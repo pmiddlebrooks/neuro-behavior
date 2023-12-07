@@ -26,7 +26,7 @@ if strcmp(dataType, 'behavior')
 
 
     changeBhv = [0; diff(bhvID)]; % nonzeros at all the indices when a new behavior begins
-    changeBhvIdx = find(changeBhv ~= 0);
+    changeBhvIdx = find(changeBhv);
 
 
     % % Convert the data to frame time as per opts.frameSize
@@ -49,6 +49,32 @@ if strcmp(dataType, 'behavior')
 elseif strcmp(dataType, 'neuron')
     fileName = 'cluster_info.tsv';
     ci = readtable([opts.dataPath, fileName], "FileType","text",'Delimiter', '\t');
+
+    % Reassign depth so 0 is most superficial and 3840 is deepest
+    ci.depth = 3840 - ci.depth;
+
+
+    % Brain area regions as function of depth from surface
+% 0 - 500  motor l2/3
+% 500 - 1240 l5/6
+% 1240 - 1540 corpus callosum, where little neural activity expected
+% 1540 - 2700 dorsal striatum
+% 2700 - 3840 ventral striatum
+
+m23 = [0 500];
+m56 = [501 1240];
+cc = [1241 1540];
+ds = [1541 2700];
+vs = [2701 3840];
+
+area = cell(size(ci, 1), 1);
+area(ci.depth >= m23(1) & ci.depth <= m23(2)) = {'M23'};
+area(ci.depth >= m56(1) & ci.depth <= m56(2)) = {'M56'};
+area(ci.depth >= cc(1) & ci.depth <= cc(2)) = {'CC'};
+area(ci.depth >= ds(1) & ci.depth <= ds(2)) = {'DS'};
+area(ci.depth >= vs(1) & ci.depth <= vs(2)) = {'VS'};
+
+ci.area = area;
 
     spikeTimes = readNPY([opts.dataPath, 'spike_times.npy']);
     spikeTimes = double(spikeTimes) / opts.fsSpike;

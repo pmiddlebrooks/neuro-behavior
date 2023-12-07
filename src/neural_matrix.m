@@ -39,6 +39,8 @@ end
 %
 % check mean rates at the beginning and end of data to ensure somewhat
 % stable isolation and neurons are within firirng rate range
+rmvNeurons = [];
+if opts.removeSome
 
 checkTime = 5 * 60;
 checkFrames = checkTime / opts.frameSize;
@@ -64,6 +66,8 @@ fprintf('\nkeeping %d of %d neurons\n', sum(~rmvNeurons), length(rmvNeurons))
 dataMat(:,rmvNeurons) = [];
 idLabels(rmvNeurons) = [];
 % imagesc(dataMat')
+
+end
 
 
 
