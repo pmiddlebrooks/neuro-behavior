@@ -3,11 +3,11 @@ function data = load_data(opts, dataType)
 % Load a specific type of data (input: dataType) for analysis
 
 % dataType: behavior:
-% 
+%
 % make a data structure with the start times and durations of each behavior
 
 % dataType: neuron:
-% 
+%
 
 if strcmp(dataType, 'behavior')
     % Behavioral data is stored with an asigned B-SOiD label every frame.
@@ -30,10 +30,10 @@ if strcmp(dataType, 'behavior')
 
 
     % % Convert the data to frame time as per opts.frameSize
-    % 
+    %
     % bhvStartFrame = [1; ceil(changeBhvIdx / opts.fsBhv / opts.frameSize)];
     % bhvStartTime = (bhvStartFrame - 1) * opts.frameSize;
-    % 
+    %
     % bhvDur = [diff(bhvStartFrame); opts.collectFor / opts.frameSize - bhvStartFrame(end) + 1]; % How many frames did behavior last (frame rate / duration in sec)
     % bhvID = [bhvID(1); bhvID(changeBhvIdx)]; % Which behavior it was
     % bhvName = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)]; % Which behavior it was
@@ -50,31 +50,37 @@ elseif strcmp(dataType, 'neuron')
     fileName = 'cluster_info.tsv';
     ci = readtable([opts.dataPath, fileName], "FileType","text",'Delimiter', '\t');
 
-    % Reassign depth so 0 is most superficial and 3840 is deepest
+    % some of the depth values aren't in order, so re-sort the data by
+    % depth
+    ci = sortrows(ci, 'depth');
+
+    % Reassign depth so 0 is most superficial (M23) and 3840 is deepest
+    % (VS)
     ci.depth = 3840 - ci.depth;
 
 
     % Brain area regions as function of depth from surface
-% 0 - 500  motor l2/3
-% 500 - 1240 l5/6
-% 1240 - 1540 corpus callosum, where little neural activity expected
-% 1540 - 2700 dorsal striatum
-% 2700 - 3840 ventral striatum
+    % 0 - 500  motor l2/3
+    % 500 - 1240 l5/6
+    % 1240 - 1540 corpus callosum, where little neural activity expected
+    % 1540 - 2700 dorsal striatum
+    % 2700 - 3840 ventral striatum
 
-m23 = [0 500];
-m56 = [501 1240];
-cc = [1241 1540];
-ds = [1541 2700];
-vs = [2701 3840];
+    m23 = [0 500];
+    m56 = [501 1240];
+    cc = [1241 1540];
+    ds = [1541 2700];
+    vs = [2701 3840];
 
-area = cell(size(ci, 1), 1);
-area(ci.depth >= m23(1) & ci.depth <= m23(2)) = {'M23'};
-area(ci.depth >= m56(1) & ci.depth <= m56(2)) = {'M56'};
-area(ci.depth >= cc(1) & ci.depth <= cc(2)) = {'CC'};
-area(ci.depth >= ds(1) & ci.depth <= ds(2)) = {'DS'};
-area(ci.depth >= vs(1) & ci.depth <= vs(2)) = {'VS'};
 
-ci.area = area;
+    area = cell(size(ci, 1), 1);
+    area(ci.depth >= m23(1) & ci.depth <= m23(2)) = {'M23'};
+    area(ci.depth >= m56(1) & ci.depth <= m56(2)) = {'M56'};
+    area(ci.depth >= cc(1) & ci.depth <= cc(2)) = {'CC'};
+    area(ci.depth >= ds(1) & ci.depth <= ds(2)) = {'DS'};
+    area(ci.depth >= vs(1) & ci.depth <= vs(2)) = {'VS'};
+
+    ci.area = area;
 
     spikeTimes = readNPY([opts.dataPath, 'spike_times.npy']);
     spikeTimes = double(spikeTimes) / opts.fsSpike;

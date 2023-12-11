@@ -69,6 +69,11 @@ analyzeCodes = codes(~rmvBhv);
 
 
 
+
+
+
+
+
 %% Get Neural matrix
 nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
 nrnDataPath = [nrnDataPath, 'recording1/'];
@@ -83,57 +88,33 @@ spikeClusters = data.spikeClusters;
 
 %% Find the neuron clusters (ids) in each brain region
 
-% 0 - 500  motor l2/3
-% 500 - 1240 l5/6
-% 1240 - 1540 corpus callosum, where little neural activity expected
-% 1540 - 2700 dorsal striatum
-% 2700 - 3840 ventral striatum
-
-m23 = [0 499];
-m56 = [500 1239];
-cc = [1240 1539];
-ds = [1540 2699];
-vs = [2700 3839];
 
 allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
-allM23 = data.ci.depth >= m23(1) & data.ci.depth <= m23(2);
-allM56 = data.ci.depth >= m56(1) & data.ci.depth <= m56(2);
-allCC = data.ci.depth >= cc(1) & data.ci.depth <= cc(2);
-allDS = data.ci.depth >= ds(1) & data.ci.depth <= ds(2);
-allVS = data.ci.depth >= vs(1) & data.ci.depth <= vs(2);
 
-goodM23 = allGood & allM23;
-goodM56= allGood & allM56;
-goodDS = allGood & allDS;
-goodVS = allGood & allVS;
+goodM23 = allGood & strcmp(data.ci.area, 'M23');
+goodM56= allGood & strcmp(data.ci.area, 'M56');
+goodDS = allGood & strcmp(data.ci.area, 'DS');
+goodVS = allGood & strcmp(data.ci.area, 'VS');
 
 
-opts.useNeurons = find(allGood & ~allCC);
 
-%%
-% Make or load neural matrix
-[dataMat, idLabels, rmvNeurons] = neural_matrix(data, opts);
-%%
-idM23 = intersect(idLabels, data.ci.cluster_id(goodM23));
-idM56 = intersect(idLabels, data.ci.cluster_id(goodM56));
-idDS = intersect(idLabels, data.ci.cluster_id(goodDS));
-idVS = intersect(idLabels, data.ci.cluster_id(goodVS));
 
-% What are the indices of neurons in each brain area within the dataMat
-matIdxM23 = 1 : length(idM23);
-matIdxM56 = 1 + length(matIdxM23) : length(matIdxM23) + length(idM56);
-matIdxDS = 1 + length(matIdxM23) + length(matIdxM56) : length(matIdxM23) + length(matIdxM56) +  length(idDS);
-matIdxVS = 1 +  length(matIdxM23) + length(matIdxM56) +  length(matIdxDS) : size(dataMat, 2);
+%% Make or load neural matrix
 
-% What index does each area begin
-m23IdxStart = 1;
-m56IdxStart = 1 + length(idM23);
-dsIdxStart = m56IdxStart + length(idM56);
-vsIdxStart = dsIdxStart + length(idDS);
+% which neurons to use in the neural matrix
+opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
 
-areaLabels = [repmat({'M23'}, 1, length(idM23)), repmat({'M56'}, 1, length(idM56)), repmat({'DS'}, 1, length(idDS)), repmat({'VS'}, 1, length(idVS))];
+tic
+[dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
+toc
+
+idM23 = find(strcmp(areaLabels, 'M23'));
+idM56 = find(strcmp(areaLabels, 'M56'));
+idDS = find(strcmp(areaLabels, 'DS'));
+idVS = find(strcmp(areaLabels, 'VS'));
 
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
+
 %%
 
 saveDataPath = strcat(paths.saveDataPath, animal,'/', sessionNrn, '/');
@@ -144,7 +125,7 @@ load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', '
 
 
 
-%% Normalize and zero-center the neural data matrix for the regression
+%% Normalize and zero-center the neural data matrix 
 
 % Normalize (z-score)
 dataMatZ = zscore(dataMat, 0, 1);
@@ -347,6 +328,46 @@ iBhv = 14;
 % imagesc(cell2mat(cellfun(@sum, (spikeCounts(1,:)), 'UniformOutput', false)'))
 imagesc(cell2mat(cellfun(@mean, (spikeZ(iBhv,:)), 'UniformOutput', false)'))
 colormap(bluewhitered), colorbar
+
+
+
+
+
+
+
+
+
+
+
+%% Examine where corpus colosum might be:
+opts.removeSome = false;
+opts.frameSize = .4; % use a big frame to go quickly
+opts.useNeurons = 1 : size(data.ci, 1);
+
+    
+% Make or load neural matrix
+[dataMat, idLabels, rmvNeurons] = neural_matrix(data, opts);
+
+
+%%
+depths = unique(data.ci.depth);
+nNeurons = zeros(length(depths), 1);
+for i = 1:length(depths)
+
+    nNeurons(i) = sum(data.ci.depth == depths(i) & strcmp(data.ci.group, 'good') & strcmp(data.ci.group, 'good'));
+end
+
+%% get avg firing rate for the window 
+
+meanRates = sum(dataMat, 1) ./ (size(dataMat, 1) * opts.frameSize);
+
+plot(data.ci.depth, meanRates)
+
+
+
+
+
+
 
 
 

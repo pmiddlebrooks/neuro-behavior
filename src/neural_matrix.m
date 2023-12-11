@@ -1,4 +1,4 @@
-function [dataMat, idLabels, rmvNeurons] = neural_matrix(data, opts)
+function [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix(data, opts)
 
 durFrames = floor(sum(data.bhvDur) / opts.frameSize);
 
@@ -11,12 +11,14 @@ end
 % Preallocate data matrix
 dataMat = zeros(durFrames, length(opts.useNeurons));
 
+areaLabels = {};
 % Loop through each neuron and put spike numbers within each frame
-for i = 1 : length(opts.useNeurons)
+for i = 1 : length(idLabels)
 
-    iSpikeTimes = data.spikeTimes(data.spikeClusters == opts.useNeurons(i));
+    % iSpikeTimes = data.spikeTimes(data.spikeClusters == opts.useNeurons(i));
+    iSpikeTimes = data.spikeTimes(data.spikeClusters == idLabels(i));
 
-    % Define the time interval (100 ms in seconds)
+    % Define the time interval (in seconds)
     interval = opts.frameSize;
 
     % Initialize a vector to store the counts
@@ -32,6 +34,9 @@ for i = 1 : length(opts.useNeurons)
     dataMat(:, i) = iSpikeCount;
     % Display the count vector
     % disp(sSpikeCount);
+
+    % Keep track which neurons (columns) are in which brain area
+    areaLabels = [areaLabels, data.ci.area(opts.useNeurons(i))];
 
 end
 
@@ -65,6 +70,7 @@ fprintf('\nkeeping %d of %d neurons\n', sum(~rmvNeurons), length(rmvNeurons))
 
 dataMat(:,rmvNeurons) = [];
 idLabels(rmvNeurons) = [];
+areaLabels(rmvNeurons) = [];
 % imagesc(dataMat')
 
 end
