@@ -108,10 +108,10 @@ tic
 [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
 toc
 
-idM23 = find(strcmp(areaLabels, 'M23'));
-idM56 = find(strcmp(areaLabels, 'M56'));
-idDS = find(strcmp(areaLabels, 'DS'));
 idVS = find(strcmp(areaLabels, 'VS'));
+idDS = find(strcmp(areaLabels, 'DS'));
+idM56 = find(strcmp(areaLabels, 'M56'));
+idM23 = find(strcmp(areaLabels, 'M23'));
 
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
@@ -119,9 +119,9 @@ fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(i
 
 saveDataPath = strcat(paths.saveDataPath, animal,'/', sessionNrn, '/');
 saveFileName = ['neural_matrix ', 'frame_size_' num2str(opts.frameSize), [' start_', num2str(opts.collectStart), ' for_', num2str(opts.collectFor), '.mat']];
-save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'rmvNeurons')
+save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
 %%
-load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'rmvNeurons')
+load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
 
 
 
@@ -133,19 +133,13 @@ dataMatZ = zscore(dataMat, 0, 1);
 % imagesc(dataMat')
 imagesc(dataMatZ')
 hold on;
-line([0, size(dataMat, 1)], [length(idM23),(length(idM23))], 'Color', 'r');
-line([0, size(dataMat, 1)], [length(idM23)+length(idM56),(length(idM23)+length(idM56))], 'Color', 'r');
-line([0, size(dataMat, 1)], [length(idM23)+length(idM56)+length(idDS),(length(idM23)+length(idM56)+length(idDS))], 'Color', 'r');
+line([0, size(dataMat, 1)], [find(strcmp(areaLabels, 'VS'), 1, 'last'),find(strcmp(areaLabels, 'VS'), 1, 'last')], 'Color', 'r');
+line([0, size(dataMat, 1)], [find(strcmp(areaLabels, 'DS'), 1, 'last'),find(strcmp(areaLabels, 'DS'), 1, 'last')], 'Color', 'r');
+line([0, size(dataMat, 1)], [find(strcmp(areaLabels, 'M56'), 1, 'last'),find(strcmp(areaLabels, 'M56'), 1, 'last')], 'Color', 'r');
 
 
 
 
-
-
-
-%%
-% Which behaviors to plot
-bhvView = behaviors(2:end);
 
 
 
@@ -155,7 +149,7 @@ bhvView = behaviors(2:end);
 %%
 brainArea = 'DS';
 % get start times of all valid instances of this behavior
-bhvCode = analyzeCodes(strcmp(analyzeBhv, 'locomotion'));
+bhvCode = analyzeCodes(strcmp(analyzeBhv, 'investigate_1'));
 
 startTimes = dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode);
 % Use all valid behavior startTimes
@@ -186,7 +180,7 @@ areas = {'M23' 'M56' 'DS' 'VS'};
 for iArea = 1 : 4
 
 meanToSort = mean(meanSpikes(strcmp(areaLabels, areas(iArea)), sortWindow), 2);
-[~, sortInd] = sort(meanToSort, 'descend');
+[~, sortInd] = sort(meanToSort, 'ascend');
 iMeanSpikes = meanSpikes(strcmp(areaLabels, areas(iArea)), :);
 meanSpikesArea{iArea} = iMeanSpikes(sortInd, :);
 % = sortMatrixByIndices(meanSpikes(strcmp(areaLabels, 'M56'),:), sortWindow(1), sortWindow(2));
@@ -194,7 +188,7 @@ end
 %%
 figure(10); clf; hold on;
 
-imagesc(meanSpikesArea{3})
+imagesc(meanSpikesArea{2})
 % plot(meanSdf(:,  strcmp(areaLabels, 'M23')), 'r');
 % plot(meanSpikes(:,  strcmp(areaLabels, 'M56')), 'm');
 % plot(sortedMatrix(:,  strcmp(areaLabels, 'DS')), 'b');
