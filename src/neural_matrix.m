@@ -40,6 +40,9 @@ for i = 1 : length(idLabels)
 
 end
 
+
+
+
 %% Remove neurons that are out of min-max firing rates
 %
 % check mean rates at the beginning and end of data to ensure somewhat
