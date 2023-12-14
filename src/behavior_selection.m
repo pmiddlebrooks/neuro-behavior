@@ -1,18 +1,17 @@
-function [validBhv] = behavior_selection(data, opts)
+function validBhv = behavior_selection(data, opts)
 % Get indices of usable behaviors
 % Details:
 %    None
 %
 % Syntax:
-%     out = myfun1(a,b,c)
+%     validBhv = behavior_selection(data, opts)
 %
 % Inputs:
-%    a - [m,n] size,[double] type,Description
-%    b - [m,n] size,[double] type,Description
-%    c - [m,n] size,[double] type,Description
+%    data - 
+%    opts - 
 %
 % Outputs:
-%    out - [m,n] size,[double] type,Description
+%    validBhv - [m,n] size,[double] type,Description
 %
 % Example:
 %    None

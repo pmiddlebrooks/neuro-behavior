@@ -24,7 +24,9 @@ figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['s
 if ~exist(figurePath, 'dir')
     mkdir(figurePath);
 end
-%%
+%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                   Get behavior data
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
 bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
 
@@ -60,7 +62,7 @@ allValid = logical(sum(cell2mat(validBhv),2)); % A list of all the valid behvaio
 rmvBhv = zeros(1, length(validBhv));
 for i = 1 : length(validBhv)
     if sum(validBhv{i}) < 20
-    rmvBhv(i) = 1;
+        rmvBhv(i) = 1;
     end
 end
 analyzeBhv = behaviors(~rmvBhv);
@@ -74,7 +76,9 @@ analyzeCodes = codes(~rmvBhv);
 
 
 
-%% Get Neural matrix
+%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                Get Neural matrix
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
 nrnDataPath = [nrnDataPath, 'recording1/'];
 opts.dataPath = nrnDataPath;
@@ -108,10 +112,10 @@ tic
 [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
 toc
 
-idVS = find(strcmp(areaLabels, 'VS'));
-idDS = find(strcmp(areaLabels, 'DS'));
-idM56 = find(strcmp(areaLabels, 'M56'));
 idM23 = find(strcmp(areaLabels, 'M23'));
+idM56 = find(strcmp(areaLabels, 'M56'));
+idDS = find(strcmp(areaLabels, 'DS'));
+idVS = find(strcmp(areaLabels, 'VS'));
 
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
@@ -125,7 +129,7 @@ load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', '
 
 
 
-%% Normalize and zero-center the neural data matrix 
+%% Normalize and zero-center the neural data matrix
 
 % Normalize (z-score)
 dataMatZ = zscore(dataMat, 0, 1);
@@ -133,9 +137,9 @@ dataMatZ = zscore(dataMat, 0, 1);
 % imagesc(dataMat')
 imagesc(dataMatZ')
 hold on;
-line([0, size(dataMat, 1)], [find(strcmp(areaLabels, 'VS'), 1, 'last'),find(strcmp(areaLabels, 'VS'), 1, 'last')], 'Color', 'r');
-line([0, size(dataMat, 1)], [find(strcmp(areaLabels, 'DS'), 1, 'last'),find(strcmp(areaLabels, 'DS'), 1, 'last')], 'Color', 'r');
-line([0, size(dataMat, 1)], [find(strcmp(areaLabels, 'M56'), 1, 'last'),find(strcmp(areaLabels, 'M56'), 1, 'last')], 'Color', 'r');
+line([0, size(dataMat, 1)], [idM23(end)+.5, idM23(end)+.5], 'Color', 'r');
+line([0, size(dataMat, 1)], [idM56(end)+.5, idM56(end)+.5], 'Color', 'r');
+line([0, size(dataMat, 1)], [idDS(end)+.5, idDS(end)+.5], 'Color', 'r');
 
 
 
@@ -159,7 +163,7 @@ startTimes(1:3) = [];
 startFrames = floor(startTimes ./ opts.frameSize);
 
 alignedMat = cell(length(startFrames), 1);
- 
+
 preStartFrames = 1 / opts.frameSize;
 postStartFrames = 1 / opts.frameSize;
 for iBout = 1 : length(startTimes)
@@ -179,11 +183,11 @@ areas = {'M23' 'M56' 'DS' 'VS'};
 
 for iArea = 1 : 4
 
-meanToSort = mean(meanSpikes(strcmp(areaLabels, areas(iArea)), sortWindow), 2);
-[~, sortInd] = sort(meanToSort, 'ascend');
-iMeanSpikes = meanSpikes(strcmp(areaLabels, areas(iArea)), :);
-meanSpikesArea{iArea} = iMeanSpikes(sortInd, :);
-% = sortMatrixByIndices(meanSpikes(strcmp(areaLabels, 'M56'),:), sortWindow(1), sortWindow(2));
+    meanToSort = mean(meanSpikes(strcmp(areaLabels, areas(iArea)), sortWindow), 2);
+    [~, sortInd] = sort(meanToSort, 'ascend');
+    iMeanSpikes = meanSpikes(strcmp(areaLabels, areas(iArea)), :);
+    meanSpikesArea{iArea} = iMeanSpikes(sortInd, :);
+    % = sortMatrixByIndices(meanSpikes(strcmp(areaLabels, 'M56'),:), sortWindow(1), sortWindow(2));
 end
 %%
 figure(10); clf; hold on;
@@ -317,6 +321,161 @@ close(figureHandle)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%               Mahalanobis distances
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+brainArea = 'M56';
+dataMatMahala = zscore(dataMat(:, strcmp(areaLabels, brainArea)));
+% dataMatMahala = dataMat(:, strcmp(areaLabels, brainArea));
+
+beforeAfterFrames = 3;
+
+dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
+onsetFrames = floor(dataBhvTruncate.bhvStartTime ./ opts.frameSize);
+% onsetLabels = 2 + dataBhv.bhvID; % shift up 2 b/c labels start from -1
+% onsetFrames = onsetFrames(10:end-10);
+% onsetLabels = onsetLabels(10:end-10);
+% mdist = mahal(dataMatManalo, dataMatManalo);
+% mdist = mahalanobis_distances(dataMatMahala, onsetFrames, onsetLabels);
+% mdistBefore = mahalanobis_distances(dataMatMahala, onsetFrames - beforeAfterFrames, onsetLabels);
+% mdistAfter = mahalanobis_distances(dataMatMahala, onsetFrames + beforeAfterFrames, onsetLabels);
+
+mdist = cell(length(analyzeCodes), 1);
+mdistBefore = cell(length(analyzeCodes), 1);
+mdistAfter = cell(length(analyzeCodes), 1);
+for iBhv = 1 : length(analyzeCodes)
+    iOnsetFrames = onsetFrames(dataBhvTruncate.bhvID == analyzeCodes(i));
+
+    mdist{i} = mahal(dataMatMahala(iOnsetFrames, :), dataMatMahala(iOnsetFrames, :));
+    mdistBefore{i} = mahal(dataMatMahala(iOnsetFrames, :), dataMatMahala(iOnsetFrames - beforeAfterFrames, :));
+    mdistAfter{i} = mahal(dataMatMahala(iOnsetFrames, :), dataMatMahala(iOnsetFrames + beforeAfterFrames, :));
+end
+
+%% Get neural data
+opts.frameSize = .1;
+opts.shiftAlignFactor = -.5;
+opts.minFiringRate = .5;
+tic
+[dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
+toc
+
+idM23 = find(strcmp(areaLabels, 'M23'));
+idM56 = find(strcmp(areaLabels, 'M56'));
+idDS = find(strcmp(areaLabels, 'DS'));
+idVS = find(strcmp(areaLabels, 'VS'));
+
+fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
+
+%% Run mahalanobis distances
+brainAreas = {'M23' 'M56' 'DS' 'VS'};
+beforeAfterFrames = -5:5;
+dataMatMahala = zscore(dataMat);
+dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
+
+minTrial = sum(strcmp(areaLabels, 'DS')) * 1.3;
+
+% fig = figure('Units', 'inches', 'Position', [0, 0, 16, 4], 'PaperOrientation', 'landscape');
+fig = figure(87);
+clf
+set(fig, 'PaperOrientation', 'portrait','Position', [50, 50, 1000, 800])
+figurePath = ['E:/Projects/neuro-behavior/docs/',animal,'/',sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectFor)]];
+
+
+
+mdist = zeros(length(analyzeCodes), length(brainAreas), length(beforeAfterFrames)); % behaviors X brainAreas X timeFrames
+% loop through behaviors to get start times of each behavior
+for iBhv = 1 : length(analyzeCodes)
+    jBhvInd = dataBhvTruncate.bhvID == analyzeCodes(iBhv);
+    jOnsetFrames = floor(dataBhvTruncate.bhvStartTime(jBhvInd) ./ opts.frameSize);
+
+
+    if length(jOnsetFrames) > minTrial
+        % loop through brain areas to collect mahalanobis distances in each
+        % area peri-behavior start times
+        for jArea = 1 : length(brainAreas)
+            jNrns = strcmp(areaLabels, brainAreas{jArea});
+            jMahal = dataMatMahala(jOnsetFrames, jNrns);
+            jKeepNrns = std(jMahal) > 0;
+            jMahal = jMahal(:, jKeepNrns);
+
+            % brainAreas{jArea}
+            % [length(jOnsetFrames) sum(jKeepNrns)]
+            for kTime = 1 : length(beforeAfterFrames)
+                kMahal = dataMatMahala(jOnsetFrames + beforeAfterFrames(kTime), jNrns);
+                kMahal = kMahal(:, jKeepNrns);
+                mdist(iBhv, jArea, kTime) = mean(mahal(kMahal,  jMahal));
+
+                % if isnan(mdist(iBhv, jArea, kTime))
+                %     [std(kMahal); std(jMahal)]
+                %     cov(jMahal)
+                %     disp('huh')
+                % end
+
+            end
+            % reshape(mdist(iBhv, jArea, :), [], 1)
+
+            % % plot(reshape(mdist(iBhv, jArea, :), [], 1))
+            % plot(zscore(reshape(mdist(iBhv, jArea, :), [], 1)))
+            % title([analyzeBhv{iBhv} ' ' brainAreas{jArea}], 'interpreter', 'none')
+            % xticklabels(beforeAfterFrames)
+        end
+        clf
+        hold on;
+        plot(zscore(reshape(mdist(iBhv, 1, :), [], 1)), 'r', 'linewidth', 2)
+        plot(zscore(reshape(mdist(iBhv, 2, :), [], 1)), 'm', 'linewidth', 2)
+        plot(zscore(reshape(mdist(iBhv, 3, :), [], 1)), 'b', 'linewidth', 2)
+        plot(zscore(reshape(mdist(iBhv, 4, :), [], 1)), 'c', 'linewidth', 2)
+        title([analyzeBhv{iBhv}], 'interpreter', 'none')
+        xticklabels(beforeAfterFrames .* 1000 .* opts.frameSize)
+        xline(ceil(length(beforeAfterFrames)/2))
+        legend(brainAreas)
+        ylabel('Mahalanobis diszance (Z-score)')
+        xlabel('Time from onset (ms)')
+        saveas(fig,fullfile(figurePath, ['mahalanobis ', analyzeBhv{iBhv}]), 'pdf')
+        % pause(3)
+    end
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %%
 iBhv = 14;
 % imagesc(cell2mat(cellfun(@sum, (spikeCounts(1,:)), 'UniformOutput', false)'))
@@ -338,7 +497,7 @@ opts.removeSome = false;
 opts.frameSize = .4; % use a big frame to go quickly
 opts.useNeurons = 1 : size(data.ci, 1);
 
-    
+
 % Make or load neural matrix
 [dataMat, idLabels, rmvNeurons] = neural_matrix(data, opts);
 
@@ -351,7 +510,7 @@ for i = 1:length(depths)
     nNeurons(i) = sum(data.ci.depth == depths(i) & strcmp(data.ci.group, 'good') & strcmp(data.ci.group, 'good'));
 end
 
-%% get avg firing rate for the window 
+%% get avg firing rate for the window
 
 meanRates = sum(dataMat, 1) ./ (size(dataMat, 1) * opts.frameSize);
 
@@ -370,16 +529,16 @@ plot(data.ci.depth, meanRates)
 
 %%
 function sortedMatrix = sortMatrixByIndices(matrix, startIndex, endIndex)
-    % Check if the indices are valid
-    if startIndex < 1 || endIndex > size(matrix, 2) || startIndex > endIndex
-        error('Invalid range of element indices.');
-    end
-    
-    % Sort the matrix based on the specified range of column indices
-    [~, indexOrder] = sortrows(matrix(:, startIndex:endIndex), -1);
-    
-    % Rearrange the matrix based on the sorted indices
-    sortedMatrix = matrix(indexOrder, :);
+% Check if the indices are valid
+if startIndex < 1 || endIndex > size(matrix, 2) || startIndex > endIndex
+    error('Invalid range of element indices.');
+end
+
+% Sort the matrix based on the specified range of column indices
+[~, indexOrder] = sortrows(matrix(:, startIndex:endIndex), -1);
+
+% Rearrange the matrix based on the sorted indices
+sortedMatrix = matrix(indexOrder, :);
 end
 
 
