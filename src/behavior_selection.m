@@ -27,7 +27,7 @@ codes = opts.bhvCodes;
 
 % bhvEventType = 3 * ones(length(behaviors), 1); % different type of events. these are all peri-event variables.
 
-validBhv = cell(1, length(behaviors));
+validBhv = zeros(size(data, 1), length(behaviors));
 
 for i = 1 : length(codes) % length(actList)
 
@@ -79,16 +79,20 @@ for i = 1 : length(codes) % length(actList)
         fprintf('%d: andNotRepeated \n', andNotRepeated)
         fprintf('Percent valid: %.1f\n\n', 100* andNotRepeated / allPossible)
 
+        % if sum(actAndLong) >= opts.minBhvNum
+        %     validBhv{i} = actAndLong;
+        % else
+        %     validBhv{i} = false(length(actAndLong), 1);
         if sum(actAndLong) >= opts.minBhvNum
-            validBhv{i} = actAndLong;
+            validBhv(:, i) = actAndLong;
         else
-            validBhv{i} = false(length(actAndLong), 1);
+            validBhv(:, i) = false(length(actAndLong), 1);
 
             fprintf('Not enough %s bouts to analyze (%d of %d needed)\n', behaviors{i}, sum(actAndLong), opts.minBhvNum)
 
         end
     else
-        validBhv{i} = false(size(data, 1), 1);
+        validBhv(:, i) = false(size(data, 1), 1);
 
         fprintf('%s code %d is not a valid behavior for this analysis\n\n', behaviors{i}, codes(i))
     end

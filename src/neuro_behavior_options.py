@@ -39,6 +39,6 @@ class neuro_behavior_options:
 
         # Neural activity options
         self.removeSome = True
-        self.minFiringRate = 0.1
+        self.minFiringRate = 0.5
         self.maxFiringRate = 40
 

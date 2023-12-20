@@ -4,7 +4,8 @@ def behavior_selection(data, opts):
     behaviors = opts.behaviors
     codes = opts.bhvCodes
 
-    validBhv = [None] * len(behaviors)
+    # validBhv = [None] * len(behaviors)
+    validBhv = np.zeros((data.shape[0], len(behaviors)))
 
     for i in range(len(codes)):
         if codes[i] in opts.validCodes:
@@ -22,7 +23,8 @@ def behavior_selection(data, opts):
             # Go through possible instances and discard unusable (repeated) ones
             for iPossible in np.where(actAndLong)[0]:
                 # Was there the same behavior within the last minNoRepeat sec?
-                endTime = np.concatenate([data.bhvStartTime[1:], [data.bhvStartTime[-1] + data.bhvDur[-1]]])
+                # endTime = np.concatenate([data.bhvStartTime[1:], [data.bhvStartTime[-1] + data.bhvDur[-1]]])
+                endTime = np.concatenate([data['bhvStartTime'].iloc[1:], [data['bhvStartTime'].iloc[-1] + data['bhvDur'].iloc[-1]]])
                 # possible repeated behaviors are any behaviors that came
                 # before this one that were within the no-repeat minimal time
                 iPossRepeat = (endTime < data.bhvStartTime[iPossible]) & (endTime >= (data.bhvStartTime[iPossible] - opts.minNoRepeatTime))
@@ -40,13 +42,13 @@ def behavior_selection(data, opts):
             print(f'Percent valid: {100 * andNotRepeated / allPossible:.1f}\n')
 
             if sum(actAndLong) >= opts.minBhvNum:
-                validBhv[i] = actAndLong
+                validBhv[:,i] = actAndLong
             else:
-                validBhv[i] = np.full(len(actAndLong), False)
+                validBhv[:,i] = np.full(len(actAndLong), False)
                 print(f'Not enough {behaviors[i]} bouts to analyze ({sum(actAndLong)} of {opts.minBhvNum} needed)\n')
 
         else:
-            validBhv[i] = np.full(len(data), False)
+            validBhv[:,i] = np.full(len(data), False)
             print(f'{behaviors[i]} code {codes[i]} is not a valid behavior for this analysis\n\n')
 
     return validBhv
