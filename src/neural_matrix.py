@@ -1,12 +1,12 @@
 import numpy as np
 
 def neural_matrix(data, opts):
-    durFrames = int(np.floor(np.sum(data.bhvDur) / opts.frameSize))
+    durFrames = int(np.floor(np.sum(data['bhvDur']) / opts.frameSize))
 
-    if 'id' in data.ci.columns:
-        idLabels = data.ci.id[opts.useNeurons]
+    if 'id' in data['ci'].columns:
+        idLabels = data['ci'].id.iloc[opts.useNeurons].values
     else:
-        idLabels = data.ci.cluster_id[opts.useNeurons]
+        idLabels = data['ci'].cluster_id.iloc[opts.useNeurons].values
 
     # Preallocate data matrix
     dataMat = np.zeros((durFrames, len(opts.useNeurons)))
@@ -15,7 +15,7 @@ def neural_matrix(data, opts):
 
     # Loop through each neuron and put spike numbers within each frame
     for i in range(len(idLabels)):
-        iSpikeTimes = data.spikeTimes[data.spikeClusters == idLabels[i]]
+        iSpikeTimes = data['spikeTimes'][data['spikeClusters'] == idLabels[i]]
 
         # Define the time interval (in seconds)
         interval = opts.frameSize
@@ -32,7 +32,7 @@ def neural_matrix(data, opts):
         dataMat[:, i] = iSpikeCount
 
         # Keep track of which neurons (columns) are in which brain area
-        areaLabels.append(data.ci.area[opts.useNeurons[i]])
+        areaLabels.append(data['ci'].area.iloc[opts.useNeurons[i]])
 
     # Remove neurons that are out of min-max firing rates
     rmvNeurons = []

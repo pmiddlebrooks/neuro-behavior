@@ -6,7 +6,7 @@
 %%
 %% get desired file paths
 computerDriveName = 'ROSETTA'; % 'Z' or 'home'
-paths = rrm_get_paths(computerDriveName);
+paths = get_paths(computerDriveName);
 
 
 opts = rrm_options;
@@ -55,16 +55,16 @@ opts.validCodes = codes(codes ~= -1);
 %% Select valid behaviors
 validBhv = behavior_selection(dataBhv, opts);
 opts.validBhv = validBhv;
-allValid = logical(sum(cell2mat(validBhv),2)); % A list of all the valid behvaior indices
+allValid = logical(sum(validBhv,2)); % A list of all the valid behvaior indices
 
 
-%% Select which behaviors we want to view/analyze
-rmvBhv = zeros(1, length(validBhv));
-for i = 1 : length(validBhv)
-    if sum(validBhv{i}) < 20
+rmvBhv = zeros(1, length(behaviors));
+for i = 1 : length(behaviors)
+    if sum(validBhv(:, i)) < 20
         rmvBhv(i) = 1;
     end
 end
+
 analyzeBhv = behaviors(~rmvBhv);
 analyzeCodes = codes(~rmvBhv);
 
@@ -122,6 +122,9 @@ fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(i
 %%
 
 saveDataPath = strcat(paths.saveDataPath, animal,'/', sessionNrn, '/');
+if ~exist(saveDataPath, 'dir')
+    mkdir(saveDataPath)
+end
 saveFileName = ['neural_matrix ', 'frame_size_' num2str(opts.frameSize), [' start_', num2str(opts.collectStart), ' for_', num2str(opts.collectFor), '.mat']];
 save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
 %%
@@ -333,7 +336,7 @@ close(figureHandle)
 
 
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%               Mahalanobis distances
+%               Mahalanobis and Euclidian distances
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 brainArea = 'M56';
@@ -344,13 +347,7 @@ beforeAfterFrames = 3;
 
 dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
 onsetFrames = floor(dataBhvTruncate.bhvStartTime ./ opts.frameSize);
-% onsetLabels = 2 + dataBhv.bhvID; % shift up 2 b/c labels start from -1
-% onsetFrames = onsetFrames(10:end-10);
-% onsetLabels = onsetLabels(10:end-10);
-% mdist = mahal(dataMatManalo, dataMatManalo);
-% mdist = mahalanobis_distances(dataMatMahala, onsetFrames, onsetLabels);
-% mdistBefore = mahalanobis_distances(dataMatMahala, onsetFrames - beforeAfterFrames, onsetLabels);
-% mdistAfter = mahalanobis_distances(dataMatMahala, onsetFrames + beforeAfterFrames, onsetLabels);
+
 
 mdist = cell(length(analyzeCodes), 1);
 mdistBefore = cell(length(analyzeCodes), 1);
@@ -454,15 +451,212 @@ end
 
 
 
+%% =================================================================
+%                   Run euclidian distances
+%  =================================================================
+%%
+% dataMatEuc = zscore(dataMat);
+dataMatEuc = dataMat;
+dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
+
+dataBhv.prevBhvID = [nan; dataBhv.bhvID(1:end-1)];
+dataBhv.prevDur = [nan; dataBhv.bhvDur(1:end-1)];
+
+
+%%
+clf
+figure(2);
+figureSize = [-1000, 0, 800, 1000]; % [left, bottom, width, height]
+set(gcf, 'Position', figureSize);
+% Adjust spacing between plots
+spacing = -0.05; % You can adjust this value as needed
+subplotSpacing = -0.01;
+
+
+minBeforeDur = .2; % previous behavior must last within a range (sec)
+maxBeforeDur = 1;
+
+% brainAreas = {'M23' 'M56' 'DS' 'VS'};
+brainAreas = {'M56' 'DS'};
+% brainAreas = {'M56'};
+beforeAfterFrames = -1 / opts.frameSize : 1 / opts.frameSize;
+
+movMeanFrames = 12;
+oneBackLabels = [];
+for iCurr = 1 : length(analyzeCodes)
+    for jPrev = 1 : length(analyzeCodes)
+        if iCurr ~= jPrev
+            % Get euclidians coming into currBhv from all other behaviors
+            currIdx = dataBhvTruncate.bhvID == analyzeCodes(iCurr);
+            currBhvOnsetAll = round(dataBhvTruncate.bhvStartTime(currIdx) ./ opts.frameSize);
+
+            % Get euclidians coming into currBhv from specific prevBhv
+            prevIdx = currIdx & ...
+                dataBhvTruncate.prevBhvID == analyzeCodes(jPrev) & ...
+                dataBhvTruncate.prevDur >= minBeforeDur & ...
+                dataBhvTruncate.prevDur <= maxBeforeDur;
+
+            currBhvOnsetSub = round(dataBhvTruncate.bhvStartTime(prevIdx) ./ opts.frameSize);
+
+
+            iLabel = [analyzeBhv{jPrev}, ' then ', analyzeBhv{iCurr}];
+            fprintf('%d %s\n', sum(prevIdx), iLabel)
+
+            if sum(prevIdx) >= 10
+                % label it as <current behavior> after <previous behavior>
+                oneBackLabels = [oneBackLabels, iLabel];
 
 
 
 
 
 
+                % initialize arrays
+                currDistAll = zeros(length(brainAreas), length(beforeAfterFrames));
+                currDistSub = zeros(length(brainAreas), length(beforeAfterFrames));
+                currDistAllSem = zeros(length(brainAreas), length(beforeAfterFrames));
+                currDistSubSem = zeros(length(brainAreas), length(beforeAfterFrames));
+                meanPsthAll = zeros(length(brainAreas), length(beforeAfterFrames));
+                meanPsthSub = zeros(length(brainAreas), length(beforeAfterFrames));
+                meanPsthAllSem = zeros(length(brainAreas), length(beforeAfterFrames));
+                meanPsthSubSem = zeros(length(brainAreas), length(beforeAfterFrames));
+
+
+                % Collect euclidian distances in each area peri-behavior start times
+                for jArea = 1 : length(brainAreas)
+                    jNrns = strcmp(areaLabels, brainAreas{jArea});
+                    jNrnIdx = find(jNrns);
+
+                    for kTime = 1 : length(beforeAfterFrames)
+                        % mean psths across neurons at each time point
+                        meanPsthAll(jArea, kTime) = mean(mean(dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize);
+                        meanPsthSub(jArea, kTime) = mean(mean(dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize);
+                        meanPsthAllSem(jArea, kTime) = mean(std(dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize) ./ sqrt(length(currBhvOnsetAll));
+                        meanPsthSubSem(jArea, kTime) = mean(std(dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize) ./ sqrt(length(currBhvOnsetAll)) ;
+
+                        kMatAll = dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx);
+                        kMatSub = dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx);
+
+                        % Centroid at this time point
+                        kCenterAll = mean(kMatAll, 1);
+                        kCenterSub = mean(kMatSub, 1);
+
+                        % Distances of each time point to the centroid
+                        % distances = sqrt((vector - mean(vector)).^2);
+                        kDistAll = sqrt(sum((kMatAll - kCenterAll).^2, 2));
+                        kDistSub = sqrt(sum((kMatSub - kCenterSub).^2, 2));
+
+                        % mean distances across trials
+                        currDistAll(jArea, kTime) = mean(kDistAll);
+                        currDistSub(jArea, kTime) = mean(kDistSub);
+                        currDistAllSem(jArea, kTime) = std(kDistAll) / sqrt(length(kDistAll));
+                        currDistSubSem(jArea, kTime) = std(kDistSub) / sqrt(length(kDistSub));
+
+                    end
+                end
+                clf
+                subplot(2, 1, 1);
+                hold on
+
+                set(gca, 'Position', get(gca, 'Position') + [0, spacing, 0, -spacing - subplotSpacing]);
+                plot(beforeAfterFrames, movmean(currDistAll(1,:), movMeanFrames), 'b', 'linewidth', 2)
+                fillX = [beforeAfterFrames fliplr(beforeAfterFrames)];
+                fillY = movmean([currDistAll(1,:) - currDistAllSem(1,:) fliplr(currDistAll(1,:) + currDistAllSem(1,:))], movMeanFrames);
+                fill(fillX, fillY, 'b', 'facealpha', .5, 'linestyle', 'none')
+
+                plot(beforeAfterFrames, movmean(currDistSub(1,:), movMeanFrames), 'r', 'linewidth', 2)
+                fillY = movmean([currDistSub(1,:) - currDistSubSem(1,:) fliplr(currDistSub(1,:) + currDistSubSem(1,:))], movMeanFrames);
+                fill(fillX, fillY, 'r', 'facealpha', .5, 'linestyle', 'none')
+
+                plot(beforeAfterFrames, movmean(currDistAll(2,:), movMeanFrames), '--b', 'linewidth', 2)
+                fillY = movmean([currDistAll(2,:) - currDistAllSem(2,:) fliplr(currDistAll(2,:) + currDistAllSem(2,:))], movMeanFrames);
+                fill(fillX, fillY, 'b', 'facealpha', .5, 'linestyle', 'none')
+
+                plot(beforeAfterFrames, movmean(currDistSub(2,:), movMeanFrames), '--r', 'linewidth', 2)
+                fillY = movmean([currDistSub(2,:) - currDistSubSem(2,:) fliplr(currDistSub(2,:) + currDistSubSem(2,:))], movMeanFrames);
+                fill(fillX, fillY, 'r', 'facealpha', .5, 'linestyle', 'none')
+
+                title(iLabel, 'interpreter', 'none')
+                xline(0, '--k')
+                ylabel('Euclidean distance')
+
+                subplot(2, 1, 2);
+                hold on
+                set(gca, 'Position', get(gca, 'Position') + [0, spacing, 0, -spacing - subplotSpacing]);
+
+                plot(beforeAfterFrames, movmean(currDistAll(1,:), movMeanFrames) ./ movmean(meanPsthAll(1, :), movMeanFrames), 'b', 'lineWidth', 2)
+                % plot(beforeAfterFrames, movmean(meanPsthAll(1, :), movMeanFrames), 'b', 'lineWidth', 2)
+                % fillX = [beforeAfterFrames fliplr(beforeAfterFrames)];
+                % fillY = movmean([meanPsthAll(1,:) - meanPsthAllSem(1,:) fliplr(meanPsthAll(1,:) + meanPsthAllSem(1,:))], movMeanFrames);
+                % fill(fillX, fillY, 'b', 'facealpha', .5, 'linestyle', 'none')
+
+                plot(beforeAfterFrames, movmean(currDistSub(1,:), movMeanFrames) ./ movmean(meanPsthSub(1, :), movMeanFrames), 'r', 'lineWidth', 2)
+                % plot(beforeAfterFrames, movmean(meanPsthSub(1, :), movMeanFrames), 'r', 'lineWidth', 2)
+
+                plot(beforeAfterFrames, movmean(currDistAll(2,:), movMeanFrames) ./ movmean(meanPsthAll(2, :), movMeanFrames), '--b', 'lineWidth', 2)
+                % plot(beforeAfterFrames, movmean(meanPsthAll(2, :), movMeanFrames), '--b', 'lineWidth', 2)
+
+                plot(beforeAfterFrames, movmean(currDistSub(2,:), movMeanFrames) ./ movmean(meanPsthSub(2, :), movMeanFrames), '--r', 'lineWidth', 2)
+                % plot(beforeAfterFrames, movmean(meanPsthSub(2, :), movMeanFrames), '--r', 'lineWidth', 2)
+
+                title('PSTH', 'interpreter', 'none')
+                xline(0, '--k')
+                ylabel('Euclidean distance / Spikes per sec')
+                disp('huh')
+            end
+        end
+    end
+end
 
 
 
+%% Test euclidian distances on DataHigh example data
+cd('E:/Projects/toolboxes/DataHigh1.3/')
+load('./data/ex2_rawspiketrains.mat');
+%%
+frameSize = .1;
+frameSize = .005;
+dataEx = [];
+
+startTimes = 1;
+beforeAfterFrames = 0: 1 / frameSize;
+% build
+% reach1: use iTrial = 1 : 40
+% reach2: use iTrial = 61 : 100
+for iTrial = 1:40
+    iData = neural_matrix_ms_to_frames(D(iTrial).data', frameSize);
+    dataEx = [dataEx; iData];
+    startTimes = [startTimes; size(dataEx, 1) + 1];
+end
+% dataEx = zscore(dataEx, 0, 1);
+startTimes(end) = [];
+meanPsth = zeros(1, length(kCenterAll));
+currDistAll = zeros(1, length(kCenterAll));
+
+for kTime = 1 : length(beforeAfterFrames)
+
+    kMatAll = dataEx(startTimes + beforeAfterFrames(kTime), :);
+
+    % find the centroid at this time point
+    kCenterAll = mean(kMatAll, 1);
+
+    % mean psth across neurons
+    meanPsth(kTime) = mean(kCenterAll) / frameSize;
+
+
+    % Distances of each time point to the centroid
+    % distances = sqrt((vector - mean(vector)).^2);
+    kDistAll = sqrt(sum((kMatAll - kCenterAll).^2, 2));
+
+    % mean distances across trials
+    currDistAll(kTime) = mean(kDistAll);
+
+end
+clf
+% plot(currDistAll, 'k', 'linewidth', 2)
+% hold on
+% plot(meanPsth, 'b', 'linewidth', 2)
+plot(currDistAll ./ meanPsth, 'r', 'linewidth', 2)
 
 
 
