@@ -9,11 +9,10 @@ computerDriveName = 'ROSETTA'; % 'Z' or 'home'
 paths = get_paths(computerDriveName);
 
 
-opts = rrm_options;
+opts = neuro_behavior_options;
 animal = 'ag25290';
 sessionBhv = '112321_1';
 sessionNrn = '112321';
-
 if strcmp(sessionBhv, '112321_1')
     sessionSave = '112321';
 end
@@ -465,23 +464,25 @@ dataBhv.prevDur = [nan; dataBhv.bhvDur(1:end-1)];
 
 %%
 clf
-figure(2);
+fig = figure(2);
 figureSize = [-1000, 0, 800, 1000]; % [left, bottom, width, height]
 set(gcf, 'Position', figureSize);
 % Adjust spacing between plots
 spacing = -0.05; % You can adjust this value as needed
-subplotSpacing = -0.01;
+subplotSpacing = 0.01;
 
 
 minBeforeDur = .2; % previous behavior must last within a range (sec)
 maxBeforeDur = 1;
+minNumBoutsPrev = 20;
 
 % brainAreas = {'M23' 'M56' 'DS' 'VS'};
 brainAreas = {'M56' 'DS'};
 % brainAreas = {'M56'};
 beforeAfterFrames = -1 / opts.frameSize : 1 / opts.frameSize;
 
-movMeanFrames = 12;
+movMeanFrames = 60;
+alphaFaceValue = .3;
 oneBackLabels = [];
 for iCurr = 1 : length(analyzeCodes)
     for jPrev = 1 : length(analyzeCodes)
@@ -501,8 +502,8 @@ for iCurr = 1 : length(analyzeCodes)
 
             iLabel = [analyzeBhv{jPrev}, ' then ', analyzeBhv{iCurr}];
             fprintf('%d %s\n', sum(prevIdx), iLabel)
-
-            if sum(prevIdx) >= 10
+            %
+            if sum(prevIdx) >= minNumBoutsPrev
                 % label it as <current behavior> after <previous behavior>
                 oneBackLabels = [oneBackLabels, iLabel];
 
@@ -529,10 +530,14 @@ for iCurr = 1 : length(analyzeCodes)
 
                     for kTime = 1 : length(beforeAfterFrames)
                         % mean psths across neurons at each time point
-                        meanPsthAll(jArea, kTime) = mean(mean(dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize);
-                        meanPsthSub(jArea, kTime) = mean(mean(dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize);
-                        meanPsthAllSem(jArea, kTime) = mean(std(dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize) ./ sqrt(length(currBhvOnsetAll));
-                        meanPsthSubSem(jArea, kTime) = mean(std(dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize) ./ sqrt(length(currBhvOnsetAll)) ;
+                        % meanPsthAll(jArea, kTime) = mean(mean(dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize);
+                        % meanPsthSub(jArea, kTime) = mean(mean(dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize);
+                        % meanPsthAllSem(jArea, kTime) = std(mean(dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize) ./ sqrt(length(currBhvOnsetAll));
+                        % meanPsthSubSem(jArea, kTime) = std(mean(dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx)) ./ frameSize) ./ sqrt(length(currBhvOnsetAll)) ;
+                        meanPsthAll(jArea, kTime) = mean(mean(dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx)));
+                        meanPsthSub(jArea, kTime) = mean(mean(dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx)));
+                        meanPsthAllSem(jArea, kTime) = std(mean(dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx))) ./ sqrt(length(currBhvOnsetAll));
+                        meanPsthSubSem(jArea, kTime) = std(mean(dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx))) ./ sqrt(length(currBhvOnsetAll)) ;
 
                         kMatAll = dataMatEuc(currBhvOnsetAll + beforeAfterFrames(kTime), jNrnIdx);
                         kMatSub = dataMatEuc(currBhvOnsetSub + beforeAfterFrames(kTime), jNrnIdx);
@@ -555,34 +560,66 @@ for iCurr = 1 : length(analyzeCodes)
                     end
                 end
                 clf
-                subplot(2, 1, 1);
-                hold on
+                sgtitle([iLabel, '  n=', num2str(sum(prevIdx)), ' trials'], 'interpreter', 'none')
 
-                set(gca, 'Position', get(gca, 'Position') + [0, spacing, 0, -spacing - subplotSpacing]);
-                plot(beforeAfterFrames, movmean(currDistAll(1,:), movMeanFrames), 'b', 'linewidth', 2)
                 fillX = [beforeAfterFrames fliplr(beforeAfterFrames)];
+
+                % Plot Euc Distances
+                subplot(3, 1, 1);
+                hold on
+                title('Euclidean Distance', 'interpreter', 'none')
+                xline(0, '--k')
+                ylabel('Euclidean distance')
+                set(gca, 'Position', get(gca, 'Position') + [0, spacing, 0, -spacing - subplotSpacing]);
+
+                plot(beforeAfterFrames, movmean(currDistAll(1,:), movMeanFrames), 'b', 'linewidth', 2)
                 fillY = movmean([currDistAll(1,:) - currDistAllSem(1,:) fliplr(currDistAll(1,:) + currDistAllSem(1,:))], movMeanFrames);
-                fill(fillX, fillY, 'b', 'facealpha', .5, 'linestyle', 'none')
+                fill(fillX, fillY, 'b', 'facealpha', alphaFaceValue, 'linestyle', 'none')
 
                 plot(beforeAfterFrames, movmean(currDistSub(1,:), movMeanFrames), 'r', 'linewidth', 2)
                 fillY = movmean([currDistSub(1,:) - currDistSubSem(1,:) fliplr(currDistSub(1,:) + currDistSubSem(1,:))], movMeanFrames);
-                fill(fillX, fillY, 'r', 'facealpha', .5, 'linestyle', 'none')
+                fill(fillX, fillY, 'r', 'facealpha', alphaFaceValue, 'linestyle', 'none')
 
                 plot(beforeAfterFrames, movmean(currDistAll(2,:), movMeanFrames), '--b', 'linewidth', 2)
                 fillY = movmean([currDistAll(2,:) - currDistAllSem(2,:) fliplr(currDistAll(2,:) + currDistAllSem(2,:))], movMeanFrames);
-                fill(fillX, fillY, 'b', 'facealpha', .5, 'linestyle', 'none')
+                fill(fillX, fillY, 'b', 'facealpha', alphaFaceValue, 'linestyle', 'none')
 
                 plot(beforeAfterFrames, movmean(currDistSub(2,:), movMeanFrames), '--r', 'linewidth', 2)
                 fillY = movmean([currDistSub(2,:) - currDistSubSem(2,:) fliplr(currDistSub(2,:) + currDistSubSem(2,:))], movMeanFrames);
-                fill(fillX, fillY, 'r', 'facealpha', .5, 'linestyle', 'none')
+                fill(fillX, fillY, 'r', 'facealpha', alphaFaceValue, 'linestyle', 'none')
 
-                title(iLabel, 'interpreter', 'none')
-                xline(0, '--k')
-                ylabel('Euclidean distance')
 
-                subplot(2, 1, 2);
+                % Plot PSTHs
+                subplot(3, 1, 2);
                 hold on
+                title('PSTH', 'interpreter', 'none')
                 set(gca, 'Position', get(gca, 'Position') + [0, spacing, 0, -spacing - subplotSpacing]);
+                ylabel('Spikes per bin')
+                xline(0, '--k')
+
+                plot(beforeAfterFrames, movmean(meanPsthAll(1, :), movMeanFrames), 'b', 'lineWidth', 2)
+                fillY = movmean([meanPsthAll(1,:) - meanPsthAllSem(1,:) fliplr(meanPsthAll(1,:) + meanPsthAllSem(1,:))], movMeanFrames);
+                fill(fillX, fillY, 'b', 'facealpha', alphaFaceValue, 'linestyle', 'none')
+
+                plot(beforeAfterFrames, movmean(meanPsthSub(1, :), movMeanFrames), 'r', 'lineWidth', 2)
+                fillY = movmean([meanPsthSub(1,:) - meanPsthSubSem(1,:) fliplr(meanPsthSub(1,:) + meanPsthSubSem(1,:))], movMeanFrames);
+                fill(fillX, fillY, 'r', 'facealpha', alphaFaceValue, 'linestyle', 'none')
+
+                plot(beforeAfterFrames, movmean(meanPsthAll(2, :), movMeanFrames), '--b', 'lineWidth', 2)
+                fillY = movmean([meanPsthAll(2,:) - meanPsthAllSem(2,:) fliplr(meanPsthAll(2,:) + meanPsthAllSem(2,:))], movMeanFrames);
+                fill(fillX, fillY, 'b', 'facealpha', alphaFaceValue, 'linestyle', 'none')
+
+                plot(beforeAfterFrames, movmean(meanPsthSub(2, :), movMeanFrames), '--r', 'lineWidth', 2)
+                fillY = movmean([meanPsthSub(2,:) - meanPsthSubSem(2,:) fliplr(meanPsthSub(2,:) + meanPsthSubSem(2,:))], movMeanFrames);
+                fill(fillX, fillY, 'r', 'facealpha', alphaFaceValue, 'linestyle', 'none')
+
+
+                subplot(3, 1, 3);
+                hold on
+                title('Distance / PSTH', 'interpreter', 'none')
+                set(gca, 'Position', get(gca, 'Position') + [0, spacing, 0, -spacing - subplotSpacing]);
+                ylabel('Euclidean distance / Spikes per bin')
+                xline(0, '--k')
 
                 plot(beforeAfterFrames, movmean(currDistAll(1,:), movMeanFrames) ./ movmean(meanPsthAll(1, :), movMeanFrames), 'b', 'lineWidth', 2)
                 % plot(beforeAfterFrames, movmean(meanPsthAll(1, :), movMeanFrames), 'b', 'lineWidth', 2)
@@ -598,11 +635,11 @@ for iCurr = 1 : length(analyzeCodes)
 
                 plot(beforeAfterFrames, movmean(currDistSub(2,:), movMeanFrames) ./ movmean(meanPsthSub(2, :), movMeanFrames), '--r', 'lineWidth', 2)
                 % plot(beforeAfterFrames, movmean(meanPsthSub(2, :), movMeanFrames), '--r', 'lineWidth', 2)
-
-                title('PSTH', 'interpreter', 'none')
-                xline(0, '--k')
-                ylabel('Euclidean distance / Spikes per sec')
-                disp('huh')
+                disp('hisdf')
+                % if savePlot
+                %     saveas(gcf,fullfile(figurePath, [num2str(opts.frameSize * 1000), ' ms bins  Euclidean Dist and PSTHs ', iLabel]), 'pdf')
+                % end
+                % pause(2)
             end
         end
     end
@@ -611,52 +648,41 @@ end
 
 
 %% Test euclidian distances on DataHigh example data
-cd('E:/Projects/toolboxes/DataHigh1.3/')
-load('./data/ex2_rawspiketrains.mat');
+load('E:/Projects/toolboxes/DataHigh1.3/data/ex2_rawspiketrains.mat');
+
 %%
-frameSize = .1;
 frameSize = .005;
 dataEx = [];
 
-startTimes = 1;
-beforeAfterFrames = 0: 1 / frameSize;
-% build
+%
 % reach1: use iTrial = 1 : 40
 % reach2: use iTrial = 61 : 100
 for iTrial = 1:40
+    trialDur(iTrial) = size(D(iTrial).data, 2);
+end
+minTrialDur = min(trialDur)/1000/frameSize;
+for iTrial = 1:40
     iData = neural_matrix_ms_to_frames(D(iTrial).data', frameSize);
-    dataEx = [dataEx; iData];
-    startTimes = [startTimes; size(dataEx, 1) + 1];
+    dataEx(:, :, iTrial) = iData(1:minTrialDur, :);
 end
 % dataEx = zscore(dataEx, 0, 1);
-startTimes(end) = [];
-meanPsth = zeros(1, length(kCenterAll));
-currDistAll = zeros(1, length(kCenterAll));
 
-for kTime = 1 : length(beforeAfterFrames)
+centerNrns = mean(dataEx, 3); %take mean (center) of each neuron at each time point across trials.
 
-    kMatAll = dataEx(startTimes + beforeAfterFrames(kTime), :);
+% Distances from each neuron to centroid
+distNrns = sqrt(sum((dataEx - centerNrns).^2, 3));
 
-    % find the centroid at this time point
-    kCenterAll = mean(kMatAll, 1);
+% Mean distance to centroid per time point across trials
+distAll = mean(distNrns, 2);
 
-    % mean psth across neurons
-    meanPsth(kTime) = mean(kCenterAll) / frameSize;
-
-
-    % Distances of each time point to the centroid
-    % distances = sqrt((vector - mean(vector)).^2);
-    kDistAll = sqrt(sum((kMatAll - kCenterAll).^2, 2));
-
-    % mean distances across trials
-    currDistAll(kTime) = mean(kDistAll);
-
-end
+% mean psth across neurons
+meanPsth = mean(mean(dataEx, 3), 2) ./ frameSize;
 clf
 % plot(currDistAll, 'k', 'linewidth', 2)
 % hold on
-% plot(meanPsth, 'b', 'linewidth', 2)
-plot(currDistAll ./ meanPsth, 'r', 'linewidth', 2)
+plot(meanPsth, 'b', 'linewidth', 2)
+plot(distAll ./ meanPsth, 'r', 'linewidth', 2)
+plot(distAll, 'r', 'linewidth', 2)
 
 
 
@@ -670,11 +696,6 @@ plot(currDistAll ./ meanPsth, 'r', 'linewidth', 2)
 
 
 
-%%
-iBhv = 14;
-% imagesc(cell2mat(cellfun(@sum, (spikeCounts(1,:)), 'UniformOutput', false)'))
-imagesc(cell2mat(cellfun(@mean, (spikeZ(iBhv,:)), 'UniformOutput', false)'))
-colormap(bluewhitered), colorbar
 
 
 
@@ -685,30 +706,192 @@ colormap(bluewhitered), colorbar
 
 
 
+%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%             peri-onset PSTHs over the course of the 4-hour session
+%
+opts = neuro_behavior_options;
+opts.collectStart = 0;
+opts.collectFor = 4*60*60;
 
-%% Examine where corpus colosum might be:
-opts.removeSome = false;
-opts.frameSize = .4; % use a big frame to go quickly
-opts.useNeurons = 1 : size(data.ci, 1);
+%                   Get behavior data
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
 
 
-% Make or load neural matrix
-[dataMat, idLabels, rmvNeurons] = neural_matrix(data, opts);
+opts.dataPath = bhvDataPath;
+opts.fileName = bhvFileName;
+
+dataBhv = load_data(opts, 'behavior');
 
 
-%%
-depths = unique(data.ci.depth);
-nNeurons = zeros(length(depths), 1);
-for i = 1:length(depths)
 
-    nNeurons(i) = sum(data.ci.depth == depths(i) & strcmp(data.ci.group, 'good') & strcmp(data.ci.group, 'good'));
+codes = unique(dataBhv.bhvID);
+% codes(codes == -1) = []; % Get rid of the nest/irrelevant behaviors
+behaviors = {};
+for iBhv = 1 : length(codes)
+    firstIdx = find(dataBhv.bhvID == codes(iBhv), 1);
+    behaviors = [behaviors, dataBhv.bhvName{firstIdx}];
+    % fprintf('behavior %d:\t code:%d\t name: %s\n', i, codes(i), dataBhvAlex.Behavior{firstIdx})
 end
 
-%% get avg firing rate for the window
+opts.behaviors = behaviors;
+opts.bhvCodes = codes;
+opts.validCodes = codes(codes ~= -1);
 
-meanRates = sum(dataMat, 1) ./ (size(dataMat, 1) * opts.frameSize);
 
-plot(data.ci.depth, meanRates)
+%% Select valid behaviors
+validBhv = behavior_selection(dataBhv, opts);
+opts.validBhv = validBhv;
+allValid = logical(sum(validBhv,2)); % A list of all the valid behvaior indices
+
+
+rmvBhv = zeros(1, length(behaviors));
+for i = 1 : length(behaviors)
+    if sum(validBhv(:, i)) < 20
+        rmvBhv(i) = 1;
+    end
+end
+
+analyzeBhv = behaviors(~rmvBhv);
+analyzeCodes = codes(~rmvBhv);
+
+
+%%                Get Neural matrix
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
+nrnDataPath = [nrnDataPath, 'recording1/'];
+opts.dataPath = nrnDataPath;
+
+data = load_data(opts, 'neuron');
+data.bhvDur = dataBhv.bhvDur;
+clusterInfo = data.ci;
+spikeTimes = data.spikeTimes;
+spikeClusters = data.spikeClusters;
+
+
+%% Find the neuron clusters (ids) in each brain region
+
+
+allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
+
+goodM23 = allGood & strcmp(data.ci.area, 'M23');
+goodM56= allGood & strcmp(data.ci.area, 'M56');
+goodDS = allGood & strcmp(data.ci.area, 'DS');
+goodVS = allGood & strcmp(data.ci.area, 'VS');
+
+
+
+
+%% Make or load neural matrix
+
+% which neurons to use in the neural matrix
+opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
+
+tic
+[dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
+toc
+
+idM23 = find(strcmp(areaLabels, 'M23'));
+idM56 = find(strcmp(areaLabels, 'M56'));
+idDS = find(strcmp(areaLabels, 'DS'));
+idVS = find(strcmp(areaLabels, 'VS'));
+
+fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
+
+%%
+
+saveDataPath = strcat(paths.saveDataPath, animal,'/', sessionNrn, '/');
+if ~exist(saveDataPath, 'dir')
+    mkdir(saveDataPath)
+end
+saveFileName = ['neural_matrix ', 'frame_size_' num2str(opts.frameSize), [' start_', num2str(opts.collectStart), ' for_', num2str(opts.collectFor), '.mat']];
+save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
+%%
+load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
+
+
+
+%% Normalize and zero-center the neural data matrix
+
+% Normalize (z-score)
+dataMatZ = zscore(dataMat, 0, 1);
+
+% imagesc(dataMat')
+imagesc(dataMatZ')
+hold on;
+line([0, size(dataMat, 1)], [idM23(end)+.5, idM23(end)+.5], 'Color', 'r');
+line([0, size(dataMat, 1)], [idM56(end)+.5, idM56(end)+.5], 'Color', 'r');
+line([0, size(dataMat, 1)], [idDS(end)+.5, idDS(end)+.5], 'Color', 'r');
+
+
+%%
+
+area = 'M56';
+bhv = 'investigate_1';
+% bhv = 'locomotion';
+% bhv = 'face_groom_1';
+
+nrnInd = strcmp(areaLabels, area);
+bhvCode = analyzeCodes(strcmp(analyzeBhv, bhv));
+
+nTrial = 40;
+
+% X min of data every 30 min
+bhvBlockWindow = 15 * 60 / opts.frameSize;
+dataWindow = -2 / opts.frameSize : 2 / opts.frameSize;
+
+bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+
+blockFrameStarts = 1 + linspace(0, 210, 8) .* 60 ./ opts.frameSize; % get a 10 min span every 30 min
+
+psths = zeros(sum(nrnInd), length(dataWindow), nTrial);
+blockPsth = cell(length(blockFrameStarts), 1);
+for iBlock = 1 : length(blockFrameStarts)
+    iBlockFrameStart = blockFrameStarts(iBlock);
+    iBlockFrameEnd = iBlockFrameStart + bhvBlockWindow -1;
+    % iDataMat = dataMat(iFrameStart : iFrameEnd, nrnInd);
+
+    % How many behaviors within that window?
+    iBhvStarts = bhvStartFrames(bhvStartFrames >= iBlockFrameStart & bhvStartFrames < iBlockFrameEnd);
+    jMat = zeros(length(dataWindow), sum(nrnInd), nTrial); % peri-event time X neurons X nTrial
+    for j = 1 : nTrial
+        jMat(:,:,j) = dataMat(iBhvStarts(j) + dataWindow,nrnInd);
+% sum(jMat(:,:,j))
+        % psths(j, :) = mean(dataMat(iBhvStarts + dataWindow), nrnInd);
+    end
+    unrankedPsth = mean(jMat, 3)';
+    unrankedPreBhv = mean(unrankedPsth(:, -dataWindow(1) : -dataWindow(1)+1), 2);
+    [~, sortOrder] = sort(unrankedPreBhv, 'descend');
+    rankedPsth = unrankedPsth(sortOrder,:);
+blockPsth{iBlock} = rankedPsth;
+
+end
+%%
+
+fig = figure(3);
+figureSize = [-1300, 20, 1400, 800]; % [left, bottom, width, height]
+set(gcf, 'Position', figureSize);
+% Adjust spacing between plots
+spacing = -0.05; % You can adjust this value as needed
+subplotSpacing = 0.01;
+
+hold on
+for i = 1 : length(blockPsth)
+    subplot(1, length(blockPsth), i)
+    imagesc(blockPsth{i})
+end
+
+
+
+
+
+
+
+
+
+
+
 
 
 

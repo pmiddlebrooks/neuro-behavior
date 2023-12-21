@@ -103,3 +103,6 @@ Thumbs.db
 data/
 results/
 docs/
+
+# python non-scripts
+.pyc
