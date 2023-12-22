@@ -53,8 +53,8 @@ if opts.removeSome
 checkTime = 5 * 60;
 checkFrames = checkTime / opts.frameSize;
 
-meanStart = sum(dataMat(1:checkFrames, :), 1) / checkTime;
-meanEnd = sum(dataMat(end-checkFrames+1:end, :), 1) / checkTime;
+meanStart = sum(dataMat(1:checkFrames, :), 1) ./ checkTime;
+meanEnd = sum(dataMat(end-checkFrames+1:end, :), 1) ./ checkTime;
 
 keepStart = meanStart >= opts.minFiringRate & meanStart <= opts.maxFiringRate;
 keepEnd = meanEnd >= opts.minFiringRate & meanEnd <= opts.maxFiringRate;
