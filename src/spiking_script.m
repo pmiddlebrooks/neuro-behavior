@@ -1,9 +1,3 @@
-%%%%%%%%%%%%%%%%%%%%
-%   TESTING TO REPLICATE PSTHS
-%%%%%%%%%%%%%%%%%%%%
-
-
-%%
 %% get desired file paths
 computerDriveName = 'ROSETTA'; % 'Z' or 'home'
 paths = get_paths(computerDriveName);
@@ -91,7 +85,6 @@ spikeClusters = data.spikeClusters;
 
 %% Find the neuron clusters (ids) in each brain region
 
-
 allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
 
 goodM23 = allGood & strcmp(data.ci.area, 'M23');
@@ -118,7 +111,7 @@ idVS = find(strcmp(areaLabels, 'VS'));
 
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
-%%
+%% Save it if you want
 
 saveDataPath = strcat(paths.saveDataPath, animal,'/', sessionNrn, '/');
 if ~exist(saveDataPath, 'dir')
@@ -126,7 +119,7 @@ if ~exist(saveDataPath, 'dir')
 end
 saveFileName = ['neural_matrix ', 'frame_size_' num2str(opts.frameSize), [' start_', num2str(opts.collectStart), ' for_', num2str(opts.collectFor), '.mat']];
 save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
-%%
+%% Or load an existing dataMat
 load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
 
 
@@ -142,6 +135,9 @@ hold on;
 line([0, size(dataMat, 1)], [idM23(end)+.5, idM23(end)+.5], 'Color', 'r');
 line([0, size(dataMat, 1)], [idM56(end)+.5, idM56(end)+.5], 'Color', 'r');
 line([0, size(dataMat, 1)], [idDS(end)+.5, idDS(end)+.5], 'Color', 'r');
+
+
+
 
 
 
@@ -226,98 +222,6 @@ for iBhv = 1 : length(bhvView)
         end
     end
 end
-
-
-%% Plot some betas and psths
-
-% set up figure
-nRow = 4;
-nColumn = 2;
-orientation = 'portrait';
-figureHandle = 34;
-[axisWidth, axisHeight, xAxesPosition, yAxesPosition] = standard_figure(nRow, nColumn, orientation, figureHandle);
-for col = 1 : nColumn
-    for row = 1 : nRow
-        ax(row,col) = axes('units', 'centimeters', 'position', [xAxesPosition(row, col) yAxesPosition(row, col) axisWidth axisHeight]);
-        hold on;
-    end
-end
-% colormap(bluewhitered)
-colormap(jet)
-
-
-% Indices of the neurons in each area
-neuronsIdx = [goodM23, goodM56, goodDS, goodVS];
-plotTitles = {'M23', 'M56', 'DS', 'VS'};
-
-
-% Loop through all the behaviors you want to see
-for iBhv = 1 : length(bhvView)
-
-    % Initialize a logical array to find relevant regressors
-    containsReg = false(size(regressorLabels));
-
-    % Loop through the regressors to check for the set corresponding to
-    % that behavior
-    for rIdx = 1:numel(regressorLabels)
-        if ischar(regressorLabels{rIdx}) && contains(regressorLabels{rIdx}, bhvView{iBhv})
-            containsReg(rIdx) = true;
-        end
-    end
-
-    % Specify the custom title position (in normalized figure coordinates)
-    titleText = bhvView{iBhv};
-    annotation('textbox', [.5, 1, 0, 0], 'String', titleText, 'Interpreter', 'none', 'FontSize', 14, 'FontWeight', 'bold', 'EdgeColor', 'none', 'HorizontalAlignment', 'center');
-    annotation('textbox', [.2, 1, 0, 0], 'String', 'Betas', 'Interpreter', 'none', 'FontSize', 14, 'FontWeight', 'bold', 'EdgeColor', 'none', 'HorizontalAlignment', 'center');
-    annotation('textbox', [.8, 1, 0, 0], 'String', 'Spikes', 'Interpreter', 'none', 'FontSize', 14, 'FontWeight', 'bold', 'EdgeColor', 'none', 'HorizontalAlignment', 'center');
-
-    nrnIdx = 0;
-    for row = 1 : nRow
-        % Example plotting in the first subplot (ax1)
-        neuronsPlot = intersect(idLabels, data.ci.cluster_id(neuronsIdx(:,row))); % Plot the neurons within this brain area in this row
-        nrnIdx = 1 + nrnIdx(end) : nrnIdx(end) + length(neuronsPlot);
-
-        % Beta value plot
-        betaPlot = dimBeta(containsReg, nrnIdx);
-        axes(ax(row, 1));
-        if row < nRow
-            set(ax(row, 1), 'xticklabel',{[]})
-        end
-        imagesc('CData', betaPlot');
-        plot(ax(row, 1), [10.5 10.5], [0 length(neuronsPlot)], 'k', 'linewidth', 3)
-        title(plotTitles{row});
-        xlim([0.5 20.5])
-        ylim([0.5 length(neuronsPlot)+.5])
-
-
-        % PSTH plot
-        axes(ax(row, 2))
-        if row < nRow
-            set(ax(row, 2), 'xticklabel',{[]})
-        end
-        imagesc(cell2mat(cellfun(@mean, (spikeZ(iBhv,nrnIdx)), 'UniformOutput', false)'))
-        plot(ax(row, 2), [10.5 10.5], [0 length(neuronsPlot)], 'k', 'linewidth', 3)
-        title(plotTitles{row});
-        xlim([0.5 20.5])
-        ylim([0.5 length(neuronsPlot)+.5])
-
-    end
-
-
-
-    c = colorbar;
-    c.Position = [0.93, 0.1, 0.02, 0.5];
-
-    if savePlot
-        saveas(figureHandle,fullfile(figurePath, ['betas_and_spikes ', bhvView{iBhv}]), 'pdf')
-    end
-    pause(10)
-    delete(findall(gcf,'type','annotation'))
-    % clf
-end
-
-close(figureHandle)
-
 
 
 
@@ -450,10 +354,12 @@ end
 
 
 
+
+
 %% =================================================================
 %                   Run euclidian distances
 %  =================================================================
-%%
+
 % dataMatEuc = zscore(dataMat);
 dataMatEuc = dataMat;
 dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
@@ -828,9 +734,12 @@ line([0, size(dataMat, 1)], [idDS(end)+.5, idDS(end)+.5], 'Color', 'r');
 %%
 
 area = 'M56';
+area = 'VS';
 bhv = 'investigate_1';
-% bhv = 'locomotion';
+bhv = 'locomotion';
 % bhv = 'face_groom_1';
+bhv = 'contra_orient';
+bhv = 'investigate_2';
 
 nrnInd = strcmp(areaLabels, area);
 bhvCode = analyzeCodes(strcmp(analyzeBhv, bhv));
@@ -856,25 +765,26 @@ for iBlock = 1 : length(blockFrameStarts)
     iBhvStarts = bhvStartFrames(bhvStartFrames >= iBlockFrameStart & bhvStartFrames < iBlockFrameEnd);
     jMat = zeros(length(dataWindow), sum(nrnInd), nTrial); % peri-event time X neurons X nTrial
     for j = 1 : nTrial
-        jMat(:,:,j) = dataMat(iBhvStarts(j) + dataWindow,nrnInd);
-% sum(jMat(:,:,j))
+        jMat(:,:,j) = zscore(dataMat(iBhvStarts(j) + dataWindow,nrnInd));
+        % jMat(:,:,j) = dataMat(iBhvStarts(j) + dataWindow,nrnInd);
+        % sum(jMat(:,:,j))
         % psths(j, :) = mean(dataMat(iBhvStarts + dataWindow), nrnInd);
     end
     unrankedPsth = mean(jMat, 3)';
     unrankedPreBhv = mean(unrankedPsth(:, -dataWindow(1) : -dataWindow(1)+1), 2);
     [~, sortOrder] = sort(unrankedPreBhv, 'descend');
     rankedPsth = unrankedPsth(sortOrder,:);
-blockPsth{iBlock} = rankedPsth;
+    blockPsth{iBlock} = rankedPsth;
 
 end
 %%
 
 fig = figure(3);
-figureSize = [-1300, 20, 1400, 800]; % [left, bottom, width, height]
+figureSize = [-1600, 20, 1400, 800]; % [left, bottom, width, height]
 set(gcf, 'Position', figureSize);
 % Adjust spacing between plots
-spacing = -0.05; % You can adjust this value as needed
-subplotSpacing = 0.01;
+spacing = -0.00; % You can adjust this value as needed
+subplotSpacing = 0.00;
 
 hold on
 for i = 1 : length(blockPsth)
