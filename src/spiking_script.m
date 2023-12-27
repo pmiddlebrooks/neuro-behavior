@@ -1,6 +1,7 @@
 %% get desired file paths
 computerDriveName = 'ROSETTA'; % 'Z' or 'home'
-paths = get_paths(computerDriveName);
+computerDriveName = 'home'; % 'Z' or 'home'
+paths = get_paths(computerDriveName)
 
 
 opts = neuro_behavior_options;
@@ -61,6 +62,40 @@ end
 analyzeBhv = behaviors(~rmvBhv);
 analyzeCodes = codes(~rmvBhv);
 
+
+
+
+
+
+%%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%           Get LFP Data
+data = load_data(opts, 'lfp');
+data = fliplr(data); % flip data so top row is brain surface
+%%
+frequency_bands = [
+    8 13;  % Alpha band
+    13 30; % Beta band
+    30 80  % Gamma band
+    ];
+
+channelSpacing = 100; 
+channelDepth = 1 : channelSpacing : channelSpacing * size(data, 2);
+lfpM56 = data(:,10); % Get a sample channel to play with (reduce memory load)
+clear data
+
+%%  Get wavelet time-frequency analysis
+start2Min = 1 + 0 * 60 * opts.fsLfp;
+windowSize = 30 * opts.fsLfp; %30 sec window
+window = 1 : windowSize;
+lfpM56Window = lfpM56(window);
+[wt, f, coi] = cwt(lfpM56Window, opts.fsLfp);
+% cwt(lfpM56Window, opts.fsLfp)
+%%
+% cwt(lfpM56Window, opts.fsLfp)
+
+wtGamma = wt(f >= frequency_bands(1,1) & f <= frequency_bands(1,2),:);
+
+plot(mean(abs(wtGamma).^2, 1));
 
 
 
