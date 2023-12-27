@@ -99,6 +99,8 @@ ci = flipud(ci);
     data.spikeClusters = spikeClusters;
 
 elseif strcmp(dataType, 'lfp')
-    % dataNeuro =
+    data = readmatrix('/Users/paulmiddlebrooks/Projects/neuro-behavior/data/txtfmt_data/lfp.txt');
+
+    data = data((opts.collectStart * opts.fsLfp) : (opts.collectStart + opts.collectFor) * opts.fsLfp, :);
 
 end
