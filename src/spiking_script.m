@@ -1,10 +1,10 @@
 %% get desired file paths
-computerDriveName = 'ROSETTA'; % 'Z' or 'home'
-computerDriveName = 'home'; % 'Z' or 'home'
+computerDriveName = 'ROSETTA'; %'ROSETTA'; % 'Z' or 'home'
 paths = get_paths(computerDriveName)
 
 
 opts = neuro_behavior_options;
+
 animal = 'ag25290';
 sessionBhv = '112321_1';
 sessionNrn = '112321';
@@ -201,9 +201,6 @@ preStartFrames = 1 / opts.frameSize;
 postStartFrames = 1 / opts.frameSize;
 for iBout = 1 : length(startTimes)
     iEpoch = startFrames(iBout) + 1 - preStartFrames: startFrames(iBout) + postStartFrames;
-    % iEpoc = startFrames(iTrial) + 1 - opts.mPreTime / opts.frameSize : startFrames(iTrial);
-    % iEpoch = startFrames(iTrial) : startFrames(iTrial) + opts.mPostTime / opts.frameSize;
-    % alignedMat{iBout} = dataMatZ(iEpoch, :);
     alignedMat{iBout} = zscore(dataMat(iEpoch, :));
 
 end
@@ -245,8 +242,8 @@ for iBhv = 1 : length(bhvView)
 
     for jNeur = 1 : size(dataMat, 2)
         for k = 1 : length(iStartFrames)
-            iRange = iStartFrames(k) - opts.mPreTime : iStartFrames(k) + opts.mPostTime;
-            if iStartFrames(k) - opts.mPreTime > 0 && iStartFrames(k) + opts.mPostTime < size(dataMat, 1)
+            iRange = iStartFrames(k) - opts.mPreTime/opts.frameSize : iStartFrames(k) + opts.mPostTime/opts.frameSize;
+            if iStartFrames(k) - opts.mPreTime/opts.frameSize > 0 && iStartFrames(k) + opts.mPostTime/opts.frameSize < size(dataMat, 1)
                 spikeCounts{iBhv, jNeur} = [spikeCounts{iBhv, jNeur}; dataMat(iRange, jNeur)'];
                 if sum(dataMat(iRange, jNeur))
                     spikeZ{iBhv, jNeur} = [spikeZ{iBhv, jNeur}; (dataMat(iRange, jNeur)' - mean(dataMat(iRange, jNeur))') / std(dataMat(iRange, jNeur))];
