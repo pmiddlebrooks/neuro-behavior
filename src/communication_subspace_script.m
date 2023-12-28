@@ -7,6 +7,11 @@ paths = get_paths(computerDriveName);
 
 
 opts = neuro_behavior_options;
+opts.mPreTime = .5;
+opts.mPostTime = .5;
+opts.windowSize = opts.mPreTime + opts.mPostTime;
+opts.framesPerTrial = floor(opts.windowSize / opts.frameSize);
+
 animal = 'ag25290';
 sessionBhv = '112321_1';
 sessionNrn = '112321';
@@ -14,8 +19,6 @@ if strcmp(sessionBhv, '112321_1')
     sessionSave = '112321';
 end
 
-
-%%
 figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectFor)]);
 if ~exist(figurePath, 'dir')
     mkdir(figurePath);
@@ -123,6 +126,26 @@ load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', '
 
 
 %%
+
+
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%     Communication Subspace (Semedo et al 2019)           %%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%
+% from Semedo et al 2019:
+% To study how neuronal activity in the two areas is related, we reasoned that any fluctuations in the V1 responses, whether due to changes in the
+% visual stimulus or not, could relate to fluctuations in V2. We therefore subtracted the appropriate peri-stimulus time histogram (PSTH)
+% from each single-trial response, and then analyzed the residuals for each orientation (termed datasets) separately
+
 area = 'M56';
 area = 'VS';
 bhv = 'investigate_1';
@@ -133,7 +156,6 @@ bhv = 'contra_orient';
 
 nrnInd = strcmp(areaLabels, area);
 bhvCode = analyzeCodes(strcmp(analyzeBhv, bhv));
-
 
 bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
 bhvStartFrames(bhvStartFrames < 10) = [];
@@ -163,18 +185,8 @@ end
 %%
 X = fullMat(:,strcmp(areaLabels, 'M56'));
 Y_V2 = fullMat(:, strcmp(areaLabels, 'DS'));
-%%
 
 
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 

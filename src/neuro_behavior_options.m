@@ -15,18 +15,16 @@ opts.fsSpike = 30000;
 opts.fsLfp = 1250;
 
 opts.frameSize = .1; % how many s per time step (frame)
-opts.windowSize = 2; % (sec): use a 2 second window (one second before and after behavior onset)
-opts.framesPerTrial = floor(opts.windowSize / opts.frameSize);
+% How many sec (not frames) do we want to regress before and after events?
+opts.sPostTime = 1; %ceil(1 / opts.frameSize);   % frames: follow stim events for 1000ms for sPostStim (used for eventType 2)
+opts.mPreTime = 1; %ceil(1 / opts.frameSize);  % frames: precede motor events by 1000 ms to capture preparatory activity (used for eventType 3)
+opts.mPostTime = 1; %ceil(1 / opts.frameSize) - 1;   % frames: follow motor eventS for 1000 ms for mPostStim (used for eventType 3). Remove one frame since behavior starts at time zero.
 
 % To capture a window centered on start of behavior, shift the time
 % bins by half their width. Thus spike counts will be -100 to +100
 % peri-behavior start
 opts.shiftAlignFactor = 0; % -.5 will make windows centered on regressor events instead of flanking them before/after
 
-% How many frames do we want to regress before and after events?
-opts.sPostTime = ceil(1 / opts.frameSize);   % frames: follow stim events for 1000ms for sPostStim (used for eventType 2)
-opts.mPreTime = ceil(1 / opts.frameSize);  % frames: precede motor events by 1000 ms to capture preparatory activity (used for eventType 3)
-opts.mPostTime = ceil(1 / opts.frameSize) - 1;   % frames: follow motor eventS for 1000 ms for mPostStim (used for eventType 3). Remove one frame since behavior starts at time zero.
 
 opts.folds = 10; %nr of folds for cross-validation
 
