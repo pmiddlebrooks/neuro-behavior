@@ -51,7 +51,7 @@ opts.bhvCodes = codes;
 opts.validCodes = codes(codes ~= -1);
 
 
-%% Select valid behaviors
+% Select valid behaviors
 validBhv = behavior_selection(dataBhv, opts);
 opts.validBhv = validBhv;
 allValid = logical(sum(validBhv,2)); % A list of all the valid behvaior indices
@@ -89,7 +89,7 @@ spikeTimes = data.spikeTimes;
 spikeClusters = data.spikeClusters;
 
 
-%% Find the neuron clusters (ids) in each brain region
+% Find the neuron clusters (ids) in each brain region
 
 allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
 
@@ -101,7 +101,7 @@ goodVS = allGood & strcmp(data.ci.area, 'VS');
 
 
 
-%% Make or load neural matrix
+% Make or load neural matrix
 
 % which neurons to use in the neural matrix
 opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
@@ -162,8 +162,10 @@ bhvStartFrames(bhvStartFrames < 10) = [];
 bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 
 nTrial = length(bhvStartFrames);
-dataWindow = -1 / opts.frameSize : 1 / opts.frameSize;
-dataWindow = -10 : 9; % Frames
+periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
+dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
+% dataWindow = -1 / opts.frameSize : 1 / opts.frameSize;
+% dataWindow = -10 : 9; % Frames
 
 psths = zeros(sum(nrnInd), length(dataWindow), nTrial);
 
@@ -174,14 +176,57 @@ for j = 1 : nTrial
     bhvMat(:,:,j) = dataMat(bhvStartFrames(j) + dataWindow ,:);
 end
 
-meanPsth = mean(bhvMat, 3);
-residualPsth = bhvMat - meanPsth;
+meanPsthM56 = mean(bhvMat(:, strcmp(areaLabels, 'M56'), :), 3);
+meanPsthDS = mean(bhvMat(:, strcmp(areaLabels, 'DS'), :), 3);
+residualM56 = bhvMat(:, strcmp(areaLabels, 'M56'), :) - meanPsthM56;
+residualDS = bhvMat(:, strcmp(areaLabels, 'DS'), :) - meanPsthDS;
 
-% put residualPsth in format for communication subspace code
-fullMat = [];
-for i = 1 : nTrial
-    fullMat = [fullMat; residualPsth(:,:,i)];
+
+%% Mean-match firing rates among the sub-populations
+rateBins = 0.5 : 0.5 : 40;
+meanM56Rates = mean(meanPsth(:, strcmp(areaLabels, 'M56')), 1) ./ opts.frameSize;
+meanDSRates = mean(meanPsth(:, strcmp(areaLabels, 'DS')), 1) ./ opts.frameSize;
+[histM56, ~, binsM56] = histcounts(meanM56Rates, rateBins);
+[histDS, ~, binsDS] = histcounts(meanDSRates, rateBins);
+
+M56Targets = [];
+DSTargets = [];
+for i = 1 : length(meanM56Rates)
+    iNSample = min(histM56(i), histDS(i)); % which brain area had minimum number of units with that spike rate?
+    if iNSample
+        allM56Targets = find(binsM56 == i);
+        allDSTargets = find(binsDS == i);
+        randM56Targets = allM56Targets(randperm(length(allM56Targets)));
+        randDSTargets = allDSTargets(randperm(length(allDSTargets)));
+        jM56Targets = [];
+        jDSTargets = [];
+        for j = 1 : iNSample % Take random sa
+            jM56Targets = [jM56Targets; randM56Targets(j)];
+            jDSTargets = [jDSTargets; randDSTargets(j)];
+        end
+
+        M56Targets = [M56Targets; jM56Targets];
+        DSTargets = [DSTargets; jDSTargets];
+    end
 end
+
+ % Use up to half of the M56 population as target population
+nTargetNeurons = min(length(M56Targets), floor(length(meanM56Rates)/2));
+M56Targets = M56Targets(1 : nTargetNeurons);
+DSTargets = DSTargets(1 : nTargetNeurons);
+M56Sources = setdiff(1:length(meanM56Rates), M56Targets);
+
+%% put residualPsth in format for communication subspace code
+resM56Source = [];
+resM56Target = [];
+resDSTarget = [];
+for i = 1 : nTrial
+    resM56Source = [resM56Source; residualM56(:,M56Sources,i)];
+    resM56Target = [resM56Target; residualM56(:,M56Targets,i)];
+    resDSTarget = [resDSTarget; residualDS(:,DSTargets,i)];
+end
+
+
 %%
 X = fullMat(:,strcmp(areaLabels, 'M56'));
 Y_V2 = fullMat(:, strcmp(areaLabels, 'DS'));
