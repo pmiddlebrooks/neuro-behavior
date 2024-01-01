@@ -18,7 +18,7 @@ figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['s
 if ~exist(figurePath, 'dir')
     mkdir(figurePath);
 end
-%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                   Get behavior data
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
@@ -46,7 +46,7 @@ opts.bhvCodes = codes;
 opts.validCodes = codes(codes ~= -1);
 
 
-%% Select valid behaviors
+% Select valid behaviors
 validBhv = behavior_selection(dataBhv, opts);
 opts.validBhv = validBhv;
 allValid = logical(sum(validBhv,2)); % A list of all the valid behvaior indices
@@ -118,7 +118,7 @@ spikeTimes = data.spikeTimes;
 spikeClusters = data.spikeClusters;
 
 
-%% Find the neuron clusters (ids) in each brain region
+% Find the neuron clusters (ids) in each brain region
 
 allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
 
@@ -130,7 +130,7 @@ goodVS = allGood & strcmp(data.ci.area, 'VS');
 
 
 
-%% Make or load neural matrix
+% Make or load neural matrix
 
 % which neurons to use in the neural matrix
 opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
