@@ -67,6 +67,10 @@ analyzeCodes = codes(~rmvBhv);
 
 
 
+
+
+
+
 %%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %           Get LFP Data
 data = load_data(opts, 'lfp');
@@ -256,6 +260,86 @@ for iBhv = 1 : length(bhvView)
 end
 
 
+
+
+
+
+
+
+
+
+
+
+
+%%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+% %             Which neurons are positively and negatively (significantly) modulated for each behavior?
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Create a 3-D psth data matrix of stacked peri-event start time windows (time X neuron X trial)
+
+periEventTime = -1 : opts.frameSize : 1; % seconds around onset
+dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+eventMat = cell(length(analyzeBhv), 1);
+for iBhv = 1 : length(analyzeBhv)
+    bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
+
+    iValidBhv = opts.validBhv(:, opts.bhvCodes == analyzeCodes(iBhv));
+    bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode & iValidBhv) ./ opts.frameSize);
+    bhvStartFrames(bhvStartFrames < dataWindow(end) + 1) = [];
+    bhvStartFrames(bhvStartFrames > size(dataMatZ, 1) - dataWindow(end)) = [];
+
+    nTrial = length(bhvStartFrames);
+
+    iEventMat = zeros(length(dataWindow), size(dataMatZ, 2), nTrial); % peri-event time X neurons X nTrial
+    for j = 1 : nTrial
+        iEventMat(:,:,j) = dataMatZ(bhvStartFrames(j) + dataWindow ,:);
+    end
+    eventMat{iBhv} = iEventMat;
+end
+
+%%
+% preWindow is -1 : -.6 sec w.r.t. onset, so figure it out w.r.t. onset in
+% the eventMat
+dataTimes = dataWindow .* opts.frameSize; % this is relative to the eventMat matrix
+preWindowInd = dataTimes >= -.8 & dataTimes < -.4;
+periWindow = dataTimes >= -.2 & dataTimes < .2;
+
+posMod = zeros(length(analyzeCodes), size(dataMatZ, 2));
+negMod = zeros(length(analyzeCodes), size(dataMatZ, 2));
+
+for iBhv = 1 : length(analyzeBhv)
+% for jNeuron = 1 : size(dataMatZ, 2)
+
+% sum of spikes in each trial (in pre-window and peri-window
+    preCounts = sum(eventMat{iBhv}(preWindowInd, :, :), 1);
+    periCounts = sum(eventMat{iBhv}(periWindow, :, :), 1);
+
+    preCounts = permute(preCounts, [3 2 1]);
+    periCounts = permute(periCounts, [3 2 1]);
+
+     % Are they modulated significantly?
+    [h,p,~,~] = ttest(preCounts, periCounts);
+    % h = reshape(h, size(h, 3), 1);
+
+    % Which one is larger (positive or negative modulation?
+    periMinusPre = mean(periCounts, 1) - mean(preCounts, 1); 
+
+    % Keep track of which neurons are positively (posMod) and negatively
+    % (negMod) for each behavior)
+posMod(iBhv, :) = periMinusPre > 0 & h;
+negMod(iBhv, :) = periMinusPre < 0 & h;
+    
+
+% get the indices 
+
+end
+%%
+for iBhv = 1 : length(analyzeBhv)
+fprintf('Behavior: %s\n', analyzeBhv{iBhv})
+fprintf('Positive:\n')
+fprintf('M23:\t%d\tM56\t%d\tDS:\t%d\tVS:\t%d\n', sum(posMod(iBhv, strcmp(areaLabels, 'M23'))), sum(posMod(iBhv, strcmp(areaLabels, 'M56'))), sum(posMod(iBhv, strcmp(areaLabels, 'DS'))), sum(posMod(iBhv, strcmp(areaLabels, 'VS'))));
+fprintf('Negative:\n')
+fprintf('M23:\t%d\tM56\t%d\tDS:\t%d\tVS:\t%d\n', sum(negMod(iBhv, strcmp(areaLabels, 'M23'))), sum(negMod(iBhv, strcmp(areaLabels, 'M56'))), sum(negMod(iBhv, strcmp(areaLabels, 'DS'))), sum(negMod(iBhv, strcmp(areaLabels, 'VS'))));
+end
 
 
 
@@ -651,117 +735,9 @@ opts = neuro_behavior_options;
 opts.collectStart = 0;
 opts.collectFor = 4*60*60;
 
-%                   Get behavior data
+%             Go get  behavior data and neural matrix from above, thne run
+%             below
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
-
-
-opts.dataPath = bhvDataPath;
-opts.fileName = bhvFileName;
-
-dataBhv = load_data(opts, 'behavior');
-
-
-
-codes = unique(dataBhv.bhvID);
-% codes(codes == -1) = []; % Get rid of the nest/irrelevant behaviors
-behaviors = {};
-for iBhv = 1 : length(codes)
-    firstIdx = find(dataBhv.bhvID == codes(iBhv), 1);
-    behaviors = [behaviors, dataBhv.bhvName{firstIdx}];
-    % fprintf('behavior %d:\t code:%d\t name: %s\n', i, codes(i), dataBhvAlex.Behavior{firstIdx})
-end
-
-opts.behaviors = behaviors;
-opts.bhvCodes = codes;
-opts.validCodes = codes(codes ~= -1);
-
-
-%% Select valid behaviors
-validBhv = behavior_selection(dataBhv, opts);
-opts.validBhv = validBhv;
-allValid = logical(sum(validBhv,2)); % A list of all the valid behvaior indices
-
-
-rmvBhv = zeros(1, length(behaviors));
-for i = 1 : length(behaviors)
-    if sum(validBhv(:, i)) < 20
-        rmvBhv(i) = 1;
-    end
-end
-
-analyzeBhv = behaviors(~rmvBhv);
-analyzeCodes = codes(~rmvBhv);
-
-
-%%                Get Neural matrix
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
-nrnDataPath = [nrnDataPath, 'recording1/'];
-opts.dataPath = nrnDataPath;
-
-data = load_data(opts, 'neuron');
-data.bhvDur = dataBhv.bhvDur;
-clusterInfo = data.ci;
-spikeTimes = data.spikeTimes;
-spikeClusters = data.spikeClusters;
-
-
-%% Find the neuron clusters (ids) in each brain region
-
-
-allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
-
-goodM23 = allGood & strcmp(data.ci.area, 'M23');
-goodM56= allGood & strcmp(data.ci.area, 'M56');
-goodDS = allGood & strcmp(data.ci.area, 'DS');
-goodVS = allGood & strcmp(data.ci.area, 'VS');
-
-
-
-
-%% Make or load neural matrix
-
-% which neurons to use in the neural matrix
-opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
-
-tic
-[dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
-toc
-
-idM23 = find(strcmp(areaLabels, 'M23'));
-idM56 = find(strcmp(areaLabels, 'M56'));
-idDS = find(strcmp(areaLabels, 'DS'));
-idVS = find(strcmp(areaLabels, 'VS'));
-
-fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
-
-%%
-
-saveDataPath = strcat(paths.saveDataPath, animal,'/', sessionNrn, '/');
-if ~exist(saveDataPath, 'dir')
-    mkdir(saveDataPath)
-end
-saveFileName = ['neural_matrix ', 'frame_size_' num2str(opts.frameSize), [' start_', num2str(opts.collectStart), ' for_', num2str(opts.collectFor), '.mat']];
-save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
-%%
-load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
-
-
-
-%% Normalize and zero-center the neural data matrix
-
-% Normalize (z-score)
-dataMatZ = zscore(dataMat, 0, 1);
-
-% imagesc(dataMat')
-imagesc(dataMatZ')
-hold on;
-line([0, size(dataMat, 1)], [idM23(end)+.5, idM23(end)+.5], 'Color', 'r');
-line([0, size(dataMat, 1)], [idM56(end)+.5, idM56(end)+.5], 'Color', 'r');
-line([0, size(dataMat, 1)], [idDS(end)+.5, idDS(end)+.5], 'Color', 'r');
-
 
 %%
 

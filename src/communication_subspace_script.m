@@ -1,16 +1,15 @@
 cd('E:/Projects/toolboxes/communication-subspace/')
+addpath regress_methods
+addpath regress_util
+addpath fa_util
 % startup
 
 %% get desired file paths
-computerDriveName = 'ROSETTA'; % 'Z' or 'home'
+computerDriveName = 'ROSETTA'; %'ROSETTA'; % 'Z' or 'home'
 paths = get_paths(computerDriveName);
 
 
 opts = neuro_behavior_options;
-opts.mPreTime = .5;
-opts.mPostTime = .5;
-opts.windowSize = opts.mPreTime + opts.mPostTime;
-opts.framesPerTrial = floor(opts.windowSize / opts.frameSize);
 
 animal = 'ag25290';
 sessionBhv = '112321_1';
@@ -19,110 +18,11 @@ if strcmp(sessionBhv, '112321_1')
     sessionSave = '112321';
 end
 
-figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectFor)]);
-if ~exist(figurePath, 'dir')
-    mkdir(figurePath);
-end
-%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%                   Get behavior data
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
 
+%% Run this, then go to spiking_script and get the behavior and data matrix
+% opts.frameSize = .05; % 50 ms framesize for now
+% opts.collectFor = 60*60; % Get an hour of data
 
-opts.dataPath = bhvDataPath;
-opts.fileName = bhvFileName;
-
-dataBhv = load_data(opts, 'behavior');
-
-
-
-codes = unique(dataBhv.bhvID);
-% codes(codes == -1) = []; % Get rid of the nest/irrelevant behaviors
-behaviors = {};
-for iBhv = 1 : length(codes)
-    firstIdx = find(dataBhv.bhvID == codes(iBhv), 1);
-    behaviors = [behaviors, dataBhv.bhvName{firstIdx}];
-    % fprintf('behavior %d:\t code:%d\t name: %s\n', i, codes(i), dataBhvAlex.Behavior{firstIdx})
-end
-
-opts.behaviors = behaviors;
-opts.bhvCodes = codes;
-opts.validCodes = codes(codes ~= -1);
-
-
-% Select valid behaviors
-validBhv = behavior_selection(dataBhv, opts);
-opts.validBhv = validBhv;
-allValid = logical(sum(validBhv,2)); % A list of all the valid behvaior indices
-
-
-rmvBhv = zeros(1, length(behaviors));
-for i = 1 : length(behaviors)
-    if sum(validBhv(:, i)) < 20
-        rmvBhv(i) = 1;
-    end
-end
-
-analyzeBhv = behaviors(~rmvBhv);
-analyzeCodes = codes(~rmvBhv);
-
-
-
-
-
-
-
-
-
-%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%                Get Neural matrix
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
-nrnDataPath = [nrnDataPath, 'recording1/'];
-opts.dataPath = nrnDataPath;
-
-data = load_data(opts, 'neuron');
-data.bhvDur = dataBhv.bhvDur;
-clusterInfo = data.ci;
-spikeTimes = data.spikeTimes;
-spikeClusters = data.spikeClusters;
-
-
-% Find the neuron clusters (ids) in each brain region
-
-allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
-
-goodM23 = allGood & strcmp(data.ci.area, 'M23');
-goodM56= allGood & strcmp(data.ci.area, 'M56');
-goodDS = allGood & strcmp(data.ci.area, 'DS');
-goodVS = allGood & strcmp(data.ci.area, 'VS');
-
-
-
-
-% Make or load neural matrix
-
-% which neurons to use in the neural matrix
-opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
-
-tic
-[dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
-toc
-
-idM23 = find(strcmp(areaLabels, 'M23'));
-idM56 = find(strcmp(areaLabels, 'M56'));
-idDS = find(strcmp(areaLabels, 'DS'));
-idVS = find(strcmp(areaLabels, 'VS'));
-
-fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
-%%
-saveDataPath = strcat(paths.saveDataPath, animal,'/', sessionNrn, '/');
-saveFileName = ['neural_matrix ', 'frame_size_' num2str(opts.frameSize), [' start_', num2str(opts.collectStart), ' for_', num2str(opts.collectFor), '.mat']];
-%%
-save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
-%%
-load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
 
 
 %%
@@ -146,44 +46,56 @@ load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', '
 % visual stimulus or not, could relate to fluctuations in V2. We therefore subtracted the appropriate peri-stimulus time histogram (PSTH)
 % from each single-trial response, and then analyzed the residuals for each orientation (termed datasets) separately
 
-area = 'M56';
-area = 'VS';
 bhv = 'investigate_1';
-bhv = 'locomotion';
+% bhv = 'locomotion';
 % bhv = 'face_groom_1';
-bhv = 'contra_orient';
+% bhv = 'contra_orient';
 % bhv = 'investigate_2';
+% bhv = 'head_groom';
 
-nrnInd = strcmp(areaLabels, area);
 bhvCode = analyzeCodes(strcmp(analyzeBhv, bhv));
 
 bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
 bhvStartFrames(bhvStartFrames < 10) = [];
 bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 
-nTrial = length(bhvStartFrames);
 periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
 dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
-% dataWindow = -1 / opts.frameSize : 1 / opts.frameSize;
-% dataWindow = -10 : 9; % Frames
 
-psths = zeros(sum(nrnInd), length(dataWindow), nTrial);
-
-bhvMat = zeros(length(dataWindow), size(dataMat, 2), nTrial); % peri-event time X neurons X nTrial
-% bhvMat = [];
+% a dataMat for a particular behavior
+dataMatBhv = zeros(length(dataWindow), size(dataMat, 2), nTrial); % peri-event time X neurons X nTrial
+nTrial = length(bhvStartFrames);
 for j = 1 : nTrial
-    % bhvMat = [bhvMat; dataMat(bhvStartFrames(j) + dataWindow ,:)];
-    bhvMat(:,:,j) = dataMat(bhvStartFrames(j) + dataWindow ,:);
+    dataMatBhv(:,:,j) = dataMat(bhvStartFrames(j) + dataWindow ,:);
 end
 
-meanPsthM56 = mean(bhvMat(:, strcmp(areaLabels, 'M56'), :), 3);
-meanPsthDS = mean(bhvMat(:, strcmp(areaLabels, 'DS'), :), 3);
-residualM56 = bhvMat(:, strcmp(areaLabels, 'M56'), :) - meanPsthM56;
-residualDS = bhvMat(:, strcmp(areaLabels, 'DS'), :) - meanPsthDS;
+% meanPsthM56 = mean(dataMatBhv(:, strcmp(areaLabels, 'M56'), :), 3);
+% meanPsthDS = mean(dataMatBhv(:, strcmp(areaLabels, 'DS'), :), 3);
+% residualM56 = dataMatBhv(:, strcmp(areaLabels, 'M56'), :) - meanPsthM56;
+% residualDS = dataMatBhv(:, strcmp(areaLabels, 'DS'), :) - meanPsthDS;
+
+meanPsth = mean(dataMatBhv, 3);
+residualPsth = dataMatBhv - meanPsth;
 
 
 %% Mean-match firing rates among the sub-populations
 rateBins = 0.5 : 0.5 : 40;
+meanRates = mean(meanPsth(:, :), 1) ./ opts.frameSize;
+
+
+
+
+%%% Stopped here: Continue to improve code: need to test subspace
+%%% dimensions among neurons that are "tuned" for a give behavior
+%%% transition. That means selecting sub-neuron populations based on:
+% tuning preference (positive and/or negative)
+% mean-matched avg firing rate
+%
+% That means there will be very few neurons in any analysis
+
+
+
+
 meanM56Rates = mean(meanPsth(:, strcmp(areaLabels, 'M56')), 1) ./ opts.frameSize;
 meanDSRates = mean(meanPsth(:, strcmp(areaLabels, 'DS')), 1) ./ opts.frameSize;
 [histM56, ~, binsM56] = histcounts(meanM56Rates, rateBins);
@@ -228,8 +140,10 @@ end
 
 
 %%
-X = fullMat(:,strcmp(areaLabels, 'M56'));
-Y_V2 = fullMat(:, strcmp(areaLabels, 'DS'));
+% X = fullMat(:,strcmp(areaLabels, 'M56'));
+% Y_V2 = fullMat(:, strcmp(areaLabels, 'DS'));
+X = resM56Source;
+Y_V2 = resDSTarget;
 
 
 
@@ -565,15 +479,15 @@ dataWindow = -2 / opts.frameSize : 2 / opts.frameSize; % Frames
 psths = zeros(sum(nrnInd), length(dataWindow), nTrial);
 spikes = cell(1, 2);
 
-bhvMat = zeros(size(dataMat, 2), length(dataWindow), nTrial); % neurons X peri-event time X nTrial
+dataMatBhv = zeros(size(dataMat, 2), length(dataWindow), nTrial); % neurons X peri-event time X nTrial
 % bhvMat = [];
 for j = 1 : nTrial
     % bhvMat = [bhvMat; dataMat(bhvStartFrames(j) + dataWindow ,:)];
-    bhvMat(:,:,j) = dataMat(bhvStartFrames(j) + dataWindow, :)';
+    dataMatBhv(:,:,j) = dataMat(bhvStartFrames(j) + dataWindow, :)';
 end
 
-spikes{1} = bhvMat(strcmp(areaLabels, 'M56'),:,:);
-spikes{2} = bhvMat(strcmp(areaLabels, 'DS'),:,:);
+spikes{1} = dataMatBhv(strcmp(areaLabels, 'M56'),:,:);
+spikes{2} = dataMatBhv(strcmp(areaLabels, 'DS'),:,:);
 
 
 
