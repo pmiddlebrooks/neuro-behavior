@@ -60,35 +60,32 @@ dataMatDSPre =  dataMatPre(:, strcmp(areaLabels, 'DS'));
 %%      Overall correlations across the whole recording
 
 edges = -.1 : .005 : .1;
+    binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 % M56
 m56CorrPeri = tril(corr(dataMatM56Peri), -1);
-N = histcounts(m56CorrPeri(:), edges);
-normHist = N / sum(N);
+N = histcounts(m56CorrPeri(:), edges, 'Normalization', 'pdf');
 subplot(2,2,1)
-bar(edges(1:end-1), normHist, 'hist')
+bar(binCenters, N, 'hist')
 [mean(m56CorrPeri(:)), std(m56CorrPeri(:))]
 
 m56CorrPre = tril(corr(dataMatM56Pre), -1);
-N = histcounts(m56CorrPre(:), edges);
-normHist = N / sum(N);
+N = histcounts(m56CorrPre(:), edges, 'Normalization', 'pdf');
 subplot(2,2,3)
-bar(edges(1:end-1), normHist, 'hist')
+bar(binCenters, N, 'hist')
 [mean(m56CorrPre(:)), std(m56CorrPre(:))]
 
 % DS
 dsCorrPeri = tril(corr(dataMatDSPeri), -1);
-N = histcounts(dsCorrPeri(:), edges);
-normHist = N / sum(N);
+N = histcounts(dsCorrPeri(:), edges, 'Normalization', 'pdf');
 subplot(2,2,2)
-bar(edges(1:end-1), normHist, 'hist')
+bar(binCenters, N, 'hist')
 [mean(dsCorrPeri(:)), std(dsCorrPeri(:))]
 
 dsCorrPre = tril(corr(dataMatDSPre), -1);
-N = histcounts(dsCorrPre(:), edges);
-normHist = N / sum(N);
+N = histcounts(dsCorrPre(:), edges, 'Normalization', 'pdf');
 subplot(2,2,4)
-bar(edges(1:end-1), normHist, 'hist')
+bar(binCenters, N, 'hist')
 [mean(dsCorrPre(:)), std(dsCorrPre(:))]
 
 
@@ -107,10 +104,10 @@ stem(lags,c)
 
 crossC = corr(dataMatM56, dataMatDS);
 edges = -1 : .01 : 1;
-N = histcounts(crossC(:), edges);
-normHist = N / sum(N);
+    binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+N = histcounts(crossC(:), edges, 'Normalization', 'pdf');
 subplot(1,2,2)
-bar(edges(1:end-1), normHist, 'hist')
+bar(binCenters, N, 'hist')
 mean(crossC(:))
 
 
@@ -185,8 +182,8 @@ for iBhv = 1 : length(analyzeBhv)
     edges = -8 : .1 : 7;
     N = histcounts(meanLagPerBhv{iBhv}(:), edges, 'Normalization', 'pdf');
     binCenters = (edges(1:end-1) + edges(2:end)) / 2;
-    % normHist = N / sum(N);
-    figure(23)
+
+    figure(44)
     cla
     hold on;
     % bar(edges(1:end-1), normHist, 'hist')
@@ -292,7 +289,6 @@ for iBhv = 1 : length(analyzeBhv)
     nTrial = length(bhvStartFrames);
 
     iEventMat = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
-    % dataMatEvent = [];
     for j = 1 : nTrial
         iEventMat(j,:) = sum(dataMat(bhvStartFrames(j) + dataWindow ,:));
     end

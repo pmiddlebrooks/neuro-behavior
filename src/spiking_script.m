@@ -82,7 +82,7 @@ frequency_bands = [
     30 80  % Gamma band
     ];
 
-channelSpacing = 100; 
+channelSpacing = 100;
 channelDepth = 1 : channelSpacing : channelSpacing * size(data, 2);
 lfpM56 = data(:,10); % Get a sample channel to play with (reduce memory load)
 clear data
@@ -125,6 +125,7 @@ spikeClusters = data.spikeClusters;
 % Find the neuron clusters (ids) in each brain region
 
 allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
+allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua');
 
 goodM23 = allGood & strcmp(data.ci.area, 'M23');
 goodM56= allGood & strcmp(data.ci.area, 'M56');
@@ -143,12 +144,24 @@ tic
 [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
 toc
 
+% Normalize and zero-center the neural data matrix
+dataMatZ = zscore(dataMat, 0, 1);
+
+
 idM23 = find(strcmp(areaLabels, 'M23'));
 idM56 = find(strcmp(areaLabels, 'M56'));
 idDS = find(strcmp(areaLabels, 'DS'));
 idVS = find(strcmp(areaLabels, 'VS'));
 
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
+
+
+%% Plot neural session data
+imagesc(dataMatZ')
+hold on;
+line([0, size(dataMat, 1)], [idM23(end)+.5, idM23(end)+.5], 'Color', 'r');
+line([0, size(dataMat, 1)], [idM56(end)+.5, idM56(end)+.5], 'Color', 'r');
+line([0, size(dataMat, 1)], [idDS(end)+.5, idDS(end)+.5], 'Color', 'r');
 
 %% Save it if you want
 
@@ -158,22 +171,12 @@ if ~exist(saveDataPath, 'dir')
 end
 saveFileName = ['neural_matrix ', 'frame_size_' num2str(opts.frameSize), [' start_', num2str(opts.collectStart), ' for_', num2str(opts.collectFor), '.mat']];
 save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
+
 %% Or load an existing dataMat
 load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
 
 
 
-%% Normalize and zero-center the neural data matrix
-
-% Normalize (z-score)
-dataMatZ = zscore(dataMat, 0, 1);
-
-% imagesc(dataMat')
-imagesc(dataMatZ')
-hold on;
-line([0, size(dataMat, 1)], [idM23(end)+.5, idM23(end)+.5], 'Color', 'r');
-line([0, size(dataMat, 1)], [idM56(end)+.5, idM56(end)+.5], 'Color', 'r');
-line([0, size(dataMat, 1)], [idDS(end)+.5, idDS(end)+.5], 'Color', 'r');
 
 
 
@@ -271,7 +274,7 @@ end
 
 
 
-%%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+%%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % %             Which neurons are positively and negatively (significantly) modulated for each behavior?
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Create a 3-D psth data matrix of stacked peri-event start time windows (time X neuron X trial)
@@ -307,39 +310,44 @@ posMod = zeros(length(analyzeCodes), size(dataMatZ, 2));
 negMod = zeros(length(analyzeCodes), size(dataMatZ, 2));
 
 for iBhv = 1 : length(analyzeBhv)
-% for jNeuron = 1 : size(dataMatZ, 2)
+    % for jNeuron = 1 : size(dataMatZ, 2)
 
-% sum of spikes in each trial (in pre-window and peri-window
+    % sum of spikes in each trial (in pre-window and peri-window
     preCounts = sum(eventMat{iBhv}(preWindowInd, :, :), 1);
     periCounts = sum(eventMat{iBhv}(periWindow, :, :), 1);
 
     preCounts = permute(preCounts, [3 2 1]);
     periCounts = permute(periCounts, [3 2 1]);
 
-     % Are they modulated significantly?
+    % Are they modulated significantly?
     [h,p,~,~] = ttest(preCounts, periCounts);
     % h = reshape(h, size(h, 3), 1);
 
     % Which one is larger (positive or negative modulation?
-    periMinusPre = mean(periCounts, 1) - mean(preCounts, 1); 
+    periMinusPre = mean(periCounts, 1) - mean(preCounts, 1);
 
     % Keep track of which neurons are positively (posMod) and negatively
     % (negMod) for each behavior)
-posMod(iBhv, :) = periMinusPre > 0 & h;
-negMod(iBhv, :) = periMinusPre < 0 & h;
-    
+    posMod(iBhv, :) = periMinusPre > 0 & h;
+    negMod(iBhv, :) = periMinusPre < 0 & h;
 
-% get the indices 
+
+    % get the indices
 
 end
 %%
 for iBhv = 1 : length(analyzeBhv)
-fprintf('Behavior: %s\n', analyzeBhv{iBhv})
-fprintf('Positive:\n')
-fprintf('M23:\t%d\tM56\t%d\tDS:\t%d\tVS:\t%d\n', sum(posMod(iBhv, strcmp(areaLabels, 'M23'))), sum(posMod(iBhv, strcmp(areaLabels, 'M56'))), sum(posMod(iBhv, strcmp(areaLabels, 'DS'))), sum(posMod(iBhv, strcmp(areaLabels, 'VS'))));
-fprintf('Negative:\n')
-fprintf('M23:\t%d\tM56\t%d\tDS:\t%d\tVS:\t%d\n', sum(negMod(iBhv, strcmp(areaLabels, 'M23'))), sum(negMod(iBhv, strcmp(areaLabels, 'M56'))), sum(negMod(iBhv, strcmp(areaLabels, 'DS'))), sum(negMod(iBhv, strcmp(areaLabels, 'VS'))));
+    fprintf('Behavior: %s\n', analyzeBhv{iBhv})
+    fprintf('Positive:\n')
+    fprintf('M23:\t%d\tM56\t%d\tDS:\t%d\tVS:\t%d\n', sum(posMod(iBhv, strcmp(areaLabels, 'M23'))), sum(posMod(iBhv, strcmp(areaLabels, 'M56'))), sum(posMod(iBhv, strcmp(areaLabels, 'DS'))), sum(posMod(iBhv, strcmp(areaLabels, 'VS'))));
+    fprintf('Negative:\n')
+    fprintf('M23:\t%d\tM56\t%d\tDS:\t%d\tVS:\t%d\n', sum(negMod(iBhv, strcmp(areaLabels, 'M23'))), sum(negMod(iBhv, strcmp(areaLabels, 'M56'))), sum(negMod(iBhv, strcmp(areaLabels, 'DS'))), sum(negMod(iBhv, strcmp(areaLabels, 'VS'))));
 end
+
+
+
+
+
 
 
 

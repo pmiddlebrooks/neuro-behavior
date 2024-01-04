@@ -21,7 +21,7 @@ end
 
 %% Run this, then go to spiking_script and get the behavior and data matrix
 % opts.frameSize = .05; % 50 ms framesize for now
-% opts.collectFor = 60*60; % Get an hour of data
+opts.collectFor = 60*60; % Get an hour of data
 
 
 
@@ -48,7 +48,7 @@ end
 
 bhv = 'investigate_1';
 % bhv = 'locomotion';
-% bhv = 'face_groom_1';
+bhv = 'face_groom_1';
 % bhv = 'contra_orient';
 % bhv = 'investigate_2';
 % bhv = 'head_groom';
@@ -59,7 +59,7 @@ bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.fr
 bhvStartFrames(bhvStartFrames < 10) = [];
 bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 
-periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
+periEventTime = -.5 : opts.frameSize : .5; % seconds around onset
 dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
 
 % a dataMat for a particular behavior
@@ -80,12 +80,11 @@ residualPsth = dataMatBhv - meanPsth;
 
 %% Mean-match firing rates among the sub-populations
 rateBins = 0.5 : 0.5 : 40;
-meanRates = mean(meanPsth(:, :), 1) ./ opts.frameSize;
+meanRates = mean(meanPsth, 1) ./ opts.frameSize;
 
 
 
-
-%%% Stopped here: Continue to improve code: need to test subspace
+%%% Stopped here: Nneed to test subspace
 %%% dimensions among neurons that are "tuned" for a give behavior
 %%% transition. That means selecting sub-neuron populations based on:
 % tuning preference (positive and/or negative)
@@ -94,16 +93,18 @@ meanRates = mean(meanPsth(:, :), 1) ./ opts.frameSize;
 % That means there will be very few neurons in any analysis
 
 
+[histM56, ~, binsM56] = histcounts(meanRates(strcmp(areaLabels, 'M56')), rateBins);
+[histDS, ~, binsDS] = histcounts(meanRates(strcmp(areaLabels, 'DS')), rateBins);
 
 
-meanM56Rates = mean(meanPsth(:, strcmp(areaLabels, 'M56')), 1) ./ opts.frameSize;
-meanDSRates = mean(meanPsth(:, strcmp(areaLabels, 'DS')), 1) ./ opts.frameSize;
-[histM56, ~, binsM56] = histcounts(meanM56Rates, rateBins);
-[histDS, ~, binsDS] = histcounts(meanDSRates, rateBins);
+% meanM56Rates = mean(meanPsth(:, strcmp(areaLabels, 'M56')), 1) ./ opts.frameSize;
+% meanDSRates = mean(meanPsth(:, strcmp(areaLabels, 'DS')), 1) ./ opts.frameSize;
+% [histM56, ~, binsM56] = histcounts(meanM56Rates, rateBins);
+% [histDS, ~, binsDS] = histcounts(meanDSRates, rateBins);
 
 M56Targets = [];
 DSTargets = [];
-for i = 1 : length(meanM56Rates)
+for i = 1 : length(histM56)
     iNSample = min(histM56(i), histDS(i)); % which brain area had minimum number of units with that spike rate?
     if iNSample
         allM56Targets = find(binsM56 == i);
@@ -123,7 +124,7 @@ for i = 1 : length(meanM56Rates)
 end
 
  % Use up to half of the M56 population as target population
-nTargetNeurons = min(length(M56Targets), floor(length(meanM56Rates)/2));
+nTargetNeurons = min(length(M56Targets), floor(sum(strcmp(areaLabels, 'M56'))/2));
 M56Targets = M56Targets(1 : nTargetNeurons);
 DSTargets = DSTargets(1 : nTargetNeurons);
 M56Sources = setdiff(1:length(meanM56Rates), M56Targets);
