@@ -26,70 +26,71 @@ dataMatUse = dataMatZ;
 
 
 %% Create a 2-D data matrix of stacked peri-event start time windows (time X neuron)
-bhv = 'locomotion';
-bhvCode = analyzeCodes(strcmp(analyzeBhv, bhv));
+% bhv = 'locomotion';
+for iBhv = 1 : length(analyzeCodes)
+    bhvCode = analyzeCodes(iBhv);
 
-periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
-periWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
-preEventTime = -.8 : opts.frameSize : -.4; % seconds before onset
-preWindow = round(preEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
-
-
-bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
-bhvStartFrames(bhvStartFrames < abs(preWindow(1))+1) = [];
-bhvStartFrames(bhvStartFrames > size(dataMat, 1) - periWindow(end)-1) = [];
-
-nTrial = length(bhvStartFrames);
+    periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
+    periWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+    preEventTime = -.8 : opts.frameSize : -.4; % seconds before onset
+    preWindow = round(preEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 
-dataMatPeri = [];
-dataMatPre = [];
-for j = 1 : nTrial
-    dataMatPeri = [dataMatPeri; dataMat(bhvStartFrames(j) + periWindow ,:)];
-    dataMatPre = [dataMatPre; dataMat(bhvStartFrames(j) + preWindow ,:)];
-end
+    bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+    bhvStartFrames(bhvStartFrames < abs(preWindow(1))+1) = [];
+    bhvStartFrames(bhvStartFrames > size(dataMat, 1) - periWindow(end)-1) = [];
 
-%% Get data mat for M56 and size-matched subset of DS
-dataMatM56Peri = dataMatPeri(:, strcmp(areaLabels, 'M56'));
-dataMatDSPeri =  dataMatPeri(:, strcmp(areaLabels, 'DS'));
-dataMatM56Pre = dataMatPre(:, strcmp(areaLabels, 'M56'));
-dataMatDSPre =  dataMatPre(:, strcmp(areaLabels, 'DS'));
-% subDSIdx = randperm(size(dataMatDS, 2), size(dataMatM56, 2));
-% dataMatDSSub = dataMatDS(:, subDSIdx);
+    nTrial = length(bhvStartFrames);
 
-%%      Overall correlations across the whole recording
 
-edges = -.1 : .005 : .1;
+    dataMatPeri = [];
+    dataMatPre = [];
+    for j = 1 : nTrial
+        dataMatPeri = [dataMatPeri; dataMat(bhvStartFrames(j) + periWindow ,:)];
+        dataMatPre = [dataMatPre; dataMat(bhvStartFrames(j) + preWindow ,:)];
+    end
+
+    % Get data mat for M56 and size-matched subset of DS
+    dataMatM56Peri = dataMatPeri(:, strcmp(areaLabels, 'M56'));
+    dataMatDSPeri =  dataMatPeri(:, strcmp(areaLabels, 'DS'));
+    dataMatM56Pre = dataMatPre(:, strcmp(areaLabels, 'M56'));
+    dataMatDSPre =  dataMatPre(:, strcmp(areaLabels, 'DS'));
+    % subDSIdx = randperm(size(dataMatDS, 2), size(dataMatM56, 2));
+    % dataMatDSSub = dataMatDS(:, subDSIdx);
+
+    %     Overall correlations across the whole recording
+
+    edges = -.1 : .005 : .1;
     binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
-% M56
-m56CorrPeri = tril(corr(dataMatM56Peri), -1);
-N = histcounts(m56CorrPeri(:), edges, 'Normalization', 'pdf');
-subplot(2,2,1)
-bar(binCenters, N, 'hist')
-[mean(m56CorrPeri(:)), std(m56CorrPeri(:))]
+    % M56
+    m56CorrPeri = tril(corr(dataMatM56Peri), -1);
+    N = histcounts(m56CorrPeri(:), edges, 'Normalization', 'pdf');
+    subplot(2,2,1)
+    bar(binCenters, N, 'hist')
+    [mean(m56CorrPeri(:)), std(m56CorrPeri(:))]
 
-m56CorrPre = tril(corr(dataMatM56Pre), -1);
-N = histcounts(m56CorrPre(:), edges, 'Normalization', 'pdf');
-subplot(2,2,3)
-bar(binCenters, N, 'hist')
-[mean(m56CorrPre(:)), std(m56CorrPre(:))]
+    m56CorrPre = tril(corr(dataMatM56Pre), -1);
+    N = histcounts(m56CorrPre(:), edges, 'Normalization', 'pdf');
+    subplot(2,2,3)
+    bar(binCenters, N, 'hist')
+    [mean(m56CorrPre(:)), std(m56CorrPre(:))]
 
-% DS
-dsCorrPeri = tril(corr(dataMatDSPeri), -1);
-N = histcounts(dsCorrPeri(:), edges, 'Normalization', 'pdf');
-subplot(2,2,2)
-bar(binCenters, N, 'hist')
-[mean(dsCorrPeri(:)), std(dsCorrPeri(:))]
+    % DS
+    dsCorrPeri = tril(corr(dataMatDSPeri), -1);
+    N = histcounts(dsCorrPeri(:), edges, 'Normalization', 'pdf');
+    subplot(2,2,2)
+    bar(binCenters, N, 'hist')
+    [mean(dsCorrPeri(:)), std(dsCorrPeri(:))]
 
-dsCorrPre = tril(corr(dataMatDSPre), -1);
-N = histcounts(dsCorrPre(:), edges, 'Normalization', 'pdf');
-subplot(2,2,4)
-bar(binCenters, N, 'hist')
-[mean(dsCorrPre(:)), std(dsCorrPre(:))]
+    dsCorrPre = tril(corr(dataMatDSPre), -1);
+    N = histcounts(dsCorrPre(:), edges, 'Normalization', 'pdf');
+    subplot(2,2,4)
+    bar(binCenters, N, 'hist')
+    [mean(dsCorrPre(:)), std(dsCorrPre(:))]
 
-
-
+    sgtitle(['Peri and Pre within area correlations: ', analyzeBhv(iBhv)])
+end
 
 
 
@@ -97,18 +98,23 @@ bar(binCenters, N, 'hist')
 
 %% Cross-Correlation across areas (across the whole session)
 
-% [c,lags] = corrcoef(dataMatM56,dataMatDSSub);
-[c,lags] = xcorr(dataMatM56(:,1),dataMatDSSub(:,1)); % this is for example first neuron in each brain area
-subplot(1,2,1)
-stem(lags,c)
+% % [c,lags] = corrcoef(dataMatM56,dataMatDSSub);
+% [c,lags] = xcorr(dataMatM56(:,1),dataMatDSSub(:,1)); % this is for example first neuron in each brain area
+% subplot(1,2,1)
+% stem(lags,c)
+% 
+% crossC = corr(dataMatM56, dataMatDS);
+% edges = -1 : .01 : 1;
+% binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+% N = histcounts(crossC(:), edges, 'Normalization', 'pdf');
+% subplot(1,2,2)
+% bar(binCenters, N, 'hist')
+% mean(crossC(:))
+% 
 
-crossC = corr(dataMatM56, dataMatDS);
-edges = -1 : .01 : 1;
-    binCenters = (edges(1:end-1) + edges(2:end)) / 2;
-N = histcounts(crossC(:), edges, 'Normalization', 'pdf');
-subplot(1,2,2)
-bar(binCenters, N, 'hist')
-mean(crossC(:))
+
+
+
 
 
 
@@ -177,13 +183,13 @@ for iBhv = 1 : length(analyzeBhv)
 
     end
     meanLagPerBhv{iBhv} = meanLag;
-
+% wanted = lags(max(c))
     % edges = dataWindow;
     edges = -8 : .1 : 7;
     N = histcounts(meanLagPerBhv{iBhv}(:), edges, 'Normalization', 'pdf');
     binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
-    figure(44)
+    figure(46)
     cla
     hold on;
     % bar(edges(1:end-1), normHist, 'hist')
@@ -306,7 +312,7 @@ xlimConst = [-1 1];
 [rho,pval] = corr(meanSpikes(:, m56Ind));
 returnIdx = tril(true(length(m56Ind)), -1);
 
-edges = -1 : .01 : 1;
+edges = -1 : .05 : 1;
 binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 % xVal = edges(1:end-1);
 N = histcounts(rho(returnIdx), edges, 'Normalization', 'pdf');
@@ -411,19 +417,20 @@ if plotGauss
     plot(x_range, y_comp1, '--r', 'LineWidth', 2);
     plot(x_range, y_comp2, '--r', 'LineWidth', 2);
 
-
-    %     %Gaussian mixture model
-    % GMModel = fitgmdist(rho(:),2);
-    % mu = GMModel.mu;
-    % sigma = GMModel.Sigma(:);
-    % gmwt = GMModel.ComponentProportion;
-    % x = linspace(edges(1),edges(end),1000);
-    % pdfValues = pdf(GMModel, x');
-    % plot(x, pdfValues, 'k', 'LineWidth', 3);
-    % pdf1 = normpdf(x, mu(1), sqrt(sigma(1)));
-    % pdf2 = normpdf(x, mu(2), sqrt(sigma(2)));
-    % plot(x, pdf1*gmwt(1), 'r', 'LineWidth', 3)
-    % plot(x, pdf2*gmwt(2), 'r', 'LineWidth', 3)
+% if plotGauss
+%         %Gaussian mixture model
+%     GMModel = fitgmdist(rho(:),2);
+%     mu = GMModel.mu;
+%     sigma = GMModel.Sigma(:);
+%     gmwt = GMModel.ComponentProportion;
+%     x = linspace(edges(1),edges(end),1000);
+%     pdfValues = pdf(GMModel, x');
+%     plot(x, pdfValues, 'k', 'LineWidth', 3);
+%     pdf1 = normpdf(x, mu(1), sqrt(sigma(1)));
+%     pdf2 = normpdf(x, mu(2), sqrt(sigma(2)));
+%     plot(x, pdf1*gmwt(1), 'r', 'LineWidth', 3)
+%     plot(x, pdf2*gmwt(2), 'r', 'LineWidth', 3)
+% end
 end
 
 %     imagesc(rho)
@@ -549,7 +556,8 @@ end
 
 
 
-%% For each behavior, what are the most common preceding behaviors?
+%%  Noise Correlations for sequences vs. all behaviors (going into behavior X, coming from behavior Y or from all different behaviors)
+%    For each behavior, what are the most common preceding behaviors?
 dataBhv.prevID = [nan; dataBhv.bhvID(1:end-1)];
 dataBhv.prevDur = [nan; dataBhv.bhvDur(1:end-1)];
 dataBhv.prevStartTime = [nan; dataBhv.bhvStartTime(1:end-1)];
@@ -615,8 +623,8 @@ dsInd = find(strcmp(areaLabels, 'DS'));
 
 periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
 dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
-    edges = -1 : .02 : 1;
-    binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+edges = -1 : .02 : 1;
+binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 for seq = 1 : over40
     seqStr = strsplit(sequenceNames{seq});
@@ -669,7 +677,7 @@ for seq = 1 : over40
     yl = ylim;
     plot([median(allM56Corr) median(allM56Corr)], [.9*yl(2) yl(2)], 'b', 'linewidth', 4)
     plot([median(seqM56CorrCurr) median(seqM56CorrCurr)], [.9*yl(2) yl(2)], 'r', 'linewidth', 4)
-title(['M56 correlations: ', sequenceNames{seq}], 'interpreter', 'none')
+    title(['M56 correlations: ', sequenceNames{seq}], 'interpreter', 'none')
     % xline(median(seqM56CorrCurr), 'r', 'linewidth', 4)
     %
 
@@ -680,7 +688,7 @@ title(['M56 correlations: ', sequenceNames{seq}], 'interpreter', 'none')
     [seqM56DSCorrCurr, ~] = corr(seqSpikesCurr(:, m56Ind), seqSpikesCurr(:, dsInd));
     [seqM56DSCorrPrev, ~] = corr(seqSpikesPrev(:, m56Ind), seqSpikesPrev(:, dsInd));
 
-        % Test whether distributions are different
+    % Test whether distributions are different
     [p,h,~] = ranksum(allM56DSCorr(:), seqM56DSCorrCurr(:)) % Different means?
 
     % Different variances?
@@ -688,7 +696,7 @@ title(['M56 correlations: ', sequenceNames{seq}], 'interpreter', 'none')
     F = var(seqM56DSCorrCurr(:)) / var(allM56DSCorr(:));
     df1 = length(seqM56DSCorrCurr(:)) - 1;
     df2 = length(allM56DSCorr(:)) - 1;
-        % Calculating the p-value using the F cumulative distribution function.
+    % Calculating the p-value using the F cumulative distribution function.
     % The '1 - ' part calculates the right-tailed probability.
     pValue = 1 - fcdf(F, df1, df2);
 
@@ -714,7 +722,7 @@ title(['M56 correlations: ', sequenceNames{seq}], 'interpreter', 'none')
     yl = ylim;
     plot([median(allM56DSCorr(:)) median(allM56DSCorr(:))], [.9*yl(2) yl(2)], 'b', 'linewidth', 4)
     plot([median(seqM56DSCorrCurr(:)) median(seqM56DSCorrCurr(:))], [.9*yl(2) yl(2)], 'r', 'linewidth', 4)
-title(['M56 - DS correlations: ', sequenceNames{seq}], 'interpreter', 'none')
+    title(['M56 - DS correlations: ', sequenceNames{seq}], 'interpreter', 'none')
 end
 
 
