@@ -6,7 +6,7 @@
 % counts peri-onset of each behavior.
 behaviorOnsets = [];
 neuralMatrix = [];
-periEventTime = -.4 : opts.frameSize : .4; % seconds around onset
+periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
 dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 for iBhv = 1 : length(analyzeCodes)
@@ -19,10 +19,12 @@ for iBhv = 1 : length(analyzeCodes)
 end
 %%
 
-[coeff,score,latent,tsquared,explained,mu] = PlotPCAWithBehaviors3D(neuralMatrix(:, idM56), behaviorOnsets);
+[coeff,score,latent,tsquared,explained,mu] = PlotPCAWithBehaviors3D(neuralMatrix(:, idDS), behaviorOnsets);
 
 
-%%
+
+
+%% PCA trajectories for each trial (adapted from Matt Smith's PCA scripts)
 figure(7);
 onsetInd = length(dataWindow)/2 + 1;
 for iBhv = 1 : length(analyzeCodes)
@@ -38,6 +40,8 @@ scatter3(jProj(onsetInd, 1), jProj(onsetInd, 2), jProj(onsetInd, 3), 100, 'fille
 end
 
 %%
+
+
 
 function [coeff,score,latent,tsquared,explained,mu] = PlotPCAWithBehaviors3D(neuralMatrix, behaviorOnsets)
 % PlotPCAWithBehaviors3D: Performs PCA on a neural spiking activity matrix and plots the first three principal components.
@@ -76,19 +80,22 @@ projData = neuralMatrix * coeff10;
 figure(23);
 clf
 hold on;
-
-% Looping through each behavior to plot.
-for i = 1:length(unique(behaviorOnsets))
-    behaviorIndices = find(behaviorOnsets == i);
-    scatter3(score(behaviorIndices,1), score(behaviorIndices,2), score(behaviorIndices,3), 36, rgbMatrix(i,:), 'filled');
-    % scatter3(projData(behaviorIndices,1), projData(behaviorIndices,2), projData(behaviorIndices,3), 36, rgbMatrix(i,:), 'filled');
-end
-
 % Adding labels and title.
 xlabel('First Principal Component');
 ylabel('Second Principal Component');
 zlabel('Third Principal Component');
 title('3D PCA of Neural Spiking Activity');
+
+% Looping through each behavior to plot.
+nRandTrial = 30;
+for i = 1:length(unique(behaviorOnsets))
+    behaviorIndices = find(behaviorOnsets == i);
+    behaviorIndices = behaviorIndices(randperm(length(behaviorIndices)));
+    % behaviorIndices = behaviorIndices(1:min(length(behaviorIndices), nRandTrial));
+    scatter3(score(behaviorIndices,1), score(behaviorIndices,2), score(behaviorIndices,3), 80, rgbMatrix(i,:));
+    % scatter3(projData(behaviorIndices,1), projData(behaviorIndices,2), projData(behaviorIndices,3), 36, rgbMatrix(i,:), 'filled');
+end
+
 % legend('Behavior 1', 'Behavior 2', 'Behavior 3');
 hold off;
 end
