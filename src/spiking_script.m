@@ -1,6 +1,6 @@
 %% get desired file paths
 computerDriveName = 'ROSETTA'; %'ROSETTA'; % 'Z' or 'home'
-paths = get_paths(computerDriveName)
+paths = get_paths(computerDriveName);
 
 
 opts = neuro_behavior_options;
@@ -125,7 +125,7 @@ spikeClusters = data.spikeClusters;
 % Find the neuron clusters (ids) in each brain region
 
 allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
-% allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua');
+allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua');
 
 goodM23 = allGood & strcmp(data.ci.area, 'M23');
 goodM56= allGood & strcmp(data.ci.area, 'M56');
@@ -303,7 +303,7 @@ end
 % preWindow is -1 : -.6 sec w.r.t. onset, so figure it out w.r.t. onset in
 % the eventMat
 dataTimes = dataWindow .* opts.frameSize; % this is relative to the eventMat matrix
-preWindowInd = dataTimes >= -.8 & dataTimes < -.4;
+preWindowInd = dataTimes >= -1 & dataTimes < -.6;
 periWindow = dataTimes >= -.2 & dataTimes < .2;
 
 posMod = zeros(length(analyzeCodes), size(dataMatZ, 2));
@@ -343,6 +343,33 @@ for iBhv = 1 : length(analyzeBhv)
     fprintf('Negative:\n')
     fprintf('M23:\t%d\tM56\t%d\tDS:\t%d\tVS:\t%d\n', sum(negMod(iBhv, strcmp(areaLabels, 'M23'))), sum(negMod(iBhv, strcmp(areaLabels, 'M56'))), sum(negMod(iBhv, strcmp(areaLabels, 'DS'))), sum(negMod(iBhv, strcmp(areaLabels, 'VS'))));
 end
+
+
+%% Plot some psths
+figure(88)
+neurons = idM56;
+bhvName = 'contra_orient';
+bhvName = 'face_groom_1';
+bhv = analyzeCodes(strcmp(analyzeBhv, bhvName));
+psthMean = mean(eventMat{bhv}(:, neurons, :), 3)';
+
+sortWindow = (dataWindow * opts.frameSize) >= -.2 & (dataWindow * opts.frameSize) < .2;
+    unrankedPreBhv = mean(psthMean(:, sortWindow), 2);
+    [~, sortOrder] = sort(unrankedPreBhv, 'descend');
+    rankedPsth = psthMean(sortOrder,:);
+
+imagesc(rankedPsth);
+% xticks(dataWindow)
+xticklabels(-.75 : .25 : 1)
+colormap(bluewhitered)
+% colormap(bluewhitered_custom)
+xline(20.5)
+colorbar
+title(bhvName, 'Interpreter', 'none')
+
+
+
+
 
 
 

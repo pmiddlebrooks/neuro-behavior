@@ -1,18 +1,3 @@
-%% get desired file paths
-computerDriveName = 'ROSETTA'; %'ROSETTA'; % 'Z' or 'home'
-paths = get_paths(computerDriveName);
-
-
-opts = neuro_behavior_options;
-
-animal = 'ag25290';
-sessionBhv = '112321_1';
-sessionNrn = '112321';
-if strcmp(sessionBhv, '112321_1')
-    sessionSave = '112321';
-end
-
-
 %% Run this, then go to spiking_script and get the behavior and neural data matrix
 opts.frameSize = .05; % 50 ms framesize for now
 opts.collectFor = 60*60; % Get an hour of data
@@ -32,7 +17,7 @@ for iBhv = 1 : length(analyzeCodes)
 
     periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
     periWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
-    preEventTime = -.8 : opts.frameSize : -.4; % seconds before onset
+    preEventTime = -1 : opts.frameSize : -.6; % seconds before onset
     preWindow = round(preEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 
@@ -102,7 +87,7 @@ end
 % [c,lags] = xcorr(dataMatM56(:,1),dataMatDSSub(:,1)); % this is for example first neuron in each brain area
 % subplot(1,2,1)
 % stem(lags,c)
-% 
+%
 % crossC = corr(dataMatM56, dataMatDS);
 % edges = -1 : .01 : 1;
 % binCenters = (edges(1:end-1) + edges(2:end)) / 2;
@@ -110,7 +95,7 @@ end
 % subplot(1,2,2)
 % bar(binCenters, N, 'hist')
 % mean(crossC(:))
-% 
+%
 
 
 
@@ -149,56 +134,88 @@ end
 
 
 %%  Cross-correlations
-% maxLag = 5;
+maxLag = 3;
 meanLagPerBhv = cell(length(analyzeBhv), 1);
-m56Ind = find(strcmp(areaLabels, 'M56'));
-dsInd = find(strcmp(areaLabels, 'DS'));
 for iBhv = 1 : length(analyzeBhv)
-    meanLag = zeros(length(m56Ind), length(dsInd)); % collects mean pairwise lags for each behavior (lags averaged across all onset times for this behavior)
+    % meanLag = zeros(length(idM56), length(idDS)); % collects mean pairwise lags for each behavior (lags averaged across all onset times for this behavior)
+    meanLag = nan(length(idM56), length(idDS)); % collects mean pairwise lags for each behavior (lags averaged across all onset times for this behavior)
 
     % Across all M56 neurons
-    for m = 1 : length(m56Ind)
+    for m = 1 : length(idM56)
 
         % Across all DS neurons
-        for d = 1 : length(dsInd)
+        for d = 1 : length(idDS)
 
-            % Acorss all trials
-            nLag = []; % Avg pairwise lag across all trials for this behavior
-            for n = 1 : size(eventMat{iBhv}, 3) % Across all onsets for this behavior
 
-                if sum(eventMat{iBhv}(:,m56Ind(m), n)) && sum(eventMat{iBhv}(:,dsInd(d), n)) % Only use trials if both neurons (from each area) have at least on spike
-                    % [c,lags] = xcorr(eventMat{iBhv}(:,m56Ind(m), iBhv), eventMat{iBhv}(:,dsInd(d), iBhv), 'normalized');
-                    [c,lags] = xcorr(eventMat{iBhv}(:,m56Ind(m), n), eventMat{iBhv}(:,dsInd(d), n), 'normalized');
-                    % stem(lags,c)
-                    nLag = [nLag; sum(lags(:) .* c) / sum(c)];
 
-                    % figure(55);
-                    % plot(lags, c)
-                end
+            %     % Across each trials
+            %     nLag = []; % Avg pairwise lag across all trials for this behavior
+            %     for n = 1 : size(eventMat{iBhv}, 3) % Across all onsets for this behavior
+            %
+            %         if sum(eventMat{iBhv}(:,idM56(m), n)) && sum(eventMat{iBhv}(:,idDS(d), n)) % Only use trials if both neurons (from each area) have at least on spike
+            %             [c,lags] = xcorr(eventMat{iBhv}(:,idM56(m), n), eventMat{iBhv}(:,idDS(d), n), maxLag, 'normalized');
+            %
+            %             % nLag = [nLag; sum(lags(:) .* c) / sum(c)];
+            %
+            %             % take lag index of max c
+            %             nMax = max(c);
+            %             maxIdx = find(c == nMax);
+            %             if length(maxIdx) > 1
+            %                         randomIndex = randi(length(maxIdx));
+            % index = maxIdx(randomIndex);
+            %             else
+            %                 index = maxIdx;
+            %             end
+            %             nLag = [nLag; lags(index)];
+            %
+            %             % figure(55);
+            %             % plot(lags, c)
+            %         end
+            %
+            %     end
+            %     meanLag(m, d) = mean(nLag);
+            %
 
+            % Average psths across trials
+            [c,lags] = xcorr(mean(eventMat{iBhv}(:,idM56(m),:), 3), mean(eventMat{iBhv}(:,idDS(d), :), 3), maxLag, 'normalized');
+
+            % take lag index of max c
+            nMax = max(c);
+            maxIdx = find(c == nMax);
+            if length(maxIdx) > 1
+                randomIndex = randi(length(maxIdx));
+                index = maxIdx(randomIndex);
+            else
+                index = maxIdx;
             end
-            meanLag(m, d) = mean(nLag);
-
+            if ~isempty(index)
+            meanLag(m, d) = lags(index);
+            end
         end
 
     end
     meanLagPerBhv{iBhv} = meanLag;
-% wanted = lags(max(c))
-    % edges = dataWindow;
-    edges = -8 : .1 : 7;
+
+
+    figure(52)
+    subplot(1,2,1)
+    cla
+    plot(lags, c)
+
+    subplot(1,2,2)
+    cla
+
+    edges = -maxLag : 1 : maxLag;
     N = histcounts(meanLagPerBhv{iBhv}(:), edges, 'Normalization', 'pdf');
     binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
-    figure(46)
-    cla
     hold on;
     % bar(edges(1:end-1), normHist, 'hist')
     bar(binCenters, N, 'hist')
     xlim([dataWindow(1) dataWindow(end)])
-    xlim([-4 4])
+    xlim([-maxLag maxLag])
 
     % Mean lag across all pairwise neurons
-    binCenters = edges(1:end-1);
     meanX = sum(binCenters .* N) / sum(N)
     xline(meanX, 'k', 'linewidth', 2)
     % Median
@@ -280,8 +297,6 @@ end
 periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
 dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
 
-m56Ind = find(strcmp(areaLabels, 'M56'));
-dsInd = find(strcmp(areaLabels, 'DS'));
 
 meanSpikes = zeros(length(analyzeBhv), size(dataMat, 2));
 spikesPerTrial = cell(length(analyzeBhv), 1);
@@ -309,8 +324,8 @@ xlimConst = [-1 1];
 % -------------------------
 % M56 signal correlations
 % -------------------------
-[rho,pval] = corr(meanSpikes(:, m56Ind));
-returnIdx = tril(true(length(m56Ind)), -1);
+[rho,pval] = corr(meanSpikes(:, idM56));
+returnIdx = tril(true(length(idM56)), -1);
 
 edges = -1 : .05 : 1;
 binCenters = (edges(1:end-1) + edges(2:end)) / 2;
@@ -340,8 +355,8 @@ title(['M56 Signal Correlations'], 'interpreter', 'none')
 % -------------------------
 % DS signal correlations
 % -------------------------
-[rho,pval] = corr(meanSpikes(:, dsInd));
-returnIdx = tril(true(length(dsInd)), -1);
+[rho,pval] = corr(meanSpikes(:, idDS));
+returnIdx = tril(true(length(idDS)), -1);
 
 N = histcounts(rho(returnIdx), edges, 'Normalization', 'pdf');
 % N = histcounts(rho(returnIdx), edges);
@@ -368,7 +383,7 @@ title(['DS Signal Correlations'], 'interpreter', 'none')
 % -------------------------
 % M56-DS areas signal correlations
 % -------------------------
-[rho,pval] = corr(meanSpikes(:, m56Ind), meanSpikes(:, dsInd));
+[rho,pval] = corr(meanSpikes(:, idM56), meanSpikes(:, idDS));
 
 N = histcounts(rho(:), edges, 'Normalization', 'pdf');
 % N = histcounts(rho(:), edges);
@@ -417,20 +432,20 @@ if plotGauss
     plot(x_range, y_comp1, '--r', 'LineWidth', 2);
     plot(x_range, y_comp2, '--r', 'LineWidth', 2);
 
-% if plotGauss
-%         %Gaussian mixture model
-%     GMModel = fitgmdist(rho(:),2);
-%     mu = GMModel.mu;
-%     sigma = GMModel.Sigma(:);
-%     gmwt = GMModel.ComponentProportion;
-%     x = linspace(edges(1),edges(end),1000);
-%     pdfValues = pdf(GMModel, x');
-%     plot(x, pdfValues, 'k', 'LineWidth', 3);
-%     pdf1 = normpdf(x, mu(1), sqrt(sigma(1)));
-%     pdf2 = normpdf(x, mu(2), sqrt(sigma(2)));
-%     plot(x, pdf1*gmwt(1), 'r', 'LineWidth', 3)
-%     plot(x, pdf2*gmwt(2), 'r', 'LineWidth', 3)
-% end
+    % if plotGauss
+    %         %Gaussian mixture model
+    %     GMModel = fitgmdist(rho(:),2);
+    %     mu = GMModel.mu;
+    %     sigma = GMModel.Sigma(:);
+    %     gmwt = GMModel.ComponentProportion;
+    %     x = linspace(edges(1),edges(end),1000);
+    %     pdfValues = pdf(GMModel, x');
+    %     plot(x, pdfValues, 'k', 'LineWidth', 3);
+    %     pdf1 = normpdf(x, mu(1), sqrt(sigma(1)));
+    %     pdf2 = normpdf(x, mu(2), sqrt(sigma(2)));
+    %     plot(x, pdf1*gmwt(1), 'r', 'LineWidth', 3)
+    %     plot(x, pdf2*gmwt(2), 'r', 'LineWidth', 3)
+    % end
 end
 
 %     imagesc(rho)
@@ -441,9 +456,9 @@ end
 %% Noise correlations
 
 
-noiseCorrM56 = zeros(length(m56Ind), length(m56Ind), length(analyzeBhv));
-noiseCorrDS = zeros(length(dsInd), length(dsInd), length(analyzeBhv));
-noiseCorrCross = zeros(length(m56Ind), length(dsInd), length(analyzeBhv));
+noiseCorrM56 = zeros(length(idM56), length(idM56), length(analyzeBhv));
+noiseCorrDS = zeros(length(idDS), length(idDS), length(analyzeBhv));
+noiseCorrCross = zeros(length(idM56), length(idDS), length(analyzeBhv));
 edges = -1 : .01 : 1;
 binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 xVal = edges(1:end-1);
@@ -453,9 +468,9 @@ for iBhv = 1 : length(analyzeBhv)
     % -------------------------
     % M56 areas correlations
     % -------------------------
-    [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, m56Ind));
+    [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, idM56));
     noiseCorrM56(:,:,iBhv) = iCorr;
-    returnIdx = tril(true(length(m56Ind)), -1);
+    returnIdx = tril(true(length(idM56)), -1);
 
     N = histcounts(iCorr(returnIdx), edges, 'Normalization', 'pdf');
     % N = histcounts(iCorr(returnIdx), edges);
@@ -480,9 +495,9 @@ for iBhv = 1 : length(analyzeBhv)
     % -------------------------
     % DS correlations
     % -------------------------
-    [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, dsInd));
+    [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, idDS));
     noiseCorrDS(:,:,iBhv) = iCorr;
-    returnIdx = tril(true(length(dsInd)), -1);
+    returnIdx = tril(true(length(idDS)), -1);
 
     N = histcounts(iCorr(returnIdx), edges, 'Normalization', 'pdf');
     % N = histcounts(iCorr(returnIdx), edges);
@@ -507,7 +522,7 @@ for iBhv = 1 : length(analyzeBhv)
     % -------------------------
     % Across areas correlations
     % -------------------------
-    [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, m56Ind), spikesPerTrial{iBhv}(:, dsInd));
+    [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, idM56), spikesPerTrial{iBhv}(:, idDS));
     noiseCorrCross(:,:,iBhv) = iCorr;
 
     N = histcounts(noiseCorrCross(:,:,iBhv), edges, 'Normalization', 'pdf');
@@ -557,6 +572,7 @@ end
 
 
 %%  Noise Correlations for sequences vs. all behaviors (going into behavior X, coming from behavior Y or from all different behaviors)
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %    For each behavior, what are the most common preceding behaviors?
 dataBhv.prevID = [nan; dataBhv.bhvID(1:end-1)];
 dataBhv.prevDur = [nan; dataBhv.bhvDur(1:end-1)];
@@ -618,8 +634,6 @@ sequenceNames(1:10)
 % Use all sequences with at least 40 trials
 over40 = find(nTrial >= 40, 1, 'last');
 %%
-m56Ind = find(strcmp(areaLabels, 'M56'));
-dsInd = find(strcmp(areaLabels, 'DS'));
 
 periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
 dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
@@ -635,58 +649,106 @@ for seq = 1 : over40
     allStarts = floor(dataBhvTruncate.bhvStartTime(goodStarts) ./ opts.frameSize);
     seqStarts = floor(seqStartTimes{seq} ./ opts.frameSize);
 
+    % take random number-matched subsample of allStarts
+    allStartsSub = allStarts(randperm(length(allStarts)));
+    allStartsSub = allStartsSub(1:size(seqStarts, 1));
+
+    nonseqStarts = setdiff(allStarts, seqStarts(:,1));
+    if length(nonseqStarts) > size(seqStarts, 1)
+        nonseqStarts = nonseqStarts(randperm(size(seqStarts, 1)));
+    elseif length(nonseqStarts) < size(seqStarts, 1)
+        subIdx = randperm(length(nonseqStarts));
+        seqStarts = seqStarts(subIdx,:);
+    end
 
     allSpikesCurr = zeros(length(allStarts), size(dataMat, 2));
     for i = 1 : length(allStarts)
         allSpikesCurr(i,:) = sum(dataMat(allStarts(i) + dataWindow, :));
     end
 
+    nonSeqSpikesCurr = zeros(size(seqStarts, 1), size(dataMat, 2));
+    allSpikesCurrSub = zeros(size(seqStarts, 1), size(dataMat, 2));
     seqSpikesCurr = zeros(size(seqStarts, 1), size(dataMat, 2));
     seqSpikesPrev = zeros(size(seqStarts, 1), size(dataMat, 2));
     for i = 1 : size(seqStarts, 1)
+        allSpikesCurrSub(i,:) = sum(dataMat(allStartsSub(i, 1) + dataWindow, :)); % trial-matched subset
+        nonSeqSpikesCurr(i,:) = sum(dataMat(nonseqStarts(i, 1) + dataWindow, :)); % trial-matched subset
         seqSpikesCurr(i,:) = sum(dataMat(seqStarts(i, 1) + dataWindow, :));
         seqSpikesPrev(i,:) = sum(dataMat(seqStarts(i, 2) + dataWindow, :));
     end
 
     % Within area correlations
+    % ------------------------
     % M56
-    returnIdx = tril(true(length(m56Ind)), -1);
-    rho = corr(allSpikesCurr(:, m56Ind));
+    returnIdx = tril(true(length(idM56)), -1);
+    rho = corr(allSpikesCurr(:, idM56));
     allM56Corr = rho(returnIdx);
-    rho = corr(seqSpikesCurr(:, m56Ind));
+    rho = corr(nonSeqSpikesCurr(:, idM56));  % trial-matched non-sequence behaviors
+    nonSeqM56Corr = rho(returnIdx);
+    rho = corr(seqSpikesCurr(:, idM56));
     seqM56CorrCurr = rho(returnIdx);
-    rho = corr(seqSpikesPrev(:, m56Ind));
+    rho = corr(seqSpikesPrev(:, idM56));
     seqM56CorrPrev = rho(returnIdx);
 
     % Test whether distributions are different
     [p,h,~] = ranksum(allM56Corr, seqM56CorrCurr)
 
     % Plot the distributions
-    subplot(1,2,1)
+    subplot(1,3,1)
     cla
-    N = histcounts(allM56Corr, edges, 'Normalization', 'pdf');
-    % N = histcounts(allM56Corr, edges);
-    % normHist = N / sum(N);
+    % N = histcounts(allM56Corr, edges, 'Normalization', 'pdf');
+    N = histcounts(nonSeqM56Corr, edges, 'Normalization', 'pdf');
     bar(binCenters, N, 'b', 'FaceAlpha', .5);%, 'hist')
     hold on
     xlim([-.5 .5])
     N = histcounts(seqM56CorrCurr, edges, 'Normalization', 'pdf');
-    % N = histcounts(seqM56CorrCurr, edges);
-    % normHist = N / sum(N);
     bar(binCenters, N, 'r', 'FaceAlpha', .5);%, 'hist')
     yl = ylim;
     plot([median(allM56Corr) median(allM56Corr)], [.9*yl(2) yl(2)], 'b', 'linewidth', 4)
     plot([median(seqM56CorrCurr) median(seqM56CorrCurr)], [.9*yl(2) yl(2)], 'r', 'linewidth', 4)
     title(['M56 correlations: ', sequenceNames{seq}], 'interpreter', 'none')
-    % xline(median(seqM56CorrCurr), 'r', 'linewidth', 4)
-    %
+
+    % ------------------------
+    % DS
+    returnIdx = tril(true(length(idDS)), -1);
+    rho = corr(allSpikesCurr(:, idDS));
+    allDSCorr = rho(returnIdx);
+    rho = corr(nonSeqSpikesCurr(:, idDS));  % trial-matched non-sequence behaviors
+    nonSeqDSCorr = rho(returnIdx);
+    rho = corr(seqSpikesCurr(:, idDS));
+    seqDSCorrCurr = rho(returnIdx);
+    rho = corr(seqSpikesPrev(:, idDS));
+    seqDSCorrPrev = rho(returnIdx);
+
+    % Test whether distributions are different
+    [p,h,~] = ranksum(allDSCorr, seqDSCorrCurr)
+
+    % Plot the distributions
+    subplot(1,3,2)
+    cla
+    % N = histcounts(allDSCorr, edges, 'Normalization', 'pdf');
+    N = histcounts(nonSeqDSCorr, edges, 'Normalization', 'pdf');
+    bar(binCenters, N, 'b', 'FaceAlpha', .5);%, 'hist')
+    hold on
+    xlim([-.5 .5])
+    N = histcounts(seqDSCorrCurr, edges, 'Normalization', 'pdf');
+    bar(binCenters, N, 'r', 'FaceAlpha', .5);%, 'hist')
+    yl = ylim;
+    plot([median(allDSCorr) median(allDSCorr)], [.9*yl(2) yl(2)], 'b', 'linewidth', 4)
+    plot([median(seqDSCorrCurr) median(seqDSCorrCurr)], [.9*yl(2) yl(2)], 'r', 'linewidth', 4)
+    title(['DS correlations: ', sequenceNames{seq}], 'interpreter', 'none')
 
 
 
     % Across area correlations
-    [allM56DSCorr, ~] = corr(allSpikesCurr(:, m56Ind), allSpikesCurr(:, dsInd));
-    [seqM56DSCorrCurr, ~] = corr(seqSpikesCurr(:, m56Ind), seqSpikesCurr(:, dsInd));
-    [seqM56DSCorrPrev, ~] = corr(seqSpikesPrev(:, m56Ind), seqSpikesPrev(:, dsInd));
+    % ------------------------
+    [allM56DSCorr, ~] = corr(allSpikesCurr(:, idM56), allSpikesCurr(:, idDS));
+    % trial-matched behaviors subsample
+    [allM56DSCorrSub, ~] = corr(allSpikesCurrSub(:, idM56), allSpikesCurrSub(:, idDS));
+    % trial-matched non-sequence behaviors subsample
+    [nonSeqM56DSCorr, ~] = corr(nonSeqSpikesCurr(:, idM56), nonSeqSpikesCurr(:, idDS));
+    [seqM56DSCorrCurr, ~] = corr(seqSpikesCurr(:, idM56), seqSpikesCurr(:, idDS));
+    [seqM56DSCorrPrev, ~] = corr(seqSpikesPrev(:, idM56), seqSpikesPrev(:, idDS));
 
     % Test whether distributions are different
     [p,h,~] = ranksum(allM56DSCorr(:), seqM56DSCorrCurr(:)) % Different means?
@@ -707,17 +769,17 @@ for seq = 1 : over40
 
 
     % Plot the distributions
-    subplot(1,2,2)
+    subplot(1,3,3)
     cla
-    N = histcounts(allM56DSCorr(:), edges, 'Normalization', 'pdf');
-    % N = histcounts(allM56DSCorr(:), edges);
-    % normHist = N / sum(N);
+    % N = histcounts(allM56DSCorr(:), edges, 'Normalization', 'pdf');
+    % trial-matched behaviors subsample
+    % N = histcounts(allM56DSCorrSub(:), edges, 'Normalization', 'pdf'); %
+    % trial-matched non-sequence behaviors subsample
+    N = histcounts(nonSeqM56DSCorr(:), edges, 'Normalization', 'pdf');
     bar(binCenters, N, 'b', 'FaceAlpha', .5);%, 'hist')
     hold on
     xlim([-.5 .5])
     N = histcounts(seqM56DSCorrCurr(:), edges, 'Normalization', 'pdf');
-    % N = histcounts(seqM56DSCorrCurr(:), edges);
-    % normHist = N / sum(N);
     bar(binCenters, N, 'r', 'FaceAlpha', .5);%, 'hist')
     yl = ylim;
     plot([median(allM56DSCorr(:)) median(allM56DSCorr(:))], [.9*yl(2) yl(2)], 'b', 'linewidth', 4)

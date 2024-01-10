@@ -487,8 +487,8 @@ for j = 1 : nTrial
     dataMatBhv(:,:,j) = dataMat(bhvStartFrames(j) + dataWindow, :)';
 end
 
-spikes{1} = dataMatBhv(strcmp(areaLabels, 'M56'),:,:);
-spikes{2} = dataMatBhv(strcmp(areaLabels, 'DS'),:,:);
+spikes{1} = dataMatBhv(:, strcmp(areaLabels, 'M56'), :);
+spikes{2} = dataMatBhv(:, strcmp(areaLabels, 'DS'), :);
 
 
 
