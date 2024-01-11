@@ -21,7 +21,7 @@ for iBhv = 1 : length(analyzeCodes)
     preWindow = round(preEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 
-    bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+    bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
     bhvStartFrames(bhvStartFrames < abs(preWindow(1))+1) = [];
     bhvStartFrames(bhvStartFrames > size(dataMat, 1) - periWindow(end)-1) = [];
 
@@ -116,7 +116,7 @@ eventMat = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
-    bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+    bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
     bhvStartFrames(bhvStartFrames < dataWindow(end) + 1) = [];
     bhvStartFrames(bhvStartFrames > size(dataMat, 1) - dataWindow(end)) = [];
 
@@ -303,7 +303,7 @@ spikesPerTrial = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
-    bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+    bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
     bhvStartFrames(bhvStartFrames < 10) = [];
     bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 
@@ -591,10 +591,9 @@ sequenceNames = {};
 seqStartTimes = {};
 for iCurr = 1 : length(analyzeCodes)
 
-    % Start here: For each behavior:
+    % For each behavior:
     % - Get the noise correlations for the current behavior (like above)
     % and all (valid) previous behaviors
-    % - compare them (subtract?)
     for jPrev = 1 : length(analyzeCodes)
         if iCurr ~= jPrev
             % Make sure this sequence passes requisite criteria
@@ -610,15 +609,6 @@ for iCurr = 1 : length(analyzeCodes)
             end
         end
 
-        % STart here: For each sequence
-        % - if there are enough trials
-        % - get the noise correlations for the previous behavior and the
-        % current behavior
-        % - compare them (subtract?)
-
-        % Also, compare all current behavior noise correlations with those
-        % of previous then current correlations (how to do this with
-        % uneven numbers in the distributions?
     end
 end
 %%
@@ -646,8 +636,8 @@ for seq = 1 : over40
     bhvPrev = analyzeCodes(strcmp(analyzeBhv, seqStr{3}));
 
     goodStarts = dataBhvTruncate.bhvID == bhvCurr & validBhvTruncate(:, opts.bhvCodes == bhvCurr);
-    allStarts = floor(dataBhvTruncate.bhvStartTime(goodStarts) ./ opts.frameSize);
-    seqStarts = floor(seqStartTimes{seq} ./ opts.frameSize);
+    allStarts = 1 + floor(dataBhvTruncate.bhvStartTime(goodStarts) ./ opts.frameSize);
+    seqStarts = 1 + floor(seqStartTimes{seq} ./ opts.frameSize);
 
     % take random number-matched subsample of allStarts
     allStartsSub = allStarts(randperm(length(allStarts)));

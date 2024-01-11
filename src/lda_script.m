@@ -1,8 +1,8 @@
 %% Go to spiking_script and get behavioral and neural data
 
-%%
+%% Make a matrix with sum or mean spikes within a peri-onset window for each behavior
 
-% Create a neural matrix. Each column is a neuron. Each row are spike
+% Create a neural matrix. Each column is a neuron. Each row are summed or mean spike
 % counts peri-onset of each behavior.
 behaviorID = [];
 neuralMatrix = [];
@@ -10,44 +10,56 @@ periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
 dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 for iBhv = 1 : length(analyzeCodes)
-    iStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
+    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
     iStartFrames = iStartFrames(3:end-3);
     behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames), 1)];
     for jStart = 1 : length(iStartFrames)
-        neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
+        % neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
+        neuralMatrix = [neuralMatrix; mean(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
+    end
+end
+%% Instead, make a matrix with concatenated peri-onset bins for each behavior
+
+% Create a neural matrix. Each column is a neuron. Each row are spike
+% counts peri-onset of each behavior.
+behaviorID = [];
+neuralMatrix = [];
+periEventTime = -.1 : opts.frameSize : .1; % seconds around onset
+dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+
+for iBhv = 1 : length(analyzeCodes)
+    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
+    iStartFrames = iStartFrames(3:end-3);
+    behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames) * length(dataWindow), 1)];
+    for jStart = 1 : length(iStartFrames)
+        % neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
+        neuralMatrix = [neuralMatrix; dataMatZ(iStartFrames(jStart) + dataWindow, :)];
     end
 end
 %%
 
 % MdlLinear = fitcdiscr(neuralMatrix, behaviorID);
 
-averageAccuracy = Perform5FoldCVLDA(neuralMatrix(:, idM56), behaviorID)
+averageAccuracy = Perform5FoldCVLDA(neuralMatrix(:, idM56), behaviorID);
 %%
 
 trainedModel = train_full_lda_model(neuralMatrix(:, idM56), behaviorID)
 
 
-%%
-neuronIndices = [4 38];
-selectedBehaviors = [2 11];
-VisualizeProjectionVectorsLDA(neuralMatrix(:, idM56), behaviorID, neuronIndices, selectedBehaviors)
+% %%
+% neuronIndices = [4 38];
+% selectedBehaviors = [2 11];
+% VisualizeProjectionVectorsLDA(neuralMatrix(:, idM56), behaviorID, neuronIndices, selectedBehaviors)
+%
+%
+% %%
+% ldaProjectionPlot(neuralMatrix(:, idM56), behaviorID)
 
 
-%%
-ldaProjectionPlot(neuralMatrix(:, idM56), behaviorID)
-
-
-%%
-lda_project_and_plot(neuralMatrix(:, idM56), behaviorID)
-%%
-
-
-function lda_project_and_plot(neuralMatrix, behaviorID)
-bhvList = unique(behaviorID);
-colors = distinguishable_colors(length(bhvList));
-
+%%   FIT and project LDA model
+fitMatrix = neuralMatrix(:, idM56);
 % Fit the LDA model
-ldaModel = fitcdiscr(neuralMatrix, behaviorID);
+ldaModel = fitcdiscr(fitMatrix, behaviorID);
 
 % Eigenvalue decomposition for the lda components
 [eigenvectors, eigenvalues] = eig(ldaModel.BetweenSigma, ldaModel.Sigma);
@@ -57,7 +69,79 @@ ldaModel = fitcdiscr(neuralMatrix, behaviorID);
 eigenvectors = eigenvectors(:, sortedIndices);
 
 % Project the data onto the LDA components
-projectedData = neuralMatrix * eigenvectors;
+projectedData = fitMatrix * eigenvectors;
+
+% Project full data matrix to plot trajectories
+projectedTraj = dataMatZ(:, idM56) * eigenvectors;
+
+dataBhv.startFrame = 1 + floor(dataBhv.bhvStartTime / opts.frameSize);
+
+%%
+bhvPlot = 5;
+
+nComponents = 5;
+[ax] = lda_plot_behaviors(projectedData, behaviorID, nComponents);
+%
+lda_plot_trajectories(projectedTraj, dataBhv, behaviorID, nComponents, ax, bhvPlot);
+
+
+
+%%
+
+function lda_plot_trajectories(projectedTraj, dataBhv, behaviorID, nComponents, ax, bhvPlot)
+bhvList = unique(behaviorID);
+
+bhvStartFrames = find(dataBhv.bhvID == bhvPlot);
+
+% colors = distinguishable_colors(length(bhvList));
+colors = colors_for_behaviors(bhvList);
+
+% Plot trajectories
+jTraj = 1;
+% for iStart = 2 : size(dataBhv, 1)
+for iStart = 1 : length(bhvStartFrames)
+    % Skip trajectories that involve in_nest_sleeping_or_irrelevant
+    if dataBhv.bhvID(bhvStartFrames(iStart)) == -1
+        continue
+    end
+    iStartFrame = dataBhv.startFrame(bhvStartFrames(iStart));
+    iEndFrame = dataBhv.startFrame(bhvStartFrames(iStart) + 1);
+    iColor = colors(bhvList == dataBhv.bhvID(bhvStartFrames(iStart)), :);
+
+    % Every time there are 3 trajectories, erase the first one
+    if jTraj == 4
+        jTraj = 1;
+        delete(plt)
+        delete(sct1)
+        delete(sctS)
+        delete(sctE)
+    end
+    for iComp = 1 : nComponents-1
+        axes(ax(iComp))
+        hold on
+
+        plt(iComp, jTraj) = plot(projectedTraj(iStartFrame : iEndFrame, iComp), projectedTraj(iStartFrame : iEndFrame, iComp+1), 'Color', iColor, 'lineWidth', 2);
+        sct1(iComp, jTraj) = scatter(projectedTraj(iStartFrame : iEndFrame, iComp), projectedTraj(iStartFrame : iEndFrame, iComp+1), 30, 'k', 'filled');
+        sctS(iComp, jTraj) = scatter(projectedTraj(iStartFrame, iComp), projectedTraj(iStartFrame, iComp+1), 100, iColor, 'filled', 'MarkerEdgeColor', 'k');
+        sctE(iComp, jTraj) = scatter(projectedTraj(iEndFrame, iComp), projectedTraj(iEndFrame, iComp+1), 75, iColor, 'd', 'filled', 'MarkerEdgeColor', 'k');
+    end
+    jTraj = jTraj + 1;
+end
+
+end % function
+
+
+
+function ax = lda_plot_behaviors(projectedData, behaviorID, nComponents)
+% Generates an LDA space based on spike counts peri-onset w.r.t. behavior
+% onsets, across all behaviors
+% Projects the peri-onset spike times into the LDA space for each behvaior.
+% For the first 10 LDA components, Plots the trial-wise examples from each behavior, or the means + std (as
+% ellipses, as a function of component x and x + 1
+
+bhvList = unique(behaviorID);
+% colors = distinguishable_colors(length(bhvList));
+colors = colors_for_behaviors(bhvList);
 
 % Create 3x3 grid of subplots
 % Get monitor positions and size
@@ -70,14 +154,17 @@ secondMonitorPosition = monitorPositions(2, :);
 fig = figure(81);
 clf
 set(fig, 'Position', secondMonitorPosition);
-[ha, pos] = tight_subplot(3, 3);
+nPlot = nComponents - 1;
+[ax, pos] = tight_subplot(ceil(nPlot/2), ceil(nPlot/2));
 
+
+% Plot all variances as ellipses
 for bhv = 1 : length(bhvList)
     bhvIdx = behaviorID == bhvList(bhv);
     bhvColor = colors(bhv,:);
-    for i = 1:9
-        axes(ha(i))
-        % subplot(3, 3, i);
+
+    for i = 1 : nComponents-1
+        axes(ax(i))
         hold on
 
         % Extract the successive pairs of components
@@ -87,39 +174,64 @@ for bhv = 1 : length(bhvList)
         % Create a scatter plot of the projected data for each pair of components
         plotDataOrMean = 0;
         if plotDataOrMean
-        scatter(componentX, componentY, 30, bhvColor);
+            scatter(componentX, componentY, 30, bhvColor);
         else
             x = mean(componentX);
             y = mean(componentY);
-            % w = std(componentX) / sqrt(length(componentX));
-            % h = std(componentY) / sqrt(length(componentY));
             w = std(componentX);
             h = std(componentY);
 
-        s = scatter(x, y, 100, bhvColor, 'filled');
+            % Generate points on the ellipse
+            theta = linspace(0, 2 * pi, 100); % Generate 100 points
+            ellipseX = (w / 2) * cos(theta) + x; % X coordinates
+            ellipseY = (h / 2) * sin(theta) + y; % Y coordinates
 
-         % Generate points on the ellipse
-    theta = linspace(0, 2 * pi, 100); % Generate 100 points
-    ellipseX = (w / 2) * cos(theta) + x; % X coordinates
-    ellipseY = (h / 2) * sin(theta) + y; % Y coordinates
-    
-    % Plot the ellipse
-    fill(ellipseX, ellipseY, bhvColor, 'FaceAlpha', 0.2); % Fill the ellipse with semi-transparency
-
+            % Plot the ellipse
+            fill(ellipseX, ellipseY, bhvColor, 'FaceAlpha', 0.15, 'EdgeColor', 'none'); % Fill the ellipse with semi-transparency
         end
-        title(['LDA Components ', num2str(i), ' and ', num2str(i+1)]);
-        % xlabel(['Component ', num2str(i)]);
-        % ylabel(['Component ', num2str(i+1)]);
-        xlabel([]);
-        ylabel([]);
-        grid on;
+        if bhv == 1
+            title(['LDA Components ', num2str(i), ' and ', num2str(i+1)]);
+            % xlabel(['Component ', num2str(i)]);
+            % ylabel(['Component ', num2str(i+1)]);
+            xlabel([]);
+            ylabel([]);
+            grid on;
+        end
+    end
+end
+% Plot all means on top of their variance ellipses
+for bhv = 1 : length(bhvList)
+    bhvIdx = behaviorID == bhvList(bhv);
+    bhvColor = colors(bhv,:);
+
+    for i = 1 : nComponents-1
+        axes(ax(i))
+        hold on
+
+        % Extract the successive pairs of components
+        componentX = projectedData(bhvIdx, i);
+        componentY = projectedData(bhvIdx, i+1);
+
+        % Create a scatter plot of the projected data for each pair of components
+        plotDataOrMean = 0;
+        if plotDataOrMean
+        else
+            x = mean(componentX);
+            y = mean(componentY);
+            s = scatter(x, y, 130, bhvColor, 'filled');
+        end
     end
 end
 % Adjust subplot layout to minimize overlap
 sgtitle('LDA Component Projections'); % Add a centered title if desired
 % set(gcf, 'Units', 'normalized', 'OuterPosition', [0 0 1 1]); % Maximize figure within monitor
 
-end
+end % function
+
+
+
+
+
 
 
 
@@ -139,6 +251,9 @@ end
 trainedModel = fitcdiscr(neuralMatrix, behaviorID);
 
 end
+
+
+
 
 function averageAccuracy = Perform5FoldCVLDA(neuralMatrix, behaviorID)
 % Perform5FoldCVLDA: Performs 5-fold cross-validation for Linear Discriminant Analysis on spiking data.

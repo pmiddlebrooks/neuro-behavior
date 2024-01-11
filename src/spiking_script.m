@@ -200,7 +200,7 @@ startTimes = dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode);
 % startTimes = dataBhv.bhvStartTime(allValid);
 startTimes(end-3:end) = [];
 startTimes(1:3) = [];
-startFrames = floor(startTimes ./ opts.frameSize);
+startFrames = 1 + floor(startTimes ./ opts.frameSize);
 
 alignedMat = cell(length(startFrames), 1);
 
@@ -286,7 +286,7 @@ for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
     iValidBhv = opts.validBhv(:, opts.bhvCodes == analyzeCodes(iBhv));
-    bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode & iValidBhv) ./ opts.frameSize);
+    bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode & iValidBhv) ./ opts.frameSize);
     bhvStartFrames(bhvStartFrames < dataWindow(end) + 1) = [];
     bhvStartFrames(bhvStartFrames > size(dataMatZ, 1) - dataWindow(end)) = [];
 
@@ -400,7 +400,7 @@ dataMatMahala = zscore(dataMat(:, strcmp(areaLabels, brainArea)));
 beforeAfterFrames = 3;
 
 dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
-onsetFrames = floor(dataBhvTruncate.bhvStartTime ./ opts.frameSize);
+onsetFrames = 1 + floor(dataBhvTruncate.bhvStartTime ./ opts.frameSize);
 
 
 mdist = cell(length(analyzeCodes), 1);
@@ -449,7 +449,7 @@ mdist = zeros(length(analyzeCodes), length(brainAreas), length(beforeAfterFrames
 % loop through behaviors to get start times of each behavior
 for iBhv = 1 : length(analyzeCodes)
     jBhvInd = dataBhvTruncate.bhvID == analyzeCodes(iBhv);
-    jOnsetFrames = floor(dataBhvTruncate.bhvStartTime(jBhvInd) ./ opts.frameSize);
+    jOnsetFrames = 1 + floor(dataBhvTruncate.bhvStartTime(jBhvInd) ./ opts.frameSize);
 
 
     if length(jOnsetFrames) > minTrial
@@ -546,7 +546,7 @@ for iCurr = 1 : length(analyzeCodes)
         if iCurr ~= jPrev
             % Get euclidians coming into currBhv from all other behaviors
             currIdx = dataBhvTruncate.bhvID == analyzeCodes(iCurr);
-            currBhvOnsetAll = round(dataBhvTruncate.bhvStartTime(currIdx) ./ opts.frameSize);
+            currBhvOnsetAll = 1 + round(dataBhvTruncate.bhvStartTime(currIdx) ./ opts.frameSize);
 
             % Get euclidians coming into currBhv from specific prevBhv
             prevIdx = currIdx & ...
@@ -554,7 +554,7 @@ for iCurr = 1 : length(analyzeCodes)
                 dataBhvTruncate.prevDur >= minBeforeDur & ...
                 dataBhvTruncate.prevDur <= maxBeforeDur;
 
-            currBhvOnsetSub = round(dataBhvTruncate.bhvStartTime(prevIdx) ./ opts.frameSize);
+            currBhvOnsetSub = 1 + round(dataBhvTruncate.bhvStartTime(prevIdx) ./ opts.frameSize);
 
 
             iLabel = [analyzeBhv{jPrev}, ' then ', analyzeBhv{iCurr}];
@@ -793,7 +793,7 @@ nTrial = 40;
 bhvBlockWindow = 15 * 60 / opts.frameSize;
 dataWindow = -2 / opts.frameSize : 2 / opts.frameSize;
 
-bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
 
 blockFrameStarts = 1 + linspace(0, 210, 8) .* 60 ./ opts.frameSize; % get a 10 min span every 30 min
 
