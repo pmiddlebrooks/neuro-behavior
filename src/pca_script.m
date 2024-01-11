@@ -10,7 +10,7 @@ periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
 dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 for iBhv = 1 : length(analyzeCodes)
-    iStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
+    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
     iStartFrames = iStartFrames(3:end-3);
     behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames), 1)];
     for jStart = 1 : length(iStartFrames)
@@ -28,7 +28,7 @@ end
 figure(7);
 onsetInd = length(dataWindow)/2 + 1;
 for iBhv = 1 : length(analyzeCodes)
-    iStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
+    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
     iStartFrames = iStartFrames(3:end-3);
     for jStart = 1 : length(iStartFrames)
         cla
@@ -41,13 +41,16 @@ end
 
 
 %%
-pca_project_and_plot(neuralMatrix(:, idM56), behaviorID)
+nComponents = 5;
+pca_project_and_plot(neuralMatrix(:, idM56), behaviorID, nComponents)
+% pca_project_and_plot(neuralMatrix(:, [idM56 idDS]), behaviorID)
 
 %%
 
-function pca_project_and_plot(neuralMatrix, behaviorID)
+function pca_project_and_plot(neuralMatrix, behaviorID, nComponents)
 bhvList = unique(behaviorID);
-colors = distinguishable_colors(length(bhvList));
+% colors = distinguishable_colors(length(bhvList));
+colors = colors_for_behaviors(bhvList);
 
 % Perform PCA
 [coeff, score, ~, ~, explained] = pca(neuralMatrix);
@@ -63,12 +66,13 @@ secondMonitorPosition = monitorPositions(2, :);
 fig = figure(80);
 clf
 set(fig, 'Position', secondMonitorPosition);
+nPlot = nComponents - 1;
 [ha, pos] = tight_subplot(3, 3);
 
 for bhv = 1 : length(bhvList)
     bhvIdx = behaviorID == bhvList(bhv);
     bhvColor = colors(bhv,:);
-    for i = 1:9
+    for i = 1 : nComponents-1
         axes(ha(i))
         % subplot(3, 3, i);
         hold on
@@ -97,7 +101,7 @@ for bhv = 1 : length(bhvList)
             ellipseY = (h / 2) * sin(theta) + y; % Y coordinates
 
             % Plot the ellipse
-            fill(ellipseX, ellipseY, bhvColor, 'FaceAlpha', 0.2); % Fill the ellipse with semi-transparency
+            fill(ellipseX, ellipseY, bhvColor, 'FaceAlpha', 0.1, 'EdgeColor', 'none'); % Fill the ellipse with semi-transparency
 
         end
         title(['PCA Components ', num2str(i), ' and ', num2str(i+1)]);

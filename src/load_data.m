@@ -29,14 +29,6 @@ if strcmp(dataType, 'behavior')
     changeBhvIdx = find(changeBhv);
 
 
-    % % Convert the data to frame time as per opts.frameSize
-    %
-    % bhvStartFrame = [1; ceil(changeBhvIdx / opts.fsBhv / opts.frameSize)];
-    % bhvStartTime = (bhvStartFrame - 1) * opts.frameSize;
-    %
-    % bhvDur = [diff(bhvStartFrame); opts.collectFor / opts.frameSize - bhvStartFrame(end) + 1]; % How many frames did behavior last (frame rate / duration in sec)
-    % bhvID = [bhvID(1); bhvID(changeBhvIdx)]; % Which behavior it was
-    % bhvName = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)]; % Which behavior it was
 
     data = table();
     data.bhvDur = [diff([0; dataWindow.Time(changeBhvIdx)]); opts.collectFor - dataWindow.Time(changeBhvIdx(end))];

@@ -55,7 +55,7 @@ bhv = 'face_groom_1';
 
 bhvCode = analyzeCodes(strcmp(analyzeBhv, bhv));
 
-bhvStartFrames = floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
 bhvStartFrames(bhvStartFrames < 10) = [];
 bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 
@@ -470,7 +470,7 @@ fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(i
 %% Get data ready for CCA canonical-correlation-maps
 areas = {'M56', 'VS'};
 dataBhv = dataBhv(8:end-8,:);
-bhvStartFrames = floor(dataBhv.bhvStartTime ./ opts.frameSize);
+bhvStartFrames = 1 + floor(dataBhv.bhvStartTime ./ opts.frameSize);
 expCond = dataBhv.bhvID;
 
 nTrial = length(bhvStartFrames);
