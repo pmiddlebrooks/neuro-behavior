@@ -574,55 +574,16 @@ end
 %%  Noise Correlations for sequences vs. all behaviors (going into behavior X, coming from behavior Y or from all different behaviors)
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %    For each behavior, what are the most common preceding behaviors?
-dataBhv.prevID = [nan; dataBhv.bhvID(1:end-1)];
-dataBhv.prevDur = [nan; dataBhv.bhvDur(1:end-1)];
-dataBhv.prevStartTime = [nan; dataBhv.bhvStartTime(1:end-1)];
-dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
-validBhvTruncate = opts.validBhv(3:end-3,:);
 
-minCurrDur = .15;
-minBeforeDur = .15; % previous behavior must last within a range (sec)
-maxBeforeDur = 2;
-minNumBoutsPrev = 20;
-
-% sequenceNames = cell(length(analyzeCodes));
-sequenceNames = {};
-% startTimes = cell(length(analyzeCodes));
-seqStartTimes = {};
-for iCurr = 1 : length(analyzeCodes)
-
-    % For each behavior:
-    % - Get the noise correlations for the current behavior (like above)
-    % and all (valid) previous behaviors
-    for jPrev = 1 : length(analyzeCodes)
-        if iCurr ~= jPrev
-            % Make sure this sequence passes requisite criteria
-            currIdx = dataBhvTruncate.bhvID == analyzeCodes(iCurr) & ...
-                validBhvTruncate(:, opts.bhvCodes == analyzeCodes(iCurr));
-            goodSeqIdx = currIdx & ...
-                dataBhvTruncate.prevID == analyzeCodes(jPrev) & ...
-                dataBhvTruncate.prevDur >= minBeforeDur & ...
-                dataBhvTruncate.prevDur <= maxBeforeDur;
-            if sum(goodSeqIdx)
-                sequenceNames = [sequenceNames; [analyzeBhv{iCurr}, ' after ', analyzeBhv{jPrev}]];
-                seqStartTimes = [seqStartTimes; [dataBhvTruncate.bhvStartTime(goodSeqIdx), dataBhvTruncate.prevStartTime(goodSeqIdx)]];
-            end
-        end
-
-    end
-end
-%%
-nTrial = cell2mat(cellfun(@(x) size(x, 1), seqStartTimes, 'UniformOutput', false));
-
-[~, i] = sort(nTrial, 'descend');
-nTrial = nTrial(i);
-sequenceNames = sequenceNames(i);
-seqStartTimes = seqStartTimes(i);
-seqStartTimes(1:10)
-sequenceNames(1:10)
+[seqStartTimes, seqCodes, seqNames] = behavior_sequences(dataBhv, analyzeCodes, analyzeBhv);
 
 % Use all sequences with at least 40 trials
+nTrial = cell2mat(cellfun(@(x) size(x, 1), seqStartTimes, 'UniformOutput', false));
+[~, i] = sort(nTrial, 'descend');
+nTrial = nTrial(i);
 over40 = find(nTrial >= 40, 1, 'last');
+
+
 %%
 
 periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
@@ -631,9 +592,9 @@ edges = -1 : .02 : 1;
 binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 for seq = 1 : over40
-    seqStr = strsplit(sequenceNames{seq});
-    bhvCurr = analyzeCodes(strcmp(analyzeBhv, seqStr{1}));
-    bhvPrev = analyzeCodes(strcmp(analyzeBhv, seqStr{3}));
+    seqStr = strsplit(seqNames{seq});
+    bhvCurr = analyzeCodes(strcmp(analyzeBhv, seqStr{3}));
+    bhvPrev = analyzeCodes(strcmp(analyzeBhv, seqStr{1}));
 
     goodStarts = dataBhvTruncate.bhvID == bhvCurr & validBhvTruncate(:, opts.bhvCodes == bhvCurr);
     allStarts = 1 + floor(dataBhvTruncate.bhvStartTime(goodStarts) ./ opts.frameSize);
@@ -643,7 +604,7 @@ for seq = 1 : over40
     allStartsSub = allStarts(randperm(length(allStarts)));
     allStartsSub = allStartsSub(1:size(seqStarts, 1));
 
-    nonseqStarts = setdiff(allStarts, seqStarts(:,1));
+    nonseqStarts = setdiff(allStarts, seqStarts(:,2));
     if length(nonseqStarts) > size(seqStarts, 1)
         nonseqStarts = nonseqStarts(randperm(size(seqStarts, 1)));
     elseif length(nonseqStarts) < size(seqStarts, 1)
@@ -663,8 +624,8 @@ for seq = 1 : over40
     for i = 1 : size(seqStarts, 1)
         allSpikesCurrSub(i,:) = sum(dataMat(allStartsSub(i, 1) + dataWindow, :)); % trial-matched subset
         nonSeqSpikesCurr(i,:) = sum(dataMat(nonseqStarts(i, 1) + dataWindow, :)); % trial-matched subset
-        seqSpikesCurr(i,:) = sum(dataMat(seqStarts(i, 1) + dataWindow, :));
-        seqSpikesPrev(i,:) = sum(dataMat(seqStarts(i, 2) + dataWindow, :));
+        seqSpikesCurr(i,:) = sum(dataMat(seqStarts(i, 2) + dataWindow, :));
+        seqSpikesPrev(i,:) = sum(dataMat(seqStarts(i, 1) + dataWindow, :));
     end
 
     % Within area correlations

@@ -1,23 +1,26 @@
 %% Go to spiking_script and get behavioral and neural data
 
+% Alter this to try out different populations
+idInd = [idM56 idDS]
+idInd = [idM56]
 %% Make a matrix with sum or mean spikes within a peri-onset window for each behavior
 
-% Create a neural matrix. Each column is a neuron. Each row are summed or mean spike
-% counts peri-onset of each behavior.
-behaviorID = [];
-neuralMatrix = [];
-periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
-dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
-
-for iBhv = 1 : length(analyzeCodes)
-    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
-    iStartFrames = iStartFrames(3:end-3);
-    behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames), 1)];
-    for jStart = 1 : length(iStartFrames)
-        % neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
-        neuralMatrix = [neuralMatrix; mean(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
-    end
-end
+% % Create a neural matrix. Each column is a neuron. Each row are summed or mean spike
+% % counts peri-onset of each behavior.
+% behaviorID = [];
+% neuralMatrix = [];
+% periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
+% dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+% 
+% for iBhv = 1 : length(analyzeCodes)
+%     iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
+%     iStartFrames = iStartFrames(3:end-3);
+%     behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames), 1)];
+%     for jStart = 1 : length(iStartFrames)
+%         % neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
+%         neuralMatrix = [neuralMatrix; mean(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
+%     end
+% end
 %% Instead, make a matrix with concatenated peri-onset bins for each behavior
 
 % Create a neural matrix. Each column is a neuron. Each row are spike
@@ -36,14 +39,39 @@ for iBhv = 1 : length(analyzeCodes)
         neuralMatrix = [neuralMatrix; dataMatZ(iStartFrames(jStart) + dataWindow, :)];
     end
 end
+
+
+%% Try to train it with a matrix that goes from -.1 before onset, through the duration of the behavior, to .1 s before next behavior onset
+behaviorID = [];
+neuralMatrix = [];
+preCurrFrames = -.1 / opts.frameSize;
+preNextFrames = -.1 / opts.frameSize;
+dataBhv.bhvDurFrame = floor(dataBhv.bhvDur ./ opts.frameSize);
+for iBhv = 1 : length(analyzeCodes)
+    dataBhvInd = dataBhv.bhvID == analyzeCodes(iBhv);
+    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhvInd) ./ opts.frameSize);
+    iDurFrames = dataBhv.bhvDurFrame(dataBhvInd);
+    iStartFrames = iStartFrames(3:end-3);
+    iDurFrames = iDurFrames(3:end-3);
+    for jStart = 1 : length(iStartFrames)
+        % Get the duration of this behavior (from -.1 to .1 before next
+        % behavior
+        jWindowDur = iDurFrames(jStart) + preNextFrames;
+        dataWindow = preCurrFrames : jWindowDur;
+        behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(dataWindow), 1)];
+        neuralMatrix = [neuralMatrix; dataMatZ(iStartFrames(jStart) + dataWindow, :)];
+    end
+end
+
+
 %%
 
 % MdlLinear = fitcdiscr(neuralMatrix, behaviorID);
 
-averageAccuracy = Perform5FoldCVLDA(neuralMatrix(:, idM56), behaviorID);
+averageAccuracy = Perform5FoldCVLDA(neuralMatrix(:, idInd), behaviorID);
 %%
 
-trainedModel = train_full_lda_model(neuralMatrix(:, idM56), behaviorID)
+trainedModel = train_full_lda_model(neuralMatrix(:, idInd), behaviorID)
 
 
 % %%
@@ -57,7 +85,7 @@ trainedModel = train_full_lda_model(neuralMatrix(:, idM56), behaviorID)
 
 
 %%   FIT and project LDA model
-fitMatrix = neuralMatrix(:, idM56);
+fitMatrix = neuralMatrix(:, idInd);
 % Fit the LDA model
 ldaModel = fitcdiscr(fitMatrix, behaviorID);
 
@@ -72,41 +100,65 @@ eigenvectors = eigenvectors(:, sortedIndices);
 projectedData = fitMatrix * eigenvectors;
 
 % Project full data matrix to plot trajectories
-projectedTraj = dataMatZ(:, idM56) * eigenvectors;
+projectedTraj = dataMatZ(:, idInd) * eigenvectors;
 
 dataBhv.startFrame = 1 + floor(dataBhv.bhvStartTime / opts.frameSize);
 
-%%
-bhvPlot = 5;
+
+
+
+
+
+%% Plot behavior onsets/transitions in LDA space
 
 nComponents = 5;
 [ax] = lda_plot_behaviors(projectedData, behaviorID, nComponents);
-%
-lda_plot_trajectories(projectedTraj, dataBhv, behaviorID, nComponents, ax, bhvPlot);
 
+
+
+
+
+%% Plot ongoing behavioral sequences
+bhv2Plot = 0;
+lda_plot_trajectories(projectedTraj, dataBhv, behaviorID, nComponents, ax, bhv2Plot);
+
+
+%%   Plot specific behavior sequences
+seq1 = 15;
+seq2 = 6;
+seqCode = [seq1 seq2];
+
+% Get all sequence start times and IDs
+[seqStartTimes, seqCodes, seqNames] = behavior_sequences(dataBhv, analyzeCodes, analyzeBhv);
+
+% Make a dataBhv table from a desired sequence
+% which index in seqStartTimes is it?
+seqIdx = seqCodes(:,1) == seq1 & seqCodes(:,2) == seq2;
+% dataBhvIdx = dataBhv.bhvStartTime == seqStartTimes{seqIdx}(:,2);
+dataBhvIdx = ismember(dataBhv.bhvStartTime, seqStartTimes{seqIdx}(:,2));
+dataBhvSeq = dataBhv(dataBhvIdx, :);
+dataBhvSeq.bhvDurFrame = floor(dataBhvSeq.bhvDur ./ opts.frameSize);
+
+
+lda_plot_seq_trajectories(projectedTraj, dataBhvSeq, seqCode, nComponents, ax)
 
 
 %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Plot trajectories of behavioral sequences
+function lda_plot_seq_trajectories(projectedTraj, dataBhv, seqCode, nComponents, ax)
 
-function lda_plot_trajectories(projectedTraj, dataBhv, behaviorID, nComponents, ax, bhvPlot)
-bhvList = unique(behaviorID);
-
-bhvStartFrames = find(dataBhv.bhvID == bhvPlot);
-
-% colors = distinguishable_colors(length(bhvList));
-colors = colors_for_behaviors(bhvList);
+% bhvList = unique(behaviorID);
+colors = colors_for_behaviors(seqCode);
 
 % Plot trajectories
 jTraj = 1;
 % for iStart = 2 : size(dataBhv, 1)
-for iStart = 1 : length(bhvStartFrames)
-    % Skip trajectories that involve in_nest_sleeping_or_irrelevant
-    if dataBhv.bhvID(bhvStartFrames(iStart)) == -1
-        continue
-    end
-    iStartFrame = dataBhv.startFrame(bhvStartFrames(iStart));
-    iEndFrame = dataBhv.startFrame(bhvStartFrames(iStart) + 1);
-    iColor = colors(bhvList == dataBhv.bhvID(bhvStartFrames(iStart)), :);
+for iStart = 1 : size(dataBhv, 1)
+    iStartFrame = dataBhv.startFrame(iStart);
+    iEndFrame = iStartFrame + dataBhv.bhvDurFrame(iStart);
+    iStartColor = colors(1,:);
+    iEndColor = colors(2,:);
 
     % Every time there are 3 trajectories, erase the first one
     if jTraj == 4
@@ -120,10 +172,60 @@ for iStart = 1 : length(bhvStartFrames)
         axes(ax(iComp))
         hold on
 
-        plt(iComp, jTraj) = plot(projectedTraj(iStartFrame : iEndFrame, iComp), projectedTraj(iStartFrame : iEndFrame, iComp+1), 'Color', iColor, 'lineWidth', 2);
+        plt(iComp, jTraj) = plot(projectedTraj(iStartFrame : iEndFrame, iComp), projectedTraj(iStartFrame : iEndFrame, iComp+1), 'Color', iStartColor, 'lineWidth', 2);
         sct1(iComp, jTraj) = scatter(projectedTraj(iStartFrame : iEndFrame, iComp), projectedTraj(iStartFrame : iEndFrame, iComp+1), 30, 'k', 'filled');
-        sctS(iComp, jTraj) = scatter(projectedTraj(iStartFrame, iComp), projectedTraj(iStartFrame, iComp+1), 100, iColor, 'filled', 'MarkerEdgeColor', 'k');
-        sctE(iComp, jTraj) = scatter(projectedTraj(iEndFrame, iComp), projectedTraj(iEndFrame, iComp+1), 75, iColor, 'd', 'filled', 'MarkerEdgeColor', 'k');
+        sctS(iComp, jTraj) = scatter(projectedTraj(iStartFrame, iComp), projectedTraj(iStartFrame, iComp+1), 150, iStartColor, 'filled', 'MarkerEdgeColor', 'k');
+        sctE(iComp, jTraj) = scatter(projectedTraj(iEndFrame, iComp), projectedTraj(iEndFrame, iComp+1), 150, iEndColor, 'd', 'filled', 'MarkerEdgeColor', 'k');
+    end
+    jTraj = jTraj + 1;
+end
+
+end % function
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function lda_plot_trajectories(projectedTraj, dataBhv, behaviorID, nComponents, ax, bhv2Plot)
+bhvList = unique(behaviorID);
+
+bhvStartIdx = find(dataBhv.bhvID == bhv2Plot);
+
+% colors = distinguishable_colors(length(bhvList));
+colors = colors_for_behaviors(bhvList);
+
+% Plot trajectories
+jTraj = 1;
+for iStart = 2 : size(dataBhv, 1)
+% for iStart = 1 : length(bhvStartIdx)
+    % Skip trajectories that involve in_nest_sleeping_or_irrelevant
+    % if dataBhv.bhvID(bhvStartIdx(iStart)) == -1 || dataBhv.bhvID(bhvStartIdx(iStart)+1) == -1
+    if dataBhv.bhvID(iStart) == -1 || dataBhv.bhvID(iStart+1) == -1
+        continue
+    end
+    % iStartFrame = dataBhv.startFrame(bhvStartIdx(iStart));
+    % iEndFrame = dataBhv.startFrame(bhvStartIdx(iStart) + 1);
+    % iStartColor = colors(bhvList == dataBhv.bhvID(bhvStartIdx(iStart)), :);
+    % iEndColor = colors(bhvList == dataBhv.bhvID(bhvStartIdx(iStart) + 1), :);
+    iStartFrame = dataBhv.startFrame(iStart);
+    iEndFrame = dataBhv.startFrame(iStart + 1);
+    iStartColor = colors(bhvList == dataBhv.bhvID(iStart), :);
+    iEndColor = colors(bhvList == dataBhv.bhvID(iStart + 1), :);
+
+    % Every time there are 3 trajectories, erase the first one
+    if jTraj == 4
+        jTraj = 1;
+        delete(plt)
+        delete(sct1)
+        delete(sctS)
+        delete(sctE)
+    end
+    for iComp = 1 : nComponents-1
+        axes(ax(iComp))
+        hold on
+
+        plt(iComp, jTraj) = plot(projectedTraj(iStartFrame : iEndFrame, iComp), projectedTraj(iStartFrame : iEndFrame, iComp+1), 'Color', iStartColor, 'lineWidth', 2);
+        sct1(iComp, jTraj) = scatter(projectedTraj(iStartFrame : iEndFrame, iComp), projectedTraj(iStartFrame : iEndFrame, iComp+1), 30, 'k', 'filled');
+        sctS(iComp, jTraj) = scatter(projectedTraj(iStartFrame, iComp), projectedTraj(iStartFrame, iComp+1), 150, iStartColor, 'filled', 'MarkerEdgeColor', 'k');
+        sctE(iComp, jTraj) = scatter(projectedTraj(iEndFrame, iComp), projectedTraj(iEndFrame, iComp+1), 150, iEndColor, 'd', 'filled', 'MarkerEdgeColor', 'k');
     end
     jTraj = jTraj + 1;
 end
@@ -132,6 +234,8 @@ end % function
 
 
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function ax = lda_plot_behaviors(projectedData, behaviorID, nComponents)
 % Generates an LDA space based on spike counts peri-onset w.r.t. behavior
 % onsets, across all behaviors
