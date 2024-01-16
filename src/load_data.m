@@ -31,12 +31,12 @@ if strcmp(dataType, 'behavior')
 
 
     data = table();
-    data.bhvDur = [diff([0; dataWindow.Time(changeBhvIdx)]); opts.collectFor - dataWindow.Time(changeBhvIdx(end))];
-    data.bhvID = [bhvID(1); bhvID(changeBhvIdx)];
-    % data.bhvName = bhvName;
-    data.bhvName = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
-    data.bhvStartTime = [0; dataWindow.Time(changeBhvIdx)];
-    % data.bhvStartFrame = bhvStartFrame;
+    data.Dur = [diff([0; dataWindow.Time(changeBhvIdx)]); opts.collectFor - dataWindow.Time(changeBhvIdx(end))];
+    data.ID = [bhvID(1); bhvID(changeBhvIdx)];
+    % data.Name = bhvName;
+    data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
+    data.StartTime = [0; dataWindow.Time(changeBhvIdx)];
+    % data.StartFrame = bhvStartFrame;
 
 elseif strcmp(dataType, 'neuron')
     fileName = 'cluster_info.tsv';

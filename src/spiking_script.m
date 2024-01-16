@@ -32,12 +32,12 @@ dataBhv = load_data(opts, 'behavior');
 
 
 
-codes = unique(dataBhv.bhvID);
+codes = unique(dataBhv.ID);
 % codes(codes == -1) = []; % Get rid of the nest/irrelevant behaviors
 behaviors = {};
 for iBhv = 1 : length(codes)
-    firstIdx = find(dataBhv.bhvID == codes(iBhv), 1);
-    behaviors = [behaviors, dataBhv.bhvName{firstIdx}];
+    firstIdx = find(dataBhv.ID == codes(iBhv), 1);
+    behaviors = [behaviors, dataBhv.Name{firstIdx}];
     % fprintf('behavior %d:\t code:%d\t name: %s\n', i, codes(i), dataBhvAlex.Behavior{firstIdx})
 end
 
@@ -116,7 +116,7 @@ nrnDataPath = [nrnDataPath, 'recording1/'];
 opts.dataPath = nrnDataPath;
 
 data = load_data(opts, 'neuron');
-data.bhvDur = dataBhv.bhvDur;
+data.bhvDur = dataBhv.Dur;
 clusterInfo = data.ci;
 spikeTimes = data.spikeTimes;
 spikeClusters = data.spikeClusters;
@@ -195,9 +195,9 @@ brainArea = 'DS';
 % get start times of all valid instances of this behavior
 bhvCode = analyzeCodes(strcmp(analyzeBhv, 'investigate_1'));
 
-startTimes = dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode);
+startTimes = dataBhv.StartTime(dataBhv.ID == bhvCode);
 % Use all valid behavior startTimes
-% startTimes = dataBhv.bhvStartTime(allValid);
+% startTimes = dataBhv.StartTime(allValid);
 startTimes(end-3:end) = [];
 startTimes(1:3) = [];
 startFrames = 1 + floor(startTimes ./ opts.frameSize);
@@ -286,7 +286,7 @@ for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
     iValidBhv = opts.validBhv(:, opts.bhvCodes == analyzeCodes(iBhv));
-    bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode & iValidBhv) ./ opts.frameSize);
+    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode & iValidBhv) ./ opts.frameSize);
     bhvStartFrames(bhvStartFrames < dataWindow(end) + 1) = [];
     bhvStartFrames(bhvStartFrames > size(dataMatZ, 1) - dataWindow(end)) = [];
 
@@ -400,14 +400,14 @@ dataMatMahala = zscore(dataMat(:, strcmp(areaLabels, brainArea)));
 beforeAfterFrames = 3;
 
 dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
-onsetFrames = 1 + floor(dataBhvTruncate.bhvStartTime ./ opts.frameSize);
+onsetFrames = 1 + floor(dataBhvTruncate.StartTime ./ opts.frameSize);
 
 
 mdist = cell(length(analyzeCodes), 1);
 mdistBefore = cell(length(analyzeCodes), 1);
 mdistAfter = cell(length(analyzeCodes), 1);
 for iBhv = 1 : length(analyzeCodes)
-    iOnsetFrames = onsetFrames(dataBhvTruncate.bhvID == analyzeCodes(i));
+    iOnsetFrames = onsetFrames(dataBhvTruncate.ID == analyzeCodes(i));
 
     mdist{i} = mahal(dataMatMahala(iOnsetFrames, :), dataMatMahala(iOnsetFrames, :));
     mdistBefore{i} = mahal(dataMatMahala(iOnsetFrames, :), dataMatMahala(iOnsetFrames - beforeAfterFrames, :));
@@ -448,8 +448,8 @@ figurePath = ['E:/Projects/neuro-behavior/docs/',animal,'/',sessionSave, '/figur
 mdist = zeros(length(analyzeCodes), length(brainAreas), length(beforeAfterFrames)); % behaviors X brainAreas X timeFrames
 % loop through behaviors to get start times of each behavior
 for iBhv = 1 : length(analyzeCodes)
-    jBhvInd = dataBhvTruncate.bhvID == analyzeCodes(iBhv);
-    jOnsetFrames = 1 + floor(dataBhvTruncate.bhvStartTime(jBhvInd) ./ opts.frameSize);
+    jBhvInd = dataBhvTruncate.ID == analyzeCodes(iBhv);
+    jOnsetFrames = 1 + floor(dataBhvTruncate.StartTime(jBhvInd) ./ opts.frameSize);
 
 
     if length(jOnsetFrames) > minTrial
@@ -515,8 +515,8 @@ end
 dataMatEuc = dataMat;
 dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
 
-dataBhv.prevBhvID = [nan; dataBhv.bhvID(1:end-1)];
-dataBhv.prevDur = [nan; dataBhv.bhvDur(1:end-1)];
+dataBhv.prevBhvID = [nan; dataBhv.ID(1:end-1)];
+dataBhv.prevDur = [nan; dataBhv.Dur(1:end-1)];
 
 
 %%
@@ -545,8 +545,8 @@ for iCurr = 1 : length(analyzeCodes)
     for jPrev = 1 : length(analyzeCodes)
         if iCurr ~= jPrev
             % Get euclidians coming into currBhv from all other behaviors
-            currIdx = dataBhvTruncate.bhvID == analyzeCodes(iCurr);
-            currBhvOnsetAll = 1 + round(dataBhvTruncate.bhvStartTime(currIdx) ./ opts.frameSize);
+            currIdx = dataBhvTruncate.ID == analyzeCodes(iCurr);
+            currBhvOnsetAll = 1 + round(dataBhvTruncate.StartTime(currIdx) ./ opts.frameSize);
 
             % Get euclidians coming into currBhv from specific prevBhv
             prevIdx = currIdx & ...
@@ -554,7 +554,7 @@ for iCurr = 1 : length(analyzeCodes)
                 dataBhvTruncate.prevDur >= minBeforeDur & ...
                 dataBhvTruncate.prevDur <= maxBeforeDur;
 
-            currBhvOnsetSub = 1 + round(dataBhvTruncate.bhvStartTime(prevIdx) ./ opts.frameSize);
+            currBhvOnsetSub = 1 + round(dataBhvTruncate.StartTime(prevIdx) ./ opts.frameSize);
 
 
             iLabel = [analyzeBhv{jPrev}, ' then ', analyzeBhv{iCurr}];
@@ -793,7 +793,7 @@ nTrial = 40;
 bhvBlockWindow = 15 * 60 / opts.frameSize;
 dataWindow = -2 / opts.frameSize : 2 / opts.frameSize;
 
-bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
 
 blockFrameStarts = 1 + linspace(0, 210, 8) .* 60 ./ opts.frameSize; % get a 10 min span every 30 min
 

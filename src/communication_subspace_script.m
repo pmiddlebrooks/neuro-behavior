@@ -55,7 +55,7 @@ bhv = 'face_groom_1';
 
 bhvCode = analyzeCodes(strcmp(analyzeBhv, bhv));
 
-bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
 bhvStartFrames(bhvStartFrames < 10) = [];
 bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 
@@ -419,12 +419,12 @@ dataBhv = load_data(opts, 'behavior');
 
 
 
-codes = unique(dataBhv.bhvID);
+codes = unique(dataBhv.ID);
 % codes(codes == -1) = []; % Get rid of the nest/irrelevant behaviors
 behaviors = {};
 for iBhv = 1 : length(codes)
-    firstIdx = find(dataBhv.bhvID == codes(iBhv), 1);
-    behaviors = [behaviors, dataBhv.bhvName{firstIdx}];
+    firstIdx = find(dataBhv.ID == codes(iBhv), 1);
+    behaviors = [behaviors, dataBhv.Name{firstIdx}];
     % fprintf('behavior %d:\t code:%d\t name: %s\n', i, codes(i), dataBhvAlex.Behavior{firstIdx})
 end
 
@@ -439,7 +439,7 @@ nrnDataPath = [nrnDataPath, 'recording1/'];
 opts.dataPath = nrnDataPath;
 
 data = load_data(opts, 'neuron');
-data.bhvDur = dataBhv.bhvDur;
+data.bhvDur = dataBhv.Dur;
 clusterInfo = data.ci;
 spikeTimes = data.spikeTimes;
 spikeClusters = data.spikeClusters;
@@ -470,8 +470,8 @@ fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(i
 %% Get data ready for CCA canonical-correlation-maps
 areas = {'M56', 'VS'};
 dataBhv = dataBhv(8:end-8,:);
-bhvStartFrames = 1 + floor(dataBhv.bhvStartTime ./ opts.frameSize);
-expCond = dataBhv.bhvID;
+bhvStartFrames = 1 + floor(dataBhv.StartTime ./ opts.frameSize);
+expCond = dataBhv.ID;
 
 nTrial = length(bhvStartFrames);
 % how many frames is 1 sec peri-event?

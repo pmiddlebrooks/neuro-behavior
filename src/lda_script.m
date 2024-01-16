@@ -1,27 +1,23 @@
 %% Go to spiking_script and get behavioral and neural data
 
 % Alter this to try out different populations
-idInd = [idM56 idDS]
+idInd = [idM56 idDS];
 idInd = [idM56]
-%% Make a matrix with sum or mean spikes within a peri-onset window for each behavior
 
-% % Create a neural matrix. Each column is a neuron. Each row are summed or mean spike
-% % counts peri-onset of each behavior.
-% behaviorID = [];
-% neuralMatrix = [];
-% periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
-% dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
-% 
-% for iBhv = 1 : length(analyzeCodes)
-%     iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
-%     iStartFrames = iStartFrames(3:end-3);
-%     behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames), 1)];
-%     for jStart = 1 : length(iStartFrames)
-%         % neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
-%         neuralMatrix = [neuralMatrix; mean(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
-%     end
-% end
-%% Instead, make a matrix with concatenated peri-onset bins for each behavior
+%% Remove the first and last bouts from the dataBhv table
+dataBhvTrunc = dataBhv(2:end-1, :);
+validBhvTrunc = validBhv(2:end-1,:);
+%% If you want to subsample bouts (match the number of bouts for each behavior...
+
+nBout = zeros(length(analyzeCodes), 1);
+for i = 1 : length(analyzeCodes)
+    nBout(i) = sum(dataBhvTrunc.ID == analyzeCodes(i) & validBhvTrunc(:, codes == analyzeCodes(i)));
+end
+nSample = min(nBout);
+
+%% Do you want to subsample to match the number of bouts?
+matchBouts = 1;
+%% Make a neural matrix with concatenated peri-onset bins for each behavior
 
 % Create a neural matrix. Each column is a neuron. Each row are spike
 % counts peri-onset of each behavior.
@@ -31,8 +27,12 @@ periEventTime = -.1 : opts.frameSize : .1; % seconds around onset
 dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 for iBhv = 1 : length(analyzeCodes)
-    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
-    iStartFrames = iStartFrames(3:end-3);
+    dataBhvInd = dataBhvTrunc.ID == analyzeCodes(iBhv) & validBhvTrunc(:, codes == analyzeCodes(iBhv));
+    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvInd) ./ opts.frameSize);
+    if matchBouts
+        iRand = randperm(length(iStartFrames));
+        iStartFrames = iStartFrames(iRand(1:nSample));
+    end
     behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames) * length(dataWindow), 1)];
     for jStart = 1 : length(iStartFrames)
         % neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
@@ -40,28 +40,75 @@ for iBhv = 1 : length(analyzeCodes)
     end
 end
 
-
-%% Try to train it with a matrix that goes from -.1 before onset, through the duration of the behavior, to .1 s before next behavior onset
+%% Instead, train it with a matrix that goes from -.1 before onset, through the duration of the behavior, to .1 s before next behavior onset
 behaviorID = [];
 neuralMatrix = [];
 preCurrFrames = -.1 / opts.frameSize;
 preNextFrames = -.1 / opts.frameSize;
-dataBhv.bhvDurFrame = floor(dataBhv.bhvDur ./ opts.frameSize);
+dataBhvTrunc.DurFrame = floor(dataBhvTrunc.Dur ./ opts.frameSize);
+dataBhvTrunc.DurFrame(dataBhvTrunc.DurFrame == 0) = 1;
 for iBhv = 1 : length(analyzeCodes)
-    dataBhvInd = dataBhv.bhvID == analyzeCodes(iBhv);
-    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhvInd) ./ opts.frameSize);
-    iDurFrames = dataBhv.bhvDurFrame(dataBhvInd);
-    iStartFrames = iStartFrames(3:end-3);
-    iDurFrames = iDurFrames(3:end-3);
+    dataBhvInd = dataBhvTrunc.ID == analyzeCodes(iBhv) & validBhvTrunc(:, codes == analyzeCodes(iBhv));
+    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvInd) ./ opts.frameSize);
+    iDurFrames = dataBhvTrunc.DurFrame(dataBhvInd);
+    if matchBouts
+        iRand = randperm(length(iStartFrames));
+        iStartFrames = iStartFrames(iRand(1:nSample));
+        iDurFrames = iDurFrames(iRand(1:nSample));
+    end
     for jStart = 1 : length(iStartFrames)
         % Get the duration of this behavior (from -.1 to .1 before next
         % behavior
         jWindowDur = iDurFrames(jStart) + preNextFrames;
-        dataWindow = preCurrFrames : jWindowDur;
+        dataWindow = preCurrFrames : jWindowDur - 1;
         behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(dataWindow), 1)];
         neuralMatrix = [neuralMatrix; dataMatZ(iStartFrames(jStart) + dataWindow, :)];
     end
 end
+
+% Samples still won't be equal since different bouts typically last shorter
+% or longer than others
+nDataPoints = zeros(length(analyzeCodes), 1);
+for i = 1 : length(analyzeCodes)
+    nDataPoints(i) = sum(behaviorID == analyzeCodes(i));
+end
+fprintf('Warning: Using this method you still sample un-matched data points, range: %d to %d\n', min(nDataPoints), max(nDataPoints));
+fprintf('... Because your subsampling for bout number, but not durations\n')
+%% Instead, train it with a matrix that goes from -.1 before onset, through the the minimum of .5 sec after onset or .1 sec before next behavior onset
+behaviorID = [];
+neuralMatrix = [];
+preCurrFrames = -.1 / opts.frameSize;
+maxDur = .5 / opts.frameSize;
+preNextFrames = -.1 / opts.frameSize;
+dataBhvTrunc.DurFrame = floor(dataBhvTrunc.Dur ./ opts.frameSize);
+dataBhvTrunc.DurFrame(dataBhvTrunc.DurFrame == 0) = 1;
+for iBhv = 1 : length(analyzeCodes)
+    dataBhvInd = dataBhvTrunc.ID == analyzeCodes(iBhv) & validBhvTrunc(:, codes == analyzeCodes(iBhv));
+    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvInd) ./ opts.frameSize);
+    iDurFrames = dataBhvTrunc.DurFrame(dataBhvInd);
+    if matchBouts
+        iRand = randperm(length(iStartFrames));
+        iStartFrames = iStartFrames(iRand(1:nSample));
+        iDurFrames = iDurFrames(iRand(1:nSample));
+    end
+    for jStart = 1 : length(iStartFrames)
+        % Get the duration of this behavior (from -.1 to .1 before next
+        % behavior
+        jWindowDur = iDurFrames(jStart) + preNextFrames;
+        dataWindow = preCurrFrames : min(maxDur, jWindowDur - 1);
+        behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(dataWindow), 1)];
+        neuralMatrix = [neuralMatrix; dataMatZ(iStartFrames(jStart) + dataWindow, :)];
+    end
+end
+nDataPoints = zeros(length(analyzeCodes), 1);
+for i = 1 : length(analyzeCodes)
+    nDataPoints(i) = sum(behaviorID == analyzeCodes(i));
+end
+fprintf('Warning: Using this method you still sample un-matched data points, range: %d to %d\n', min(nDataPoints), max(nDataPoints));
+fprintf('... Because your subsampling for bout number, but not durations\n')
+
+
+
 
 
 %%
@@ -102,7 +149,7 @@ projectedData = fitMatrix * eigenvectors;
 % Project full data matrix to plot trajectories
 projectedTraj = dataMatZ(:, idInd) * eigenvectors;
 
-dataBhv.startFrame = 1 + floor(dataBhv.bhvStartTime / opts.frameSize);
+dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
 
 
 
@@ -134,8 +181,8 @@ seqCode = [seq1 seq2];
 % Make a dataBhv table from a desired sequence
 % which index in seqStartTimes is it?
 seqIdx = seqCodes(:,1) == seq1 & seqCodes(:,2) == seq2;
-% dataBhvIdx = dataBhv.bhvStartTime == seqStartTimes{seqIdx}(:,2);
-dataBhvIdx = ismember(dataBhv.bhvStartTime, seqStartTimes{seqIdx}(:,2));
+% dataBhvIdx = dataBhv.StartTime == seqStartTimes{seqIdx}(:,2);
+dataBhvIdx = ismember(dataBhv.StartTime, seqStartTimes{seqIdx}(:,2));
 dataBhvSeq = dataBhv(dataBhvIdx, :);
 dataBhvSeq.bhvDurFrame = floor(dataBhvSeq.bhvDur ./ opts.frameSize);
 
@@ -155,8 +202,8 @@ colors = colors_for_behaviors(seqCode);
 jTraj = 1;
 % for iStart = 2 : size(dataBhv, 1)
 for iStart = 1 : size(dataBhv, 1)
-    iStartFrame = dataBhv.startFrame(iStart);
-    iEndFrame = iStartFrame + dataBhv.bhvDurFrame(iStart);
+    iStartFrame = dataBhv.StartFrame(iStart);
+    iEndFrame = iStartFrame + dataBhv.DurFrame(iStart);
     iStartColor = colors(1,:);
     iEndColor = colors(2,:);
 
@@ -187,7 +234,7 @@ end % function
 function lda_plot_trajectories(projectedTraj, dataBhv, behaviorID, nComponents, ax, bhv2Plot)
 bhvList = unique(behaviorID);
 
-bhvStartIdx = find(dataBhv.bhvID == bhv2Plot);
+bhvStartIdx = find(dataBhv.ID == bhv2Plot);
 
 % colors = distinguishable_colors(length(bhvList));
 colors = colors_for_behaviors(bhvList);
@@ -197,18 +244,18 @@ jTraj = 1;
 for iStart = 2 : size(dataBhv, 1)
 % for iStart = 1 : length(bhvStartIdx)
     % Skip trajectories that involve in_nest_sleeping_or_irrelevant
-    % if dataBhv.bhvID(bhvStartIdx(iStart)) == -1 || dataBhv.bhvID(bhvStartIdx(iStart)+1) == -1
-    if dataBhv.bhvID(iStart) == -1 || dataBhv.bhvID(iStart+1) == -1
+    % if dataBhv.ID(bhvStartIdx(iStart)) == -1 || dataBhv.ID(bhvStartIdx(iStart)+1) == -1
+    if dataBhv.ID(iStart) == -1 || dataBhv.ID(iStart+1) == -1
         continue
     end
-    % iStartFrame = dataBhv.startFrame(bhvStartIdx(iStart));
-    % iEndFrame = dataBhv.startFrame(bhvStartIdx(iStart) + 1);
-    % iStartColor = colors(bhvList == dataBhv.bhvID(bhvStartIdx(iStart)), :);
-    % iEndColor = colors(bhvList == dataBhv.bhvID(bhvStartIdx(iStart) + 1), :);
-    iStartFrame = dataBhv.startFrame(iStart);
-    iEndFrame = dataBhv.startFrame(iStart + 1);
-    iStartColor = colors(bhvList == dataBhv.bhvID(iStart), :);
-    iEndColor = colors(bhvList == dataBhv.bhvID(iStart + 1), :);
+    % iStartFrame = dataBhv.StartFrame(bhvStartIdx(iStart));
+    % iEndFrame = dataBhv.StartFrame(bhvStartIdx(iStart) + 1);
+    % iStartColor = colors(bhvList == dataBhv.ID(bhvStartIdx(iStart)), :);
+    % iEndColor = colors(bhvList == dataBhv.ID(bhvStartIdx(iStart) + 1), :);
+    iStartFrame = dataBhv.StartFrame(iStart);
+    iEndFrame = dataBhv.StartFrame(iStart + 1);
+    iStartColor = colors(bhvList == dataBhv.ID(iStart), :);
+    iEndColor = colors(bhvList == dataBhv.ID(iStart + 1), :);
 
     % Every time there are 3 trajectories, erase the first one
     if jTraj == 4

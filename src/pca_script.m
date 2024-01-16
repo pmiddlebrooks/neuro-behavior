@@ -10,7 +10,7 @@ periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
 dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 for iBhv = 1 : length(analyzeCodes)
-    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
+    iStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv)) ./ opts.frameSize);
     iStartFrames = iStartFrames(3:end-3);
     behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames), 1)];
     for jStart = 1 : length(iStartFrames)
@@ -28,7 +28,7 @@ end
 figure(7);
 onsetInd = length(dataWindow)/2 + 1;
 for iBhv = 1 : length(analyzeCodes)
-    iStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == analyzeCodes(iBhv)) ./ opts.frameSize);
+    iStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv)) ./ opts.frameSize);
     iStartFrames = iStartFrames(3:end-3);
     for jStart = 1 : length(iStartFrames)
         cla
