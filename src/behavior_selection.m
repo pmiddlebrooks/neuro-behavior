@@ -34,10 +34,10 @@ for i = 1 : length(codes) % length(actList)
     if ismember(codes(i), opts.validCodes)
         iAct = codes(i);
 
-        actIdx = data.bhvID == iAct; % All instances labeled as this behavior
+        actIdx = data.ID == iAct; % All instances labeled as this behavior
         allPossible = sum(actIdx);
 
-        longEnough = data.bhvDur >= opts.minActTime; % Only use if it lasted long enough to count
+        longEnough = data.Dur >= opts.minActTime; % Only use if it lasted long enough to count
 
         actAndLong = actIdx & longEnough;
         andLongEnough = sum(actAndLong);  % for printing sanity check report below
@@ -48,17 +48,17 @@ for i = 1 : length(codes) % length(actList)
         for iPossible = find(actAndLong)'
 
             % Was there the same behvaior within the last minNoRepeat sec?
-            endTime = [data.bhvStartTime(2:end); data.bhvStartTime(end) + data.bhvDur(end)];
+            endTime = [data.StartTime(2:end); data.StartTime(end) + data.Dur(end)];
             % possible repeated behaviors are any behaviors that came
             % before this one that were within the no-repeat minimal time
-            iPossRepeat = endTime < data.bhvStartTime(iPossible) & endTime >= (data.bhvStartTime(iPossible) - opts.minNoRepeatTime);
+            iPossRepeat = endTime < data.StartTime(iPossible) & endTime >= (data.StartTime(iPossible) - opts.minNoRepeatTime);
 
             % sanity checks
             % preBehv = sum(iPossRepeat);
 
 
             % If it's within minNoRepeat and any of the behaviors during that time are the same as this one (this behavior is a repeat), get rid of it
-            if sum(iPossRepeat) && any(data.bhvID(iPossRepeat) == iAct)
+            if sum(iPossRepeat) && any(data.ID(iPossRepeat) == iAct)
 
                 % % debug display
                 % data.bStart100(iPossible-3:iPossible+3,:)

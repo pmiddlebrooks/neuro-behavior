@@ -21,7 +21,7 @@ for iBhv = 1 : length(analyzeCodes)
     preWindow = round(preEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 
-    bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
     bhvStartFrames(bhvStartFrames < abs(preWindow(1))+1) = [];
     bhvStartFrames(bhvStartFrames > size(dataMat, 1) - periWindow(end)-1) = [];
 
@@ -116,7 +116,7 @@ eventMat = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
-    bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
     bhvStartFrames(bhvStartFrames < dataWindow(end) + 1) = [];
     bhvStartFrames(bhvStartFrames > size(dataMat, 1) - dataWindow(end)) = [];
 
@@ -303,7 +303,7 @@ spikesPerTrial = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
-    bhvStartFrames = 1 + floor(dataBhv.bhvStartTime(dataBhv.bhvID == bhvCode) ./ opts.frameSize);
+    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
     bhvStartFrames(bhvStartFrames < 10) = [];
     bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 
@@ -556,10 +556,61 @@ end
 
 
 
+%%  Are the pairwise correlations consistent across behaviors, for each pair?
+noiseCorrM56Pair = [];
+for iBhv = 1 : length(analyzeCodes)
 
+returnIdx = tril(true(length(idM56)), -1);
+iCorr = noiseCorrM56(:,:,iBhv);
+noiseCorrM56Pair = [noiseCorrM56Pair, iCorr(returnIdx)];
 
+end
+%% Regressions for the correlations on all the pair-wise behaviors (
+figure(54);
+clf
+hold on
+for iBhv = 1 : length(analyzeCodes)-1
+    for jBhv = 2 : length(analyzeCodes)
+        if iBhv == jBhv
+            continue
+        end
+        x = noiseCorrM56Pair(:,iBhv);
+        y = noiseCorrM56Pair(:,jBhv);
+    scatter(x,y)
+    x = [ones(length(x), 1), x];
+b = x\y;
 
+% Define regression line function
+regressionLine = @(u) b(1) + b(2)*u;
 
+% Plot regression line
+fplot(regressionLine, [min(x(:,2)), max(x(:,2))]);
+
+% Calculate correlation coefficient
+r = corrcoef(x(:,2), y);
+r = r(1, 2);
+
+    end
+end
+
+% [p,tbl,stats] = anova1(noiseCorrM56Pair(1,:))
+
+%%
+% imagesc(noiseCorrM56Pair)
+figure(71);
+clf
+hold on;
+clearAx = 1;
+for iPair = 1 : size(noiseCorrM56Pair, 1)
+    if clearAx == 5
+        cla
+        clearAx = 1;
+    end
+    yline(0)
+    plot(noiseCorrM56Pair(iPair,:), 'linewidth', 2)
+    [h, p] = ttest(noiseCorrM56Pair(iPair,:))
+    clearAx = clearAx + 1;
+end
 
 
 
@@ -596,8 +647,8 @@ for seq = 1 : over40
     bhvCurr = analyzeCodes(strcmp(analyzeBhv, seqStr{3}));
     bhvPrev = analyzeCodes(strcmp(analyzeBhv, seqStr{1}));
 
-    goodStarts = dataBhvTruncate.bhvID == bhvCurr & validBhvTruncate(:, opts.bhvCodes == bhvCurr);
-    allStarts = 1 + floor(dataBhvTruncate.bhvStartTime(goodStarts) ./ opts.frameSize);
+    goodStarts = dataBhvTruncate.ID == bhvCurr & validBhvTruncate(:, opts.bhvCodes == bhvCurr);
+    allStarts = 1 + floor(dataBhvTruncate.StartTime(goodStarts) ./ opts.frameSize);
     seqStarts = 1 + floor(seqStartTimes{seq} ./ opts.frameSize);
 
     % take random number-matched subsample of allStarts
