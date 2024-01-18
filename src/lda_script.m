@@ -74,7 +74,9 @@ for i = 1 : length(analyzeCodes)
 end
 fprintf('Warning: Using this method you still sample un-matched data points, range: %d to %d\n', min(nDataPoints), max(nDataPoints));
 fprintf('... Because your subsampling for bout number, but not durations\n')
-%% Instead, train it with a matrix that goes from -.1 before onset, through the the minimum of .5 sec after onset or .1 sec before next behavior onset
+%% -.1 to min([.5, duration])
+% Instead, train it with a matrix that goes from -.1 before onset, through the the minimum of .5 sec after onset or .1 sec before next behavior onset
+
 behaviorID = [];
 neuralMatrix = [];
 preCurrFrames = -.1 / opts.frameSize;
