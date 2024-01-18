@@ -189,7 +189,7 @@ for iBhv = 1 : length(analyzeBhv)
                 index = maxIdx;
             end
             if ~isempty(index)
-            meanLag(m, d) = lags(index);
+                meanLag(m, d) = lags(index);
             end
         end
 
@@ -299,6 +299,7 @@ dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (rem
 
 
 meanSpikes = zeros(length(analyzeBhv), size(dataMat, 2));
+meanSpikesZ = meanSpikes;
 spikesPerTrial = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
@@ -310,12 +311,16 @@ for iBhv = 1 : length(analyzeBhv)
     nTrial = length(bhvStartFrames);
 
     iEventMat = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
+    iMeanMat = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
     for j = 1 : nTrial
-        iEventMat(j,:) = sum(dataMat(bhvStartFrames(j) + dataWindow ,:));
+        iEventMat(j,:) = sum(dataMat(bhvStartFrames(j) + dataWindow ,:), 1);
+        iMeanMat(j,:) = mean(dataMatZ(bhvStartFrames(j) + dataWindow ,:), 1);
     end
 
     meanSpikes(iBhv, :) = mean(iEventMat, 1);
+    meanSpikesZ(iBhv, :) = mean(iMeanMat, 1);
     spikesPerTrial{iBhv} = iEventMat;
+
 end
 
 %% Signal correlations
@@ -454,7 +459,7 @@ end
 
 
 %% Noise correlations
-
+plotFlag = 0;
 
 noiseCorrM56 = zeros(length(idM56), length(idM56), length(analyzeBhv));
 noiseCorrDS = zeros(length(idDS), length(idDS), length(analyzeBhv));
@@ -470,54 +475,13 @@ for iBhv = 1 : length(analyzeBhv)
     % -------------------------
     [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, idM56));
     noiseCorrM56(:,:,iBhv) = iCorr;
-    returnIdx = tril(true(length(idM56)), -1);
-
-    N = histcounts(iCorr(returnIdx), edges, 'Normalization', 'pdf');
-    % N = histcounts(iCorr(returnIdx), edges);
-    % normHist = N / sum(N);
-
-    subplot(1,3,1)
-    cla
-    hold on
-    bar(binCenters, N, 'hist')
-
-    % Mean correlation
-    meanX = sum(binCenters .* N) / sum(N);
-    plot([meanX meanX], [0 .5], 'g', 'linewidth', 2)
-    % Median correlation
-    cumulativeSum = cumsum(N);
-    medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
-    medianX = binCenters(medianIndex);
-    plot([medianX medianX], [0 .5], 'r', 'linewidth', 2)
-    xlim(xlimConst)
-    title(['M56 Noise Correlations for ', analyzeBhv{iBhv}], 'interpreter', 'none')
 
     % -------------------------
     % DS correlations
     % -------------------------
     [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, idDS));
     noiseCorrDS(:,:,iBhv) = iCorr;
-    returnIdx = tril(true(length(idDS)), -1);
 
-    N = histcounts(iCorr(returnIdx), edges, 'Normalization', 'pdf');
-    % N = histcounts(iCorr(returnIdx), edges);
-    % normHist = N / sum(N);
-
-    subplot(1,3,2)
-    cla
-    hold on
-    bar(binCenters, N, 'hist')
-
-    % Mean correlation
-    meanX = sum(binCenters .* N) / sum(N);
-    plot([meanX meanX], [0 .5], 'g', 'linewidth', 2)
-    % Median correlation
-    cumulativeSum = cumsum(N);
-    medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
-    medianX = binCenters(medianIndex);
-    plot([medianX medianX], [0 .5], 'r', 'linewidth', 2)
-    xlim(xlimConst)
-    title(['DS Noise Correlations for ', analyzeBhv{iBhv}], 'interpreter', 'none')
 
     % -------------------------
     % Across areas correlations
@@ -525,28 +489,86 @@ for iBhv = 1 : length(analyzeBhv)
     [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, idM56), spikesPerTrial{iBhv}(:, idDS));
     noiseCorrCross(:,:,iBhv) = iCorr;
 
-    N = histcounts(noiseCorrCross(:,:,iBhv), edges, 'Normalization', 'pdf');
-    % N = histcounts(noiseCorrCross(:,:,iBhv), edges);
-    % normHist = N / sum(N);
 
-    subplot(1,3,3)
-    cla
-    hold on
-    bar(binCenters, N, 'hist')
 
-    % Mean correlation
-    meanX = sum(binCenters .* N) / sum(N);
-    plot([meanX meanX], [0 .5], 'g', 'linewidth', 2)
-    % Median correlation
-    cumulativeSum = cumsum(N);
-    medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
-    medianX = binCenters(medianIndex);
-    plot([medianX medianX], [0 .5], 'r', 'linewidth', 2)
-    xlim(xlimConst)
-    title(['M56-DS Noise Correlations for ', analyzeBhv{iBhv}], 'interpreter', 'none')
-    % imagesc(noiseCorr(:,:,iBhv))
-    % colorbar
-    % colormap(bluewhitered)
+
+    % -------------------------
+    % Plotting
+    % -------------------------
+    if plotFlag
+
+        % M56
+        % ----------
+        N = histcounts(iCorr(returnIdx), edges, 'Normalization', 'pdf');
+        returnIdx = tril(true(length(idM56)), -1);
+        % N = histcounts(iCorr(returnIdx), edges);
+        % normHist = N / sum(N);
+
+        subplot(1,3,1)
+        cla
+        hold on
+        bar(binCenters, N, 'hist')
+
+        % Mean correlation
+        meanX = sum(binCenters .* N) / sum(N);
+        plot([meanX meanX], [0 .5], 'g', 'linewidth', 2)
+        % Median correlation
+        cumulativeSum = cumsum(N);
+        medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
+        medianX = binCenters(medianIndex);
+        plot([medianX medianX], [0 .5], 'r', 'linewidth', 2)
+        xlim(xlimConst)
+        title(['M56 Noise Correlations for ', analyzeBhv{iBhv}], 'interpreter', 'none')
+
+        %  DS
+        % ----------
+        N = histcounts(iCorr(returnIdx), edges, 'Normalization', 'pdf');
+        returnIdx = tril(true(length(idDS)), -1);
+        % N = histcounts(iCorr(returnIdx), edges);
+        % normHist = N / sum(N);
+
+        subplot(1,3,2)
+        cla
+        hold on
+        bar(binCenters, N, 'hist')
+
+        % Mean correlation
+        meanX = sum(binCenters .* N) / sum(N);
+        plot([meanX meanX], [0 .5], 'g', 'linewidth', 2)
+        % Median correlation
+        cumulativeSum = cumsum(N);
+        medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
+        medianX = binCenters(medianIndex);
+        plot([medianX medianX], [0 .5], 'r', 'linewidth', 2)
+        xlim(xlimConst)
+        title(['DS Noise Correlations for ', analyzeBhv{iBhv}], 'interpreter', 'none')
+
+
+        % M56 X DS
+        % ----------
+        N = histcounts(noiseCorrCross(:,:,iBhv), edges, 'Normalization', 'pdf');
+        % N = histcounts(noiseCorrCross(:,:,iBhv), edges);
+        % normHist = N / sum(N);
+
+        subplot(1,3,3)
+        cla
+        hold on
+        bar(binCenters, N, 'hist')
+
+        % Mean correlation
+        meanX = sum(binCenters .* N) / sum(N);
+        plot([meanX meanX], [0 .5], 'g', 'linewidth', 2)
+        % Median correlation
+        cumulativeSum = cumsum(N);
+        medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
+        medianX = binCenters(medianIndex);
+        plot([medianX medianX], [0 .5], 'r', 'linewidth', 2)
+        xlim(xlimConst)
+        title(['M56-DS Noise Correlations for ', analyzeBhv{iBhv}], 'interpreter', 'none')
+        % imagesc(noiseCorr(:,:,iBhv))
+        % colorbar
+        % colormap(bluewhitered)
+    end
 end
 
 
@@ -557,13 +579,67 @@ end
 
 
 %%  Are the pairwise correlations consistent across behaviors, for each pair?
-noiseCorrM56Pair = [];
-for iBhv = 1 : length(analyzeCodes)
+plotFlag = 1;
+
 
 returnIdx = tril(true(length(idM56)), -1);
-iCorr = noiseCorrM56(:,:,iBhv);
-noiseCorrM56Pair = [noiseCorrM56Pair, iCorr(returnIdx)];
+% Get the neuron indices of the correlation matrix
+[row, col] = find(returnIdx);
 
+noiseCorrM56Pair = zeros(length(row), length(analyzeCodes));
+kNeuronMod1 = zeros(length(row), length(analyzeCodes));
+kNeuronMod2 = zeros(length(row), length(analyzeCodes));
+
+for iBhv = 1 : length(analyzeCodes)
+
+    iCorr = noiseCorrM56(:,:,iBhv);
+    noiseCorrM56Pair(:, iBhv) = iCorr(returnIdx);
+
+    % Go through each pair and compare the correlation value to each
+    % neuron's behavior-related modulation
+
+    for k = 1 : length(noiseCorrM56Pair)
+        kNeuronMod1(k, iBhv) = meanSpikesZ(iBhv, idM56(row(k)));
+        kNeuronMod2(k, iBhv) = meanSpikesZ(iBhv, idM56(col(k)));
+    end
+
+end
+
+if plotFlag
+        maxCorr = max(noiseCorrM56Pair(:));
+    minCorr = min(noiseCorrM56Pair(:));
+maxMod = max([kNeuronMod1(:); kNeuronMod2(:)]);
+minMod = min([kNeuronMod1(:); kNeuronMod2(:)]);
+
+    % Create 3x3 grid of subplots
+    % Get monitor positions and size
+    monitorPositions = get(0, 'MonitorPositions');
+    if size(monitorPositions, 1) < 2
+        error('Second monitor not detected');
+    end
+    secondMonitorPosition = monitorPositions(2, :);
+    % Create a maximized figure on the second monitor
+    fig = figure(70);
+    clf
+    set(fig, 'Position', secondMonitorPosition);
+    nPlot = length(analyzeCodes);
+    [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4));
+    colors = colors_for_behaviors(analyzeCodes);
+
+
+    for iBhv = 1 : length(analyzeCodes)
+        axes(ax(iBhv))
+        hold on
+        xlim([minMod maxMod])
+        ylim([minCorr maxCorr]);
+        for k = 1 : length(noiseCorrM56Pair)
+            plot([kNeuronMod1(k, iBhv) kNeuronMod2(k, iBhv)], [noiseCorrM56Pair(k, iBhv) noiseCorrM56Pair(k, iBhv)], 'color', colors(iBhv,:), 'linewidth', 2)
+        end
+        xline(0, 'linewidth', 2);
+        yline(0, 'linewidth', 2);
+
+
+    end
 end
 %% Regressions for the correlations on all the pair-wise behaviors (
 figure(54);
@@ -576,19 +652,19 @@ for iBhv = 1 : length(analyzeCodes)-1
         end
         x = noiseCorrM56Pair(:,iBhv);
         y = noiseCorrM56Pair(:,jBhv);
-    scatter(x,y)
-    x = [ones(length(x), 1), x];
-b = x\y;
+        scatter(x,y)
+        x = [ones(length(x), 1), x];
+        b = x\y;
 
-% Define regression line function
-regressionLine = @(u) b(1) + b(2)*u;
+        % Define regression line function
+        regressionLine = @(u) b(1) + b(2)*u;
 
-% Plot regression line
-fplot(regressionLine, [min(x(:,2)), max(x(:,2))]);
+        % Plot regression line
+        fplot(regressionLine, [min(x(:,2)), max(x(:,2))]);
 
-% Calculate correlation coefficient
-r = corrcoef(x(:,2), y);
-r = r(1, 2);
+        % Calculate correlation coefficient
+        r = corrcoef(x(:,2), y);
+        r = r(1, 2);
 
     end
 end
