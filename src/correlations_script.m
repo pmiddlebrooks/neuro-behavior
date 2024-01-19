@@ -293,6 +293,21 @@ end
 %       Signal and noise correlations
 %       across pairwise M56 and DS neurons across behvaiors (mean per-event response of each neuron for each behavior
 
+%%
+dataBhvTrunc = dataBhv(2:end-2, :);
+validBhvTrunc = validBhv(2:end-2,:);
+
+%% If you want to subsample bouts (match the number of bouts for each behavior...
+nBout = zeros(length(analyzeCodes), 1);
+for i = 1 : length(analyzeCodes)
+    nBout(i) = sum(dataBhvTrunc.ID == analyzeCodes(i) & validBhvTrunc(:, codes == analyzeCodes(i)));
+end
+nSample = min(nBout);
+
+%% Do you want to subsample to match the number of bouts?
+matchBouts = 1;
+
+%%
 %  Get relevant data
 periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
 dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
@@ -304,17 +319,21 @@ spikesPerTrial = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
-    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
-    bhvStartFrames(bhvStartFrames < 10) = [];
-    bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
+    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvTrunc.ID == bhvCode) ./ opts.frameSize);
+    % bhvStartFrames(bhvStartFrames < 10) = [];
+    % bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 
-    nTrial = length(bhvStartFrames);
+    if matchBouts
+        iRand = randperm(length(iStartFrames));
+        iStartFrames = iStartFrames(iRand(1:nSample));
+    end
+    nTrial = length(iStartFrames);
 
     iEventMat = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
     iMeanMat = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
     for j = 1 : nTrial
-        iEventMat(j,:) = sum(dataMat(bhvStartFrames(j) + dataWindow ,:), 1);
-        iMeanMat(j,:) = mean(dataMatZ(bhvStartFrames(j) + dataWindow ,:), 1);
+        iEventMat(j,:) = sum(dataMat(iStartFrames(j) + dataWindow ,:), 1);
+        iMeanMat(j,:) = mean(dataMatZ(iStartFrames(j) + dataWindow ,:), 1);
     end
 
     meanSpikes(iBhv, :) = mean(iEventMat, 1);
@@ -324,138 +343,138 @@ for iBhv = 1 : length(analyzeBhv)
 end
 
 %% Signal correlations
+plotFlag = 1;
+
 xlimConst = [-1 1];
 
-% -------------------------
 % M56 signal correlations
 % -------------------------
-[rho,pval] = corr(meanSpikes(:, idM56));
-returnIdx = tril(true(length(idM56)), -1);
+[rhoM56,pval] = corr(meanSpikes(:, idM56));
 
-edges = -1 : .05 : 1;
-binCenters = (edges(1:end-1) + edges(2:end)) / 2;
-% xVal = edges(1:end-1);
-N = histcounts(rho(returnIdx), edges, 'Normalization', 'pdf');
-% N = histcounts(rho(returnIdx), edges);
-% normHist = N / sum(N);
-
-% Plot
-subplot(1,3,1)
-cla
-hold on
-bar(binCenters, N, 'hist')
-
-% Mean correlation
-meanX = sum(binCenters .* N) / sum(N);
-plot([meanX meanX], [0 .005], 'g', 'linewidth', 2)
-% Median correlation
-cumulativeSum = cumsum(N);
-medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
-medianX = binCenters(medianIndex);
-plot([medianX medianX], [0 .005], 'r', 'linewidth', 2)
-xlim(xlimConst)
-
-title(['M56 Signal Correlations'], 'interpreter', 'none')
-
-% -------------------------
 % DS signal correlations
 % -------------------------
-[rho,pval] = corr(meanSpikes(:, idDS));
-returnIdx = tril(true(length(idDS)), -1);
+[rhoDS,pval] = corr(meanSpikes(:, idDS));
 
-N = histcounts(rho(returnIdx), edges, 'Normalization', 'pdf');
-% N = histcounts(rho(returnIdx), edges);
-% normHist = N / sum(N);
-
-% Plot
-subplot(1,3,2)
-cla
-hold on
-bar(binCenters, N, 'hist')
-
-% Mean correlation
-meanX = sum(binCenters .* N) / sum(N);
-plot([meanX meanX], [0 .005], 'g', 'linewidth', 2)
-% Median correlation
-cumulativeSum = cumsum(N);
-medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
-medianX = binCenters(medianIndex);
-plot([medianX medianX], [0 .005], 'r', 'linewidth', 2)
-xlim(xlimConst)
-
-title(['DS Signal Correlations'], 'interpreter', 'none')
-
-% -------------------------
 % M56-DS areas signal correlations
 % -------------------------
-[rho,pval] = corr(meanSpikes(:, idM56), meanSpikes(:, idDS));
+[rhoX,pval] = corr(meanSpikes(:, idM56), meanSpikes(:, idDS));
 
-N = histcounts(rho(:), edges, 'Normalization', 'pdf');
-% N = histcounts(rho(:), edges);
-% normHist = N / sum(N);
+% Plotting
+% -------------------------
+if plotFlag
+    plotGauss = 0;
+    edges = -1 : .05 : 1;
+    binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
-% Plot
-subplot(1,3,3)
-cla
-hold on
-bar(binCenters, N, 'hist')
+    % M56
+    % -------------------------
+    returnIdx = tril(true(length(idM56)), -1);
+    N = histcounts(rhoM56(returnIdx), edges, 'Normalization', 'pdf');
 
-% Mean correlation
-meanX = sum(binCenters .* N) / sum(N);
-plot([meanX meanX], [0 .005], 'g', 'linewidth', 2)
-% Median correlation
-cumulativeSum = cumsum(N);
-medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
-medianX = binCenters(medianIndex);
-plot([medianX medianX], [0 .005], 'r', 'linewidth', 2)
-xlim(xlimConst)
-title(['M56-DS Signal Correlations'], 'interpreter', 'none')
+    figure(49)
+    clf
+    subplot(1,3,1)
+    cla
+    hold on
+    bar(binCenters, N, 'hist')
 
-if plotGauss
+    % Mean correlation
+    meanX = sum(binCenters .* N) / sum(N);
+    plot([meanX meanX], [0 .005], 'g', 'linewidth', 2)
+    % Median correlation
+    cumulativeSum = cumsum(N);
+    medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
+    medianX = binCenters(medianIndex);
+    plot([medianX medianX], [0 .005], 'r', 'linewidth', 2)
+    xlim(xlimConst)
+    title(['M56 Signal Correlations'], 'interpreter', 'none')
+
+
+    % DS
+    % -------------------------
+    returnIdx = tril(true(length(idDS)), -1);
+    N = histcounts(rhoDS(returnIdx), edges, 'Normalization', 'pdf');
+
+    subplot(1,3,2)
+    cla
+    hold on
+    bar(binCenters, N, 'hist')
+
+    % Mean correlation
+    meanX = sum(binCenters .* N) / sum(N);
+    plot([meanX meanX], [0 .005], 'g', 'linewidth', 2)
+    % Median correlation
+    cumulativeSum = cumsum(N);
+    medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
+    medianX = binCenters(medianIndex);
+    plot([medianX medianX], [0 .005], 'r', 'linewidth', 2)
+    xlim(xlimConst)
+    title(['DS Signal Correlations'], 'interpreter', 'none')
+
+
+    % M56 X DS
+    % -------------------------
+    N = histcounts(rhoX(:), edges, 'Normalization', 'pdf');
+
+    subplot(1,3,3)
+    cla
+    hold on
+    bar(binCenters, N, 'hist')
+
+    % Mean correlation
+    meanX = sum(binCenters .* N) / sum(N);
+    plot([meanX meanX], [0 .005], 'g', 'linewidth', 2)
+    % Median correlation
+    cumulativeSum = cumsum(N);
+    medianIndex = find(cumulativeSum >= sum(N) / 2, 1);
+    medianX = binCenters(medianIndex);
+    plot([medianX medianX], [0 .005], 'r', 'linewidth', 2)
+    xlim(xlimConst)
+    title(['M56-DS Signal Correlations'], 'interpreter', 'none')
+
     % Gaussian mixture model
-    data = rho(:);
-    % Fit a Gaussian mixture model with 2 components
-    gm = fitgmdist(data, 2);
+    if plotGauss
+        data = rhoX(:);
+        % Fit a Gaussian mixture model with 2 components
+        gm = fitgmdist(data, 2);
 
-    % Define the range for plotting
-    x_range = linspace(min(data), max(data), 1000);
+        % Define the range for plotting
+        x_range = linspace(min(data), max(data), 1000);
 
-    % Evaluate the pdf of the GMM
-    y_gmm = pdf(gm, x_range');
+        % Evaluate the pdf of the GMM
+        y_gmm = pdf(gm, x_range');
 
-    % Evaluate the pdfs of the individual components
-    % Normalize the component pdfs to match the scale of the GMM pdf
-    y_comp1 = normpdf(x_range, gm.mu(1), sqrt(gm.Sigma(:,:,1)));
-    y_comp2 = normpdf(x_range, gm.mu(2), sqrt(gm.Sigma(:,:,2)));
-    y_comp1 = y_comp1 * gm.ComponentProportion(1);
-    y_comp2 = y_comp2 * gm.ComponentProportion(2);
+        % Evaluate the pdfs of the individual components
+        % Normalize the component pdfs to match the scale of the GMM pdf
+        y_comp1 = normpdf(x_range, gm.mu(1), sqrt(gm.Sigma(:,:,1)));
+        y_comp2 = normpdf(x_range, gm.mu(2), sqrt(gm.Sigma(:,:,2)));
+        y_comp1 = y_comp1 * gm.ComponentProportion(1);
+        y_comp2 = y_comp2 * gm.ComponentProportion(2);
 
-    % Plot the GMM pdf
-    plot(x_range, y_gmm, 'r', 'LineWidth', 2);
+        % Plot the GMM pdf
+        plot(x_range, y_gmm, 'r', 'LineWidth', 2);
 
-    % Plot the individual component pdfs
-    plot(x_range, y_comp1, '--r', 'LineWidth', 2);
-    plot(x_range, y_comp2, '--r', 'LineWidth', 2);
+        % Plot the individual component pdfs
+        plot(x_range, y_comp1, '--r', 'LineWidth', 2);
+        plot(x_range, y_comp2, '--r', 'LineWidth', 2);
 
-    % if plotGauss
-    %         %Gaussian mixture model
-    %     GMModel = fitgmdist(rho(:),2);
-    %     mu = GMModel.mu;
-    %     sigma = GMModel.Sigma(:);
-    %     gmwt = GMModel.ComponentProportion;
-    %     x = linspace(edges(1),edges(end),1000);
-    %     pdfValues = pdf(GMModel, x');
-    %     plot(x, pdfValues, 'k', 'LineWidth', 3);
-    %     pdf1 = normpdf(x, mu(1), sqrt(sigma(1)));
-    %     pdf2 = normpdf(x, mu(2), sqrt(sigma(2)));
-    %     plot(x, pdf1*gmwt(1), 'r', 'LineWidth', 3)
-    %     plot(x, pdf2*gmwt(2), 'r', 'LineWidth', 3)
-    % end
+        % if plotGauss
+        %         %Gaussian mixture model
+        %     GMModel = fitgmdist(rho(:),2);
+        %     mu = GMModel.mu;
+        %     sigma = GMModel.Sigma(:);
+        %     gmwt = GMModel.ComponentProportion;
+        %     x = linspace(edges(1),edges(end),1000);
+        %     pdfValues = pdf(GMModel, x');
+        %     plot(x, pdfValues, 'k', 'LineWidth', 3);
+        %     pdf1 = normpdf(x, mu(1), sqrt(sigma(1)));
+        %     pdf2 = normpdf(x, mu(2), sqrt(sigma(2)));
+        %     plot(x, pdf1*gmwt(1), 'r', 'LineWidth', 3)
+        %     plot(x, pdf2*gmwt(2), 'r', 'LineWidth', 3)
+        % end
+    end
 end
 
-%     imagesc(rho)
-% colormap(bluewhitered)
-% colorbar
 
 
 %% Noise correlations
@@ -463,32 +482,28 @@ plotFlag = 0;
 
 noiseCorrM56 = zeros(length(idM56), length(idM56), length(analyzeBhv));
 noiseCorrDS = zeros(length(idDS), length(idDS), length(analyzeBhv));
-noiseCorrCross = zeros(length(idM56), length(idDS), length(analyzeBhv));
+noiseCorrX = zeros(length(idM56), length(idDS), length(analyzeBhv));
 edges = -1 : .01 : 1;
 binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 xVal = edges(1:end-1);
 xlimConst = [-.6 .6];
 for iBhv = 1 : length(analyzeBhv)
 
-    % -------------------------
     % M56 areas correlations
     % -------------------------
-    [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, idM56));
-    noiseCorrM56(:,:,iBhv) = iCorr;
+    [iCorrM56 iPval] = corr(spikesPerTrial{iBhv}(:, idM56));
+    noiseCorrM56(:,:,iBhv) = iCorrM56;
 
-    % -------------------------
     % DS correlations
     % -------------------------
-    [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, idDS));
-    noiseCorrDS(:,:,iBhv) = iCorr;
+    [iCorrDS iPval] = corr(spikesPerTrial{iBhv}(:, idDS));
+    noiseCorrDS(:,:,iBhv) = iCorrDS;
 
 
+    % M56 X DS correlations
     % -------------------------
-    % Across areas correlations
-    % -------------------------
-    [iCorr iPval] = corr(spikesPerTrial{iBhv}(:, idM56), spikesPerTrial{iBhv}(:, idDS));
-    noiseCorrCross(:,:,iBhv) = iCorr;
-
+    [iCorrX iPval] = corr(spikesPerTrial{iBhv}(:, idM56), spikesPerTrial{iBhv}(:, idDS));
+    noiseCorrX(:,:,iBhv) = iCorrX;
 
 
 
@@ -499,10 +514,8 @@ for iBhv = 1 : length(analyzeBhv)
 
         % M56
         % ----------
-        N = histcounts(iCorr(returnIdx), edges, 'Normalization', 'pdf');
+        N = histcounts(iCorrM56(returnIdx), edges, 'Normalization', 'pdf');
         returnIdx = tril(true(length(idM56)), -1);
-        % N = histcounts(iCorr(returnIdx), edges);
-        % normHist = N / sum(N);
 
         subplot(1,3,1)
         cla
@@ -522,10 +535,8 @@ for iBhv = 1 : length(analyzeBhv)
 
         %  DS
         % ----------
-        N = histcounts(iCorr(returnIdx), edges, 'Normalization', 'pdf');
+        N = histcounts(iCorrDS(returnIdx), edges, 'Normalization', 'pdf');
         returnIdx = tril(true(length(idDS)), -1);
-        % N = histcounts(iCorr(returnIdx), edges);
-        % normHist = N / sum(N);
 
         subplot(1,3,2)
         cla
@@ -546,9 +557,7 @@ for iBhv = 1 : length(analyzeBhv)
 
         % M56 X DS
         % ----------
-        N = histcounts(noiseCorrCross(:,:,iBhv), edges, 'Normalization', 'pdf');
-        % N = histcounts(noiseCorrCross(:,:,iBhv), edges);
-        % normHist = N / sum(N);
+        N = histcounts(noiseCorrX(:,:,iBhv), edges, 'Normalization', 'pdf');
 
         subplot(1,3,3)
         cla
@@ -580,36 +589,63 @@ end
 
 %%  Are the pairwise correlations consistent across behaviors, for each pair?
 plotFlag = 1;
+idX = [idM56 idDS];
 
-
-returnIdx = tril(true(length(idM56)), -1);
 % Get the neuron indices of the correlation matrix
-[row, col] = find(returnIdx);
+returnIdxM56 = tril(true(length(idM56)), -1);
+[rowM56, colM56] = find(returnIdxM56);
+returnIdxDS = tril(true(length(idDS)), -1);
+[rowDS, colDS] = find(returnIdxDS);
+% returnIdxX = ones(length(idM56), length(idDS));
+% [rowX, colX] = find(returnIdxX);
+[row, col] = ndgrid(idM56, idDS);
+idxXPairs = [row(:) col(:)];
 
-noiseCorrM56Pair = zeros(length(row), length(analyzeCodes));
-kNeuronMod1 = zeros(length(row), length(analyzeCodes));
-kNeuronMod2 = zeros(length(row), length(analyzeCodes));
+noiseCorrM56Pair = zeros(length(rowM56), length(analyzeCodes));
+neuronMod1M56 = zeros(length(rowM56), length(analyzeCodes));
+neuronMod2M56 = zeros(length(rowM56), length(analyzeCodes));
+noiseCorrDSPair = zeros(length(rowDS), length(analyzeCodes));
+neuronMod1DS = zeros(length(rowDS), length(analyzeCodes));
+neuronMod2DS = zeros(length(rowDS), length(analyzeCodes));
+noiseCorrXPair = zeros(length(rowX), length(analyzeCodes));
+neuronMod1X = zeros(length(rowX), length(analyzeCodes));
+neuronMod2X = zeros(length(rowX), length(analyzeCodes));
 
+% Loop through behaviors to get correlations and neural modulations
 for iBhv = 1 : length(analyzeCodes)
-
     iCorr = noiseCorrM56(:,:,iBhv);
-    noiseCorrM56Pair(:, iBhv) = iCorr(returnIdx);
+    noiseCorrM56Pair(:, iBhv) = iCorr(returnIdxM56);
+    iCorr = noiseCorrDS(:,:,iBhv);
+    noiseCorrDSPair(:, iBhv) = iCorr(returnIdxDS);
+    iCorr = noiseCorrX(:,:,iBhv);
+    noiseCorrXPair(:, iBhv) = iCorr(:);
 
     % Go through each pair and compare the correlation value to each
     % neuron's behavior-related modulation
-
     for k = 1 : length(noiseCorrM56Pair)
-        kNeuronMod1(k, iBhv) = meanSpikesZ(iBhv, idM56(row(k)));
-        kNeuronMod2(k, iBhv) = meanSpikesZ(iBhv, idM56(col(k)));
+        neuronMod1M56(k, iBhv) = meanSpikesZ(iBhv, idM56(rowM56(k)));
+        neuronMod2M56(k, iBhv) = meanSpikesZ(iBhv, idM56(colM56(k)));
     end
+    for k = 1 : length(noiseCorrDSPair)
+        neuronMod1DS(k, iBhv) = meanSpikesZ(iBhv, idDS(rowDS(k)));
+        neuronMod2DS(k, iBhv) = meanSpikesZ(iBhv, idDS(colDS(k)));
+    end
+    for k = 1 : length(noiseCorrXPair)
+        % neuronMod1X(k, iBhv) = meanSpikesZ(iBhv, idX(rowX(k)));
+        % neuronMod2X(k, iBhv) = meanSpikesZ(iBhv, idX(colX(k)));
+        neuronMod1X(k, iBhv) = meanSpikesZ(iBhv, idxXPairs(k, 1));
+        neuronMod2X(k, iBhv) = meanSpikesZ(iBhv, idxXPairs(k, 2));
+    end
+    for m = 1 : length(idM56)
+        for d = 1 : length(idDS)
 
+        end
+    end
 end
 
+
 if plotFlag
-        maxCorr = max(noiseCorrM56Pair(:));
-    minCorr = min(noiseCorrM56Pair(:));
-maxMod = max([kNeuronMod1(:); kNeuronMod2(:)]);
-minMod = min([kNeuronMod1(:); kNeuronMod2(:)]);
+    plotBhv = 'X'; % M56 DS X
 
     % Create 3x3 grid of subplots
     % Get monitor positions and size
@@ -626,21 +662,134 @@ minMod = min([kNeuronMod1(:); kNeuronMod2(:)]);
     [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4));
     colors = colors_for_behaviors(analyzeCodes);
 
+    switch plotBhv
+        case 'M56'
+            maxCorr = max(noiseCorrM56Pair(:));
+            minCorr = min(noiseCorrM56Pair(:));
+            maxMod = max([neuronMod1M56(:); neuronMod2M56(:)]);
+            minMod = min([neuronMod1M56(:); neuronMod2M56(:)]);
+            for iBhv = 1 : length(analyzeCodes)
+                axes(ax(iBhv))
+                hold on
+                xlim([minMod maxMod])
+                ylim([minCorr maxCorr]);
+                for k = 1 : length(noiseCorrM56Pair)
+                    plot([neuronMod1M56(k, iBhv) neuronMod2M56(k, iBhv)], [noiseCorrM56Pair(k, iBhv) noiseCorrM56Pair(k, iBhv)], 'color', colors(iBhv,:), 'linewidth', 2)
+                end
+                xline(0, 'linewidth', 2);
+                yline(0, 'linewidth', 2);
+                title(analyzeBhv{iBhv}, 'interpreter', 'none')
 
-    for iBhv = 1 : length(analyzeCodes)
-        axes(ax(iBhv))
-        hold on
-        xlim([minMod maxMod])
-        ylim([minCorr maxCorr]);
-        for k = 1 : length(noiseCorrM56Pair)
-            plot([kNeuronMod1(k, iBhv) kNeuronMod2(k, iBhv)], [noiseCorrM56Pair(k, iBhv) noiseCorrM56Pair(k, iBhv)], 'color', colors(iBhv,:), 'linewidth', 2)
-        end
-        xline(0, 'linewidth', 2);
-        yline(0, 'linewidth', 2);
+            end
+        case 'DS'
+            maxCorr = max(noiseCorrDSPair(:));
+            minCorr = min(noiseCorrDSPair(:));
+            maxMod = max([neuronMod1DS(:); neuronMod2DS(:)]);
+            minMod = min([neuronMod1DS(:); neuronMod2DS(:)]);
+            for iBhv = 1 : length(analyzeCodes)
+                axes(ax(iBhv))
+                hold on
+                xlim([minMod maxMod])
+                ylim([minCorr maxCorr]);
+                for k = 1 : length(noiseCorrDSPair)
+                    plot([neuronMod1DS(k, iBhv) neuronMod2DS(k, iBhv)], [noiseCorrDSPair(k, iBhv) noiseCorrDSPair(k, iBhv)], 'color', colors(iBhv,:), 'linewidth', 2)
+                end
+                xline(0, 'linewidth', 2);
+                yline(0, 'linewidth', 2);
+                title(analyzeBhv{iBhv}, 'interpreter', 'none')
 
+            end
+        case 'X'
+            maxCorr = max(noiseCorrXPair(:));
+            minCorr = min(noiseCorrXPair(:));
+            maxMod = max([neuronMod1X(:); neuronMod2X(:)]);
+            minMod = min([neuronMod1X(:); neuronMod2X(:)]);
+            for iBhv = 1 : length(analyzeCodes)
+                axes(ax(iBhv))
+                hold on
+                xlim([minMod maxMod])
+                ylim([minCorr maxCorr]);
+                for k = 1 : length(noiseCorrXPair)
+                    plot([neuronMod1X(k, iBhv) neuronMod2X(k, iBhv)], [noiseCorrXPair(k, iBhv) noiseCorrXPair(k, iBhv)], 'color', colors(iBhv,:), 'linewidth', 2)
+                end
+                xline(0, 'linewidth', 2);
+                yline(0, 'linewidth', 2);
+                title(analyzeBhv{iBhv}, 'interpreter', 'none')
 
+            end
     end
 end
+
+
+%% M56 individual pairs
+returnIdx = tril(true(length(idM56)), -1);
+signalCorrM56Pair = rhoM56(returnIdx);
+figure(44)
+for k = 1 : length(noiseCorrM56Pair)
+    clf
+    hold on
+    plot(neuronMod1M56(k,:), 'b', 'linewidth', 2)
+    plot(neuronMod2M56(k,:), 'color', [0 .5 1], 'linewidth', 2)
+    yline(signalCorrM56Pair(k), 'g', 'linewidth', 2)
+    plot(noiseCorrM56Pair(k,:), 'r', 'linewidth', 2)
+    yline(0, '--k')
+    legend({'neuron1 Tune', 'neuron2 Tune', 'Signal Corr', 'Noise Corr'})
+end
+
+%% DS individual pairs
+returnIdx = tril(true(length(idDS)), -1);
+signalCorrDSPair = rhoDS(returnIdx);
+figure(44)
+for k = 1 : length(noiseCorrDSPair)
+    clf
+    hold on
+    plot(neuronMod1DS(k,:), 'b', 'linewidth', 2)
+    plot(neuronMod2DS(k,:), 'color', [0 .5 1], 'linewidth', 2)
+    yline(signalCorrDSPair(k), 'g', 'linewidth', 2)
+    plot(noiseCorrDSPair(k,:), 'r', 'linewidth', 2)
+    yline(0, '--k')
+    legend({'neuron1 Tune', 'neuron2 Tune', 'Signal Corr', 'Noise Corr'})
+end
+
+%% M56 X DS individual pairs
+signalCorrXPair = rhoX(:);
+figure(44)
+for k = 1 : length(noiseCorrXPair)
+    clf
+    hold on
+    plot(neuronMod1X(k,:), 'b', 'linewidth', 2)
+    plot(neuronMod2X(k,:), 'color', [0 .5 1], 'linewidth', 2)
+    yline(signalCorrXPair(k), 'g', 'linewidth', 2)
+    plot(noiseCorrXPair(k,:), 'r', 'linewidth', 2)
+    yline(0, '--k')
+    legend({'neuron1 Tune', 'neuron2 Tune', 'Signal Corr', 'Noise Corr'})
+    pause
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %% Regressions for the correlations on all the pair-wise behaviors (
 figure(54);
 clf
