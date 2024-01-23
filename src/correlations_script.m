@@ -598,8 +598,8 @@ returnIdxDS = tril(true(length(idDS)), -1);
 [rowDS, colDS] = find(returnIdxDS);
 % returnIdxX = ones(length(idM56), length(idDS));
 % [rowX, colX] = find(returnIdxX);
-[row, col] = ndgrid(idM56, idDS);
-idxXPairs = [row(:) col(:)];
+[rowX, colX] = ndgrid(idM56, idDS);
+idxXPairs = [rowX(:) colX(:)];
 
 noiseCorrM56Pair = zeros(length(rowM56), length(analyzeCodes));
 neuronMod1M56 = zeros(length(rowM56), length(analyzeCodes));
@@ -607,9 +607,9 @@ neuronMod2M56 = zeros(length(rowM56), length(analyzeCodes));
 noiseCorrDSPair = zeros(length(rowDS), length(analyzeCodes));
 neuronMod1DS = zeros(length(rowDS), length(analyzeCodes));
 neuronMod2DS = zeros(length(rowDS), length(analyzeCodes));
-noiseCorrXPair = zeros(length(rowX), length(analyzeCodes));
-neuronMod1X = zeros(length(rowX), length(analyzeCodes));
-neuronMod2X = zeros(length(rowX), length(analyzeCodes));
+noiseCorrXPair = zeros(size(idxXPairs, 1), length(analyzeCodes));
+neuronMod1X = zeros(size(idxXPairs, 1), length(analyzeCodes));
+neuronMod2X = zeros(size(idxXPairs, 1), length(analyzeCodes));
 
 % Loop through behaviors to get correlations and neural modulations
 for iBhv = 1 : length(analyzeCodes)
@@ -622,15 +622,15 @@ for iBhv = 1 : length(analyzeCodes)
 
     % Go through each pair and compare the correlation value to each
     % neuron's behavior-related modulation
-    for k = 1 : length(noiseCorrM56Pair)
+    for k = 1 : size(noiseCorrM56Pair, 1)
         neuronMod1M56(k, iBhv) = meanSpikesZ(iBhv, idM56(rowM56(k)));
         neuronMod2M56(k, iBhv) = meanSpikesZ(iBhv, idM56(colM56(k)));
     end
-    for k = 1 : length(noiseCorrDSPair)
+    for k = 1 : size(noiseCorrDSPair, 1)
         neuronMod1DS(k, iBhv) = meanSpikesZ(iBhv, idDS(rowDS(k)));
         neuronMod2DS(k, iBhv) = meanSpikesZ(iBhv, idDS(colDS(k)));
     end
-    for k = 1 : length(noiseCorrXPair)
+    for k = 1 : size(noiseCorrXPair, 1)
         % neuronMod1X(k, iBhv) = meanSpikesZ(iBhv, idX(rowX(k)));
         % neuronMod2X(k, iBhv) = meanSpikesZ(iBhv, idX(colX(k)));
         neuronMod1X(k, iBhv) = meanSpikesZ(iBhv, idxXPairs(k, 1));
@@ -1039,5 +1039,141 @@ end
 %%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                           CCA Canonical Correlation Analysis
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+bhvCode = 15;
+
+% Define the column subsets for CCA
+subset1Columns = idM56; % Example subset 1
+subset2Columns = idDS; % Example subset 2
+
+% Extract subsets from neuralMatrix
+subsetM56 = neuralMatrix(behaviorID == bhvCode, subset1Columns);
+subsetDS = neuralMatrix(behaviorID == bhvCode, subset2Columns);
+fitMat = neuralMatrix(behaviorID == bhvCode, :);
+
+%%
+% Fit CCA model on training data
+[A, B, r, U, V] = canoncorr(subsetM56, subsetDS);
+
+%% Train and test the model
+
+[A, B, meanRSquared] = cca_with_crossvalidation(fitMat, subset1Columns, subset2Columns);
 
 
+%% 
+% Remove the first and last bouts from the dataBhv table
+dataBhvTrunc = dataBhv(2:end-1, :);
+validBhvTrunc = validBhv(2:end-1,:);
+
+
+periEventTime = -.3 : opts.frameSize : .5; % seconds around onset
+dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+
+    dataBhvInd = dataBhvTrunc.ID == bhvCode & validBhvTrunc(:, codes == bhvCode);
+    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvInd) ./ opts.frameSize);
+
+for i = 1 : length(iStartFrames)
+neuralMatrix1 = dataMatZ(iStartFrames(i) + dataWindow, idM56);
+neuralMatrix2 = dataMatZ(iStartFrames(i) + dataWindow, idDS);
+plot_projected_data(neuralMatrix1, neuralMatrix2, A, B)
+
+end
+%%
+
+
+% Perform Canonical Correlation Analysis
+[A, B, r, U, V] = canoncorr(subsetM56, subsetDS);
+
+% Display R-squared values
+rSquared = r.^2;
+disp('R-squared values:');
+disp(rSquared);
+
+% Project data onto the first 4 canonical variables
+U_projected = U(:, 1:4);
+V_projected = V(:, 1:4);
+
+% Create 2x2 subplot using tight_subplot (or MATLAB's built-in subplot)
+figure;
+ha = tight_subplot(2, 2, [0.1 0.1], [0.1 0.1], [0.1 0.1]);
+
+axes(ha(1));
+hold on
+% plot(U_projected(:, 1), V_projected(:, 1), 'o');
+plot(U_projected(:, 1), 'b');
+plot(V_projected(:, 1), 'k');
+title('Canonical Variables 1');
+
+axes(ha(2));
+plot(U_projected(:, 2), V_projected(:, 2), 'o');
+title('Canonical Variables 2');
+
+axes(ha(3));
+plot(U_projected(:, 3), V_projected(:, 3), 'o');
+title('Canonical Variables 3');
+
+axes(ha(4));
+plot(U_projected(:, 4), V_projected(:, 4), 'o');
+title('Canonical Variables 4');
+
+
+
+
+function [A, B, meanRSquared] = cca_with_crossvalidation(neuralMatrix, subset1Columns, subset2Columns)
+    % Perform 5-fold cross-validation
+    n = size(neuralMatrix, 1);
+    cv = cvpartition(n, 'KFold', 5);
+    rSquaredValues = zeros(cv.NumTestSets, 4); % Store R^2 for first 4 canonical vars
+
+    for i = 1:cv.NumTestSets
+        trainIdx = cv.training(i);
+        testIdx = cv.test(i);
+
+        % Training and Test subsets
+        subset1Train = neuralMatrix(trainIdx, subset1Columns);
+        subset2Train = neuralMatrix(trainIdx, subset2Columns);
+        subset1Test = neuralMatrix(testIdx, subset1Columns);
+        subset2Test = neuralMatrix(testIdx, subset2Columns);
+
+        % Fit CCA model on training data
+        [A, B, rT, U, V] = canoncorr(subset1Train, subset2Train);
+
+        % Project test data onto the canonical variables
+        U_test = subset1Test * A;
+        V_test = subset2Test * B;
+
+        % Compute R-squared for the first 4 canonical variables
+        for j = 1:4
+            r = corr(U_test(:, j), V_test(:, j))^2;
+            rSquaredValues(i, j) = r;
+        end
+    end
+
+    % Average R-squared values across folds
+    meanRSquared = mean(rSquaredValues, 1);
+
+    % Display mean R-squared values
+    disp('Mean R-squared values across folds:');
+    disp(meanRSquared);
+end
+
+
+
+function plot_projected_data(neuralMatrix1, neuralMatrix2, A, B)
+    % Project the data onto the first 4 canonical variables
+    U1_projected = neuralMatrix1 * A(:, 1:4);
+    U2_projected = neuralMatrix2 * B(:, 1:4);
+
+    % Create 2x2 subplot
+    figure;
+    ha = tight_subplot(2, 2, [0.1 0.1], [0.1 0.1], [0.1 0.1]);
+    time = 1:size(U1_projected, 1); % Assuming equal time points for both matrices
+
+    for i = 1:4
+        axes(ha(i));
+        plot(time, U1_projected(:, i), 'b', time, U2_projected(:, i), 'r');
+        title(['Canonical Variable ' num2str(i)]);
+        xlabel('Time');
+        ylabel('Projection Value');
+        legend('Matrix1', 'Matrix2');
+    end
+end
