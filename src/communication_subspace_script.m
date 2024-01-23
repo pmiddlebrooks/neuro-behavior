@@ -4,21 +4,6 @@ addpath regress_util
 addpath fa_util
 % startup
 
-%% get desired file paths
-computerDriveName = 'ROSETTA'; %'ROSETTA'; % 'Z' or 'home'
-paths = get_paths(computerDriveName);
-
-
-opts = neuro_behavior_options;
-
-animal = 'ag25290';
-sessionBhv = '112321_1';
-sessionNrn = '112321';
-if strcmp(sessionBhv, '112321_1')
-    sessionSave = '112321';
-end
-
-
 %% Run this, then go to spiking_script and get the behavior and data matrix
 % opts.frameSize = .05; % 50 ms framesize for now
 opts.collectFor = 60*60; % Get an hour of data
@@ -30,14 +15,10 @@ opts.collectFor = 60*60; % Get an hour of data
 
 
 
-
-
-
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%     Communication Subspace (Semedo et al 2019)           %%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%     Communication Subspace (Semedo et al 2019)            %%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%     adapted from communication-subsapce/example.m         %%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%
@@ -46,7 +27,7 @@ opts.collectFor = 60*60; % Get an hour of data
 % visual stimulus or not, could relate to fluctuations in V2. We therefore subtracted the appropriate peri-stimulus time histogram (PSTH)
 % from each single-trial response, and then analyzed the residuals for each orientation (termed datasets) separately
 
-bhv = 'investigate_1';
+bhv = 'investigate_2';
 % bhv = 'locomotion';
 bhv = 'face_groom_1';
 % bhv = 'contra_orient';
@@ -58,6 +39,7 @@ bhvCode = analyzeCodes(strcmp(analyzeBhv, bhv));
 bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
 bhvStartFrames(bhvStartFrames < 10) = [];
 bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
+nTrial = length(bhvStartFrames);
 
 periEventTime = -.5 : opts.frameSize : .5; % seconds around onset
 dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
@@ -69,19 +51,21 @@ for j = 1 : nTrial
     dataMatBhv(:,:,j) = dataMat(bhvStartFrames(j) + dataWindow ,:);
 end
 
-% meanPsthM56 = mean(dataMatBhv(:, strcmp(areaLabels, 'M56'), :), 3);
-% meanPsthDS = mean(dataMatBhv(:, strcmp(areaLabels, 'DS'), :), 3);
-% residualM56 = dataMatBhv(:, strcmp(areaLabels, 'M56'), :) - meanPsthM56;
-% residualDS = dataMatBhv(:, strcmp(areaLabels, 'DS'), :) - meanPsthDS;
 
-meanPsth = mean(dataMatBhv, 3);
-residualPsth = dataMatBhv - meanPsth;
+meanPsthM56 = mean(dataMatBhv(:,idM56,:), 3);
+meanRatesM56 = mean(meanPsthM56, 1) ./ opts.frameSize;
+residualPsthM56 = dataMatBhv(:,idM56,:) - meanPsthM56;
+shuffleIdx = randperm(nTrial);
+residualPsthM56Shuffle = residualPsthM56(:,:,shuffleIdx);
 
+meanPsthDS = mean(dataMatBhv(:,idDS,:), 3);
+meanRatesDS = mean(meanPsthDS, 1) ./ opts.frameSize;
+residualPsthDS = dataMatBhv(:,idDS,:) - meanPsthDS;
+shuffleIdx = randperm(nTrial);
+residualPsthDSShuffle = residualPsthDS(:,:,shuffleIdx);
 
 %% Mean-match firing rates among the sub-populations
 rateBins = 0.5 : 0.5 : 40;
-meanRates = mean(meanPsth, 1) ./ opts.frameSize;
-
 
 
 %%% Stopped here: Nneed to test subspace
@@ -92,19 +76,12 @@ meanRates = mean(meanPsth, 1) ./ opts.frameSize;
 %
 % That means there will be very few neurons in any analysis
 
-
-[histM56, ~, binsM56] = histcounts(meanRates(strcmp(areaLabels, 'M56')), rateBins);
-[histDS, ~, binsDS] = histcounts(meanRates(strcmp(areaLabels, 'DS')), rateBins);
-
-
-% meanM56Rates = mean(meanPsth(:, strcmp(areaLabels, 'M56')), 1) ./ opts.frameSize;
-% meanDSRates = mean(meanPsth(:, strcmp(areaLabels, 'DS')), 1) ./ opts.frameSize;
-% [histM56, ~, binsM56] = histcounts(meanM56Rates, rateBins);
-% [histDS, ~, binsDS] = histcounts(meanDSRates, rateBins);
+[histM56, ~, binsM56] = histcounts(meanRatesM56, rateBins);
+[histDS, ~, binsDS] = histcounts(meanRatesDS, rateBins);
 
 M56Targets = [];
 DSTargets = [];
-for i = 1 : length(histM56)
+for i = 1 : length(histDS)
     iNSample = min(histM56(i), histDS(i)); % which brain area had minimum number of units with that spike rate?
     if iNSample
         allM56Targets = find(binsM56 == i);
@@ -123,27 +100,39 @@ for i = 1 : length(histM56)
     end
 end
 
- % Use up to half of the M56 population as target population
-nTargetNeurons = min(length(M56Targets), floor(sum(strcmp(areaLabels, 'M56'))/2));
-M56Targets = M56Targets(1 : nTargetNeurons);
-DSTargets = DSTargets(1 : nTargetNeurons);
-M56Sources = setdiff(1:length(meanM56Rates), M56Targets);
+% Use up to half of the M56 (or DS) population as target population (take a random
+% sample of the rate-matched subset
+% nTargetNeurons = min(length(DSTargets), floor(length(idDS)/2));
+nTargetNeurons = min(length(M56Targets), floor(length(idM56)/2));
+neuronsIdx = randperm(nTargetNeurons);
+M56Targets = M56Targets(neuronsIdx);
+DSTargets = DSTargets(neuronsIdx);
+% DSSources = setdiff(1:length(idDS), DSTargets);
+M56Sources = setdiff(1:length(idM56), M56Targets);
 
 %% put residualPsth in format for communication subspace code
+resDSSourceShuffle = [];
+% resDSSource = [];
 resM56Source = [];
 resM56Target = [];
 resDSTarget = [];
 for i = 1 : nTrial
-    resM56Source = [resM56Source; residualM56(:,M56Sources,i)];
-    resM56Target = [resM56Target; residualM56(:,M56Targets,i)];
-    resDSTarget = [resDSTarget; residualDS(:,DSTargets,i)];
+    % resDSSource = [resDSSource; residualPsthDS(:,DSSources,i)];
+    resM56Source = [resM56Source; residualPsthM56(:,M56Sources,i)];
+    resDSSourceShuffle = [resDSSourceShuffle; residualPsthDSShuffle(:,DSSources,i)];
+    resM56Target = [resM56Target; residualPsthM56(:,M56Targets,i)];
+    resDSTarget = [resDSTarget; residualPsthDS(:,DSTargets,i)];
 end
 
 
 %%
 % X = fullMat(:,strcmp(areaLabels, 'M56'));
 % Y_V2 = fullMat(:, strcmp(areaLabels, 'DS'));
+
+% X = resDSSource;
 X = resM56Source;
+% X = resDSSourceShuffle;
+% Y_V2 = resM56Target;
 Y_V2 = resDSTarget;
 
 
@@ -153,7 +142,7 @@ Y_V2 = resDSTarget;
 %%
 
 SET_CONSTS
-
+%%
 load('mat_sample/sample_data.mat')
 
 %%
@@ -400,72 +389,14 @@ qOpt = FactorAnalysisModelSelect(cvLoss, q);
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%          Feedforward - feedback (Semedo et al 2022)       %%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%          Feedforward - feedback (Semedo et al 2022)       %%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%        adapted from adapted from canonical-correlation-maps/example.m     %%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 opts.frameSize = .01; % Need 10ms binned spike matrix
 
-%%                   Get behavior data
-bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
 
-
-opts.dataPath = bhvDataPath;
-opts.fileName = bhvFileName;
-
-dataBhv = load_data(opts, 'behavior');
-
-
-
-codes = unique(dataBhv.ID);
-% codes(codes == -1) = []; % Get rid of the nest/irrelevant behaviors
-behaviors = {};
-for iBhv = 1 : length(codes)
-    firstIdx = find(dataBhv.ID == codes(iBhv), 1);
-    behaviors = [behaviors, dataBhv.Name{firstIdx}];
-    % fprintf('behavior %d:\t code:%d\t name: %s\n', i, codes(i), dataBhvAlex.Behavior{firstIdx})
-end
-
-opts.behaviors = behaviors;
-opts.bhvCodes = codes;
-opts.validCodes = codes(codes ~= -1);
-
-%             Get Neural matrix
-
-nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
-nrnDataPath = [nrnDataPath, 'recording1/'];
-opts.dataPath = nrnDataPath;
-
-data = load_data(opts, 'neuron');
-data.bhvDur = dataBhv.Dur;
-clusterInfo = data.ci;
-spikeTimes = data.spikeTimes;
-spikeClusters = data.spikeClusters;
-
-% Find the neuron clusters (ids) in each brain region
-
-allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
-
-goodM23 = allGood & strcmp(data.ci.area, 'M23');
-goodM56= allGood & strcmp(data.ci.area, 'M56');
-goodDS = allGood & strcmp(data.ci.area, 'DS');
-goodVS = allGood & strcmp(data.ci.area, 'VS');
-
-% Make or load neural matrix
-
-% which neurons to use in the neural matrix
-opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
-
-[dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
-
-idM23 = find(strcmp(areaLabels, 'M23'));
-idM56 = find(strcmp(areaLabels, 'M56'));
-idDS = find(strcmp(areaLabels, 'DS'));
-idVS = find(strcmp(areaLabels, 'VS'));
-
-fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
 %% Get data ready for CCA canonical-correlation-maps
 areas = {'M56', 'VS'};

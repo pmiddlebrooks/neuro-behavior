@@ -8,6 +8,7 @@ idInd = [idM56]
 dataBhvTrunc = dataBhv(2:end-1, :);
 validBhvTrunc = validBhv(2:end-1,:);
 %% If you want to subsample bouts (match the number of bouts for each behavior...
+matchBouts = 0;
 
 nBout = zeros(length(analyzeCodes), 1);
 for i = 1 : length(analyzeCodes)
@@ -15,8 +16,6 @@ for i = 1 : length(analyzeCodes)
 end
 nSample = min(nBout);
 
-%% Do you want to subsample to match the number of bouts?
-matchBouts = 1;
 %% Make a neural matrix with concatenated peri-onset bins for each behavior
 
 % Create a neural matrix. Each column is a neuron. Each row are spike
