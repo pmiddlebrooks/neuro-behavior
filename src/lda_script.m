@@ -150,7 +150,6 @@ projectedData = fitMatrix * eigenvectors;
 % Project full data matrix to plot trajectories
 projectedTraj = dataMatZ(:, idInd) * eigenvectors;
 
-dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
 
 
 

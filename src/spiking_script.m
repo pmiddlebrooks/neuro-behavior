@@ -12,6 +12,9 @@ if strcmp(sessionBhv, '112321_1')
     sessionSave = '112321';
 end
 
+%% Make any options changes you want here
+
+opts.collectFor = 60*60*2;
 
 %%
 figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectFor)]);
@@ -154,6 +157,18 @@ idDS = find(strcmp(areaLabels, 'DS'));
 idVS = find(strcmp(areaLabels, 'VS'));
 
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
+
+
+% Create a vector of behavior IDs for each frame of the dataMat
+dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
+dataBhv.DurFrame = floor(dataBhv.Dur ./ opts.frameSize);
+
+bhvIDMat = zeros(size(dataMat, 1), 1);
+for i = 1 : size(dataBhv, 1)
+    iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
+    bhvIDMat(iInd) = dataBhv.ID(i);
+end
+
 
 
 %% Plot neural session data
