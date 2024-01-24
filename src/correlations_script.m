@@ -587,7 +587,8 @@ end
 
 
 
-%%  Are the pairwise correlations consistent across behaviors, for each pair?
+%%    Pairwise correlations as a function of pairwise peri-onset modulation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 plotFlag = 1;
 idX = [idM56 idDS];
 
@@ -679,6 +680,10 @@ if plotFlag
                 xline(0, 'linewidth', 2);
                 yline(0, 'linewidth', 2);
                 title(analyzeBhv{iBhv}, 'interpreter', 'none')
+                if iBhv == 9
+                    ylabel('Correlation')
+                    xlabel('Pairwise modulation')
+                end
 
             end
         case 'DS'
@@ -697,6 +702,10 @@ if plotFlag
                 xline(0, 'linewidth', 2);
                 yline(0, 'linewidth', 2);
                 title(analyzeBhv{iBhv}, 'interpreter', 'none')
+                if iBhv == 9
+                    ylabel('Correlation')
+                    xlabel('Pairwise modulation')
+                end
 
             end
         case 'X'
@@ -715,12 +724,18 @@ if plotFlag
                 xline(0, 'linewidth', 2);
                 yline(0, 'linewidth', 2);
                 title(analyzeBhv{iBhv}, 'interpreter', 'none')
+                if iBhv == 9
+                    ylabel('Correlation')
+                    xlabel('Pairwise modulation')
+                end
 
             end
     end
 end
 
 
+%%        Are the pairwise correlations consistent across behaviors, for each pair?
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% M56 individual pairs
 returnIdx = tril(true(length(idM56)), -1);
 signalCorrM56Pair = rhoM56(returnIdx);
