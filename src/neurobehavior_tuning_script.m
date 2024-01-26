@@ -149,7 +149,7 @@ end
 %   - Negatively tuned population: mean < X std
 nStd = 1;
 
-idInd = idM56;
+idInd = idDS;
 
     % Get monitor positions and size
     monitorPositions = get(0, 'MonitorPositions');
@@ -160,9 +160,10 @@ idInd = idM56;
     % Create a maximized figure on the second monitor
     fig = figure(230);
     clf
+    sgtitle('Proportions of postively tuned neurons across trials')
     set(fig, 'Position', secondMonitorPosition);
     nPlot = length(analyzeCodes);
-    [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4));
+    [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
     colors = colors_for_behaviors(analyzeCodes);
 
 for iBhv = 1 : length(analyzeBhv)
@@ -180,11 +181,12 @@ for iBhv = 1 : length(analyzeBhv)
 
 % Create histogram with bars centered on unique values
 axes(ax(iBhv))
-bar(values, counts, 'BarWidth', 1);
+bar(values, counts, 'BarWidth', 1, 'FaceColor', colors(iBhv,:));
 
 % Set x-axis tick marks and labels
 xticks(values);
 xticklabels(arrayfun(@num2str, values, 'UniformOutput', false));
+xlim([-.05 1.05])
 title([analyzeBhv{iBhv}, '  nTuned: ', num2str(sum(iTuned))], 'interpreter', 'none')
 
 if iBhv == 13
@@ -192,7 +194,6 @@ if iBhv == 13
 xlabel('Proportions');
 ylabel('Count');
 end
-    sgtitle('Proportions of postively tuned neurons across trials')
 end
 
 
