@@ -96,7 +96,8 @@ bhvSmoteTest = bhvSmote(testInd);
 
 numTrees = 100; % Define the number of trees
 % randomForestModel = TreeBagger(numTrees, neuralM56, behaviorID, 'OOBPrediction', 'On');
-randomForestModel = TreeBagger(numTrees, neuralSmoteTrain(:, idM56), bhvSmoteTrain, OOBPrediction='On', OOBPredictorImportance='On');
+randomForestModel = TreeBagger(numTrees, neuralSmoteTrain(:, idM56), bhvSmoteTrain, ...
+    OOBPrediction='On', OOBPredictorImportance='On');
 
 % Calculate OOB Error
 oobErrorVal = oobError(randomForestModel);
@@ -120,6 +121,18 @@ disp(['OOB Prediction Accuracy: ', num2str(accuracy)]);
 % view(randomForestModel.Trees{1}, 'Mode', 'graph');
 
 
+%% Which neurons are more/less important?
+importanceVal = randomForestModel.OOBPermutedPredictorDeltaError;
+
+figure;
+bar(importanceVal);
+title('Predictor Importances');
+xlabel('Predictors');
+ylabel('Importance');
+xticks(1:length(importanceVal));
+xticklabels(randomForestModel.PredictorNames);
+
+
 
 
 %% You have a fitted RF model. Use it to predict behaviors: confusion matrix
@@ -130,8 +143,8 @@ predBhvID = rf_predict_behavior(randomForestModel, neuralMat, bhvID);
 
 
 
- %%
- [confMat, C_norm] = plot_confusion_matrix(bhvID, predBhvID);
+ %% Plot the confusion matrix
+ [confMat, C_norm] = plot_confusion_matrix(bhvID, predBhvID, analyzeBhv);
  % [confMat, order] = plot_confusion_matrix(bhvSmote, predictedBehaviorID)
 
 
@@ -240,7 +253,7 @@ end
 
 
 
-function [C, C_norm] = plot_confusion_matrix(predBhvID, obsBhvID)
+function [C, C_norm] = plot_confusion_matrix(predBhvID, obsBhvID, analyzeBhv)
     % Function to plot two confusion matrices: absolute values and normalized values
 
     % Create confusion matrix
@@ -251,10 +264,13 @@ function [C, C_norm] = plot_confusion_matrix(predBhvID, obsBhvID)
 
     % Create figure
     figure(83);
-
+    clf
+    set(groot, 'DefaultAxesTickLabelInterpreter', 'none')
     % Plot 1: Absolute values using confusionchart
     subplot(1, 2, 1);
     confusionchart(C, order);
+    % set(gca, 'XTickLabel', analyzeBhv);
+    % set(gca, 'YTickLabel', analyzeBhv);
     title('Confusion Matrix (Absolute Values)');
     
     % Plot 2: Normalized values in grayscale
@@ -268,8 +284,10 @@ function [C, C_norm] = plot_confusion_matrix(predBhvID, obsBhvID)
     axis square; % Make the plot square
     
     % Setting axes and labels for the grayscale plot
-    set(gca, 'XTick', 1:length(order), 'XTickLabel', order);
-    set(gca, 'YTick', 1:length(order), 'YTickLabel', order);
+    set(gca, 'XTick', 1:length(order), 'XTickLabel', analyzeBhv);
+    set(gca, 'YTick', 1:length(order), 'YTickLabel', analyzeBhv);
+    % set(gca, 'XTick', 1:length(order), 'XTickLabel', order);
+    % set(gca, 'YTick', 1:length(order), 'YTickLabel', order);
     title('Normalized Confusion Matrix (Grayscale)');
     xlabel('Predicted Class');
     ylabel('True Class');
