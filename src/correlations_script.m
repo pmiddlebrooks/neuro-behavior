@@ -3,12 +3,6 @@ opts.frameSize = .05; % 50 ms framesize for now
 opts.collectFor = 60*60; % Get an hour of data
 
 
-%% Which dataMat do you want to use?
-% dataMatuse = dataMat;
-dataMatUse = dataMatZ;
-
-
-
 
 %% Create a 2-D data matrix of stacked peri-event start time windows (time X neuron)
 % bhv = 'locomotion';
@@ -294,8 +288,8 @@ end
 %       across pairwise M56 and DS neurons across behvaiors (mean per-event response of each neuron for each behavior
 
 %%
-dataBhvTrunc = dataBhv(2:end-2, :);
-validBhvTrunc = validBhv(2:end-2,:);
+dataBhvTrunc = dataBhv(3:end-2, :);
+validBhvTrunc = validBhv(3:end-2,:);
 
 %% If you want to subsample bouts (match the number of bouts for each behavior...
 nBout = zeros(length(analyzeCodes), 1);
@@ -316,6 +310,7 @@ dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (rem
 meanSpikes = zeros(length(analyzeBhv), size(dataMat, 2));
 meanSpikesZ = meanSpikes;
 spikesPerTrial = cell(length(analyzeBhv), 1);
+spikesPerTrialZ = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
@@ -330,17 +325,20 @@ for iBhv = 1 : length(analyzeBhv)
     nTrial = length(iStartFrames);
 
     iEventMat = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
-    iMeanMat = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
+    iMeanMatZ = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
     for j = 1 : nTrial
         iEventMat(j,:) = sum(dataMat(iStartFrames(j) + dataWindow ,:), 1);
-        iMeanMat(j,:) = mean(dataMatZ(iStartFrames(j) + dataWindow ,:), 1);
+        iMeanMatZ(j,:) = mean(dataMatZ(iStartFrames(j) + dataWindow ,:), 1);
     end
 
     meanSpikes(iBhv, :) = mean(iEventMat, 1);
-    meanSpikesZ(iBhv, :) = mean(iMeanMat, 1);
+    meanSpikesZ(iBhv, :) = mean(iMeanMatZ, 1);
     spikesPerTrial{iBhv} = iEventMat;
+    spikesPerTrialZ{iBhv} = iMeanMatZ;
 
 end
+
+%%
 
 %% Signal correlations
 plotFlag = 1;
