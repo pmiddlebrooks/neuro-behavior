@@ -15,30 +15,30 @@ nSample = min(nBout);
 
 % %% Do you want to subsample to match the number of bouts?
 % matchBouts = 0;
-% 
-% 
+%
+%
 % %  Get relevant data
 % periEventTime = -.1 : opts.frameSize : .1; % seconds around onset
 % dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
-% 
-% 
+%
+%
 % meanSpikes = zeros(length(analyzeBhv), size(dataMat, 2));
 % meanSpikesZ = meanSpikes;
 % spikesPerTrial = cell(length(analyzeBhv), 1);
 % spikesPerTrialZ = cell(length(analyzeBhv), 1);
 % for iBhv = 1 : length(analyzeBhv)
 %     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
-% 
+%
 %     iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvTrunc.ID == bhvCode) ./ opts.frameSize);
 %     % bhvStartFrames(bhvStartFrames < 10) = [];
 %     % bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
-% 
+%
 %     if matchBouts
 %         iRand = randperm(length(iStartFrames));
 %         iStartFrames = iStartFrames(iRand(1:nSample));
 %     end
 %     nTrial = length(iStartFrames);
-% 
+%
 %     iEventMat = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
 %     iMeanMatZ = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
 %     for j = 1 : nTrial
@@ -46,12 +46,12 @@ nSample = min(nBout);
 %         iMeanMatZ(j,:) = mean(dataMatZ(iStartFrames(j) + dataWindow ,:), 1);
 %         % dataMatZ(iStartFrames(j) + dataWindow ,:)
 %     end
-% 
+%
 %     meanSpikes(iBhv, :) = mean(iEventMat, 1);
 %     meanSpikesZ(iBhv, :) = mean(iMeanMatZ, 1);
 %     spikesPerTrial{iBhv} = iEventMat;
 %     spikesPerTrialZ{iBhv} = iMeanMatZ;
-% 
+%
 % end
 
 
@@ -64,7 +64,7 @@ nSample = min(nBout);
 fullTime = -1 : opts.frameSize : 1; % seconds around onset
 fullWindow = round(fullTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 periTime = -.1 : opts.frameSize : .1; % seconds around onset
-periWindow = periTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
+periWindowInd = periTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
 
 % eventMat = cell(length(analyzeCodes), 1);
 eventMatZ = cell(length(analyzeCodes), 1);
@@ -84,18 +84,18 @@ for iBhv = 1 : length(analyzeCodes)
     for j = 1 : nTrial
         % iEventMat(:,:,j) = dataMat(bhvStartFrames(j) + dataWindow ,:);
         iEventMatZ(:,:,j) = dataMatZ(bhvStartFrames(j) + fullWindow ,:);
-        iPeriMatZ(j,:) = mean(dataMatZ(bhvStartFrames(j) + periWindow ,:), 1);
+        iPeriMatZ(j,:) = mean(dataMatZ(bhvStartFrames(j) + periWindowInd ,:), 1);
     end
     % eventMat{iBhv} = iEventMat;
     eventMatZ{iBhv} = iEventMatZ;
     periMatZ{iBhv} = iPeriMatZ;
 end
 
-%% Which neurons are and aren't tuned?
+%% Which neurons are and aren't tuned? Test 1: Ttest between mean firing rates baseline vs. per-onset
 
-dataTimes = dataWindow .* opts.frameSize; % this is relative to the eventMat matrix
+dataTimes = fullWindow .* opts.frameSize; % this is relative to the eventMat matrix
 preWindowInd = dataTimes >= -1 & dataTimes < -.7; % baseline window
-periWindow = dataTimes >= -.1 & dataTimes < .1; % peri-onset window
+periWindowInd = dataTimes >= -.1 & dataTimes < .1; % peri-onset window
 
 posMod = zeros(length(analyzeCodes), size(dataMatZ, 2));
 negMod = posMod;
@@ -103,25 +103,67 @@ noMod = posMod;
 
 for iBhv = 1 : length(analyzeBhv)
     % mean of spikes in each trial (in pre-window and peri-window
-    preRate = mean(eventMatZ{iBhv}(preWindowInd, :, :), 1);
-    periRate = mean(eventMatZ{iBhv}(periWindow, :, :), 1);
+    preMean = mean(eventMatZ{iBhv}(preWindowInd, :, :), 1);
+    periMean = mean(eventMatZ{iBhv}(periWindowInd, :, :), 1);
 
-    preRate = permute(preRate, [3 2 1]);
-    periRate = permute(periRate, [3 2 1]);
+    preMean = permute(preMean, [3 2 1]);
+    periMean = permute(periMean, [3 2 1]);
 
     % Are they modulated significantly?
-    [h,p,~,~] = ttest(preRate, periRate);
+    [h,p,~,~] = ttest(preMean, periMean);
     h(isnan(h)) = 0;
     % h = reshape(h, size(h, 3), 1);
 
     % Which one is larger (positive or negative modulation?
-    periMinusPre = mean(periRate, 1) - mean(preRate, 1);
+    periMinusPre = mean(periMean, 1) - mean(preMean, 1);
 
     % Keep track of which neurons are positively (posMod) and negatively
     % (negMod) for each behavior)
     posMod(iBhv, :) = periMinusPre > 0 & h;
     negMod(iBhv, :) = periMinusPre < 0 & h;
     noMod(iBhv, :) = ~posMod(iBhv, :) & ~negMod(iBhv,:);
+
+end
+
+%% Recreate Hsu Fig 2b
+figure(923);
+sumPos = sum(posMod(:,idM23));
+
+[uniqueInts, ~, idx] = unique(sumPos);
+counts = accumarray(idx, 1);
+countsNorm = counts / sum(counts)
+% Plot the bar graph
+bar(uniqueInts, countsNorm);
+
+%% Run if you want to see the numbers
+for iBhv = 1 : length(analyzeBhv)
+    fprintf('Behavior: %s\n', analyzeBhv{iBhv})
+    fprintf('Positive:\n')
+    fprintf('M23:\t%d\tM56\t%d\tDS:\t%d\tVS:\t%d\n', sum(posMod(iBhv, strcmp(areaLabels, 'M23'))), sum(posMod(iBhv, strcmp(areaLabels, 'M56'))), sum(posMod(iBhv, strcmp(areaLabels, 'DS'))), sum(posMod(iBhv, strcmp(areaLabels, 'VS'))));
+    fprintf('Negative:\n')
+    fprintf('M23:\t%d\tM56\t%d\tDS:\t%d\tVS:\t%d\n', sum(negMod(iBhv, strcmp(areaLabels, 'M23'))), sum(negMod(iBhv, strcmp(areaLabels, 'M56'))), sum(negMod(iBhv, strcmp(areaLabels, 'DS'))), sum(negMod(iBhv, strcmp(areaLabels, 'VS'))));
+end
+
+
+%% Which neurons are and aren't tuned? Test 2: Max/min firing rates during peri-onset
+
+dataTimes = fullWindow .* opts.frameSize; % this is relative to the eventMat matrix
+% preWindowInd = dataTimes >= -1 & dataTimes < -.7; % baseline window
+periWindowInd = dataTimes >= -.2 & dataTimes < .2; % peri-onset window
+
+nStd = 2;
+posMod = zeros(length(analyzeCodes), size(dataMatZ, 2));
+negMod = posMod;
+noMod = posMod;
+
+for iBhv = 1 : length(analyzeBhv)
+    % mean of spikes in each trial (in pre-window and peri-window)
+    % preRate = mean(eventMatZ{iBhv}(preWindowInd, :, :), 1);
+    periMean = mean(eventMatZ{iBhv}(periWindowInd, :, :), 3);
+
+    % Keep track of which neurons are positively (posMod) and negatively
+    % (negMod) for each behavior)
+    posMod(iBhv, :) = max(periMean) > nStd; % standard deviations
 
 end
 
@@ -136,7 +178,17 @@ end
 
 
 
-%%
+
+
+
+
+
+
+
+%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                   Tuning across behaviors and trials
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 % For each behavior:
 %   - Tuned population: mean > X std
 %       - what proportion of the significantly tuned neurons are tuned in each/across trials?
@@ -144,58 +196,140 @@ end
 %           neurons compensate? (i.e. are there more non-tuned neurons that
 %           step up?)
 %       - what proportion of each tuned neuron is tuned across trials?
-%       - 
+%       -
 %   - Non-tuned population: -X std < mean < X std
 %   - Negatively tuned population: mean < X std
 nStd = 1;
 
-idInd = idDS;
+idInd = idM56;
 
-    % Get monitor positions and size
-    monitorPositions = get(0, 'MonitorPositions');
-    if size(monitorPositions, 1) < 2
-        error('Second monitor not detected');
-    end
-    secondMonitorPosition = monitorPositions(2, :);
-    % Create a maximized figure on the second monitor
-    fig = figure(230);
-    clf
-    sgtitle('Proportions of postively tuned neurons across trials')
-    set(fig, 'Position', secondMonitorPosition);
-    nPlot = length(analyzeCodes);
-    [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
-    colors = colors_for_behaviors(analyzeCodes);
+% Get monitor positions and size
+monitorPositions = get(0, 'MonitorPositions');
+if size(monitorPositions, 1) < 2
+    error('Second monitor not detected');
+end
+secondMonitorPosition = monitorPositions(2, :);
+% Create a maximized figure on the second monitor
+fig = figure(230);
+clf
+sgtitle('Proportions of postively tuned neurons across trials')
+set(fig, 'Position', secondMonitorPosition);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
+colors = colors_for_behaviors(analyzeCodes);
 
 for iBhv = 1 : length(analyzeBhv)
     iTuned = logical(posMod(iBhv, idInd));
 
-    % periMatZ{iBhv}(:, idInd(iTuned))
-    % what proportion of tuned population is tuned in each/across trials?
-    iPosTune = periMatZ{iBhv}(:, idInd(iTuned)) > 1;
-    iPropTuned = sum(iPosTune, 2) ./ sum(iTuned);
+    % what proportion of tuned/not tuned population is tuned in each/across trials?
+    iPosTuned = periMatZ{iBhv}(:, idInd(iTuned)) > nStd;
+    iPosNotTuned = periMatZ{iBhv}(:, idInd(~iTuned)) > nStd;
+    iPropPosTuned = sum(iPosTune, 2) ./ sum(iTuned); % Proportion of tuned neurons tuned in each trial
+    iPropPosNotTuned = sum(iPosNotTuned, 2) ./ sum(~iTuned); % Proportion of not tuned neurons tuned in each trial
 
-    values = unique(iPropTuned);
+
+    iPropTunedTrials = sum(iPosTuned, 1) ./ size(periMatZ{iBhv}, 1);
+
+    valPosTuned = unique(iPropPosTuned);
+    valPosNotTuned = unique(iPropPosNotTuned);
     % Create histogram
     % [counts, uniqueValues] = histcounts(iPropTuned, unique(values));
-    [counts, uniqueValues] = histcounts(iPropTuned, length(values));
+    [countsPosTuned, ~] = histcounts(iPropPosTuned, length(valPosTuned));
+    [countsPosNotTuned, ~] = histcounts(iPropPosNotTuned, length(valPosNotTuned));
 
-% Create histogram with bars centered on unique values
-axes(ax(iBhv))
-bar(values, counts, 'BarWidth', 1, 'FaceColor', colors(iBhv,:));
+    % Create histogram with bars centered on unique values
+    axes(ax(iBhv))
+    hold on
+    bar(valPosTuned, countsPosTuned, 'BarWidth', 1, 'FaceColor', colors(iBhv,:));
+    bar(valPosNotTuned, countsPosNotTuned, 'BarWidth', 1, 'FaceColor', [.5 .5 .5]);    
 
-% Set x-axis tick marks and labels
-xticks(values);
-xticklabels(arrayfun(@num2str, values, 'UniformOutput', false));
-xlim([-.05 1.05])
-title([analyzeBhv{iBhv}, '  nTuned: ', num2str(sum(iTuned))], 'interpreter', 'none')
+    % Set x-axis tick marks and labels
+    xticks(valPosTuned);
+    xticklabels(arrayfun(@num2str, valPosTuned, 'UniformOutput', false));
+    xlim([-.05 1.05])
+    title([analyzeBhv{iBhv}, '  nTuned: ', num2str(sum(iTuned))], 'interpreter', 'none')
 
-if iBhv == 13
-% Labels for axes and title
-xlabel('Proportions');
-ylabel('Count');
+    if iBhv == 13
+        % Labels for axes and title
+        xlabel('Proportion of pop. tuned across trials');
+        ylabel('nTrial w/ Prop Pos Modulated');
+    end
 end
-end
 
+
+%% Mean firing rate of tuned and not-tuned neurons across trials
+% Get monitor positions and size
+monitorPositions = get(0, 'MonitorPositions');
+if size(monitorPositions, 1) < 2
+    error('Second monitor not detected');
+end
+secondMonitorPosition = monitorPositions(2, :);
+% Create a maximized figure on the second monitor
+fig = figure(231); clf
+set(fig, 'Position', secondMonitorPosition);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
+colors = colors_for_behaviors(analyzeCodes);
+
+maxTrial = 50;
+for iBhv = 1 : length(analyzeBhv)
+    iTuned = logical(posMod(iBhv, idInd));
+    meanRateTuned = mean(periMatZ{iBhv}(:, idInd(iTuned)), 2);
+    meanRateNotTuned = mean(periMatZ{iBhv}(:, idInd(~iTuned)), 2);
+
+    iTrial = min(maxTrial, length(meanRateTuned));
+    iRandTrial = randperm(iTrial);
+    axes(ax(iBhv))
+    hold on
+plot(meanRateNotTuned(iRandTrial), 'Color', [0 .5 0], 'linewidth', 2);
+plot(meanRateTuned(iRandTrial), 'Color', colors(iBhv,:), 'linewidth', 2);
+end
+sgtitle('Mean pop firing rate across trials')
+
+%%
+% Create a maximized figure on the second monitor
+fig = figure(232); clf
+set(fig, 'Position', secondMonitorPosition);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
+colors = colors_for_behaviors(analyzeCodes);
+for iBhv = 1 : length(analyzeBhv)
+    iTuned = logical(posMod(iBhv, idInd));
+    meanRateTuned = mean(periMatZ{iBhv}(:, idInd(iTuned)), 2);
+    meanRateNotTuned = mean(periMatZ{iBhv}(:, idInd(~iTuned)), 2);
+
+% Calculate the correlation coefficient
+R = corrcoef(meanRateTuned, meanRateNotTuned);
+
+% Display the correlation coefficient
+disp(['Correlation coefficient: ', num2str(R(1,2))]);
+
+% Plot the data points
+    axes(ax(iBhv))
+scatter(meanRateTuned, meanRateNotTuned, 'markerEdgeColor', colors(iBhv,:));
+hold on; % Hold on to the current plot
+
+% Fit a linear regression line
+coefficients = polyfit(meanRateTuned, meanRateNotTuned, 1);
+
+% Generate x values for the regression line
+xLine = linspace(min(meanRateTuned), max(meanRateTuned), 100);
+
+% Calculate y values for the regression line
+yLine = polyval(coefficients, xLine);
+
+% Plot the regression line
+plot(xLine, yLine, 'k', 'LineWidth', 2);
+
+% Display the correlation coefficient on the plot
+textLocation = [min(meanRateTuned), max(meanRateNotTuned)]; % Set location for the text
+text(textLocation(1), textLocation(2), ['R = ' num2str(R(1,2))], 'FontSize', 12, 'Color', 'blue');
+
+% Add labels and title
+xlabel('meanRateTuned');
+ylabel('meanRateNotTuned');
+end
+sgtitle('Tuned vs. not tuned firing rates per trial');
 
 
 
@@ -208,14 +342,14 @@ figure(88)
 idInd = idM56;
 bhvName = 'contra_orient';
 % bhvName = 'face_groom_1';
-% bhvName = 'locomotion';
+bhvName = 'locomotion';
 bhv = analyzeCodes(strcmp(analyzeBhv, bhvName));
 psthMean = mean(eventMatZ{bhv}(:, idInd, :), 3)';
 
 sortWindow = (dataWindow * opts.frameSize) >= -.2 & (dataWindow * opts.frameSize) < .2;
-    unrankedPreBhv = mean(psthMean(:, sortWindow), 2);
-    [~, sortOrder] = sort(unrankedPreBhv, 'descend');
-    rankedPsth = psthMean(sortOrder,:);
+unrankedPreBhv = mean(psthMean(:, sortWindow), 2);
+[~, sortOrder] = sort(unrankedPreBhv, 'descend');
+rankedPsth = psthMean(sortOrder,:);
 
 imagesc(rankedPsth);
 xticks(1:length(dataWindow))
