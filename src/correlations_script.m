@@ -512,8 +512,8 @@ for iBhv = 1 : length(analyzeBhv)
 
         % M56
         % ----------
-        N = histcounts(iCorrM56(returnIdx), edges, 'Normalization', 'pdf');
         returnIdx = tril(true(length(idM56)), -1);
+        N = histcounts(iCorrM56(returnIdx), edges, 'Normalization', 'pdf');
 
         subplot(1,3,1)
         cla
@@ -533,8 +533,8 @@ for iBhv = 1 : length(analyzeBhv)
 
         %  DS
         % ----------
-        N = histcounts(iCorrDS(returnIdx), edges, 'Normalization', 'pdf');
         returnIdx = tril(true(length(idDS)), -1);
+        N = histcounts(iCorrDS(returnIdx), edges, 'Normalization', 'pdf');
 
         subplot(1,3,2)
         cla
@@ -732,6 +732,8 @@ if plotFlag
 end
 
 
+
+
 %%        Are the pairwise correlations consistent across behaviors, for each pair?
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% M56 individual pairs
@@ -781,8 +783,123 @@ end
 
 
 
+%%              Plot Noise Correlation distributions for pairs
+
+% Get signal correlation to draw a correlation line
+returnIdxM56 = tril(true(length(idM56)), -1);
+[rowM56, colM56] = find(returnIdxM56);   % indices of each neuron in the pair
+signalCorrM56Pair = rhoM56(returnIdxM56);
 
 
+for k = 500 : length(signalCorrM56Pair)
+figure(455)
+    clf; 
+
+        subplot(1,2,2)
+    hold on
+    plot(neuronMod1M56(k,:), 'b', 'linewidth', 2)
+    plot(neuronMod2M56(k,:), 'color', [0 .5 1], 'linewidth', 2)
+    yline(signalCorrM56Pair(k), 'g', 'linewidth', 2)
+    plot(noiseCorrM56Pair(k,:), 'r', 'linewidth', 2)
+    yline(0, '--k')
+    legend({'neuron1 Tune', 'neuron2 Tune', 'Signal Corr', 'Noise Corr'})
+
+
+
+    subplot(1,2,1)
+        axis square
+    hold on;
+    yline(0, '--k')
+    xline(0, '--k')
+    
+
+    for iBhv = 1 : length(analyzeCodes)
+        colors = colors_for_behaviors(analyzeCodes);
+        % Get the trial to trial spike counts for these two neurons
+        % n1 = spikesPerTrial{iBhv}(:, idM56(rowM56(k)));
+        % n2 = spikesPerTrial{iBhv}(:, idM56(colM56(k)));
+        n1 = spikesPerTrialZ{iBhv}(:, idM56(rowM56(k)));
+        n2 = spikesPerTrialZ{iBhv}(:, idM56(colM56(k)));
+
+
+        % Calculate the regression slope and intercept
+        slope = corr(n1, n2);
+
+        % coefficients = polyfit(n1, n2, 1);
+        % slope = coefficients(1);
+        % intercept = coefficients(2);
+
+        % Calculate mean and std
+        meanN1 = mean(n1);
+        meanN2 = mean(n2);
+        stdN1 = std(n1);
+        stdN2 = std(n2);
+
+        % Generate regression line points
+        % xLine = linspace(meanN1 - stdN1, meanN1 + stdN1, 100);
+        % yLine = slope * xLine + intercept;
+
+        % Plotting the regression line
+        % plot(xLine, yLine, 'b-', 'LineWidth', 2);
+
+        % Generate ellipse
+        theta = linspace(0, 2 * pi, 100);
+        xEllipse = stdN1 * cos(theta);
+        yEllipse = stdN2 * sin(theta);
+
+        % fill(meanN1 + xEllipse, meanN2 + yEllipse, colors(iBhv,:), 'FaceAlpha', 0.2, 'EdgeColor', colors(iBhv,:)); % Fill the ellipse with semi-transparency
+
+        % Angle for rotation
+        angle = atan(slope);
+
+        % Rotate the ellipse
+        cosA = cos(angle);
+        sinA = sin(angle);
+        xRot = cosA * xEllipse - sinA * yEllipse;
+        yRot = sinA * xEllipse + cosA * yEllipse;
+
+        % Plot ellipse
+        % plot(xRot, yRot, 'b-', 'LineWidth', 2);
+        fill(meanN1 + xRot, meanN2 + yRot, colors(iBhv,:), 'FaceAlpha', 0.2, 'EdgeColor', colors(iBhv,:)); % Plot the filled and rotated ellipse
+
+        
+        % Make axes square and have same span
+        % scatter(n1, n2)
+
+xLimit = xlim;
+yLimit = ylim;
+if min(meanN1 + xRot) < xLimit(1); xLimit(1) = min(meanN1 + xRot); end
+if max(meanN1 + xRot) > xLimit(2); xLimit(2) = max(meanN1 + xRot); end
+if min(meanN2 + yRot) < yLimit(1); yLimit(1) = min(meanN2 + yRot); end
+if max(meanN2 + yRot) > yLimit(2); yLimit(2) = max(meanN2 + yRot); end
+
+% Calculate span
+xSpan = xLimit(2) - xLimit(1);
+ySpan = yLimit(2) - yLimit(1);
+
+% Ensure both axes have the same span
+if xSpan > ySpan
+    yMid = mean(yLimit);
+    yLimit = [yMid - xSpan / 2, yMid + xSpan / 2];
+elseif ySpan > xSpan
+    xMid = mean(xLimit);
+    xLimit = [xMid - ySpan / 2, xMid + ySpan / 2];
+end
+
+% Set the limits
+xlim(xLimit);
+ylim(yLimit);
+    end
+    % Draw the signal correlation line
+    kCorr = signalCorrM56Pair(k);
+    xLineLim = xlim;
+    xSigLine = linspace(xLineLim(1), xLineLim(2), 100);
+        ySigLine = kCorr * xSigLine;
+        plot(xSigLine, ySigLine, 'k', 'linewidth', 2)
+
+    % legend({'neuron1 Tune', 'neuron2 Tune', 'Signal Corr', 'Noise Corr'})
+
+end
 
 
 
@@ -1072,7 +1189,7 @@ fitMat = neuralMatrix(behaviorID == bhvCode, :);
 [A, B, meanRSquared] = cca_with_crossvalidation(fitMat, subset1Columns, subset2Columns);
 
 
-%% 
+%%
 % Remove the first and last bouts from the dataBhv table
 dataBhvTrunc = dataBhv(2:end-1, :);
 validBhvTrunc = validBhv(2:end-1,:);
@@ -1081,13 +1198,13 @@ validBhvTrunc = validBhv(2:end-1,:);
 periEventTime = -.3 : opts.frameSize : .5; % seconds around onset
 dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
-    dataBhvInd = dataBhvTrunc.ID == bhvCode & validBhvTrunc(:, codes == bhvCode);
-    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvInd) ./ opts.frameSize);
+dataBhvInd = dataBhvTrunc.ID == bhvCode & validBhvTrunc(:, codes == bhvCode);
+iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvInd) ./ opts.frameSize);
 
 for i = 1 : length(iStartFrames)
-neuralMatrix1 = dataMatZ(iStartFrames(i) + dataWindow, idM56);
-neuralMatrix2 = dataMatZ(iStartFrames(i) + dataWindow, idDS);
-plot_projected_data(neuralMatrix1, neuralMatrix2, A, B)
+    neuralMatrix1 = dataMatZ(iStartFrames(i) + dataWindow, idM56);
+    neuralMatrix2 = dataMatZ(iStartFrames(i) + dataWindow, idDS);
+    plot_projected_data(neuralMatrix1, neuralMatrix2, A, B)
 
 end
 %%
@@ -1132,61 +1249,61 @@ title('Canonical Variables 4');
 
 
 function [A, B, meanRSquared] = cca_with_crossvalidation(neuralMatrix, subset1Columns, subset2Columns)
-    % Perform 5-fold cross-validation
-    n = size(neuralMatrix, 1);
-    cv = cvpartition(n, 'KFold', 5);
-    rSquaredValues = zeros(cv.NumTestSets, 4); % Store R^2 for first 4 canonical vars
+% Perform 5-fold cross-validation
+n = size(neuralMatrix, 1);
+cv = cvpartition(n, 'KFold', 5);
+rSquaredValues = zeros(cv.NumTestSets, 4); % Store R^2 for first 4 canonical vars
 
-    for i = 1:cv.NumTestSets
-        trainIdx = cv.training(i);
-        testIdx = cv.test(i);
+for i = 1:cv.NumTestSets
+    trainIdx = cv.training(i);
+    testIdx = cv.test(i);
 
-        % Training and Test subsets
-        subset1Train = neuralMatrix(trainIdx, subset1Columns);
-        subset2Train = neuralMatrix(trainIdx, subset2Columns);
-        subset1Test = neuralMatrix(testIdx, subset1Columns);
-        subset2Test = neuralMatrix(testIdx, subset2Columns);
+    % Training and Test subsets
+    subset1Train = neuralMatrix(trainIdx, subset1Columns);
+    subset2Train = neuralMatrix(trainIdx, subset2Columns);
+    subset1Test = neuralMatrix(testIdx, subset1Columns);
+    subset2Test = neuralMatrix(testIdx, subset2Columns);
 
-        % Fit CCA model on training data
-        [A, B, rT, U, V] = canoncorr(subset1Train, subset2Train);
+    % Fit CCA model on training data
+    [A, B, rT, U, V] = canoncorr(subset1Train, subset2Train);
 
-        % Project test data onto the canonical variables
-        U_test = subset1Test * A;
-        V_test = subset2Test * B;
+    % Project test data onto the canonical variables
+    U_test = subset1Test * A;
+    V_test = subset2Test * B;
 
-        % Compute R-squared for the first 4 canonical variables
-        for j = 1:4
-            r = corr(U_test(:, j), V_test(:, j))^2;
-            rSquaredValues(i, j) = r;
-        end
+    % Compute R-squared for the first 4 canonical variables
+    for j = 1:4
+        r = corr(U_test(:, j), V_test(:, j))^2;
+        rSquaredValues(i, j) = r;
     end
+end
 
-    % Average R-squared values across folds
-    meanRSquared = mean(rSquaredValues, 1);
+% Average R-squared values across folds
+meanRSquared = mean(rSquaredValues, 1);
 
-    % Display mean R-squared values
-    disp('Mean R-squared values across folds:');
-    disp(meanRSquared);
+% Display mean R-squared values
+disp('Mean R-squared values across folds:');
+disp(meanRSquared);
 end
 
 
 
 function plot_projected_data(neuralMatrix1, neuralMatrix2, A, B)
-    % Project the data onto the first 4 canonical variables
-    U1_projected = neuralMatrix1 * A(:, 1:4);
-    U2_projected = neuralMatrix2 * B(:, 1:4);
+% Project the data onto the first 4 canonical variables
+U1_projected = neuralMatrix1 * A(:, 1:4);
+U2_projected = neuralMatrix2 * B(:, 1:4);
 
-    % Create 2x2 subplot
-    figure;
-    ha = tight_subplot(2, 2, [0.1 0.1], [0.1 0.1], [0.1 0.1]);
-    time = 1:size(U1_projected, 1); % Assuming equal time points for both matrices
+% Create 2x2 subplot
+figure;
+ha = tight_subplot(2, 2, [0.1 0.1], [0.1 0.1], [0.1 0.1]);
+time = 1:size(U1_projected, 1); % Assuming equal time points for both matrices
 
-    for i = 1:4
-        axes(ha(i));
-        plot(time, U1_projected(:, i), 'b', time, U2_projected(:, i), 'r');
-        title(['Canonical Variable ' num2str(i)]);
-        xlabel('Time');
-        ylabel('Projection Value');
-        legend('Matrix1', 'Matrix2');
-    end
+for i = 1:4
+    axes(ha(i));
+    plot(time, U1_projected(:, i), 'b', time, U2_projected(:, i), 'r');
+    title(['Canonical Variable ' num2str(i)]);
+    xlabel('Time');
+    ylabel('Projection Value');
+    legend('Matrix1', 'Matrix2');
+end
 end
