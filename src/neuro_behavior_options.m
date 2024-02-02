@@ -39,7 +39,7 @@ opts.nTrialBalance = 200;
 
 
 % Only count (use) a behavior if it...
-opts.minActTime = .125; % is at least minActTime long (in seconds): this is .099999 instead of .1 b/c matlab precision thinks .1 doesn't equal .1 (see rrm_behavior_selection)
+opts.minActTime = .11; % is at least minActTime long (in seconds): this is .099999 instead of .1 b/c matlab precision thinks .1 doesn't equal .1 (see rrm_behavior_selection)
 opts.minNoRepeatTime = .59; % Can't have occured this much time in the past (in seconds)
 opts.minBhvNum = 20;  % must have occured at least this many times to analyze
 
