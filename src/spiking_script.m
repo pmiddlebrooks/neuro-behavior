@@ -144,7 +144,7 @@ goodVS = allGood & strcmp(data.ci.area, 'VS');
 opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
 
 tic
-[dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts); % Change rrm_neural_matrix
+[dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts);
 toc
 
 % Normalize and zero-center the neural data matrix
@@ -168,6 +168,30 @@ for i = 1 : size(dataBhv, 1)
     iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
     bhvIDMat(iInd) = dataBhv.ID(i);
 end
+
+%% Alternative z-scoring: Find non-transition times and create baseline and std from that
+removeTime = -.4 : opts.frameSize : .4;
+removeWindow = round(removeTime(1:end-1) / opts.frameSize);
+zFrames = ones(size(dataMatZ, 1), 1);
+zFrames(1:4) = 0; zFrames(end-4:end) = 0;
+startFrame = round(dataBhv.StartFrame(4:end-3));
+for i = 1 : length(removeWindow)
+    zFrames(startFrame + removeWindow(i)) = 0;
+end
+dataMatZAlt = (dataMat - mean(dataMat(logical(zFrames), :), 1)) ./ std(dataMat(logical(zFrames), :), 1);
+
+mean(dataMat(:, idM56), 1) - mean(dataMat(logical(zFrames), idM56), 1)
+std(dataMat(:, idM56), 1) - std(dataMat(logical(zFrames), idM56), 1)
+%% Alternative z-scoring: use in nest/sleeping/irrelevant times for baseline/std
+dataMatAlt = [];
+startFrame = dataBhv.StartFrame(dataBhv.ID == -1);
+durFrame = dataBhv.DurFrame(dataBhv.ID == -1);
+for i = 1 :length(startFrame)
+    if durFrame(i) > 1
+    dataMatAlt = [dataMatAlt; dataMat(startFrame(i) : startFrame(i) + durFrame(i) - 2, :)];
+    end
+end
+
 
 
 
@@ -217,34 +241,36 @@ startTimes(end-3:end) = [];
 startTimes(1:3) = [];
 startFrames = 1 + floor(startTimes ./ opts.frameSize);
 
-alignedMat = cell(length(startFrames), 1);
 
-preStartFrames = 1 / opts.frameSize;
-postStartFrames = 1 / opts.frameSize;
+dataTime = -1 : opts.frameSize : 1;
+dataWindow = dataTime(1:end-1) / opts.frameSize;
+alignedMat = zeros(length(dataWindow), size(dataMat, 2), length(startFrames));
 for iBout = 1 : length(startTimes)
-    iEpoch = startFrames(iBout) + 1 - preStartFrames: startFrames(iBout) + postStartFrames;
-    alignedMat{iBout} = zscore(dataMat(iEpoch, :));
+    iEpoch = startFrames(iBout) + dataWindow;
+    alignedMat(:, :, iBout) = zscore(dataMat(iEpoch, :));
 
 end
-meanSpikes = mean(cat(4, alignedMat{:}), 4)';
+meanSpikes = mean(alignedMat, 3);
 
 %% Sort the neurons from highest to lowest activity
-sortWindow = length(iEpoch) / 2 - 2 :  length(iEpoch) / 2 + 2;
+sortWindow = length(dataWindow) / 2 - 2 :  length(dataWindow) / 2;
 meanSpikesArea = cell(4, 1);
 areas = {'M23' 'M56' 'DS' 'VS'};
 
 for iArea = 1 : 4
 
-    meanToSort = mean(meanSpikes(strcmp(areaLabels, areas(iArea)), sortWindow), 2);
+    meanToSort = mean(meanSpikes(sortWindow, strcmp(areaLabels, areas(iArea))), 1);
     [~, sortInd] = sort(meanToSort, 'ascend');
-    iMeanSpikes = meanSpikes(strcmp(areaLabels, areas(iArea)), :);
-    meanSpikesArea{iArea} = iMeanSpikes(sortInd, :);
+    iMeanSpikes = meanSpikes(:, strcmp(areaLabels, areas(iArea)));
+    meanSpikesArea{iArea} = iMeanSpikes(:, sortInd);
     % = sortMatrixByIndices(meanSpikes(strcmp(areaLabels, 'M56'),:), sortWindow(1), sortWindow(2));
 end
 %%
 figure(10); clf; hold on;
 
-imagesc(meanSpikesArea{2})
+imagesc(meanSpikesArea{2}')
+colormap(bluewhitered_custom([-1 1]))
+colorbar
 % plot(meanSdf(:,  strcmp(areaLabels, 'M23')), 'r');
 % plot(meanSpikes(:,  strcmp(areaLabels, 'M56')), 'm');
 % plot(sortedMatrix(:,  strcmp(areaLabels, 'DS')), 'b');
