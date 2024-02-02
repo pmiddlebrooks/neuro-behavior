@@ -303,8 +303,8 @@ matchBouts = 1;
 
 %%
 %  Get relevant data
-periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
-dataWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
+periEventTime = -.1 : opts.frameSize : .1; % seconds around onset
+corrWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
 
 
 meanSpikes = zeros(length(analyzeBhv), size(dataMat, 2));
@@ -315,8 +315,6 @@ for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
     iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvTrunc.ID == bhvCode) ./ opts.frameSize);
-    % bhvStartFrames(bhvStartFrames < 10) = [];
-    % bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 
     if matchBouts
         iRand = randperm(length(iStartFrames));
@@ -327,8 +325,8 @@ for iBhv = 1 : length(analyzeBhv)
     iEventMat = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
     iMeanMatZ = zeros(nTrial, size(dataMat, 2)); % nTrial X nNeurons
     for j = 1 : nTrial
-        iEventMat(j,:) = sum(dataMat(iStartFrames(j) + dataWindow ,:), 1);
-        iMeanMatZ(j,:) = mean(dataMatZ(iStartFrames(j) + dataWindow ,:), 1);
+        iEventMat(j,:) = sum(dataMat(iStartFrames(j) + corrWindow ,:), 1);
+        iMeanMatZ(j,:) = mean(dataMatZ(iStartFrames(j) + corrWindow ,:), 1);
     end
 
     meanSpikes(iBhv, :) = mean(iEventMat, 1);
@@ -868,12 +866,12 @@ figure(455)
 
 xLimit = xlim;
 yLimit = ylim;
-if min(meanN1 + xRot) < xLimit(1); xLimit(1) = min(meanN1 + xRot); end
-if max(meanN1 + xRot) > xLimit(2); xLimit(2) = max(meanN1 + xRot); end
-if min(meanN2 + yRot) < yLimit(1); yLimit(1) = min(meanN2 + yRot); end
-if max(meanN2 + yRot) > yLimit(2); yLimit(2) = max(meanN2 + yRot); end
-
-% Calculate span
+    if min(meanN1 + xRot) < xLimit(1); xLimit(1) = min(meanN1 + xRot); end
+    if max(meanN1 + xRot) > xLimit(2); xLimit(2) = max(meanN1 + xRot); end
+    if min(meanN2 + yRot) < yLimit(1); yLimit(1) = min(meanN2 + yRot); end
+    if max(meanN2 + yRot) > yLimit(2); yLimit(2) = max(meanN2 + yRot); end
+    
+    % Calculate span
 xSpan = xLimit(2) - xLimit(1);
 ySpan = yLimit(2) - yLimit(1);
 
