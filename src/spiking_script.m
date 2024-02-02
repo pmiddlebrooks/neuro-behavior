@@ -1,5 +1,5 @@
 %% get desired file paths
-computerDriveName = 'ROSETTA'; %'ROSETTA'; % 'Z' or 'home'
+computerDriveName = 'home'; %'ROSETTA'; % 'Z' or 'home'
 paths = get_paths(computerDriveName);
 
 
@@ -136,7 +136,7 @@ goodDS = allGood & strcmp(data.ci.area, 'DS');
 goodVS = allGood & strcmp(data.ci.area, 'VS');
 
 
-
+%%
 
 % Make or load neural matrix
 
