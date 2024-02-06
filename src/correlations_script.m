@@ -299,13 +299,11 @@ end
 nSample = min(nBout);
 
 %% Do you want to subsample to match the number of bouts?
-matchBouts = 1;
+matchBouts = 0;
 
-%%
-%  Get relevant data
+%% Get relevant data (Using dataMat/dataMatZ
 periEventTime = -.1 : opts.frameSize : .1; % seconds around onset
 corrWindow = periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
-
 
 meanSpikes = zeros(length(analyzeBhv), size(dataMat, 2));
 meanSpikesZ = meanSpikes;
@@ -314,7 +312,7 @@ spikesPerTrialZ = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
-    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvTrunc.ID == bhvCode) ./ opts.frameSize);
+    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvTrunc.ID == bhvCode & validBhvTrunc(:,codes == analyzeCodes(iBhv))) ./ opts.frameSize);
 
     if matchBouts
         iRand = randperm(length(iStartFrames));
@@ -336,6 +334,28 @@ for iBhv = 1 : length(analyzeBhv)
 
 end
 
+%%  Get relevant data: Using eventMat from spiking_script.m
+
+periEventTime = -.1 : opts.frameSize : .1; % seconds around onset
+corrWindow = fullStartInd + periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
+
+meanSpikes = zeros(length(analyzeBhv), size(eventMat{1}, 2));
+meanSpikesZ = meanSpikes;
+spikesPerTrial = cell(length(analyzeBhv), 1);
+spikesPerTrialZ = cell(length(analyzeBhv), 1);
+for iBhv = 1 : length(analyzeBhv)
+
+    if matchBouts
+        iRand = randperm(size(eventMatZ{iBhv}, 3));
+        iTrialInd = iRand(1:nSample);
+    else
+        iTrialInd = 1:size(eventMatZ{iBhv}, 3);
+    end
+    spikesPerTrialZ{iBhv} = mean(eventMatZ{iBhv}(corrWindow, :, iTrialInd));
+    spikesPerTrialZ{iBhv} = permute(spikesPerTrialZ{iBhv}, [3 2 1]);
+    meanSpikesZ(iBhv, :) = mean(mean(eventMatZ{iBhv}(corrWindow, :, iTrialInd), 1), 3);
+end
+
 %%
 
 %% Signal correlations
@@ -345,15 +365,15 @@ xlimConst = [-1 1];
 
 % M56 signal correlations
 % -------------------------
-[rhoM56,pval] = corr(meanSpikes(:, idM56));
+[rhoM56,pval] = corr(meanSpikesZ(:, idM56));
 
 % DS signal correlations
 % -------------------------
-[rhoDS,pval] = corr(meanSpikes(:, idDS));
+[rhoDS,pval] = corr(meanSpikesZ(:, idDS));
 
 % M56-DS areas signal correlations
 % -------------------------
-[rhoX,pval] = corr(meanSpikes(:, idM56), meanSpikes(:, idDS));
+[rhoX,pval] = corr(meanSpikesZ(:, idM56), meanSpikesZ(:, idDS));
 
 % Plotting
 % -------------------------
@@ -474,7 +494,7 @@ end
 
 
 %% Noise correlations
-plotFlag = 0;
+plotFlag = 1;
 
 noiseCorrM56 = zeros(length(idM56), length(idM56), length(analyzeBhv));
 noiseCorrDS = zeros(length(idDS), length(idDS), length(analyzeBhv));
@@ -487,18 +507,18 @@ for iBhv = 1 : length(analyzeBhv)
 
     % M56 areas correlations
     % -------------------------
-    [iCorrM56 iPval] = corr(spikesPerTrial{iBhv}(:, idM56));
+    [iCorrM56 iPval] = corr(spikesPerTrialZ{iBhv}(:, idM56));
     noiseCorrM56(:,:,iBhv) = iCorrM56;
 
     % DS correlations
     % -------------------------
-    [iCorrDS iPval] = corr(spikesPerTrial{iBhv}(:, idDS));
+    [iCorrDS iPval] = corr(spikesPerTrialZ{iBhv}(:, idDS));
     noiseCorrDS(:,:,iBhv) = iCorrDS;
 
 
     % M56 X DS correlations
     % -------------------------
-    [iCorrX iPval] = corr(spikesPerTrial{iBhv}(:, idM56), spikesPerTrial{iBhv}(:, idDS));
+    [iCorrX iPval] = corr(spikesPerTrialZ{iBhv}(:, idM56), spikesPerTrialZ{iBhv}(:, idDS));
     noiseCorrX(:,:,iBhv) = iCorrX;
 
 
@@ -644,7 +664,6 @@ end
 if plotFlag
     plotBhv = 'X'; % M56 DS X
 
-    % Create 3x3 grid of subplots
     % Get monitor positions and size
     monitorPositions = get(0, 'MonitorPositions');
     if size(monitorPositions, 1) < 2
@@ -789,11 +808,11 @@ returnIdxM56 = tril(true(length(idM56)), -1);
 signalCorrM56Pair = rhoM56(returnIdxM56);
 
 
-for k = 500 : length(signalCorrM56Pair)
-figure(455)
-    clf; 
+for k = 1 : length(signalCorrM56Pair)
+    figure(455)
+    clf;
 
-        subplot(1,2,2)
+    subplot(1,2,2)
     hold on
     plot(neuronMod1M56(k,:), 'b', 'linewidth', 2)
     plot(neuronMod2M56(k,:), 'color', [0 .5 1], 'linewidth', 2)
@@ -805,17 +824,15 @@ figure(455)
 
 
     subplot(1,2,1)
-        axis square
+    axis square
     hold on;
     yline(0, '--k')
     xline(0, '--k')
-    
+
 
     for iBhv = 1 : length(analyzeCodes)
         colors = colors_for_behaviors(analyzeCodes);
         % Get the trial to trial spike counts for these two neurons
-        % n1 = spikesPerTrial{iBhv}(:, idM56(rowM56(k)));
-        % n2 = spikesPerTrial{iBhv}(:, idM56(colM56(k)));
         n1 = spikesPerTrialZ{iBhv}(:, idM56(rowM56(k)));
         n2 = spikesPerTrialZ{iBhv}(:, idM56(colM56(k)));
 
@@ -845,8 +862,6 @@ figure(455)
         xEllipse = stdN1 * cos(theta);
         yEllipse = stdN2 * sin(theta);
 
-        % fill(meanN1 + xEllipse, meanN2 + yEllipse, colors(iBhv,:), 'FaceAlpha', 0.2, 'EdgeColor', colors(iBhv,:)); % Fill the ellipse with semi-transparency
-
         % Angle for rotation
         angle = atan(slope);
 
@@ -860,40 +875,37 @@ figure(455)
         % plot(xRot, yRot, 'b-', 'LineWidth', 2);
         fill(meanN1 + xRot, meanN2 + yRot, colors(iBhv,:), 'FaceAlpha', 0.2, 'EdgeColor', colors(iBhv,:)); % Plot the filled and rotated ellipse
 
-        
         % Make axes square and have same span
-        % scatter(n1, n2)
+        xLimit = xlim;
+        yLimit = ylim;
+        if min(meanN1 + xRot) < xLimit(1); xLimit(1) = min(meanN1 + xRot); end
+        if max(meanN1 + xRot) > xLimit(2); xLimit(2) = max(meanN1 + xRot); end
+        if min(meanN2 + yRot) < yLimit(1); yLimit(1) = min(meanN2 + yRot); end
+        if max(meanN2 + yRot) > yLimit(2); yLimit(2) = max(meanN2 + yRot); end
 
-xLimit = xlim;
-yLimit = ylim;
-    if min(meanN1 + xRot) < xLimit(1); xLimit(1) = min(meanN1 + xRot); end
-    if max(meanN1 + xRot) > xLimit(2); xLimit(2) = max(meanN1 + xRot); end
-    if min(meanN2 + yRot) < yLimit(1); yLimit(1) = min(meanN2 + yRot); end
-    if max(meanN2 + yRot) > yLimit(2); yLimit(2) = max(meanN2 + yRot); end
-    
-    % Calculate span
-xSpan = xLimit(2) - xLimit(1);
-ySpan = yLimit(2) - yLimit(1);
+        % Calculate span
+        xSpan = xLimit(2) - xLimit(1);
+        ySpan = yLimit(2) - yLimit(1);
 
-% Ensure both axes have the same span
-if xSpan > ySpan
-    yMid = mean(yLimit);
-    yLimit = [yMid - xSpan / 2, yMid + xSpan / 2];
-elseif ySpan > xSpan
-    xMid = mean(xLimit);
-    xLimit = [xMid - ySpan / 2, xMid + ySpan / 2];
-end
+        % Ensure both axes have the same span
+        if xSpan > ySpan
+            yMid = mean(yLimit);
+            yLimit = [yMid - xSpan / 2, yMid + xSpan / 2];
+        elseif ySpan > xSpan
+            xMid = mean(xLimit);
+            xLimit = [xMid - ySpan / 2, xMid + ySpan / 2];
+        end
 
-% Set the limits
-xlim(xLimit);
-ylim(yLimit);
+        % Set the limits
+        xlim(xLimit);
+        ylim(yLimit);
     end
     % Draw the signal correlation line
     kCorr = signalCorrM56Pair(k);
     xLineLim = xlim;
     xSigLine = linspace(xLineLim(1), xLineLim(2), 100);
-        ySigLine = kCorr * xSigLine;
-        plot(xSigLine, ySigLine, 'k', 'linewidth', 2)
+    ySigLine = kCorr * xSigLine;
+    plot(xSigLine, ySigLine, 'k', 'linewidth', 2)
 
     % legend({'neuron1 Tune', 'neuron2 Tune', 'Signal Corr', 'Noise Corr'})
 
@@ -903,6 +915,245 @@ end
 
 
 
+
+
+
+%% Individual pair correlations of positively modulated neurons: Examine the correlations between pairs of modulated neurons in each behavior:
+% Do positively modulated neurons have pos/neg signal and noise
+% correlations?
+
+% Get posMod from neurobehavior_tuning_script
+
+idInd = idM56;
+
+colors = colors_for_behaviors(analyzeCodes);
+for iBhv = 1 : length(analyzeCodes)
+    % Which neurons are positively tuned for this behavior?
+    iPosTuneInd = intersect(idInd, find(posMod(iBhv, :)));
+
+    % What is their signal correlation?
+    [sigRho,pval] = corr(meanSpikesZ(:, iPosTuneInd));
+    returnIdx = tril(true(length(iPosTuneInd)), -1);
+    [row, col] = find(returnIdx);   % indices of each neuron in the pair
+    iSigCorr = sigRho(returnIdx);
+
+    % Loop through all pairs of neurons
+    for k = 1 : length(row)
+        kSigCorr = iSigCorr(k); % The signal correlation for this pair of neurons
+
+        % Noise correlation for this pair of (postively tuned) neurons for this behavior
+        n1 = spikesPerTrialZ{iBhv}(:, iPosTuneInd(row(k)));
+        n2 = spikesPerTrialZ{iBhv}(:, iPosTuneInd(col(k)));
+
+        % Calculate the regression slope
+        kNoiseCorr = corr(n1, n2);
+
+        % Calculate mean and std
+        meanN1 = mean(n1);
+        meanN2 = mean(n2);
+        stdN1 = std(n1);
+        stdN2 = std(n2);
+
+        % Generate ellipse
+        theta = linspace(0, 2 * pi, 100);
+        xEllipse = stdN1 * cos(theta);
+        yEllipse = stdN2 * sin(theta);
+
+        % Angle for rotation
+        angle = atan(kNoiseCorr);
+
+        % Rotate the ellipse
+        cosA = cos(angle);
+        sinA = sin(angle);
+        xRot = cosA * xEllipse - sinA * yEllipse;
+        yRot = sinA * xEllipse + cosA * yEllipse;
+
+
+        figure(456)
+        clf;
+        % Plot ellipse
+        subplot(1,2,1)
+        hold on
+        fill(meanN1 + xRot, meanN2 + yRot, colors(iBhv,:), 'FaceAlpha', 0.4, 'EdgeColor', colors(iBhv,:)); % Plot the filled and rotated ellipse
+        scatter(n1, n2)
+        ylim([min([n1; n2]-5) max([n1; n2])])
+        xlim([min([n1; n2]-5) max([n1; n2])])
+        title('Spikes per bout')
+        xlabel('Neuron 1')
+        title('Neuron 2')
+        axis square
+        yline(0, '--k')
+
+        subplot(1,2,2)
+        bar([1 2], [kSigCorr kNoiseCorr])
+        ylim([-1 1])
+        xticklabels({'Signal Corr', 'Noise Corr'})
+
+
+        sgtitle('Pairs of pos. tuned neurons: Signal and Noise correlations')
+    end
+end
+
+
+
+%% Distribution of signal and noise correlations for positively tuned neurons in each behavior
+idInd = idM56;
+edges = -.8 : .05 : .8;
+binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+
+% Get monitor positions and size
+monitorPositions = get(0, 'MonitorPositions');
+if size(monitorPositions, 1) < 2
+    error('Second monitor not detected');
+end
+secondMonitorPosition = monitorPositions(2, :);
+% Create a maximized figure on the second monitor
+fig = figure(760);
+clf
+set(fig, 'Position', secondMonitorPosition);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
+colors = colors_for_behaviors(analyzeCodes);
+
+for iBhv = 1 : length(analyzeCodes)
+
+    % Which neurons are positively tuned for this behavior?
+    iPosTuneInd = intersect(idInd, find(posMod(iBhv, :)));
+
+    returnIdx = tril(true(length(iPosTuneInd)), -1);
+    [row, col] = find(returnIdx);   % indices of each neuron in the pair
+
+    % What is their signal correlation across behaviors?
+    [sigRho,pval] = corr(meanSpikesZ(:, iPosTuneInd));
+    iSigCorr = sigRho(returnIdx);
+
+    % What is their noise correlation for this behavior?
+    noiseRho = corr(spikesPerTrialZ{iBhv}(:, iPosTuneInd));
+    iNoiseCorr = noiseRho(returnIdx);
+
+    axes(ax(iBhv)); hold on
+
+    N = histcounts(iNoiseCorr, edges, 'Normalization', 'pdf');
+    bar(binCenters, N, 'FaceColor', colors(iBhv,:), 'BarWidth', 1);
+
+    N = histcounts(iSigCorr, edges, 'Normalization', 'pdf');
+bar(binCenters, N, 'FaceColor', [.5 .5 .5], 'BarWidth', 1, 'FaceAlpha', .6);
+
+    ca = gca;
+    % ca.YTickLabel = ca.YTick;
+    ca.XTickLabel = ca.XTick;
+    title(analyzeBhv{iBhv}, 'interpreter', 'none')
+    if iBhv == 1
+        legend({'Noise', 'Signal'})
+    end
+end
+sgtitle('Positively tuned neuron pairs: Noise and Signal correlations')
+
+
+%% Distribution of signal and noise correlations for untuned neurons in each behavior
+edges = -.8 : .05 : .8;
+binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+
+% Get monitor positions and size
+monitorPositions = get(0, 'MonitorPositions');
+if size(monitorPositions, 1) < 2
+    error('Second monitor not detected');
+end
+secondMonitorPosition = monitorPositions(2, :);
+% Create a maximized figure on the second monitor
+fig = figure(761);
+clf
+set(fig, 'Position', secondMonitorPosition);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
+colors = colors_for_behaviors(analyzeCodes);
+
+for iBhv = 1 : length(analyzeCodes)
+
+    % Which neurons are not tuned for this behavior?
+    iNotTuneInd = intersect(idInd, find(notMod(iBhv, :)));
+
+    returnIdx = tril(true(length(iNotTuneInd)), -1);
+    [row, col] = find(returnIdx);   % indices of each neuron in the pair
+
+    % What is their signal correlation across behaviors?
+    [sigRho,pval] = corr(meanSpikesZ(:, iNotTuneInd));
+    iSigCorr = sigRho(returnIdx);
+
+    % What is their noise correlation for this behavior?
+    noiseRho = corr(spikesPerTrialZ{iBhv}(:, iNotTuneInd));
+    iNoiseCorr = noiseRho(returnIdx);
+
+    axes(ax(iBhv)); hold on
+
+    N = histcounts(iNoiseCorr, edges, 'Normalization', 'pdf');
+    bar(binCenters, N, 'FaceColor', colors(iBhv,:), 'BarWidth', 1);
+
+    N = histcounts(iSigCorr, edges, 'Normalization', 'pdf');
+    % bar(binCenters, N, 'FaceColor', [.5 1 .5], 'BarWidth', 1, 'FaceAlpha', .5);
+    bar(binCenters, N, 'FaceColor', [.5 .5 .5], 'BarWidth', 1, 'FaceAlpha', .6);
+
+    ca = gca;
+    % ca.YTickLabel = ca.YTick;
+    ca.XTickLabel = ca.XTick;
+    title(analyzeBhv{iBhv}, 'interpreter', 'none')
+    if iBhv == 1
+        legend({'Noise', 'Signal'})
+    end
+end
+sgtitle('Untuned neuron pairs: Noise and Signal correlations')
+
+%% Distribution of signal and noise correlations for tuned vs. untuned neurons in each behavior
+edges = -.7 : .05 : .7;
+binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+
+% Get monitor positions and size
+monitorPositions = get(0, 'MonitorPositions');
+if size(monitorPositions, 1) < 2
+    error('Second monitor not detected');
+end
+secondMonitorPosition = monitorPositions(2, :);
+% Create a maximized figure on the second monitor
+fig = figure(762);
+clf
+set(fig, 'Position', secondMonitorPosition);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
+colors = colors_for_behaviors(analyzeCodes);
+
+for iBhv = 1 : length(analyzeCodes)
+
+    % Which neurons are positively/not tuned for this behavior?
+    iPosTuneInd = intersect(idInd, find(posMod(iBhv, :)));
+    iNotTuneInd = intersect(idInd, find(notMod(iBhv, :)));
+    iNegTuneInd = intersect(idInd, find(negMod(iBhv, :)));
+    a = length(iPosTuneInd) + length(iNotTuneInd) + length(iNegTuneInd);
+
+    % What is their signal correlation across behaviors?
+    [sigRho,pval] = corr(meanSpikesZ(:, iPosTuneInd), meanSpikesZ(:, iNotTuneInd));
+    iSigCorr = sigRho(:);
+
+    % What is their noise correlation for this behavior?
+    noiseRho = corr(spikesPerTrialZ{iBhv}(:, iPosTuneInd), spikesPerTrialZ{iBhv}(:, iNotTuneInd));
+    iNoiseCorr = noiseRho(:);
+
+    axes(ax(iBhv)); hold on
+
+    N = histcounts(iNoiseCorr, edges, 'Normalization', 'pdf');
+    bar(binCenters, N, 'FaceColor', colors(iBhv,:), 'BarWidth', 1);
+
+    N = histcounts(iSigCorr, edges, 'Normalization', 'pdf');
+    bar(binCenters, N, 'FaceColor', [.5 .5 .5], 'BarWidth', 1, 'FaceAlpha', .6);
+
+    ca = gca;
+    % ca.YTickLabel = ca.YTick;
+    ca.XTickLabel = ca.XTick;
+    title(analyzeBhv{iBhv}, 'interpreter', 'none')
+    if iBhv == 1
+        legend({'Noise', 'Signal'})
+    end
+end
+sgtitle('Tuned vs Untuned neuron pairs: Noise and Signal correlations')
 
 
 

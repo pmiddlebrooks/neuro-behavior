@@ -156,6 +156,8 @@ idM23 = find(strcmp(areaLabels, 'M23'));
 idM56 = find(strcmp(areaLabels, 'M56'));
 idDS = find(strcmp(areaLabels, 'DS'));
 idVS = find(strcmp(areaLabels, 'VS'));
+idAll{1} = idM23; idAll{2} = idM56; idAll{3} = idDS; idAll{4} = idVS;
+areaAll{1} = 'M23'; areaAll{2} = 'M56'; areaAll{3} = 'DS'; areaAll{4} = 'VS';
 
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
