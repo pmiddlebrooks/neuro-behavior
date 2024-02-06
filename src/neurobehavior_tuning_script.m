@@ -8,7 +8,7 @@ validBhvTrunc = validBhv(3:end-2,:);
 
 
 %% What peri-onset window do you want to use?
-periTime = -.2 : opts.frameSize : .2; % seconds around onset
+periTime = -.15 : opts.frameSize : .15; % seconds around onset
 periWindow = periTime(1:end-1) / opts.frameSize; % frames around onset w.r.t. zWindow (remove last frame)
 
 
@@ -157,23 +157,32 @@ end
 % 
 % end
 
-%% Recreate Hsu Fig 2b
+%% Recreate Hsu Fig 2b: What proportion of neurons are positively modulated over how many behaviors?
 figure(923);
-idInd = idVS;
+for i = 1:4
+    idInd = idAll{i};
 sumPos = sum(posMod(:,idInd));
 
 [uniqueInts, ~, idx] = unique(sumPos);
 counts = accumarray(idx, 1);
 countsNorm = counts / sum(counts);
 % Plot the bar graph
+subplot(4,1,i)
 bar(uniqueInts, countsNorm);
+xlim([-.5 14.5])
+title(areaAll{i})
+ylabel('Positively tuned')
+if i == 4
+    xlabel("Number of behaviors")
+end
+end
 
 %% How many neurons are tuned in each behavior?
 figure(924);
 idInd = idM56;
 sumPos = sum(posMod(:,idInd), 2);
 sumNeg = sum(negMod(:,idInd), 2);
-sumNot = sum(noMod(:,idInd), 2);
+sumNot = sum(notMod(:,idInd), 2);
 ymax = 1 + max([sumPos; sumNeg; sumNot]);
 % Plot the bar graph
 subplot(1,3,1)
@@ -230,7 +239,7 @@ end
 nStd = 2;
 idInd = idM56;
 
-%%
+%%  What proportion of positively tuned and untuned neurons are positively modulated across proportions of trials?
 
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
@@ -348,6 +357,139 @@ ca.YTickLabel = ca.YTick;
 end
 sgtitle('Number of postively tuned neurons across trials')
 saveas(gcf, fullfile(paths.figurePath, 'Number of postively modulated neurons across trials'), 'png')
+
+
+%% Across trials, how modulated are postively tuned and untuned neurons (ones that ?
+
+% Get monitor positions and size
+monitorPositions = get(0, 'MonitorPositions');
+if size(monitorPositions, 1) < 2
+    error('Second monitor not detected');
+end
+secondMonitorPosition = monitorPositions(2, :);
+% Create a maximized figure on the second monitor
+fig = figure(231);
+clf
+set(fig, 'Position', secondMonitorPosition);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02], .1);
+
+for iBhv = 1 : length(analyzeBhv)
+    iPosTuned = logical(posMod(iBhv, idInd));
+    iNegTuned = logical(negMod(iBhv, idInd));
+    iNotTuned = logical(notMod(iBhv, idInd));
+
+    % what proportion of tuned/not tuned population is tuned in each/across trials?
+    iPosTunedPos = mean(eventMatZ{iBhv}(fullStartInd + periWindow, idInd(iPosTuned), :), 1);
+    iPosTunedPos = permute(iPosTunedPos, [2 3 1]);
+    iNegTunedPos = mean(eventMatZ{iBhv}(fullStartInd + periWindow, idInd(iNegTuned), :), 1);
+    iNegTunedPos = permute(iNegTunedPos, [2 3 1]);
+    iPosNotTunedPos = mean(eventMatZ{iBhv}(fullStartInd + periWindow, idInd(iNotTuned), :), 1);
+    iPosNotTunedPos = permute(iPosNotTunedPos, [2 3 1]);
+
+
+    % Plot lines of numbers of neurons in each category
+    axes(ax(iBhv))
+    hold on
+    % imagesc([iPosTunedPos; iPosNotTunedPos])
+    imagesc([iPosNotTunedPos; iPosTunedPos])
+    yline(size(iPosNotTunedPos, 1), 'k', 'linewidth', 4)
+    xlim([0 size(iPosTunedPos,2)])
+    ylim([0 size(iPosTunedPos,1)+size(iPosNotTunedPos,1)])
+    colormap(bluewhitered_custom([-8 8]))
+ca = gca;
+ca.YTickLabel = ca.YTick;
+    % plot(1:length(iNPosTuned), iNTotTuned, 'k', 'linewidth', 2)
+    % plot(1:length(iNPosTuned), iNNegTuned, 'r', 'linewidth', 2)
+    % plot(1:length(iNPosTuned), iNNotTuned, 'color', [.5 .5 .5], 'linewidth', 2)
+    % plot(1:length(iNPosTuned), iNPosTuned, 'b', 'linewidth', 2)
+    % 
+    % yline(sum(iPosTuned), 'b', 'linewidth', 2)
+    % yline(sum(iNegTuned), 'r', 'linewidth', 2)
+    % yline(sum(iNotTuned), 'color', [.5 .5 .5], 'linewidth', 2)
+    % xlim([0 length(iNPosTuned)])
+    % title([analyzeBhv{iBhv}, ' nTrial: ', num2str(length(iNPosTuned))], 'interpreter', 'none')
+    % if iBhv == 13
+    %     % Labels for axes and title
+    %     xlabel('Number of pos. tuned across trials');
+    %     ylabel('Number Postively Modulated');
+    %     legend({'Total', 'Negative Tuned', 'Not Tuned', 'Positive Tuned'})
+    % end
+end
+sgtitle('Mean peri-onset spiking M56')
+% saveas(gcf, fullfile(paths.figurePath, 'Number of postively modulated neurons across trials'), 'png')
+
+
+
+
+%% Across a given brain area, for positively tuned neurons, on what proportion of trials is each on positively modulated?
+
+% Get monitor positions and size
+monitorPositions = get(0, 'MonitorPositions');
+if size(monitorPositions, 1) < 2
+    error('Second monitor not detected');
+end
+secondMonitorPosition = monitorPositions(2, :);
+% Create a maximized figure on the second monitor
+fig = figure(237);
+clf
+set(fig, 'Position', secondMonitorPosition);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02], .1);
+
+for iBhv = 1 : length(analyzeBhv)
+    iPosTuned = logical(posMod(iBhv, idInd));
+    iNegTuned = logical(negMod(iBhv, idInd));
+    iNotTuned = logical(notMod(iBhv, idInd));
+
+    % what proportion of tuned/not tuned population is tuned in each/across trials?
+    iPosTunedPos = max(eventMatZ{iBhv}(fullStartInd + periWindow, idInd(iPosTuned), :), [], 1) > nStd;
+    iPosTunedPos = permute(iPosTunedPos, [3 2 1]);
+    iNegTunedPos = max(eventMatZ{iBhv}(fullStartInd + periWindow, idInd(iNegTuned), :), [], 1) > nStd;
+    iNegTunedPos = permute(iNegTunedPos, [3 2 1]);
+    iPosNotTunedPos = max(eventMatZ{iBhv}(fullStartInd + periWindow, idInd(iNotTuned), :), [], 1) > nStd;
+    iPosNotTunedPos = permute(iPosNotTunedPos, [3 2 1]);
+
+    % Number of pos, not, neg neurons tuned in each trial
+    iNPosTuned = sum(iPosTunedPos, 1) ./ size(iPosTunedPos, 1); 
+    iNNegTuned = sum(iNegTunedPos, 1) ./ size(iPosTunedPos, 1); 
+    iNNotTuned = sum(iPosNotTunedPos, 1) ./ size(iPosTunedPos, 1);
+
+    % Plot lines of numbers of neurons in each category
+    axes(ax(iBhv))
+    hold on
+    bar(1:length(iNPosTuned), iNPosTuned)
+    % plot(1:length(iNPosTuned), iNNegTuned, 'r', 'linewidth', 2)
+    % plot(1:length(iNPosTuned), iNNotTuned, 'color', [.5 .5 .5], 'linewidth', 2)
+    % plot(1:length(iNPosTuned), iNPosTuned, 'b', 'linewidth', 2)
+    % 
+    % yline(sum(iPosTuned), 'b', 'linewidth', 2)
+    % yline(sum(iNegTuned), 'r', 'linewidth', 2)
+    % yline(sum(iNotTuned), 'color', [.5 .5 .5], 'linewidth', 2)
+    % xlim([0 length(iNPosTuned)])
+    % title([analyzeBhv{iBhv}, ' nTrial: ', num2str(length(iNPosTuned))], 'interpreter', 'none')
+ca = gca;
+ca.YTickLabel = ca.YTick;
+    % if iBhv == 13
+    %     % Labels for axes and title
+        xlabel('Individual pos. tuned neurons');
+        ylabel('Prop. Trials Postively Modulated');
+    %     legend({'Total', 'Negative Tuned', 'Not Tuned', 'Positive Tuned'})
+    % end
+end
+sgtitle('Number of postively tuned neurons across trials')
+saveas(gcf, fullfile(paths.figurePath, 'Number of postively modulated neurons across trials'), 'png')
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -479,6 +621,21 @@ figure(823); clusterer.plot_clusters();
 
 
 
+%%
+fname = 'myfigure';
+
+picturewidth = 20; % set this parameter and keep it forever
+hw_ratio = 0.65; % feel free to play with this ratio
+set(findall(hfig,'-property','FontSize'),'FontSize',17) % adjust fontsize to your document
+
+set(findall(hfig,'-property','Box'),'Box','off') % optional
+set(findall(hfig,'-property','Interpreter'),'Interpreter','latex') 
+set(findall(hfig,'-property','TickLabelInterpreter'),'TickLabelInterpreter','latex')
+set(hfig,'Units','centimeters','Position',[3 3 picturewidth hw_ratio*picturewidth])
+pos = get(hfig,'Position');
+set(hfig,'PaperPositionMode','Auto','PaperUnits','centimeters','PaperSize',[pos(3), pos(4)])
+%print(hfig,fname,'-dpdf','-vector','-fillpage')
+print(hfig,fname,'-dpng','-vector')
 
 
 

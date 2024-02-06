@@ -180,10 +180,13 @@ ipsi_orient     = [1 .3 .7]; % red/pink
 locomotion      = [0 .17 0];  % (dark) green
 
 in_nest_sleeping_or_irrelevant   = [0 .3 0]; % dark green
-investigate_1   = [0 0 0]; % black
-investigate_2   = [.4 .4 .4];  % med gray
-investigate_3   = [.75 .75 .75];  % light gray
-rear            = [1 .928 0]; % yellow
+% investigate_1   = [0 0 0]; % black
+% investigate_2   = [.4 .4 .4];  % med gray
+% investigate_3   = [.75 .75 .75];  % light gray
+investigate_1   = [0 .4 0]; % black
+investigate_2   = [.1 .6 .1];  % med gray
+investigate_3   = [.2 1 .2];  % light gray
+rear            = [.93 .86 0]; % yellow
 dive_scrunch    = [.421 .25 .216]; % brown
 paw_groom       = [.1 .5 .6]; % blue
 face_groom_1    = [.3 0 .7]; % dark purple
@@ -195,7 +198,8 @@ contra_itch     = [.9 .35 0]; % dark orange
 ipsi_itch_1     = [1 .55 0]; % light orange
 contra_orient   = [1 0 0]; % red
 ipsi_orient     = [1 0 .85]; % magenta read
-locomotion      = [0 .8 0];  % (dark) green
+% locomotion      = [0 .8 0];  % (dark) green
+locomotion      = [0 0 0];  % (dark) green
 
 
 colors = [];

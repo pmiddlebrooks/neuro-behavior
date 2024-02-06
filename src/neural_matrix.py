@@ -1,15 +1,15 @@
 import numpy as np
 
 def neural_matrix(data, opts):
-    durFrames = int(np.floor(np.sum(data['bhvDur']) / opts.frameSize))
+    durFrames = int(np.floor(np.sum(data['bhvDur']) / opts['frameSize']))
 
     if 'id' in data['ci'].columns:
-        idLabels = data['ci'].id.iloc[opts.useNeurons].values
+        idLabels = data['ci'].id.iloc[opts['useNeurons']].values
     else:
-        idLabels = data['ci'].cluster_id.iloc[opts.useNeurons].values
+        idLabels = data['ci'].cluster_id.iloc[opts['useNeurons']].values
 
     # Preallocate data matrix
-    dataMat = np.zeros((durFrames, len(opts.useNeurons)))
+    dataMat = np.zeros((durFrames, len(opts['useNeurons'])))
 
     areaLabels = []
 
@@ -18,34 +18,34 @@ def neural_matrix(data, opts):
         iSpikeTimes = data['spikeTimes'][data['spikeClusters'] == idLabels[i]]
 
         # Define the time interval (in seconds)
-        interval = opts.frameSize
+        interval = opts['frameSize']
 
         # Initialize a vector to store the counts
         iSpikeCount = np.zeros(dataMat.shape[0])
 
         # Count the number of time stamps (spikes) within each interval
         for j in range(dataMat.shape[0]):
-            lowerBound = ((j - 1) * interval) + (interval * opts.shiftAlignFactor)
-            upperBound = (j * interval) + (interval * opts.shiftAlignFactor)
+            lowerBound = ((j - 1) * interval) + (interval * opts['shiftAlignFactor'])
+            upperBound = (j * interval) + (interval * opts['shiftAlignFactor'])
             iSpikeCount[j] = np.sum((iSpikeTimes >= lowerBound) & (iSpikeTimes < upperBound))
 
         dataMat[:, i] = iSpikeCount
 
         # Keep track of which neurons (columns) are in which brain area
-        areaLabels.append(data['ci'].area.iloc[opts.useNeurons[i]])
+        areaLabels.append(data['ci'].area.iloc[opts['useNeurons'][i]])
 
     # Remove neurons that are out of min-max firing rates
     rmvNeurons = []
 
-    if opts.removeSome:
+    if opts['removeSome']:
         checkTime = 5 * 60
-        checkFrames = int(checkTime / opts.frameSize)
+        checkFrames = int(checkTime / opts['frameSize'])
 
         meanStart = np.sum(dataMat[:checkFrames, :], axis=0) / checkTime
         meanEnd = np.sum(dataMat[-checkFrames:, :], axis=0) / checkTime
 
-        keepStart = (meanStart >= opts.minFiringRate) & (meanStart <= opts.maxFiringRate)
-        keepEnd = (meanEnd >= opts.minFiringRate) & (meanEnd <= opts.maxFiringRate)
+        keepStart = (meanStart >= opts['minFiringRate']) & (meanStart <= opts['maxFiringRate'])
+        keepEnd = (meanEnd >= opts['minFiringRate']) & (meanEnd <= opts['maxFiringRate'])
 
         rmvNeurons = ~(keepStart & keepEnd)
         print(f'\nKeeping {np.sum(~rmvNeurons)} of {len(rmvNeurons)} neurons')
