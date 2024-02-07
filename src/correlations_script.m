@@ -1,7 +1,10 @@
-%% Run this, then go to spiking_script and get the behavior and neural data matrix
-opts.frameSize = .05; % 50 ms framesize for now
-opts.collectFor = 60*60; % Get an hour of data
+%% Get data from get_standard_data
 
+opts = neuro_behavior_options;
+opts.frameSize = .05; % 50 ms framesize for now
+opts.collectFor = 60*45; % Get 45 min
+
+get_standard_data
 
 
 %% Create a 2-D data matrix of stacked peri-event start time windows (time X neuron)
@@ -292,14 +295,15 @@ dataBhvTrunc = dataBhv(3:end-2, :);
 validBhvTrunc = validBhv(3:end-2,:);
 
 %% If you want to subsample bouts (match the number of bouts for each behavior...
+% Do you want to subsample to match the number of bouts?
+matchBouts = 0;
+%%
 nBout = zeros(length(analyzeCodes), 1);
 for i = 1 : length(analyzeCodes)
     nBout(i) = sum(dataBhvTrunc.ID == analyzeCodes(i) & validBhvTrunc(:, codes == analyzeCodes(i)));
 end
 nSample = min(nBout);
 
-%% Do you want to subsample to match the number of bouts?
-matchBouts = 0;
 
 %% Get relevant data (Using dataMat/dataMatZ
 periEventTime = -.1 : opts.frameSize : .1; % seconds around onset
@@ -359,7 +363,7 @@ end
 %%
 
 %% Signal correlations
-plotFlag = 1;
+plotFlag = 0;
 
 xlimConst = [-1 1];
 
@@ -1048,6 +1052,58 @@ bar(binCenters, N, 'FaceColor', [.5 .5 .5], 'BarWidth', 1, 'FaceAlpha', .6);
     end
 end
 sgtitle('Positively tuned neuron pairs: Noise and Signal correlations')
+
+
+%% Distribution of signal - noise correlations for positively tuned neurons in each behavior
+idInd = idM56;
+edges = -.8 : .05 : .8;
+binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+
+% Get monitor positions and size
+monitorPositions = get(0, 'MonitorPositions');
+if size(monitorPositions, 1) < 2
+    error('Second monitor not detected');
+end
+secondMonitorPosition = monitorPositions(2, :);
+% Create a maximized figure on the second monitor
+fig = figure(761); clf
+set(fig, 'Position', secondMonitorPosition);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
+colors = colors_for_behaviors(analyzeCodes);
+
+for iBhv = 1 : length(analyzeCodes)
+
+    % Which neurons are positively tuned for this behavior?
+    iPosTuneInd = intersect(idInd, find(posMod(iBhv, :)));
+
+    returnIdx = tril(true(length(iPosTuneInd)), -1);
+    [row, col] = find(returnIdx);   % indices of each neuron in the pair
+
+    % What is their signal correlation across behaviors?
+    [sigRho,pval] = corr(meanSpikesZ(:, iPosTuneInd));
+    iSigCorr = sigRho(returnIdx);
+
+    % What is their noise correlation for this behavior?
+    noiseRho = corr(spikesPerTrialZ{iBhv}(:, iPosTuneInd));
+    iNoiseCorr = noiseRho(returnIdx);
+
+    axes(ax(iBhv)); hold on
+
+    N = histcounts(iSigCorr - iNoiseCorr, edges, 'Normalization', 'pdf');
+    bar(binCenters, N, 'FaceColor', colors(iBhv,:), 'BarWidth', 1);
+
+    ca = gca;
+    % ca.YTickLabel = ca.YTick;
+    ca.XTickLabel = ca.XTick;
+    title(analyzeBhv{iBhv}, 'interpreter', 'none')
+    if iBhv == 1
+        legend({'Signal - Noise'})
+    end
+end
+sgtitle('Positively tuned neuron pairs: Signal minus Noise correlations')
+
+
 
 
 %% Distribution of signal and noise correlations for untuned neurons in each behavior
