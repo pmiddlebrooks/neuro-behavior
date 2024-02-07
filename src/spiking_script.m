@@ -14,7 +14,7 @@ end
 
 %% Make any options changes you want here
 
-opts.collectFor = 60*60*2;
+opts.collectFor = 60*45; % seconds
 
 %%
 figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectFor)]);
@@ -132,6 +132,7 @@ allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | st
 
 goodM23 = allGood & strcmp(data.ci.area, 'M23');
 goodM56= allGood & strcmp(data.ci.area, 'M56');
+goodCC = allGood & strcmp(data.ci.area, 'CC');
 goodDS = allGood & strcmp(data.ci.area, 'DS');
 goodVS = allGood & strcmp(data.ci.area, 'VS');
 
@@ -141,7 +142,7 @@ goodVS = allGood & strcmp(data.ci.area, 'VS');
 % Make or load neural matrix
 
 % which neurons to use in the neural matrix
-opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
+opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS | goodCC);
 
 tic
 [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts);
@@ -155,6 +156,8 @@ idM23 = find(strcmp(areaLabels, 'M23'));
 idM56 = find(strcmp(areaLabels, 'M56'));
 idDS = find(strcmp(areaLabels, 'DS'));
 idVS = find(strcmp(areaLabels, 'VS'));
+idAll{1} = idM23; idAll{2} = idM56; idAll{3} = idDS; idAll{4} = idVS;
+areaAll{1} = 'M23'; areaAll{2} = 'M56'; areaAll{3} = 'DS'; areaAll{4} = 'VS';
 
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
@@ -169,27 +172,50 @@ for i = 1 : size(dataBhv, 1)
     bhvIDMat(iInd) = dataBhv.ID(i);
 end
 
-%% Alternative z-scoring: Find non-transition times and create baseline and std from that
-removeTime = -.4 : opts.frameSize : .4;
-removeWindow = round(removeTime(1:end-1) / opts.frameSize);
-zFrames = ones(size(dataMatZ, 1), 1);
-zFrames(1:4) = 0; zFrames(end-4:end) = 0;
-startFrame = round(dataBhv.StartFrame(4:end-3));
-for i = 1 : length(removeWindow)
-    zFrames(startFrame + removeWindow(i)) = 0;
-end
-dataMatZAlt = (dataMat - mean(dataMat(logical(zFrames), :), 1)) ./ std(dataMat(logical(zFrames), :), 1);
 
-mean(dataMat(:, idM56), 1) - mean(dataMat(logical(zFrames), idM56), 1)
-std(dataMat(:, idM56), 1) - std(dataMat(logical(zFrames), idM56), 1)
-%% Alternative z-scoring: use in nest/sleeping/irrelevant times for baseline/std
-dataMatAlt = [];
-startFrame = dataBhv.StartFrame(dataBhv.ID == -1);
-durFrame = dataBhv.DurFrame(dataBhv.ID == -1);
-for i = 1 :length(startFrame)
-    if durFrame(i) > 1
-    dataMatAlt = [dataMatAlt; dataMat(startFrame(i) : startFrame(i) + durFrame(i) - 2, :)];
+
+%%         Standard PSTHS to use for analyses (b/c they have the same trials, etc)
+% Create 3-D psth data matrix of stacked peri-event start time windows (time X neuron X trial)
+% Make one of spike counts and one of zscored spike counts
+
+% z-Window is a big window used to calculate z-score. Then store a smaller
+% portion of that window in fullWindow.
+zTime = -3 : opts.frameSize : 2;  % zscore on a 5sec window peri-onset
+zWindow = round(zTime(1:end-1) / opts.frameSize);
+zStartInd = find(zTime == 0);
+fullTime = -1 : opts.frameSize : 1; % seconds around onset
+fullWindow = round(fullTime(1:end-1) / opts.frameSize); % frames around onset w.r.t. zWindow (remove last frame)
+fullStartInd = find(fullWindow == 0);
+periTime = -.1 : opts.frameSize : .1; % seconds around onset
+periWindow = periTime(1:end-1) / opts.frameSize; % frames around onset w.r.t. zWindow (remove last frame)
+
+eventMat = cell(length(analyzeCodes), 1);
+eventMatZ = cell(length(analyzeCodes), 1);
+periMatZ = cell(length(analyzeCodes), 1);
+for iBhv = 1 : length(analyzeCodes)
+
+    iValidBhv = opts.validBhv(:, opts.bhvCodes == analyzeCodes(iBhv));
+    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv) & iValidBhv) ./ opts.frameSize);
+    bhvStartFrames(bhvStartFrames < -zWindow(1) + 1) = [];
+    bhvStartFrames(bhvStartFrames > size(dataMat, 1) - zWindow(end)) = [];
+
+    nTrial = length(bhvStartFrames);
+
+    iDataMat = zeros(length(zWindow), size(dataMat, 2), nTrial); % peri-event time X neurons X nTrial
+    for j = 1 : nTrial
+        iDataMat(:,:,j) = dataMat(bhvStartFrames(j) + zWindow ,:);
+        % iZMat(:,:,j) = zscore(dataMat(bhvStartFrames(j) + zWindow ,:), 1);
     end
+    meanPsth = mean(iDataMat, 3);
+    meanWindow = mean(meanPsth, 1);
+    stdWindow = std(meanPsth, 1);
+
+    iDataMatZ = (iDataMat - meanWindow) ./ stdWindow; 
+
+    eventMat{iBhv} = iDataMat(zStartInd + fullWindow, :, :);
+    eventMatZ{iBhv} = iDataMatZ(zStartInd + fullWindow, :, :);
+    periMatZ{iBhv} = permute(mean(iDataMatZ(zStartInd + periWindow, :, :), 1), [3 2 1]);
+
 end
 
 
@@ -213,6 +239,10 @@ save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', '
 
 %% Or load an existing dataMat
 load(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
+
+
+
+
 
 
 
