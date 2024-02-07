@@ -16,24 +16,14 @@ areaLabels = {};
 for i = 1 : length(idLabels)
 
     % iSpikeTimes = data.spikeTimes(data.spikeClusters == opts.useNeurons(i));
-    iSpikeTimes = data.spikeTimes(data.spikeClusters == idLabels(i));
+    iSpikeTime = data.spikeTimes(data.spikeClusters == idLabels(i));
 
-    % Define the time interval (in seconds)
-    interval = opts.frameSize;
+    timeEdges = 0 : opts.frameSize : sum(data.bhvDur); % Create edges of bins from 0 to max time
 
-    % Initialize a vector to store the counts
-    iSpikeCount = zeros(size(dataMat, 1), 1);
+    % Count the number of spikes in each bin
+[iSpikeCount, ~] = histcounts(iSpikeTime, timeEdges);
 
-    % Count the number of time stamps (spikes) within each interval
-    for j = 1:size(dataMat, 1)
-        lower_bound = ((j - 1) * interval) + (interval * opts.shiftAlignFactor);
-        upper_bound = (j * interval) + (interval * opts.shiftAlignFactor);
-        iSpikeCount(j) = sum(iSpikeTimes >= lower_bound & iSpikeTimes < upper_bound);
-    end
-    % [sum(iSpikeCount) find(iSpikeCount, 1, 'last')]
-    dataMat(:, i) = iSpikeCount;
-    % Display the count vector
-    % disp(sSpikeCount);
+    dataMat(:, i) = iSpikeCount';
 
     % Keep track which neurons (columns) are in which brain area
     areaLabels = [areaLabels, data.ci.area(opts.useNeurons(i))];

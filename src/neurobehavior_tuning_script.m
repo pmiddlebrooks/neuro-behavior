@@ -66,24 +66,24 @@ nSample = min(nBout);
 % %             Which neurons are positively and negatively (significantly) modulated for each behavior?
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % % Create a 3-D psth data matrix of stacked peri-event start time windows (time X neuron X trial)
-% 
+%
 % fullTime = -1 : opts.frameSize : 1; % seconds around onset
 % fullWindow = round(fullTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 % periTime = -.1 : opts.frameSize : .1; % seconds around onset
 % periWindowInd = periTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
-% 
+%
 % % eventMat = cell(length(analyzeCodes), 1);
 % eventMatZ = cell(length(analyzeCodes), 1);
 % periMatZ = cell(length(analyzeCodes), 1);
 % for iBhv = 1 : length(analyzeCodes)
-% 
+%
 %     iValidBhv = opts.validBhv(:, opts.bhvCodes == analyzeCodes(iBhv));
 %     bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv) & iValidBhv) ./ opts.frameSize);
 %     bhvStartFrames(bhvStartFrames < fullWindow(end) + 1) = [];
 %     bhvStartFrames(bhvStartFrames > size(dataMatZ, 1) - fullWindow(end)) = [];
-% 
+%
 %     nTrial = length(bhvStartFrames);
-% 
+%
 %     % iEventMat = zeros(length(fullWindow), size(dataMatZ, 2), nTrial); % peri-event time X neurons X nTrial
 %     iEventMatZ = zeros(length(fullWindow), size(dataMatZ, 2), nTrial); % peri-event time X neurons X nTrial
 %     iPeriMatZ = zeros(nTrial, size(dataMatZ, 2)); % peri-event time X neurons X nTrial
@@ -96,7 +96,7 @@ nSample = min(nBout);
 %     eventMatZ{iBhv} = iEventMatZ;
 %     periMatZ{iBhv} = iPeriMatZ;
 % end
-% 
+%
 
 
 
@@ -124,57 +124,57 @@ end
 
 
 %% Which neurons are and aren't tuned? Test 1: Ttest between mean firing rates baseline vs. per-onset
-% 
+%
 % dataTimes = fullWindow .* opts.frameSize; % this is relative to the eventMat matrix
 % preWindowInd = dataTimes >= -1 & dataTimes < -.7; % baseline window
 % periWindowInd = dataTimes >= -.1 & dataTimes < .1; % peri-onset window
-% 
+%
 % posMod = zeros(length(analyzeCodes), size(dataMatZ, 2));
 % negMod = posMod;
 % notMod = posMod;
-% 
+%
 % for iBhv = 1 : length(analyzeBhv)
 %     % mean of spikes in each trial (in pre-window and peri-window
 %     preMean = mean(eventMatZ{iBhv}(preWindowInd, :, :), 1);
 %     periMean = mean(eventMatZ{iBhv}(periWindowInd, :, :), 1);
-% 
+%
 %     preMean = permute(preMean, [3 2 1]);
 %     periMean = permute(periMean, [3 2 1]);
-% 
+%
 %     % Are they modulated significantly?
 %     [h,p,~,~] = ttest(preMean, periMean);
 %     h(isnan(h)) = 0;
 %     % h = reshape(h, size(h, 3), 1);
-% 
+%
 %     % Which one is larger (positive or negative modulation?
 %     periMinusPre = mean(periMean, 1) - mean(preMean, 1);
-% 
+%
 %     % Keep track of which neurons are positively (posMod) and negatively
 %     % (negMod) for each behavior)
 %     posMod(iBhv, :) = periMinusPre > 0 & h;
 %     negMod(iBhv, :) = periMinusPre < 0 & h;
 %     noMod(iBhv, :) = ~posMod(iBhv, :) & ~negMod(iBhv,:);
-% 
+%
 % end
 
 %% Recreate Hsu Fig 2b: What proportion of neurons are positively modulated over how many behaviors?
 figure(923);
 for i = 1:4
     idInd = idAll{i};
-sumPos = sum(posMod(:,idInd));
+    sumPos = sum(posMod(:,idInd));
 
-[uniqueInts, ~, idx] = unique(sumPos);
-counts = accumarray(idx, 1);
-countsNorm = counts / sum(counts);
-% Plot the bar graph
-subplot(4,1,i)
-bar(uniqueInts, countsNorm);
-xlim([-.5 14.5])
-title(areaAll{i})
-ylabel('Positively tuned')
-if i == 4
-    xlabel("Number of behaviors")
-end
+    [uniqueInts, ~, idx] = unique(sumPos);
+    counts = accumarray(idx, 1);
+    countsNorm = counts / sum(counts);
+    % Plot the bar graph
+    subplot(4,1,i)
+    bar(uniqueInts, countsNorm);
+    xlim([-.5 14.5])
+    title(areaAll{i})
+    ylabel('Positively tuned')
+    if i == 4
+        xlabel("Number of behaviors")
+    end
 end
 
 %% How many neurons are tuned in each behavior?
@@ -254,8 +254,8 @@ set(fig, 'Position', secondMonitorPosition);
 nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02], .1);
 colors = colors_for_behaviors(analyzeCodes);
-    edges = -.05 : .1 : 1.05;
-    binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+edges = -.05 : .1 : 1.05;
+binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 for iBhv = 1 : length(analyzeBhv)
     iPosTuned = logical(posMod(iBhv, idInd));
@@ -285,9 +285,9 @@ for iBhv = 1 : length(analyzeBhv)
     % % Set x-axis tick marks and labels
     title([analyzeBhv{iBhv}, '  nPosTune: ', num2str(sum(iPosTuned)), '  nNotTune: ', num2str(sum(iNotTuned)), ' nTrial: ', num2str(length(iPropPosTuned))], 'interpreter', 'none')
     xticks(binCenters)
-xticklabels(binCenters)
-ca = gca;
-ca.YTickLabel = ca.YTick;
+    xticklabels(binCenters)
+    ca = gca;
+    ca.YTickLabel = ca.YTick;
     if iBhv == 13
         % Labels for axes and title
         xlabel('Proportion of pop. tuned across trials');
@@ -328,8 +328,8 @@ for iBhv = 1 : length(analyzeBhv)
     iPosNotTunedPos = permute(iPosNotTunedPos, [3 2 1]);
 
     % Number of pos, not, neg neurons tuned in each trial
-    iNPosTuned = sum(iPosTunedPos, 2); 
-    iNNegTuned = sum(iNegTunedPos, 2); 
+    iNPosTuned = sum(iPosTunedPos, 2);
+    iNNegTuned = sum(iNegTunedPos, 2);
     iNNotTuned = sum(iPosNotTunedPos, 2);
     iNTotTuned = sum([iNPosTuned, iNNegTuned, iNNotTuned], 2);
 
@@ -346,8 +346,8 @@ for iBhv = 1 : length(analyzeBhv)
     yline(sum(iNotTuned), 'color', [.5 .5 .5], 'linewidth', 2)
     xlim([0 length(iNPosTuned)])
     title([analyzeBhv{iBhv}, ' nTrial: ', num2str(length(iNPosTuned))], 'interpreter', 'none')
-ca = gca;
-ca.YTickLabel = ca.YTick;
+    ca = gca;
+    ca.YTickLabel = ca.YTick;
     if iBhv == 13
         % Labels for axes and title
         xlabel('Number of pos. tuned across trials');
@@ -397,13 +397,13 @@ for iBhv = 1 : length(analyzeBhv)
     xlim([0 size(iPosTunedPos,2)])
     ylim([0 size(iPosTunedPos,1)+size(iPosNotTunedPos,1)])
     colormap(bluewhitered_custom([-8 8]))
-ca = gca;
-ca.YTickLabel = ca.YTick;
+    ca = gca;
+    ca.YTickLabel = ca.YTick;
     % plot(1:length(iNPosTuned), iNTotTuned, 'k', 'linewidth', 2)
     % plot(1:length(iNPosTuned), iNNegTuned, 'r', 'linewidth', 2)
     % plot(1:length(iNPosTuned), iNNotTuned, 'color', [.5 .5 .5], 'linewidth', 2)
     % plot(1:length(iNPosTuned), iNPosTuned, 'b', 'linewidth', 2)
-    % 
+    %
     % yline(sum(iPosTuned), 'b', 'linewidth', 2)
     % yline(sum(iNegTuned), 'r', 'linewidth', 2)
     % yline(sum(iNotTuned), 'color', [.5 .5 .5], 'linewidth', 2)
@@ -451,8 +451,8 @@ for iBhv = 1 : length(analyzeBhv)
     iPosNotTunedPos = permute(iPosNotTunedPos, [3 2 1]);
 
     % Number of pos, not, neg neurons tuned in each trial
-    iNPosTuned = sum(iPosTunedPos, 1) ./ size(iPosTunedPos, 1); 
-    iNNegTuned = sum(iNegTunedPos, 1) ./ size(iPosTunedPos, 1); 
+    iNPosTuned = sum(iPosTunedPos, 1) ./ size(iPosTunedPos, 1);
+    iNNegTuned = sum(iNegTunedPos, 1) ./ size(iPosTunedPos, 1);
     iNNotTuned = sum(iPosNotTunedPos, 1) ./ size(iPosTunedPos, 1);
 
     % Plot lines of numbers of neurons in each category
@@ -462,18 +462,18 @@ for iBhv = 1 : length(analyzeBhv)
     % plot(1:length(iNPosTuned), iNNegTuned, 'r', 'linewidth', 2)
     % plot(1:length(iNPosTuned), iNNotTuned, 'color', [.5 .5 .5], 'linewidth', 2)
     % plot(1:length(iNPosTuned), iNPosTuned, 'b', 'linewidth', 2)
-    % 
+    %
     % yline(sum(iPosTuned), 'b', 'linewidth', 2)
     % yline(sum(iNegTuned), 'r', 'linewidth', 2)
     % yline(sum(iNotTuned), 'color', [.5 .5 .5], 'linewidth', 2)
     % xlim([0 length(iNPosTuned)])
     % title([analyzeBhv{iBhv}, ' nTrial: ', num2str(length(iNPosTuned))], 'interpreter', 'none')
-ca = gca;
-ca.YTickLabel = ca.YTick;
+    ca = gca;
+    ca.YTickLabel = ca.YTick;
     % if iBhv == 13
     %     % Labels for axes and title
-        xlabel('Individual pos. tuned neurons');
-        ylabel('Prop. Trials Postively Modulated');
+    xlabel('Individual pos. tuned neurons');
+    ylabel('Prop. Trials Postively Modulated');
     %     legend({'Total', 'Negative Tuned', 'Not Tuned', 'Positive Tuned'})
     % end
 end
@@ -517,7 +517,7 @@ nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
 
 for iBhv = 1 : length(analyzeBhv)
-    
+
     % iSpikes = sum(eventMatZ{iBhv}(fullStartInd + periWindow, idInd, :), 1);
     iSpikes = sum(eventMat{iBhv}(fullStartInd + periWindow, idDS, :), 1);
     iSpikes = permute(iSpikes, [3 2 1]);
@@ -550,7 +550,7 @@ nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
 
 for iBhv = 1 : length(analyzeBhv)
-    
+
     % iSpikes = sum(eventMatZ{iBhv}(fullStartInd + periWindow, idInd, :), 1);
     iSpikes = sum(eventMat{iBhv}(fullStartInd + periWindow, idM56, :), 1);
     iSpikes = permute(iSpikes, [3 2 1]);
@@ -575,38 +575,52 @@ sgtitle('PCA: M56')
 
 %%                           Dim-reduction and clustering
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Make a modified dataMat with 400ms bins
-nPerBin = .4 / opts.frameSize;
-dataMat400 = [];
-bhvID400 = [];
-nBin400 = floor(size(dataMat, 1) / nPerBin);
-for i = 1 : nPerBin : nBin400 * nPerBin
-    dataMat400 = [dataMat400; sum(dataMat(i:i+nPerBin-1, :), 1)];
-    bhvID400 = [bhvID400; bhvIDMat(i+nPerBin/2 - 1)];
+%% Make a modified dataMat with big (e.g. 400ms) bins
+
+% idInd = 1:size(dataMat, 2);
+idInd = idM56;
+
+binSize = .3;
+
+% nPerBin = uint8(binSize / opts.frameSize);
+nPerBin = round(binSize / opts.frameSize);
+dataMatMod = [];
+bhvIDMod = [];
+nBin = floor(size(dataMat, 1) / nPerBin);
+for i = 1 : nPerBin : nBin * nPerBin
+    dataMatMod = [dataMatMod; sum(dataMat(i : i + nPerBin - 1, :), 1)];
+    bhvIDMod = [bhvIDMod; bhvIDMat(i + floor(nPerBin/2) - 1)];
 end
 
 
 
 %% t-SNE for all behaviors
-nFrame = floor(size(dataMat400, 1) / 4);
-    Y = tsne(dataMat400(1:nFrame,idM56),'Algorithm','exact');
-    figure(236)
-    colors = colors_for_behaviors(codes);
-    h = gscatter(Y(:,1), Y(:,2), bhvID400(1:nFrame), [], 'o');
-    for i = 1 : length(codes)
+nFrame = floor(size(dataMatMod, 1) / 4);
+Y = tsne(dataMatMod(1:nFrame, idInd),'Algorithm','exact');
+%%
+figure(236)
+colors = colors_for_behaviors(codes);
+h = gscatter(Y(:,1), Y(:,2), bhvIDMod(1:nFrame), [], 'o');
+for i = 1 : length(codes)
     % set(h(i), 'MarkerFaceColor', colors(i, :), 'MarkerEdgeColor', colors(i, :));
     set(h(i), 'MarkerEdgeColor', colors(i, :), 'linewidth', 2);
-    end
+end
 %     scatter3(Y(:,1), Y(:,2), 1:nFrame)
+title(['t-SNE binSize = ', num2str(binSize)])
 
 %% UMAP for all behaviors
-nFrame = floor(size(dataMat400, 1) / 4);
-[reduction, umap, clusterIdentifiers, extras] = run_umap(dataMat400(1:nFrame,:));
-    % figure(238)
-    gscatter(reduction(:,1), reduction(:,2), bhvID400(1:nFrame))
-    % scatter3(Y(:,1), Y(:,2), 1:nFrame)
+nFrame = floor(size(dataMatMod, 1) / 4);
+[reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(1:nFrame, idInd));
+%%
+figure(238)
+h = gscatter(reduction(:,1), reduction(:,2), bhvIDMod(1:nFrame), [], 'o');
+for i = 1 : length(codes)
+    % set(h(i), 'MarkerFaceColor', colors(i, :), 'MarkerEdgeColor', colors(i, :));
+    set(h(i), 'MarkerEdgeColor', colors(i, :), 'linewidth', 2);
+end
+% scatter3(Y(:,1), Y(:,2), 1:nFrame)
 % gscatter3(reduction(:,1), reduction(:,2), 1:nFrame, bhvID400(1:nFrame))
-
+title(['UMAP binSize = ', num2str(binSize)])
 
 
 %% Classify using HDBSCAN
@@ -629,7 +643,7 @@ hw_ratio = 0.65; % feel free to play with this ratio
 set(findall(hfig,'-property','FontSize'),'FontSize',17) % adjust fontsize to your document
 
 set(findall(hfig,'-property','Box'),'Box','off') % optional
-set(findall(hfig,'-property','Interpreter'),'Interpreter','latex') 
+set(findall(hfig,'-property','Interpreter'),'Interpreter','latex')
 set(findall(hfig,'-property','TickLabelInterpreter'),'TickLabelInterpreter','latex')
 set(hfig,'Units','centimeters','Position',[3 3 picturewidth hw_ratio*picturewidth])
 pos = get(hfig,'Position');
@@ -670,8 +684,8 @@ for iBhv = 1 : length(analyzeBhv)
     iRandTrial = randperm(iTrial);
     axes(ax(iBhv))
     hold on
-plot(meanRateNotTuned(iRandTrial), 'Color', [0 .5 0], 'linewidth', 2);
-plot(meanRateTuned(iRandTrial), 'Color', colors(iBhv,:), 'linewidth', 2);
+    plot(meanRateNotTuned(iRandTrial), 'Color', [0 .5 0], 'linewidth', 2);
+    plot(meanRateTuned(iRandTrial), 'Color', colors(iBhv,:), 'linewidth', 2);
 end
 sgtitle('Mean pop firing rate across trials')
 
@@ -687,36 +701,36 @@ for iBhv = 1 : length(analyzeBhv)
     meanRateTuned = mean(periMatZ{iBhv}(:, idInd(iTuned)), 2);
     meanRateNotTuned = mean(periMatZ{iBhv}(:, idInd(~iTuned)), 2);
 
-% Calculate the correlation coefficient
-R = corrcoef(meanRateTuned, meanRateNotTuned);
+    % Calculate the correlation coefficient
+    R = corrcoef(meanRateTuned, meanRateNotTuned);
 
-% Display the correlation coefficient
-disp(['Correlation coefficient: ', num2str(R(1,2))]);
+    % Display the correlation coefficient
+    disp(['Correlation coefficient: ', num2str(R(1,2))]);
 
-% Plot the data points
+    % Plot the data points
     axes(ax(iBhv))
-scatter(meanRateTuned, meanRateNotTuned, 'markerEdgeColor', colors(iBhv,:));
-hold on; % Hold on to the current plot
+    scatter(meanRateTuned, meanRateNotTuned, 'markerEdgeColor', colors(iBhv,:));
+    hold on; % Hold on to the current plot
 
-% Fit a linear regression line
-coefficients = polyfit(meanRateTuned, meanRateNotTuned, 1);
+    % Fit a linear regression line
+    coefficients = polyfit(meanRateTuned, meanRateNotTuned, 1);
 
-% Generate x values for the regression line
-xLine = linspace(min(meanRateTuned), max(meanRateTuned), 100);
+    % Generate x values for the regression line
+    xLine = linspace(min(meanRateTuned), max(meanRateTuned), 100);
 
-% Calculate y values for the regression line
-yLine = polyval(coefficients, xLine);
+    % Calculate y values for the regression line
+    yLine = polyval(coefficients, xLine);
 
-% Plot the regression line
-plot(xLine, yLine, 'k', 'LineWidth', 2);
+    % Plot the regression line
+    plot(xLine, yLine, 'k', 'LineWidth', 2);
 
-% Display the correlation coefficient on the plot
-textLocation = [min(meanRateTuned), max(meanRateNotTuned)]; % Set location for the text
-text(textLocation(1), textLocation(2), ['R = ' num2str(R(1,2))], 'FontSize', 12, 'Color', 'blue');
+    % Display the correlation coefficient on the plot
+    textLocation = [min(meanRateTuned), max(meanRateNotTuned)]; % Set location for the text
+    text(textLocation(1), textLocation(2), ['R = ' num2str(R(1,2))], 'FontSize', 12, 'Color', 'blue');
 
-% Add labels and title
-xlabel('meanRateTuned');
-ylabel('meanRateNotTuned');
+    % Add labels and title
+    xlabel('meanRateTuned');
+    ylabel('meanRateNotTuned');
 end
 sgtitle('Tuned vs. not tuned firing rates per trial');
 

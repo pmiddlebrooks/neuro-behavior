@@ -161,25 +161,26 @@ function colors = colors_for_behaviors(behaviors) % (n_colors,bg,func)
 % end
 
 % PGM code starts here:
-in_nest_sleeping_or_irrelevant   = [0 .4 0]; % green
-investigate_1   = [.2 .5448 .1]; % green
-investigate_2   = [.587 .828 .31];  % green
-investigate_3   = [0 1 0];  % green
-rear            = [1 .928 0]; % yellow
-dive_scrunch    = [.521 .25 .216]; % brown
-paw_groom       = [.1 .5 .6]; % blue
-face_groom_1    = [.1 .6 .7]; % blue
-face_groom_2    = [.1 .7 1]; % blue
-head_groom      = [0 0 1]; % blue
-contra_body_groom = [0 1 1]; % blue
-ipsi_body_groom = [0 .7 .9];  % blue
-contra_itch     = [.9 .4 0]; % red/orange
-ipsi_itch_1     = [1 .65 0]; % red/orange
-contra_orient   = [1 .1 .85]; %red/pink
-ipsi_orient     = [1 .3 .7]; % red/pink
-locomotion      = [0 .17 0];  % (dark) green
 
-in_nest_sleeping_or_irrelevant   = [0 .3 0]; % dark green
+% in_nest_sleeping_or_irrelevant   = [0 .4 0]; % green
+% investigate_1   = [.2 .5448 .1]; % green
+% investigate_2   = [.587 .828 .31];  % green
+% investigate_3   = [0 1 0];  % green
+% rear            = [1 .928 0]; % yellow
+% dive_scrunch    = [.521 .25 .216]; % brown
+% paw_groom       = [.1 .5 .6]; % blue
+% face_groom_1    = [.1 .6 .7]; % blue
+% face_groom_2    = [.1 .7 1]; % blue
+% head_groom      = [0 0 1]; % blue
+% contra_body_groom = [0 1 1]; % blue
+% ipsi_body_groom = [0 .7 .9];  % blue
+% contra_itch     = [.9 .4 0]; % red/orange
+% ipsi_itch_1     = [1 .65 0]; % red/orange
+% contra_orient   = [1 .1 .85]; %red/pink
+% ipsi_orient     = [1 .3 .7]; % red/pink
+% locomotion      = [0 .17 0];  % (dark) green
+
+in_nest_sleeping_or_irrelevant   = [.75 .75 .75]; % light gray
 % investigate_1   = [0 0 0]; % black
 % investigate_2   = [.4 .4 .4];  % med gray
 % investigate_3   = [.75 .75 .75];  % light gray
@@ -196,8 +197,8 @@ contra_body_groom = [0 .2 1]; % blue
 ipsi_body_groom = [0 .8 1];  % cyan blue
 contra_itch     = [.9 .35 0]; % dark orange
 ipsi_itch_1     = [1 .55 0]; % light orange
-contra_orient   = [1 0 0]; % red
-ipsi_orient     = [1 0 .85]; % magenta read
+contra_orient   = [1 0 .2]; % red
+ipsi_orient     = [1 0 .65]; % magenta read
 % locomotion      = [0 .8 0];  % (dark) green
 locomotion      = [0 0 0];  % (dark) green
 

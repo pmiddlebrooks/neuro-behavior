@@ -1,8 +1,12 @@
-%% Go to spiking_script and get behavioral and neural data
+%% Get data from get_standard_data
+opts = neuro_behavior_options;
+opts.collectFor = 2*60*60;
+get_standard_data
 
+%%
 % Alter this to try out different populations
 idInd = [idM56 idDS];
-idInd = [idM56]
+idInd = [idM56];
 
 %% Remove the first and last bouts from the dataBhv table
 dataBhvTrunc = dataBhv(3:end-1, :);
@@ -16,7 +20,36 @@ for i = 1 : length(analyzeCodes)
 end
 nSample = min(nBout);
 
-%% Make a neural matrix with concatenated peri-onset bins for each behavior: using dataMatZ
+%% Make a neural matrix with concatenated peri-onset bins for each behavior: using eventMatZ
+
+% Create a neural matrix. Each column is a neuron. Each row are spike
+% counts peri-onset of each behavior.
+behaviorID = [];
+neuralMatrix = [];
+periEventTime = -.1 : opts.frameSize : .3; % seconds around onset
+periWindow = fullStartInd + round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+
+matchBouts = 1;
+for iBhv = 1 : length(analyzeCodes)
+    nBout = size(eventMatZ{iBhv}, 3);
+    if matchBouts
+        iRand = randperm(nBout);
+        iSample = iRand(1:nSample);
+    else
+        iSample = 1:nBout;
+    end
+    behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(nBout * length(periWindow), 1)];
+    iEventMat = permute(eventMatZ{iBhv}(periWindow, :, :), [1 3 2]);
+    iEventMat = reshape(iEventMat, size(iEventMat, 1) * size(iEventMat, 2), []);
+    neuralMatrix = [neuralMatrix; iEventMat];
+end
+
+
+
+
+
+
+%% Alternative: Make a neural matrix with concatenated peri-onset bins for each behavior: using dataMatZ
 
 % Create a neural matrix. Each column is a neuron. Each row are spike
 % counts peri-onset of each behavior.
@@ -38,45 +71,6 @@ for iBhv = 1 : length(analyzeCodes)
         neuralMatrix = [neuralMatrix; dataMatZ(iStartFrames(jStart) + dataWindow, :)];
     end
 end
-
-%% Make a neural matrix with concatenated peri-onset bins for each behavior: using eventMatZ
-
-
-
-
-
-
-% Start here and run LDA
-
-
-
-
-
-
-% Create a neural matrix. Each column is a neuron. Each row are spike
-% counts peri-onset of each behavior.
-behaviorID = [];
-neuralMatrix = [];
-periEventTime = -.1 : opts.frameSize : .1; % seconds around onset
-dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
-
-for iBhv = 1 : length(analyzeCodes)
-    nBout = size(eventMatZ{iBhv}, 3);
-    behaviorID = [behaviorID; ones(nBout * length(dataWindow), 1)];
-    iEventMat = permute(eventMatZ{iBhv}(fullStartInd + dataWindow, :, :), [1 3 2]);
-    iEventMat = reshape(iEventMat, size(iEventMat, 1) * size(iEventMat, 2), []);
-    neuralMatrix = [neuralMatrix; iEventMat];
-end
-
-
-
-
-
-
-
-
-
-
 
 
 %% Instead, train it with a matrix that goes from -.1 before onset, through the duration of the behavior, to .1 s before next behavior onset
@@ -378,7 +372,7 @@ for bhv = 1 : length(bhvList)
             ellipseY = (h / 2) * sin(theta) + y; % Y coordinates
 
             % Plot the ellipse
-            fill(ellipseX, ellipseY, bhvColor, 'FaceAlpha', 0.15, 'EdgeColor', 'none'); % Fill the ellipse with semi-transparency
+            fill(ellipseX, ellipseY, bhvColor, 'FaceAlpha', 0.3, 'EdgeColor', 'none'); % Fill the ellipse with semi-transparency
         end
         if bhv == 1
             title(['LDA Components ', num2str(i), ' and ', num2str(i+1)]);
