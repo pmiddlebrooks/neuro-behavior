@@ -5,8 +5,8 @@ idInd = [idM56 idDS];
 idInd = [idM56]
 
 %% Remove the first and last bouts from the dataBhv table
-dataBhvTrunc = dataBhv(2:end-1, :);
-validBhvTrunc = validBhv(2:end-1,:);
+dataBhvTrunc = dataBhv(3:end-1, :);
+validBhvTrunc = validBhv(3:end-1,:);
 %% If you want to subsample bouts (match the number of bouts for each behavior...
 matchBouts = 0;
 
@@ -16,7 +16,7 @@ for i = 1 : length(analyzeCodes)
 end
 nSample = min(nBout);
 
-%% Make a neural matrix with concatenated peri-onset bins for each behavior
+%% Make a neural matrix with concatenated peri-onset bins for each behavior: using dataMatZ
 
 % Create a neural matrix. Each column is a neuron. Each row are spike
 % counts peri-onset of each behavior.
@@ -38,6 +38,46 @@ for iBhv = 1 : length(analyzeCodes)
         neuralMatrix = [neuralMatrix; dataMatZ(iStartFrames(jStart) + dataWindow, :)];
     end
 end
+
+%% Make a neural matrix with concatenated peri-onset bins for each behavior: using eventMatZ
+
+
+
+
+
+
+% Start here and run LDA
+
+
+
+
+
+
+% Create a neural matrix. Each column is a neuron. Each row are spike
+% counts peri-onset of each behavior.
+behaviorID = [];
+neuralMatrix = [];
+periEventTime = -.1 : opts.frameSize : .1; % seconds around onset
+dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+
+for iBhv = 1 : length(analyzeCodes)
+    nBout = size(eventMatZ{iBhv}, 3);
+    behaviorID = [behaviorID; ones(nBout * length(dataWindow), 1)];
+    iEventMat = permute(eventMatZ{iBhv}(fullStartInd + dataWindow, :, :), [1 3 2]);
+    iEventMat = reshape(iEventMat, size(iEventMat, 1) * size(iEventMat, 2), []);
+    neuralMatrix = [neuralMatrix; iEventMat];
+end
+
+
+
+
+
+
+
+
+
+
+
 
 %% Instead, train it with a matrix that goes from -.1 before onset, through the duration of the behavior, to .1 s before next behavior onset
 behaviorID = [];

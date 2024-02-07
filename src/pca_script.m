@@ -1,25 +1,36 @@
 %% Go to spiking_script and get behavioral and neural data
 
-%%
+%% Create a neural matrix. Each column is a neuron. Each row are spike counts peri-onset of each behavior.
+% behaviorID = [];
+% neuralMatrix = [];
+% periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
+% dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+% 
+% for iBhv = 1 : length(analyzeCodes)
+%     iStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv)) ./ opts.frameSize);
+%     iStartFrames = iStartFrames(3:end-3);
+%     behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames), 1)];
+%     for jStart = 1 : length(iStartFrames)
+%         neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
+%     end
+% end
 
-% Create a neural matrix. Each column is a neuron. Each row are spike
-% counts peri-onset of each behavior.
+%% Create a neural matrix. Each column is a neuron. Each row are spike counts peri-onset of each behavior.
 behaviorID = [];
 neuralMatrix = [];
 periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
-dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+dataWindow = fullStartInd + periEventTime(1:end-1) / opts.frameSize; % frames around onset (remove last frame)
 
 for iBhv = 1 : length(analyzeCodes)
-    iStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv)) ./ opts.frameSize);
-    iStartFrames = iStartFrames(3:end-3);
-    behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames), 1)];
-    for jStart = 1 : length(iStartFrames)
-        neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
-    end
+    behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(size(eventMatZ{iBhv}, 3), 1)];
+    iMat = sum(eventMatZ{iBhv}(dataWindow, :, :), 1);
+    iMat = permute(iMat, [3 2 1]);
+            neuralMatrix = [neuralMatrix; iMat];
 end
+
 %%
 
-[coeff,score,latent,tsquared,explained,mu] = PlotPCAWithBehaviors3D(neuralMatrix(:, idDS), behaviorID);
+[coeff,score,latent,tsquared,explained,mu] = PlotPCAWithBehaviors3D(neuralMatrix(:, idM56), behaviorID);
 
 
 
