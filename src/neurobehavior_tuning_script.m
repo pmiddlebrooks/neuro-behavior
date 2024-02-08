@@ -1,5 +1,10 @@
-%% Run this, then go to spiking_script and get the behavior and neural data matrix
-opts.collectFor = 60*45; % Get an hour of data
+%% Get data from get_standard_data
+
+opts = neuro_behavior_options;
+opts.frameSize = .1; % 100 ms framesize for now
+opts.collectFor = 60*60; % Get 45 min
+
+get_standard_data
 
 
 %% Truncate the ends of the behaviors since we want a window that reaches backward and forward in time
@@ -576,29 +581,29 @@ sgtitle('PCA: M56')
 %%                           Dim-reduction and clustering
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Make a modified dataMat with big (e.g. 400ms) bins
-
-% idInd = 1:size(dataMat, 2);
-idInd = idM56;
-
-binSize = .3;
-
-% nPerBin = uint8(binSize / opts.frameSize);
+binSize = 1;
 nPerBin = round(binSize / opts.frameSize);
-dataMatMod = [];
-bhvIDMod = [];
 nBin = floor(size(dataMat, 1) / nPerBin);
-for i = 1 : nPerBin : nBin * nPerBin
-    dataMatMod = [dataMatMod; sum(dataMat(i : i + nPerBin - 1, :), 1)];
-    bhvIDMod = [bhvIDMod; bhvIDMat(i + floor(nPerBin/2) - 1)];
-end
 
+% If n is not exactly divisible by k, you might want to handle the remainder
+% For this example, we'll trim the excess
+% dataMatTrimmed = dataMat(1 : nBin * nPerBin, :);
 
+% Reshape and sum
+dataMatReshaped = reshape(dataMat, nPerBin, nBin, size(dataMat, 2));
+dataMatMod = squeeze(sum(dataMatReshaped, 1));
+
+%%
+idInd = cell2mat(idAll); area = 'All';
+idInd = idM56; area = 'M56';
+idInd = idDS; area = 'DS';
+
+nFrame = floor(size(dataMatMod, 1) / 5);
 
 %% t-SNE for all behaviors
-nFrame = floor(size(dataMatMod, 1) / 4);
 Y = tsne(dataMatMod(1:nFrame, idInd),'Algorithm','exact');
 %%
-figure(236)
+hfig = figure(236);
 colors = colors_for_behaviors(codes);
 h = gscatter(Y(:,1), Y(:,2), bhvIDMod(1:nFrame), [], 'o');
 for i = 1 : length(codes)
@@ -606,10 +611,23 @@ for i = 1 : length(codes)
     set(h(i), 'MarkerEdgeColor', colors(i, :), 'linewidth', 2);
 end
 %     scatter3(Y(:,1), Y(:,2), 1:nFrame)
-title(['t-SNE binSize = ', num2str(binSize)])
+title(['t-SNE ' area, ' binSize = ', num2str(binSize)])
+saveas(gcf, fullfile(paths.figurePath, ['t-sne ' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
+
+%% Classify using HDBSCAN
+clusterer = HDBSCAN(Y);
+clusterer.minpts = 4; %tends to govern cluster number  %was 3? with all neurons
+clusterer.minclustsize = 11; %governs accuracy  %was 4? with all neurons
+clusterer.fit_model(); 			% trains a cluster hierarchy
+clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
+clusterer.get_membership();		% assigns cluster labels to the points in X
+figure(828); clusterer.plot_clusters();
+title(['t-SNE ' area, ' binSize = ', num2str(binSize)])
+saveas(gcf, fullfile(paths.figurePath, ['t-sne HDBSCAN ' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
 
 %% UMAP for all behaviors
-nFrame = floor(size(dataMatMod, 1) / 4);
 [reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(1:nFrame, idInd));
 %%
 figure(238)
@@ -620,18 +638,21 @@ for i = 1 : length(codes)
 end
 % scatter3(Y(:,1), Y(:,2), 1:nFrame)
 % gscatter3(reduction(:,1), reduction(:,2), 1:nFrame, bhvID400(1:nFrame))
-title(['UMAP binSize = ', num2str(binSize)])
+title(['UMAP ' area, ' binSize = ', num2str(binSize)])
+saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
 
 
 %% Classify using HDBSCAN
-
-clusterer = HDBSCAN(Y);
-clusterer.minpts = 3; %tends to govern cluster number  %was 3? with all neurons
-clusterer.minclustsize = 6; %governs accuracy  %was 4? with all neurons
+clusterer = HDBSCAN(reduction);
+clusterer.minpts = 4; %tends to govern cluster number  %was 3? with all neurons
+clusterer.minclustsize = 11; %governs accuracy  %was 4? with all neurons
 clusterer.fit_model(); 			% trains a cluster hierarchy
 clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
 clusterer.get_membership();		% assigns cluster labels to the points in X
 figure(823); clusterer.plot_clusters();
+title(['umap HDBSCAN ,' area, ' binSize = ', num2str(binSize)])
+saveas(gcf, fullfile(paths.figurePath, ['umap HDBSCAN ,' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
 
 
 

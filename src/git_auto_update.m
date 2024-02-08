@@ -2,7 +2,9 @@ function git_auto_update(location)
 
 switch location
     case 'home'
-        pathsToUpdate = {''};
+        pathsToUpdate = {'/Users/paulmiddlebrooks/Projects/neuro-behavior'...
+            '/Users/paulmiddlebrooks/Projects/dynamics'...
+            '/Users/paulmiddlebrooks/Projects/ridgeregress'};
     case 'lab'
         pathsToUpdate = {'E:/Projects/neuro-behavior/', ...
             'E:/Projects/dynamics/', ...
@@ -23,4 +25,5 @@ for i = 1 : length(pathsToUpdate)
     system('git push origin main');
     pause(5)
 end
+cd 'E:/Projects/neuro-behavior/src'
 end
