@@ -1,6 +1,6 @@
 function [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix(data, opts)
 
-durFrames = floor(sum(data.bhvDur) / opts.frameSize);
+durFrames = ceil(sum(data.bhvDur) / opts.frameSize);
 
 if ismember('id',data.ci.Properties.VariableNames)
     idLabels = data.ci.id(opts.useNeurons);
