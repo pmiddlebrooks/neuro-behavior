@@ -35,7 +35,7 @@ neuralDS = neuralMatrix(:,idDS);
 
 
 %% This matrix keeps real time in order. So you can plot predictions in their order
-dataBhvValid = dataBhv(allValid,:);
+dataBhvValid = dataBhv(dataBhv.Valid,:);
 
 behaviorIDOrdered = [];
 neuralMatrixOrdered = [];
