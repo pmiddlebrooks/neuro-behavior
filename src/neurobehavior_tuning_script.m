@@ -4,6 +4,7 @@ opts = neuro_behavior_options;
 opts.frameSize = .1; % 100 ms framesize for now
 opts.collectFor = 60*60; % Get 45 min
 
+
 get_standard_data
 
 
@@ -581,7 +582,7 @@ sgtitle('PCA: M56')
 %%                           Dim-reduction and clustering
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Make a modified dataMat with big (e.g. 400ms) bins
-binSize = 1;
+binSize = ;
 nPerBin = round(binSize / opts.frameSize);
 nBin = floor(size(dataMat, 1) / nPerBin);
 
