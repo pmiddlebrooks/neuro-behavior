@@ -48,7 +48,6 @@ bhvCode = analyzeCodes(strcmp(analyzeBhv, 'investigate_1'));
 
 startTimes = dataBhv.StartTime(dataBhv.ID == bhvCode);
 % Use all valid behavior startTimes
-% startTimes = dataBhv.StartTime(allValid);
 startTimes(end-3:end) = [];
 startTimes(1:3) = [];
 startFrames = 1 + floor(startTimes ./ opts.frameSize);
