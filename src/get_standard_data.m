@@ -7,7 +7,7 @@
 
 
 %% get desired file paths
-computerDriveName = 'ROSETTA'; %'ROSETTA'; % 'Z' or 'home'
+computerDriveName = 'home'; %'ROSETTA'; % 'Z' or 'home'
 paths = get_paths(computerDriveName);
 
 animal = 'ag25290';
