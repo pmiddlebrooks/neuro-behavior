@@ -494,6 +494,25 @@ saveas(gcf, fullfile(paths.figurePath, 'Number of postively modulated neurons ac
 
 
 
+%% Do tunings change over time (drift, jump around, etc)? Sliding window
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Get data from get_standard_data
+
+opts = neuro_behavior_options;
+opts.collectStart = 0; % seconds
+opts.collectFor = 60*60*4; % seconds
+
+get_standard_data
+
+%%
+
+
+
+
+
+
+
+
 
 
 
@@ -506,6 +525,7 @@ saveas(gcf, fullfile(paths.figurePath, 'Number of postively modulated neurons ac
 
 
 %% Are there different modes (firing rate patterns across a given brain area) for each behavior?
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % t-SNE for each behavior across all trials
 
 % Get monitor positions and size
@@ -581,7 +601,7 @@ sgtitle('PCA: M56')
 %%                           Dim-reduction and clustering
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Make a modified dataMat with big (e.g. 400ms) bins
-binSize = 1;
+binSize = .1;
 nPerBin = round(binSize / opts.frameSize);
 nBin = floor(size(dataMat, 1) / nPerBin);
 
@@ -593,26 +613,32 @@ nBin = floor(size(dataMat, 1) / nPerBin);
 dataMatReshaped = reshape(dataMat, nPerBin, nBin, size(dataMat, 2));
 dataMatMod = squeeze(sum(dataMatReshaped, 1));
 
+bhvIDReshaped = reshape(bhvIDMat, nPerBin, nBin);
+bhvIDMod = bhvIDReshaped(floor(nPerBin/2) + 1, :)';
+
 %%
 idInd = cell2mat(idAll); area = 'All';
 idInd = idM56; area = 'M56';
-idInd = idDS; area = 'DS';
+% idInd = idDS; area = 'DS';
 
-nFrame = floor(size(dataMatMod, 1) / 5);
+% Only use part of the dataMat (if binSize is small)
+nFrame = floor(size(dataMatMod, 1) / 2);  
+frameWindow = 1 : nFrame;
+% windowStart = floor(size(dataMatMod, 1) / 1);
+% frameWindow = windowStart : windowStart + nFrame - 1;
 
 %% t-SNE for all behaviors
-Y = tsne(dataMatMod(1:nFrame, idInd),'Algorithm','exact');
+Y = tsne(dataMatMod(frameWindow, idInd),'Algorithm','exact');
+
 %%
 hfig = figure(236);
-colors = colors_for_behaviors(codes);
-h = gscatter(Y(:,1), Y(:,2), bhvIDMod(1:nFrame), [], 'o');
-for i = 1 : length(codes)
-    % set(h(i), 'MarkerFaceColor', colors(i, :), 'MarkerEdgeColor', colors(i, :));
-    set(h(i), 'MarkerEdgeColor', colors(i, :), 'linewidth', 2);
-end
-%     scatter3(Y(:,1), Y(:,2), 1:nFrame)
+colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+scatter3(Y(:,1), Y(:,2), 1:nFrame, [], colorsForPlot, 'linewidth', 2);
+
 title(['t-SNE ' area, ' binSize = ', num2str(binSize)])
 saveas(gcf, fullfile(paths.figurePath, ['t-sne ' area, ' binsize ', num2str(binSize), '.png']), 'png')
+% Map labels to RGB colors
 
 
 %% Classify using HDBSCAN
@@ -628,16 +654,15 @@ saveas(gcf, fullfile(paths.figurePath, ['t-sne HDBSCAN ' area, ' binsize ', num2
 
 
 %% UMAP for all behaviors
-[reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(1:nFrame, idInd));
+% [reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd));
+[reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd));
+
 %%
-figure(238)
-h = gscatter(reduction(:,1), reduction(:,2), bhvIDMod(1:nFrame), [], 'o');
-for i = 1 : length(codes)
-    % set(h(i), 'MarkerFaceColor', colors(i, :), 'MarkerEdgeColor', colors(i, :));
-    set(h(i), 'MarkerEdgeColor', colors(i, :), 'linewidth', 2);
-end
-% scatter3(Y(:,1), Y(:,2), 1:nFrame)
-% gscatter3(reduction(:,1), reduction(:,2), 1:nFrame, bhvID400(1:nFrame))
+figure(230)
+% colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
+colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+scatter3(reduction(:,1), reduction(:,2), 1:size(reduction,1), [], colorsForPlot, 'linewidth', 2);
 title(['UMAP ' area, ' binSize = ', num2str(binSize)])
 saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
 

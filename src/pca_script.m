@@ -1,4 +1,10 @@
-%% Go to spiking_script and get behavioral and neural data
+%% Get data from get_standard_data
+
+opts = neuro_behavior_options;
+opts.frameSize = .1; % 100 ms framesize for now
+opts.collectFor = 60*60; % Get 45 min
+
+get_standard_data
 
 %% Create a neural matrix. Each column is a neuron. Each row are spike counts peri-onset of each behavior.
 % behaviorID = [];
@@ -27,6 +33,70 @@ for iBhv = 1 : length(analyzeCodes)
     iMat = permute(iMat, [3 2 1]);
             neuralMatrix = [neuralMatrix; iMat];
 end
+
+
+
+
+
+
+
+
+%%  Plot PCA projections over time with behaviors labeled by color
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Make a modified dataMat with big (e.g. 400ms) bins
+binSize = .4;
+nPerBin = round(binSize / opts.frameSize);
+nBin = floor(size(dataMat, 1) / nPerBin);
+
+% If n is not exactly divisible by k, you might want to handle the remainder
+% For this example, we'll trim the excess
+% dataMatTrimmed = dataMat(1 : nBin * nPerBin, :);
+
+% Reshape and sum dataMat
+dataMatReshaped = reshape(dataMat, nPerBin, nBin, size(dataMat, 2));
+dataMatMod = squeeze(sum(dataMatReshaped, 1));
+
+bhvIDReshaped = reshape(bhvIDMat, nPerBin, nBin);
+bhvIDMod = bhvIDReshaped(floor(nPerBin/2) + 1, :)';
+
+%%
+idInd = cell2mat(idAll); area = 'All';
+idInd = idM56; area = 'M56';
+% idInd = idDS; area = 'DS';
+
+% Only use part of the dataMat (if binSize is small)
+nFrame = floor(size(dataMatMod, 1) / 1.1);  
+frameWindow = 1 : nFrame;
+% windowStart = floor(size(dataMatMod, 1) / 1);
+% frameWindow = windowStart : windowStart + nFrame - 1;
+
+
+
+%% Perform PCA
+[coeff, score, ~, ~, explained] = pca(dataMatMod(frameWindow, idInd));
+
+%%
+hfig = figure(240);
+colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+scatter3(score(:,1), score(:,2), 1:nFrame, [], colorsForPlot, 'linewidth', 2);
+
+title(['PCA ' area, ' binSize = ', num2str(binSize)])
+saveas(gcf, fullfile(paths.figurePath, ['PCA ' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 %%
 

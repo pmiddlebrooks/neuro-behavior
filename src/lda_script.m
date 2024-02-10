@@ -146,6 +146,85 @@ fprintf('... Because your subsampling for bout number, but not durations\n')
 
 
 
+
+
+
+
+
+
+%%  Plot LDA projections over time with behaviors labeled by color
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Make a modified dataMat with big (e.g. 400ms) bins
+binSize = .4;
+nPerBin = round(binSize / opts.frameSize);
+nBin = floor(size(dataMat, 1) / nPerBin);
+
+% If n is not exactly divisible by k, you might want to handle the remainder
+% For this example, we'll trim the excess
+% dataMatTrimmed = dataMat(1 : nBin * nPerBin, :);
+
+% Reshape and sum dataMat
+dataMatReshaped = reshape(dataMat, nPerBin, nBin, size(dataMat, 2));
+dataMatMod = squeeze(sum(dataMatReshaped, 1));
+
+bhvIDReshaped = reshape(bhvIDMat, nPerBin, nBin);
+bhvIDMod = bhvIDReshaped(floor(nPerBin/2) + 1, :)';
+
+%%
+idInd = cell2mat(idAll); area = 'All';
+idInd = idM56; area = 'M56';
+% idInd = idDS; area = 'DS';
+
+% Only use part of the dataMat (if binSize is small)
+nFrame = floor(size(dataMatMod, 1) / 1.1);  
+frameWindow = 1 : nFrame;
+% windowStart = floor(size(dataMatMod, 1) / 1);
+% frameWindow = windowStart : windowStart + nFrame - 1;
+
+
+
+%% Fit the LDA model
+ldaModel = fitcdiscr(dataMatMod(frameWindow, idInd), bhvIDMod(frameWindow));
+
+% Eigenvalue decomposition for the lda components
+[eigenvectors, eigenvalues] = eig(ldaModel.BetweenSigma, ldaModel.Sigma);
+
+% Sort the eigenvalues and associated eigenvectors
+[eigenvalues, sortedIndices] = sort(diag(eigenvalues), 'descend');
+eigenvectors = eigenvectors(:, sortedIndices);
+
+% Project the data onto the LDA components
+projectedData = dataMatMod(frameWindow, idInd) * eigenvectors;
+
+% Project full data matrix to plot trajectories
+% projectedTraj = dataMatZ(:, idInd) * eigenvectors;
+
+%%
+hfig = figure(241);
+colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+scatter3(projectedData(:,1), projectedData(:,2), 1:nFrame, [], colorsForPlot, 'linewidth', 2);
+
+title(['LDA ' area, ' binSize = ', num2str(binSize)])
+saveas(gcf, fullfile(paths.figurePath, ['LDA ' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %%
 
 % MdlLinear = fitcdiscr(neuralMatrix, behaviorID);

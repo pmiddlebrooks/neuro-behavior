@@ -24,7 +24,7 @@ get_standard_data
 % bin and average those spike counts. Now the matrix is neurons by time
 % bins. We did PCA on that.
 
-%% Define constants
+%% Define window constants
 bigWinTime = 10 * 60; % window within which to avg all responses: seconds
 bigWinFrame = bigWinTime / opts.frameSize;
 winSlideTime = 5 * 60; % slide bigWindow this many seconds over the duration

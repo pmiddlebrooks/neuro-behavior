@@ -36,7 +36,7 @@ dataBhv = load_data(opts, 'behavior');
 
 
 codes = unique(dataBhv.ID);
-% codes(codes == -1) = []; % Get rid of the nest/irrelevant behaviors
+% behaviors = unique(dataBhv.Name);
 behaviors = {};
 for iBhv = 1 : length(codes)
     firstIdx = find(dataBhv.ID == codes(iBhv), 1);
@@ -48,16 +48,9 @@ opts.behaviors = behaviors;
 opts.bhvCodes = codes;
 opts.validCodes = codes(codes ~= -1);
 
-
-% Select valid behaviors
-validBhv = behavior_selection(dataBhv, opts);
-opts.validBhv = validBhv;
-allValid = logical(sum(validBhv,2)); % A list of all the valid behvaior indices
-
-
 rmvBhv = zeros(1, length(behaviors));
 for i = 1 : length(behaviors)
-    if sum(validBhv(:, i)) < 20
+    if (sum(dataBhv.ID == codes(i) & dataBhv.Valid) < 20) || codes(i) == -1
         rmvBhv(i) = 1;
     end
 end
@@ -187,8 +180,7 @@ eventMatZ = cell(length(analyzeCodes), 1);
 periMatZ = cell(length(analyzeCodes), 1);
 for iBhv = 1 : length(analyzeCodes)
 
-    iValidBhv = opts.validBhv(:, opts.bhvCodes == analyzeCodes(iBhv));
-    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv) & iValidBhv) ./ opts.frameSize);
+    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv) & dataBhv.Valid) ./ opts.frameSize);
     bhvStartFrames(bhvStartFrames < -zWindow(1) + 1) = [];
     bhvStartFrames(bhvStartFrames > size(dataMat, 1) - zWindow(end)) = [];
 
