@@ -13,7 +13,7 @@ dataBhv.DurFrame(dataBhv.DurFrame == 0) = 1;
 behaviorID = [];
 neuralMatrix = [];
 for iBhv = 1 : length(analyzeCodes)
-    dataBhvInd = dataBhv.ID == analyzeCodes(iBhv) & validBhv(:, codes == analyzeCodes(iBhv));
+    dataBhvInd = dataBhv.ID == analyzeCodes(iBhv) & dataBhv.Valid;
     iStartFrames = dataBhv.StartFrame(dataBhvInd);
     iDurFrames = dataBhv.DurFrame(dataBhvInd);
     if matchBouts
@@ -54,7 +54,7 @@ behaviorID = [];
 neuralMatrix = [];
 maxBout = 200;
 for iBhv = 1 : length(analyzeCodes)
-    dataBhvInd = dataBhv.ID == analyzeCodes(iBhv) & validBhv(:, codes == analyzeCodes(iBhv));
+    dataBhvInd = dataBhv.ID == analyzeCodes(iBhv) & dataBhv.Valid;
     iStartFrames = dataBhv.StartFrame(dataBhvInd);
     iDurFrames = dataBhv.DurFrame(dataBhvInd);
     if sum(dataBhvInd) > maxBout
@@ -93,10 +93,10 @@ bhvSmoteTest = bhvSmote(testInd);
 
 
 %% Random Forest Classification using TreeBagger
-
+idInd = idDS;
 numTrees = 100; % Define the number of trees
 % randomForestModel = TreeBagger(numTrees, neuralM56, behaviorID, 'OOBPrediction', 'On');
-randomForestModel = TreeBagger(numTrees, neuralSmoteTrain(:, idM56), bhvSmoteTrain, ...
+randomForestModel = TreeBagger(numTrees, neuralSmoteTrain(:, idInd), bhvSmoteTrain, ...
     OOBPrediction='On', OOBPredictorImportance='On');
 
 % Calculate OOB Error
@@ -126,8 +126,8 @@ importanceVal = randomForestModel.OOBPermutedPredictorDeltaError;
 
 figure;
 bar(importanceVal);
-title('Predictor Importances');
-xlabel('Predictors');
+title('Neuron Importances');
+xlabel('Neurons (Predictors)');
 ylabel('Importance');
 xticks(1:length(importanceVal));
 xticklabels(randomForestModel.PredictorNames);
@@ -137,6 +137,7 @@ xticklabels(randomForestModel.PredictorNames);
 
 %% You have a fitted RF model. Use it to predict behaviors: confusion matrix
 neuralMat = neuralM56;
+neuralMat = neuralDS;
 bhvID = behaviorID;
 predBhvID = rf_predict_behavior(randomForestModel, neuralMat, bhvID);
 

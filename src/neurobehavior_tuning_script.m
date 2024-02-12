@@ -1,12 +1,12 @@
 %% Get data from get_standard_data
 
 opts = neuro_behavior_options;
-opts.frameSize = .1; % 100 ms framesize for now
-opts.collectFor = 60*60; % Get 45 min
+opts.frameSize = .05; % 100 ms framesize for now
+opts.collectFor = 60*45; % Get 45 min
 
 get_standard_data
 
-
+colors = colors_for_behaviors(codes);
 %% Truncate the ends of the behaviors since we want a window that reaches backward and forward in time
 dataBhvTrunc = dataBhv(3:end-2, :);
 validBhvTrunc = validBhv(3:end-2,:);
@@ -601,7 +601,7 @@ sgtitle('PCA: M56')
 %%                           Dim-reduction and clustering
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Make a modified dataMat with big (e.g. 400ms) bins
-binSize = .1;
+binSize = .8;
 nPerBin = round(binSize / opts.frameSize);
 nBin = floor(size(dataMat, 1) / nPerBin);
 
@@ -619,7 +619,7 @@ bhvIDMod = bhvIDReshaped(floor(nPerBin/2) + 1, :)';
 %%
 idInd = cell2mat(idAll); area = 'All';
 idInd = idM56; area = 'M56';
-% idInd = idDS; area = 'DS';
+idInd = idDS; area = 'DS';
 
 % Only use part of the dataMat (if binSize is small)
 nFrame = floor(size(dataMatMod, 1) / 2);  
@@ -631,10 +631,11 @@ frameWindow = 1 : nFrame;
 Y = tsne(dataMatMod(frameWindow, idInd),'Algorithm','exact');
 
 %%
-hfig = figure(236);
+hfig = figure(230);
 colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-scatter3(Y(:,1), Y(:,2), 1:nFrame, [], colorsForPlot, 'linewidth', 2);
+% scatter3(Y(:,1), Y(:,2), 1:nFrame, [], colorsForPlot, 'linewidth', 2);
+scatter(Y(:,1), Y(:,2), [], colorsForPlot, 'linewidth', 2);
 
 title(['t-SNE ' area, ' binSize = ', num2str(binSize)])
 saveas(gcf, fullfile(paths.figurePath, ['t-sne ' area, ' binsize ', num2str(binSize), '.png']), 'png')
@@ -654,15 +655,15 @@ saveas(gcf, fullfile(paths.figurePath, ['t-sne HDBSCAN ' area, ' binsize ', num2
 
 
 %% UMAP for all behaviors
-% [reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd));
 [reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd));
-
+% close
 %%
 figure(230)
 % colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
 colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-scatter3(reduction(:,1), reduction(:,2), 1:size(reduction,1), [], colorsForPlot, 'linewidth', 2);
+% scatter3(reduction(:,1), reduction(:,2), 1:size(reduction,1), [], colorsForPlot, 'linewidth', 2);
+scatter(reduction(:,1), reduction(:,2), [], colorsForPlot, 'linewidth', 2);
 title(['UMAP ' area, ' binSize = ', num2str(binSize)])
 saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
 
