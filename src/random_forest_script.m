@@ -1,5 +1,7 @@
-%% Go to spiking_script and get behavioral and neural data
-
+%% Get data from get_standard_data
+opts = neuro_behavior_options;
+opts.collectFor = 60*60;
+get_standard_data
 
 %% Settings for building the neural and behavioral matrices for the random forest tree
 matchBouts = 0;
@@ -54,7 +56,8 @@ behaviorID = [];
 neuralMatrix = [];
 maxBout = 200;
 for iBhv = 1 : length(analyzeCodes)
-    dataBhvInd = dataBhv.ID == analyzeCodes(iBhv) & validBhv(:, codes == analyzeCodes(iBhv));
+    dataBhvInd = dataBhv.ID == analyzeCodes(iBhv) & dataBhv.Valid;
+    % dataBhvInd = dataBhv.ID == analyzeCodes(iBhv) & validBhv(:, codes == analyzeCodes(iBhv));
     iStartFrames = dataBhv.StartFrame(dataBhvInd);
     iDurFrames = dataBhv.DurFrame(dataBhvInd);
     if sum(dataBhvInd) > maxBout

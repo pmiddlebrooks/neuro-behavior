@@ -1,7 +1,7 @@
 %% Get data from get_standard_data
 
 opts = neuro_behavior_options;
-opts.frameSize = .1; % 100 ms framesize for now
+opts.frameSize = .05; % 100 ms framesize for now
 opts.collectFor = 60*60; % Get 45 min
 
 
@@ -603,7 +603,7 @@ sgtitle('PCA: M56')
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Make a modified dataMat with big (e.g. 400ms) bins
 
-binSize = .1;
+binSize = .2;
 nPerBin = round(binSize / opts.frameSize);
 nBin = floor(size(dataMat, 1) / nPerBin);
 
@@ -629,11 +629,14 @@ frameWindow = 1 : nFrame;
 % windowStart = floor(size(dataMatMod, 1) / 1);
 % frameWindow = windowStart : windowStart + nFrame - 1;
 
+colors = colors_for_behaviors(codes);
+
 %% t-SNE for all behaviors
 Y = tsne(dataMatMod(frameWindow, idInd),'Algorithm','exact');
 
+
 %%
-hfig = figure(236);
+hfig = figure(237);
 colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 scatter3(Y(:,1), Y(:,2), 1:nFrame, [], colorsForPlot, 'linewidth', 2);
@@ -641,6 +644,7 @@ scatter3(Y(:,1), Y(:,2), 1:nFrame, [], colorsForPlot, 'linewidth', 2);
 title(['t-SNE ' area, ' binSize = ', num2str(binSize)])
 saveas(gcf, fullfile(paths.figurePath, ['t-sne ' area, ' binsize ', num2str(binSize), '.png']), 'png')
 % Map labels to RGB colors
+
 
 
 %% Classify using HDBSCAN
