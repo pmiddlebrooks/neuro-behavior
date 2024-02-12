@@ -300,7 +300,7 @@ matchBouts = 0;
 %%
 nBout = zeros(length(analyzeCodes), 1);
 for i = 1 : length(analyzeCodes)
-    nBout(i) = sum(dataBhvTrunc.ID == analyzeCodes(i) & validBhvTrunc(:, codes == analyzeCodes(i)));
+    nBout(i) = sum(dataBhvTrunc.ID == analyzeCodes(i) & dataBhvTrunc.Valid);
 end
 nSample = min(nBout);
 
@@ -316,7 +316,7 @@ spikesPerTrialZ = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
-    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvTrunc.ID == bhvCode & validBhvTrunc(:,codes == analyzeCodes(iBhv))) ./ opts.frameSize);
+    iStartFrames = 1 + floor(dataBhvTrunc.StartTime(dataBhvTrunc.ID == bhvCode & dataBhvTrunc.Valid) ./ opts.frameSize);
 
     if matchBouts
         iRand = randperm(length(iStartFrames));
@@ -363,7 +363,7 @@ end
 %%
 
 %% Signal correlations
-plotFlag = 0;
+plotFlag = 1;
 
 xlimConst = [-1 1];
 
@@ -669,15 +669,15 @@ if plotFlag
     plotBhv = 'X'; % M56 DS X
 
     % Get monitor positions and size
-    monitorPositions = get(0, 'MonitorPositions');
-    if size(monitorPositions, 1) < 2
-        error('Second monitor not detected');
-    end
-    secondMonitorPosition = monitorPositions(2, :);
+    % monitorPositions = get(0, 'MonitorPositions');
+    % if size(monitorPositions, 1) < 2
+    %     error('Second monitor not detected');
+    % end
+    % secondMonitorPosition = monitorPositions(2, :);
     % Create a maximized figure on the second monitor
     fig = figure(70);
     clf
-    set(fig, 'Position', secondMonitorPosition);
+    % set(fig, 'Position', secondMonitorPosition);
     nPlot = length(analyzeCodes);
     [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4));
     colors = colors_for_behaviors(analyzeCodes);
@@ -761,7 +761,7 @@ end
 returnIdx = tril(true(length(idM56)), -1);
 signalCorrM56Pair = rhoM56(returnIdx);
 figure(44)
-for k = 1 : length(noiseCorrM56Pair)
+for k = 650 : length(noiseCorrM56Pair)
     clf
     hold on
     plot(neuronMod1M56(k,:), 'b', 'linewidth', 2)
@@ -812,7 +812,7 @@ returnIdxM56 = tril(true(length(idM56)), -1);
 signalCorrM56Pair = rhoM56(returnIdxM56);
 
 
-for k = 1 : length(signalCorrM56Pair)
+for k = 550 : length(signalCorrM56Pair)
     figure(455)
     clf;
 
@@ -1006,15 +1006,15 @@ edges = -.8 : .05 : .8;
 binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 % Get monitor positions and size
-monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+% monitorPositions = get(0, 'MonitorPositions');
+% if size(monitorPositions, 1) < 2
+%     error('Second monitor not detected');
+% end
+% secondMonitorPosition = monitorPositions(2, :);
 % Create a maximized figure on the second monitor
 fig = figure(760);
 clf
-set(fig, 'Position', secondMonitorPosition);
+% set(fig, 'Position', secondMonitorPosition);
 nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
 colors = colors_for_behaviors(analyzeCodes);
@@ -1060,14 +1060,14 @@ edges = -.8 : .05 : .8;
 binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 % Get monitor positions and size
-monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+% monitorPositions = get(0, 'MonitorPositions');
+% if size(monitorPositions, 1) < 2
+%     error('Second monitor not detected');
+% end
+% secondMonitorPosition = monitorPositions(2, :);
 % Create a maximized figure on the second monitor
 fig = figure(761); clf
-set(fig, 'Position', secondMonitorPosition);
+% set(fig, 'Position', secondMonitorPosition);
 nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
 colors = colors_for_behaviors(analyzeCodes);
@@ -1164,15 +1164,15 @@ edges = -.7 : .05 : .7;
 binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 % Get monitor positions and size
-monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+% monitorPositions = get(0, 'MonitorPositions');
+% if size(monitorPositions, 1) < 2
+%     error('Second monitor not detected');
+% end
+% secondMonitorPosition = monitorPositions(2, :);
 % Create a maximized figure on the second monitor
 fig = figure(762);
 clf
-set(fig, 'Position', secondMonitorPosition);
+% set(fig, 'Position', secondMonitorPosition);
 nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(ceil(nPlot/4), ceil(nPlot/4), [.04 .02]);
 colors = colors_for_behaviors(analyzeCodes);
