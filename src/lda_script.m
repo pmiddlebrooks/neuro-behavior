@@ -1,6 +1,6 @@
 %% Get data from get_standard_data
 opts = neuro_behavior_options;
-opts.collectFor = 2*60*60;
+opts.collectFor = 60*60;
 get_standard_data
 
 %%
@@ -409,15 +409,15 @@ colors = colors_for_behaviors(bhvList);
 
 % Create 3x3 grid of subplots
 % Get monitor positions and size
-monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+% monitorPositions = get(0, 'MonitorPositions');
+% if size(monitorPositions, 1) < 2
+%     error('Second monitor not detected');
+% end
+% secondMonitorPosition = monitorPositions(2, :);
 % Create a maximized figure on the second monitor
 fig = figure(81);
 clf
-set(fig, 'Position', secondMonitorPosition);
+% set(fig, 'Position', secondMonitorPosition);
 nPlot = nComponents - 1;
 [ax, pos] = tight_subplot(ceil(nPlot/2), ceil(nPlot/2));
 

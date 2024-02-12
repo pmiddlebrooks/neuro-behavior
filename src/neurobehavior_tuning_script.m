@@ -4,6 +4,7 @@ opts = neuro_behavior_options;
 opts.frameSize = .05; % 100 ms framesize for now
 opts.collectFor = 60*45; % Get 45 min
 
+
 get_standard_data
 
 colors = colors_for_behaviors(codes);
@@ -601,7 +602,7 @@ sgtitle('PCA: M56')
 %%                           Dim-reduction and clustering
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Make a modified dataMat with big (e.g. 400ms) bins
-binSize = .8;
+binSize = .2;
 nPerBin = round(binSize / opts.frameSize);
 nBin = floor(size(dataMat, 1) / nPerBin);
 
@@ -627,8 +628,11 @@ frameWindow = 1 : nFrame;
 % windowStart = floor(size(dataMatMod, 1) / 1);
 % frameWindow = windowStart : windowStart + nFrame - 1;
 
+colors = colors_for_behaviors(codes);
+
 %% t-SNE for all behaviors
 Y = tsne(dataMatMod(frameWindow, idInd),'Algorithm','exact');
+
 
 %%
 hfig = figure(230);
@@ -640,6 +644,7 @@ scatter(Y(:,1), Y(:,2), [], colorsForPlot, 'linewidth', 2);
 title(['t-SNE ' area, ' binSize = ', num2str(binSize)])
 saveas(gcf, fullfile(paths.figurePath, ['t-sne ' area, ' binsize ', num2str(binSize), '.png']), 'png')
 % Map labels to RGB colors
+
 
 
 %% Classify using HDBSCAN

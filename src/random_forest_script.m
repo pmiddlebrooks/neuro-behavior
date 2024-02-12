@@ -1,5 +1,7 @@
-%% Go to spiking_script and get behavioral and neural data
-
+%% Get data from get_standard_data
+opts = neuro_behavior_options;
+opts.collectFor = 60*60;
+get_standard_data
 
 %% Settings for building the neural and behavioral matrices for the random forest tree
 matchBouts = 0;
