@@ -1,8 +1,9 @@
 %% Get data from get_standard_data
 
 opts = neuro_behavior_options;
-opts.frameSize = .05; % 100 ms framesize for now
-opts.collectFor = 60*45; % Get 45 min
+opts.frameSize = .1; % 100 ms framesize for now
+opts.collectStart = 2*60*60; % Start collection here
+opts.collectFor = 60*60; % Get 45 min
 
 
 get_standard_data
@@ -602,7 +603,7 @@ sgtitle('PCA: M56')
 %%                           Dim-reduction and clustering
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Make a modified dataMat with big (e.g. 400ms) bins
-binSize = .2;
+binSize = .1;
 nPerBin = round(binSize / opts.frameSize);
 nBin = floor(size(dataMat, 1) / nPerBin);
 
@@ -623,7 +624,7 @@ idInd = idM56; area = 'M56';
 idInd = idDS; area = 'DS';
 
 % Only use part of the dataMat (if binSize is small)
-nFrame = floor(size(dataMatMod, 1) / 2);  
+nFrame = floor(size(dataMatMod, 1) / 1);  
 frameWindow = 1 : nFrame;
 % windowStart = floor(size(dataMatMod, 1) / 1);
 % frameWindow = windowStart : windowStart + nFrame - 1;
@@ -663,14 +664,31 @@ saveas(gcf, fullfile(paths.figurePath, ['t-sne HDBSCAN ' area, ' binsize ', num2
 [reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd));
 % close
 %%
-figure(230)
-% colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
+figure(230); clf
 colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-% scatter3(reduction(:,1), reduction(:,2), 1:size(reduction,1), [], colorsForPlot, 'linewidth', 2);
-scatter(reduction(:,1), reduction(:,2), [], colorsForPlot, 'linewidth', 2);
+scatter3(reduction(:,1), reduction(:,2), 1:size(reduction,1), [], colorsForPlot, 'linewidth', 2);
+% scatter(reduction(:,1), reduction(:,2), [], colorsForPlot, 'linewidth', 2);
 title(['UMAP ' area, ' binSize = ', num2str(binSize)])
 saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
+%% Plot a short time span at a time to see how the dots are connected
+figure(230)
+colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+
+plotFrames = 30 / opts.frameSize; % 
+nPlot = floor(size(reduction, 1) / plotFrames);
+
+for iPlot = 1 : nPlot
+    clf; hold on;
+    iStart = 1 + (iPlot - 1) * plotFrames;
+    iSpan = iStart : iStart + plotFrames - 1;
+scatter3(reduction(iSpan,1), reduction(iSpan,2), iSpan, 50, colorsForPlot(iSpan, :), 'linewidth', 3);
+plot3(reduction(iSpan,1), reduction(iSpan,2), iSpan, 'k', 'linewidth', 1);
+grid on;
+end
+title(['UMAP ' area, ' binSize = ', num2str(binSize)])
+% saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
 
 
 %% Classify using HDBSCAN
@@ -683,6 +701,64 @@ clusterer.get_membership();		% assigns cluster labels to the points in X
 figure(823); clusterer.plot_clusters();
 title(['umap HDBSCAN ,' area, ' binSize = ', num2str(binSize)])
 saveas(gcf, fullfile(paths.figurePath, ['umap HDBSCAN ,' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
+
+
+
+
+
+%% DO UMAP on just the transitions
+
+periTime = -.2 : opts.frameSize : 0;
+    periWindow = round(periTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+
+    dataMatOnsets = [];
+    dataMatBhv = [];
+    dataStartFrame = [];
+    for i = 3 : length(dataBhv.StartFrame)
+if dataBhv.DurFrame(i) > 0
+dataMatOnsets = [dataMatOnsets; sum(dataMat(dataBhv.StartFrame(i) + periWindow, :), 1)];
+dataMatBhv = [dataMatBhv; dataBhv.ID(i)];
+dataStartFrame = [dataStartFrame; dataBhv.StartFrame(i)];
+end
+    end
+
+%% UMAP for all behavior onsets
+idInd = idDS;
+[reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatOnsets(:, idInd));
+
+
+%%
+figure(230); clf
+colorsForPlot = arrayfun(@(x) colors(x,:), dataMatBhv + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+scatter3(reduction(:,1), reduction(:,2), 1:size(reduction,1), [], colorsForPlot, 'linewidth', 2);
+% scatter(reduction(:,1), reduction(:,2), [], colorsForPlot, 'linewidth', 2);
+title(['UMAP Onsets ' area, ' binSize = ', num2str(binSize)])
+grid on;
+% saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
+%% Plot a short time span at a time to see how the dots are connected
+figure(230)
+colorsForPlot = arrayfun(@(x) colors(x,:), dataMatBhv + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+
+plotFrames = 1 / opts.frameSize; % 
+nPlot = floor(size(reduction, 1) / opts.frameSize / plotFrames);
+
+for iPlot = 1 : nPlot
+    clf; hold on;
+    iStart = 1 + (iPlot - 1) * plotFrames;
+    iSpan = dataStartFrame >= iStart & dataStartFrame < iStart + plotFrames - 1;
+scatter3(reduction(iSpan,1), reduction(iSpan,2), dataStartFrame(iSpan), 50, colorsForPlot(iSpan, :), 'linewidth', 3);
+plot3(reduction(iSpan,1), reduction(iSpan,2), dataStartFrame(iSpan), 'k', 'linewidth', 1);
+grid on;
+end
+title(['UMAP Onsets ' area, ' binSize = ', num2str(binSize)])
+% saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
+
+
 
 
 

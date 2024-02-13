@@ -7,7 +7,7 @@
 
 
 %% get desired file paths
-computerDriveName = 'home'; %'ROSETTA'; % 'Z' or 'home'
+computerDriveName = 'ROSETTA'; %'ROSETTA'; % 'Z' or 'home'
 paths = get_paths(computerDriveName);
 
 animal = 'ag25290';
@@ -129,6 +129,7 @@ goodVS = allGood & strcmp(data.ci.area, 'VS');
 
 % which neurons to use in the neural matrix
 opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS | goodCC);
+opts.useNeurons = find(goodM56 | goodDS);
 
 tic
 [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts);

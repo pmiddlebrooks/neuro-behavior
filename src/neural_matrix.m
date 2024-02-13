@@ -21,7 +21,7 @@ for i = 1 : length(idLabels)
     timeEdges = 0 : opts.frameSize : sum(data.bhvDur); % Create edges of bins from 0 to max time
 
     % Count the number of spikes in each bin
-[iSpikeCount, ~] = histcounts(iSpikeTime, timeEdges);
+    [iSpikeCount, ~] = histcounts(iSpikeTime, timeEdges);
 
     dataMat(:, i) = iSpikeCount';
 
