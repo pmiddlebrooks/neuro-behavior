@@ -17,17 +17,22 @@ def neural_matrix(data, opts):
     for i in range(len(idLabels)):
         iSpikeTimes = data['spikeTimes'][data['spikeClusters'] == idLabels[i]]
 
-        # Define the time interval (in seconds)
-        interval = opts['frameSize']
+        # timeEdges = np.arange(0, np.sum(data['bhvDur']) + opts['frameSize'], opts['frameSize'])
+        timeEdges = np.arange(0, np.sum(data['bhvDur']) + opts['frameSize'], opts['frameSize'])
+        # Calculate histogram
+        iSpikeCount, _ = np.histogram(iSpikeTimes, bins=timeEdges)
 
-        # Initialize a vector to store the counts
-        iSpikeCount = np.zeros(dataMat.shape[0])
+        # # Define the time interval (in seconds)
+        # interval = opts['frameSize']
 
-        # Count the number of time stamps (spikes) within each interval
-        for j in range(dataMat.shape[0]):
-            lowerBound = ((j - 1) * interval) + (interval * opts['shiftAlignFactor'])
-            upperBound = (j * interval) + (interval * opts['shiftAlignFactor'])
-            iSpikeCount[j] = np.sum((iSpikeTimes >= lowerBound) & (iSpikeTimes < upperBound))
+        # # Initialize a vector to store the counts
+        # iSpikeCount = np.zeros(dataMat.shape[0])
+
+        # # Count the number of time stamps (spikes) within each interval
+        # for j in range(dataMat.shape[0]):
+        #     lowerBound = ((j - 1) * interval) + (interval * opts['shiftAlignFactor'])
+        #     upperBound = (j * interval) + (interval * opts['shiftAlignFactor'])
+        #     iSpikeCount[j] = np.sum((iSpikeTimes >= lowerBound) & (iSpikeTimes < upperBound))
 
         dataMat[:, i] = iSpikeCount
 
