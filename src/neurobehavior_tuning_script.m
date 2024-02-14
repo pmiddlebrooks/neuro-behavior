@@ -2,8 +2,8 @@
 
 opts = neuro_behavior_options;
 opts.frameSize = .1; % 100 ms framesize for now
-opts.collectStart = 2*60*60; % Start collection here
-opts.collectFor = 60*60; % Get 45 min
+opts.collectStart = 0*60*60; % Start collection here
+opts.collectFor = 45*60; % Get 45 min
 
 
 get_standard_data
@@ -250,10 +250,8 @@ idInd = idM56;
 
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
 % Create a maximized figure on the second monitor
 fig = figure(230);
 clf
@@ -310,10 +308,8 @@ saveas(gcf, fullfile(paths.figurePath, 'Proportions of postively modulated neuro
 
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
 % Create a maximized figure on the second monitor
 fig = figure(231);
 clf
@@ -370,10 +366,8 @@ saveas(gcf, fullfile(paths.figurePath, 'Number of postively modulated neurons ac
 
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
 % Create a maximized figure on the second monitor
 fig = figure(231);
 clf
@@ -433,10 +427,8 @@ sgtitle('Mean peri-onset spiking M56')
 
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
 % Create a maximized figure on the second monitor
 fig = figure(237);
 clf
@@ -532,10 +524,8 @@ get_standard_data
 
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
 % Create a maximized figure on the second monitor
 fig = figure(232); clf
 set(fig, 'Position', secondMonitorPosition);
@@ -565,10 +555,8 @@ sgtitle('DS')
 
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
 % Create a maximized figure on the second monitor
 fig = figure(232); clf
 set(fig, 'Position', secondMonitorPosition);
@@ -600,162 +588,6 @@ sgtitle('PCA: M56')
 
 
 
-%%                           Dim-reduction and clustering
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Make a modified dataMat with big (e.g. 400ms) bins
-binSize = .1;
-nPerBin = round(binSize / opts.frameSize);
-nBin = floor(size(dataMat, 1) / nPerBin);
-
-% If n is not exactly divisible by k, you might want to handle the remainder
-% For this example, we'll trim the excess
-% dataMatTrimmed = dataMat(1 : nBin * nPerBin, :);
-
-% Reshape and sum
-dataMatReshaped = reshape(dataMat, nPerBin, nBin, size(dataMat, 2));
-dataMatMod = squeeze(sum(dataMatReshaped, 1));
-
-bhvIDReshaped = reshape(bhvIDMat, nPerBin, nBin);
-bhvIDMod = bhvIDReshaped(floor(nPerBin/2) + 1, :)';
-
-%%
-idInd = cell2mat(idAll); area = 'All';
-idInd = idM56; area = 'M56';
-idInd = idDS; area = 'DS';
-
-% Only use part of the dataMat (if binSize is small)
-nFrame = floor(size(dataMatMod, 1) / 1);  
-frameWindow = 1 : nFrame;
-% windowStart = floor(size(dataMatMod, 1) / 1);
-% frameWindow = windowStart : windowStart + nFrame - 1;
-
-colors = colors_for_behaviors(codes);
-
-%% t-SNE for all behaviors
-Y = tsne(dataMatMod(frameWindow, idInd),'Algorithm','exact');
-
-
-%%
-hfig = figure(230);
-colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
-colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-% scatter3(Y(:,1), Y(:,2), 1:nFrame, [], colorsForPlot, 'linewidth', 2);
-scatter(Y(:,1), Y(:,2), [], colorsForPlot, 'linewidth', 2);
-
-title(['t-SNE ' area, ' binSize = ', num2str(binSize)])
-saveas(gcf, fullfile(paths.figurePath, ['t-sne ' area, ' binsize ', num2str(binSize), '.png']), 'png')
-% Map labels to RGB colors
-
-
-
-%% Classify using HDBSCAN
-clusterer = HDBSCAN(Y);
-clusterer.minpts = 4; %tends to govern cluster number  %was 3? with all neurons
-clusterer.minclustsize = 11; %governs accuracy  %was 4? with all neurons
-clusterer.fit_model(); 			% trains a cluster hierarchy
-clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
-clusterer.get_membership();		% assigns cluster labels to the points in X
-figure(828); clusterer.plot_clusters();
-title(['t-SNE ' area, ' binSize = ', num2str(binSize)])
-saveas(gcf, fullfile(paths.figurePath, ['t-sne HDBSCAN ' area, ' binsize ', num2str(binSize), '.png']), 'png')
-
-
-%% UMAP for all behaviors
-[reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd));
-% close
-%%
-figure(230); clf
-colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
-colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-scatter3(reduction(:,1), reduction(:,2), 1:size(reduction,1), [], colorsForPlot, 'linewidth', 2);
-% scatter(reduction(:,1), reduction(:,2), [], colorsForPlot, 'linewidth', 2);
-title(['UMAP ' area, ' binSize = ', num2str(binSize)])
-saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
-%% Plot a short time span at a time to see how the dots are connected
-figure(230)
-colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMod(frameWindow) + 2, 'UniformOutput', false);
-colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-
-plotFrames = 30 / opts.frameSize; % 
-nPlot = floor(size(reduction, 1) / plotFrames);
-
-for iPlot = 1 : nPlot
-    clf; hold on;
-    iStart = 1 + (iPlot - 1) * plotFrames;
-    iSpan = iStart : iStart + plotFrames - 1;
-scatter3(reduction(iSpan,1), reduction(iSpan,2), iSpan, 50, colorsForPlot(iSpan, :), 'linewidth', 3);
-plot3(reduction(iSpan,1), reduction(iSpan,2), iSpan, 'k', 'linewidth', 1);
-grid on;
-end
-title(['UMAP ' area, ' binSize = ', num2str(binSize)])
-% saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
-
-
-%% Classify using HDBSCAN
-clusterer = HDBSCAN(reduction);
-clusterer.minpts = 4; %tends to govern cluster number  %was 3? with all neurons
-clusterer.minclustsize = 11; %governs accuracy  %was 4? with all neurons
-clusterer.fit_model(); 			% trains a cluster hierarchy
-clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
-clusterer.get_membership();		% assigns cluster labels to the points in X
-figure(823); clusterer.plot_clusters();
-title(['umap HDBSCAN ,' area, ' binSize = ', num2str(binSize)])
-saveas(gcf, fullfile(paths.figurePath, ['umap HDBSCAN ,' area, ' binsize ', num2str(binSize), '.png']), 'png')
-
-
-
-
-
-
-%% DO UMAP on just the transitions
-
-periTime = -.2 : opts.frameSize : 0;
-    periWindow = round(periTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
-
-    dataMatOnsets = [];
-    dataMatBhv = [];
-    dataStartFrame = [];
-    for i = 3 : length(dataBhv.StartFrame)
-if dataBhv.DurFrame(i) > 0
-dataMatOnsets = [dataMatOnsets; sum(dataMat(dataBhv.StartFrame(i) + periWindow, :), 1)];
-dataMatBhv = [dataMatBhv; dataBhv.ID(i)];
-dataStartFrame = [dataStartFrame; dataBhv.StartFrame(i)];
-end
-    end
-
-%% UMAP for all behavior onsets
-idInd = idDS;
-[reduction, umap, clusterIdentifiers, extras] = run_umap(dataMatOnsets(:, idInd));
-
-
-%%
-figure(230); clf
-colorsForPlot = arrayfun(@(x) colors(x,:), dataMatBhv + 2, 'UniformOutput', false);
-colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-scatter3(reduction(:,1), reduction(:,2), 1:size(reduction,1), [], colorsForPlot, 'linewidth', 2);
-% scatter(reduction(:,1), reduction(:,2), [], colorsForPlot, 'linewidth', 2);
-title(['UMAP Onsets ' area, ' binSize = ', num2str(binSize)])
-grid on;
-% saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
-
-%% Plot a short time span at a time to see how the dots are connected
-figure(230)
-colorsForPlot = arrayfun(@(x) colors(x,:), dataMatBhv + 2, 'UniformOutput', false);
-colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-
-plotFrames = 1 / opts.frameSize; % 
-nPlot = floor(size(reduction, 1) / opts.frameSize / plotFrames);
-
-for iPlot = 1 : nPlot
-    clf; hold on;
-    iStart = 1 + (iPlot - 1) * plotFrames;
-    iSpan = dataStartFrame >= iStart & dataStartFrame < iStart + plotFrames - 1;
-scatter3(reduction(iSpan,1), reduction(iSpan,2), dataStartFrame(iSpan), 50, colorsForPlot(iSpan, :), 'linewidth', 3);
-plot3(reduction(iSpan,1), reduction(iSpan,2), dataStartFrame(iSpan), 'k', 'linewidth', 1);
-grid on;
-end
-title(['UMAP Onsets ' area, ' binSize = ', num2str(binSize)])
-% saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
 
 
 
@@ -763,7 +595,7 @@ title(['UMAP Onsets ' area, ' binSize = ', num2str(binSize)])
 
 
 
-%%
+%% some figure pretty things
 fname = 'myfigure';
 
 picturewidth = 20; % set this parameter and keep it forever
@@ -788,13 +620,19 @@ print(hfig,fname,'-dpng','-vector')
 
 
 
+
+
+
+
+
+
+
+
 %% Mean firing rate of tuned and not-tuned neurons across trials
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
 % Create a maximized figure on the second monitor
 fig = figure(231); clf
 set(fig, 'Position', secondMonitorPosition);
@@ -863,32 +701,6 @@ end
 sgtitle('Tuned vs. not tuned firing rates per trial');
 
 
-
-
-
-
-
-%% Plot some psths
-figure(88)
-idInd = idM56;
-bhvName = 'contra_orient';
-% bhvName = 'face_groom_1';
-% bhvName = 'locomotion';
-% bhvName = 'investigate_1';
-bhv = find(strcmp(analyzeBhv, bhvName));
-psthMean = mean(eventMatZ{bhv}(:, idInd, :), 3)';
-
-sortWindow = (fullWindow * opts.frameSize) >= -.2 & (fullWindow * opts.frameSize) < 0;
-unrankedPreBhv = mean(psthMean(:, sortWindow), 2);
-[~, sortOrder] = sort(unrankedPreBhv, 'descend');
-rankedPsth = psthMean(sortOrder,:);
-
-imagesc(rankedPsth);
-xticks(1:length(fullWindow))
-xticklabels(fullWindow)
-xline(10.5, 'linewidth', 2)
-colormap(bluewhitered_custom([-3 3])), colorbar
-title(bhvName, 'Interpreter', 'none')
 
 
 

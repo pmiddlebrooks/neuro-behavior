@@ -409,11 +409,8 @@ colors = colors_for_behaviors(bhvList);
 
 % Create 3x3 grid of subplots
 % Get monitor positions and size
-% monitorPositions = get(0, 'MonitorPositions');
-% if size(monitorPositions, 1) < 2
-%     error('Second monitor not detected');
-% end
-% secondMonitorPosition = monitorPositions(2, :);
+monitorPositions = get(0, 'MonitorPositions');
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 % Create a maximized figure on the second monitor
 fig = figure(81);
 clf

@@ -136,7 +136,7 @@ tic
 toc
 
 % Normalize and zero-center the neural data matrix
-dataMatZ = zscore(dataMat, 0, 1);
+% dataMatZ = zscore(dataMat, 0, 1);
 
 
 idM23 = find(strcmp(areaLabels, 'M23'));
