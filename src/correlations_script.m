@@ -670,10 +670,7 @@ if plotFlag
 
     % Get monitor positions and size
     % monitorPositions = get(0, 'MonitorPositions');
-    % if size(monitorPositions, 1) < 2
-    %     error('Second monitor not detected');
-    % end
-    % secondMonitorPosition = monitorPositions(2, :);
+% secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
     % Create a maximized figure on the second monitor
     fig = figure(70);
     clf
@@ -1007,10 +1004,7 @@ binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 % Get monitor positions and size
 % monitorPositions = get(0, 'MonitorPositions');
-% if size(monitorPositions, 1) < 2
-%     error('Second monitor not detected');
-% end
-% secondMonitorPosition = monitorPositions(2, :);
+% secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 % Create a maximized figure on the second monitor
 fig = figure(760);
 clf
@@ -1061,10 +1055,7 @@ binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 % Get monitor positions and size
 % monitorPositions = get(0, 'MonitorPositions');
-% if size(monitorPositions, 1) < 2
-%     error('Second monitor not detected');
-% end
-% secondMonitorPosition = monitorPositions(2, :);
+% secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 % Create a maximized figure on the second monitor
 fig = figure(761); clf
 % set(fig, 'Position', secondMonitorPosition);
@@ -1112,10 +1103,8 @@ binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) < 2
-    error('Second monitor not detected');
-end
-secondMonitorPosition = monitorPositions(2, :);
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
 % Create a maximized figure on the second monitor
 fig = figure(761);
 clf
@@ -1165,10 +1154,7 @@ binCenters = (edges(1:end-1) + edges(2:end)) / 2;
 
 % Get monitor positions and size
 % monitorPositions = get(0, 'MonitorPositions');
-% if size(monitorPositions, 1) < 2
-%     error('Second monitor not detected');
-% end
-% secondMonitorPosition = monitorPositions(2, :);
+% secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 % Create a maximized figure on the second monitor
 fig = figure(762);
 clf
