@@ -16,7 +16,7 @@ def neuro_behavior_options():
        
         'folds': 10,  # number of folds for cross-validation
        
-        'collectStart': 5 * 60,  # seconds: when to start collecting the data
+        'collectStart': 0 * 60,  # seconds: when to start collecting the data
         'collectFor': 45 * 60,  # seconds: how long to collect data
        
         'nTrialBalance': 200,  # Balance the data (take nTrial of each behavior)

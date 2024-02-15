@@ -423,7 +423,7 @@ sgtitle('Mean peri-onset spiking M56')
 
 
 
-%% Across a given brain area, for positively tuned neurons, on what proportion of trials is each on positively modulated?
+%% Across a given brain area, for positively tuned neurons, on what proportion of trials is each one positively modulated?
 
 % Get monitor positions and size
 monitorPositions = get(0, 'MonitorPositions');
