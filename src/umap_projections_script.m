@@ -1,7 +1,7 @@
 % Get data from get_standard_data
 
 opts = neuro_behavior_options;
-opts.collectStart = 0; % seconds
+opts.collectStart = 0 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
 opts.frameSize = .1;
 
@@ -12,7 +12,7 @@ get_standard_data
 %%                           Dim-reduction and clustering
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Make a modified dataMat with big (e.g. 400ms) bins
-binSize = .1;
+binSize = .2;
 nPerBin = round(binSize / opts.frameSize);
 nBin = floor(size(dataMat, 1) / nPerBin);
 
@@ -25,7 +25,8 @@ dataMatReshaped = reshape(dataMat, nPerBin, nBin, size(dataMat, 2));
 dataMatMod = squeeze(sum(dataMatReshaped, 1));
 
 bhvIDReshaped = reshape(bhvIDMat, nPerBin, nBin);
-labels = bhvIDReshaped(floor(nPerBin/2) + 1, :)';
+% labels = bhvIDReshaped(floor(nPerBin/2) + 1, :)';
+labels = bhvIDReshaped(end, :)';
 
 %%
 idInd = cell2mat(idAll); area = 'All';
@@ -49,7 +50,6 @@ colors = colors_for_behaviors(codes);
 
 %% t-SNE for all behaviors
 projections = tsne(dataMatMod(frameWindow, idInd),'Algorithm','exact');
-
 
 %%
 hfig = figure(230);
@@ -80,15 +80,21 @@ saveas(gcf, fullfile(paths.figurePath, ['t-sne HDBSCAN ' area, ' binsize ', num2
 
 
 
-%% UMAP for all behaviors
+%% 2-D UMAP for all behaviors
 [projections, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd));
-% close
+pause(2); close
 %%
-figure(230); clf
+% Create a figure window that fills the screen
+monitorPositions = get(0, 'MonitorPositions');
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+fig = figure(223); clf
+set(fig, 'Position', secondMonitorPosition);
+
 colorsForPlot = arrayfun(@(x) colors(x,:), labels(frameWindow) + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 scatter3(projections(:,1), projections(:,2), 1:size(projections,1), [], colorsForPlot, 'linewidth', 2);
 % scatter(projections(:,1), projections(:,2), [], colorsForPlot, 'linewidth', 2);
+xlabel('D1'); ylabel('D2'); zlabel('D3')
 title(['UMAP ' area, ' binSize = ', num2str(binSize)])
 saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
 %% Plot a short time span at a time to see how the dots are connected
@@ -127,9 +133,11 @@ saveas(gcf, fullfile(paths.figurePath, ['umap HDBSCAN ,' area, ' binsize ', num2
 
 
 
+
+
 %% DO UMAP on just the transitions
 
-periTime = -.1 : opts.frameSize : .1;
+periTime = .1 : opts.frameSize : .3;
 periWindow = round(periTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 dataMatOnsets = [];
@@ -143,13 +151,17 @@ for i = 3 : length(dataBhv.StartFrame)
     end
 end
 
-%% UMAP for all behavior onsets
-idInd = idDS;
+%% 2-D UMAP for all behavior onsets
 [projections, umap, clusterIdentifiers, extras] = run_umap(dataMatOnsets(:, idInd));
-
+pause(2); close;
 
 %%
-figure(232); clf
+% Create a figure window that fills the screen
+monitorPositions = get(0, 'MonitorPositions');
+secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+fig = figure(232); clf;
+set(fig, 'Position', secondMonitorPosition);
+
 colorsForPlot = arrayfun(@(x) colors(x,:), labels + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 scatter3(projections(:,1), projections(:,2), 1:size(projections,1), [], colorsForPlot, 'linewidth', 2);
@@ -184,18 +196,21 @@ title(['UMAP Onsets ' area, ' binSize = ', num2str(binSize)])
 
 
 
+
 %% UMAP for all behaviors, alllowing more than 2 dimensions
 [projections, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd), 'n_components', 8);
-% close
+pause(2); close
 %% Plot dimensions
 d1 = 1;
 d2 = 2;
 figure(230); clf
 colorsForPlot = arrayfun(@(x) colors(x,:), labels(frameWindow) + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-scatter3(projections(:,d1), projections(:,d2), 1:size(projections,1), [], colorsForPlot, 'linewidth', 2);
+% scatter3(projections(:,d1), projections(:,d2), 1:size(projections,1), [], colorsForPlot, 'linewidth', 2);
+scatter3(projections(:,d1), projections(:,d2), projections(:,3), [], colorsForPlot, 'linewidth', 2);
 % scatter(projections(:,d1), projections(:,d2), [], colorsForPlot, 'linewidth', 2);
 title(['UMAP ' area, ' binSize = ', num2str(binSize)])
+xlabel('D1'); ylabel('D2'); zlabel('D3')
 saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
 %% Plot a short time span at a time to see how the dots are connected
 figure(231)
@@ -215,6 +230,13 @@ for iPlot = 1 : nPlot
 end
 title(['UMAP ' area, ' binSize = ', num2str(binSize)])
 % saveas(gcf, fullfile(paths.figurePath, ['umap ' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
+
+
+
+
+
+
 
 %% Histograms of the different behaviors per dimension, in UMAP space
 
@@ -256,16 +278,17 @@ secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just u
 fig = figure(250); clf; hold on;
 set(fig, 'Position', secondMonitorPosition);
 
-bhvCode = 2;
+bhvCode = 1;
+bhvCode = codes(find(strcmp(behaviors, 'face_groom_1')));
 bhvInd = labels == bhvCode;
 bhvStarts = find([0; diff(bhvInd)] == 1);
 bhvEnds = find([0; diff(bhvInd)] == -1) - 1;
 
 for iBout = 1 : length(bhvStarts)
     iInd = bhvStarts(iBout) : bhvEnds(iBout);
-    iColors = bluemagentared_custom(length(iInd));
-    scatter(projections(iInd, 1), projections(iInd, 2), 40, iColors, 'linewidth', 2)
-    plot(projections(iInd, 1), projections(iInd, 2), 'k')
+    iColors = three_color_heatmap([0 0 1], [.7 .7 .7], [1 0 0], length(iInd));
+    plot3(projections(iInd, 1), projections(iInd, 2), iInd, 'color', [.5 .5 .5])
+    scatter3(projections(iInd, 1), projections(iInd, 2), iInd, 40, iColors, 'linewidth', 2)
 end
 
-
+%% Plot 
