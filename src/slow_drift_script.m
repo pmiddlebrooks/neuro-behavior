@@ -33,12 +33,13 @@ nWind = (size(dataMat, 1) - bigWinFrame)/ winSlideFrame;
 %%
 % Which brain area to analyze?
 idInd = idDS;
-idInd = cell2mat(idAll);
+% idInd = cell2mat(idAll);
 
 % which behavior to analyze?
 behavior = 'contra_body_groom';
-behavior = 'paw_groom';
+behavior = 'locomotion';
 bhvID = analyzeCodes(strcmp(analyzeBhv, behavior));
+bhvInd = find(strcmp(analyzeBhv, behavior));
 
 periTime = -.2 : opts.frameSize : .2;
 periWindow = periTime(1:end-1) / opts.frameSize; % frames around onset w.r.t. zWindow (remove last frame)
@@ -66,19 +67,30 @@ for iWin = 1 : nWind
     % Mean of the residuals for this window
     meanRes(iWin,:) = mean(iPeriRes, 1);
 end
-% PCA on the residual running avgs
+%% PCA on the residual running avgs
 % [coeff, score, ~, ~, explained] = pca(meanRes(:,idInd)');
 [coeff, score, ~, ~, explained] = pca(meanRes(:,idInd));
-slowDriftAxis = coeff(:,1);
-fprintf('First component: %.2f explained variance\n', explained(1));
+figure(45); clf
+for i = 1 : 3
+slowDriftAxis = coeff(:,i);
 %
 slowDriftProj = periSpike(:, idInd) * slowDriftAxis;
-figure(45)
+subplot(3,1,i)
+hold on
 scatter(1:length(slowDriftProj), slowDriftProj, '.')
+    plot(1:length(slowDriftProj), movmean(slowDriftProj, 20), 'lineWidth', 3)
+
 xlabel('Bouts')
-ylabel('Projection along slow drift PC 1')
-title(['Slow drift for ', behavior], 'interpreter', 'none')
+ylabel(['Slow drift PC ', num2str(i)])
+end
+sgtitle(['Slow drift for ', behavior], 'interpreter', 'none')
+fprintf('First 3 components explained variance:\n %.2f\n %.2f\n %.2f\n', explained(1),  explained(2),  explained(3));
+
+
+
+
 %%
+idInd = cell2mat(idAll);
 nBout = size(eventMat{bhvInd}, 3);
 periSpikeCt = sum(eventMat{bhvInd}(fullStartInd + periWindow, :, :), 1);
 periSpikeCt = permute(periSpikeCt, [3 2 1]);
@@ -87,9 +99,11 @@ meanSpikeCt = mean(periSpikeCt, 1);
 
 resSpikeCt = periSpikeCt - meanSpikeCt;
 
+
 %% Individual neuron slow drift for given behavior
 % Which brain area to analyze?
 idInd = idM56;
+idInd = cell2mat(idAll);
 
 figure(654);
 for i = 1:length(idInd)
@@ -97,11 +111,11 @@ for i = 1:length(idInd)
     scatter(1:nBout, resSpikeCt(:,idInd(i)), 'filled')
     plot(1:nBout, movmean(resSpikeCt(:,idInd(i)), 20), 'linewidth', 3)
 end
-
 %% PCA projections of slow drift for given behavior/brain area
 
 % Which brain area to analyze?
 idInd = idM56;
+idInd = cell2mat(idAll);
 % Perform PCA
 [coeff, score, ~, ~, explained] = pca(resSpikeCt(:,idInd));
 figure(62); clf;
@@ -113,3 +127,5 @@ for iComp = 1:3
     xlabel('Bouts')
 end
 sgtitle(['PCA projections: ', behavior], 'interpreter', 'none')
+
+
