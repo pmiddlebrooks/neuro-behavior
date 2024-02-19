@@ -7,8 +7,8 @@
 
 
 %% get desired file paths
-computerDriveName = 'ROSETTA'; %'ROSETTA'; % 'Z' or 'home'
-paths = get_paths(computerDriveName);
+computerDriveName = 'home'; %'ROSETTA'; % 'Z' or 'home'
+paths = get_paths;
 
 animal = 'ag25290';
 sessionBhv = '112321_1';
@@ -18,10 +18,10 @@ if strcmp(sessionBhv, '112321_1')
 end
 
 %%
-figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectFor)]);
-if ~exist(figurePath, 'dir')
-    mkdir(figurePath);
-end
+% figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectFor)]);
+% if ~exist(figurePath, 'dir')
+%     mkdir(figurePath);
+% end
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                   Get behavior data
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
