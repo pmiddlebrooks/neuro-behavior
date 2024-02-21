@@ -5,9 +5,10 @@
 %   cell array: (Behaviors X 1)
 %   matrices in cells: peri-onset neural data stacked across bouts (n time bins X p neurons X b bouts)
 
+% Clear variables to free up memory
+clear dataMat dataBhv eventMat eventMatZ
 
 %% get desired file paths
-computerDriveName = 'home'; %'ROSETTA'; % 'Z' or 'home'
 paths = get_paths;
 
 animal = 'ag25290';
@@ -160,7 +161,7 @@ for i = 1 : size(dataBhv, 1)
 end
 
 
-
+return
 %%         Standard PSTHS to use for analyses (b/c they have the same trials, etc)
 % Create 3-D psth data matrix of stacked peri-event start time windows (time X neuron X trial)
 % Make one of spike counts and one of zscored spike counts
@@ -178,7 +179,7 @@ periWindow = periTime(1:end-1) / opts.frameSize; % frames around onset w.r.t. zW
 
 eventMat = cell(length(analyzeCodes), 1);
 eventMatZ = cell(length(analyzeCodes), 1);
-periMatZ = cell(length(analyzeCodes), 1);
+% periMatZ = cell(length(analyzeCodes), 1);
 for iBhv = 1 : length(analyzeCodes)
 
     bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv) & dataBhv.Valid) ./ opts.frameSize);
@@ -200,7 +201,7 @@ for iBhv = 1 : length(analyzeCodes)
 
     eventMat{iBhv} = iDataMat(zStartInd + fullWindow, :, :);
     eventMatZ{iBhv} = iDataMatZ(zStartInd + fullWindow, :, :);
-    periMatZ{iBhv} = permute(mean(iDataMatZ(zStartInd + periWindow, :, :), 1), [3 2 1]);
+    % periMatZ{iBhv} = permute(mean(iDataMatZ(zStartInd + periWindow, :, :), 1), [3 2 1]);
 
 end
 
