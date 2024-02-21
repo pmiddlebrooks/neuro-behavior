@@ -9,7 +9,8 @@ else
 end
 
 % Preallocate data matrix
-dataMat = zeros(durFrames, length(opts.useNeurons));
+dataMat = int8(zeros(durFrames, length(opts.useNeurons)));
+% dataMat = zeros(durFrames, length(opts.useNeurons));
 
 areaLabels = {};
 % Loop through each neuron and put spike numbers within each frame

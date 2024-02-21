@@ -1,5 +1,4 @@
-% SaniOG_etal_2021_NatNeuro
-% Modeling behaviorally relevant neural dynamics enabled by preferential subspace identification
+% SaniOG_etal_2021_NatNeuro: Modeling behaviorally relevant neural dynamics enabled by preferential subspace identification
 %%
 cd '/Users/paulmiddlebrooks/Projects/toolboxes/PSID/'
 init
@@ -22,3 +21,19 @@ idSys = PSID(y, z, nx, n1, i);
 
 %%
 R2 = evalPrediction(z, zPred, 'R2')
+
+
+
+
+
+
+%%                  PYTHON in MATLAB: Do some python stuff in matlab
+% ===========================================================================
+p = pyenv
+%%
+py.sys.version
+py.math.sqrt(42)
+
+py.list([1,2])
+
+
