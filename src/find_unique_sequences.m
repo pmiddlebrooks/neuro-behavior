@@ -1,7 +1,11 @@
 function [uniqueSequences, sequenceIndices] = find_unique_sequences(dataBhv, nSeq, validInd)
 % ID: list of categorical behavior IDs
 % nSeq: how many behaviors in a sequence?
-% validInd: ensure these behaviors in the sequence are "valid" as per behavior_selection.m
+% validInd: logical the length of nSeq (e.g. [0 1 0]: ensures the 2nd behavior in the sequence is "valid" as per behavior_selection.m
+%
+% Out:
+% uniqueSequences: list of sequences by code behavior, ranked by most frequent
+% sequenceIndices: the index in dataBhv of the FIRST behavior in the sequence.
 
 if length(validInd) ~= nSeq
     error('validInd needs to be a 1XnSeq logical to determine which index/indices to ensure are "valid"')

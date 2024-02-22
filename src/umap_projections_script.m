@@ -1,10 +1,11 @@
 % Get data from get_standard_data
-
+cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
 opts.frameSize = .1;
 
+getDataType = 'all';
 get_standard_data
 
 
@@ -12,7 +13,7 @@ get_standard_data
 %%                           Dim-reduction and clustering
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Make a modified dataMat with big (e.g. 400ms) bins
-binSize = .2;
+binSize = .1;
 nPerBin = round(binSize / opts.frameSize);
 nBin = floor(size(dataMat, 1) / nPerBin);
 
@@ -81,6 +82,7 @@ saveas(gcf, fullfile(paths.figurePath, ['t-sne HDBSCAN ' area, ' binsize ', num2
 
 
 %% 2-D UMAP for all behaviors
+cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 [projections, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd));
 pause(2); close
 %%
@@ -198,7 +200,7 @@ title(['UMAP Onsets ' area, ' binSize = ', num2str(binSize)])
 
 
 %% UMAP for all behaviors, alllowing more than 2 dimensions
-[projections, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd), 'n_components', 8);
+[projections, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd), 'n_components', 6);
 pause(2); close
 %% Plot dimensions
 d1 = 1;
@@ -291,4 +293,85 @@ for iBout = 1 : length(bhvStarts)
     scatter3(projections(iInd, 1), projections(iInd, 2), iInd, 40, iColors, 'linewidth', 2)
 end
 
-%% Plot 
+
+
+
+
+
+
+%%                      Compare common behavioral sequences
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Get an hour
+cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+
+opts = neuro_behavior_options;
+opts.collectStart = 0 * 60; % seconds
+opts.collectFor = 2 * 60 * 60; % seconds
+opts.frameSize = .1;
+
+getDataType = 'all';
+get_standard_data
+
+%% Run UMAPto get projectsions in low-D space
+
+idInd = idDS;
+nComponents = 3;
+[projections, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+pause(5); close
+
+
+
+%%
+nSeq = 3;
+requireValid = [0 1 0];
+% requireValid = [1 1];
+% requireValid = [0 0 0];
+[uniqueSequences, sequenceIndices] = find_unique_sequences(dataBhv, nSeq, requireValid);
+
+uniqueSequences(1:40)
+cellfun(@length, sequenceIndices(1:40))
+
+
+%% Get just the triplets with a particular behavior in the middle
+
+middleBhv = 6;
+middleIdx = find(cellfun(@(x) x(2) == middleBhv, uniqueSequences)); % Sequences in uniqueSequences with middle behavior = middleBhv
+uniqueSequences(middleIdx)
+cellfun(@length, sequenceIndices(middleIdx))
+
+%%
+figure(929); clf; hold on; grid on;
+colors = colors_for_behaviors(codes);
+middleColor = colors(middleBhv+2,:);
+for i = 1 : length(middleIdx)
+    iFirstBhv = uniqueSequences{middleIdx(i)}(1);
+    iLastBhv = uniqueSequences{middleIdx(i)}(end);
+    iFirstColor = colors(iFirstBhv+2,:);
+    iLastColor = colors(iLastBhv+2,:);
+    iDataBhvIdx = sequenceIndices{middleIdx(i)};
+    % Loop through each instance of this sequence and plot from 1st to 2nd
+    % to 3rd behavior
+    for j = 1 : length(iDataBhvIdx)
+        start1 = dataBhv.StartFrame(iDataBhvIdx(j));
+        start2 = dataBhv.StartFrame(iDataBhvIdx(j) + 1);
+        start3 = dataBhv.StartFrame(iDataBhvIdx(j) + 2);
+
+        plot3(projections(start1:start2, 1), projections(start1:start2, 2), projections(start1:start2, 3), 'color', [.7 .7 .7])
+        plot3(projections(start2:start3, 1), projections(start2:start3, 2), projections(start2:start3, 3), 'color', [.7 .7 .7])
+        scatter3(projections(start1, 1), projections(start1, 2), projections(start1, 3), 60, iFirstColor, 'LineWidth', 2)
+        scatter3(projections(start2, 1), projections(start2, 2), projections(start2, 3), 100, middleColor, 'LineWidth', 2)
+        scatter3(projections(start3, 1), projections(start3, 2), projections(start3, 3), 60, iLastColor, 'LineWidth', 2)
+    end
+end
+
+
+%%
+[seqStartTimes, seqCodes, seqNames] = behavior_sequences(dataBhv, analyzeCodes, analyzeBhv)
+
+% for a given behavior, make a histogram of the behaviors that precede it.
+bhv = 6;
+
+
+
+
+
