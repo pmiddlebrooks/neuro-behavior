@@ -28,6 +28,8 @@ def load_data(opts, dataType):
         data['Name'] = np.concatenate([pd.Series(data_window['Behavior'].iloc[0]), data_window['Behavior'].iloc[change_bhv_idx]])
         data['StartTime'] = np.concatenate([pd.Series(0), data_window['Time'].iloc[change_bhv_idx]])
         
+        data['Valid'] = behavior_selection(data, opts)
+
     elif dataType == 'neuron':
         file_name = 'cluster_info.tsv'
         # ci = pd.read_csv(opts['dataPath'] + file_name, delimiter='\t')
@@ -76,3 +78,66 @@ def load_data(opts, dataType):
         pass
 
     return data
+
+
+
+
+def behavior_selection(data, opts):
+    # behaviors = opts['behaviors']
+    # codes = opts['bhvCodes']
+    codes = np.unique(data.ID)
+    behaviors = []  # behaviors: a Python list containing the behavior names
+    for iBhv in range(len(codes)):
+        # first_idx = np.where(dataBhv.ID == codes[iBhv])[0][0]
+        firstIdx = np.where(data.ID == codes[iBhv])[0][0]
+        behaviors.append(data.Name.iloc[firstIdx])
+
+
+    # validBhv = [None] * len(behaviors)
+    validBhv = np.zeros(data.shape[0], dtype=bool)
+
+    for i in range(len(codes)):
+        # if codes[i] in opts['validCodes']:
+            iAct = codes[i]
+            actIdx = data.ID == iAct  # All instances labeled as this behavior
+            allPossible = sum(actIdx)
+
+            longEnough = data.Dur >= opts['minActTime']  # Only use if it lasted long enough to count
+
+            actAndLong = actIdx & longEnough
+            andLongEnough = sum(actAndLong)  # for printing sanity check report below
+
+            # iPossible is a list of behavior indices for this behavior that is
+            # at least long enough
+            # Go through possible instances and discard unusable (repeated) ones
+            for iPossible in np.where(actAndLong)[0]:
+                # Was there the same behavior within the last minNoRepeat sec?
+                # endTime = np.concatenate([data.StartTime[1:], [data.StartTime[-1] + data.Dur[-1]]])
+                endTime = np.concatenate([data.StartTime.iloc[1:], [data.StartTime.iloc[-1] + data.Dur.iloc[-1]]])
+                # possible repeated behaviors are any behaviors that came
+                # before this one that were within the no-repeat minimal time
+                iPossRepeat = (endTime < data.StartTime[iPossible]) & (endTime >= (data.StartTime[iPossible] - opts['minNoRepeatTime']))
+
+                # If it's within minNoRepeat and any of the behaviors during that time are the same as this one (this behavior is a repeat), get rid of it
+                if np.sum(iPossRepeat) and any(data.ID[iPossRepeat] == iAct):
+                    actAndLong[iPossible] = False
+
+            andNotRepeated = sum(actAndLong)
+
+            print(f'Behavior {codes[i]}: {behaviors[i]}')
+            print(f'{allPossible}: allPossible')
+            print(f'{andLongEnough}: andLongEnough')
+            print(f'{andNotRepeated}: andNotRepeated')
+            print(f'Percent valid: {100 * andNotRepeated / allPossible:.1f}\n')
+
+            # if sum(actAndLong) >= opts['minBhvNum']:
+            validBhv[actAndLong] = 1
+            # else:
+            #     validBhv[:,i] = np.full(len(actAndLong), False)
+            #     print(f"Not enough {behaviors[i]} bouts to analyze ({sum(actAndLong)} of {opts['minBhvNum']} needed)\n")
+
+        # else:
+        #     validBhv[:,i] = np.full(len(data), False)
+        #     print(f'{behaviors[i]} code {codes[i]} is not a valid behavior for this analysis\n\n')
+
+    return validBhv

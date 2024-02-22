@@ -160,10 +160,11 @@ for i = 1 : length(codes) % length(actList)
     andNotRepeated = sum(actAndLong);
 
     fprintf('Behavior %d: %s\n', codes(i), behaviors{i})
-    fprintf('%d: allPossible\n', allPossible)
-    fprintf('%d: andLongEnough\n', andLongEnough)
-    fprintf('%d: andNotRepeated \n', andNotRepeated)
-    fprintf('Percent valid: %.1f\n\n', 100* andNotRepeated / allPossible)
+    % fprintf('%d: allPossible\n', allPossible)
+    % fprintf('%d: andLongEnough\n', andLongEnough)
+    % fprintf('%d: andNotRepeated \n', andNotRepeated)
+    % fprintf('Percent valid: %.1f\n\n', 100* andNotRepeated / allPossible)
+    fprintf('Valid: %d\t (Percent): %.1f\n\n', andNotRepeated, 100* andNotRepeated / allPossible)
 
     validBhv(actAndLong) = 1;
 end

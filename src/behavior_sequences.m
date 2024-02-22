@@ -1,9 +1,9 @@
 function [seqStartTimes, seqCodes, seqNames] = behavior_sequences(dataBhv, analyzeCodes, analyzeBhv)
 %    For each behavior, what are the most common preceding behaviors?
 
-dataBhv.prevID = [nan; dataBhv.ID(1:end-1)];
-dataBhv.prevDur = [nan; dataBhv.Dur(1:end-1)];
-dataBhv.prevStartTime = [nan; dataBhv.StartTime(1:end-1)];
+dataBhv.PrevID = [nan; dataBhv.ID(1:end-1)];
+dataBhv.PrevDur = [nan; dataBhv.Dur(1:end-1)];
+dataBhv.PrevStartTime = [nan; dataBhv.StartTime(1:end-1)];
 dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
 
 minCurrDur = .15;

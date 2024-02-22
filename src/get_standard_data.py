@@ -58,23 +58,24 @@ dataBhv = nb.load_data(opts, 'behavior')
 codes = np.unique(dataBhv.ID)
 behaviors = []  # behaviors: a Python list containing the behavior names
 for iBhv in range(len(codes)):
-    # first_idx = np.where(dataBhv['bhvID'] == codes[iBhv])[0][0]
-    firstIdx = np.where(dataBhv['ID'] == codes[iBhv])[0][0]
-    behaviors.append(dataBhv['Name'].iloc[firstIdx])
+    # first_idx = np.where(dataBhv.ID == codes[iBhv])[0][0]
+    firstIdx = np.where(dataBhv.ID == codes[iBhv])[0][0]
+    behaviors.append(dataBhv.Name.iloc[firstIdx])
 
 opts['behaviors'] = behaviors
 opts['bhvCodes'] = codes
 opts['validCodes'] = np.array(codes)[np.array(codes) != -1]
 
-# Select valid behaviors
-valiBhv = nb.behavior_selection(dataBhv, opts)
-opts['validBhv'] = valiBhv
-# all_valid = np.sum(np.array(valiBhv), axis=1)  # A list of all the valid behavior indices
-
 rmv_bhv = np.zeros(len(behaviors), dtype=int)
 for i in range(len(behaviors)):
-    if np.sum(valiBhv[:,i]) < 20:
+    if (np.sum((dataBhv.ID == codes[i]) & dataBhv.Valid) < 20) or codes[i] == -1:
         rmv_bhv[i] = 1
+
+
+# # Select valid behaviors
+# valiBhv = nb.behavior_selection(dataBhv, opts)
+# opts['validBhv'] = valiBhv
+# # all_valid = np.sum(np.array(valiBhv), axis=1)  # A list of all the valid behavior indices
 
 analyzeBhv = np.array(behaviors)[rmv_bhv == 0]
 analyzeCodes = np.array(codes)[rmv_bhv == 0]
@@ -123,8 +124,8 @@ print(f'{len(idM23)} M23\n{len(idM56)} M56\n{len(idDS)} DS\n{len(idVS)} VS')
 
 
 #  Create a vector of behavior IDs for each frame of the dataMat
-dataBhv['StartFrame'] = 1 + np.floor(dataBhv.StartTime / opts['frameSize'])
-dataBhv['DurFrame'] = np.floor(dataBhv.Dur / opts['frameSize'])
+dataBhv.StartFrame = 1 + np.floor(dataBhv.StartTime / opts['frameSize'])
+dataBhv.DurFrame = np.floor(dataBhv.Dur / opts['frameSize'])
 
 bhvIDMat = np.zeros(dataMat.shape[0], dtype=int)
 for i in range(dataBhv.shape[0]):
@@ -154,8 +155,7 @@ eventMatZ = [None] * len(analyzeCodes)
 # periMatZ = [None] * len(analyzeCodes)
 
 for iBhv, code in enumerate(analyzeCodes):
-    iValidBhv = opts['validBhv'][:, opts['bhvCodes'] == code].flatten()
-    bhvStartFrames = 1 + np.floor(np.divide(dataBhv.loc[np.logical_and(dataBhv['ID'] == code, iValidBhv.astype(bool)), 'StartTime'].values, opts['frameSize'])).astype(int)
+    bhvStartFrames = 1 + np.floor(np.divide(dataBhv.loc[np.logical_and(dataBhv.ID == code, dataBhv.Valid), 'StartTime'].values, opts['frameSize'])).astype(int)
     bhvStartFrames = bhvStartFrames[np.logical_and(bhvStartFrames >= -z_window[0] + 1, bhvStartFrames <= dataMat.shape[0] - z_window[-1])]
 
     n_trial = len(bhvStartFrames)
