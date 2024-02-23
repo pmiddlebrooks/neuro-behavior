@@ -3,7 +3,7 @@ cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
-opts.frameSize = .1;
+% opts.frameSize = .1;
 
 getDataType = 'all';
 get_standard_data
@@ -200,7 +200,7 @@ title(['UMAP Onsets ' area, ' binSize = ', num2str(binSize)])
 
 
 %% UMAP for all behaviors, alllowing more than 2 dimensions
-[projections, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd), 'n_components', 6);
+[projections, umap, clusterIdentifiers, extras] = run_umap(dataMatMod(frameWindow, idInd), 'n_components', 3);
 pause(2); close
 %% Plot dimensions
 d1 = 1;
@@ -306,35 +306,83 @@ cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 2 * 60 * 60; % seconds
-opts.frameSize = .1;
+opts.collectFor = 1 * 30 * 60; % seconds
+opts.frameSize = .05;
 
 getDataType = 'all';
 get_standard_data
 
-%% Run UMAPto get projectsions in low-D space
-
-idInd = idDS;
-nComponents = 3;
-[projections, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
-pause(5); close
-
-
 
 %%
-nSeq = 3;
+nSeq = 2;
 requireValid = [0 1 0];
-% requireValid = [1 1];
+requireValid = [1 0];
 % requireValid = [0 0 0];
 [uniqueSequences, sequenceIndices] = find_unique_sequences(dataBhv, nSeq, requireValid);
 
 uniqueSequences(1:40)
 cellfun(@length, sequenceIndices(1:40))
 
+startBhvIdx = 1; % Which behavior in the sequence to plot as the start point. (The index in the sequence)
 
-%% Get just the triplets with a particular behavior in the middle
+%% Which sequences to plot
+seqIdx = [1 2 14 18];
 
-middleBhv = 6;
+
+%% Run UMAPto get projectsions in low-D space
+idInd = idM56;
+nComponents = 3;
+[projectionsM56, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+pause(5); close
+
+
+idInd = idDS;
+nComponents = 3;
+[projectionsDS, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+pause(5); close
+
+
+
+%% For sequences of 2
+uniqueSequences(seqIdx)
+
+% colors = [1 0 0; 0 0 1; 0 .7 0; 0 0 .15];
+colors = colors_for_behaviors(codes);
+figure(420); clf; hold on; title('UMAP M56');
+figure(421); clf; hold on; title('UMAP DS');
+for i = 1 : length(seqIdx)
+    bhv1 = uniqueSequences{seqIdx(i)}(1);
+    bhv2 = uniqueSequences{seqIdx(i)}(end);
+    color1 = colors(bhv1+2,:);
+    color2 = colors(bhv2+2,:);
+
+
+    for j = 1 : nTrial
+        start1 = dataBhv.StartFrame(sequenceIndices{i}(j));
+        start2 = dataBhv.StartFrame(sequenceIndices{i}(j)+1);
+
+
+        figure(420);
+        plot3(projectionsM56(start1:start2, 1), projectionsM56(start1:start2, 2), projectionsM56(start1:start2, 3), '.-', 'Color', color1, 'LineWidth', 2, 'MarkerSize', 10')
+        scatter3(projectionsM56(start1, 1), projectionsM56(start1, 2), projectionsM56(start1, 3), 100, color1, 'filled')
+        scatter3(projectionsM56(start2, 1), projectionsM56(start2, 2), projectionsM56(start2, 3), 100, color2, 'filled')
+        grid on;
+        xlabel('D1'); ylabel('D2'); zlabel('D3')
+
+        figure(421)
+        plot3(projectionsDS(start1:start2, 1), projectionsDS(start1:start2, 2), projectionsDS(start1:start2, 3), '.-', 'Color', color1, 'LineWidth', 2, 'MarkerSize', 10')
+        scatter3(projectionsDS(start1, 1), projectionsDS(start1, 2), projectionsDS(start1, 3), 100, color1, 'filled')
+        scatter3(projectionsDS(start2, 1), projectionsDS(start2, 2), projectionsDS(start2, 3), 100, color2, 'filled')
+        xlabel('D1'); ylabel('D2'); zlabel('D3')
+        grid on;
+    end
+end
+
+
+
+%% For sequences of 3: Get just the triplets with a particular behavior in the middle
+
+middleBhv = 15;
 middleIdx = find(cellfun(@(x) x(2) == middleBhv, uniqueSequences)); % Sequences in uniqueSequences with middle behavior = middleBhv
 uniqueSequences(middleIdx)
 cellfun(@length, sequenceIndices(middleIdx))
@@ -344,11 +392,12 @@ figure(929); clf; hold on; grid on;
 colors = colors_for_behaviors(codes);
 middleColor = colors(middleBhv+2,:);
 for i = 1 : length(middleIdx)
-    iFirstBhv = uniqueSequences{middleIdx(i)}(1);
-    iLastBhv = uniqueSequences{middleIdx(i)}(end);
-    iFirstColor = colors(iFirstBhv+2,:);
-    iLastColor = colors(iLastBhv+2,:);
+    bhv1 = uniqueSequences{middleIdx(i)}(1);
+    bhv2 = uniqueSequences{middleIdx(i)}(end);
+    iFirstColor = colors(bhv1+2,:);
+    iLastColor = colors(bhv2+2,:);
     iDataBhvIdx = sequenceIndices{middleIdx(i)};
+    uniqueSequences{middleIdx(i)}
     % Loop through each instance of this sequence and plot from 1st to 2nd
     % to 3rd behavior
     for j = 1 : length(iDataBhvIdx)

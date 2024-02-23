@@ -1,6 +1,5 @@
 from .neuro_behavior_options import neuro_behavior_options
 from .load_data import load_data
-from .behavior_selection import behavior_selection
 from .neural_matrix import neural_matrix
 from .find_unique_sequences import find_unique_sequences
 # from .get_standard_data import neuro_behavior_options

@@ -24,7 +24,7 @@ def load_data(opts, dataType):
         data['Dur'] = np.concatenate([np.diff(np.insert(data_window['Time'].iloc[change_bhv_idx].values, 0, 0)),
                                          [opts['collectFor'] - data_window['Time'].iloc[change_bhv_idx[-1]]]])
         # data['bhvID'] = np.concatenate([bhv_id.iloc[0], bhv_id.iloc[change_bhv_idx]])
-        data['ID'] = np.concatenate([pd.Series(bhv_id.iloc[0]), bhv_id.iloc[change_bhv_idx]])
+        data['ID'] = np.concatenate([pd.Series(bhv_id.iloc[0]), bhv_id.iloc[change_bhv_idx]]).astype(int)
         data['Name'] = np.concatenate([pd.Series(data_window['Behavior'].iloc[0]), data_window['Behavior'].iloc[change_bhv_idx]])
         data['StartTime'] = np.concatenate([pd.Series(0), data_window['Time'].iloc[change_bhv_idx]])
         
@@ -124,11 +124,12 @@ def behavior_selection(data, opts):
 
             andNotRepeated = sum(actAndLong)
 
-            print(f'Behavior {codes[i]}: {behaviors[i]}')
-            print(f'{allPossible}: allPossible')
-            print(f'{andLongEnough}: andLongEnough')
-            print(f'{andNotRepeated}: andNotRepeated')
-            print(f'Percent valid: {100 * andNotRepeated / allPossible:.1f}\n')
+            # print(f'Behavior {codes[i]}: {behaviors[i]}')
+            # print(f'{allPossible}: allPossible')
+            # print(f'{andLongEnough}: andLongEnough')
+            # print(f'{andNotRepeated}: andNotRepeated')
+            # print(f'Percent valid: {100 * andNotRepeated / allPossible:.1f}\n')
+            print(f'{codes[i]}: {behaviors[i]}: Valid: {andNotRepeated} ({100 * andNotRepeated / allPossible:.1f})%\n')
 
             # if sum(actAndLong) >= opts['minBhvNum']:
             validBhv[actAndLong] = 1
