@@ -301,7 +301,7 @@ end
 
 %%                      Compare common behavioral sequences
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Get an hour
+%% Get 30 min (matches GPFA)
 cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 
 opts = neuro_behavior_options;
@@ -328,18 +328,18 @@ startBhvIdx = 1; % Which behavior in the sequence to plot as the start point. (T
 %% Which sequences to plot
 seqIdx = [1 2 14 18];
 
+nTrial = min(30, min(cellfun(@length, sequenceIndices(seqIdx))));
 
 %% Run UMAPto get projectsions in low-D space
 idInd = idM56;
 nComponents = 3;
 [projectionsM56, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
-pause(5); close
+pause(7); close
 
-
+%%
 idInd = idDS;
-nComponents = 3;
 [projectionsDS, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
-pause(5); close
+pause(7); close
 
 
 
@@ -348,8 +348,8 @@ uniqueSequences(seqIdx)
 
 % colors = [1 0 0; 0 0 1; 0 .7 0; 0 0 .15];
 colors = colors_for_behaviors(codes);
-figure(420); clf; hold on; title('UMAP M56');
-figure(421); clf; hold on; title('UMAP DS');
+figure(420); clf; hold on; title(['UMAP M56, D=', num2str(nComponents)]);
+figure(421); clf; hold on; title(['UMAP DS, D=', num2str(nComponents)]);
 for i = 1 : length(seqIdx)
     bhv1 = uniqueSequences{seqIdx(i)}(1);
     bhv2 = uniqueSequences{seqIdx(i)}(end);
@@ -361,7 +361,7 @@ for i = 1 : length(seqIdx)
         start1 = dataBhv.StartFrame(sequenceIndices{i}(j));
         start2 = dataBhv.StartFrame(sequenceIndices{i}(j)+1);
 
-
+        %  M56 data
         figure(420);
         plot3(projectionsM56(start1:start2, 1), projectionsM56(start1:start2, 2), projectionsM56(start1:start2, 3), '.-', 'Color', color1, 'LineWidth', 2, 'MarkerSize', 10')
         scatter3(projectionsM56(start1, 1), projectionsM56(start1, 2), projectionsM56(start1, 3), 100, color1, 'filled')
@@ -369,6 +369,7 @@ for i = 1 : length(seqIdx)
         grid on;
         xlabel('D1'); ylabel('D2'); zlabel('D3')
 
+        %  DS data
         figure(421)
         plot3(projectionsDS(start1:start2, 1), projectionsDS(start1:start2, 2), projectionsDS(start1:start2, 3), '.-', 'Color', color1, 'LineWidth', 2, 'MarkerSize', 10')
         scatter3(projectionsDS(start1, 1), projectionsDS(start1, 2), projectionsDS(start1, 3), 100, color1, 'filled')
@@ -377,6 +378,101 @@ for i = 1 : length(seqIdx)
         grid on;
     end
 end
+
+
+
+
+
+
+
+%% Get full session to find common sequences (of the more interesting/less common behaviors)
+
+opts = neuro_behavior_options;
+opts.collectStart = 0 * 60; % seconds
+opts.collectFor = 2 * 60 * 60; % seconds
+opts.frameSize = .05;
+
+getDataType = 'all';
+get_standard_data
+
+%% Find sequences of 3 and collect their indices
+nSeq = 3;
+requireValid = [0 1 0];
+% requireValid = [0 0 0];
+[uniqueSequences, sequenceIndices] = find_unique_sequences(dataBhv, nSeq, requireValid);
+
+minSeq = 7;
+bhvList = 5:12;
+
+seqList = {};
+seqInd = {};
+for i = 1 : length(uniqueSequences)
+    if any(ismember(uniqueSequences{i}, bhvList)) && ~ismember(-1, uniqueSequences{i}) % If any interesting behaviors are part of the sequence...
+        if length(sequenceIndices{i}) >= minSeq % If there enough instances of this sequence, collect it
+            seqList = [seqList, uniqueSequences{i}];
+            seqInd = [seqInd, sequenceIndices{i}];
+
+            fprintf('Sequence: %s\t %s\t %s\n', behaviors{codes == uniqueSequences{i}(1)}, ...
+                behaviors{codes == uniqueSequences{i}(2)}, ...
+                behaviors{codes == uniqueSequences{i}(3)});
+            fprintf('Number: %d\n', length(sequenceIndices{i}))
+        else
+            continue
+        end
+    end
+end
+
+%%
+colors = colors_for_behaviors(codes);
+figure(420); clf; hold on; title('UMAP M56');
+figure(421); clf; hold on; title('UMAP DS');
+for i = 3 : length(seqList)
+    bhv1 = seqList{i}(1);
+    bhv2 = seqList{i}(2);
+    bhv3 = seqList{i}(3);
+    color1 = colors(bhv1+2,:);
+    color2 = colors(bhv2+2,:);
+    color3 = colors(bhv3+2,:);
+
+
+    for j = 1 : length(seqInd{i})
+        start1 = dataBhv.StartFrame(seqInd{i}(j));
+        start2 = dataBhv.StartFrame(seqInd{i}(j)+1);
+        start3 = dataBhv.StartFrame(seqInd{i}(j)+2);
+
+        %  M56 data
+        figure(420);
+        plot3(projectionsM56(start1:start2, 1), projectionsM56(start1:start2, 2), projectionsM56(start1:start2, 3), '.-', 'Color', color1, 'LineWidth', 2, 'MarkerSize', 10')
+        plot3(projectionsM56(start2:start3, 1), projectionsM56(start2:start3, 2), projectionsM56(start2:start3, 3), '.-', 'Color', color2, 'LineWidth', 2, 'MarkerSize', 10')
+        scatter3(projectionsM56(start1, 1), projectionsM56(start1, 2), projectionsM56(start1, 3), 100, color1, 'filled')
+        scatter3(projectionsM56(start2, 1), projectionsM56(start2, 2), projectionsM56(start2, 3), 100, color2, 'filled')
+        scatter3(projectionsM56(start3, 1), projectionsM56(start3, 2), projectionsM56(start3, 3), 100, color3, 'filled')
+        grid on;
+        xlabel('D1'); ylabel('D2'); zlabel('D3')
+
+        %  DS data
+        figure(421)
+        plot3(projectionsDS(start1:start2, 1), projectionsDS(start1:start2, 2), projectionsDS(start1:start2, 3), '.-', 'Color', color1, 'LineWidth', 2, 'MarkerSize', 10')
+        plot3(projectionsDS(start2:start3, 1), projectionsDS(start2:start3, 2), projectionsDS(start2:start3, 3), '.-', 'Color', color2, 'LineWidth', 2, 'MarkerSize', 10')
+        scatter3(projectionsDS(start1, 1), projectionsDS(start1, 2), projectionsDS(start1, 3), 100, color1, 'filled')
+        scatter3(projectionsDS(start2, 1), projectionsDS(start2, 2), projectionsDS(start2, 3), 100, color2, 'filled')
+        scatter3(projectionsDS(start3, 1), projectionsDS(start3, 2), projectionsDS(start3, 3), 100, color3, 'filled')
+        xlabel('D1'); ylabel('D2'); zlabel('D3')
+        grid on;
+    end
+end
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -412,15 +508,6 @@ for i = 1 : length(middleIdx)
         scatter3(projections(start3, 1), projections(start3, 2), projections(start3, 3), 60, iLastColor, 'LineWidth', 2)
     end
 end
-
-
-%%
-[seqStartTimes, seqCodes, seqNames] = behavior_sequences(dataBhv, analyzeCodes, analyzeBhv)
-
-% for a given behavior, make a histogram of the behaviors that precede it.
-bhv = 6;
-
-
 
 
 
