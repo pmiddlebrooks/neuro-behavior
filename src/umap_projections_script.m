@@ -320,8 +320,8 @@ requireValid = [1 0];
 % requireValid = [0 0 0];
 [uniqueSequences, sequenceIndices] = find_unique_sequences(dataBhv, nSeq, requireValid);
 
-uniqueSequences(1:40)
-cellfun(@length, sequenceIndices(1:40))
+% uniqueSequences(1:40)
+% cellfun(@length, sequenceIndices(1:40))
 
 startBhvIdx = 1; % Which behavior in the sequence to plot as the start point. (The index in the sequence)
 
@@ -334,12 +334,12 @@ nTrial = min(30, min(cellfun(@length, sequenceIndices(seqIdx))));
 idInd = idM56;
 nComponents = 3;
 [projectionsM56, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
-pause(7); close
+pause(5); close
 
 %%
 idInd = idDS;
 [projectionsDS, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
-pause(7); close
+pause(5); close
 
 
 
