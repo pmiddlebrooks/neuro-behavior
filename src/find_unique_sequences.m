@@ -41,6 +41,13 @@ for i = 1:length(dataBhv.ID) - nSeq + 1
         % New sequence found, add it to the list
         allSequences{end+1} = seqStr; % Add sequence string
         allIndices{end+1} = [i]; % Initialize with the current starting index
+
+            % Find indices where the value changes
+    changeIndices = [true, diff(inputSeq) ~= 0];
+    
+    % Extract the values at the change points
+    compressedSeq = inputSeq(changeIndices);
+
     else
         % Existing sequence, append the new starting index
         allIndices{seqIndex} = [allIndices{seqIndex}, i];
