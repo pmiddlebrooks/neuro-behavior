@@ -306,7 +306,7 @@ cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 1 * 30 * 60; % seconds
+opts.collectFor = 2 * 60 * 60; % seconds
 opts.frameSize = .05;
 
 getDataType = 'all';
