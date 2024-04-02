@@ -1,4 +1,13 @@
 %%
+opts = neuro_behavior_options;
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 2 * 60 * 60; % seconds
+opts.frameSize = 1/60;
+% opts.frameSize = .1;
+
+getDataType = 'all';
+get_standard_data
+%%
 bhvDataPath = 'E:/Projects/neuro-behavior/data/processed_behavior/';
 animal = 'ag25290';
 sessionBhv = '112321_1';

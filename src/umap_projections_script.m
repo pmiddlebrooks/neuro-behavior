@@ -511,3 +511,320 @@ end
 
 
 
+
+
+
+
+
+
+
+
+
+%%                      Compare common behavioral activities
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+
+opts = neuro_behavior_options;
+opts.collectStart = 0 * 60; % seconds
+opts.collectFor = 2 * 60 * 60; % seconds
+opts.frameSize = .1;
+
+getDataType = 'all';
+get_standard_data
+
+%% Run UMAPto get projectsions in low-D space
+nComponents = 3;
+
+idInd = idM56;
+% [projectionsM56, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+[projectionsM56, ~, ~, ~] = run_umap(dataMatZ(:, idInd), 'n_components', nComponents);
+pause(5); close
+
+idInd = idDS;
+% [projectionsDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+[projectionsDS, ~, ~, ~] = run_umap(dataMatZ(:, idInd), 'n_components', nComponents);
+pause(5); close
+
+
+%% Shift behavior label w.r.t. neural to account for neuro-behavior latency
+shiftSec = .1;
+shiftFrame = ceil(shiftSec / opts.frameSize);
+bhvID = bhvIDMat(1+shiftFrame:end);
+
+projectionsM56 = projectionsM56(1:end-shiftFrame, :);
+projectionsDS = projectionsDS(1:end-shiftFrame, :);
+
+
+%% Plot with individual behavior labels
+dimPlot = [1 2 3];
+
+colors = colors_for_behaviors(codes);
+colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+
+figure(230); clf; hold on; title(['UMAP M56, D =', num2str(nComponents)]);
+scatter3(projectionsM56(:, dimPlot(1)), projectionsM56(:, dimPlot(2)), projectionsM56(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+grid on;
+xlabel('D1'); ylabel('D2'); zlabel('D3')
+
+figure(231); clf; hold on; title(['UMAP DS, D =', num2str(nComponents)]);
+scatter3(projectionsDS(:, dimPlot(1)), projectionsDS(:, dimPlot(2)), projectionsDS(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+grid on;
+xlabel('D1'); ylabel('D2'); zlabel('D3')
+
+
+%% Get sequences of activities
+opts.minLength = ceil(1 / opts.frameSize); % Mininum length in sec for a sequence to count
+opts.minBhvPct = 90; % Minimum percent in the sequence that has to be within the requested behaviors
+opts.maxNonBhv = ceil(.5 / opts.frameSize); % Max consecutive time of a non-requested behavior allowed within the sequence
+opts.minBtwnSeq = ceil(.5 / opts.frameSize); % Minimum time between qualifying sequences
+opts.minDistinctBhv = 2; % Sequence must have at least this many distinct behaviors
+
+possibleBhv = {5:12, [0:2, 13:14], 13:15};
+possibleBhv = {5:12, [0:2], 13:15};
+possibleBhv = {5:12, [0:2, 13:15]};
+% possibleBhv = {15};
+
+matchSeq = {};
+startIdx = {};
+bhvSeq = {};
+idx = {};
+
+for i = 1 : length(possibleBhv)
+    opts.possibleBhv = possibleBhv{i};
+    [matchSeq{i}, startIdx{i}, bhvSeq{i}] = find_matching_sequences(bhvID, opts);
+    % [matchSeq(i), startIdx{i}, bhvSeq(i)] = find_matching_sequences(bhvID, opts)
+    idx{i} = randperm(length(matchSeq{i}));
+end
+nSample = min(cellfun(@length, idx));
+% opts.possibleBhv = [5:12];
+% [matchSeqGroom, startIdxGroom, bhvSeqGroom] = find_matching_sequences(bhvID, opts);
+%
+% opts.possibleBhv = [0 1 2 13 14 15];
+% [matchSeqMove, startIdxMove, bhvSeqMove] = find_matching_sequences(bhvID, opts);
+
+
+%% Plot the coarse-grained activities 3D
+% Choose which indices of activities to plot
+for i = 1 : length(matchSeq)
+    randIdx{i} = randperm(length(matchSeq{i}));
+end
+% groomIdx = randperm(length(matchSeqGroom));
+% moveIdx = randperm(length(matchSeqMove));
+
+% Plot Groom vs Move activities
+
+% colors = colors_for_behaviors(codes);
+% colorGroom = [0 0 1];
+% colorMove = [0 .7 0];
+colors = {[0 0 1], [0 .7 0], [1 .4 0]};
+colors = {[0 0 1], [0 .7 0]};
+figure(420); clf; hold on; title(['UMAP M56, D:', num2str(nComponents), '  bin:', num2str(opts.frameSize), '  shift:', num2str(shiftSec)], 'interpreter', 'none');
+figure(421); clf; hold on; title(['UMAP DS, D:', num2str(nComponents), '  bin:', num2str(opts.frameSize), '  shift:', num2str(shiftSec)], 'interpreter', 'none');
+for i = 1 : nSample % length(groomIdx)
+
+    for j = 1 : length(matchSeq)
+        jStart = startIdx{j}(randIdx{j}(i));
+        jStop = startIdx{j}(randIdx{j}(i)) + length(matchSeq{j}{i});
+
+        %     startGroom = startIdxGroom(groomIdx(i));
+        % stopGroom = startIdxGroom(groomIdx(i)) + length(matchSeqGroom{groomIdx(i)}) - 1;
+        % startMove = startIdxMove(moveIdx(i));
+        % stopMove = startIdxMove(moveIdx(i)) + length(matchSeqMove{moveIdx(i)}) - 1;
+
+        figure(420);
+        plot3(projectionsM56(jStart:jStop, dimPlot(1)), projectionsM56(jStart:jStop, dimPlot(2)), projectionsM56(jStart:jStop, dimPlot(3)), '.:', 'Color', colors{j}, 'LineWidth', 1, 'MarkerSize', 15')
+        % plot3(projectionsM56(startGroom:stopGroom, 1), projectionsM56(startGroom:stopGroom, 2), projectionsM56(startGroom:stopGroom, 3), '.:', 'Color', colorGroom, 'LineWidth', 1, 'MarkerSize', 15')
+        % plot3(projectionsM56(startMove:stopMove, 1), projectionsM56(startMove:stopMove, 2), projectionsM56(startMove:stopMove, 3), '.:', 'Color', colorMove, 'LineWidth', 1, 'MarkerSize', 15')
+        % scatter3(projectionsM56(startGroom:stopGroom, 1), projectionsM56(startGroom:stopGroom, 2), projectionsM56(startGroom:stopGroom, 3), 60, colorsForPlot(startGroom:stopGroom,:), 'LineWidth', 2)
+        % scatter3(projectionsM56(startMove:stopMove, 1), projectionsM56(startMove:stopMove, 2), projectionsM56(startMove:stopMove, 3), 60, colorsForPlot(startMove:stopMove,:), 'LineWidth', 2)
+        grid on;
+        xlabel('D1'); ylabel('D2'); zlabel('D3')
+
+        figure(421);
+        plot3(projectionsDS(jStart:jStop, dimPlot(1)), projectionsDS(jStart:jStop, dimPlot(2)), projectionsDS(jStart:jStop, dimPlot(3)), '.:', 'Color', colors{j}, 'LineWidth', 1, 'MarkerSize', 15')
+        % plot3(projectionsDS(startGroom:stopGroom, 1), projectionsDS(startGroom:stopGroom, 2), projectionsDS(startGroom:stopGroom, 3), '.:', 'Color', colorGroom, 'LineWidth', 1, 'MarkerSize', 15')
+        % plot3(projectionsDS(startMove:stopMove, 1), projectionsDS(startMove:stopMove, 2), projectionsDS(startMove:stopMove, 3), '.:', 'Color', colorMove, 'LineWidth', 1, 'MarkerSize', 15')
+        xlabel('D1'); ylabel('D2'); zlabel('D3')
+        grid on;
+
+    end
+end
+
+%%
+fig = figure(420);
+figName = ['Groom_vs_Move_M56_bin_', num2str(opts.frameSize), '_shift_', num2str(shiftSec), '_3D'];
+% Set up the video writer for MP4 format
+videoFileName = ['E:\Projects\neuro-behavior\docs\', figName, '.mp4'];
+v = VideoWriter(videoFileName, 'MPEG-4');
+v.FrameRate = 10; % Lower numbers will slow down the playback
+open(v);
+
+% Define the rotation steps
+azimuthSteps = 0:360;
+elevationSteps = linspace(0, 360, numel(azimuthSteps));
+
+% Rotate the view and capture frames
+for i = 1:length(azimuthSteps)
+    % Calculate the current azimuth and elevation
+    azimuth = azimuthSteps(i);
+    elevation = -30 + 30*sin(deg2rad(elevationSteps(i))); % Example elevation change
+
+    % Update the view angle
+    view(azimuth, elevation);
+
+    % Capture the frame
+    frame = getframe(fig);
+
+    % Write the frame to the video
+    writeVideo(v, frame);
+end
+
+% Close the video file
+close(v);
+
+% Display completion message
+disp(['Rotating 3D plot saved to ' videoFileName]);
+
+pause(5)
+
+fig = figure(421);
+figName = ['Groom_vs_Move_DS_bin_', num2str(opts.frameSize), '_shift_', num2str(shiftSec), '_3D'];
+% Set up the video writer for MP4 format
+videoFileName = ['E:\Projects\neuro-behavior\docs\', figName, '.mp4'];
+v = VideoWriter(videoFileName, 'MPEG-4');
+v.FrameRate = 5; % Lower numbers will slow down the playback
+open(v);
+
+% Define the rotation steps
+azimuthSteps = 0:360;
+elevationSteps = linspace(0, 360, numel(azimuthSteps));
+
+% Rotate the view and capture frames
+for i = 1:length(azimuthSteps)
+    % Calculate the current azimuth and elevation
+    azimuth = azimuthSteps(i);
+    elevation = -30 + 30*sin(deg2rad(elevationSteps(i))); % Example elevation change
+
+    % Update the view angle
+    view(azimuth, elevation);
+
+    % Capture the frame
+    frame = getframe(fig);
+
+    % Write the frame to the video
+    writeVideo(v, frame);
+end
+
+% Close the video file
+close(v);
+
+% Display completion message
+disp(['Rotating 3D plot saved to ' videoFileName]);
+
+
+%% Plot the coarse-grained activities 2D through time
+% Choose which indices of activities to plot
+groomIdx = randperm(length(matchSeqGroom));
+moveIdx = randperm(length(matchSeqMove));
+
+% Plot Groom vs Move activities
+
+% colors = colors_for_behaviors(codes);
+colorGroom = [0 0 1];
+colorMove = [0 .7 0];
+figure(430); clf; hold on; title(['UMAP M56, D:', num2str(nComponents), '  bin:', num2str(opts.frameSize), '  shift:', num2str(shiftSec)], 'interpreter', 'none');
+figure(431); clf; hold on; title(['UMAP DS, D:', num2str(nComponents), '  bin:', num2str(opts.frameSize), '  shift:', num2str(shiftSec)], 'interpreter', 'none');
+for i = 1 : length(groomIdx)
+
+    startGroom = startIdxGroom(groomIdx(i));
+    stopGroom = startIdxGroom(groomIdx(i)) + length(matchSeqGroom{groomIdx(i)}) - 1;
+    startMove = startIdxMove(moveIdx(i));
+    stopMove = startIdxMove(moveIdx(i)) + length(matchSeqMove{moveIdx(i)}) - 1;
+
+    figure(430);
+    plot3(projectionsM56(startGroom:stopGroom, 1), projectionsM56(startGroom:stopGroom, 2), startGroom:stopGroom, '.:', 'Color', colorGroom, 'LineWidth', 1, 'MarkerSize', 15')
+    plot3(projectionsM56(startMove:stopMove, 1), projectionsM56(startMove:stopMove, 2), startMove:stopMove, '.:', 'Color', colorMove, 'LineWidth', 1, 'MarkerSize', 15')
+    grid on;
+    xlabel('D1'); ylabel('D2'); zlabel('Time')
+
+    figure(431);
+    plot3(projectionsDS(startGroom:stopGroom, 1), projectionsDS(startGroom:stopGroom, 2), startGroom:stopGroom, '.:', 'Color', colorGroom, 'LineWidth', 1, 'MarkerSize', 15')
+    plot3(projectionsDS(startMove:stopMove, 1), projectionsDS(startMove:stopMove, 2), startMove:stopMove, '.:', 'Color', colorMove, 'LineWidth', 1, 'MarkerSize', 15')
+    xlabel('D1'); ylabel('D2'); zlabel('Time')
+    grid on;
+
+
+end
+
+%% save rotating videos
+fig = figure(430);
+figName = ['Groom_vs_Move_M56_bin_', num2str(opts.frameSize), '_shift_', num2str(shiftSec), '_2DTime'];
+% Set up the video writer for MP4 format
+videoFileName = ['E:\Projects\neuro-behavior\docs\', figName, '.mp4'];
+v = VideoWriter(videoFileName, 'MPEG-4');
+v.FrameRate = 10; % Lower numbers will slow down the playback
+open(v);
+
+% Define the rotation steps
+azimuthSteps = 0:360;
+elevationSteps = linspace(0, 360, numel(azimuthSteps));
+
+% Rotate the view and capture frames
+for i = 1:length(azimuthSteps)
+    % Calculate the current azimuth and elevation
+    azimuth = azimuthSteps(i);
+    elevation = -30 + 30*sin(deg2rad(elevationSteps(i))); % Example elevation change
+
+    % Update the view angle
+    view(azimuth, elevation);
+
+    % Capture the frame
+    frame = getframe(fig);
+
+    % Write the frame to the video
+    writeVideo(v, frame);
+end
+
+% Close the video file
+close(v);
+
+% Display completion message
+disp(['Rotating 3D plot saved to ' videoFileName]);
+
+pause(5)
+
+fig = figure(431);
+figName = ['Groom_vs_Move_DS_bin_', num2str(opts.frameSize), '_shift_', num2str(shiftSec), '_2DTime'];
+% Set up the video writer for MP4 format
+videoFileName = ['E:\Projects\neuro-behavior\docs\', figName, '.mp4'];
+v = VideoWriter(videoFileName, 'MPEG-4');
+v.FrameRate = 5; % Lower numbers will slow down the playback
+open(v);
+
+% Define the rotation steps
+azimuthSteps = 0:360;
+elevationSteps = linspace(0, 360, numel(azimuthSteps));
+
+% Rotate the view and capture frames
+for i = 1:length(azimuthSteps)
+    % Calculate the current azimuth and elevation
+    azimuth = azimuthSteps(i);
+    elevation = -30 + 30*sin(deg2rad(elevationSteps(i))); % Example elevation change
+
+    % Update the view angle
+    view(azimuth, elevation);
+
+    % Capture the frame
+    frame = getframe(fig);
+
+    % Write the frame to the video
+    writeVideo(v, frame);
+end
+
+% Close the video file
+close(v);
+
+% Display completion message
+disp(['Rotating 3D plot saved to ' videoFileName]);

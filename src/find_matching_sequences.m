@@ -29,6 +29,7 @@ minLength = opts.minLength;
 minBhvPct = opts.minBhvPct;
 maxNonBhv = opts.maxNonBhv;
 minBtwnSeq = opts.minBtwnSeq;
+minDistinctBhv = opts.minDistinctBhv;
 
 % Initialize variables for search
 matchingSequences = {};
@@ -78,7 +79,7 @@ while i <= length(bhvID) - minLength + 1
     % Check if the sequence meets all criteria
     if sequenceEnd - i + 1 >= minLength && ...
             bhvCount / (sequenceEnd - i + 1) >= minBhvPct / 100 && ...
-            length(distinctBhv) >= 2 % Ensure at least 2 distinct behaviors from possibleBhv
+            length(distinctBhv) >= minDistinctBhv % Ensure at least 2 distinct behaviors from possibleBhv
         iSeq = bhvID(i:sequenceEnd);
         matchingSequences{end+1} = iSeq;
         % Compress the sequence to the pattern of behaviors:
