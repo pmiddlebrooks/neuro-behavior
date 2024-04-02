@@ -65,7 +65,8 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior')
     dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
     dataBhv.DurFrame = floor(dataBhv.Dur ./ opts.frameSize);
 
-    nFrame = opts.collectFor / opts.frameSize;
+    % nFrame = opts.collectFor / opts.frameSize;
+    nFrame = ceil(opts.collectFor / opts.frameSize);
     bhvIDMat = int8(zeros(nFrame, 1));
     for i = 1 : size(dataBhv, 1)
         iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
@@ -153,7 +154,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'neural')
     toc
 
     % Normalize and zero-center the neural data matrix
-    % dataMatZ = zscore(dataMat, 0, 1);
+    dataMatZ = zscore(dataMat, 0, 1);
 
 
     idM23 = find(strcmp(areaLabels, 'M23'));

@@ -11,12 +11,12 @@ end
 
 % Preallocate data matrix: If it's huge, make it a int matrix (reduce memory)
 if durFrames > 30*60/.001
-dataMat = int8(zeros(durFrames, length(opts.useNeurons)));
+    dataMat = int8(zeros(durFrames, length(opts.useNeurons)));
 else
     dataMat = zeros(durFrames, length(opts.useNeurons));
 end
 
-    % dataMat = int8([]);
+% dataMat = int8([]);
 areaLabels = {};
 % rmvNeurons = [];
 % Loop through each neuron and put spike numbers within each frame
@@ -29,21 +29,21 @@ for i = 1 : length(idLabels)
     % % Don't add neurons out of min-max firing rate
     % meanStart = sum(iSpikeTime >= checkTime) ./ checkTime;
     % meanEnd = sum(iSpikeTime > opts.collectFor - checkTime) ./ checkTime;
-    % 
+    %
     % keepStart = meanStart >= opts.minFiringRate & meanStart <= opts.maxFiringRate;
     % keepEnd = meanEnd >= opts.minFiringRate & meanEnd <= opts.maxFiringRate;
     % if keepStart && keepEnd
 
-        timeEdges = 0 : opts.frameSize : sum(data.bhvDur); % Create edges of bins from 0 to max time
+    timeEdges = 0 : opts.frameSize : sum(data.bhvDur); % Create edges of bins from 0 to max time
 
-        % Count the number of spikes in each bin
-        [iSpikeCount, ~] = histcounts(iSpikeTime, timeEdges);
+    % Count the number of spikes in each bin
+    [iSpikeCount, ~] = histcounts(iSpikeTime, timeEdges);
 
-        dataMat(:, i) = iSpikeCount';
-        % dataMat = [dataMat, iSpikeCount'];
+    dataMat(:, i) = iSpikeCount';
+    % dataMat = [dataMat, iSpikeCount'];
 
-        % Keep track which neurons (columns) are in which brain area
-        areaLabels = [areaLabels, data.ci.area(opts.useNeurons(i))];
+    % Keep track which neurons (columns) are in which brain area
+    areaLabels = [areaLabels, data.ci.area(opts.useNeurons(i))];
     % else
     %     rmvNeurons = [rmvNeurons, i];
     % end
@@ -60,7 +60,7 @@ rmvNeurons = [];
 if opts.removeSome
 
     checkTime = 5 * 60;
-    checkFrames = checkTime / opts.frameSize;
+    checkFrames = floor(checkTime / opts.frameSize);
 
     meanStart = sum(dataMat(1:checkFrames, :), 1) ./ checkTime;
     meanEnd = sum(dataMat(end-checkFrames+1:end, :), 1) ./ checkTime;
