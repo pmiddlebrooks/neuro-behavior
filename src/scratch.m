@@ -44,6 +44,13 @@ locBouts = strcmp(dataBhv.Name, 'locomotion');
 figure(555);
 histogram(dataBhv.Dur(locBouts))
 
+%%
+for i = 2 : size(dataBhv) - 1
+    if dataBhv.ID(i-1) == dataBhv.ID(i+1) && dataBhv.ID(i-1) ~= dataBhv.ID(i)
+        disp(dataBhv(i-5:i+5,:))
+        pause
+    end
+end
 
 
 %%

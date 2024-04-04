@@ -299,81 +299,102 @@ end
 
 
 
-%%                      Compare common behavioral sequences
+
+
+
+
+
+
+%%                      Sequences: Compare common behavioral sequences
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Get 30 min (matches GPFA)
+%% Get data
 cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60; % seconds
 opts.collectFor = 2 * 60 * 60; % seconds
-opts.frameSize = .05;
+opts.frameSize = .15;
 
 getDataType = 'all';
 get_standard_data
 
+%% Curate behavior labels if desired
+[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
+
 
 %%
-nSeq = 2;
+nSeq = 3;
 requireValid = [0 1 0];
-requireValid = [1 0];
+% requireValid = [1 0];
 % requireValid = [0 0 0];
 [uniqueSequences, sequenceIndices] = find_unique_sequences(dataBhv, nSeq, requireValid);
 
-% uniqueSequences(1:40)
-% cellfun(@length, sequenceIndices(1:40))
+uniqueSequences(1:50)
+cellfun(@length, sequenceIndices(1:50))
 
 startBhvIdx = 1; % Which behavior in the sequence to plot as the start point. (The index in the sequence)
 
+%% 
+grooms = 5:12;
+matches = find(cellfun(@(x) all(ismember(x, grooms)), uniqueSequences));
+uniqueSequences(matches(1:10))
+cellfun(@length, sequenceIndices(matches(1:10)))
+
 %% Which sequences to plot
-seqIdx = [1 2 14 18];
+% seqIdx = [1 2 14 18];
+seqIdx = matches(1:4);
 
 nTrial = min(30, min(cellfun(@length, sequenceIndices(seqIdx))));
 
 %% Run UMAPto get projectsions in low-D space
 idInd = idM56;
 nComponents = 3;
-[projectionsM56, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+[projectionsM56, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
 pause(5); close
 
-%%
+%
 idInd = idDS;
-[projectionsDS, umap, clusterIdentifiers, extras] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+[projectionsDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
 pause(5); close
 
 
 
-%% For sequences of 2
+%% For sequences of 2 or 3
 uniqueSequences(seqIdx)
 
 % colors = [1 0 0; 0 0 1; 0 .7 0; 0 0 .15];
 colors = colors_for_behaviors(codes);
-figure(420); clf; hold on; title(['UMAP M56, D=', num2str(nComponents)]);
-figure(421); clf; hold on; title(['UMAP DS, D=', num2str(nComponents)]);
+figure(520); clf; hold on; title(['UMAP M56, D=', num2str(nComponents)]);
+figure(521); clf; hold on; title(['UMAP DS, D=', num2str(nComponents)]);
 for i = 1 : length(seqIdx)
     bhv1 = uniqueSequences{seqIdx(i)}(1);
-    bhv2 = uniqueSequences{seqIdx(i)}(end);
+    bhv2 = uniqueSequences{seqIdx(i)}(2);
+    bhv3 = uniqueSequences{seqIdx(i)}(3);
     color1 = colors(bhv1+2,:);
     color2 = colors(bhv2+2,:);
+    color3 = colors(bhv3+2,:);
 
 
     for j = 1 : nTrial
         start1 = dataBhv.StartFrame(sequenceIndices{i}(j));
         start2 = dataBhv.StartFrame(sequenceIndices{i}(j)+1);
+        start3 = dataBhv.StartFrame(sequenceIndices{i}(j)+2);
 
         %  M56 data
-        figure(420);
-        plot3(projectionsM56(start1:start2, 1), projectionsM56(start1:start2, 2), projectionsM56(start1:start2, 3), '.-', 'Color', color1, 'LineWidth', 2, 'MarkerSize', 10')
+        figure(520);
+        plot3(projectionsM56(start1:start3, 1), projectionsM56(start1:start3, 2), projectionsM56(start1:start3, 3), '.-', 'Color', [.5 .5 .5], 'LineWidth', 1, 'MarkerSize', 10')
         scatter3(projectionsM56(start1, 1), projectionsM56(start1, 2), projectionsM56(start1, 3), 100, color1, 'filled')
         scatter3(projectionsM56(start2, 1), projectionsM56(start2, 2), projectionsM56(start2, 3), 100, color2, 'filled')
+        scatter3(projectionsM56(start3, 1), projectionsM56(start3, 2), projectionsM56(start3, 3), 100, color3, 'filled')
         grid on;
         xlabel('D1'); ylabel('D2'); zlabel('D3')
 
         %  DS data
-        figure(421)
-        plot3(projectionsDS(start1:start2, 1), projectionsDS(start1:start2, 2), projectionsDS(start1:start2, 3), '.-', 'Color', color1, 'LineWidth', 2, 'MarkerSize', 10')
+        figure(521)
+        plot3(projectionsDS(start1:start3, 1), projectionsDS(start1:start3, 2), projectionsDS(start1:start3, 3), '.-', 'Color', [.5 .5 .5], 'LineWidth', 1, 'MarkerSize', 10')
         scatter3(projectionsDS(start1, 1), projectionsDS(start1, 2), projectionsDS(start1, 3), 100, color1, 'filled')
         scatter3(projectionsDS(start2, 1), projectionsDS(start2, 2), projectionsDS(start2, 3), 100, color2, 'filled')
+        scatter3(projectionsDS(start3, 1), projectionsDS(start3, 2), projectionsDS(start3, 3), 100, color2, 'filled')
         xlabel('D1'); ylabel('D2'); zlabel('D3')
         grid on;
     end
@@ -383,17 +404,6 @@ end
 
 
 
-
-
-%% Get full session to find common sequences (of the more interesting/less common behaviors)
-
-opts = neuro_behavior_options;
-opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 2 * 60 * 60; % seconds
-opts.frameSize = .05;
-
-getDataType = 'all';
-get_standard_data
 
 %% Find sequences of 3 and collect their indices
 nSeq = 3;
@@ -468,14 +478,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 %% For sequences of 3: Get just the triplets with a particular behavior in the middle
 
 middleBhv = 15;
@@ -520,34 +522,41 @@ end
 
 
 
-%%                      Compare common behavioral activities
+
+
+
+%%                     Activities:  Compare common behavioral activities
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 
 opts = neuro_behavior_options;
+opts.minActTime = .2;
 opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 2 * 60 * 60; % seconds
-opts.frameSize = .1;
+opts.collectFor = 1.5 * 60 * 60; % seconds
+opts.frameSize = .15;
 
 getDataType = 'all';
 get_standard_data
+%%
+[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
-%% Run UMAPto get projectsions in low-D space
+%% Run UMAPto get projections in low-D space
 nComponents = 3;
 
 idInd = idM56;
-% [projectionsM56, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
-[projectionsM56, ~, ~, ~] = run_umap(dataMatZ(:, idInd), 'n_components', nComponents);
+[projectionsM56, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+% [projectionsM56, ~, ~, ~] = run_umap(dataMatZ(:, idInd), 'n_components', nComponents);
 pause(5); close
 
 idInd = idDS;
-% [projectionsDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
-[projectionsDS, ~, ~, ~] = run_umap(dataMatZ(:, idInd), 'n_components', nComponents);
+[projectionsDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+% [projectionsDS, ~, ~, ~] = run_umap(dataMatZ(:, idInd), 'n_components', nComponents);
 pause(5); close
 
 
-%% Shift behavior label w.r.t. neural to account for neuro-behavior latency
+% --------------------------------------------
+% Shift behavior label w.r.t. neural to account for neuro-behavior latency
 shiftSec = .1;
 shiftFrame = ceil(shiftSec / opts.frameSize);
 bhvID = bhvIDMat(1+shiftFrame:end);
@@ -556,7 +565,8 @@ projectionsM56 = projectionsM56(1:end-shiftFrame, :);
 projectionsDS = projectionsDS(1:end-shiftFrame, :);
 
 
-%% Plot with individual behavior labels
+% --------------------------------------------
+% Plot with individual behavior labels
 dimPlot = [1 2 3];
 
 colors = colors_for_behaviors(codes);
@@ -574,8 +584,11 @@ grid on;
 xlabel('D1'); ylabel('D2'); zlabel('D3')
 
 
-%% Get sequences of activities
-opts.minLength = ceil(1 / opts.frameSize); % Mininum length in sec for a sequence to count
+
+
+% --------------------------------------------
+% Get stretches of activities
+opts.minLength = ceil(2 / opts.frameSize); % Mininum length in sec for a sequence to count
 opts.minBhvPct = 90; % Minimum percent in the sequence that has to be within the requested behaviors
 opts.maxNonBhv = ceil(.5 / opts.frameSize); % Max consecutive time of a non-requested behavior allowed within the sequence
 opts.minBtwnSeq = ceil(.5 / opts.frameSize); % Minimum time between qualifying sequences
@@ -583,7 +596,7 @@ opts.minDistinctBhv = 2; % Sequence must have at least this many distinct behavi
 
 possibleBhv = {5:12, [0:2, 13:14], 13:15};
 possibleBhv = {5:12, [0:2], 13:15};
-possibleBhv = {5:12, [0:2, 13:15]};
+% possibleBhv = {5:12, [0:2, 13:15]};
 % possibleBhv = {15};
 
 matchSeq = {};
@@ -604,8 +617,8 @@ nSample = min(cellfun(@length, idx));
 % opts.possibleBhv = [0 1 2 13 14 15];
 % [matchSeqMove, startIdxMove, bhvSeqMove] = find_matching_sequences(bhvID, opts);
 
-
-%% Plot the coarse-grained activities 3D
+% --------------------------------------------
+% Plot the coarse-grained activities 3D
 % Choose which indices of activities to plot
 for i = 1 : length(matchSeq)
     randIdx{i} = randperm(length(matchSeq{i}));
@@ -618,8 +631,8 @@ end
 % colors = colors_for_behaviors(codes);
 % colorGroom = [0 0 1];
 % colorMove = [0 .7 0];
-colors = {[0 0 1], [0 .7 0], [1 .4 0]};
-colors = {[0 0 1], [0 .7 0]};
+colors = {[0 0 1], [0 .7 0], [1 .3 0]};
+% colors = {[0 0 1], [0 .7 0]};
 figure(420); clf; hold on; title(['UMAP M56, D:', num2str(nComponents), '  bin:', num2str(opts.frameSize), '  shift:', num2str(shiftSec)], 'interpreter', 'none');
 figure(421); clf; hold on; title(['UMAP DS, D:', num2str(nComponents), '  bin:', num2str(opts.frameSize), '  shift:', num2str(shiftSec)], 'interpreter', 'none');
 for i = 1 : nSample % length(groomIdx)
@@ -634,7 +647,8 @@ for i = 1 : nSample % length(groomIdx)
         % stopMove = startIdxMove(moveIdx(i)) + length(matchSeqMove{moveIdx(i)}) - 1;
 
         figure(420);
-        plot3(projectionsM56(jStart:jStop, dimPlot(1)), projectionsM56(jStart:jStop, dimPlot(2)), projectionsM56(jStart:jStop, dimPlot(3)), '.:', 'Color', colors{j}, 'LineWidth', 1, 'MarkerSize', 15')
+        % plot3(projectionsM56(jStart:jStop, dimPlot(1)), projectionsM56(jStart:jStop, dimPlot(2)), projectionsM56(jStart:jStop, dimPlot(3)), '.:', 'Color', colors{j}, 'LineWidth', 1, 'MarkerSize', 15')
+        plot3(projectionsM56(jStart:jStop, dimPlot(1)), projectionsM56(jStart:jStop, dimPlot(2)), projectionsM56(jStart:jStop, dimPlot(3)), 'o:', 'Color', colors{j}, 'LineWidth', 1, 'MarkerSize', 7')
         % plot3(projectionsM56(startGroom:stopGroom, 1), projectionsM56(startGroom:stopGroom, 2), projectionsM56(startGroom:stopGroom, 3), '.:', 'Color', colorGroom, 'LineWidth', 1, 'MarkerSize', 15')
         % plot3(projectionsM56(startMove:stopMove, 1), projectionsM56(startMove:stopMove, 2), projectionsM56(startMove:stopMove, 3), '.:', 'Color', colorMove, 'LineWidth', 1, 'MarkerSize', 15')
         % scatter3(projectionsM56(startGroom:stopGroom, 1), projectionsM56(startGroom:stopGroom, 2), projectionsM56(startGroom:stopGroom, 3), 60, colorsForPlot(startGroom:stopGroom,:), 'LineWidth', 2)
@@ -643,7 +657,8 @@ for i = 1 : nSample % length(groomIdx)
         xlabel('D1'); ylabel('D2'); zlabel('D3')
 
         figure(421);
-        plot3(projectionsDS(jStart:jStop, dimPlot(1)), projectionsDS(jStart:jStop, dimPlot(2)), projectionsDS(jStart:jStop, dimPlot(3)), '.:', 'Color', colors{j}, 'LineWidth', 1, 'MarkerSize', 15')
+        % plot3(projectionsDS(jStart:jStop, dimPlot(1)), projectionsDS(jStart:jStop, dimPlot(2)), projectionsDS(jStart:jStop, dimPlot(3)), '.:', 'Color', colors{j}, 'LineWidth', 1, 'MarkerSize', 15')
+        plot3(projectionsDS(jStart:jStop, dimPlot(1)), projectionsDS(jStart:jStop, dimPlot(2)), projectionsDS(jStart:jStop, dimPlot(3)), 'o:', 'Color', colors{j}, 'LineWidth', 1, 'MarkerSize', 7')
         % plot3(projectionsDS(startGroom:stopGroom, 1), projectionsDS(startGroom:stopGroom, 2), projectionsDS(startGroom:stopGroom, 3), '.:', 'Color', colorGroom, 'LineWidth', 1, 'MarkerSize', 15')
         % plot3(projectionsDS(startMove:stopMove, 1), projectionsDS(startMove:stopMove, 2), projectionsDS(startMove:stopMove, 3), '.:', 'Color', colorMove, 'LineWidth', 1, 'MarkerSize', 15')
         xlabel('D1'); ylabel('D2'); zlabel('D3')
@@ -652,7 +667,7 @@ for i = 1 : nSample % length(groomIdx)
     end
 end
 
-%%
+%% Make movie of the 3-D activity projections
 fig = figure(420);
 figName = ['Groom_vs_Move_M56_bin_', num2str(opts.frameSize), '_shift_', num2str(shiftSec), '_3D'];
 % Set up the video writer for MP4 format
