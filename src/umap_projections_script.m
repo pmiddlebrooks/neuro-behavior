@@ -843,3 +843,40 @@ close(v);
 
 % Display completion message
 disp(['Rotating 3D plot saved to ' videoFileName]);
+
+
+
+
+
+
+%% Short vs long locomotions
+shortLocStart = dataBhv.StartFrame(dataBhv.ID == 15 & dataBhv.Dur < .5);
+longLocStart = dataBhv.StartFrame(dataBhv.ID == 15 & dataBhv.Dur > 1.5);
+
+shortIdx = randperm(length(shortLocStart));
+
+
+periEventTime = -.3 : opts.frameSize : .3; % seconds around onset
+dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+
+colorShort = [0 .6 0];
+colorLong = [0 0 0];
+figure(620); clf; hold on; title(['UMAP M56, D:', num2str(nComponents), '  bin:', num2str(opts.frameSize), '  shift:', num2str(shiftSec)], 'interpreter', 'none');
+figure(621); clf; hold on; title(['UMAP DS, D:', num2str(nComponents), '  bin:', num2str(opts.frameSize), '  shift:', num2str(shiftSec)], 'interpreter', 'none');
+
+for i = 1 : length(longLocStart)
+
+
+        figure(620);
+        plot3(projectionsM56(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(1)), projectionsM56(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(2)), projectionsM56(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(3)), 'o:', 'Color', colorShort, 'LineWidth', 1, 'MarkerSize', 7')
+        plot3(projectionsM56(longLocStart(i) + dataWindow, dimPlot(1)), projectionsM56(longLocStart(i) + dataWindow, dimPlot(2)), projectionsM56(longLocStart(i) + dataWindow, dimPlot(3)), 'o:', 'Color', colorLong, 'LineWidth', 1, 'MarkerSize', 7')
+        grid on;
+        xlabel('D1'); ylabel('D2'); zlabel('D3')
+
+        figure(621);
+        plot3(projectionsDS(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(1)), projectionsDS(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(2)), projectionsDS(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(3)), 'o:', 'Color', colorShort, 'LineWidth', 1, 'MarkerSize', 7')
+        plot3(projectionsDS(longLocStart(i) + dataWindow, dimPlot(1)), projectionsDS(longLocStart(i) + dataWindow, dimPlot(2)), projectionsDS(longLocStart(i) + dataWindow, dimPlot(3)), 'o:', 'Color', colorLong, 'LineWidth', 1, 'MarkerSize', 7')
+        xlabel('D1'); ylabel('D2'); zlabel('D3')
+        grid on;
+
+end
