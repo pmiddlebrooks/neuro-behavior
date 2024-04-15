@@ -65,13 +65,64 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior')
     dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
     dataBhv.DurFrame = floor(dataBhv.Dur ./ opts.frameSize);
 
-    % nFrame = opts.collectFor / opts.frameSize;
+
+
+
+    % Create bhvIDMat, a vector of ID labels, one element per frame to match the
+    % neural matrix
+
+    % 1. Create a vector of ID labels, one element per behavioral frame
+    % rate
+    timeWindows = 0 : 1/opts.fsBhv : dataBhv.StartTime(end) + dataBhv.Dur(end);
+    idFull = int8(zeros(length(timeWindows), 1));
+    for i = 1 : length(timeWindows) - 1
+        % Find behavior active during the current time window
+        idFull(i) = dataBhv.ID(dataBhv.StartTime <= timeWindows(i) & dataBhv.StartTime + dataBhv.Dur > timeWindows(i));
+    end
+    idFull(end) = dataBhv.ID(end);
+
+    % 2. Find majority behavior in each opts.frameSize window
     nFrame = ceil(opts.collectFor / opts.frameSize);
     bhvIDMat = int8(zeros(nFrame, 1));
-    for i = 1 : size(dataBhv, 1)
-        iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
-        bhvIDMat(iInd) = dataBhv.ID(i);
+    for i = 1 : size(bhvIDMat, 1)
+        % if i == 100
+        %     disp('here')
+        % end
+        iStartTime = (i-1) * opts.frameSize;
+        iStopTime = i * opts.frameSize;
+        iStartFrame = round(1 + iStartTime * opts.fsBhv);
+        iStopFrame = round(iStopTime * opts.fsBhv);
+        iID = idFull(iStartFrame : iStopFrame);
+        bhvIDMat(i) = mode(iID);
     end
+
+
+    % for i = 1 : size(dataBhv, 1)
+    %     iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
+    %     bhvIDMat(iInd) = dataBhv.ID(i);
+    % end
+
+
+
+
+    % ============================================================
+    % Start here
+
+
+    % For each frame, use the behavior with the majority time in that frame
+    % for i = 1 : size(bhvIDMat, 1)
+    %     iStart = i * opts.frameSize - opts.frameSize;
+    %     iStop = i * opts.frameSize - 1/opts.fsBhv;
+    %     iInFrame = (dataBhv.StartTime <= iStart & dataBhv.StartTime + dataBhv.Dur > iStart) | ...
+    %         (dataBhv.StartTime >= iStart & dataBhv.StartTime < iStop);
+    %     if sum(iInFrame) == 1
+    %         bhvIDMat(i) = dataBhv.ID(iInFrame);
+    %     elseif sum(iInFrame) > 1
+    %     end
+    %     if i == 38
+    %         disp('here')
+    %     end
+    % end
 
 end
 

@@ -334,7 +334,7 @@ cellfun(@length, sequenceIndices(1:50))
 
 startBhvIdx = 1; % Which behavior in the sequence to plot as the start point. (The index in the sequence)
 
-%% 
+%%
 grooms = 5:12;
 matches = find(cellfun(@(x) all(ismember(x, grooms)), uniqueSequences));
 uniqueSequences(matches(1:10))
@@ -531,9 +531,9 @@ end
 cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 
 opts = neuro_behavior_options;
-opts.minActTime = .2;
+opts.minActTime = .16;
 opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 1.5 * 60 * 60; % seconds
+opts.collectFor = 2 * 60 * 60; % seconds
 opts.frameSize = .15;
 
 getDataType = 'all';
@@ -542,30 +542,28 @@ get_standard_data
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
 %% Run UMAPto get projections in low-D space
-nComponents = 3;
+nComponents = 2;
 
 idInd = idM56;
-[projectionsM56, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
-% [projectionsM56, ~, ~, ~] = run_umap(dataMatZ(:, idInd), 'n_components', nComponents);
-pause(5); close
+[projM56, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+pause(3); close
 
 idInd = idDS;
-[projectionsDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
-% [projectionsDS, ~, ~, ~] = run_umap(dataMatZ(:, idInd), 'n_components', nComponents);
-pause(5); close
+[projDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents);
+pause(3); close
 
 
-% --------------------------------------------
+%% --------------------------------------------
 % Shift behavior label w.r.t. neural to account for neuro-behavior latency
-shiftSec = .1;
+shiftSec = 0;
 shiftFrame = ceil(shiftSec / opts.frameSize);
-bhvID = bhvIDMat(1+shiftFrame:end);
 
-projectionsM56 = projectionsM56(1:end-shiftFrame, :);
-projectionsDS = projectionsDS(1:end-shiftFrame, :);
+bhvID = bhvIDMat(1+shiftFrame:end); % Shift bhvIDMat to account for time shift
+projectionsM56 = projM56(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
+projectionsDS = projDS(1:end-shiftFrame, :);
 
 
-% --------------------------------------------
+%% --------------------------------------------
 % Plot with individual behavior labels
 dimPlot = [1 2 3];
 
@@ -573,20 +571,196 @@ colors = colors_for_behaviors(codes);
 colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
-figure(230); clf; hold on; title(['UMAP M56, D =', num2str(nComponents)]);
-scatter3(projectionsM56(:, dimPlot(1)), projectionsM56(:, dimPlot(2)), projectionsM56(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+figure(230); clf; hold on;
+titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleM)
+if nComponents == 3
+    scatter3(projectionsM56(:, dimPlot(1)), projectionsM56(:, dimPlot(2)), projectionsM56(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsM56(:, dimPlot(1)), projectionsM56(:, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
+end
+grid on;
+xlabel('D1'); ylabel('D2'); zlabel('D3')
+% saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+
+
+figure(231); clf; hold on;
+titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleD)
+if nComponents == 3
+    scatter3(projectionsDS(:, dimPlot(1)), projectionsDS(:, dimPlot(2)), projectionsDS(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsDS(:, dimPlot(1)), projectionsDS(:, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
+end
+grid on;
+xlabel('D1'); ylabel('D2'); zlabel('D3')
+% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+
+
+%% --------------------------------------------
+% Plot just the transitions with individual behavior labels
+dimPlot = [1 2 3];
+
+behaviorsPlot = {'investigate_1', 'head_groom'};
+behaviorsPlot = {'contra_itch', 'paw_groom'};
+behaviorsPlot = {'ipsi_itch_1'};
+behaviorsPlot = {'locomotion', 'contra_orient', 'ipsi_orient'};
+behaviorsPlot = {'locomotion'};
+
+
+colors = colors_for_behaviors(codes);
+periEventTime = -.15 : opts.frameSize : .3; % seconds around onset
+periEventTime = -.15 : opts.frameSize : 0; % seconds around onset
+dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+
+figure(230); clf; hold on;
+titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleM)
 grid on;
 xlabel('D1'); ylabel('D2'); zlabel('D3')
 
-figure(231); clf; hold on; title(['UMAP DS, D =', num2str(nComponents)]);
-scatter3(projectionsDS(:, dimPlot(1)), projectionsDS(:, dimPlot(2)), projectionsDS(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+figure(231); clf; hold on;
+titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleD)
 grid on;
 xlabel('D1'); ylabel('D2'); zlabel('D3')
 
+% for i = 2 : length(codes)
+for i = 1 : length(behaviorsPlot)
+    bhvPlot = find(strcmp(behaviors, behaviorsPlot{i})) - 2;
+
+    allInd = bhvID == bhvPlot;
+    firstInd = 1 + find(diff(allInd) == 1);
+
+    transitionsInd = zeros(length(dataWindow) * length(firstInd), 1);
+
+    for j = 1 : length(firstInd)
+        % Calculate the start index in the expanded array
+        startIndex = (j-1) * length(dataWindow) + 1;
+
+        % Add dataWindow to the current element of firstInd and store it in the correct position
+        transitionsInd(startIndex:startIndex + length(dataWindow) - 1) = firstInd(j) + dataWindow;
+    end
+
+    figure(230)
+    if nComponents == 3
+        scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    elseif nComponents == 2
+        scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+        % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
+        % scatter(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    end
+
+    figure(231)
+    if nComponents == 3
+        scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    elseif nComponents == 2
+        scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+        % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
+        % scatter(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    end
+end
+
+figure(230)
+% saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+figure(231)
+% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+
+
+%% Use a square to Find time indices according to an area within low-D spaces
+area1D1Window = [0 3];
+area1D2Window = [2 6];
+
+area2D1Window = [-4 2];
+area2D2Window = [-3 2];
+
+area1Ind = bhvID == bhvPlot &...
+    (projectionsDS(:,1) >= area1D1Window(1) & projectionsDS(:,1) <= area1D1Window(2)) & ...
+    (projectionsDS(:,2) >= area1D2Window(1) & projectionsDS(:,2) <= area1D2Window(2));
+area1Time = (find(area1Ind)-1) * opts.frameSize;
+
+area2Ind = bhvID == bhvPlot &...
+    (projectionsDS(:,1) >= area2D1Window(1) & projectionsDS(:,1) <= area2D1Window(2)) & ...
+    (projectionsDS(:,2) >= area2D2Window(1) & projectionsDS(:,2) <= area2D2Window(2));
+area2Time = (find(area2Ind)-1) * opts.frameSize;
+
+
+%% Use a circle instead of a square
+area1Cen = [0 2];
+% area2Cen = [.5 5.5];
+area2Cen = [-.5 -2];
+area3Cen = [5.5 3.5];
+radius = 2;
+
+% Calculate the Euclidean distance between the point and the center of the circle
+    distance1 = sqrt((projectionsDS(:, 1) - area1Cen(1)).^2 + (projectionsDS(:, 2) - area1Cen(2)).^2);
+    distance2 = sqrt((projectionsDS(:, 1) - area2Cen(1)).^2 + (projectionsDS(:, 2) - area2Cen(2)).^2);
+    distance3 = sqrt((projectionsDS(:, 1) - area3Cen(1)).^2 + (projectionsDS(:, 2) - area3Cen(2)).^2);
+    
+    % Determine if the point is inside the circle (including on the boundary)
+    isInside1 = distance1 <= radius;
+    isInside2 = distance2 <= radius;
+    isInside3 = distance3 <= radius;
+
+
+    bhvInd = zeros(length(projectionsDS), 1);
+    bhvInd(transitionsInd) = 1;
+
+    bhvTime1 = find(isInside1 & bhvInd);
+    bhvTime2 = find(isInside2 & bhvInd);
+    bhvTime3 = find(isInside3 & bhvInd);
 
 
 
-% --------------------------------------------
+
+
+%% --------------------------------------------
+% Plot particular behaviors etc - full time during behaviors
+dimPlot = [1 2 3];
+
+behaviorsPlot = {'locomotion', 'contra_orient', 'ipsi_orient'};
+colors = colors_for_behaviors(codes);
+
+figure(230); clf; hold on;
+titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleM)
+grid on;
+xlabel('D1'); ylabel('D2'); zlabel('D3')
+
+figure(231); clf; hold on;
+titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleD)
+grid on;
+xlabel('D1'); ylabel('D2'); zlabel('D3')
+
+for i = 1 : length(behaviorsPlot)
+    bhvPlot = find(strcmp(behaviors, behaviorsPlot{i})) - 2;
+
+    plotInd = bhvID == bhvPlot;
+
+    figure(230)
+    if nComponents == 3
+        scatter3(projectionsM56(plotInd, dimPlot(1)), projectionsM56(plotInd, dimPlot(2)), projectionsM56(plotInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    elseif nComponents == 2
+        scatter(projectionsM56(plotInd, dimPlot(1)), projectionsM56(plotInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    end
+    % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+
+
+    figure(231)
+    if nComponents == 3
+        scatter3(projectionsDS(plotInd, dimPlot(1)), projectionsDS(plotInd, dimPlot(2)), projectionsDS(plotInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    elseif nComponents == 2
+        scatter(projectionsDS(plotInd, dimPlot(1)), projectionsDS(plotInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    end
+    % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+
+
+end
+
+
+
+%% --------------------------------------------
 % Get stretches of activities
 opts.minLength = ceil(2 / opts.frameSize); % Mininum length in sec for a sequence to count
 opts.minBhvPct = 90; % Minimum percent in the sequence that has to be within the requested behaviors
@@ -867,16 +1041,19 @@ figure(621); clf; hold on; title(['UMAP DS, D:', num2str(nComponents), '  bin:',
 for i = 1 : length(longLocStart)
 
 
-        figure(620);
-        plot3(projectionsM56(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(1)), projectionsM56(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(2)), projectionsM56(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(3)), 'o:', 'Color', colorShort, 'LineWidth', 1, 'MarkerSize', 7')
-        plot3(projectionsM56(longLocStart(i) + dataWindow, dimPlot(1)), projectionsM56(longLocStart(i) + dataWindow, dimPlot(2)), projectionsM56(longLocStart(i) + dataWindow, dimPlot(3)), 'o:', 'Color', colorLong, 'LineWidth', 1, 'MarkerSize', 7')
-        grid on;
-        xlabel('D1'); ylabel('D2'); zlabel('D3')
+    figure(620);
+    plot3(projectionsM56(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(1)), projectionsM56(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(2)), projectionsM56(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(3)), 'o:', 'Color', colorShort, 'LineWidth', 1, 'MarkerSize', 7')
+    plot3(projectionsM56(longLocStart(i) + dataWindow, dimPlot(1)), projectionsM56(longLocStart(i) + dataWindow, dimPlot(2)), projectionsM56(longLocStart(i) + dataWindow, dimPlot(3)), 'o:', 'Color', colorLong, 'LineWidth', 1, 'MarkerSize', 7')
+    grid on;
+    xlabel('D1'); ylabel('D2'); zlabel('D3')
 
-        figure(621);
-        plot3(projectionsDS(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(1)), projectionsDS(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(2)), projectionsDS(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(3)), 'o:', 'Color', colorShort, 'LineWidth', 1, 'MarkerSize', 7')
-        plot3(projectionsDS(longLocStart(i) + dataWindow, dimPlot(1)), projectionsDS(longLocStart(i) + dataWindow, dimPlot(2)), projectionsDS(longLocStart(i) + dataWindow, dimPlot(3)), 'o:', 'Color', colorLong, 'LineWidth', 1, 'MarkerSize', 7')
-        xlabel('D1'); ylabel('D2'); zlabel('D3')
-        grid on;
+    figure(621);
+    plot3(projectionsDS(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(1)), projectionsDS(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(2)), projectionsDS(shortLocStart(shortIdx(i)) + dataWindow, dimPlot(3)), 'o:', 'Color', colorShort, 'LineWidth', 1, 'MarkerSize', 7')
+    plot3(projectionsDS(longLocStart(i) + dataWindow, dimPlot(1)), projectionsDS(longLocStart(i) + dataWindow, dimPlot(2)), projectionsDS(longLocStart(i) + dataWindow, dimPlot(3)), 'o:', 'Color', colorLong, 'LineWidth', 1, 'MarkerSize', 7')
+    xlabel('D1'); ylabel('D2'); zlabel('D3')
+    grid on;
 
 end
+
+
+%% Single behaviors - check when they are in different umap spaces
