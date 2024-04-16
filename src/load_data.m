@@ -1,4 +1,4 @@
-function data = load_data(opts, dataType)
+function dataBhv = load_data(opts, dataType)
 
 % Load a specific type of data (input: dataType) for analysis
 
@@ -30,15 +30,15 @@ if strcmp(dataType, 'behavior')
 
 
 
-    data = table();
-    data.Dur = [diff([0; dataWindow.Time(changeBhvIdx)]); opts.collectFor - dataWindow.Time(changeBhvIdx(end))];
-    data.ID = [bhvID(1); bhvID(changeBhvIdx)];
+    dataBhv = table();
+    dataBhv.Dur = [diff([0; dataWindow.Time(changeBhvIdx)]); opts.collectFor - dataWindow.Time(changeBhvIdx(end))];
+    dataBhv.ID = [bhvID(1); bhvID(changeBhvIdx)];
     % data.Name = bhvName;
-    data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
-    data.StartTime = [0; dataWindow.Time(changeBhvIdx)];
+    dataBhv.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
+    dataBhv.StartTime = [0; dataWindow.Time(changeBhvIdx)];
     % data.StartFrame = bhvStartFrame;
 
-    data.Valid = behavior_selection(data, opts);
+    dataBhv.Valid = behavior_selection(dataBhv, opts);
 
 elseif strcmp(dataType, 'neuron')
     fileName = 'cluster_info.tsv';
@@ -88,14 +88,14 @@ elseif strcmp(dataType, 'neuron')
     spikeTimes = spikeTimes - opts.collectStart;
     spikeClusters = spikeClusters(dataWindow);
 
-    data.ci = ci;
-    data.spikeTimes = spikeTimes;
-    data.spikeClusters = spikeClusters;
+    dataBhv.ci = ci;
+    dataBhv.spikeTimes = spikeTimes;
+    dataBhv.spikeClusters = spikeClusters;
 
 elseif strcmp(dataType, 'lfp')
-    data = readmatrix('/Users/paulmiddlebrooks/Projects/neuro-behavior/data/txtfmt_data/lfp.txt');
+    dataBhv = readmatrix('/Users/paulmiddlebrooks/Projects/neuro-behavior/data/txtfmt_data/lfp.txt');
 
-    data = data((opts.collectStart * opts.fsLfp) : (opts.collectStart + opts.collectFor) * opts.fsLfp, :);
+    dataBhv = dataBhv((opts.collectStart * opts.fsLfp) : (opts.collectStart + opts.collectFor) * opts.fsLfp, :);
 
 end
 

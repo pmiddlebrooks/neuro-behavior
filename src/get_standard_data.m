@@ -62,7 +62,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior')
 
 
     % Create a vector of behavior IDs for each frame of the dataMat
-    dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
+    % dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
     dataBhv.DurFrame = floor(dataBhv.Dur ./ opts.frameSize);
 
 

@@ -534,7 +534,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60; % seconds
 opts.collectFor = 2 * 60 * 60; % seconds
-opts.frameSize = .15;
+opts.frameSize = .1;
 
 getDataType = 'all';
 get_standard_data
@@ -564,7 +564,7 @@ projectionsDS = projDS(1:end-shiftFrame, :);
 
 
 %% --------------------------------------------
-% Plot with individual behavior labels
+% Plot FULL TIME OF ALL BEHAVIORS
 dimPlot = [1 2 3];
 
 colors = colors_for_behaviors(codes);
@@ -597,20 +597,28 @@ xlabel('D1'); ylabel('D2'); zlabel('D3')
 % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 
 
+
+
+
+
+
+
+
 %% --------------------------------------------
-% Plot just the transitions with individual behavior labels
+% Plot just the TRANSITIONS with individual behavior labels
 dimPlot = [1 2 3];
 
 behaviorsPlot = {'investigate_1', 'head_groom'};
 behaviorsPlot = {'contra_itch', 'paw_groom'};
-behaviorsPlot = {'ipsi_itch_1'};
 behaviorsPlot = {'locomotion', 'contra_orient', 'ipsi_orient'};
+behaviorsPlot = {'contra_itch', 'rear'};
+behaviorsPlot = {'investigate_2'};
 behaviorsPlot = {'locomotion'};
 
 
 colors = colors_for_behaviors(codes);
 periEventTime = -.15 : opts.frameSize : .3; % seconds around onset
-periEventTime = -.15 : opts.frameSize : 0; % seconds around onset
+periEventTime = -.1 : opts.frameSize : 0; % seconds around onset
 dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 figure(230); clf; hold on;
@@ -667,58 +675,114 @@ figure(231)
 % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 
 
-%% Use a square to Find time indices according to an area within low-D spaces
-area1D1Window = [0 3];
-area1D2Window = [2 6];
-
-area2D1Window = [-4 2];
-area2D2Window = [-3 2];
-
-area1Ind = bhvID == bhvPlot &...
-    (projectionsDS(:,1) >= area1D1Window(1) & projectionsDS(:,1) <= area1D1Window(2)) & ...
-    (projectionsDS(:,2) >= area1D2Window(1) & projectionsDS(:,2) <= area1D2Window(2));
-area1Time = (find(area1Ind)-1) * opts.frameSize;
-
-area2Ind = bhvID == bhvPlot &...
-    (projectionsDS(:,1) >= area2D1Window(1) & projectionsDS(:,1) <= area2D1Window(2)) & ...
-    (projectionsDS(:,2) >= area2D2Window(1) & projectionsDS(:,2) <= area2D2Window(2));
-area2Time = (find(area2Ind)-1) * opts.frameSize;
+%% Use a square to Find time indices according to an area within low-D space
+% area1D1Window = [0 3];
+% area1D2Window = [2 6];
+% 
+% area2D1Window = [-4 2];
+% area2D2Window = [-3 2];
+% 
+% area1Ind = bhvID == bhvPlot &...
+%     (projectionsDS(:,1) >= area1D1Window(1) & projectionsDS(:,1) <= area1D1Window(2)) & ...
+%     (projectionsDS(:,2) >= area1D2Window(1) & projectionsDS(:,2) <= area1D2Window(2));
+% area1Time = (find(area1Ind)-1) * opts.frameSize;
+% 
+% area2Ind = bhvID == bhvPlot &...
+%     (projectionsDS(:,1) >= area2D1Window(1) & projectionsDS(:,1) <= area2D1Window(2)) & ...
+%     (projectionsDS(:,2) >= area2D2Window(1) & projectionsDS(:,2) <= area2D2Window(2));
+% area2Time = (find(area2Ind)-1) * opts.frameSize;
 
 
 %% Use a circle instead of a square
-area1Cen = [0 2];
-% area2Cen = [.5 5.5];
-area2Cen = [-.5 -2];
-area3Cen = [5.5 3.5];
+area1Cen = [-2.2 -8.5];
+area2Cen = [2 -3];
+area3Cen = [1.5 1.5];
+% area4Cen = [0 -5.5];
+% area5Cen = [-.25 -2];
 radius = 2;
 
-% Calculate the Euclidean distance between the point and the center of the circle
-    distance1 = sqrt((projectionsDS(:, 1) - area1Cen(1)).^2 + (projectionsDS(:, 2) - area1Cen(2)).^2);
-    distance2 = sqrt((projectionsDS(:, 1) - area2Cen(1)).^2 + (projectionsDS(:, 2) - area2Cen(2)).^2);
-    distance3 = sqrt((projectionsDS(:, 1) - area3Cen(1)).^2 + (projectionsDS(:, 2) - area3Cen(2)).^2);
+% Plot the circles
+figure(231);
+   % Number of points to define the circle
+    theta = linspace(0, 2*pi, 100);  % Generate 100 points along the circle
     
-    % Determine if the point is inside the circle (including on the boundary)
-    isInside1 = distance1 <= radius;
-    isInside2 = distance2 <= radius;
-    isInside3 = distance3 <= radius;
+    % Parametric equation of the circle
+    x = area1Cen(1) + radius * cos(theta);
+    y = area1Cen(2) + radius * sin(theta);
+    plot(x, y, 'b-', 'lineWidth', 2);  % Plot the circle with a blue line
+    % Parametric equation of the circle
+    x = area2Cen(1) + radius * cos(theta);
+    y = area2Cen(2) + radius * sin(theta);
+    plot(x, y, 'b-', 'lineWidth', 2);  % Plot the circle with a blue line
+    % Parametric equation of the circle
+    x = area3Cen(1) + radius * cos(theta);
+    y = area3Cen(2) + radius * sin(theta);
+    plot(x, y, 'b-', 'lineWidth', 2);  % Plot the circle with a blue line
 
 
-    bhvInd = zeros(length(projectionsDS), 1);
-    bhvInd(transitionsInd) = 1;
 
-    bhvTime1 = find(isInside1 & bhvInd);
-    bhvTime2 = find(isInside2 & bhvInd);
-    bhvTime3 = find(isInside3 & bhvInd);
+% Calculate the Euclidean distance between the point and the center of the circle
+distance1 = sqrt((projectionsDS(:, 1) - area1Cen(1)).^2 + (projectionsDS(:, 2) - area1Cen(2)).^2);
+distance2 = sqrt((projectionsDS(:, 1) - area2Cen(1)).^2 + (projectionsDS(:, 2) - area2Cen(2)).^2);
+distance3 = sqrt((projectionsDS(:, 1) - area3Cen(1)).^2 + (projectionsDS(:, 2) - area3Cen(2)).^2);
+% distance4 = sqrt((projectionsDS(:, 1) - area4Cen(1)).^2 + (projectionsDS(:, 2) - area4Cen(2)).^2);
+% distance5 = sqrt((projectionsDS(:, 1) - area5Cen(1)).^2 + (projectionsDS(:, 2) - area5Cen(2)).^2);
+
+% Determine if the point is inside the circle (including on the boundary)
+isInside1 = distance1 <= radius;
+isInside2 = distance2 <= radius;
+isInside3 = distance3 <= radius;
+% isInside4 = distance4 <= radius;
+% isInside5 = distance5 <= radius;
+
+
+bhvInd = zeros(length(projectionsDS), 1);
+bhvInd(transitionsInd) = 1;
+
+bhvTime1 = find(isInside1 & bhvInd);
+bhvTime2 = find(isInside2 & bhvInd);
+bhvTime3 = find(isInside3 & bhvInd);
+% bhvTime4 = find(isInside4 & bhvInd);
+% bhvTime5 = find(isInside5 & bhvInd);
+
+n = 1:10;
+
+% t = seconds([bhvTime1(n) bhvTime2(n) bhvTime3(n) bhvTime4(n) bhvTime5(n)] .* opts.frameSize);
+t = seconds([bhvTime1(n) bhvTime2(n) bhvTime3(n)] .* opts.frameSize);
+t.Format = 'hh:mm:ss.S'
+
+% Want to get all the behaviors just before this one, for each group in
+% UMAP space
+
+
+
+%% Plot in M56
+figure(230); clf; hold on; grid on;
+if nComponents == 3
+    scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+elseif nComponents == 2
+    scatter3(projectionsM56(bhvTime1, dimPlot(1)), projectionsM56(bhvTime1, dimPlot(2)), opts.frameSize * (bhvTime1-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    scatter3(projectionsM56(bhvTime2, dimPlot(1)), projectionsM56(bhvTime2, dimPlot(2)), opts.frameSize * (bhvTime2-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    scatter3(projectionsM56(bhvTime3, dimPlot(1)), projectionsM56(bhvTime3, dimPlot(2)), opts.frameSize * (bhvTime3-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+    % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
+    % scatter(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+end
+
+
+
+
+
 
 
 
 
 
 %% --------------------------------------------
-% Plot particular behaviors etc - full time during behaviors
+% Plot particular behaviors etc - FULL TIME during behaviors
 dimPlot = [1 2 3];
 
-behaviorsPlot = {'locomotion', 'contra_orient', 'ipsi_orient'};
+behaviorsPlot = {'investigate_2', 'locomotion', 'contra_itch'};
+behaviorsPlot = {'locomotion'};
 colors = colors_for_behaviors(codes);
 
 figure(230); clf; hold on;
@@ -742,7 +806,7 @@ for i = 1 : length(behaviorsPlot)
     if nComponents == 3
         scatter3(projectionsM56(plotInd, dimPlot(1)), projectionsM56(plotInd, dimPlot(2)), projectionsM56(plotInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
     elseif nComponents == 2
-        scatter(projectionsM56(plotInd, dimPlot(1)), projectionsM56(plotInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+        scatter3(projectionsM56(plotInd, dimPlot(1)), projectionsM56(plotInd, dimPlot(2)), opts.frameSize * (find(plotInd)-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
     end
     % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 
@@ -751,12 +815,60 @@ for i = 1 : length(behaviorsPlot)
     if nComponents == 3
         scatter3(projectionsDS(plotInd, dimPlot(1)), projectionsDS(plotInd, dimPlot(2)), projectionsDS(plotInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
     elseif nComponents == 2
-        scatter(projectionsDS(plotInd, dimPlot(1)), projectionsDS(plotInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+        scatter3(projectionsDS(plotInd, dimPlot(1)), projectionsDS(plotInd, dimPlot(2)), opts.frameSize * (find(plotInd)-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
     end
     % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 
 
 end
+
+
+%% Use a circle instead of a square
+bhvPlot = find(strcmp(behaviors, 'locomotion')) - 2;
+
+area1Cen = [-3 -9];
+area2Cen = [3 -2];
+% area3Cen = [-3.2 -2.8];
+% area4Cen = [0 -5.5];
+% area5Cen = [-.25 -2];
+radius = 1.5;
+
+% Calculate the Euclidean distance between the point and the center of the circle
+distance1 = sqrt((projectionsDS(:, 1) - area1Cen(1)).^2 + (projectionsDS(:, 2) - area1Cen(2)).^2);
+distance2 = sqrt((projectionsDS(:, 1) - area2Cen(1)).^2 + (projectionsDS(:, 2) - area2Cen(2)).^2);
+% distance3 = sqrt((projectionsDS(:, 1) - area3Cen(1)).^2 + (projectionsDS(:, 2) - area3Cen(2)).^2);
+% distance4 = sqrt((projectionsDS(:, 1) - area4Cen(1)).^2 + (projectionsDS(:, 2) - area4Cen(2)).^2);
+% distance5 = sqrt((projectionsDS(:, 1) - area5Cen(1)).^2 + (projectionsDS(:, 2) - area5Cen(2)).^2);
+
+% Determine if the point is inside the circle (including on the boundary)
+isInside1 = distance1 <= radius;
+isInside2 = distance2 <= radius;
+% isInside3 = distance3 <= radius;
+% isInside4 = distance4 <= radius;
+% isInside5 = distance5 <= radius;
+
+bhvInd = bhvID == bhvPlot;
+
+bhvTime1 = find(isInside1 & bhvInd);
+bhvTime2 = find(isInside2 & bhvInd);
+% bhvTime3 = find(isInside3 & bhvInd);
+% bhvTime4 = find(isInside4 & bhvInd);
+% bhvTime5 = find(isInside5 & bhvInd);
+
+n = 1:20;
+% [bhvTime1(n) bhvTime2(n) bhvTime3(n) bhvTime4(n) bhvTime5(n)] .* opts.frameSize
+t = seconds([bhvTime1(n) bhvTime2(n)] .* opts.frameSize);
+t.Format = 'hh:mm:ss.S'
+
+bhvInd = find(bhvPlot == dataBhv.ID);
+
+
+
+
+
+
+
+
 
 
 
