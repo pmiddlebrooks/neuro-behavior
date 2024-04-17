@@ -617,7 +617,6 @@ behaviorsPlot = {'locomotion'};
 
 
 colors = colors_for_behaviors(codes);
-periEventTime = -.15 : opts.frameSize : .3; % seconds around onset
 periEventTime = -.1 : opts.frameSize : 0; % seconds around onset
 dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
@@ -694,65 +693,67 @@ figure(231)
 
 
 %% Use a circle instead of a square
-area1Cen = [-2.2 -8.5];
-area2Cen = [2 -3];
-area3Cen = [1.5 1.5];
-% area4Cen = [0 -5.5];
-% area5Cen = [-.25 -2];
-radius = 2;
+center{1} = [-2.2 -8.5];
+center{2} = [2 -3];
+center{3} = [1.5 1.5];
+radius{1} = 2;
+radius{2} = 2;
+radius{3} = 2;
+
+bhvFrame = cell(length(center), 1);
+prevBhv = cell(length(center), 1);
 
 % Plot the circles
 figure(231);
    % Number of points to define the circle
     theta = linspace(0, 2*pi, 100);  % Generate 100 points along the circle
     
+    for i = 1 : length(center)
     % Parametric equation of the circle
-    x = area1Cen(1) + radius * cos(theta);
-    y = area1Cen(2) + radius * sin(theta);
+    x = center{i}(1) + radius{i} * cos(theta);
+    y = center{i}(2) + radius{i} * sin(theta);
     plot(x, y, 'b-', 'lineWidth', 2);  % Plot the circle with a blue line
-    % Parametric equation of the circle
-    x = area2Cen(1) + radius * cos(theta);
-    y = area2Cen(2) + radius * sin(theta);
-    plot(x, y, 'b-', 'lineWidth', 2);  % Plot the circle with a blue line
-    % Parametric equation of the circle
-    x = area3Cen(1) + radius * cos(theta);
-    y = area3Cen(2) + radius * sin(theta);
-    plot(x, y, 'b-', 'lineWidth', 2);  % Plot the circle with a blue line
-
 
 
 % Calculate the Euclidean distance between the point and the center of the circle
-distance1 = sqrt((projectionsDS(:, 1) - area1Cen(1)).^2 + (projectionsDS(:, 2) - area1Cen(2)).^2);
-distance2 = sqrt((projectionsDS(:, 1) - area2Cen(1)).^2 + (projectionsDS(:, 2) - area2Cen(2)).^2);
-distance3 = sqrt((projectionsDS(:, 1) - area3Cen(1)).^2 + (projectionsDS(:, 2) - area3Cen(2)).^2);
-% distance4 = sqrt((projectionsDS(:, 1) - area4Cen(1)).^2 + (projectionsDS(:, 2) - area4Cen(2)).^2);
-% distance5 = sqrt((projectionsDS(:, 1) - area5Cen(1)).^2 + (projectionsDS(:, 2) - area5Cen(2)).^2);
+iDistance = sqrt((projectionsDS(:, 1) - center{i}(1)).^2 + (projectionsDS(:, 2) - center{i}(2)).^2);
 
 % Determine if the point is inside the circle (including on the boundary)
-isInside1 = distance1 <= radius;
-isInside2 = distance2 <= radius;
-isInside3 = distance3 <= radius;
-% isInside4 = distance4 <= radius;
-% isInside5 = distance5 <= radius;
-
+isInside = iDistance <= radius{i};
 
 bhvInd = zeros(length(projectionsDS), 1);
 bhvInd(transitionsInd) = 1;
 
-bhvTime1 = find(isInside1 & bhvInd);
-bhvTime2 = find(isInside2 & bhvInd);
-bhvTime3 = find(isInside3 & bhvInd);
-% bhvTime4 = find(isInside4 & bhvInd);
-% bhvTime5 = find(isInside5 & bhvInd);
+bhvFrame{i} = find(isInside & bhvInd);
 
+prevBhv{i} = bhvID(bhvFrame{i});
+    end
 n = 1:10;
 
 % t = seconds([bhvTime1(n) bhvTime2(n) bhvTime3(n) bhvTime4(n) bhvTime5(n)] .* opts.frameSize);
-t = seconds([bhvTime1(n) bhvTime2(n) bhvTime3(n)] .* opts.frameSize);
+t = seconds([bhvFrame{1}(n) bhvFrame{2}(n) bhvFrame{3}(n)] .* opts.frameSize);
 t.Format = 'hh:mm:ss.S'
 
-% Want to get all the behaviors just before this one, for each group in
-% UMAP space
+%% Want to get all the behaviors just before this one, for each group in UMAP space
+for i = 1 : length(center)
+    [uniqueElements, ~, idx] = unique(prevBhv{i});
+    counts = accumarray(idx, 1);
+    
+    % Create the bar graph
+    figure(i+9);  % Open a new figure window
+    bar(uniqueElements, counts);  % Create a bar plot
+end
+
+
+%% Plot PSTHS of the various groups
+periEventTime = -.1 : opts.frameSize : 0; % seconds around onset
+dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+
+for i = 1 : length(center)
+
+end
+
+
 
 
 
