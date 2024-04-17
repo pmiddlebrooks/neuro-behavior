@@ -22,7 +22,7 @@ while i < size(dataBhv, 1)
             dataBhv.Dur(i) <= minRemoveDur
 
         dataBhv.Dur(i-1) = sum(dataBhv.Dur(i-1:i+1));
-        dataBhv.DurFrame(i-1) = floor(dataBhv.Dur(i-1) ./ opts.frameSize);
+        % dataBhv.DurFrame(i-1) = floor(dataBhv.Dur(i-1) ./ opts.frameSize);
 
 
         % Remove the rows that were collapsed into the first row behavior
@@ -40,42 +40,44 @@ dataBhv.Valid = behavior_selection(dataBhv, opts);
 
 % Recalculate StartFrame
 dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
+    nFrame = ceil(opts.collectFor / opts.frameSize);
 
-% Create bhvIDMat, a vector of ID labels, one element per frame to match the
-% neural matrix
+% Re-Create bhvIDMat, a vector of ID labels, one element per frame to match the
+% neural matrix (see get_standard_data.m)
 
-% 1. Create a vector of ID labels, one element per behavioral frame
-% rate
-timeWindows = 0 : 1/opts.fsBhv : dataBhv.StartTime(end) + dataBhv.Dur(end);
-idFull = int8(zeros(length(timeWindows), 1));
-for i = 1 : length(timeWindows) - 1
-    % Find behavior active during the current time window
-    idFull(i) = dataBhv.ID(dataBhv.StartTime <= timeWindows(i) & dataBhv.StartTime + dataBhv.Dur > timeWindows(i));
-end
-idFull(end) = dataBhv.ID(end);
-
-% 2. Find majority behavior in each opts.frameSize window
-nFrame = ceil(opts.collectFor / opts.frameSize);
+% Use StartFrame and DurFrame method:
 bhvIDMat = int8(zeros(nFrame, 1));
-for i = 1 : size(bhvIDMat, 1)
-    % if i == 100
-    %     disp('here')
-    % end
-    iStartTime = (i-1) * opts.frameSize;
-    iStopTime = i * opts.frameSize;
-    iStartFrame = round(1 + iStartTime * opts.fsBhv);
-    iStopFrame = round(iStopTime * opts.fsBhv);
-    iID = idFull(iStartFrame : iStopFrame);
-    bhvIDMat(i) = mode(iID);
+for i = 1 : size(dataBhv, 1) - 1
+    % iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
+    iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
+    bhvIDMat(iInd) = dataBhv.ID(i);
 end
+bhvIDMat(iInd(end) + 1 : end) = dataBhv.ID(end);
+
+
+% Use majority time in frame method:
+
+% % 1. Create a vector of ID labels, one element per behavioral frame
+% % rate
+% timeWindows = 0 : 1/opts.fsBhv : dataBhv.StartTime(end) + dataBhv.Dur(end);
+% idFull = int8(zeros(length(timeWindows), 1));
+% for i = 1 : length(timeWindows) - 1
+%     % Find behavior active during the current time window
+%     idFull(i) = dataBhv.ID(dataBhv.StartTime <= timeWindows(i) & dataBhv.StartTime + dataBhv.Dur > timeWindows(i));
+% end
+% idFull(end) = dataBhv.ID(end);
 %
-% % Create a new bhvIDMat based on the new dataBvh (same code as in
-% % get_standard_data
-% nFrame = ceil(opts.collectFor / opts.frameSize);
-% bhvIDMat = int8(zeros(nFrame, 1));
-% for i = 1 : size(dataBhv, 1)
-%     iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
-%     bhvIDMat(iInd) = dataBhv.ID(i);
+% % 2. Find majority behavior in each opts.frameSize window
+% for i = 1 : size(bhvIDMat, 1)
+%     % if i == 100
+%     %     disp('here')
+%     % end
+%     iStartTime = (i-1) * opts.frameSize;
+%     iStopTime = i * opts.frameSize;
+%     iStartFrame = round(1 + iStartTime * opts.fsBhv);
+%     iStopFrame = round(iStopTime * opts.fsBhv);
+%     iID = idFull(iStartFrame : iStopFrame);
+%     bhvIDMat(i) = mode(iID);
 % end
 
 end
