@@ -613,7 +613,7 @@ behaviorsPlot = {'contra_itch', 'paw_groom'};
 behaviorsPlot = {'locomotion', 'contra_orient', 'ipsi_orient'};
 behaviorsPlot = {'contra_itch', 'rear'};
 behaviorsPlot = {'investigate_2'};
-behaviorsPlot = {'locomotion'};
+behaviorsPlot = {'paw_groom'};
 
 
 colors = colors_for_behaviors(codes);
@@ -677,15 +677,15 @@ figure(231)
 %% Use a square to Find time indices according to an area within low-D space
 % area1D1Window = [0 3];
 % area1D2Window = [2 6];
-% 
+%
 % area2D1Window = [-4 2];
 % area2D2Window = [-3 2];
-% 
+%
 % area1Ind = bhvID == bhvPlot &...
 %     (projectionsDS(:,1) >= area1D1Window(1) & projectionsDS(:,1) <= area1D1Window(2)) & ...
 %     (projectionsDS(:,2) >= area1D2Window(1) & projectionsDS(:,2) <= area1D2Window(2));
 % area1Time = (find(area1Ind)-1) * opts.frameSize;
-% 
+%
 % area2Ind = bhvID == bhvPlot &...
 %     (projectionsDS(:,1) >= area2D1Window(1) & projectionsDS(:,1) <= area2D1Window(2)) & ...
 %     (projectionsDS(:,2) >= area2D2Window(1) & projectionsDS(:,2) <= area2D2Window(2));
@@ -693,41 +693,67 @@ figure(231)
 
 
 %% Use a circle instead of a square
-center{1} = [-2.2 -8.5];
-center{2} = [2 -3];
-center{3} = [1.5 1.5];
+clear center radius
+% center{1} = [-2.2 -8.5];
+% center{2} = [2 -3];
+% center{3} = [1.5 1.5];
+% radius{1} = 2;
+% radius{2} = 2;
+% radius{3} = 2;
+center{1} = [-2.5 -8];
+center{2} = [0 0];
+center{3} = [1 -6];
 radius{1} = 2;
 radius{2} = 2;
 radius{3} = 2;
+colors = three_color_heatmap([1 0 0],[0 .7 0], [0 0 1], 3);
 
 bhvFrame = cell(length(center), 1);
 prevBhv = cell(length(center), 1);
 
-% Plot the circles
+% Number of points to define the circle
+theta = linspace(0, 2*pi, 100);  % Generate 100 points along the circle
+
+plotTime = -1 : opts.frameSize : 1; % seconds around onset
+plotFrame = floor(periEventTime(1:end-1) / opts.frameSize);
+matDS = cell(length(center), 1);
+
+for i = 1 : length(center)
 figure(231);
-   % Number of points to define the circle
-    theta = linspace(0, 2*pi, 100);  % Generate 100 points along the circle
-    
-    for i = 1 : length(center)
     % Parametric equation of the circle
     x = center{i}(1) + radius{i} * cos(theta);
     y = center{i}(2) + radius{i} * sin(theta);
-    plot(x, y, 'b-', 'lineWidth', 2);  % Plot the circle with a blue line
+    plot(x, y, 'color', colors(i,:), 'lineWidth', 4);  % Plot the circle with a blue line
 
 
-% Calculate the Euclidean distance between the point and the center of the circle
-iDistance = sqrt((projectionsDS(:, 1) - center{i}(1)).^2 + (projectionsDS(:, 2) - center{i}(2)).^2);
+    % Calculate the Euclidean distance between the point and the center of the circle
+    iDistance = sqrt((projectionsDS(:, 1) - center{i}(1)).^2 + (projectionsDS(:, 2) - center{i}(2)).^2);
 
-% Determine if the point is inside the circle (including on the boundary)
-isInside = iDistance <= radius{i};
+    % Determine if the point is inside the circle (including on the boundary)
+    isInside = iDistance <= radius{i};
 
-bhvInd = zeros(length(projectionsDS), 1);
-bhvInd(transitionsInd) = 1;
+    bhvInd = zeros(length(projectionsDS), 1);
+    bhvInd(transitionsInd) = 1;
 
-bhvFrame{i} = find(isInside & bhvInd);
+    bhvFrame{i} = find(isInside & bhvInd);
+    % Get rid of instances too close to beginning/end (to enable plotting
+    % them)
+    bhvFrame{i}((bhvFrame{i} < -plotFrame(1)) | bhvFrame{i} > size(dataMat, 1) - plotFrame(end)) = [];
 
-prevBhv{i} = bhvID(bhvFrame{i});
+    prevBhv{i} = bhvID(bhvFrame{i});
+
+    % Plot the data in M56
+figure(230);
+    scatter3(projectionsM56(bhvFrame{i}, dimPlot(1)), projectionsM56(bhvFrame{i}, dimPlot(2)), opts.frameSize * (bhvFrame{i}-1), 60, colors(i,:), 'LineWidth', 2)
+
+    % Collect the neural data peri-bout start
+    nBout = length(bhvFrame{i});
+    iMatDS = zeros(length(idDS), length(plotFrame), nBout);
+    for n = 1 : nBout
+        iMatDS(:, :, n) = dataMat((bhvFrame{i}(n) - dataWindow) + plotFrame, idDS)';
     end
+    matDS{i} = iMatDS;
+end
 n = 1:10;
 
 % t = seconds([bhvTime1(n) bhvTime2(n) bhvTime3(n) bhvTime4(n) bhvTime5(n)] .* opts.frameSize);
@@ -738,20 +764,56 @@ t.Format = 'hh:mm:ss.S'
 for i = 1 : length(center)
     [uniqueElements, ~, idx] = unique(prevBhv{i});
     counts = accumarray(idx, 1);
-    
+
     % Create the bar graph
     figure(i+9);  % Open a new figure window
-    bar(uniqueElements, counts);  % Create a bar plot
+    bar(uniqueElements, counts, 'FaceColor', colors(i,:));  % Create a bar plot
 end
 
 
 %% Plot PSTHS of the various groups
-periEventTime = -.1 : opts.frameSize : 0; % seconds around onset
-dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+figure(3234);
 
+allMat = [];
+for i = 1 : length(center)
+    allMat = cat(3, allMat, matDS{i});
+end
+meanMat = mean(allMat, 3);
+meanWindow = mean(meanMat, 2);
+stdWindow = std(meanMat, [], 2);
+
+zMatDS = cell(length(center), 1);
+zMeanMatDS = cell(length(center), 1);
 for i = 1 : length(center)
 
+    % z-score the psth data
+    zMatDS{i} = (matDS{i} - meanWindow) ./ stdWindow;
+    zMeanMatDS{i} = mean(zMatDS{i}, 3);
+    subplot(1, length(center), i)
+    imagesc(mean(matDS{i}, 3))
+    % imagesc(zMeanMatDS{i})
+    colormap(bluewhitered_custom([-3 3]))
+
 end
+% colorbar
+
+figure(423);
+zMeanMatDS12 = zMeanMatDS{1} - zMeanMatDS{2};
+zMeanMatDS13 = zMeanMatDS{1} - zMeanMatDS{3};
+zMeanMatDS23 = zMeanMatDS{2} - zMeanMatDS{3};
+subplot(1,3,1)
+    imagesc(zMeanMatDS12)
+    colormap(bluewhitered_custom([-3 3]))
+    title('1 - 2')
+subplot(1,3,2)
+    imagesc(zMeanMatDS13)
+    colormap(bluewhitered_custom([-3 3]))
+    title('1 - 3')
+subplot(1,3,3)
+    imagesc(zMeanMatDS23)
+    colormap(bluewhitered_custom([-3 3]))
+    title('2 - 3')
+
 
 
 
