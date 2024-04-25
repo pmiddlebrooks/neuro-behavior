@@ -539,7 +539,7 @@ cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 2 * 60 * 60; % seconds
+opts.collectFor = .5 * 60 * 60; % seconds
 opts.frameSize = .15;
 
 getDataType = 'all';
@@ -553,11 +553,11 @@ nComponents = 8;
 idInd = idM56;
 [projM56, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
 pause(3); close
-%%
+%
 idInd = idDS;
 rng(1); % 'shuffle'
-% randSub = randperm(length(idDS), length(idM56));
-% idInd = idDS(randSub);
+randSub = randperm(length(idDS), length(idM56));
+idInd = idDS(randSub);
 [projDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
 pause(3); close
 
@@ -623,8 +623,8 @@ behaviorsPlot = {'locomotion', 'contra_orient', 'ipsi_orient'};
 behaviorsPlot = {'contra_itch', 'rear'};
 behaviorsPlot = {'investigate_2'};
 % behaviorsPlot = {'paw_groom'};
-behaviorsPlot = {'locomotion','investigate_2'};
-behaviorsPlot = {'face_groom_1'};
+behaviorsPlot = {'locomotion'};
+% behaviorsPlot = {'face_groom_1'};
 
 
 colors = colors_for_behaviors(codes);
@@ -644,15 +644,13 @@ title(titleD)
 grid on;
 xlabel('D1'); ylabel('D2'); zlabel('D3')
 
-% for i = 2 : length(codes)
 for i = 1 : length(behaviorsPlot)
     bhvPlot = find(strcmp(behaviors, behaviorsPlot{i})) - 2;
 
-    allInd = bhvID == bhvPlot;
-    firstInd = 1 + find(diff(allInd) == 1);
+    allInd = bhvID == bhvPlot; % all labeled target behaviors
+    firstInd = 1 + find(diff(allInd) == 1); % first frames of all target behaviors
 
     transitionsInd = zeros(length(dataWindow) * length(firstInd), 1);
-
     for j = 1 : length(firstInd)
         % Calculate the start index in the expanded array
         startIndex = (j-1) * length(dataWindow) + 1;
@@ -719,23 +717,17 @@ switch selectFrom
 end        
 
 clear center radius
-center{1} = [2.5 0];
-center{2} = [-2 0];
-center{3} = [1 3.5];
-radius{1} = .75;
-radius{2} = 2;
+center{1} = [-1.25 -1];
+center{2} = [-4.5 1.75];
+center{3} = [0 4];
+radius{1} = 1;
+radius{2} = 1.5;
 radius{3} = 2;
 % center{1} = [-2.5 -8];
 % center{2} = [0 0];
 % center{3} = [1 -6];
 % radius{1} = 2;
 % radius{2} = 2;
-% radius{3} = 2;
-% center{1} = [-1 .5];
-% center{2} = [0 -1];
-% center{3} = [1 -6];
-% radius{1} = .5;
-% radius{2} = .5;
 % radius{3} = 2;
 
 colors = three_color_heatmap([1 0 0],[0 .7 0], [0 0 1], 3);
@@ -747,7 +739,7 @@ prevBhv = cell(length(center), 1);
 theta = linspace(0, 2*pi, 100);  % Generate 100 points along the circle
 
 plotTime = -3 : opts.frameSize : 3; % seconds around onset
-plotFrame = floor(plotTime(1:end-1) / opts.frameSize);
+plotFrame = round(plotTime(1:end-1) / opts.frameSize);
 matSelect = cell(length(center), 1);
 
 for i = 1 : length(center)
@@ -861,6 +853,13 @@ subplot(1,3,3)
     title('2 - 3')
 
 
+testFrame = (-plotFrame(1) + 1) + (-1:0);
+zTest1 = mean(zMeanMat{1}(:, testFrame), 2);
+zTest2 = mean(zMeanMat{2}(:, testFrame), 2);
+zTest3 = mean(zMeanMat{3}(:, testFrame), 2);
+[h,p] = ttest(zTest1, zTest2)
+[h,p] = ttest(zTest1, zTest3)
+[h,p] = ttest(zTest2, zTest3)
 
 
 
