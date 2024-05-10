@@ -15,6 +15,7 @@ get_standard_data
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
 %% Run UMAPto get projections in low-D space
+umapFrameSize = opts.frameSize;
 nComponents = 8;
 
 idInd = idM56;
@@ -92,8 +93,8 @@ behaviorsPlot = {'investigate_2'};
 % behaviorsPlot = {'paw_groom'};
 behaviorsPlot = {'locomotion'};
 % behaviorsPlot = {'face_groom_1'};
-% behaviorsPlot = {'contra_itch'};
-behaviorsPlot = {'dive_scrunch'};
+behaviorsPlot = {'contra_itch'};
+% behaviorsPlot = {'investigate_2'};
 
 
 colors = colors_for_behaviors(codes);
@@ -260,6 +261,9 @@ switch selectFrom
         idSelect = idDS;
 end
 
+% Choose colors: alter this to change how many colors (clusters) you want to use
+colors = three_color_heatmap([1 0 0],[0 .7 0], [0 0 1], 3);
+
 
 %% Use HDBSCAN to select data points for analaysis. Play with this until you're happy with the groups
 nDimUse = 3; % use the first nDimUse dimensions for HDBSCAN
@@ -267,22 +271,22 @@ nDimUse = 3; % use the first nDimUse dimensions for HDBSCAN
 % Classify using HDBSCAN
 clusterer = HDBSCAN(projSelect(transitionsInd, 1:nDimUse));
 clusterer.minpts = 2; %tends to govern cluster number  %was 3? with all neurons
-clusterer.minclustsize = 20; %governs accuracy  %was 4? with all neurons
+clusterer.minclustsize = 10; %governs accuracy  %was 4? with all neurons
 
 clusterer.fit_model(); 			% trains a cluster hierarchy
 clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
 clusterer.get_membership();		% assigns cluster labels to the points in X
-figure(823); 
+figure(823);
 h = clusterer.plot_clusters();
 % Change appearance if you want
 % h.Marker = 'o'
-            % set( h.Parent,'tickdir','out','box','off','color','k','xcolor','w','ycolor','w' );
+% set( h.Parent,'tickdir','out','box','off','color','k','xcolor','w','ycolor','w' );
 
 % title(['umap HDBSCAN ,' area, ' binSize = ', num2str(binSize)])
 % saveas(gcf, fullfile(paths.figurePath, ['umap HDBSCAN ,' area, ' binsize ', num2str(binSize), '.png']), 'png')
 
 %% HDBSCAN defined some groups. Now select those group data from the umap projections
-nGroup = max(clusterer.labels);
+nGroup = single(max(clusterer.labels));
 bhvFrame = cell(nGroup, 1);
 plotTime = -3 : opts.frameSize : 3; % seconds around onset (to plot PSTHs below)
 plotFrame = round(plotTime(1:end-1) / opts.frameSize);
@@ -290,16 +294,13 @@ matSelect = cell(nGroup, 1);
 
 for i = 1 : nGroup
 
-        % Choose only behavior of interest
-    bhvInd = zeros(length(projSelect), 1);
-    bhvInd(transitionsInd) = 1;
-
-        bhvFrame{i} = transitionsInd(clusterer.labels == i);
+    % Choose only cluster of interest
+    bhvFrame{i} = transitionsInd(clusterer.labels == i);
     % Get rid of instances too close to beginning/end (to enable plotting
     % them)
     bhvFrame{i}((bhvFrame{i} < -plotFrame(1)) | bhvFrame{i} > size(dataMat, 1) - plotFrame(end)) = [];
 
-        % Collect the neural data peri-bout start
+    % Collect the neural data peri-bout start
     nBout = length(bhvFrame{i});
     iMatSelect = zeros(length(idSelect), length(plotFrame), nBout);
     for n = 1 : nBout
@@ -311,7 +312,7 @@ end
 
 
 
-%% Alt: Do it by hand.  Use a circle or sphere to select data points for analysis (instead of HDBSCAN)
+%% Alternative: Do it by hand.  Use a circle or sphere to select data points for analysis (instead of HDBSCAN)
 clear center radius
 % center{1} = [-.25 -.5];
 % center{2} = [-4.5 1];
@@ -330,7 +331,6 @@ radius{3} = 1;
 % radius{3} = 2;
 
 nGroup = length(center);
-colors = three_color_heatmap([1 0 0],[0 .7 0], [0 0 1], 3);
 
 bhvFrame = cell(nGroup, 1);
 prevBhv = cell(nGroup, 1);
@@ -350,23 +350,23 @@ for i = 1 : nGroup
     end
 
     if length(center{1}) == 2
-    % Parametric equation of the circle
-    x = center{i}(1) + radius{i} * cos(theta);
-    y = center{i}(2) + radius{i} * sin(theta);
-    plot(x, y, 'color', colors(i,:), 'lineWidth', 4);  % Plot the circle with a blue line
+        % Parametric equation of the circle
+        x = center{i}(1) + radius{i} * cos(theta);
+        y = center{i}(2) + radius{i} * sin(theta);
+        plot(x, y, 'color', colors(i,:), 'lineWidth', 4);  % Plot the circle with a blue line
 
-    % Calculate the Euclidean distance between the point and the center of the circle
-    iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2);
+        % Calculate the Euclidean distance between the point and the center of the circle
+        iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2);
     elseif length(center{1}) == 3
-            [x, y, z] = sphere(50);
+        [x, y, z] = sphere(50);
         x = x * radius{i} + center{i}(1);  % Scale and translate the sphere
         y = y * radius{i} + center{i}(2);  % Scale and translate the sphere
         z = z * radius{i} + center{i}(3);  % Scale and translate the sphere
 
-            surf(x, y, z, 'FaceColor', colors(i,:), 'FaceAlpha', 0.2, 'EdgeColor', 'none');  % Translucent sphere
+        surf(x, y, z, 'FaceColor', colors(i,:), 'FaceAlpha', 0.2, 'EdgeColor', 'none');  % Translucent sphere
 
-    % Calculate the Euclidean distance between the point and the center of the circle
-    iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2 + (projSelect(:, 3) - center{i}(3)).^2);
+        % Calculate the Euclidean distance between the point and the center of the circle
+        iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2 + (projSelect(:, 3) - center{i}(3)).^2);
     end
 
     % Determine if the point is inside the circle (including on the boundary)
@@ -514,7 +514,8 @@ get_standard_data
 cd('E:/Projects/toolboxes/gpfa_v0203/')
 startup
 
-%%
+
+%% Find the start times of the behaviors in .001 frame-time
 clear dat
 preTime = .2;
 postTime = .2;
@@ -585,131 +586,358 @@ end
 
 
 
-%% Plot all behaviors in light gray, full time of a behavior in black, and transitions into that behavior in green (or some other color)
+%% ====================================================================================
+% =====           Test clusters of within-behavior frames             ===============
+% ====================================================================================
+
+
+
+% Plot all behaviors in light gray, full time of a behavior in black, and transitions into that behavior in green (or some other color)
 
 behaviorsPlot = {'locomotion'};
-behaviorsPlot = {'contra_itch'};
+% behaviorsPlot = {'contra_itch'};
 % behaviorsPlot = {'investigate_2'};
-behaviorsPlot = {'face_groom_2'};
-for i = 1 : length(behaviors)
-    behaviorsPlot = behaviors(i);
+% behaviorsPlot = {'face_groom_2'};
+i = 1;
+for i = 2 : length(behaviors)
+behaviorsPlot = behaviors(i);
 
-    % --------------------------------------------
-    % Plot FULL TIME OF ALL BEHAVIORS - in light gray, sampling every X
-    dimPlot = [1 2 3];
+% --------------------------------------------
+% Plot FULL TIME OF ALL BEHAVIORS - in light gray, sampling every X
+dimPlot = [1 2 3];
 
-    colorsForPlot = [.8 .8 .8];
-    colorsForPlot = [.5 .5 .5];
-    alphaVal = .3;
-    propSample = .3; % subsample the data to keep the plot clean (but still sample the whole space)
-    randInd = randperm(length(bhvID), floor(length(bhvID) * propSample));
+colorsForPlot = [.8 .8 .8];
+colorsForPlot = [.5 .5 .5];
+alphaVal = .3;
+propSample = .5; % subsample the data to keep the plot clean (but still sample the whole space)
+randInd = randperm(length(bhvID), floor(length(bhvID) * propSample));
 
-    figure(520); clf; hold on;
-    titleM = [behaviors{i}, '  UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-    title(titleM, 'interpreter', 'none')
-    if nComponents > 2
-        scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
-    elseif nComponents == 2
-        scatter(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
-    end
-    grid on;
-    xlabel('D1'); ylabel('D2'); zlabel('D3')
-    % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
-
-
-    % figure(221+i); clf; hold on;
-    figure(521); clf; hold on;
-    titleD = [behaviors{i}, '  UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-    title(titleD, 'interpreter', 'none')
-    if nComponents > 2
-        scatter3(projectionsDS(randInd, dimPlot(1)), projectionsDS(randInd, dimPlot(2)), projectionsDS(randInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
-    elseif nComponents == 2
-        scatter(projectionsDS(randInd, dimPlot(1)), projectionsDS(randInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
-    end
-    grid on;
-    xlabel('D1'); ylabel('D2'); zlabel('D3')
-    % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
-    %
+figure(520); clf; hold on;
+titleM = [behaviorsPlot{1}, '  UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleM, 'interpreter', 'none')
+if nComponents > 2
+    % scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 50, colorsForPlot, '.', 'AlphaData', alphaVal)
+    % scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 10, colorsForPlot, '*', 'MarkerFaceAlpha', alphaVal)
+    % scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 10, colorsForPlot, 'filled', 'LineWidth', 0, 'MarkerFaceAlpha', alphaVal)
+    scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 40, colorsForPlot, 'MarkerEdgeAlpha', alphaVal)
+elseif nComponents == 2
+    scatter(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
+end
+grid on;
+xlabel('D1'); ylabel('D2'); zlabel('D3')
+% saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 
 
-    %
-
-    % --------------------------------------------
-    % Plot FULL TIME OF Single behavior
-    dimPlot = [1 2 3];
-
-    colors = colors_for_behaviors(codes);
-    bhvColor = find(strcmp(behaviors, behaviorsPlot));
-    fullColor = [0 0 0];
-
-    bhvPlot = find(strcmp(behaviors, behaviorsPlot)) - 2;
-    allInd = bhvID == bhvPlot; % all labeled target behaviors
-
-    figure(520);
-    if nComponents > 2
-        scatter3(projectionsM56(allInd, dimPlot(1)), projectionsM56(allInd, dimPlot(2)), projectionsM56(allInd, dimPlot(3)), 60, fullColor, 'LineWidth', 2)
-    elseif nComponents == 2
-        scatter(projectionsM56(allInd, dimPlot(1)), projectionsM56(allInd, dimPlot(2)), 60, fullColor, 'LineWidth', 2)
-    end
-    % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+% figure(221+i); clf; hold on;
+figure(521); clf; hold on;
+titleD = [behaviorsPlot{1}, '  UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleD, 'interpreter', 'none')
+if nComponents > 2
+    scatter3(projectionsDS(randInd, dimPlot(1)), projectionsDS(randInd, dimPlot(2)), projectionsDS(randInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
+elseif nComponents == 2
+    scatter(projectionsDS(randInd, dimPlot(1)), projectionsDS(randInd, dimPlot(2)), 40, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
+end
+grid on;
+xlabel('D1'); ylabel('D2'); zlabel('D3')
+% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+%
 
 
-    figure(521);
-    if nComponents > 2
-        scatter3(projectionsDS(allInd, dimPlot(1)), projectionsDS(allInd, dimPlot(2)), projectionsDS(allInd, dimPlot(3)), 60, fullColor, 'LineWidth', 2)
-    elseif nComponents == 2
-        scatter(projectionsDS(allInd, dimPlot(1)), projectionsDS(allInd, dimPlot(2)), 60, fullColor, 'LineWidth', 2)
-    end
-    % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+%
+
+% --------------------------------------------
+% Plot FULL TIME OF Single behavior
+dimPlot = [1 2 3];
+
+colors = colors_for_behaviors(codes);
+bhvColor = find(strcmp(behaviors, behaviorsPlot));
+fullColor = [0 0 0];
+% fullColor = [0 .7 1];
+% fullColor = [0 0 1];
+
+bhvPlot = find(strcmp(behaviors, behaviorsPlot)) - 2;
+allInd = bhvID == bhvPlot; % all labeled target behaviors
+
+figure(520);
+if nComponents > 2
+    scatter3(projectionsM56(allInd, dimPlot(1)), projectionsM56(allInd, dimPlot(2)), projectionsM56(allInd, dimPlot(3)), 60, fullColor, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsM56(allInd, dimPlot(1)), projectionsM56(allInd, dimPlot(2)), 60, fullColor, 'LineWidth', 2)
+end
+% saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 
 
-    % --------------------------------------------
-    % Plot just the TRANSITIONS with individual behavior labels
-    dimPlot = [1 2 3];
+figure(521);
+if nComponents > 2
+    scatter3(projectionsDS(allInd, dimPlot(1)), projectionsDS(allInd, dimPlot(2)), projectionsDS(allInd, dimPlot(3)), 60, fullColor, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsDS(allInd, dimPlot(1)), projectionsDS(allInd, dimPlot(2)), 60, fullColor, 'LineWidth', 2)
+end
+% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 
-    startColor = [0 1 0];
-    periEventTime = -opts.frameSize : opts.frameSize : 0; % seconds around onset
-    dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
+
+% --------------------------------------------
+% Plot just the TRANSITIONS with individual behavior labels
+dimPlot = [1 2 3];
+
+startColor = [1 0 .5];
+startColor = [0 .9 0];
+periEventTime = -opts.frameSize : opts.frameSize : 0; % seconds around onset
+dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 
-    firstInd = 1 + find(diff(allInd) == 1); % first frames of all target behaviors
+firstInd = 1 + find(diff(allInd) == 1); % first frames of all target behaviors
 
-    transitionsInd = zeros(length(dataWindow) * length(firstInd), 1);
-    for j = 1 : length(firstInd)
-        % Calculate the start index in the expanded array
-        startIndex = (j-1) * length(dataWindow) + 1;
+transitionsInd = zeros(length(dataWindow) * length(firstInd), 1);
+for j = 1 : length(firstInd)
+    % Calculate the start index in the expanded array
+    startIndex = (j-1) * length(dataWindow) + 1;
 
-        % Add dataWindow to the current element of firstInd and store it in the correct position
-        transitionsInd(startIndex:startIndex + length(dataWindow) - 1) = firstInd(j) + dataWindow;
-    end
+    % Add dataWindow to the current element of firstInd and store it in the correct position
+    transitionsInd(startIndex:startIndex + length(dataWindow) - 1) = firstInd(j) + dataWindow;
+end
 
-    figure(520)
-    if nComponents > 2
-        scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, startColor, 'LineWidth', 2)
-    elseif nComponents == 2
-        scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, startColor, 'LineWidth', 2)
-        % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
-        % scatter(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
-    end
+figure(520)
+if nComponents > 2
+    scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, startColor, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, startColor, 'LineWidth', 2)
+    % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
+    % scatter(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+end
 
-    figure(521)
-    if nComponents > 2
-        scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, startColor, 'LineWidth', 2)
-    elseif nComponents == 2
-        scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, startColor, 'LineWidth', 2)
-        % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
-        % scatter(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
-    end
+figure(521)
+if nComponents > 2
+    scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, startColor, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, startColor, 'LineWidth', 2)
+    % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
+    % scatter(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
+end
+
+end
+
+
+
+%%
+%% Use HDBSCAN to select data points for analaysis. Play with this until you're happy with the groups
+nDimUse = 3; % use the first nDimUse dimensions for HDBSCAN
+
+% Classify using HDBSCAN
+clusterer = HDBSCAN(projSelect(allInd, 1:nDimUse));
+clusterer.minpts = 2; %tends to govern cluster number  %was 3? with all neurons
+clusterer.minclustsize = 40; %governs accuracy  %was 4? with all neurons
+
+clusterer.fit_model(); 			% trains a cluster hierarchy
+clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
+clusterer.get_membership();		% assigns cluster labels to the points in X
+figure(823);
+h = clusterer.plot_clusters();
+% Change appearance if you want
+% h.Marker = 'o'
+% set( h.Parent,'tickdir','out','box','off','color','k','xcolor','w','ycolor','w' );
+
+% title(['umap HDBSCAN ,' area, ' binSize = ', num2str(binSize)])
+% saveas(gcf, fullfile(paths.figurePath, ['umap HDBSCAN ,' area, ' binsize ', num2str(binSize), '.png']), 'png')
+
+
+%% HDBSCAN defined some groups. Now select those group data from the umap projections
+nGroup = single(max(clusterer.labels));
+clusterFrame = cell(nGroup, 1);
+clusterSpikes = cell(nGroup, 1);
+% plotTime = -3 : opts.frameSize : 3; % seconds around onset (to plot PSTHs below)
+% plotFrame = round(plotTime(1:end-1) / opts.frameSize);
+matSelect = cell(nGroup, 1);
+
+figure(92); clf; hold on;
+for i = 1 : nGroup
+
+    % Choose only cluster of interest
+    iFrames = find(allInd);
+    clusterFrame{i} = iFrames(clusterer.labels == i);
+    clusterSpikes{i} = dataMat(clusterFrame{i}, idSelect);
+    % scatter(clusterFrame{i}, mean(clusterSpikes{i}(:)))
+    scatter(1, mean(clusterSpikes{i}(:)))
+
+    % Get rid of instances too close to beginning/end (to enable plotting
+    % them)
+    % clusterFrame{i}((clusterFrame{i} < -plotFrame(1)) | clusterFrame{i} > size(dataMat, 1) - plotFrame(end)) = [];
+
+    % Collect the neural data peri-bout start
+    % nBout = length(bhvFrame{i});
+    % iMatSelect = zeros(length(idSelect), length(plotFrame), nBout);
+    % for n = 1 : nBout
+    %     iMatSelect(:, :, n) = dataMat((bhvFrame{i}(n) - dataWindow) + plotFrame, idSelect)';
+    % end
+    % matSelect{i} = iMatSelect;
 
 end
 
 
 
 
+%% Alternative: Do it by hand.  Use a circle or sphere to select data points for analysis (instead of HDBSCAN)
+clear center radius
+% center{1} = [-.25 -.5];
+% center{2} = [-4.5 1];
+% center{3} = [.5 4];
+center{1} = [.5 -1.5 -6.5];
+center{2} = [-1.5 .5 -5.5];
+center{3} = [1 -1.5 -3.25];
+% center{1} = [-2.5 -8];
+% center{2} = [0 0];
+% center{3} = [1 -6];
+radius{1} = 1.2;
+radius{2} = .7;
+radius{3} = 1;
+
+% Choose colors: alter this to change how many colors (clusters) you want to use
+colors = three_color_heatmap([1 0 0],[0 .7 0], [0 0 1], 3);
+
+nGroup = length(center);
+
+clusterFrame = cell(nGroup, 1);
+clusterSpikes = cell(nGroup, 1);
+
+% Number of points to define the circle
+theta = linspace(0, 2*pi, 100);  % Generate 100 points along the circle
+
+matSelect = cell(nGroup, 1);
+
+for i = 1 : nGroup
+    if strcmp(selectFrom, 'M56')
+        figure(520)
+    else
+        figure(521)
+    end
+
+    if length(center{1}) == 2
+        % Parametric equation of the circle
+        x = center{i}(1) + radius{i} * cos(theta);
+        y = center{i}(2) + radius{i} * sin(theta);
+        plot(x, y, 'color', colors(i,:), 'lineWidth', 4);  % Plot the circle with a blue line
+
+        % Calculate the Euclidean distance between the point and the center of the circle
+        iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2);
+    elseif length(center{1}) == 3
+        [x, y, z] = sphere(50);
+        x = x * radius{i} + center{i}(1);  % Scale and translate the sphere
+        y = y * radius{i} + center{i}(2);  % Scale and translate the sphere
+        z = z * radius{i} + center{i}(3);  % Scale and translate the sphere
+
+        surf(x, y, z, 'FaceColor', colors(i,:), 'FaceAlpha', 0.5, 'EdgeColor', 'none');  % Translucent sphere
+
+        % Calculate the Euclidean distance between the point and the center of the circle
+        iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2 + (projSelect(:, 3) - center{i}(3)).^2);
+    end
+
+    % Determine if the point is inside the circle (including on the boundary)
+    isInside = iDistance <= radius{i};
+
+    % Choose only behavior of interest
+    bhvInd = zeros(length(projSelect), 1);
+    bhvInd(allInd) = 1;
+
+    clusterFrame{i} = find(isInside & bhvInd);
+    clusterSpikes{i} = dataMat(clusterFrame{i}, idSelect);
+
+    % Plot the data in the other area
+    if strcmp(selectFrom, 'M56')
+        figure(521)
+    else
+        figure(520)
+    end
+    scatter3(projProject(bhvFrame{i}, dimPlot(1)), projProject(bhvFrame{i}, dimPlot(2)), opts.frameSize * (bhvFrame{i}-1), 60, colors(i,:), 'LineWidth', 2)
+
+end
+
+
+
+%%                  RUN UMAP / clusters (HDBSCAN or by hand) in GPFA
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Build a set of neural matrices for training gpfa
+
+%% Get a new dataMat and dataBvh for gpfa
+opts.frameSize = .001;
+get_standard_data
+cd('E:/Projects/toolboxes/gpfa_v0203/')
+startup
+
+
+%% Concatenate frames into gpfa rate (.001s per frame)
+clear dat
+trialDur = .4; % How long to make each "trial" for GPFA
+nTrial = floor(min(cellfun(@length, clusterFrame)) * umapFrameSize / trialDur); % Use same amount of trials per "condition"
+% nTrial = min(40, nTrial);
+umapFramePerTrial = trialDur / umapFrameSize;
+
+dataBhvInd = cell(length(clusterFrame), 1);
+for i = 1 : length(clusterFrame)
+    clusterFrameSample{i} = clusterFrame{i}(randperm(length(clusterFrame{i}), nTrial));
+
+    for j = 1 : nTrial
+        trialData = [];
+        for k = 1 : umapFramePerTrial
+            % convert UMAP frame to .001 s frame for gpfa
+            gpfaFrame = clusterFrameSample{i}(j) * umapFrameSize / .001;
+            trialData = [trialData; dataMat(gpfaFrame : gpfaFrame + umapFrameSize / .001 - 1, idSelect)];
+        end
+        trialIdx = (i-1) * nTrial + j;
+        dat(trialIdx).trialId = i;
+        dat(trialIdx).spikes = trialData';
+
+
+    end
+end
 
 
 
 
+
+%%
+method = 'gpfa';
+runIdx = 1;
+binWidth = 20; % ms
+startInd = ceil(1000* preTime / binWidth); % When the behavior starts (first frame)
+
+% Select number of latent dimensions
+xDim = 8;
+kernSD = 30;
+
+% Extract neural trajectories
+result = neuralTraj(runIdx, dat, 'method', method, 'xDim', xDim,...
+    'kernSDList', kernSD, 'seglength', 50, 'binWidth', binWidth);
+% NOTE: This function does most of the heavy lifting.
+
+% Orthonormalize neural trajectories
+[estParams, seqTrain] = postprocess(result, 'kernSD', kernSD);
+% NOTE: The importance of orthnormalization is described on
+%       pp.621-622 of Yu et al., J Neurophysiol, 2009.
+
+
+
+%% Plot the gpfa fits
+figure(430); clf; grid on; hold on
+xlabel('D1'); ylabel('D2'); zlabel('D3')
+for i = 1 : length(seqTrain)
+    trialID = seqTrain(i).trialId;
+    plot3(seqTrain(i).xorth(1,:), seqTrain(i).xorth(2,:), seqTrain(i).xorth(3,:), '.-', 'Color', colors(trialID,:), 'LineWidth', 2, 'MarkerSize', 10')
+    % scatter3(seqTrain(i).xorth(1,1), seqTrain(i).xorth(2,1), seqTrain(i).xorth(3,1), 40, colors(trialID,:), 'filled')
+    % scatter3(seqTrain(i).xorth(1,startInd), seqTrain(i).xorth(2,startInd), seqTrain(i).xorth(3,startInd), 100, colors(trialID,:), 'filled')
+end
+
+
+
+
+
+%%
+i = 3
+figure(13);
+% plot(diff(bhvFrame{i}))
+plot(bhvFrame{i})
+
+sum(diff(bhvFrame{i}) > 1)
+sum(diff(bhvFrame{i}) == 1)
 
 
 
