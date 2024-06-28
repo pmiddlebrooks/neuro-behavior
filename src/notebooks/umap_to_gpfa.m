@@ -5,8 +5,8 @@ cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 
 opts = neuro_behavior_options;
 opts.minActTime = .16;
-opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 1.5 * 60 * 60; % seconds
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 1 * 60 * 60; % seconds
 opts.frameSize = .1;
 
 getDataType = 'all';
@@ -41,6 +41,33 @@ projectionsM56 = projM56(1:end-shiftFrame, :); % Remove shiftFrame frames from p
 projectionsDS = projDS(1:end-shiftFrame, :);
 
 
+
+
+%% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
+selectFrom = 'M56';
+selectFrom = 'DS';
+switch selectFrom
+    case 'M56'
+        projSelect = projectionsM56;
+        projProject = projectionsDS;
+        idSelect = idM56;
+    case 'DS'
+        projSelect = projectionsDS;
+        projProject = projectionsM56;
+        idSelect = idDS;
+end
+
+% Choose colors: alter this to change how many colors (clusters) you want to use
+colors = three_color_heatmap([1 0 0],[0 .7 0], [0 0 1], 3);
+
+
+
+
+
+
+
+
+
 %% --------------------------------------------
 % Plot FULL TIME OF ALL BEHAVIORS
 dimPlot = [1 2 3];
@@ -58,7 +85,7 @@ elseif nComponents == 2
     scatter(projectionsM56(:, dimPlot(1)), projectionsM56(:, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
 end
 grid on;
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 
 
@@ -72,9 +99,459 @@ elseif nComponents == 2
     scatter(projectionsDS(:, dimPlot(1)), projectionsDS(:, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
 end
 grid on;
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 %
+
+%%                  SVM classifier to predict behavior labels
+% Script to train an SVM model with different kernels and select the best model
+tic
+% Load data
+% projSelect: matrix of 8-dimensional data (rows: data points, columns: features)
+% bhvID: vector of category labels for each data point (length: number of rows in projSelect)
+% Assuming projSelect and categoryLabels are already loaded in the workspace
+
+% Get rid of "irrelevant/in-nest"
+delInd = bhvID == -1;
+svmInd = ~delInd;
+
+% Define different kernel functions to try
+% kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
+kernelFunctions = {'polynomial', 'rbf'};
+kernelFunctions = {'polynomial'};
+
+% Initialize variables to store results
+bestCVAccuracy = 0;
+bestKernel = '';
+
+% Perform cross-validation for each kernel
+for i = 1:length(kernelFunctions)
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
+
+    % Train the SVM model using cross-validation
+    svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd,:), 'Learners', t, 'KFold', 5);
+
+    % Compute cross-validation accuracy
+    cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+
+    % Display the best model and its kernel function
+    fprintf('Kernel: %s\n', kernelFunctions{i});
+    fprintf('Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
+
+    % Check if this model is the best one so far
+    if cvAccuracy > bestCVAccuracy
+        bestCVAccuracy = cvAccuracy;
+        bestModel = svmModel;
+        bestKernel = kernelFunctions{i};
+    end
+end
+
+% Display the best model and its kernel function
+fprintf('Best Kernel: %s\n', bestKernel);
+fprintf('Best Cross-Validation Accuracy: %.2f%%\n', bestCVAccuracy * 100);
+
+% The bestModel variable now contains the trained model with the best kernel
+toc
+
+%% Use the best model to make predictions
+svmBhvID = bhvID(svmInd);
+svmProj = projSelect(svmInd, :);
+
+predictedLabels = predict(bestModel, svmProj);
+
+% Calculate and display the overall accuracy
+accuracy = sum(predictedLabels == categoryLabels) / length(categoryLabels) * 100;
+fprintf('Overall Accuracy: %.2f%%\n', accuracy);
+
+
+
+%% Expected accuracy for randomly choosing 
+
+randomPredict = svmBhvID(randperm(length(svmBhvID)));
+
+accuracy = sum(randomPredict == svmBhvID) / length(randomPredict) * 100
+
+% Count the occurrences of each unique number in the vector
+counts = histcounts(svmBhvID, unique(svmBhvID));
+%  Calculate the total number of elements
+totalElements = length(svmBhvID);
+
+% Calculate the proportions
+proportions = counts / totalElements;
+
+% Calculate the expected accuracy
+expectedAccuracy = sum(proportions .^ 2);
+% Display the result
+fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100);
+
+%% Randomize labels to get chance level SVM accuracy: all behaviors
+svmIndPos = find(svmInd);
+svmIndRand = svmIndPos(randperm(length(svmIndPos)));
+kernelFunction = bestKernel;
+
+% Set SVM template with the current kernel
+t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+
+% Train the SVM model using cross-validation
+svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmIndRand), 'Learners', t, 'KFold', 5);
+
+% Compute cross-validation accuracy
+cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+
+% Display the best model and its kernel function
+fprintf('Randomized Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
+
+
+
+
+%% --------------------------------------------
+% Plot just the TRANSITIONS of all behaviors (for now, include behaviors
+% that last one frame)
+
+transInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
+transID = bhvID(transInd + 1);  % behavior ID being transitioned into
+
+colors = colors_for_behaviors(codes);
+colorsForPlot = arrayfun(@(x) colors(x,:), transID + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+
+figure(260); clf; hold on;
+titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleM)
+if nComponents > 2
+    scatter3(projectionsM56(transInd, dimPlot(1)), projectionsM56(transInd, dimPlot(2)), projectionsM56(transInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsM56(transInd, dimPlot(1)), projectionsM56(transInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
+end
+grid on;
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
+% saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+
+
+% figure(221+i); clf; hold on;
+figure(261); clf; hold on;
+titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleD)
+if nComponents > 2
+    scatter3(projectionsDS(transInd, dimPlot(1)), projectionsDS(transInd, dimPlot(2)), projectionsDS(transInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsDS(transInd, dimPlot(1)), projectionsDS(transInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
+end
+grid on;
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
+% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+%
+
+%%                  SVM classifier to predict behavior ID for all transitions only
+% Script to train an SVM model with different kernels and select the best model
+tic
+% transInd = [transInd; transInd + 1];
+% transID = [transID; transID];
+% Load data
+% projSelect: matrix of 8-dimensional data (rows: data points, columns: features)
+% bhvID: vector of category labels for each data point (length: number of rows in projSelect)
+% Assuming projSelect and categoryLabels are already loaded in the workspace
+
+% Get rid of "irrelevant/in-nest"
+svmInd = transInd(transID ~= -1);
+
+% Define different kernel functions to try
+% kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
+kernelFunctions = {'polynomial', 'rbf'};
+% kernelFunctions = {'polynomial'};
+
+% Initialize variables to store results
+bestCVAccuracy = 0;
+bestKernel = '';
+
+% Perform cross-validation for each kernel
+for i = 1:length(kernelFunctions)
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
+
+    % Train the SVM model using cross-validation
+    svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5);
+
+    % Compute cross-validation accuracy
+    cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+
+    % Display the best model and its kernel function
+    fprintf('Kernel: %s\n', kernelFunctions{i});
+    fprintf('Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
+
+    % Check if this model is the best one so far
+    if cvAccuracy > bestCVAccuracy
+        bestCVAccuracy = cvAccuracy;
+        bestModel = svmModel;
+        bestKernel = kernelFunctions{i};
+    end
+end
+
+% Display the best model and its kernel function
+fprintf('Best Kernel for Behavior Transitions: %s\n', bestKernel);
+fprintf('Best Cross-Validation Accuracy: %.2f%%\n', bestCVAccuracy * 100);
+
+% The bestModel variable now contains the trained model with the best kernel
+toc
+
+%% Use the best model to make predictions
+svmBhvID = bhvID(svmInd);
+svmProj = projSelect(svmInd, :);
+
+predictedLabels = predict(bestModel, svmProj);
+
+% Calculate and display the overall accuracy
+accuracy = sum(predictedLabels == categoryLabels) / length(categoryLabels) * 100;
+fprintf('Overall Accuracy: %.2f%%\n', accuracy);
+
+
+
+%% Expected accuracy for randomly choosing 
+
+randomPredict = svmBhvID(randperm(length(svmBhvID)));
+
+accuracy = sum(randomPredict == svmBhvID) / length(randomPredict) * 100
+
+% Count the occurrences of each unique number in the vector
+counts = histcounts(svmBhvID, unique(svmBhvID));
+%  Calculate the total number of elements
+totalElements = length(svmBhvID);
+
+% Calculate the proportions
+proportions = counts / totalElements;
+
+% Calculate the expected accuracy
+expectedAccuracy = sum(proportions .^ 2);
+% Display the result
+fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100);
+
+%% Randomize labels to get chance level SVM accuracy:  transitions only
+svmIndPos = find(svmInd);
+svmIndRand = svmIndPos(randperm(length(svmIndPos)));
+kernelFunction = bestKernel;
+
+% Set SVM template with the current kernel
+t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+
+% Train the SVM model using cross-validation
+svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmIndRand), 'Learners', t, 'KFold', 5);
+
+% Compute cross-validation accuracy
+cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+
+% Display the best model and its kernel function
+fprintf('Randomized Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
+
+
+
+
+
+
+
+%% --------------------------------------------
+% Plot just the WITHIN behvior frames (if behavior lasts more than 1 frame... don't want to include any transition frames as defined above)
+
+transIndLog = zeros(length(bhvID), 1);
+transIndLog(transInd) = 1;
+withinInd = find(~transIndLog);
+withinID = bhvID(withinInd);
+
+
+colors = colors_for_behaviors(codes);
+colorsForPlot = arrayfun(@(x) colors(x,:), withinID + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+
+figure(270); clf; hold on;
+titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleM)
+if nComponents > 2
+    scatter3(projectionsM56(withinInd, dimPlot(1)), projectionsM56(withinInd, dimPlot(2)), projectionsM56(withinInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsM56(withinInd, dimPlot(1)), projectionsM56(withinInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
+end
+grid on;
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
+% saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+
+
+figure(271); clf; hold on;
+titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleD)
+if nComponents > 2
+    scatter3(projectionsDS(withinInd, dimPlot(1)), projectionsDS(withinInd, dimPlot(2)), projectionsDS(withinInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsDS(withinInd, dimPlot(1)), projectionsDS(withinInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
+end
+grid on;
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
+% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+%
+
+%%                  SVM classifier to predict behavior ID for all within-behavior data
+% Script to train an SVM model with different kernels and select the best model
+tic
+% Load data
+% projSelect: matrix of 8-dimensional data (rows: data points, columns: features)
+% bhvID: vector of category labels for each data point (length: number of rows in projSelect)
+% Assuming projSelect and categoryLabels are already loaded in the workspace
+
+% Get rid of "irrelevant/in-nest"
+% svmInd = withinID ~= -1;
+svmInd = withinInd(withinID ~= -1);
+
+% Define different kernel functions to try
+% kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
+% kernelFunctions = {'polynomial', 'rbf'};
+kernelFunctions = {'polynomial'};
+
+% Initialize variables to store results
+bestCVAccuracy = 0;
+bestKernel = '';
+
+% Perform cross-validation for each kernel
+for i = 1:length(kernelFunctions)
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
+
+    % Train the SVM model using cross-validation
+    svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t, 'KFold', 5);  % Dimensions 1:3
+    % svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5); % All UMAP dimensions
+    % svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t, 'KFold', 5); % Full neural space
+
+    % Compute cross-validation accuracy
+    cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+
+    % Display the best model and its kernel function
+    fprintf('Kernel: %s\n', kernelFunctions{i});
+    fprintf('Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
+
+    % Check if this model is the best one so far
+    if cvAccuracy > bestCVAccuracy
+        bestCVAccuracy = cvAccuracy;
+        bestModel = svmModel;
+        bestKernel = kernelFunctions{i};
+    end
+end
+
+% Display the best model and its kernel function
+% fprintf('SVM on neural data (not UMAP):\n');
+fprintf('Best Kernel for Within Behaviors: %s\n', bestKernel);
+fprintf('Best Cross-Validation Accuracy: %.2f%%\n', bestCVAccuracy * 100);
+toc
+
+%% Train model on all data - how well does it fit? (without cross-validation)
+svmInd = withinInd(withinID ~= -1);
+tic
+
+% Define different kernel functions to try
+% kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
+% kernelFunctions = {'polynomial', 'rbf'};
+kernelFunctions = {'polynomial'};
+
+% Initialize variables to store results
+bestCVAccuracy = 0;
+bestKernel = '';
+
+% Perform cross-validation for each kernel
+for i = 1:length(kernelFunctions)
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
+
+    % Train the SVM model using cross-validation
+    % svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t);
+    svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t);
+    % svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t);
+    
+    % Compute cross-validation accuracy
+    % cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+    % Display the best model and its kernel function
+    fprintf('Kernel: %s\n', kernelFunctions{i});
+    fprintf('Trained data Accuracy: %.2f%%\n', cvAccuracy * 100);
+
+end
+
+% The bestModel variable now contains the trained model with the best kernel
+toc
+
+% Use the best model to make predictions
+svmBhvID = bhvID(svmInd);
+svmProj = projSelect(svmInd, 1:3);
+
+predictedLabels = predict(svmModel, svmProj);
+
+% Calculate and display the overall accuracy
+accuracy = sum(predictedLabels == svmBhvID) / length(svmBhvID) * 100;
+fprintf('Overall Accuracy: %.2f%%\n', accuracy);
+
+%% --------------------------------------------
+% Plot predictions
+colorsForPlot = arrayfun(@(x) colors(x,:), predictedLabels + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+
+% figure(270); clf; hold on;
+% titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+% title(titleM)
+% if nComponents > 2
+%     scatter3(projectionsM56(withinInd, dimPlot(1)), projectionsM56(withinInd, dimPlot(2)), projectionsM56(withinInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+% elseif nComponents == 2
+%     scatter(projectionsM56(withinInd, dimPlot(1)), projectionsM56(withinInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
+% end
+% grid on;
+% xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
+% % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+
+
+figure(821); clf; hold on;
+titleD = ['Predicted UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleD)
+if nComponents > 2
+    scatter3(projectionsDS(svmInd, dimPlot(1)), projectionsDS(svmInd, dimPlot(2)), projectionsDS(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsDS(svmInd, dimPlot(1)), projectionsDS(svmInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
+end
+grid on;
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
+% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+%
+
+
+%% Expected accuracy for randomly choosing 
+svmBhvID = bhvID(svmInd);
+svmProj = projSelect(svmInd, :);
+
+randomPredict = svmBhvID(randperm(length(svmBhvID)));
+
+accuracy = sum(randomPredict == svmBhvID) / length(randomPredict) * 100
+
+% Count the occurrences of each unique number in the vector
+counts = histcounts(svmBhvID, unique(svmBhvID));
+%  Calculate the total number of elements
+totalElements = length(svmBhvID);
+
+% Calculate the proportions
+proportions = counts / totalElements;
+
+% Calculate the expected accuracy
+expectedAccuracy = sum(proportions .^ 2);
+% Display the result
+fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100);
+
+%% Randomize labels to get chance level SVM accuracy
+svmIndPos = find(svmInd);
+svmIndRand = svmIndPos(randperm(length(svmIndPos)));
+kernelFunction = 'polynomial';
+
+% Set SVM template with the current kernel
+t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+
+% Train the SVM model using cross-validation
+svmModel = fitcecoc(projSelect(svmInd,:), withinID(svmIndRand), 'Learners', t, 'KFold', 5);
+
+% Compute cross-validation accuracy
+cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+
+fprintf('Randomized Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
 
 
 
@@ -83,7 +560,6 @@ xlabel('D1'); ylabel('D2'); zlabel('D3')
 
 %% --------------------------------------------
 % Plot just the TRANSITIONS with individual behavior labels
-dimPlot = [1 2 3];
 
 behaviorsPlot = {'investigate_1', 'head_groom'};
 behaviorsPlot = {'contra_itch', 'paw_groom'};
@@ -106,13 +582,13 @@ figure(230); clf; hold on;
 titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM)
 grid on;
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 
 figure(231); clf; hold on;
 titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 grid on;
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 
 for i = 1 : length(behaviorsPlot)
     bhvPlot = find(strcmp(behaviors, behaviorsPlot{i})) - 2;
@@ -157,7 +633,6 @@ figure(231)
 %% --------------------------------------------
 % Compare, for a single behavior, the frame before and after behavior start
 % time (frame)
-dimPlot = [1 2 3];
 
 behaviorsPlot = {'investigate_1', 'head_groom'};
 behaviorsPlot = {'contra_itch', 'paw_groom'};
@@ -177,13 +652,13 @@ figure(230); clf; hold on;
 titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM)
 grid on;
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 
 figure(231); clf; hold on;
 titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 grid on;
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 
 for k = 1 : length(frameShift)
     periEventTime = periEventTime + frameShift(k);
@@ -228,48 +703,27 @@ figure(231)
 % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 
 
-%% Use a square to Find time indices according to an area within low-D space
-% area1D1Window = [0 3];
-% area1D2Window = [2 6];
-%
-% area2D1Window = [-4 2];
-% area2D2Window = [-3 2];
-%
-% area1Ind = bhvID == bhvPlot &...
-%     (projectionsDS(:,1) >= area1D1Window(1) & projectionsDS(:,1) <= area1D1Window(2)) & ...
-%     (projectionsDS(:,2) >= area1D2Window(1) & projectionsDS(:,2) <= area1D2Window(2));
-% area1Time = (find(area1Ind)-1) * opts.frameSize;
-%
-% area2Ind = bhvID == bhvPlot &...
-%     (projectionsDS(:,1) >= area2D1Window(1) & projectionsDS(:,1) <= area2D1Window(2)) & ...
-%     (projectionsDS(:,2) >= area2D2Window(1) & projectionsDS(:,2) <= area2D2Window(2));
-% area2Time = (find(area2Ind)-1) * opts.frameSize;
 
 
 
-%% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
-selectFrom = 'M56';
-selectFrom = 'DS';
-switch selectFrom
-    case 'M56'
-        projSelect = projectionsM56;
-        projProject = projectionsDS;
-        idSelect = idM56;
-    case 'DS'
-        projSelect = projectionsDS;
-        projProject = projectionsM56;
-        idSelect = idDS;
-end
 
-% Choose colors: alter this to change how many colors (clusters) you want to use
-colors = three_color_heatmap([1 0 0],[0 .7 0], [0 0 1], 3);
+
+
+
+
+
+
+
+
+
+
 
 
 %% Use HDBSCAN to select data points for analaysis. Play with this until you're happy with the groups
-nDimUse = 3; % use the first nDimUse dimensions for HDBSCAN
+nDimUse = dimPlot; % use the first nDimUse dimensions for HDBSCAN
 
 % Classify using HDBSCAN
-clusterer = HDBSCAN(projSelect(transitionsInd, 1:nDimUse));
+clusterer = HDBSCAN(projSelect(transitionsInd, nDimUse));
 clusterer.minpts = 2; %tends to govern cluster number  %was 3? with all neurons
 clusterer.minclustsize = 10; %governs accuracy  %was 4? with all neurons
 
@@ -312,7 +766,7 @@ end
 
 
 
-%% Alternative: Do it by hand.  Use a circle or sphere to select data points for analysis (instead of HDBSCAN)
+%% Alternative to HDBSCAN: Do it by hand.  Use a circle or sphere to select data points for analysis
 clear center radius
 % center{1} = [-.25 -.5];
 % center{2} = [-4.5 1];
@@ -557,7 +1011,7 @@ result = neuralTraj(runIdx, dat, 'method', method, 'xDim', xDim,...
 
 %% Plot the gpfa fits
 figure(430); clf; grid on; hold on
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 for i = 1 : length(seqTrain)
     trialID = seqTrain(i).trialId;
     plot3(seqTrain(i).xorth(1,:), seqTrain(i).xorth(2,:), seqTrain(i).xorth(3,:), '.-', 'Color', colors(trialID,:), 'LineWidth', 2, 'MarkerSize', 10')
@@ -590,17 +1044,16 @@ end
 % =====           Test clusters of within-behavior frames             ===============
 % ====================================================================================
 
-
-
 % Plot all behaviors in light gray, full time of a behavior in black, and transitions into that behavior in green (or some other color)
 
 behaviorsPlot = {'locomotion'};
 % behaviorsPlot = {'contra_itch'};
 % behaviorsPlot = {'investigate_2'};
 % behaviorsPlot = {'face_groom_2'};
-i = 1;
-for i = 2 : length(behaviors)
-behaviorsPlot = behaviors(i);
+
+% i = 1;
+% for i = 2 : length(behaviors)
+% behaviorsPlot = behaviors(i);
 
 % --------------------------------------------
 % Plot FULL TIME OF ALL BEHAVIORS - in light gray, sampling every X
@@ -616,15 +1069,12 @@ figure(520); clf; hold on;
 titleM = [behaviorsPlot{1}, '  UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM, 'interpreter', 'none')
 if nComponents > 2
-    % scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 50, colorsForPlot, '.', 'AlphaData', alphaVal)
-    % scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 10, colorsForPlot, '*', 'MarkerFaceAlpha', alphaVal)
-    % scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 10, colorsForPlot, 'filled', 'LineWidth', 0, 'MarkerFaceAlpha', alphaVal)
     scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 40, colorsForPlot, 'MarkerEdgeAlpha', alphaVal)
 elseif nComponents == 2
     scatter(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
 end
 grid on;
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 
 
@@ -638,7 +1088,7 @@ elseif nComponents == 2
     scatter(projectionsDS(randInd, dimPlot(1)), projectionsDS(randInd, dimPlot(2)), 40, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
 end
 grid on;
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 %
 
@@ -647,13 +1097,10 @@ xlabel('D1'); ylabel('D2'); zlabel('D3')
 
 % --------------------------------------------
 % Plot FULL TIME OF Single behavior
-dimPlot = [1 2 3];
 
 colors = colors_for_behaviors(codes);
 bhvColor = find(strcmp(behaviors, behaviorsPlot));
 fullColor = [0 0 0];
-% fullColor = [0 .7 1];
-% fullColor = [0 0 1];
 
 bhvPlot = find(strcmp(behaviors, behaviorsPlot)) - 2;
 allInd = bhvID == bhvPlot; % all labeled target behaviors
@@ -678,7 +1125,6 @@ end
 
 % --------------------------------------------
 % Plot just the TRANSITIONS with individual behavior labels
-dimPlot = [1 2 3];
 
 startColor = [1 0 .5];
 startColor = [0 .9 0];
@@ -696,37 +1142,95 @@ for j = 1 : length(firstInd)
     % Add dataWindow to the current element of firstInd and store it in the correct position
     transitionsInd(startIndex:startIndex + length(dataWindow) - 1) = firstInd(j) + dataWindow;
 end
+colorsForPlot = arrayfun(@(x) colors(x,:), bhvID(transitionsInd) + 2, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
 figure(520)
 if nComponents > 2
-    scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, startColor, 'LineWidth', 2)
+    scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
 elseif nComponents == 2
-    scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, startColor, 'LineWidth', 2)
+    scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colorsForPlot, 'LineWidth', 2)
     % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
     % scatter(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
 end
 
 figure(521)
 if nComponents > 2
-    scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, startColor, 'LineWidth', 2)
+    scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
 elseif nComponents == 2
-    scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, startColor, 'LineWidth', 2)
+    scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colorsForPlot, 'LineWidth', 2)
     % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
     % scatter(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
 end
 
+% end
+
+%% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
+selectFrom = 'M56';
+selectFrom = 'DS';
+switch selectFrom
+    case 'M56'
+        projSelect = projectionsM56;
+        projProject = projectionsDS;
+        idSelect = idM56;
+    case 'DS'
+        projSelect = projectionsDS;
+        projProject = projectionsM56;
+        idSelect = idDS;
 end
 
 
+%%                  SVM classifier to predict transitions from all behaviors into single behavior X
+% Get rid of "irrelevant/in-nest"
+% svmInd = withinID ~= -1;
+svmInd = transitionsInd(bhvID(transitionsInd) ~= -1);
 
-%%
+% Define different kernel functions to try
+% kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
+kernelFunctions = {'polynomial', 'rbf'};
+% kernelFunctions = {'polynomial'};
+
+% Initialize variables to store results
+bestCVAccuracy = 0;
+bestKernel = '';
+
+% Perform cross-validation for each kernel
+for i = 1:length(kernelFunctions)
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
+
+    % Train the SVM model using cross-validation
+    svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5);
+
+    % Compute cross-validation accuracy
+    cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+
+    % Display the best model and its kernel function
+    fprintf('Kernel: %s\n', kernelFunctions{i});
+    fprintf('Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
+
+    % Check if this model is the best one so far
+    if cvAccuracy > bestCVAccuracy
+        bestCVAccuracy = cvAccuracy;
+        bestModel = svmModel;
+        bestKernel = kernelFunctions{i};
+    end
+end
+
+% Display the best model and its kernel function
+fprintf('Best Kernel for Within Behaviors: %s\n', bestKernel);
+fprintf('Best Cross-Validation Accuracy: %.2f%%\n', bestCVAccuracy * 100);
+
+
+
 %% Use HDBSCAN to select data points for analaysis. Play with this until you're happy with the groups
-nDimUse = 3; % use the first nDimUse dimensions for HDBSCAN
+nDimUse = dimPlot; % use the first nDimUse dimensions for HDBSCAN
 
 % Classify using HDBSCAN
-clusterer = HDBSCAN(projSelect(allInd, 1:nDimUse));
+clusterer = HDBSCAN(projSelect(allInd, 1:8));
 clusterer.minpts = 2; %tends to govern cluster number  %was 3? with all neurons
-clusterer.minclustsize = 40; %governs accuracy  %was 4? with all neurons
+clusterer.minclustsize = 100; %governs accuracy  %was 4? with all neurons
+clusterer.minClustNum = 2; % force at least this many clusters
 
 clusterer.fit_model(); 			% trains a cluster hierarchy
 clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
@@ -758,18 +1262,6 @@ for i = 1 : nGroup
     clusterSpikes{i} = dataMat(clusterFrame{i}, idSelect);
     % scatter(clusterFrame{i}, mean(clusterSpikes{i}(:)))
     scatter(1, mean(clusterSpikes{i}(:)))
-
-    % Get rid of instances too close to beginning/end (to enable plotting
-    % them)
-    % clusterFrame{i}((clusterFrame{i} < -plotFrame(1)) | clusterFrame{i} > size(dataMat, 1) - plotFrame(end)) = [];
-
-    % Collect the neural data peri-bout start
-    % nBout = length(bhvFrame{i});
-    % iMatSelect = zeros(length(idSelect), length(plotFrame), nBout);
-    % for n = 1 : nBout
-    %     iMatSelect(:, :, n) = dataMat((bhvFrame{i}(n) - dataWindow) + plotFrame, idSelect)';
-    % end
-    % matSelect{i} = iMatSelect;
 
 end
 
@@ -853,6 +1345,92 @@ end
 
 
 
+
+%% Repeated measures ANOVA across groups
+meanSpikes = cellfun(@mean, clusterSpikes, 'UniformOutput', false);
+stdSpikes = cellfun(@std, clusterSpikes, 'UniformOutput', false);
+
+% spikeData = [];
+% clusterID = [];
+% neuronID = [];
+% for i = 1 : length(meanSpikes)
+%     spikeData = [spikeData; meanSpikes{i}'];
+%     clusterID = [clusterID; i * ones(length(meanSpikes{i}), 1)];
+%     neuronID = [neuronID; idSelect'];
+% end
+
+% figure(987); clf; hold on;
+% for i = 1 : length(meanSpikes)
+% plot(meanSpikes{i})
+% end
+
+%% Correlation structures
+edges = -.6 : .02 : .6;
+binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+    returnIdx = tril(true(length(idSelect)), -1);
+    figure(54); clf; hold on;
+    colors = {'r', 'g', 'b'};
+for i = 1 : length(meanSpikes)
+    rho{i} = corr(clusterSpikes{i});
+    rhoPop{i} = rho{i}(returnIdx);
+    N = histcounts(rhoPop{i}, edges, 'Normalization', 'pdf');
+    bar(binCenters, N, colors{i}, 'FaceAlpha', .5);%, 'hist')
+end
+cellfun(@mean, rhoPop)
+
+%%
+dataTbl = table([1:length(rhoPop{1})]', ...
+    'VariableNames', {'neuronID'});
+for i = 1 : length(meanSpikes)
+    iName = ['cluster', num2str(i)];
+    dataTbl.(iName) = rhoPop{i};
+end
+
+% Define the within-subject design
+within = table([1:length(meanSpikes)]', ...
+    'VariableNames', {'clusterID'});
+
+varNames = dataTbl.Properties.VariableNames;
+modelStr = [varNames{2},'-',varNames{end},'~1'];
+% Fit the repeated measures model
+rm = fitrm(dataTbl, modelStr, 'WithinDesign', within);
+
+% Perform the repeated measures ANOVA
+ranovatbl = ranova(rm);
+
+% Display the results
+disp(ranovatbl);
+
+%% 
+dataTbl = table(idSelect', ...
+    'VariableNames', {'neuronID'});
+for i = 1 : length(meanSpikes)
+    iName = ['cluster', num2str(i)];
+    % dataTbl.(iName) = meanSpikes{i}';
+    dataTbl.(iName) = stdSpikes{i}';
+end
+
+% Define the within-subject design
+within = table([1:length(meanSpikes)]', ...
+    'VariableNames', {'clusterID'});
+
+varNames = dataTbl.Properties.VariableNames;
+modelStr = [varNames{2},'-',varNames{end},'~1'];
+% Fit the repeated measures model
+rm = fitrm(dataTbl, modelStr, 'WithinDesign', within);
+
+% Perform the repeated measures ANOVA
+ranovatbl = ranova(rm);
+
+% Display the results
+disp(ranovatbl);
+
+
+
+
+
+
+
 %%                  RUN UMAP / clusters (HDBSCAN or by hand) in GPFA
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Build a set of neural matrices for training gpfa
@@ -898,7 +1476,6 @@ end
 method = 'gpfa';
 runIdx = 1;
 binWidth = 20; % ms
-startInd = ceil(1000* preTime / binWidth); % When the behavior starts (first frame)
 
 % Select number of latent dimensions
 xDim = 8;
@@ -918,12 +1495,10 @@ result = neuralTraj(runIdx, dat, 'method', method, 'xDim', xDim,...
 
 %% Plot the gpfa fits
 figure(430); clf; grid on; hold on
-xlabel('D1'); ylabel('D2'); zlabel('D3')
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 for i = 1 : length(seqTrain)
     trialID = seqTrain(i).trialId;
-    plot3(seqTrain(i).xorth(1,:), seqTrain(i).xorth(2,:), seqTrain(i).xorth(3,:), '.-', 'Color', colors(trialID,:), 'LineWidth', 2, 'MarkerSize', 10')
-    % scatter3(seqTrain(i).xorth(1,1), seqTrain(i).xorth(2,1), seqTrain(i).xorth(3,1), 40, colors(trialID,:), 'filled')
-    % scatter3(seqTrain(i).xorth(1,startInd), seqTrain(i).xorth(2,startInd), seqTrain(i).xorth(3,startInd), 100, colors(trialID,:), 'filled')
+    plot3(seqTrain(i).xorth(dimPlot(1),:), seqTrain(i).xorth(dimPlot(2),:), seqTrain(i).xorth(dimPlot(3),:), '.-', 'Color', colors(trialID,:), 'LineWidth', 2, 'MarkerSize', 10')
 end
 
 
