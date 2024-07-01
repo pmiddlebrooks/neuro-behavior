@@ -26,5 +26,6 @@ for i = 1 : length(pathsToUpdate)
     system('git push origin main');
     pause(5)
 end
-cd 'E:/Projects/neuro-behavior/src'
+cd(pathsToUpdate{1})
+cd src/
 end
