@@ -460,8 +460,8 @@ for i = 1:length(kernelFunctions)
 
     % Train the SVM model using cross-validation
     % svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t);
-    svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t);
-    % svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t);
+    % svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t);
+    svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t);
     
     % Compute cross-validation accuracy
     % cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
@@ -476,7 +476,8 @@ toc
 
 % Use the best model to make predictions
 svmBhvID = bhvID(svmInd);
-svmProj = projSelect(svmInd, 1:3);
+% svmProj = projSelect(svmInd, :);
+svmProj = dataMat(svmInd,idSelect);
 
 predictedLabels = predict(svmModel, svmProj);
 
