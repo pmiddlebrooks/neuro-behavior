@@ -1,7 +1,8 @@
 %%                     Compare neuro-behavior in UMAP spaces
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+% cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+cd '/Users/paulmiddlebrooks/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 
 opts = neuro_behavior_options;
 opts.minActTime = .16;
@@ -45,7 +46,7 @@ projectionsDS = projDS(1:end-shiftFrame, :);
 
 %% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
 selectFrom = 'M56';
-selectFrom = 'DS';
+% selectFrom = 'DS';
 switch selectFrom
     case 'M56'
         projSelect = projectionsM56;
@@ -258,8 +259,8 @@ svmInd = transInd(transID ~= -1);
 
 % Define different kernel functions to try
 % kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
-kernelFunctions = {'polynomial', 'rbf'};
-% kernelFunctions = {'polynomial'};
+% kernelFunctions = {'polynomial', 'rbf'};
+kernelFunctions = {'polynomial'};
 
 % Initialize variables to store results
 bestCVAccuracy = 0;
@@ -306,6 +307,50 @@ accuracy = sum(predictedLabels == categoryLabels) / length(categoryLabels) * 100
 fprintf('Overall Accuracy: %.2f%%\n', accuracy);
 
 
+%% Train model on all transition data - how well does it fit? (without cross-validation)
+svmInd = transInd(transID ~= -1);
+tic
+
+% Define different kernel functions to try
+% kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
+% kernelFunctions = {'polynomial', 'rbf'};
+kernelFunctions = {'polynomial'};
+
+% Initialize variables to store results
+bestCVAccuracy = 0;
+bestKernel = '';
+
+% Perform cross-validation for each kernel
+for i = 1:length(kernelFunctions)
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
+
+    % Train the SVM model using cross-validation
+    % svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t);
+    svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t);
+    % svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t);
+    
+    % % Compute cross-validation accuracy
+    % cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+    % % Display the best model and its kernel function
+    % fprintf('Kernel: %s\n', kernelFunctions{i});
+    % fprintf('Trained data Accuracy: %.2f%%\n', cvAccuracy * 100);
+
+end
+
+% The bestModel variable now contains the trained model with the best kernel
+toc
+%
+% Use the best model to make predictions
+svmBhvID = bhvID(svmInd);
+svmProj = projSelect(svmInd, 1:3);
+% svmProj = dataMat(svmInd, idSelect);
+
+predictedLabels = predict(svmModel, svmProj);
+
+% Calculate and display the overall accuracy
+accuracy = sum(predictedLabels == svmBhvID) / length(svmBhvID) * 100;
+fprintf('Overall Accuracy: %.2f%%\n', accuracy);
 
 %% Expected accuracy for randomly choosing 
 
@@ -419,19 +464,19 @@ for i = 1:length(kernelFunctions)
     % svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5); % All UMAP dimensions
     % svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t, 'KFold', 5); % Full neural space
 
-    % Compute cross-validation accuracy
-    cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
-
-    % Display the best model and its kernel function
-    fprintf('Kernel: %s\n', kernelFunctions{i});
-    fprintf('Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
-
-    % Check if this model is the best one so far
-    if cvAccuracy > bestCVAccuracy
-        bestCVAccuracy = cvAccuracy;
-        bestModel = svmModel;
-        bestKernel = kernelFunctions{i};
-    end
+    % % Compute cross-validation accuracy
+    % cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
+    % 
+    % % Display the best model and its kernel function
+    % fprintf('Kernel: %s\n', kernelFunctions{i});
+    % fprintf('Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
+    % 
+    % % Check if this model is the best one so far
+    % if cvAccuracy > bestCVAccuracy
+    %     bestCVAccuracy = cvAccuracy;
+    %     bestModel = svmModel;
+    %     bestKernel = kernelFunctions{i};
+    % end
 end
 
 % Display the best model and its kernel function
@@ -463,17 +508,17 @@ for i = 1:length(kernelFunctions)
     % svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t);
     svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t);
     
-    % Compute cross-validation accuracy
+    % % Compute cross-validation accuracy
     % cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
-    % Display the best model and its kernel function
-    fprintf('Kernel: %s\n', kernelFunctions{i});
-    fprintf('Trained data Accuracy: %.2f%%\n', cvAccuracy * 100);
+    % % Display the best model and its kernel function
+    % fprintf('Kernel: %s\n', kernelFunctions{i});
+    % fprintf('Trained data Accuracy: %.2f%%\n', cvAccuracy * 100);
 
 end
 
 % The bestModel variable now contains the trained model with the best kernel
 toc
-
+%
 % Use the best model to make predictions
 svmBhvID = bhvID(svmInd);
 % svmProj = projSelect(svmInd, :);
