@@ -419,7 +419,7 @@ svmIndRand = svmIndPos(randperm(length(svmIndPos)));
 svmInd = svmIndRand;
 kernelFunction = 'polynomial';
 
-    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction); 
 
     % Train the SVM model using cross-validation            
     svmModel = fitcecoc(projSelect(svmIndRand,:), bhvID(svmIndRand), 'Learners', t);
