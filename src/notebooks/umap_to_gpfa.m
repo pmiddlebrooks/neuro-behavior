@@ -12,6 +12,8 @@ opts.frameSize = .1;
 
 getDataType = 'all';
 get_standard_data
+
+
 %%
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
@@ -167,7 +169,7 @@ fprintf('Overall Accuracy: %.2f%%\n', accuracy);
 
 
 
-%% Expected accuracy for randomly choosing 
+%% Expected accuracy for randomly choosing
 
 randomPredict = svmBhvID(randperm(length(svmBhvID)));
 
@@ -213,16 +215,23 @@ fprintf('Randomized Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
 % that last one frame)
 
 transInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
-
+% transInd = transInd + 1;
 transID = bhvID(transInd + 1);  % behavior ID being transitioned into
 transIDInd = transInd + 1; % The indices of the bevhior ID being transitioned into
+
+% Adjust which bin to plot (and train SVN on below)
+% transInd = transInd + 1;
+
+transID = [transID; transID];
+transInd = [transInd; transInd];
+transIDInd = [transIDInd; transIDInd];
 
 colors = colors_for_behaviors(codes);
 colorsForPlot = arrayfun(@(x) colors(x,:), transID + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
 figure(260); clf; hold on;
-titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleM = ['UMAP M56 ', num2str(nComponents), 'D transitions bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM)
 if nComponents > 2
     scatter3(projectionsM56(transInd, dimPlot(1)), projectionsM56(transInd, dimPlot(2)), projectionsM56(transInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
@@ -231,12 +240,12 @@ elseif nComponents == 2
 end
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-% saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 
 
 % figure(221+i); clf; hold on;
 figure(261); clf; hold on;
-titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = ['UMAP DS ', num2str(nComponents), 'D transitions bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 if nComponents > 2
     scatter3(projectionsDS(transInd, dimPlot(1)), projectionsDS(transInd, dimPlot(2)), projectionsDS(transInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
@@ -245,7 +254,7 @@ elseif nComponents == 2
 end
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 %
 
 %%                  SVM classifier to predict behavior ID for all transitions only
@@ -259,7 +268,10 @@ tic
 % Assuming projSelect and categoryLabels are already loaded in the workspace
 
 % Get rid of "irrelevant/in-nest"
-svmInd = transIDInd(transID ~= -1); % ID is the 
+svmInd = transIDInd(transID ~= -1); % ID is the
+
+% Adjust which neural bin to use for prediction if you want
+% svmInd = svmInd + 1;
 
 % Define different kernel functions to try
 % kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
@@ -277,6 +289,8 @@ for i = 1:length(kernelFunctions)
 
     % Train the SVM model using cross-validation
     svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5);
+    % svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t, 'KFold', 5);
+    % svmModel = fitcecoc(dataMat(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5);
 
     % Compute cross-validation accuracy
     cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
@@ -294,8 +308,8 @@ for i = 1:length(kernelFunctions)
 end
 
 % Display the best model and its kernel function
-fprintf('Best Kernel for Behavior Transitions: %s\n', bestKernel);
-fprintf('Best Cross-Validation Accuracy: %.2f%%\n', bestCVAccuracy * 100);
+fprintf('%s Best Kernel for Transitions: %s\n', selectFrom, bestKernel);
+fprintf('%s Best Cross-Validation Transitions Accuracy: %.2f%%\n', selectFrom, bestCVAccuracy * 100);
 
 % The bestModel variable now contains the trained model with the best kernel
 toc
@@ -323,6 +337,7 @@ tic
 % kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
 % kernelFunctions = {'polynomial', 'rbf'};
 kernelFunctions = {'polynomial'};
+% kernelFunctions = {'rbf'};
 
 % Perform cross-validation for each kernel
 for i = 1:length(kernelFunctions)
@@ -332,7 +347,7 @@ for i = 1:length(kernelFunctions)
     % Train the SVM model using cross-validation
     svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t);
     % svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t);
-    % svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t);   
+    % svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t);
 end
 
 % The bestModel variable now contains the trained model with the best kernel
@@ -373,25 +388,23 @@ for i = 2 : length(codes)
     axes(ax(i-1))
     bar(barCodes, N, 'b', 'FaceAlpha', .5);
     iTitle = sprintf('%s (%d): %.2f', behaviors{i}, codes(i), iAccuracy(i-1));
-title(iTitle, 'interpreter', 'none'); 
+    title(iTitle, 'interpreter', 'none');
 end
-fitType = 'UMAP 1-3';
-fitType = 'NeuralSpace';
-    iTitle = sprintf('%s %s transitions errors due to other behaviors', selectFrom, fitType);
+fitType = 'UMAP 1-8';
+% fitType = 'NeuralSpace';
+iTitle = sprintf('%s %s transitions errors due to other behaviors', selectFrom, fitType);
 sgtitle(iTitle)
-titleE = [selectFrom, ' ',fitType, ' transitions mislabeled as others'];
-saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
+titleW = [selectFrom, ' ',fitType, ' transitions mislabeled as others'];
+saveas(gcf, fullfile(paths.figurePath, [titleW, '.png']), 'png')
 
 figure(55);
 bar(codes(2:end), iAccuracy);
 xticks(0:codes(end))
 ylim([0 1])
-% xticklabels({strjoin(behaviors(2:end), ',')});
-% quotedStrings = cellfun(@(s) ['''', s, ''''], behaviors(2:end), 'UniformOutput', false);
-    % bhvLabel = strjoin(quotedStrings, ',');
-% xticklabels(bhvLabel);
-title([selectFrom, ' ',fitType, ' transitions % accuracy for each behavior'])
-titleE = [selectFrom, ' ',fitType, ' transitions % decoding accuracy for each behavior'];
+% bvhLabels = behaviors(2:end)
+xticklabels(bhvLabels)
+title([selectFrom, ' ',fitType, ' transitions accuracy for each behavior'])
+titleE = [selectFrom, ' ',fitType, ' transitions decoding accuracy for each behavior'];
 saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
 
 %% --------------------------------------------
@@ -401,7 +414,7 @@ colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
 
 figure(821); clf; hold on;
-titleD = ['Predicted UMAP ', selectFrom,' ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = ['Predicted UMAP ', selectFrom,' ', num2str(nComponents), 'D transitions bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 if nComponents > 2
     scatter3(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), projSelect(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
@@ -410,23 +423,23 @@ elseif nComponents == 2
 end
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 %
 
 %% Randomize labels to get chance level SVM accuracy
-svmIndPos = find(svmInd);
-svmIndRand = svmIndPos(randperm(length(svmIndPos)));
-svmInd = svmIndRand;
+% svmIndPos = find(svmInd);
+svmIndRand = svmInd(randperm(length(svmInd)));
 kernelFunction = 'polynomial';
+% kernelFunction = 'rbf';
 
-    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction); 
+t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
 
-    % Train the SVM model using cross-validation            
-    svmModel = fitcecoc(projSelect(svmIndRand,:), bhvID(svmIndRand), 'Learners', t);
-    % svmModel = fitcecoc(projSelect(svmIndRand,1:3), bhvID(svmIndRand), 'Learners', t);
-    % svmModel = fitcecoc(dataMat(svmIndRand,idSelect), bhvID(svmIndRand), 'Learners', t);
+% Train the SVM model using cross-validation
+svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmIndRand), 'Learners', t);
+% svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmIndRand), 'Learners', t);
+% svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmIndRand), 'Learners', t);
 
-    % Use the best model to make predictions
+% Use the best model to make predictions
 svmBhvID = bhvID(svmIndRand);
 svmProj = projSelect(svmIndRand, :);
 % svmProj = projSelect(svmInd, 1:3);
@@ -438,7 +451,7 @@ predictedLabels = predict(svmModel, svmProj);
 accuracy = sum(predictedLabels == svmBhvID) / length(svmBhvID) * 100;
 fprintf('%s Randomized Transitions Overall Accuracy: %.2f%%\n', selectFrom, accuracy);
 
-%% Expected accuracy for randomly choosing 
+%% Expected accuracy for randomly choosing
 
 randomPredict = svmBhvID(randperm(length(svmBhvID)));
 
@@ -457,22 +470,6 @@ expectedAccuracy = sum(proportions .^ 2);
 % Display the result
 fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100);
 
-%% Randomize labels to get chance level SVM accuracy:  transitions only
-svmIndPos = find(svmInd);
-svmIndRand = svmIndPos(randperm(length(svmIndPos)));
-kernelFunction = bestKernel;
-
-% Set SVM template with the current kernel
-t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
-
-% Train the SVM model using cross-validation
-svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmIndRand), 'Learners', t, 'KFold', 5);
-
-% Compute cross-validation accuracy
-cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
-
-% Display the best model and its kernel function
-fprintf('Randomized Cross-Validation Accuracy: %.2f%%\n', cvAccuracy * 100);
 
 
 
@@ -502,7 +499,7 @@ colorsForPlot = arrayfun(@(x) colors(x,:), withinID + 2, 'UniformOutput', false)
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
 figure(270); clf; hold on;
-titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleM = ['UMAP M56 ', num2str(nComponents), 'D within-behavior bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM)
 if nComponents > 2
     scatter3(projectionsM56(withinInd, dimPlot(1)), projectionsM56(withinInd, dimPlot(2)), projectionsM56(withinInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
@@ -515,7 +512,7 @@ saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 
 
 figure(271); clf; hold on;
-titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = ['UMAP DS ', num2str(nComponents), 'D within-behavior bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 if nComponents > 2
     scatter3(projectionsDS(withinInd, dimPlot(1)), projectionsDS(withinInd, dimPlot(2)), projectionsDS(withinInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
@@ -541,12 +538,11 @@ svmInd = withinInd(withinID ~= -1);
 
 % Define different kernel functions to try
 % kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
-% kernelFunctions = {'polynomial', 'rbf'};
 kernelFunctions = {'polynomial'};
 
 % Initialize variables to store results
 bestCVAccuracy = 0;
-bestKernel = '';
+bestKernel = ''; 
 
 % Perform cross-validation for each kernel
 for i = 1:length(kernelFunctions)
@@ -554,8 +550,8 @@ for i = 1:length(kernelFunctions)
     t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
 
     % Train the SVM model using cross-validation
-    svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t, 'KFold', 5);  % Dimensions 1:3
-    % svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5); % All UMAP dimensions
+    % svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t, 'KFold', 5);  % Dimensions 1:3
+    svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5); % All UMAP dimensions
     % svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t, 'KFold', 5); % Full neural space
 
     % Compute cross-validation accuracy
@@ -575,8 +571,8 @@ end
 
 % Display the best model and its kernel function
 % fprintf('SVM on neural data (not UMAP):\n');
-fprintf('Best Kernel for Within Behaviors: %s\n', bestKernel);
-fprintf('Best Cross-Validation Accuracy: %.2f%%\n', bestCVAccuracy * 100);
+fprintf('%s Best Kernel for Within Behaviors: %s\n', selectFrom, bestKernel);
+fprintf('%s Best Cross-Validation Accuracy: %.2f%%\n', selectFrom, bestCVAccuracy * 100);
 toc
 
 %% Train model on all data - how well does it fit? (without cross-validation)
@@ -592,20 +588,20 @@ for i = 1:length(kernelFunctions)
     % Set SVM template with the current kernel
     t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
 
-    % Train the SVM model using cross-validation            
-    % svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t);
+    % Train the SVM model using cross-validation
+    svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t);
     % svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmInd), 'Learners', t);
-    svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t);
-    
+    % svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmInd), 'Learners', t);
+
 end
 
 % The bestModel variable now contains the trained model with the best kernel
 %
 % Use the best model to make predictions
 svmBhvID = bhvID(svmInd);
-% svmProj = projSelect(svmInd, :);
+svmProj = projSelect(svmInd, :);
 % svmProj = projSelect(svmInd, 1:3);
-svmProj = dataMat(svmInd,idSelect);
+% svmProj = dataMat(svmInd,idSelect);
 
 predictedLabels = predict(svmModel, svmProj);
 
@@ -638,13 +634,13 @@ for i = 2 : length(codes)
     axes(ax(i-1))
     bar(barCodes, N, 'b', 'FaceAlpha', .5);
     iTitle = sprintf('%s (%d): %.2f', behaviors{i}, codes(i), iAccuracy(i-1));
-title(iTitle, 'interpreter', 'none'); 
+    title(iTitle, 'interpreter', 'none');
 end
-fitType = 'UMAP 1-3';
-    iTitle = sprintf('%s %s within-behavior errors due to other behaviors', selectFrom, fitType);
+fitType = 'UMAP 1-8';
+iTitle = sprintf('%s %s within-behavior errors due to other behaviors', selectFrom, fitType);
 sgtitle(iTitle)
 titleE = [selectFrom, ' ',fitType, ' within-behavior mislabeled as others'];
-% saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
+saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
 
 figure(55);
 bar(codes(2:end), iAccuracy);
@@ -652,11 +648,11 @@ xticks(0:codes(end))
 ylim([0 1])
 % xticklabels({strjoin(behaviors(2:end), ',')});
 % quotedStrings = cellfun(@(s) ['''', s, ''''], behaviors(2:end), 'UniformOutput', false);
-    % bhvLabel = strjoin(quotedStrings, ',');
+% bhvLabel = strjoin(quotedStrings, ',');
 % xticklabels(bhvLabel);
-title([selectFrom, ' ',fitType, ' within-behavior % accuracy errors for each behavior'])
-titleE = [selectFrom, ' ',fitType, ' within-behavior % decoding accuracy for each behavior'];
-% saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
+title([selectFrom, ' ',fitType, ' within-behavior accuracy errors for each behavior'])
+titleE = [selectFrom, ' ',fitType, ' within-behavior decoding accuracy for each behavior'];
+saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
 
 
 %% --------------------------------------------
@@ -665,7 +661,7 @@ colorsForPlot = arrayfun(@(x) colors(x,:), predictedLabels + 2, 'UniformOutput',
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
 figure(821); clf; hold on;
-titleD = ['Predicted UMAP ', selectFrom, ' ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = ['Predicted UMAP ', selectFrom, ' ', num2str(nComponents), 'D within-behavior bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 if nComponents > 2
     scatter3(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), projSelect(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
@@ -675,10 +671,10 @@ end
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
-%
 
 
-%% Expected accuracy for randomly choosing 
+
+%% Expected accuracy for randomly choosing
 svmBhvID = bhvID(svmInd);
 svmProj = projSelect(svmInd, :);
 
@@ -701,17 +697,17 @@ fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100)
 
 %% Randomize labels to get chance level SVM accuracy
 svmIndPos = find(svmInd);
-svmIndRand = svmIndPos(randperm(length(svmIndPos)));
+svmIndRand = svmInd(randperm(length(svmInd)));
 kernelFunction = 'polynomial';
 
-    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
 
-    % Train the SVM model using cross-validation            
-    % svmModel = fitcecoc(projSelect(svmIndRand,:), bhvID(svmIndRand), 'Learners', t);
-    % svmModel = fitcecoc(projSelect(svmIndRand,1:3), bhvID(svmIndRand), 'Learners', t);
-    svmModel = fitcecoc(dataMat(svmIndRand,idSelect), bhvID(svmIndRand), 'Learners', t);
+% Train the SVM model using cross-validation
+% svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmIndRand), 'Learners', t);
+% svmModel = fitcecoc(projSelect(svmInd,1:3), bhvID(svmIndRand), 'Learners', t);
+svmModel = fitcecoc(dataMat(svmInd,idSelect), bhvID(svmIndRand), 'Learners', t);
 
-    % Use the best model to make predictions
+% Use the best model to make predictions
 svmBhvID = bhvID(svmIndRand);
 % svmProj = projSelect(svmIndRand, :);
 % svmProj = projSelect(svmInd, 1:3);
@@ -1539,9 +1535,9 @@ stdSpikes = cellfun(@std, clusterSpikes, 'UniformOutput', false);
 %% Correlation structures
 edges = -.6 : .02 : .6;
 binCenters = (edges(1:end-1) + edges(2:end)) / 2;
-    returnIdx = tril(true(length(idSelect)), -1);
-    figure(54); clf; hold on;
-    colors = {'r', 'g', 'b'};
+returnIdx = tril(true(length(idSelect)), -1);
+figure(54); clf; hold on;
+colors = {'r', 'g', 'b'};
 for i = 1 : length(meanSpikes)
     rho{i} = corr(clusterSpikes{i});
     rhoPop{i} = rho{i}(returnIdx);
@@ -1573,7 +1569,7 @@ ranovatbl = ranova(rm);
 % Display the results
 disp(ranovatbl);
 
-%% 
+%%
 dataTbl = table(idSelect', ...
     'VariableNames', {'neuronID'});
 for i = 1 : length(meanSpikes)
