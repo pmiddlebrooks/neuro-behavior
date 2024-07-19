@@ -186,7 +186,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'neural')
 
     % which neurons to use in the neural matrix
     opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS | goodCC);
-    opts.useNeurons = find(goodM56 | goodDS);
+    opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
 
     tic
     [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(data, opts);
