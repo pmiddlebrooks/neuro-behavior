@@ -1,8 +1,11 @@
 %%                     Compare neuro-behavior in UMAP spaces
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
-% cd '/Users/paulmiddlebrooks/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
+cd '/Users/paulmiddlebrooks/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+else
+    cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+end
 
 opts = neuro_behavior_options;
 opts.minActTime = .16;
