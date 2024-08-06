@@ -1,5 +1,5 @@
-%%                     Compare neuro-behavior in UMAP spaces
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%      Compare neural activity between mutliple modes of a single behavior
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 % cd '/Users/paulmiddlebrooks/Projects/toolboxes/umapFileExchange (4.4)/umap/'
@@ -13,14 +13,31 @@ opts.frameSize = .1;
 getDataType = 'all';
 get_standard_data
 
+%% Curate behavior labels
+[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
+
+
+
+%% Get the "original" (in 60Hz bins) behavior labels, to match the kinematics file
+paths = get_paths;
+    bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+    bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
+
+
+    opts.dataPath = bhvDataPath;
+    opts.fileName = bhvFileName;
+    dataFull = readtable([opts.dataPath, opts.fileName]);
+
+        % Use a time window of recorded data
+    getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectStart + opts.collectFor));
+    dataWindow = dataFull(getWindow,:);
+    dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
+    bhvID = dataWindow.Code;
+
+
+
 %% Get the kinematics file to re-save for single behaviors
 % bhvDataPath = 'E:/Projects/neuro-behavior/data/processed_behavior/';
-animal = 'ag25290';
-sessionBhv = '112321_1';
-sessionNrn = '112321';
-if strcmp(sessionBhv, '112321_1')
-    sessionSave = '112321';
-end
     bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
     bhvFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000.csv';
 
@@ -36,16 +53,16 @@ concatenatedHeader = headerData(2,:) + "_" + headerData(3,:);
 
 % Now, prepare to read the entire file with custom headers
 % Initialize detectImportOptions again to specify the DataLines and VariableNames
-opts = detectImportOptions(csvFilePath, 'NumHeaderLines', 3); % Skip the first 3 header lines
-opts.VariableNames = matlab.lang.makeValidName(concatenatedHeader); % Make valid MATLAB variable names
+optsImport = detectImportOptions(csvFilePath, 'NumHeaderLines', 3); % Skip the first 3 header lines
+optsImport.VariableNames = matlab.lang.makeValidName(concatenatedHeader); % Make valid MATLAB variable names
 
 % Assuming data starts from the 4th row, adjust VariableTypes if your data differs
-for i = 1:length(opts.VariableTypes)
-    opts = setvartype(opts, repmat({'double'}, 1, length(opts.VariableTypes))); % Assuming all data are type double
+for i = 1:length(optsImport.VariableTypes)
+    optsImport = setvartype(optsImport, repmat({'double'}, 1, length(optsImport.VariableTypes))); % Assuming all data are type double
 end
 
 % Read the CSV data with the new settings
-kinData = readtable(csvFilePath, opts);
+kinData = readtable(csvFilePath, optsImport);
 
 % Display the first few rows of the table to check
 disp(head(kinData));
@@ -55,6 +72,9 @@ disp(head(kinData));
 bhvName = 'locomotion';
 bhvCode = codes(strcmp(behaviors, bhvName));
 
+
+bhvInd = bhvID == bhvCode;
+dataSave = kinData(bhvInd,:);
 
 
 
