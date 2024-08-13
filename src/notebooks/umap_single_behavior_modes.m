@@ -29,11 +29,21 @@ paths = get_paths;
     dataFull = readtable([opts.dataPath, opts.fileName]);
 
         % Use a time window of recorded data
-    getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectStart + opts.collectFor));
-    dataWindow = dataFull(getWindow,:);
-    dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
-    bhvID = dataWindow.Code;
+    % getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectStart + opts.collectFor));
+    % dataWindow = dataFull(getWindow,:);
+    % dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
+    % bhvID = dataWindow.Code;
 
+    %%    
+    % sessionBhv = '112321_2';
+    % bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+    % bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
+    % 
+    % 
+    % opts.dataPath = bhvDataPath;
+    % opts.fileName = bhvFileName;
+    % dataFull2 = readtable([opts.dataPath, opts.fileName]);
+    % 
 
 
 %% Get the kinematics file to re-save for single behaviors
@@ -74,6 +84,9 @@ bhvCode = codes(strcmp(behaviors, bhvName));
 
 % Create a new table with only kinematics during the behavior of interest
 bhvInd = dataFull.Code == bhvCode;
+
+
+% Take all the kinData rows of selected behavior
 dataSave = kinData(bhvInd,:);
 
 
@@ -116,6 +129,23 @@ workDir = 'C:/Users/yttri-lab/Desktop/B-SOID Project/SessionLocomotion/';
 % workDir = 'C:/Users/yttri-lab/Desktop/B-SOID Project/Output/';
 csvFile = [workDir, csvName];
 
-bhvData = readtable(csvFile);
+% Use the 'readtable' function with 'HeaderLines' to skip the first 3 rows
+csvOpts = detectImportOptions(csvFile);
+csvOpts.DataLines = [4 Inf];  % Start reading from the 4th row until the end
+% Specify the columns to read
+csvOpts.SelectedVariableNames = csvOpts.VariableNames([2, 3]);  % Select only 2nd and 3rd columns
 
+bhvData = readtable(csvFile, csvOpts);
+
+% Rename the 3rd column to "Frame60Hz"
+bhvData.Properties.VariableNames{2} = 'Time';
+bhvData.Time = bhvData.Time / opts.fsBhv;
+bhvData.Frame = 1 + floor(bhvData.Time / opts.frameSize);
+
+
+%%
+for i = 2 : length(switches)
+    disp(bhvData(switches(i) - 9 : switches(i) + 10, :))
+    pause
+end
 
