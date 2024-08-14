@@ -7,7 +7,7 @@ cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 1 * 60 * 60; % seconds
+opts.collectFor = 4 * 60 * 60; % seconds
 opts.frameSize = .1;
 
 getDataType = 'all';
@@ -20,36 +20,36 @@ get_standard_data
 
 %% Get the "original" (in 60Hz bins) behavior labels, to match the kinematics file
 paths = get_paths;
-    bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-    bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
+bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
 
 
-    opts.dataPath = bhvDataPath;
-    opts.fileName = bhvFileName;
-    dataFull = readtable([opts.dataPath, opts.fileName]);
+opts.dataPath = bhvDataPath;
+opts.fileName = bhvFileName;
+dataFull = readtable([opts.dataPath, opts.fileName]);
 
-        % Use a time window of recorded data
-    % getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectStart + opts.collectFor));
-    % dataWindow = dataFull(getWindow,:);
-    % dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
-    % bhvID = dataWindow.Code;
+% Use a time window of recorded data
+% getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectStart + opts.collectFor));
+% dataWindow = dataFull(getWindow,:);
+% dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
+% bhvID = dataWindow.Code;
 
-    %%    
-    % sessionBhv = '112321_2';
-    % bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-    % bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
-    % 
-    % 
-    % opts.dataPath = bhvDataPath;
-    % opts.fileName = bhvFileName;
-    % dataFull2 = readtable([opts.dataPath, opts.fileName]);
-    % 
+%%
+% sessionBhv = '112321_2';
+% bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+% bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
+%
+%
+% opts.dataPath = bhvDataPath;
+% opts.fileName = bhvFileName;
+% dataFull2 = readtable([opts.dataPath, opts.fileName]);
+%
 
 
 %% Get the kinematics file to re-save for single behaviors
 % bhvDataPath = 'E:/Projects/neuro-behavior/data/processed_behavior/';
-    bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-    bhvFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000.csv';
+bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+bhvFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000.csv';
 
 % Define the path to your CSV file
 csvFile = [bhvDataPath, bhvFileName];
@@ -119,8 +119,8 @@ fclose(fileID);
 %% GO DO B-SOID TO GENERATE Labeled modes of the behavior, then come back here
 
 
-%% 
-% 
+%%
+%
 % Load to newly labeled modes of the data
 csvName = 'Aug-07-2024_mapping.csv';
 % csvName = 'Aug-07-2024_assign_prob.csv';
@@ -135,15 +135,60 @@ csvOpts.DataLines = [4 Inf];  % Start reading from the 4th row until the end
 % Specify the columns to read
 csvOpts.SelectedVariableNames = csvOpts.VariableNames([2, 3]);  % Select only 2nd and 3rd columns
 
-bhvData = readtable(csvFile, csvOpts);
+dataBhvCsv = readtable(csvFile, csvOpts);
 
 % Rename the 3rd column to "Frame60Hz"
-bhvData.Properties.VariableNames{2} = 'Time';
-bhvData.Time = bhvData.Time / opts.fsBhv;
-bhvData.Frame = 1 + floor(bhvData.Time / opts.frameSize);
+dataBhvCsv.Properties.VariableNames{2} = 'Time';
+dataBhvCsv.Time = dataBhvCsv.Time / opts.fsBhv;
+% bhvData.Frame = 1 + floor(bhvData.Time / opts.frameSize);
 
+dataBhvCsv(dataBhvCsv.Time >= opts.collectFor, :) = [];
+
+%% Plot bouts, each frame color-coded by b-soid label
+boutFrame = [1; find(diff(dataBhvCsv.Time) > .017) + 1];
+boutNumber = zeros(size(dataBhvCsv, 1), 1);
+boutFrameEach = zeros(size(dataBhvCsv, 1), 1);
+for i = 1 : length(boutFrame) - 1
+    boutNumber(boutFrame(i): boutFrame(i+1)-1) = i;
+    boutFrameEach(boutFrame(i): boutFrame(i+1)-1) = 1 : length(boutFrame(i): boutFrame(i+1)-1);
+end
+boutNumber(boutFrame(i+1) : end) = i + 1;
+boutFrameEach(boutFrame(i+1) : end) = 1 : length(boutFrame(i+1):size(dataBhvCsv, 1));
+
+colors = [0 0 1;...
+    0 1 0;...
+1 0 1;...
+    0.8500 0.3250 0.0980];
+colorsForPlot = arrayfun(@(x) colors(x,:), dataBhvCsv.B_SOiDLabels + 1, 'UniformOutput', false);
+colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+
+
+figure(823); clf; hold on
+scatter(boutFrmeEach, boutNumber, colorsForPlot)
+
+
+%% Create a bhvIDMatSingle of behavior labels and frames that matches the frame times of the neural matrix
+changeBhv = [0; diff(dataBhvCsv.B_SOiDLabels)]; % nonzeros at all the indices when a new behavior begins
+changeBhvIdx = find(changeBhv);
+
+dataBhvSingle = table();
+dataBhvSingle.ID = [dataBhvCsv.B_SOiDLabels(1); dataBhvCsv.B_SOiDLabels(changeBhvIdx)];
+dataBhvSingle.StartTime = [dataBhvCsv.Time(1); dataBhvCsv.Time(changeBhvIdx)];
+dataBhvSingle.StartFrame = 1 + floor(dataBhvSingle.StartTime / opts.frameSize);
+
+
+    nFrame = ceil(opts.collectFor / opts.frameSize);
+    % Use StartFrame and DurFrame method:
+    bhvIDMatSingle = int8(zeros(nFrame, 1));
+    for i = 1 : size(dataBhv, 1) - 1
+        iInd = dataBhvSingle.StartFrame(i) : dataBhvSingle.StartFrame(i+1) - 1;
+        bhvIDMatSingle(iInd) = dataBhv.ID(i);
+    end
+    bhvIDMatSingle(iInd(end) + 1 : end) = dataBhvSingle.ID(end);
+disp('done')
 
 %%
+
 for i = 2 : length(switches)
     disp(bhvData(switches(i) - 9 : switches(i) + 10, :))
     pause
