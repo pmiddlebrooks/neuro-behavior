@@ -164,7 +164,13 @@ colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
 
 figure(823); clf; hold on
-scatter(boutFrmeEach, boutNumber, colorsForPlot)
+scatter(boutFrameEach, boutNumber, 15, colorsForPlot, '.')
+% Set the background color of the plot area (axes background)
+ylabel('Bout Number')
+xlabel('Frames (60Hz)')
+title([bhvName, ' modes'])
+ax = gca;  % Get the current axes
+ax.Color = [0.5 0.5 0.5];  % Set the axes background color to gray
 
 
 %% Create a bhvIDMatSingle of behavior labels and frames that matches the frame times of the neural matrix

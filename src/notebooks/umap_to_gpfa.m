@@ -38,7 +38,7 @@ idInd = idDS;
 [projDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
 pause(3); close
 
-%
+%%
 idInd = cell2mat(idAll);
 % rng(1);
 
@@ -51,12 +51,18 @@ idInd = idVS;
 [projVS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
 pause(3); close
 
+
+
+
+
+
 %% --------------------------------------------
 % Shift behavior label w.r.t. neural to account for neuro-behavior latency
 shiftSec = 0;
 shiftFrame = ceil(shiftSec / opts.frameSize);
-
 bhvID = bhvIDMat(1+shiftFrame:end); % Shift bhvIDMat to account for time shift
+
+%%
 projectionsM56 = projM56(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
 projectionsDS = projDS(1:end-shiftFrame, :);
 
@@ -70,9 +76,9 @@ projectionsAll = projAll(1:end-shiftFrame, :);
 
 %% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
 selectFrom = 'M56';
-selectFrom = 'DS';
+% selectFrom = 'DS';
 % selectFrom = 'VS';
-% selectFrom = 'All';
+selectFrom = 'All';
 switch selectFrom
     case 'M56'
         projSelect = projectionsM56;
@@ -262,18 +268,22 @@ preInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
 
 svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
 
-% Adjust which bin(s) to plot (and train SVN on below)
-svmInd = preInd; % + 1; % First bin after transition
+% Pre and/or Post: Adjust which bin(s) to plot (and train SVN on below)
+svmInd = preInd; % First bin after transition
 
-% Comment/uncomment to use more than one bin
-svmID = [svmID; svmID];
+% Pre & Post: Comment/uncomment to use more than one bin
+% svmID = [svmID; svmID];
+% svmInd = [svmInd - 1; svmInd]; % two bins before transition
 svmInd = [svmInd; svmInd + 1]; % Last bin before transition and first bin after
 
-% transWithinLabel = 'transitions pre';
+transWithinLabel = 'transitions pre';
+% transWithinLabel = 'transitions 200ms pre';
 % transWithinLabel = 'transitions post';
 transWithinLabel = 'transitions pre & post';
 
 %% WITHIN-BEHAVIOR of all behaviors (for now, include behaviors that last one frame)
+subsample = 1;
+
 transIndLog = zeros(length(bhvID), 1);
 transIndLog(preInd) = 1;
 
@@ -282,11 +292,41 @@ vec = find(transIndLog);
 transIndLog(vec-1) = 1;
 
 % If you want to remove a bin after behavior onset, do this:
-transIndLog(vec+1) = 1;
+% transIndLog(vec+1) = 1;
 
 svmInd = find(~transIndLog);
 svmID = bhvID(svmInd);
 
+
+% % subsampling for max 1000 frame cutoff
+% if subsample
+%     cutoff = 1000;
+% frameCounts = histcounts(svmID);
+% for i = 2 : length(frameCounts)
+%     iBhvInd = find(svmID == i - 2);
+%     if length(iBhvInd) > cutoff
+%         nRemove = length(iBhvInd) - cutoff;
+%         rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
+%         svmID(rmvBhvInd) = [];
+%         svmInd(rmvBhvInd) = [];
+%     end
+% end
+% end
+
+% subsampling to match single frame transition number
+if subsample
+frameCounts = histcounts(bhvID(preInd + 1));
+
+for i = 2 : length(frameCounts)
+    iBhvInd = find(svmID == i - 2);
+    if length(iBhvInd) > frameCounts(i)
+        nRemove = length(iBhvInd) - frameCounts(i);
+        rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
+        svmID(rmvBhvInd) = [];
+        svmInd(rmvBhvInd) = [];
+    end
+end
+end
 
 transWithinLabel = 'within-behavior';
 
@@ -297,11 +337,17 @@ deleteInd = svmID == -1;
 svmID(deleteInd) = [];
 svmInd(deleteInd) = [];
 
+
+%% Get colors for plotting
 colors = colors_for_behaviors(codes(2:end));
 colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 1, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
 dimPlot = [1 2 3];
+
+
+
+
 
 %% Motor 5/6
 figure(260); clf; hold on;
@@ -356,6 +402,8 @@ saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 
 %%                  SVM classifier to predict behavior ID
 % Script to train an SVM model with different kernels and select the best model
+nDim = 8;
+
 tic
 
 % Define different kernel functions to try
@@ -372,9 +420,8 @@ for i = 1:length(kernelFunctions)
     t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
 
     % Train the SVM model using cross-validation
-    % svmModel = fitcecoc(projSelect(svmInd,1:3), svmID, 'Learners', t, 'KFold', 5);
-    % svmModel = fitcecoc(projSelect(svmInd,:), svmID, 'Learners', t, 'KFold', 5);
-    svmModel = fitcecoc(dataMat(svmInd,:), svmID, 'Learners', t, 'KFold', 5);
+    svmModel = fitcecoc(projSelect(svmInd,1:nDim), svmID, 'Learners', t, 'KFold', 5);
+    % svmModel = fitcecoc(dataMat(svmInd,:), svmID, 'Learners', t, 'KFold', 5);
 
     % Compute cross-validation accuracy
     cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
@@ -403,6 +450,7 @@ sound(y,Fs)
 
 %% Train model on all data - how well does it fit? (without cross-validation)
 tic
+nDim = 8;
 
 % Define different kernel functions to try
 % kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
@@ -410,9 +458,8 @@ kernelFunctions = {'polynomial'};
 % kernelFunctions = {'rbf'};
 
 % Choose which data to model
-% svmProj = projSelect(svmInd, 1:3);
-% svmProj = projSelect(svmInd, :);
-svmProj = dataMat(svmInd, idSelect);
+svmProj = projSelect(svmInd, 1:nDim);
+% svmProj = dataMat(svmInd, idSelect);
 
 % Train model
 for i = 1:length(kernelFunctions)
@@ -433,77 +480,87 @@ fprintf('%s %s Overall Accuracy: %.2f%%\n', selectFrom, transWithinLabel, accura
 load handel
 sound(y,Fs)
 %% Train and test model on single hold-out set
+
+
+for nDim = 3:8
 tic
 
-% Define different kernel functions to try
-% kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
-kernelFunction = 'polynomial';
-% kernelFunctions = {'rbf'};
+    disp('=================================================================')    
+fprintf('\n\n%s %s DIMENSIONS 1 - %d\n\n', selectFrom, transWithinLabel, nDim)  % UMAP Dimensions
+    % fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
 
-% Choose which data to model
-% svmProj = projSelect(svmInd, 1:3);
-% svmProj = projSelect(svmInd, :);
-svmProj = dataMat(svmInd, idSelect);
+    % Choose which data to model
+    svmProj = projSelect(svmInd, 1:nDim);
+    % svmProj = dataMat(svmInd, idSelect);
 
-% Split data into training (80%) and testing (20%) sets
-cv = cvpartition(svmID, 'HoldOut', 0.2);
-trainData = svmProj(training(cv), :);
-trainLabels = svmID(training(cv));
-testData = svmProj(test(cv), :);
-testLabels = svmID(test(cv));
-
-% Train model
-% Set SVM template with the current kernel
-t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
-
-% Train the SVM model using cross-validation
-svmModel = fitcecoc(trainData, trainLabels, 'Learners', t);
-toc
-
-predictedLabels = predict(svmModel, testData);
-
-% Calculate and display the overall accuracy
-accuracy = sum(predictedLabels == testLabels) / length(testLabels) * 100;
-fprintf('%s %s Overall Accuracy: %.2f%%\n', selectFrom, transWithinLabel, accuracy);
-
-load handel
-sound(y,Fs)
+    % Split data into training (80%) and testing (20%) sets
+    cv = cvpartition(svmID, 'HoldOut', 0.2);
+    trainData = svmProj(training(cv), 1:nDim);  % UMAP Dimensions
+    % trainData = svmProj(training(cv), :);  % Neural Space
+    trainLabels = svmID(training(cv));
+    testData = svmProj(test(cv), 1:nDim); % UMAP Dimensions
+    % testData = svmProj(test(cv), :); % Neural Space
+    testLabels = svmID(test(cv));
 
 
-%
-% Randomize labels and Train model on single hold-out set
-tic
-numPermutations = 20;
-permutedAccuracies = zeros(numPermutations, 1);
+    % Define different kernel functions to try
+    % kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
+    kernelFunction = 'polynomial';
 
-for i = 1:numPermutations
+    % Train model
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
 
-    % Shuffle the labels
-    shuffledLabels = trainLabels(randperm(length(trainLabels)));
+    % Train the SVM model using cross-validation
+    svmModel = fitcecoc(trainData, trainLabels, 'Learners', t);
 
-% Set SVM template with the current kernel
-t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
 
-% Train the SVM model on shuffled training data
-svmModelPermuted = fitcecoc(trainData, shuffledLabels, 'Learners', t);
+    predictedLabels = predict(svmModel, testData);
 
-% Predict the labels using observed test data
-predictedLabelsPermuted = predict(svmModelPermuted, testData);
+    % Calculate and display the overall accuracy
+    accuracy = sum(predictedLabels == testLabels) / length(testLabels);
+    fprintf('%s %s Overall Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy);
 
-    % Calculate the permuted accuracy
-    permutedAccuracies(i) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
+    % load handel
+    % sound(y,Fs)
+    toc/60
+
+    %
+    % Randomize labels and Train model on single hold-out set
+    % tic
+    numPermutations = 3;
+    permutedAccuracies = zeros(numPermutations, 1);
+    %
+    for i = 1:numPermutations
+
+        % Shuffle the labels
+        shuffledLabels = trainLabels(randperm(length(trainLabels)));
+
+        % Set SVM template with the current kernel
+        t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+
+        % Train the SVM model on shuffled training data
+        svmModelPermuted = fitcecoc(trainData, shuffledLabels, 'Learners', t);
+
+        % Predict the labels using observed test data
+        predictedLabelsPermuted = predict(svmModelPermuted, testData);
+
+        % Calculate the permuted accuracy
+        permutedAccuracies(i) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
+            fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f%%\n', selectFrom, transWithinLabel, i, permutedAccuracies(i));
+
+    end
+
+    
+
+    % Get the elapsed time
+    toc/60
 end
-
-fprintf('Permuted %s %s Overall Accuracies:\n', selectFrom, transWithinLabel);
-permutedAccuracies
-
 load handel
 sound(y,Fs)
-
-% Get the elapsed time
-elapsedTime = toc
 
 %% Analzyze the predictions vs observed
+% fitType = 'UMAP 1-3';
 % fitType = 'UMAP 1-8';
 fitType = 'NeuralSpace';
 
