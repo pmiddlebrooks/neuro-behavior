@@ -479,7 +479,12 @@ tic
 numPermutations = 20;
 permutedAccuracies = zeros(numPermutations, 1);
 
-for i = 1:numPermutations
+% for i = 1 : numPermutations
+%     randIdx(:,i) = randperm(length(trainLabels));
+% end
+poolID = parpool(4, 'IdleTimeout', Inf);
+parfor i = 1 : permutedAccuracies%length(regLabels)
+% for i = 1:numPermutations
 
     % Shuffle the labels
     shuffledLabels = trainLabels(randperm(length(trainLabels)));
@@ -496,6 +501,7 @@ predictedLabelsPermuted = predict(svmModelPermuted, testData);
     % Calculate the permuted accuracy
     permutedAccuracies(i) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
 end
+delete(poolID)
 
 fprintf('Permuted %s %s Overall Accuracies:\n', selectFrom, transWithinLabel);
 permutedAccuracies
