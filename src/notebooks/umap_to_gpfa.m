@@ -80,8 +80,8 @@ projectionsAll = projAll(1:end-shiftFrame, :);
 
 %% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
 selectFrom = 'M56';
-% selectFrom = 'DS';
-selectFrom = 'Both';
+selectFrom = 'DS';
+% selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
 switch selectFrom
@@ -222,8 +222,8 @@ svmID = bhvID(svmInd);
 %         svmInd(rmvBhvInd) = [];
 %     end
 % end
-% end
 % transWithinLabel = ['within-behavior max frames ', num2str(cutoff)];
+% end
 
 
 % subsampling to match single frame transition number
@@ -239,12 +239,11 @@ if subsample
             svmInd(rmvBhvInd) = [];
         end
     end
+    transWithinLabel = 'within-behavior match transitions';
 end
 
 % choose correct title
 transWithinLabel = 'within-behavior';
-transWithinLabel = 'within-behavior match transitions';
-transWithinLabel = ['within-behavior minBout ', num2str(nMinFrames)];
 
 
 %% IF YOU WANT, GET RID OF DATA FOR WHICH THE BOUTS ARE UNDER A MINIMUM NUMBER OF FRAMES
@@ -291,10 +290,11 @@ rmvSvmInd = intersect(svmInd, rmvIndices);
 svmInd = setdiff(svmInd, rmvSvmInd);
 svmID = bhvID(svmInd);
 
+transWithinLabel = [transWithinLabel, ', minBout ', num2str(nMinFrames)];
 
 
 %% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
-nMinDataPoints = 1000;
+nMinDataPoints = 500;
 
 bhvDataCount = histcounts(svmID);
 rmvBehaviors = find(bhvDataCount < nMinDataPoints) - 2;
@@ -304,7 +304,37 @@ rmvSvmInd = intersect(svmInd, rmvBhvInd);
 svmInd = setdiff(svmInd, rmvSvmInd);
 svmID = bhvID(svmInd);
 
-transWithinLabel = [transWithinLabel, ' min data points ', num2str(nMinDataPoints)];
+transWithinLabel = [transWithinLabel, ', min data points ', num2str(nMinDataPoints)];
+
+
+%% IF YOU WANT, DOWNSAMPLE TO A CERTAIN NUMBER OF DATA POINTS
+%     cutoff = 1000;
+% frameCounts = histcounts(svmID);
+% for i = 2 : length(frameCounts)
+%     iBhvInd = find(svmID == i - 2);
+%     if length(iBhvInd) > cutoff
+%         nRemove = length(iBhvInd) - cutoff;
+%         rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
+%         svmID(rmvBhvInd) = [];
+%         svmInd(rmvBhvInd) = [];
+%     end
+% end
+% transWithinLabel = ['within-behavior max frames ', num2str(cutoff)];
+
+% subsampling to match single frame transition number
+frameCounts = histcounts(svmID);
+downSample = min(frameCounts(frameCounts > 0));
+for i = 2 : length(frameCounts)
+    iBhvInd = find(svmID == i - 2);
+    if ~isempty(iBhvInd)
+        nRemove = length(iBhvInd) - downSample;
+        rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
+        svmID(rmvBhvInd) = [];
+        svmInd(rmvBhvInd) = [];
+    end
+end
+transWithinLabel = [transWithinLabel, ', downsample to ', num2str(downSample), ' data points'];
+
 
 %% Get rid of sleeping/in_nest/irrelavents
 deleteInd = svmID == -1;
@@ -312,6 +342,8 @@ svmID(deleteInd) = [];
 svmInd(deleteInd) = [];
 
 
+%% Keep track of the behavior IDs you end up using
+bhv2Model = unique(svmID);
 
 
 %% Get colors for plotting
@@ -377,8 +409,10 @@ xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel([
 saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
 
 
-%{
+
 %%                  SVM classifier to predict behavior ID
+
+%{
 % Script to train an SVM model with different kernels and select the best model
 nDim = 8;
 
@@ -462,7 +496,7 @@ sound(y,Fs)
 
 
 for nDim = 3:8
-    ticxxxxx
+    tic
 
     % Split data into training (80%) and testing (20%) sets
     cv = cvpartition(svmID, 'HoldOut', 0.2);
@@ -737,163 +771,32 @@ fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100)
 
 % Get data (top of script) if needed
 
-%% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
-selectFrom = 'M56';
-selectFrom = 'DS';
-% selectFrom = 'VS';
-% selectFrom = 'All';
-switch selectFrom
-    case 'M56'
-        projSelect = projectionsM56;
-        projProject = projectionsDS;
-        idSelect = idM56;
-    case 'DS'
-        projSelect = projectionsDS;
-        projProject = projectionsM56;
-        idSelect = idDS;
-    case 'VS'
-        projSelect = projectionsVS;
-        projProject = projectionsDS;
-        idSelect = idVS;
-    case 'All'
-        projSelect = projectionsAll;
-        projProject = projectionsDS;
-        idSelect = cell2mat(idAll);
-end
+%% Go back up top to Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
 
 
-
-%% WITHIN-BEHAVIOR of all behaviors (for now, include behaviors that last one frame)
-subsample = 0;
-
-% Find all time bins preceding all behavior transitions:
-preInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
-
-transIndLog = zeros(length(bhvID), 1);
-transIndLog(preInd) = 1;
-
-% If you want to remove another pre-behavior onset bin, do this:
-vec = find(transIndLog);
-transIndLog(vec-1) = 1;
-
-% If you want to remove a bin after behavior onset, do this:
-% transIndLog(vec+1) = 1;
-
-svmInd = find(~transIndLog);
-svmID = bhvID(svmInd);
-
-
-% % subsampling for max 1000 frame cutoff
-% if subsample
-%     cutoff = 1000;
-% frameCounts = histcounts(svmID);
-% for i = 2 : length(frameCounts)
-%     iBhvInd = find(svmID == i - 2);
-%     if length(iBhvInd) > cutoff
-%         nRemove = length(iBhvInd) - cutoff;
-%         rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-%         svmID(rmvBhvInd) = [];
-%         svmInd(rmvBhvInd) = [];
-%     end
-% end
-% end
-
-% subsampling to match single frame transition number
-if subsample
-    frameCounts = histcounts(bhvID(preInd + 1));
-
-    for i = 2 : length(frameCounts)
-        iBhvInd = find(svmID == i - 2);
-        if length(iBhvInd) > frameCounts(i)
-            nRemove = length(iBhvInd) - frameCounts(i);
-            rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-            svmID(rmvBhvInd) = [];
-            svmInd(rmvBhvInd) = [];
-        end
-    end
-end
-
-transWithinLabel = 'within-behavior';
-
-
-
-%% Get rid of sleeping/in_nest/irrelavents
-deleteInd = svmID == -1;
-svmID(deleteInd) = [];
-svmInd(deleteInd) = [];
-
-
-
-%% (Re-)Train the particular model you want to test on other data
-nDim = 8;
-
-tic
-
-% Split data into training (80%) and testing (20%) sets
-cv = cvpartition(svmID, 'HoldOut', 0.2);
-
-disp('=================================================================')
-
-% UMAP dimension version
-fprintf('\n\n%s %s DIMENSIONS 1 - %d\n\n', selectFrom, transWithinLabel, nDim)  % UMAP Dimensions
-% Choose which data to model
-svmProj = projSelect(svmInd, 1:nDim);
-trainData = svmProj(training(cv), 1:nDim);  % UMAP Dimensions
-testData = svmProj(test(cv), 1:nDim); % UMAP Dimensions
-
-
-% Neural space version
-% fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
-% svmProj = dataMat(svmInd, idSelect);
-% trainData = svmProj(training(cv), :);  % Neural Space
-% testData = svmProj(test(cv), :); % Neural Space
-
-
-
-trainLabels = svmID(training(cv));
-testLabels = svmID(test(cv));
-
-
-% Define different kernel functions to try
-% kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
-kernelFunction = 'polynomial';
-
-% Train model
-% Set SVM template with the current kernel
-t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
-
-% Train the SVM model using cross-validation
-svmModel = fitcecoc(trainData, trainLabels, 'Learners', t);
-
-
-predictedLabels = predict(svmModel, testData);
-
-% Calculate and display the overall accuracy (make sure it matches the
-% original fits to ensure we're modeling the same way)
-accuracy = sum(predictedLabels == testLabels) / length(testLabels);
-fprintf('%s %s Overall Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy);
-
-
-% Get the elapsed time
-toc/60
-load handel
-sound(y,Fs)
+%% Go back up top if needed to (Re-)Train the particular model you want to test on other data
 
 
 %% Use the model to predict single frames going into and out of behavior transitions
 
-frames = -2 : 2; % 2 frames pre to two frames post transition
+frames = -2 : 3; % 2 frames pre to two frames post transition
 
-svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
-%Get rid of sleeping/in_nest/irrelavents
-deleteInd = svmID == -1;
-svmID(deleteInd) = [];
+svmIDTest = bhvID(preInd + 1);  % behavior ID being transitioned into
+svmIndTest = preInd + 1;
+
+% Get rid of behaviors you didn't model
+rmvBhv = setdiff(unique(bhvID), bhv2Model);
+% Find indices in svmID that contain any elements of rmvBhv
+deleteInd = ismember(svmIDTest, rmvBhv);
+
+% Remove the elements from svmID using logical indexing
+svmIDTest(deleteInd) = [];
+svmIndTest(deleteInd) = [];
+
 
 for i = 1 : length(frames)
     % Get relevant frame to test (w.r.t. transition frame)
-    svmIndTest = preInd + frames(i) + 1;
-
-    svmIndTest(deleteInd) = [];
+    svmIndTest = svmIndTest + frames(i);
 
     testData = projSelect(svmIndTest, 1:nDim); % UMAP Dimensions
 
