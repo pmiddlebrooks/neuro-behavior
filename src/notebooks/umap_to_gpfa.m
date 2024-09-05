@@ -63,7 +63,7 @@ pause(3); close
 % Shift behavior label w.r.t. neural to account for neuro-behavior latency
 shiftSec = 0;
 shiftFrame = ceil(shiftSec / opts.frameSize);
-bhvID = bhvIDMat(1+shiftFrame:end); % Shift bhvIDMat to account for time shift
+bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for time shift
 
 %%
 projectionsM56 = projM56(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
@@ -252,7 +252,7 @@ transWithinLabel = 'within-behavior';
 %% IF YOU WANT, GET RID OF DATA FOR WHICH THE BOUTS ARE UNDER A MINIMUM NUMBER OF FRAMES
 
 % Define the minimum number of frames
-nMinFrames = 4;  % The minimum number of consecutive repetitions
+nMinFrames = 6;  % The minimum number of consecutive repetitions
 
 % Find all unique integers in the vector
 uniqueInts = unique(bhvID);
@@ -296,10 +296,29 @@ svmID = bhvID(svmInd);
 transWithinLabel = [transWithinLabel, ', minBout ', num2str(nMinFrames)];
 
 
-%% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
-nMinDataPoints = 500;
+%% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF BOUTS
+nMinBouts = 45;
 
-bhvDataCount = histcounts(svmID);
+% Remove consecutive repetitions
+noRepsVec = svmID([true; diff(svmID) ~= 0]);
+
+% Count instances of each unique integer (each bout)
+[bhvDataCount, ~] = histcounts(noRepsVec, (min(bhvID)-0.5):(max(bhvID)+0.5));
+
+% bhvBoutCount = histcounts(noRepsVec);
+rmvBehaviors = find(bhvDataCount < nMinBouts) - 2;
+
+rmvBhvInd = find(ismember(bhvID, rmvBehaviors));
+rmvSvmInd = intersect(svmInd, rmvBhvInd);
+svmInd = setdiff(svmInd, rmvSvmInd);
+svmID = bhvID(svmInd);
+
+transWithinLabel = [transWithinLabel, ', min bouts ', num2str(nMinBouts)];
+[codes'; bhvDataCount]
+%% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
+nMinDataPoints = 1000;
+
+bhvDataCount = histcounts(svmID, (min(bhvID)-0.5):(max(bhvID)+0.5));
 rmvBehaviors = find(bhvDataCount < nMinDataPoints) - 2;
 
 rmvBhvInd = find(ismember(bhvID, rmvBehaviors));
@@ -308,6 +327,8 @@ svmInd = setdiff(svmInd, rmvSvmInd);
 svmID = bhvID(svmInd);
 
 transWithinLabel = [transWithinLabel, ', min data points ', num2str(nMinDataPoints)];
+[codes'; bhvDataCount]
+
 
 
 %% IF YOU WANT, DOWNSAMPLE TO A CERTAIN NUMBER OF DATA POINTS
@@ -346,7 +367,7 @@ svmInd(deleteInd) = [];
 
 
 %% Keep track of the behavior IDs you end up using
-bhv2Model = unique(svmID);
+bhv2ModelCodes = unique(svmID);
 
 
 %% Get colors for plotting
@@ -497,8 +518,8 @@ sound(y,Fs)
 %}
 %% Train and test model on single hold-out set
 
-
-for nDim = 3:8
+nDim = 8;
+for nDim = 4:2:8
     tic
 
 
@@ -550,7 +571,7 @@ for nDim = 3:8
 
     % Randomize labels and Train model on single hold-out set
     % tic
-    numPermutations = 2;
+    numPermutations = 1;
     permutedAccuracies = zeros(numPermutations, 1);
     %
     for i = 1:numPermutations
@@ -783,17 +804,14 @@ fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100)
 
 %% Use the model to predict single frames going into and out of behavior transitions
 
-frames = -2 : 3; % 2 frames pre to two frames post transition
+frames = -2 : 4; % 2 frames pre to two frames post transition
 
 svmIDTest = bhvID(preInd + 1);  % behavior ID being transitioned into
 svmIndTest = preInd + 1;
 
 % Get rid of behaviors you didn't model
-rmvBhv = setdiff(unique(bhvID), bhv2Model);
-% Find indices in svmID that contain any elements of rmvBhv
+rmvBhv = setdiff(unique(bhvID), bhv2ModelCodes);
 deleteInd = ismember(svmIDTest, rmvBhv);
-
-% Remove the elements from svmID using logical indexing
 svmIDTest(deleteInd) = [];
 svmIndTest(deleteInd) = [];
 
@@ -808,13 +826,43 @@ for i = 1 : length(frames)
 
     % Calculate and display the overall accuracy (make sure it matches the
     % original fits to ensure we're modeling the same way)
-    accuracy = sum(predictedLabels == svmID) / length(svmID);
+    accuracy = sum(predictedLabels == svmIDTest) / length(svmIDTest);
     fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(i), accuracy);
 
 
 end
 
 
+%% Use the model to predict all within-behavior frames
+
+transIndLog = zeros(length(bhvID), 1);
+transIndLog(preInd) = 1;
+
+% If you want to remove another pre-behavior onset bin, do this:
+vec = find(transIndLog);
+transIndLog(vec-1) = 1;
+
+% If you want to remove a bin after behavior onset, do this:
+% transIndLog(vec+1) = 1;
+
+svmIndTest = find(~transIndLog);
+svmIDTest = bhvID(svmIndTest);
+
+% Get rid of behaviors you didn't model
+rmvBhv = setdiff(unique(bhvID), bhv2ModelCodes);
+deleteInd = ismember(svmIDTest, rmvBhv);
+svmIDTest(deleteInd) = [];
+svmIndTest(deleteInd) = [];
+
+
+    testData = projSelect(svmIndTest, 1:nDim); % UMAP Dimensions
+
+    predictedLabels = predict(svmModel, testData);
+
+    % Calculate and display the overall accuracy (make sure it matches the
+    % original fits to ensure we're modeling the same way)
+    accuracy = sum(predictedLabels == svmIDTest) / length(svmIDTest);
+    fprintf('%s Test Within-Behavior Overall Accuracy: %.4f%%\n', selectFrom, accuracy);
 
 
 
