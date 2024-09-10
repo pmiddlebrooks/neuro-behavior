@@ -41,7 +41,13 @@ idInd = idDS;
 [projDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
 pause(3); close
 
-%
+%%
+idInd = cell2mat(idM56, idDS);
+% rng(1);
+
+[projBoth, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
+pause(3); close
+%% Both M56 and DS
 idInd = cell2mat(idAll);
 % rng(1);
 
@@ -70,6 +76,8 @@ projectionsM56 = projM56(1:end-shiftFrame, :); % Remove shiftFrame frames from p
 projectionsDS = projDS(1:end-shiftFrame, :);
 
 %%
+projectionsBoth = projBoth(1:end-shiftFrame, :);
+%%
 projectionsVS = projVS(1:end-shiftFrame, :);
 %%
 projectionsAll = projAll(1:end-shiftFrame, :);
@@ -84,7 +92,7 @@ projectionsAll = projAll(1:end-shiftFrame, :);
 %% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
 selectFrom = 'M56';
 selectFrom = 'DS';
-% selectFrom = 'Both';
+selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
 switch selectFrom
@@ -128,6 +136,7 @@ colors = colors_for_behaviors(codes);
 colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + 2, 'UniformOutput', false);
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
+%%
 figure(220); clf; hold on;
 titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM)
@@ -153,7 +162,21 @@ end
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
-%
+
+%%
+% figure(221+i); clf; hold on;
+figure(221); clf; hold on;
+titleD = ['UMAP Both ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+title(titleD)
+if nComponents > 2
+    scatter3(projectionsBoth(:, dimPlot(1)), projectionsBoth(:, dimPlot(2)), projectionsBoth(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+elseif nComponents == 2
+    scatter(projectionsBoth(:, dimPlot(1)), projectionsBoth(:, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
+end
+grid on;
+xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
+% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+
 
 
 
