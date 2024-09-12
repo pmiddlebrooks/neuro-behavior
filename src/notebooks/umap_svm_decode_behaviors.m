@@ -24,6 +24,8 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 %%
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
+
+
 %% Run UMAPto get projections in low-D space
 umapFrameSize = opts.frameSize;
 nComponents = 8;
@@ -71,6 +73,9 @@ shiftSec = 0;
 shiftFrame = ceil(shiftSec / opts.frameSize);
 bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for time shift
 
+%% IF YOU WANT, COLLAPSE MULTIPLE BEHAVIOR LABELS INTO A SINGLE LABEL
+bhvID(bhvID == 2) = 15;
+
 %%
 projectionsM56 = projM56(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
 projectionsDS = projDS(1:end-shiftFrame, :);
@@ -91,8 +96,8 @@ projectionsAll = projAll(1:end-shiftFrame, :);
 
 %% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
 selectFrom = 'M56';
-selectFrom = 'DS';
-selectFrom = 'Both';
+% selectFrom = 'DS';
+% selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
 switch selectFrom
@@ -216,7 +221,7 @@ transWithinLabel = 'transitions pre';
 % transWithinLabel = 'transitions 200ms pre';
 % transWithinLabel = 'transitions post';
 % transWithinLabel = 'transitions pre & post';
-transWithinLabel = ['transitions pre minBout ', num2str(nMinFrames)];
+% transWithinLabel = ['transitions pre minBout ', num2str(nMinFrames)];
 
 %% WITHIN-BEHAVIOR of all behaviors (for now, include behaviors that last one frame)
 subsample = 0;
@@ -316,7 +321,7 @@ rmvSvmInd = intersect(svmInd, rmvIndices);
 svmInd = setdiff(svmInd, rmvSvmInd);
 svmID = bhvID(svmInd);
 
-transWithinLabel = [transWithinLabel, ', minBout ', num2str(nMinFrames)];
+transWithinLabel = [transWithinLabel, ', minBoutDur ', num2str(nMinFrames)];
 
 
 %% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF BOUTS
@@ -336,10 +341,10 @@ rmvSvmInd = intersect(svmInd, rmvBhvInd);
 svmInd = setdiff(svmInd, rmvSvmInd);
 svmID = bhvID(svmInd);
 
-transWithinLabel = [transWithinLabel, ', min bouts ', num2str(nMinBouts)];
+transWithinLabel = [transWithinLabel, ', minBouts ', num2str(nMinBouts)];
 [codes'; bhvDataCount]
 %% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
-nMinDataPoints = 1000;
+nMinDataPoints = 500;
 
 bhvDataCount = histcounts(svmID, (min(bhvID)-0.5):(max(bhvID)+0.5));
 rmvBehaviors = find(bhvDataCount < nMinDataPoints) - 2;
@@ -349,7 +354,7 @@ rmvSvmInd = intersect(svmInd, rmvBhvInd);
 svmInd = setdiff(svmInd, rmvSvmInd);
 svmID = bhvID(svmInd);
 
-transWithinLabel = [transWithinLabel, ', min data points ', num2str(nMinDataPoints)];
+transWithinLabel = [transWithinLabel, ', minTotalFrames ', num2str(nMinDataPoints)];
 [codes'; bhvDataCount]
 
 
@@ -387,6 +392,7 @@ transWithinLabel = [transWithinLabel, ', downsample to ', num2str(downSample), '
 deleteInd = svmID == -1;
 svmID(deleteInd) = [];
 svmInd(deleteInd) = [];
+
 
 
 %% Keep track of the behavior IDs you end up using
@@ -594,7 +600,7 @@ for nDim = 4:2:8
 
     % Randomize labels and Train model on single hold-out set
     % tic
-    numPermutations = 1;
+    numPermutations = 2;
     permutedAccuracies = zeros(numPermutations, 1);
     %
     for i = 1:numPermutations
@@ -626,10 +632,12 @@ load handel
 sound(y,Fs)
 
 %% Analzyze the predictions vs observed
-% fitType = 'UMAP 1-3';
-% fitType = 'UMAP 1-8';
-fitType = 'NeuralSpace';
 
+% Use above code to establish model to analyze
+
+% fitType = 'UMAP 1-3';
+fitType = ['UMAP 1-', num2str(nDim)];
+% fitType = 'NeuralSpace';
 
 
 monitorPositions = get(0, 'MonitorPositions');
@@ -643,10 +651,13 @@ nPlot = length(codes) - 1;
 
 edges = -.5 : 1 : codes(end)+1;
 for i = 2 : length(codes)
-    iObs = svmID == codes(i);
-    iPred = predictedLabels(iObs);
-    iAccuracy(i-1) = sum(svmID(iObs) == iPred) / sum(iObs);
-    iPredWrong = iPred(svmID(iObs) ~= iPred);
+    % iObs = svmID == codes(i);
+    iObsInd = testLabels == codes(i);
+    iObs = testLabels(iObsInd);
+    iPred = predictedLabels(iObsInd);
+    % iAccuracy(i-1) = sum(svmID(iObs) == iPred) / sum(iObs);
+    iAccuracy(i-1) = sum(iObs == iPred) / length(iObs);
+    iPredWrong = iPred(iObs ~= iPred);
     N = histcounts(iPredWrong, edges, 'Normalization', 'pdf');
     % barCodes = codes(codes ~= codes(i)) + 1;
     barCodes = 0:codes(end);
@@ -656,10 +667,12 @@ for i = 2 : length(codes)
     iTitle = sprintf('%s (%d): %.2f', behaviors{i}, codes(i), iAccuracy(i-1));
     title(iTitle, 'interpreter', 'none');
 end
-iTitle = sprintf('%s %s %s errors due to other behaviors', selectFrom, fitType, transWithinLabel);
+iTitle = sprintf('Errors due to other behaviors: %s %s %s', selectFrom, fitType, transWithinLabel);
 sgtitle(iTitle)
 titleW = [selectFrom, ' ',fitType, ' ', transWithinLabel,' mislabeled as others'];
 saveas(gcf, fullfile(paths.figurePath, [titleW, '.png']), 'png')
+
+%% Accuracies and F-scores
 
 figure(55);
 bar(codes(2:end), iAccuracy);
@@ -668,13 +681,14 @@ ylim([0 1])
 % bvhLabels = behaviors(2:end)
 % xticklabels(bhvLabels)
 % xtickangle(45);
-title([selectFrom, ' ',fitType, ' ', transWithinLabel, ' accuracy for each behavior'])
-titleE = [selectFrom, ' ',fitType, ' ', transWithinLabel, ' decoding accuracy for each behavior'];
+title(['Accuracy for each behavior- ', selectFrom, ' ',fitType, ' ', transWithinLabel])
+titleE = ['Accuracy for each behavior- ', selectFrom, ' ',fitType, ' ', transWithinLabel];
 saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
 
 % F1 score
 % Initialize arrays to store precision, recall, and F1 scores for each label
-observedLabels = svmID;
+% observedLabels = svmID;
+observedLabels = testLabels;
 uniqueLabels = unique(observedLabels);
 precision = zeros(size(uniqueLabels));
 recall = zeros(size(uniqueLabels));
@@ -721,11 +735,13 @@ end
 % disp(resultsTable);
 
 figure(56);
-bar(codes(2:end), f1Score);
-xticks(0:codes(end))
+% bar(codes(2:end), f1Score);
+% xticks(0:codes(end))
+bar(uniqueLabels, f1Score);
+xticks(uniqueLabels)
 ylim([0 1])
-title([selectFrom, ' ',fitType, ' ', transWithinLabel, ' F1 score for each behavior'])
-titleE = [selectFrom, ' ',fitType, ' ', transWithinLabel, ' F1 score for each behavior'];
+title([' F1 scores- ', selectFrom, ' ',fitType, ' ', transWithinLabel])
+titleE = [' F1 scores- ', selectFrom, ' ',fitType, ' ', transWithinLabel];
 saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
 %% --------------------------------------------
 % Plot predictions
@@ -826,7 +842,7 @@ fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100)
 
 
 %% Use the model to predict single frames going into and out of behavior transitions
-
+fprintf('\nPredicting each frame going into transitions:\n')
 frames = -2 : 4; % 2 frames pre to two frames post transition
 
 svmIDTest = bhvID(preInd + 1);  % behavior ID being transitioned into
@@ -838,7 +854,7 @@ deleteInd = ismember(svmIDTest, rmvBhv);
 svmIDTest(deleteInd) = [];
 svmIndTest(deleteInd) = [];
 
-
+accuracy = zeros(length(frames), 1);
 for i = 1 : length(frames)
     % Get relevant frame to test (w.r.t. transition frame)
     svmIndTest = svmIndTest + frames(i);
@@ -849,8 +865,8 @@ for i = 1 : length(frames)
 
     % Calculate and display the overall accuracy (make sure it matches the
     % original fits to ensure we're modeling the same way)
-    accuracy = sum(predictedLabels == svmIDTest) / length(svmIDTest);
-    fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(i), accuracy);
+    accuracy(i) = sum(predictedLabels == svmIDTest) / length(svmIDTest);
+    fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(i), accuracy(i));
 
 
 end

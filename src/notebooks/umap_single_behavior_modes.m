@@ -121,7 +121,7 @@ fclose(fileID);
 
 %%
 %
-% Load to newly labeled modes of the data
+% Load newly labeled modes of the data
 csvName = 'Aug-07-2024_mapping.csv';
 % csvName = 'Aug-07-2024_assign_prob.csv';
 csvName = 'BSOID/Aug-07-2024labels_pose_60Hz2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000_locomotion.csv';
@@ -199,4 +199,19 @@ for i = 2 : length(switches)
     disp(bhvData(switches(i) - 9 : switches(i) + 10, :))
     pause
 end
+
+
+
+
+
+
+
+
+
+
+
+
+%% Analyses
+
+minProp = .7; % Get bouts that have at least minProp proportion in one mode.
 
