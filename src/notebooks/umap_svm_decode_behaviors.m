@@ -10,11 +10,20 @@ end
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 1 * 60 * 60; % seconds
+opts.collectFor = 60 * 60; % seconds
 opts.frameSize = .1;
 
 getDataType = 'all';
 get_standard_data
+
+
+%% for plotting consistency
+%
+monitorPositions = get(0, 'MonitorPositions');
+monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
+monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
+
 
 %%
 bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
@@ -26,43 +35,6 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 
 
-%% Run UMAPto get projections in low-D space
-umapFrameSize = opts.frameSize;
-nComponents = 8;
-
-idInd = idM56;
-% rng(1);
-[projM56, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
-pause(3); close
-
-
-idInd = idDS;
-% rng(1);
-% rng('shuffle');
-% randSub = randperm(length(idDS), length(idM56));
-% idInd = idDS(randSub);
-[projDS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
-pause(3); close
-
-% Both M56 and DS
-% idInd = cell2mat(idM56, idDS);
-idInd = [idM56, idDS];
-% rng(1);
-
-[projBoth, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
-pause(3); close
-%% Both M56 and DS
-idInd = cell2mat(idAll);
-% rng(1);
-
-[projAll, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
-pause(3); close
-%%
-idInd = idVS;
-% rng(1);
-
-[projVS, ~, ~, ~] = run_umap(dataMat(:, idInd), 'n_components', nComponents, 'randomize', false);
-pause(3); close
 
 
 
@@ -72,486 +44,561 @@ pause(3); close
 
 
 
-%% --------------------------------------------
-% Shift behavior label w.r.t. neural to account for neuro-behavior latency
-shiftSec = 0;
-shiftFrame = ceil(shiftSec / opts.frameSize);
-bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for time shift
+%% =============================================================================
+% --------    RUN UMAP SVM FITS FOR VARIOUS CONDITIONS ON VARIOUS DATA
+% =============================================================================
+
+% Select which data to run analyses on, UMAP dimensions, etc
+
+forDim = 2:8; % Loop through these dimensions to fit UMAP
+% forDim = 3; % Loop through these dimensions to fit UMAP
+newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 
 
-%%
-projectionsM56 = projM56(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
-projectionsDS = projDS(1:end-shiftFrame, :);
+% Change these (and check their sections below) to determine which
+% variables to test
+% ==========================
 
-%%
-projectionsBoth = projBoth(1:end-shiftFrame, :);
-%%
-projectionsVS = projVS(1:end-shiftFrame, :);
-%%
-projectionsAll = projAll(1:end-shiftFrame, :);
+% Modeling variables
+nPermutations = 1; % How many random permutations to run to compare with best fit model?
+accuracy = zeros(length(forDim), 1);
+accuracyPermuted = zeros(length(forDim), nPermutations);
+
+% Apply to all:
+% -------------
+plotFullMap = 0;
+plotFullModelData = 1;
+plotModelData = 1;
+changeBhvLabels = 0;
+
+% Transition or within variables
+% -------------------------
+% transOrWithin = 'trans';
+transOrWithin = 'within';
+matchTransitionCount = 0;
+minFramePerBout = 0;
+
+% Apply to all:
+% --------------
+collapseBhv = 0;
+minBoutNumber = 0;
+downSampleBouts = 0;
+minFrames = 0;
+downSampleFrames = 0;
 
 
-
-
-
-
-
-
-%% Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
 switch selectFrom
     case 'M56'
-        projSelect = projectionsM56;
-        projProject = projectionsDS;
+        % projSelect = projectionsM56;
+        % projProject = projectionsDS;
         idSelect = idM56;
+        figHFull = 260;
+        figHModel = 270;
+        figHFullModel = 280;
     case 'DS'
-        projSelect = projectionsDS;
-        projProject = projectionsM56;
+        % projSelect = projectionsDS;
+        % projProject = projectionsM56;
         idSelect = idDS;
+        figHFull = 261;
+        figHModel = 271;
+        figHFullModel = 281;
     case 'Both'
-        projSelect = [projectionsM56; projectionsDS];
+        % projSelect = [projectionsM56; projectionsDS];
         idSelect = [idM56, idDS];
+        figHFull = 262;
+        figHModel = 272;
+        figHFullModel = 282;
     case 'VS'
-        projSelect = projectionsVS;
-        projProject = projectionsDS;
+        % projSelect = projectionsVS;
+        % projProject = projectionsDS;
         idSelect = idVS;
+        figHFull = 263;
+        figHModel = 273;
+        figHFullModel = 283;
     case 'All'
-        projSelect = projectionsAll;
-        projProject = projectionsDS;
+        % projSelect = projectionsAll;
+        % projProject = projectionsDS;
         idSelect = cell2mat(idAll);
+        figHFull = 264;
+        figHModel = 274;
+        figHFullModel = 284;
 end
 
-% Choose colors: alter this to change how many colors (clusters) you want to use
-colors = three_color_heatmap([1 0 0],[0 .7 0], [0 0 1], 3);
 
+% Some figure properties
+allFontSize = 12;
 
 
+for k = 1:length(forDim)
+    iDim = forDim(k);
+    nUmapDim = iDim;
+    fitType = ['UMAP ', num2str(iDim), 'D'];
+    % fitType = 'NeuralSpace';
 
 
+    %% Run UMAPto get projections in low-D space
+    % if runAll
+    if newUmapModel
+        umapFrameSize = opts.frameSize;
 
-
-
-
-%% --------------------------------------------
-% Plot FULL TIME OF ALL BEHAVIORS
-dimPlot = [1 2 3];
-
-colors = colors_for_behaviors(codes);
-colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + 2, 'UniformOutput', false);
-colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-
-%%
-figure(220); clf; hold on;
-titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-title(titleM)
-if nComponents > 2
-    scatter3(projectionsM56(:, dimPlot(1)), projectionsM56(:, dimPlot(2)), projectionsM56(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
-    scatter(projectionsM56(:, dimPlot(1)), projectionsM56(:, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
-end
-grid on;
-xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-% saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
-
-
-% figure(221+i); clf; hold on;
-figure(221); clf; hold on;
-titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-title(titleD)
-if nComponents > 2
-    scatter3(projectionsDS(:, dimPlot(1)), projectionsDS(:, dimPlot(2)), projectionsDS(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
-    scatter(projectionsDS(:, dimPlot(1)), projectionsDS(:, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
-end
-grid on;
-xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
-
-%%
-% figure(221+i); clf; hold on;
-figure(221); clf; hold on;
-titleD = ['UMAP Both ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-title(titleD)
-if nComponents > 2
-    scatter3(projectionsBoth(:, dimPlot(1)), projectionsBoth(:, dimPlot(2)), projectionsBoth(:, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
-    scatter(projectionsBoth(:, dimPlot(1)), projectionsBoth(:, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
-end
-grid on;
-xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-% saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-%% --------------------------------------------------------------------------------------------------------------
-% -----------------     TWEAK THE BEHAVIOR LABELS IF YOU WANT       -----------------
-% --------------------------------------------------------------------------------------------------------------
-bhvToChange = [1, 15];
-newBhvCode = 16;
-minDurFrames = 4;
-
-for i = 1 : length(bhvToChange)
-
-valIndices = (bhvID == bhvToChange(i));
-
-% Identify the start and end of stretches of the target value
-diffIndices = [false; diff(valIndices) ~= 0]; % Find where the value changes
-startIndices = find(diffIndices & valIndices); % Starts of stretches
-endIndices = find(diffIndices & ~valIndices) - 1; % Ends of stretches
-
-% Handle case where the last stretch runs until the end of the vector
-if isempty(endIndices) || endIndices(end) < numel(bhvID) && valIndices(end)
-    endIndices = [endIndices; numel(bhvID)];
-end
-
-% Calculate the durations of each stretch
-durations = endIndices - startIndices + 1;
-
-% Get the indices of stretches with durations <= 2
-shortBhvs = find(durations <= minDurFrames);
-
-% Optionally, get the specific indices for these stretches
-shortIndices = [];
-for i = 1:length(shortBhvs)
-    shortIndices = [shortIndices, startIndices(shortBhvs(i)):endIndices(shortBhvs(i))];
-end
-
-bhvID(shortIndices) = newBhvCode;
-end
-
-% figure(2343)
-% histogram(durations)
-
-behaviors = [behaviors, 'meander'];
-
-
-
-
-
-
-%% --------------------------------------------------------------------------------------------------------------
-% ---------------   TRANSITIONS OR WITHIN-BEHAVIOR     ----------------------------------------------------------
-% --------------------------------------------------------------------------------------------------------------
-
-% Find all time bins preceding all behavior transitions:
-
-preInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
-
-%% TRANSITIONS of all behaviors (for now, include behaviors that last one frame)
-% svmID: vector of category labels for each data point to be analyzed/fit
-
-svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
-
-% Pre and/or Post: Adjust which bin(s) to plot (and train SVN on below)
-svmInd = preInd; % + 1; % First bin after transition
-
-% Pre & Post: Comment/uncomment to use more than one bin
-svmID = [svmID; svmID];
-% svmInd = [svmInd - 1; svmInd]; % two bins before transition
-svmInd = [svmInd; svmInd + 1]; % Last bin before transition and first bin after
-
-transWithinLabel = 'transitions pre';
-transWithinLabel = 'transitions 200ms pre';
-% transWithinLabel = 'transitions post';
-transWithinLabel = 'transitions pre & post';
-% transWithinLabel = ['transitions pre minBout ', num2str(nMinFrames)];
-
-
-%% WITHIN-BEHAVIOR of all behaviors (for now, include behaviors that last one frame)
-subsample = 0;
-
-transIndLog = zeros(length(bhvID), 1);
-transIndLog(preInd) = 1;
-
-% If you want to remove another pre-behavior onset bin, do this:
-vec = find(transIndLog);
-transIndLog(vec-1) = 1;
-
-% If you want to remove a bin after behavior onset, do this:
-% transIndLog(vec+1) = 1;
-
-svmInd = find(~transIndLog);
-svmID = bhvID(svmInd);
-
-
-% % subsampling for max 1000 frame cutoff
-% if subsample
-%     cutoff = 1000;
-% frameCounts = histcounts(svmID);
-% for i = 2 : length(frameCounts)
-%     iBhvInd = find(svmID == i - 2);
-%     if length(iBhvInd) > cutoff
-%         nRemove = length(iBhvInd) - cutoff;
-%         rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-%         svmID(rmvBhvInd) = [];
-%         svmInd(rmvBhvInd) = [];
-%     end
-% end
-% transWithinLabel = ['within-behavior max frames ', num2str(cutoff)];
-% end
-
-
-% subsampling to match single frame transition number
-if subsample
-    frameCounts = histcounts(bhvID(preInd + 1));
-
-    for i = 2 : length(frameCounts)
-        iBhvInd = find(svmID == i - 2);
-        if length(iBhvInd) > frameCounts(i)
-            nRemove = length(iBhvInd) - frameCounts(i);
-            rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-            svmID(rmvBhvInd) = [];
-            svmInd(rmvBhvInd) = [];
-        end
+        % rng(1);
+        [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', nUmapDim, 'randomize', false);
+        pause(3); close
     end
-    transWithinLabel = 'within-behavior match transitions';
-end
-
-% choose correct title
-transWithinLabel = 'within-behavior';
+    % end
 
 
 
+    %% --------------------------------------------
+    % Shift behavior label w.r.t. neural to account for neuro-behavior latency
+    shiftSec = 0;
+    shiftFrame = ceil(shiftSec / opts.frameSize);
+    bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for time shift
 
 
-%%
-transWithinLabel = 'within-behavior short inv2-loco as new bhv';
-
-
-
-
-
-
-%% TWEAK THE BEHAVIOR LABELS IF YOU WANT
-
-% IF YOU WANT, COLLAPSE MULTIPLE BEHAVIOR LABELS INTO A SINGLE LABEL
-% bhvID(bhvID == 2) = 15;
-
-% Remove all investigate/locomotion/orients
-rmvIndices = find(svmID == 0 | svmID == 1 | svmID == 2 | svmID == 13 | svmID == 14 | svmID == 15);
-svmID(rmvIndices) = [];
-svmInd(rmvIndices) = [];
-% svmInd
-% rmvSvmInd = intersect(svmInd, rmvIndices);
-% svmInd = setdiff(svmInd, rmvSvmInd);
-% svmID = bhvID(svmInd);
-
-transWithinLabel = [transWithinLabel, ', remove loco-invest-orients'];
+    projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
+    % projectionsM56 = projM56(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
+    % projectionsDS = projDS(1:end-shiftFrame, :);
 
 
 
 
-%% IF YOU WANT, GET RID OF DATA FOR WHICH THE BOUTS ARE UNDER A MINIMUM NUMBER OF FRAMES
 
-% Define the minimum number of frames
-nMinFrames = 6;  % The minimum number of consecutive repetitions
 
-% Find all unique integers in the vector
-uniqueInts = unique(bhvID);
 
-% Initialize a structure to hold the result indices for each unique integer
-rmvIndices = zeros(length(bhvID), 1);
 
-% Loop through each unique integer
-for i = 1:length(uniqueInts)
-    targetInt = uniqueInts(i);  % The current integer to check
+    %% --------------------------------------------
+    % Plot FULL TIME OF ALL BEHAVIORS
+    if plotFullMap
 
-    % Find the indices where the target integer appears
-    indices = find(bhvID == targetInt);
+        colors = colors_for_behaviors(codes);
+        colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + 2, 'UniformOutput', false);
+        colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
-    % Loop through the found indices and check for repetitions
-    startIdx = 1;
-    while startIdx <= length(indices)
-        endIdx = startIdx;
+        % colorsForPlot = [.2 .2 .2];
 
-        % Check how long the sequence of consecutive targetInt values is
-        while endIdx < length(indices) && indices(endIdx + 1) == indices(endIdx) + 1
-            endIdx = endIdx + 1;
+        % Plot on second monitor, half-width
+        plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
+        fig = figure(figHFull);
+        set(fig, 'Position', plotPos); clf; hold on;
+        titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+        title(titleM)
+        if nUmapDim > 2
+            scatter3(projSelect(:, iDim-2), projSelect(:, iDim-1), projSelect(:, iDim), 60, colorsForPlot, 'LineWidth', 2)
+            % Variable to set the viewing angle
+            azimuth = 60;  % Angle for rotation around the z-axis
+            elevation = 20;  % Angle for elevation
+            % Set the viewing angle
+            view(azimuth, elevation);
+            % Set axes ranges based on the data
+            xlim([min(projSelect(:, iDim-2)), max(projSelect(:, iDim-2))]);
+            ylim([min(projSelect(:, iDim-1)), max(projSelect(:, iDim-1))]);
+            zlim([min(projSelect(:, iDim)), max(projSelect(:, iDim))]);
+            set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+            set(findall(fig,'-property','Box'),'Box','off') % optional
+
+        elseif nUmapDim == 2
+            scatter(projSelect(:, 1), projSelect(:, 2), 60, colorsForPlot, 'LineWidth', 2)
+        end
+        grid on;
+        xlabel(['D', num2str(iDim-1)]); ylabel(['D', num2str(iDim)]); zlabel(['D', num2str(dimPlot(3))])
+        % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+        print('-dpdf', fullfile(paths.figurePath, [titleM, '.pdf']), '-bestfit')
+    end
+
+
+
+
+
+
+
+
+
+    %% --------------------------------------------------------------------------------------------------------------
+    % -----------------     TWEAK THE BEHAVIOR LABELS IF YOU WANT       -----------------
+    % --------------------------------------------------------------------------------------------------------------
+    if changeBhvLabels
+        bhvToChange = [1, 15];
+        newBhvCode = 16;
+        minDurFrames = 4;
+
+        for iBhv = 1 : length(bhvToChange)
+
+            valIndices = (bhvID == bhvToChange(iBhv));
+
+            % Identify the start and end of stretches of the target value
+            diffIndices = [false; diff(valIndices) ~= 0]; % Find where the value changes
+            startIndices = find(diffIndices & valIndices); % Starts of stretches
+            endIndices = find(diffIndices & ~valIndices) - 1; % Ends of stretches
+
+            % Handle case where the last stretch runs until the end of the vector
+            if isempty(endIndices) || endIndices(end) < numel(bhvID) && valIndices(end)
+                endIndices = [endIndices; numel(bhvID)];
+            end
+
+            % Calculate the durations of each stretch
+            durations = endIndices - startIndices + 1;
+
+            % Get the indices of stretches with durations <= 2
+            shortBhvs = find(durations <= minDurFrames);
+
+            % Optionally, get the specific indices for these stretches
+            shortIndices = [];
+            for kBhv = 1:length(shortBhvs)
+                shortIndices = [shortIndices, startIndices(shortBhvs(kBhv)):endIndices(shortBhvs(kBhv))];
+            end
+
+            bhvID(shortIndices) = newBhvCode;
         end
 
-        % If the sequence is shorter than nMinFrames, add all its indices to tempIndices
-        if (endIdx - startIdx + 1) < nMinFrames
-            rmvIndices(indices(startIdx:endIdx)) = 1;
+        % figure(2343)
+        % histogram(durations)
+
+        behaviors = [behaviors, 'meander'];
+
+    end
+
+
+
+
+    %% --------------------------------------------------------------------------------------------------------------
+    % ---------------   TRANSITIONS OR WITHIN-BEHAVIOR     ----------------------------------------------------------
+    % --------------------------------------------------------------------------------------------------------------
+    % Find all time bins preceding all behavior transitions:
+
+    preInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
+
+
+    switch transOrWithin
+        case 'trans'
+            %% TRANSITIONS of all behaviors (for now, include behaviors that last one frame)
+            % svmID: vector of category labels for each data point to be analyzed/fit
+
+            svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
+
+            % Pre and/or Post: Adjust which bin(s) to plot (and train SVN on below)
+            svmInd = preInd;% + 1; % First bin after transition
+
+            % Pre & Post: Comment/uncomment to use more than one bin
+            % svmID = [svmID; svmID];
+            % svmInd = [svmInd - 1; svmInd]; % two bins before transition
+            % svmInd = [svmInd; svmInd + 1]; % Last bin before transition and first bin after
+
+            transWithinLabel = 'transitions pre';
+            % transWithinLabel = 'transitions 200ms pre';
+            % transWithinLabel = 'transitions post';
+            % transWithinLabel = 'transitions pre & post';
+            % transWithinLabel = ['transitions pre minBout ', num2str(nMinFrames)];
+
+
+        case 'within'%% WITHIN-BEHAVIOR of all behaviors (for now, include behaviors that last one frame)
+
+            transIndLog = zeros(length(bhvID), 1);
+            transIndLog(preInd) = 1;
+
+            % If you want to remove another pre-behavior onset bin, do this:
+            vec = find(transIndLog);
+            transIndLog(vec-1) = 1;
+
+            % If you want to remove a bin after behavior onset, do this:
+            % transIndLog(vec+1) = 1;
+
+            svmInd = find(~transIndLog);
+            svmID = bhvID(svmInd);
+
+            % choose correct title
+            transWithinLabel = 'within-behavior';
+
+
+
+            if matchTransitionCount
+                frameCounts = histcounts(bhvID(preInd + 1));
+
+                for iBhv = 1 : length(frameCounts)
+                    iBhvInd = find(svmID == iBhv - 2);
+                    if length(iBhvInd) > frameCounts(iBhv)
+                        nRemove = length(iBhvInd) - frameCounts(iBhv);
+                        rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
+                        svmID(rmvBhvInd) = [];
+                        svmInd(rmvBhvInd) = [];
+                    end
+                end
+                transWithinLabel = [transWithinLabel, ' match transitions'];
+            end
+
+
+
+            %
+            if changeBhvLabels
+                transWithinLabel = [transWithinLabel, ' short inv2-loco as new bhv'];
+                % transWithinLabel = 'within-behavior xxxxx';
+            end
+
+
+
+            %% IF YOU WANT, GET RID OF DATA FOR WHICH THE BOUTS ARE UNDER A MINIMUM NUMBER OF FRAMES
+            if minFramePerBout
+                % Define the minimum number of frames
+                nMinFrames = 6;  % The minimum number of consecutive repetitions
+
+                % Find all unique integers in the vector
+                uniqueInts = unique(bhvID);
+
+                % Initialize a structure to hold the result indices for each unique integer
+                rmvIndices = zeros(length(bhvID), 1);
+
+                % Loop through each unique integer
+                for iBhv = 1:length(uniqueInts)
+                    targetInt = uniqueInts(iBhv);  % The current integer to check
+
+                    % Find the indices where the target integer appears
+                    indices = find(bhvID == targetInt);
+
+                    % Loop through the found indices and check for repetitions
+                    startIdx = 1;
+                    while startIdx <= length(indices)
+                        endIdx = startIdx;
+
+                        % Check how long the sequence of consecutive targetInt values is
+                        while endIdx < length(indices) && indices(endIdx + 1) == indices(endIdx) + 1
+                            endIdx = endIdx + 1;
+                        end
+
+                        % If the sequence is shorter than nMinFrames, add all its indices to tempIndices
+                        if (endIdx - startIdx + 1) < nMinFrames
+                            rmvIndices(indices(startIdx:endIdx)) = 1;
+                        end
+
+                        % Move to the next sequence
+                        startIdx = endIdx + 1;
+                    end
+                end
+                rmvIndices = find(rmvIndices);
+
+                % Remove any frames of behaviors that lasted less than nMinFrames
+                rmvSvmInd = intersect(svmInd, rmvIndices);
+                svmInd = setdiff(svmInd, rmvSvmInd);
+                svmID = bhvID(svmInd);
+
+                transWithinLabel = [transWithinLabel, ', minBoutDur ', num2str(nMinFrames)];
+            end
+
+
+    end
+    %% TWEAK THE BEHAVIOR LABELS IF YOU WANT
+    if collapseBhv
+        % IF YOU WANT, COLLAPSE MULTIPLE BEHAVIOR LABELS INTO A SINGLE LABEL
+        % bhvID(bhvID == 2) = 15;
+
+        % Remove all investigate/locomotion/orients
+        rmvIndices = find(svmID == 0 | svmID == 1 | svmID == 2 | svmID == 13 | svmID == 14 | svmID == 15);
+        svmID(rmvIndices) = [];
+        svmInd(rmvIndices) = [];
+        % svmInd
+        % rmvSvmInd = intersect(svmInd, rmvIndices);
+        % svmInd = setdiff(svmInd, rmvSvmInd);
+        % svmID = bhvID(svmInd);
+
+        transWithinLabel = [transWithinLabel, ', remove loco-invest-orients'];
+    end
+    %% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF BOUTS
+    if minBoutNumber
+        nMinBouts = 100;
+
+        % Remove consecutive repetitions
+        noRepsVec = svmID([true; diff(svmID) ~= 0]);
+
+        % Count instances of each unique integer (each bout)
+        [bhvDataCount, ~] = histcounts(noRepsVec, (min(bhvID)-0.5):(max(bhvID)+0.5));
+
+        % bhvBoutCount = histcounts(noRepsVec);
+        rmvBehaviors = find(bhvDataCount < nMinBouts) - 2;
+
+        rmvBhvInd = find(ismember(bhvID, rmvBehaviors)); % find bhvID indices to remove
+        rmvSvmInd = intersect(svmInd, rmvBhvInd); % find those indices that are also in svmInd
+        svmInd = setdiff(svmInd, rmvSvmInd); % the remaining svmInd are the ones to keep (from the original bhvInd)
+        svmID = bhvID(svmInd);
+
+        transWithinLabel = [transWithinLabel, ', minBouts ', num2str(nMinBouts)];
+        [codes'; bhvDataCount]
+    end
+    %% IF YOU WANT, DOWNSAMPLE TO A CERTAIN NUMBER OF BOUTS (THE BEHAVIOR WITH THE MINUMUM NUMBER OF BOUTS)
+    if downSampleBouts
+
+        % Remove consecutive repetitions
+        noRepsVec = svmID([true; diff(svmID) ~= 0]);
+
+        % Count instances of each unique integer (each bout)
+        [bhvDataCount, ~] = histcounts(noRepsVec, (min(bhvID)-0.5):(max(bhvID)+0.5));
+
+        % subsampling to match single frame transition number
+        downSample = min(bhvDataCount(bhvDataCount > 0));
+        for iBhv = 1 : length(bhvDataCount)
+            iBhvInd = find(svmID == iBhv - 2);
+            if ~isempty(iBhvInd)
+                nRemove = length(iBhvInd) - downSample;
+                rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
+                svmID(rmvBhvInd) = [];
+                svmInd(rmvBhvInd) = [];
+            end
         end
-
-        % Move to the next sequence
-        startIdx = endIdx + 1;
+        transWithinLabel = [transWithinLabel, ', downsample to ', num2str(downSample), ' bouts'];
     end
-end
-rmvIndices = find(rmvIndices);
 
-% Remove any frames of behaviors that lasted less than nMinFrames
-rmvSvmInd = intersect(svmInd, rmvIndices);
-svmInd = setdiff(svmInd, rmvSvmInd);
-svmID = bhvID(svmInd);
+     %% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
+    if minFrames
+        nMinFrames = 500;
 
-transWithinLabel = [transWithinLabel, ', minBoutDur ', num2str(nMinFrames)];
+[uniqueVals, ~, idx] = unique(svmID); % Find unique integers and indices
+bhvDataCount = accumarray(idx, 1); % Count occurrences of each unique integer
+        % bhvDataCount = histcounts(svmID, (min(bhvID)-0.5):(max(bhvID)+0.5));
+        rmvBehaviors = find(bhvDataCount < nMinFrames) - 2;
 
+        rmvBhvInd = find(ismember(bhvID, rmvBehaviors));
+        rmvSvmInd = intersect(svmInd, rmvBhvInd);
+        svmInd = setdiff(svmInd, rmvSvmInd);
+        svmID = bhvID(svmInd);
 
-%% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF BOUTS
-nMinBouts = 45;
-
-% Remove consecutive repetitions
-noRepsVec = svmID([true; diff(svmID) ~= 0]);
-
-% Count instances of each unique integer (each bout)
-[bhvDataCount, ~] = histcounts(noRepsVec, (min(bhvID)-0.5):(max(bhvID)+0.5));
-
-% bhvBoutCount = histcounts(noRepsVec);
-rmvBehaviors = find(bhvDataCount < nMinBouts) - 2;
-
-rmvBhvInd = find(ismember(bhvID, rmvBehaviors));
-rmvSvmInd = intersect(svmInd, rmvBhvInd);
-svmInd = setdiff(svmInd, rmvSvmInd);
-svmID = bhvID(svmInd);
-
-transWithinLabel = [transWithinLabel, ', minBouts ', num2str(nMinBouts)];
-[codes'; bhvDataCount]
-%% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
-nMinDataPoints = 500;
-
-bhvDataCount = histcounts(svmID, (min(bhvID)-0.5):(max(bhvID)+0.5));
-rmvBehaviors = find(bhvDataCount < nMinDataPoints) - 2;
-
-rmvBhvInd = find(ismember(bhvID, rmvBehaviors));
-rmvSvmInd = intersect(svmInd, rmvBhvInd);
-svmInd = setdiff(svmInd, rmvSvmInd);
-svmID = bhvID(svmInd);
-
-transWithinLabel = [transWithinLabel, ', minTotalFrames ', num2str(nMinDataPoints)];
-[codes'; bhvDataCount]
-
-
-
-%% IF YOU WANT, DOWNSAMPLE TO A CERTAIN NUMBER OF DATA POINTS
-%     cutoff = 1000;
-% frameCounts = histcounts(svmID);
-% for i = 2 : length(frameCounts)
-%     iBhvInd = find(svmID == i - 2);
-%     if length(iBhvInd) > cutoff
-%         nRemove = length(iBhvInd) - cutoff;
-%         rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-%         svmID(rmvBhvInd) = [];
-%         svmInd(rmvBhvInd) = [];
-%     end
-% end
-% transWithinLabel = ['within-behavior max frames ', num2str(cutoff)];
-
-% subsampling to match single frame transition number
-frameCounts = histcounts(svmID);
-downSample = min(frameCounts(frameCounts > 0));
-for i = 2 : length(frameCounts)
-    iBhvInd = find(svmID == i - 2);
-    if ~isempty(iBhvInd)
-        nRemove = length(iBhvInd) - downSample;
-        rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-        svmID(rmvBhvInd) = [];
-        svmInd(rmvBhvInd) = [];
+        transWithinLabel = [transWithinLabel, ', minTotalFrames ', num2str(nMinFrames)];
+        [uniqueVals'; bhvDataCount']
     end
-end
-transWithinLabel = [transWithinLabel, ', downsample to ', num2str(downSample), ' data points'];
 
+    %% IF YOU WANT, DOWNSAMPLE TO A CERTAIN NUMBER OF DATA POINTS
+    if downSampleFrames
+        %     cutoff = 1000;
+        % frameCounts = histcounts(svmID);
+        % for iBhv = 2 : length(frameCounts)
+        %     iBhvInd = find(svmID == iBhv - 2);
+        %     if length(iBhvInd) > cutoff
+        %         nRemove = length(iBhvInd) - cutoff;
+        %         rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
+        %         svmID(rmvBhvInd) = [];
+        %         svmInd(rmvBhvInd) = [];
+        %     end
+        % end
+        % transWithinLabel = ['within-behavior max frames ', num2str(cutoff)];
 
-%% Get rid of sleeping/in_nest/irrelavents
-deleteInd = svmID == -1;
-svmID(deleteInd) = [];
-svmInd(deleteInd) = [];
-
-
-
-%% Keep track of the behavior IDs you end up using
-bhv2ModelCodes = unique(svmID);
-bhv2ModelNames = behaviors(bhv2ModelCodes+2);
-
-
-
-
-
-
-
-%% Get colors for plotting
-colors = colors_for_behaviors(bhv2ModelCodes);
-colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 1, 'UniformOutput', false);
-colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-
-dimPlot = [1 2 3];
-
-%% Motor 5/6
-figure(260); clf; hold on;
-titleM = ['UMAP M56 ', num2str(nComponents), 'D ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-title(titleM)
-if nComponents > 2
-    scatter3(projectionsM56(svmInd, dimPlot(1)), projectionsM56(svmInd, dimPlot(2)), projectionsM56(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
-    scatter(projectionsM56(svmInd, dimPlot(1)), projectionsM56(svmInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
-end
-grid on;
-xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
-
-%% Dorstal Striatum
-figure(261); clf; hold on;
-titleD = ['UMAP DS ', num2str(nComponents), 'D ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-title(titleD)
-if nComponents > 2
-    scatter3(projectionsDS(svmInd, dimPlot(1)), projectionsDS(svmInd, dimPlot(2)), projectionsDS(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
-    scatter(projectionsDS(svmInd, dimPlot(1)), projectionsDS(svmInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
-end
-grid on;
-xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
-%
-%% Ventral Striatum
-figure(262); clf; hold on;
-titleD = ['UMAP VS ', num2str(nComponents), 'D ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-title(titleD)
-if nComponents > 2
-    scatter3(projectionsVS(svmInd, dimPlot(1)), projectionsVS(svmInd, dimPlot(2)), projectionsVS(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
-    scatter(projectionsVS(svmInd, dimPlot(1)), projectionsVS(svmInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
-end
-grid on;
-xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
-%% ALL areas together
-figure(263); clf; hold on;
-titleD = ['UMAP All ', num2str(nComponents), 'D ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-title(titleD)
-if nComponents > 2
-    scatter3(projectionsAll(svmInd, dimPlot(1)), projectionsAll(svmInd, dimPlot(2)), projectionsAll(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
-    scatter(projectionsAll(svmInd, dimPlot(1)), projectionsAll(svmInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 2)
-end
-grid on;
-xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+        % subsampling to match single frame transition number
+[uniqueVals, ~, idx] = unique(svmID); % Find unique integers and indices
+frameCounts = accumarray(idx, 1); % Count occurrences of each unique integer
+        downSample = min(frameCounts(frameCounts > 0));
+        for iBhv = 1 : length(frameCounts)
+            iBhvInd = find(svmID == iBhv - 2);
+            if ~isempty(iBhvInd)
+                nRemove = length(iBhvInd) - downSample;
+                rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
+                svmID(rmvBhvInd) = [];
+                svmInd(rmvBhvInd) = [];
+            end
+        end
+        transWithinLabel = [transWithinLabel, ', downsample to ', num2str(downSample), ' data points'];
+    end
 
 
 
-%%                  SVM classifier to predict behavior ID
 
-%{
+
+    %% Get rid of sleeping/in_nest/irrelavents
+    deleteInd = svmID == -1;
+    svmID(deleteInd) = [];
+    svmInd(deleteInd) = [];
+
+
+
+    %% Keep track of the behavior IDs you end up using
+    bhv2ModelCodes = unique(svmID);
+    bhv2ModelNames = behaviors(bhv2ModelCodes+2);
+
+
+    colors = colors_for_behaviors(codes);
+    bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
+
+
+
+    %% --------------------------------------------
+    % Plot Full time of all behaviors that we are modeling
+    if plotFullModelData
+        allBhvModeled = ismember(bhvID, bhv2ModelCodes);
+
+        colors = colors_for_behaviors(codes);
+        colorsForPlot = arrayfun(@(x) colors(x,:), bhvID(allBhvModeled) + 2, 'UniformOutput', false);
+        colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+
+        % colorsForPlot = [.2 .2 .2];
+
+        % Plot on second monitor, half-width
+        plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
+        fig = figure(figHFull);
+        set(fig, 'Position', plotPos); clf; hold on;
+        titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+        title(titleM)
+        if nUmapDim > 2
+            scatter3(projSelect(allBhvModeled, iDim-2), projSelect(allBhvModeled, iDim-1), projSelect(allBhvModeled, iDim), 60, colorsForPlot, 'LineWidth', 2)
+            % Variable to set the viewing angle
+            azimuth = 60;  % Angle for rotation around the z-axis
+            elevation = 20;  % Angle for elevation
+            % Set the viewing angle
+            view(azimuth, elevation);
+            % Set axes ranges based on the data
+            xlim([min(projSelect(:, iDim-2)), max(projSelect(:, iDim-2))]);
+            ylim([min(projSelect(:, iDim-1)), max(projSelect(:, iDim-1))]);
+            zlim([min(projSelect(:, iDim)), max(projSelect(:, iDim))]);
+            set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+            set(findall(fig,'-property','Box'),'Box','off') % optional
+        xlabel(['D', num2str(iDim-2)]); ylabel(['D', num2str(iDim-1)]); zlabel(['D', num2str(iDim)])
+
+        elseif nUmapDim == 2
+            scatter(projSelect(allBhvModeled, 1), projSelect(allBhvModeled, 2), 60, colorsForPlot, 'LineWidth', 2)
+        xlabel(['D', num2str(iDim-1)]); ylabel(['D', num2str(iDim)])
+        end
+        grid on;
+        % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+        print('-dpdf', fullfile(paths.figurePath, [titleM, '.pdf']), '-bestfit')
+    end
+
+    %% Plot data to model
+    if plotModelData
+        colors = colors_for_behaviors(codes);
+        colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 2, 'UniformOutput', false);
+        colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+
+        plotPos = [monitorTwo(1) + monitorTwo(3)/2, 1, monitorTwo(3)/2, monitorTwo(4)];
+        fig = figure(figHModel);
+        set(fig, 'Position', plotPos); clf; hold on;
+        titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+        title(titleM)
+        if nUmapDim > 2
+            scatter3(projSelect(svmInd, iDim-2), projSelect(svmInd, iDim-1), projSelect(svmInd, iDim), 60, colorsForPlot, 'LineWidth', 2)
+            % Variable to set the viewing angle
+            azimuth = 60;  % Angle for rotation around the z-axis
+            elevation = 20;  % Angle for elevation
+            % Set the viewing angle
+            view(azimuth, elevation);
+            % Set axes ranges based on the data
+            xlim([min(projSelect(:, iDim-2)), max(projSelect(:, iDim-2))]);
+            ylim([min(projSelect(:, iDim-1)), max(projSelect(:, iDim-1))]);
+            zlim([min(projSelect(:, iDim)), max(projSelect(:, iDim))]);
+            set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+            set(findall(fig,'-property','Box'),'Box','off') % optional
+        xlabel(['D', num2str(iDim-2)]); ylabel(['D', num2str(iDim-1)]); zlabel(['D', num2str(iDim)])
+        elseif nUmapDim == 2
+            scatter(projSelect(svmInd, 1), projSelect(svmInd, 2), 60, colorsForPlot, 'LineWidth', 2)
+        xlabel(['D', num2str(iDim-1)]); ylabel(['D', num2str(iDim)])
+        end
+        grid on;
+        print('-dpdf', fullfile(paths.figurePath, [titleM, '.pdf']), '-bestfit')
+
+    end
+
+
+    %%                  SVM classifier to predict behavior ID
+
+    %{
 % Script to train an SVM model with different kernels and select the best model
 nDim = 8;
 
@@ -596,7 +643,7 @@ fprintf('%s Best Cross-Validation %s Accuracy: %.2f%%\n', selectFrom, transWithi
 % The bestModel variable now contains the trained model with the best kernel
 toc
 load handel
-sound(y,Fs)
+sound(y(1:3*Fs),Fs)
 
 
 %% Train model on all data - how well does it fit? (without cross-validation)
@@ -629,20 +676,12 @@ accuracy = sum(predictedLabels == svmID) / length(svmID) * 100;
 fprintf('%s %s Overall Accuracy: %.2f%%\n', selectFrom, transWithinLabel, accuracy);
 
 load handel
-sound(y,Fs)
-%}
-%% Train and test model on single hold-out set
-appendModelName = selectFrom;
-nDim = 8;
+sound(y(1:3*Fs),Fs)
+    %}
+    %% Train and test model on single hold-out set
+    appendModelName = selectFrom;
 
-dimToModel = 2:8;
-% dimToModel = 8;
-nPermutations = 1;
 
-accuracy = zeros(length(dimToModel), 1);
-accuracyPermuted = zeros(length(dimToModel), nPermutations);
-
-for n = 1 : length(dimToModel)
     tic
 
 
@@ -652,9 +691,9 @@ for n = 1 : length(dimToModel)
     disp('=================================================================')
 
     % UMAP dimension version
-    fprintf('\n\n%s %s DIMENSIONS 1 - %d\n\n', selectFrom, transWithinLabel, dimToModel(n))  % UMAP Dimensions
+    fprintf('\n\n%s %s DIMENSIONS %d\n\n', selectFrom, transWithinLabel, nUmapDim)  % UMAP Dimensions
     % Choose which data to model
-    svmProj = projSelect(svmInd, 1:dimToModel(n));
+    svmProj = projSelect(svmInd, :);
     trainData = svmProj(training(cv), :);  % UMAP Dimensions
     testData = svmProj(test(cv), :); % UMAP Dimensions
 
@@ -689,15 +728,15 @@ for n = 1 : length(dimToModel)
     predictedLabels = predict(svmModel, testData);
 
     % Calculate and display the overall accuracy
-    accuracy(n) = sum(predictedLabels == testLabels) / length(testLabels);
-    fprintf('%s %s Overall Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy(n));
+    accuracy(k) = sum(predictedLabels == testLabels) / length(testLabels);
+    fprintf('%s %s Overall Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy(k));
 
-    toc/60
+    fprintf('Model fit took %.2f min\n', toc/60)
 
-tic
+    tic
     % Randomize labels and Train model on single hold-out set
     % tic
-    for i = 1:nPermutations
+    for iPerm = 1:nPermutations
 
         % Shuffle the labels
         shuffledLabels = trainLabels(randperm(length(trainLabels)));
@@ -712,8 +751,8 @@ tic
         predictedLabelsPermuted = predict(svmModelPermuted, testData);
 
         % Calculate the permuted accuracy
-        accuracyPermuted(n, i) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
-        fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f%%\n', selectFrom, transWithinLabel, i, accuracyPermuted(n, i));
+        accuracyPermuted(k, iPerm) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
+        fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f%%\n', selectFrom, transWithinLabel, k, accuracyPermuted(k, iPerm));
 
     end
     modelName = ['svmModelPermuted', appendModelName];
@@ -723,318 +762,378 @@ tic
 
 
     % Get the elapsed time
-    toc/60
+    fprintf('Permutation model fit(s) took %.2f min\n', toc/60)
+
+%     load handel
+% sound(y(1:3*Fs),Fs)
+
+
+
+
+    %% Analzyze the predictions vs observed
+
+    % Use above code to establish model to analyze
+
+
+
+    % Create a maximized figure on the second monitor
+    fig = figure(54); clf
+    set(fig, 'Position', monitorTwo);
+    nPlot = length(bhv2ModelCodes);
+    [ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
+
+    edges = -.5 : 1 : bhv2ModelCodes(end)+1;
+    iAccuracy = zeros(length(bhv2ModelCodes), 1);
+    for iBhv = 1 : length(bhv2ModelCodes)
+        iObsInd = testLabels == bhv2ModelCodes(iBhv);
+        iObs = testLabels(iObsInd);
+        iPred = predictedLabels(iObsInd);
+        iAccuracy(iBhv) = sum(iObs == iPred) / length(iObs);
+        iPredWrong = iPred(iObs ~= iPred);
+        % N = histcounts(iPredWrong, edges, 'Normalization', 'pdf');
+        bhv2ModelErrProp = zeros(length(bhv2ModelCodes), 1);
+        for kBhv = 1 : length(bhv2ModelCodes)
+        bhv2ModelErrProp(kBhv) = sum(iPredWrong == bhv2ModelCodes(kBhv)) / length(iPredWrong);
+        end
+        % barCodes = 0:bhv2ModelCodes(end);
+
+        axes(ax(iBhv))
+        % barH = bar(barCodes, N);
+        barH = bar(bhv2ModelCodes, bhv2ModelErrProp);
+        for kBar = 1:length(bhv2ModelCodes)
+            barH.FaceColor = 'flat';        % Enable face color for each bar
+            barH.CData(kBar,:) = bhv2ModelColors(kBar,:);  % Assign color to each bar
+        end
+
+        barH.BarWidth = 1;
+        set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+        set(findall(fig,'-property','Box'),'Box','off') % optional
+        iTitle = sprintf('%s (%d): %.2f', bhv2ModelNames{iBhv}, bhv2ModelCodes(iBhv), iAccuracy(iBhv));
+        title(iTitle, 'interpreter', 'none');
+    end
+    iTitle = sprintf('%s %s %s Errors due to other behaviors', selectFrom, fitType, transWithinLabel);
+    sgtitle(iTitle)
+    % saveas(gcf, fullfile(paths.figurePath, [iTitle, '.png']), 'png')
+    print('-dpdf', fullfile(paths.figurePath, [iTitle, '.pdf']), '-bestfit')
+
+    %% Accuracies and F-scores
+    accuracyPosition = [monitorOne(1:2), monitorOne(3)/3, monitorOne(4)/2.2];
+    fig = figure(55); clf;
+    set(fig, 'Position', accuracyPosition);
+    % barH = bar(bhv2ModelCodes, iAccuracy);
+    barH = bar(bhv2ModelCodes, iAccuracy);
+    for kBar = 1:length(iAccuracy)
+        barH.FaceColor = 'flat';        % Enable face color for each bar
+        barH.CData(kBar,:) = bhv2ModelColors(kBar,:);  % Assign color to each bar
+    end
+    barH.BarWidth = 1;
+    xticks(bhv2ModelCodes)
+    ylim([0 1])
+    set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+    set(findall(fig,'-property','Box'),'Box','off') % optional
+    xlabel('Behavior')
+    ylabel('Proportion Accurate')
+    % bvhLabels = behaviors(2:end)
+    % xticklabels(bhvLabels)
+    % xtickangle(45);
+    titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Bhv Accuracies'];
+    title(titleE)
+    print('-dpdf', fullfile(paths.figurePath, [iTitle, '.pdf']), '-bestfit')
+
+    % F1 score
+    % Initialize arrays to store precision, recall, and F1 scores for each label
+    % observedLabels = svmID;
+    uniqueLabels = unique(testLabels);
+    precision = zeros(size(uniqueLabels));
+    recall = zeros(size(uniqueLabels));
+    f1Score = zeros(size(uniqueLabels));
+
+    % Calculate F1 score for each unique label
+    for iBhv = 1:length(uniqueLabels)
+        label = uniqueLabels(iBhv);
+
+        % True positives (TP)
+        tp = sum((predictedLabels == label) & (testLabels == label));
+
+        % False positives (FP)
+        fp = sum((predictedLabels == label) & (testLabels ~= label));
+
+        % False negatives (FN)
+        fn = sum((predictedLabels ~= label) & (testLabels == label));
+
+        % Precision
+        if (tp + fp) > 0
+            precision(iBhv) = tp / (tp + fp);
+        else
+            precision(iBhv) = 0;
+        end
+
+        % Recall
+        if (tp + fn) > 0
+            recall(iBhv) = tp / (tp + fn);
+        else
+            recall(iBhv) = 0;
+        end
+
+        % F1 Score
+        if (precision(iBhv) + recall(iBhv)) > 0
+            f1Score(iBhv) = 2 * (precision(iBhv) * recall(iBhv)) / (precision(iBhv) + recall(iBhv));
+        else
+            f1Score(iBhv) = 0;
+        end
+    end
+
+    % % Display the results
+    % resultsTable = table(uniqueLabels', precision', recall', f1Score', ...
+    %                      'VariableNames', {'Label', 'Precision', 'Recall', 'F1_Score'});
+    % disp(resultsTable);
+
+    f1Position = [monitorOne(1), monitorOne(4)/2, monitorOne(3)/3, monitorOne(4)/2.2];
+    fig = figure(56); clf;
+    set(fig, 'Position', f1Position);
+    % bar(codes(2:end), f1Score);
+    % xticks(0:codes(end))
+    barH = bar(uniqueLabels, f1Score);
+    for kBar = 1:length(f1Score)
+        barH.FaceColor = 'flat';        % Enable face color for each bar
+        barH.CData(kBar,:) = bhv2ModelColors(kBar,:);  % Assign color to each bar
+    end
+    barH.BarWidth = 1;
+    set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+    set(findall(fig,'-property','Box'),'Box','off') % optional
+    xticks(uniqueLabels)
+    ylim([0 1])
+    xlabel('Behavior')
+    ylabel('F-score')
+    titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Bhv F1 scores'];
+    title(titleE)
+    print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
+
+
+
+    %% This needs to be updated  --------------------------------------------
+    % % Plot predictions
+    % colorsForPlot = arrayfun(@(x) colors(x,:), predictedLabels + 1, 'UniformOutput', false);
+    % colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+    %
+    %
+    % figure(821); clf; hold on;
+    % titleD = ['Predicted UMAP ', selectFrom,' ', num2str(nUmapDim), 'D ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+    % title(titleD)
+    % if nUmapDim > 2
+    %     scatter3(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), projSelect(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+    % elseif nUmapDim == 2
+    %     scatter(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), 60, projSelect, 'LineWidth', 2)
+    % end
+    % grid on;
+    % xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
+    % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
+
+
+    % %% Randomize data to get chance level SVM accuracy
+    % svmIDRand = svmID(randperm(length(svmID)));
+    % % svmIndRand = svmInd(randperm(length(svmID)));
+    % kernelFunction = 'polynomial';
+    % % kernelFunction = 'rbf';
+    %
+    % t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+    %
+    % % Choose which data to model
+    % % svmProj = projSelect(svmInd, 1:3);
+    % % svmProj = projSelect(svmInd, :);
+    % svmProj = dataMat(svmInd, idSelect);
+    %
+    % % Train the SVM model
+    % svmModel = fitcecoc(svmProj, svmIDRand, 'Learners', t);
+    %
+    % % Use the best model to make predictions
+    % % svmID = svmID(svmIndRand);
+    %
+    % predictedLabels = predict(svmModel, svmProj);
+    %
+    % % Calculate and display the overall accuracy
+    % accuracy = sum(predictedLabels == svmIDRand) / length(svmIDRand) * 100;
+    % fprintf('%s Randomized %s Overall Accuracy: %.2f%%\n', selectFrom, transWithinLabel, accuracy);
+    % load handel
+% sound(y(1:3*Fs),Fs)
+    % %% Expected accuracy for randomly choosing
+    %
+    % randomPredict = svmID(randperm(length(svmID)));
+    %
+    % accuracy = sum(randomPredict == svmID) / length(randomPredict) * 100
+    %
+    % % Count the occurrences of each unique number in the vector
+    % counts = histcounts(svmID, unique(svmID));
+    % %  Calculate the total number of elements
+    % totalElements = length(svmID);
+    %
+    % % Calculate the proportions
+    % proportions = counts / totalElements;
+    %
+    % % Calculate the expected accuracy
+    % expectedAccuracy = sum(proportions .^ 2);
+    % % Display the result
+    % fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    %% =======================================================================================
+    %                   USE A PARTICULAR MODEL TO ANALYZE/PREDICT PARTICULAR
+    %                   TIME BINS (GOING INTO AND OUT OF BEHAVIORS)
+    % ========================================================================================
+
+    % Get data (top of script) if needed
+
+    %% Go back up top to Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
+
+
+    %% Go back up top if needed to (Re-)Train the particular model you want to test on other data
+
+
+    %% Use the model to predict single frames going into and out of behavior transitions
+    % This tests the transistions on ALL transitions into behaviors (so if
+    % you subsampled, downsampled, etc., it will test beyond only the data
+    % points used to generate the model. Thus, the accuracy my differ (be
+    % lower than in many cases) than the model tested on the test set.
+
+    fprintf('\nPredicting each frame going into transitions:\n')
+    frames = -2 : 4; % 2 frames pre to two frames post transition
+
+    svmIDTest = bhvID(preInd + 1);  % behavior ID being transitioned into
+    svmIndTest = preInd + 1;
+
+    % Get rid of behaviors you didn't model
+    rmvBhv = setdiff(unique(bhvID), bhv2ModelCodes);
+    deleteInd = ismember(svmIDTest, rmvBhv);
+    svmIDTest(deleteInd) = [];
+    svmIndTest(deleteInd) = [];
+
+
+    accuracyTrans = zeros(length(frames), 1);
+    accuracyPermutedTrans = zeros(length(frames), 1);
+    for iFrame = 1 : length(frames)
+        % Get relevant frame to test (w.r.t. transition frame)
+        iSvmInd = svmIndTest + frames(iFrame);
+        testData = projSelect(iSvmInd, 1:iDim); % UMAP Dimensions
+
+        % Calculate and display the overall accuracy (make sure it matches the
+        % original fits to ensure we're modeling the same way)
+        predictedLabels = predict(svmModel, testData);
+        accuracyTrans(iFrame) = sum(predictedLabels == svmIDTest) / length(svmIDTest);
+        fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(iFrame), accuracyTrans(iFrame));
+
+        % Calculate and display the overall accuracy (make sure it matches the
+        % original fits to ensure we're modeling the same way)
+        predictedLabelsPermuted = predict(svmModelPermuted, testData);
+        accuracyPermutedTrans(iFrame) = sum(predictedLabelsPermuted == svmIDTest) / length(svmIDTest);
+        % fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(iFrame), accuracyPermuted(iFrame));
+
+    end
+
+    goingInPosition = [monitorOne(3)/2, monitorOne(2), monitorOne(3)/3, monitorOne(4)/2.2];
+    fig = figure(67);
+    set(fig, 'Position', goingInPosition); clf; hold on;
+    % bar(codes(2:end), f1Score);
+    % xticks(0:codes(end))
+    plot(frames, accuracyTrans, '-o', 'color', 'blue', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'blue', 'LineWidth', 1.5);
+    plot(frames, accuracyPermutedTrans, '-o', 'color', 'red', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'red', 'LineWidth', 1.5);
+    set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+    set(findall(fig,'-property','Box'),'Box','off') % optional
+    xticks(frames)
+    ylim([0 1])
+    ylabel('Accuracy')
+    xlabel('Frames relative to transition')
+    xline(0)
+    titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Accuracy into transitions'];
+    title(titleE)
+    % saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
+    print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
+
+
+    % %% Use the model to predict all within-behavior frames
+    %
+    % transIndLog = zeros(length(bhvID), 1);
+    % transIndLog(preInd) = 1;
+    %
+    % % If you want to remove another pre-behavior onset bin, do this:
+    % vec = find(transIndLog);
+    % transIndLog(vec-1) = 1;
+    %
+    % % If you want to remove a bin after behavior onset, do this:
+    % % transIndLog(vec+1) = 1;
+    %
+    % svmIndTest = find(~transIndLog);
+    % svmIDTest = bhvID(svmIndTest);
+    %
+    % % Get rid of behaviors you didn't model
+    % rmvBhv = setdiff(unique(bhvID), bhv2ModelCodes);
+    % deleteInd = ismember(svmIDTest, rmvBhv);
+    % svmIDTest(deleteInd) = [];
+    % svmIndTest(deleteInd) = [];
+    %
+    %
+    % testData = projSelect(svmIndTest, 1:iDim); % UMAP Dimensions
+    %
+    % predictedLabels = predict(svmModel, testData);
+    %
+    % % Calculate and display the overall accuracy (make sure it matches the
+    % % original fits to ensure we're modeling the same way)
+    % accuracy = sum(predictedLabels == svmIDTest) / length(svmIDTest);
+    % fprintf('%s Test Within-Behavior Overall Accuracy: %.4f%%\n', selectFrom, accuracy);
+
+
+
+
+
 end
-load handel
-sound(y,Fs)
-
-
-%% Plot the accuracy results per dimension
-
-% fitType = 'UMAP 1-3';
-fitType = ['UMAP 1-', num2str(dimToModel(n))];
-% fitType = 'NeuralSpace';
+% Plot the accuracy results per dimension
 
 
 
 
-figure(65); clf; hold on;
-plot(dimToModel, accuracy, '-o', 'color', 'blue', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'blue', 'LineWidth', 1.5);
-plot(dimToModel, mean(accuracyPermuted, 2), '-o', 'color', 'red', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'red', 'LineWidth', 1.5);
-xticks(dimToModel)
+perDimPosition = [monitorOne(3)/2, monitorOne(4)/2, monitorOne(3)/3, monitorOne(4)/2.2];
+fig = figure(65);
+set(fig, 'Position', perDimPosition); clf; hold on;
+plot(forDim, accuracy, '-o', 'color', 'blue', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'blue', 'LineWidth', 1.5);
+plot(forDim, mean(accuracyPermuted, 2), '-o', 'color', 'red', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'red', 'LineWidth', 1.5);
+set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+set(findall(fig,'-property','Box'),'Box','off') % optional
+xticks(forDim)
 ylim([0 1])
 ylabel('Accuracy')
 xlabel('Dimensions')
-title(['Accuracy for dimensions', selectFrom, ' ',fitType, ' ', transWithinLabel])
-titleE = ['Accuracy going into transitions- ', selectFrom, ' ',fitType, ' ', transWithinLabel];
-saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
+titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Accuracy per dimensions'];
+title(titleE);
+% saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
+print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
 
 
-%% Analzyze the predictions vs observed
 
-% Use above code to establish model to analyze
+    load handel
+sound(y(1:2.2*Fs),Fs)
 
 
-monitorPositions = get(0, 'MonitorPositions');
-secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
-% Create a maximized figure on the second monitor
-fig = figure(54); clf
-set(fig, 'Position', secondMonitorPosition);
-nPlot = length(bhv2ModelCodes);
-[ax, pos] = tight_subplot(2, ceil(nPlot/2), [.04 .02], .1);
 
-edges = -.5 : 1 : bhv2ModelCodes(end)+1;
-iAccuracy = zeros(length(bhv2ModelCodes), 1);
-for i = 1 : length(bhv2ModelCodes)
-    iObsInd = testLabels == bhv2ModelCodes(i);
-    iObs = testLabels(iObsInd);
-    iPred = predictedLabels(iObsInd);
-    iAccuracy(i) = sum(iObs == iPred) / length(iObs);
-    iPredWrong = iPred(iObs ~= iPred);
-    N = histcounts(iPredWrong, edges, 'Normalization', 'pdf');
-    barCodes = 0:bhv2ModelCodes(end);
-
-    axes(ax(i))
-    bar(barCodes, N, 'b', 'FaceAlpha', .5);
-    iTitle = sprintf('%s (%d): %.2f', bhv2ModelNames{i}, bhv2ModelCodes(i), iAccuracy(i));
-    title(iTitle, 'interpreter', 'none');
-end
-iTitle = sprintf('Errors due to other behaviors: %s %s %s', selectFrom, fitType, transWithinLabel);
-sgtitle(iTitle)
-titleW = [selectFrom, ' ',fitType, ' ', transWithinLabel,' mislabeled as others'];
-saveas(gcf, fullfile(paths.figurePath, [titleW, '.png']), 'png')
-
-%% Accuracies and F-scores
-
-figure(55);
-bar(bhv2ModelCodes, iAccuracy);
-xticks(bhv2ModelCodes)
-ylim([0 1])
-% bvhLabels = behaviors(2:end)
-% xticklabels(bhvLabels)
-% xtickangle(45);
-title(['Accuracy for each behavior- ', selectFrom, ' ',fitType, ' ', transWithinLabel])
-titleE = ['Accuracy for each behavior- ', selectFrom, ' ',fitType, ' ', transWithinLabel];
-saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
-
-% F1 score
-% Initialize arrays to store precision, recall, and F1 scores for each label
-% observedLabels = svmID;
-uniqueLabels = unique(testLabels);
-precision = zeros(size(uniqueLabels));
-recall = zeros(size(uniqueLabels));
-f1Score = zeros(size(uniqueLabels));
-
-% Calculate F1 score for each unique label
-for i = 1:length(uniqueLabels)
-    label = uniqueLabels(i);
-
-    % True positives (TP)
-    tp = sum((predictedLabels == label) & (testLabels == label));
-
-    % False positives (FP)
-    fp = sum((predictedLabels == label) & (testLabels ~= label));
-
-    % False negatives (FN)
-    fn = sum((predictedLabels ~= label) & (testLabels == label));
-
-    % Precision
-    if (tp + fp) > 0
-        precision(i) = tp / (tp + fp);
-    else
-        precision(i) = 0;
-    end
-
-    % Recall
-    if (tp + fn) > 0
-        recall(i) = tp / (tp + fn);
-    else
-        recall(i) = 0;
-    end
-
-    % F1 Score
-    if (precision(i) + recall(i)) > 0
-        f1Score(i) = 2 * (precision(i) * recall(i)) / (precision(i) + recall(i));
-    else
-        f1Score(i) = 0;
-    end
-end
-
-% % Display the results
-% resultsTable = table(uniqueLabels', precision', recall', f1Score', ...
-%                      'VariableNames', {'Label', 'Precision', 'Recall', 'F1_Score'});
-% disp(resultsTable);
-
-figure(56);
-% bar(codes(2:end), f1Score);
-% xticks(0:codes(end))
-bar(uniqueLabels, f1Score);
-xticks(uniqueLabels)
-ylim([0 1])
-title(['F1 scores- ', selectFrom, ' ',fitType, ' ', transWithinLabel])
-titleE = ['F1 scores- ', selectFrom, ' ',fitType, ' ', transWithinLabel];
-saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
-
-
-
-%% This needs to be updated  --------------------------------------------
-% Plot predictions
-colorsForPlot = arrayfun(@(x) colors(x,:), predictedLabels + 1, 'UniformOutput', false);
-colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-
-
-figure(821); clf; hold on;
-titleD = ['Predicted UMAP ', selectFrom,' ', num2str(nComponents), 'D ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-title(titleD)
-if nComponents > 2
-    scatter3(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), projSelect(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
-    scatter(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), 60, projSelect, 'LineWidth', 2)
-end
-grid on;
-xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
-saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
-%
-
-%% Randomize data to get chance level SVM accuracy
-svmIDRand = svmID(randperm(length(svmID)));
-% svmIndRand = svmInd(randperm(length(svmID)));
-kernelFunction = 'polynomial';
-% kernelFunction = 'rbf';
-
-t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
-
-% Choose which data to model
-% svmProj = projSelect(svmInd, 1:3);
-% svmProj = projSelect(svmInd, :);
-svmProj = dataMat(svmInd, idSelect);
-
-% Train the SVM model
-svmModel = fitcecoc(svmProj, svmIDRand, 'Learners', t);
-
-% Use the best model to make predictions
-% svmID = svmID(svmIndRand);
-
-predictedLabels = predict(svmModel, svmProj);
-
-% Calculate and display the overall accuracy
-accuracy = sum(predictedLabels == svmIDRand) / length(svmIDRand) * 100;
-fprintf('%s Randomized %s Overall Accuracy: %.2f%%\n', selectFrom, transWithinLabel, accuracy);
-load handel
-sound(y,Fs)
-%% Expected accuracy for randomly choosing
-
-randomPredict = svmID(randperm(length(svmID)));
-
-accuracy = sum(randomPredict == svmID) / length(randomPredict) * 100
-
-% Count the occurrences of each unique number in the vector
-counts = histcounts(svmID, unique(svmID));
-%  Calculate the total number of elements
-totalElements = length(svmID);
-
-% Calculate the proportions
-proportions = counts / totalElements;
-
-% Calculate the expected accuracy
-expectedAccuracy = sum(proportions .^ 2);
-% Display the result
-fprintf('Expected Accuracy (Random Guessing): %.2f%%\n', expectedAccuracy * 100);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-%% =======================================================================================
-%                   USE A PARTICULAR MODEL TO ANALYZE/PREDICT PARTICULAR
-%                   TIME BINS (GOING INTO AND OUT OF BEHAVIORS)
-% ========================================================================================
-
-% Get data (top of script) if needed
-
-%% Go back up top to Choose which area to select data from (to analyze clusters in that area, and/or to project same time points in another area
-
-
-%% Go back up top if needed to (Re-)Train the particular model you want to test on other data
-
-
-%% Use the model to predict single frames going into and out of behavior transitions
-fprintf('\nPredicting each frame going into transitions:\n')
-frames = -2 : 4; % 2 frames pre to two frames post transition
-
-svmIDTest = bhvID(preInd + 1);  % behavior ID being transitioned into
-svmIndTest = preInd + 1;
-
-% Get rid of behaviors you didn't model
-rmvBhv = setdiff(unique(bhvID), bhv2ModelCodes);
-deleteInd = ismember(svmIDTest, rmvBhv);
-svmIDTest(deleteInd) = [];
-svmIndTest(deleteInd) = [];
-
-accuracy = zeros(length(frames), 1);
-accuracyPermuted = zeros(length(frames), 1);
-for i = 1 : length(frames)
-    % Get relevant frame to test (w.r.t. transition frame)
-    iSvmInd = svmIndTest + frames(i);
-    testData = projSelect(iSvmInd, 1:dimToModel(n)); % UMAP Dimensions
-
-    % Calculate and display the overall accuracy (make sure it matches the
-    % original fits to ensure we're modeling the same way)
-    predictedLabels = predict(svmModel, testData);
-    accuracy(i) = sum(predictedLabels == svmIDTest) / length(svmIDTest);
-    fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(i), accuracy(i));
-
-    % Calculate and display the overall accuracy (make sure it matches the
-    % original fits to ensure we're modeling the same way)
-    predictedLabelsPermuted = predict(svmModelPermuted, testData);
-    accuracyPermuted(i) = sum(predictedLabelsPermuted == svmIDTest) / length(svmIDTest);
-    % fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(i), accuracyPermuted(i));
-
-end
-
-figure(67); clf; hold on;
-% bar(codes(2:end), f1Score);
-% xticks(0:codes(end))
-plot(frames, accuracy, '-o', 'color', 'blue', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'blue', 'LineWidth', 1.5);
-plot(frames, accuracyPermuted, '-o', 'color', 'red', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'red', 'LineWidth', 1.5);
-xticks(frames)
-ylim([0 1])
-ylabel('Accuracy')
-xlabel('Frames relative to transition')
-xline(0)
-title(['Accuracy going into transitions- ', selectFrom, ' ',fitType, ' ', transWithinLabel])
-titleE = ['Accuracy going into transitions- ', selectFrom, ' ',fitType, ' ', transWithinLabel];
-saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
-
-
-%% Use the model to predict all within-behavior frames
-
-transIndLog = zeros(length(bhvID), 1);
-transIndLog(preInd) = 1;
-
-% If you want to remove another pre-behavior onset bin, do this:
-vec = find(transIndLog);
-transIndLog(vec-1) = 1;
-
-% If you want to remove a bin after behavior onset, do this:
-% transIndLog(vec+1) = 1;
-
-svmIndTest = find(~transIndLog);
-svmIDTest = bhvID(svmIndTest);
-
-% Get rid of behaviors you didn't model
-rmvBhv = setdiff(unique(bhvID), bhv2ModelCodes);
-deleteInd = ismember(svmIDTest, rmvBhv);
-svmIDTest(deleteInd) = [];
-svmIndTest(deleteInd) = [];
-
-
-testData = projSelect(svmIndTest, 1:dimToModel(n)); % UMAP Dimensions
-
-predictedLabels = predict(svmModel, testData);
-
-% Calculate and display the overall accuracy (make sure it matches the
-% original fits to ensure we're modeling the same way)
-accuracy = sum(predictedLabels == svmIDTest) / length(svmIDTest);
-fprintf('%s Test Within-Behavior Overall Accuracy: %.4f%%\n', selectFrom, accuracy);
 
 
 
@@ -1101,13 +1200,13 @@ periEventTime = -opts.frameSize : opts.frameSize : 0; % seconds around onset
 dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 figure(230); clf; hold on;
-titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleM = ['UMAP M56 ', num2str(nUmapDim), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM)
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 
 figure(231); clf; hold on;
-titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = ['UMAP DS ', num2str(nUmapDim), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
@@ -1128,18 +1227,18 @@ for i = 1 : length(behaviorsPlot)
     end
 
     figure(230)
-    if nComponents > 2
+    if nUmapDim > 2
         scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
-    elseif nComponents == 2
+    elseif nUmapDim == 2
         scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
         % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
         % scatter(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
     end
 
     figure(231)
-    if nComponents > 2
+    if nUmapDim > 2
         scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
-    elseif nComponents == 2
+    elseif nUmapDim == 2
         scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
         % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
         % scatter(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
@@ -1171,13 +1270,13 @@ frameShift = [0 opts.frameSize];
 periEventTime = -opts.frameSize : opts.frameSize : 0; % seconds around onset
 
 figure(230); clf; hold on;
-titleM = ['UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleM = ['UMAP M56 ', num2str(nUmapDim), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM)
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 
 figure(231); clf; hold on;
-titleD = ['UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = ['UMAP DS ', num2str(nUmapDim), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
@@ -1203,17 +1302,17 @@ for k = 1 : length(frameShift)
         end
 
         figure(230)
-        if nComponents > 2
+        if nUmapDim > 2
             scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, colors(k,:), 'LineWidth', 2)
-        elseif nComponents == 2
+        elseif nUmapDim == 2
             scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(k,:), 'LineWidth', 2)
             % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
         end
 
         figure(231)
-        if nComponents > 2
+        if nUmapDim > 2
             scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, colors(k,:), 'LineWidth', 2)
-        elseif nComponents == 2
+        elseif nUmapDim == 2
             scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(k,:), 'LineWidth', 2)
             % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
         end
@@ -1595,11 +1694,11 @@ propSample = .5; % subsample the data to keep the plot clean (but still sample t
 randInd = randperm(length(bhvID), floor(length(bhvID) * propSample));
 
 figure(520); clf; hold on;
-titleM = [behaviorsPlot{1}, '  UMAP M56 ', num2str(nComponents), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleM = [behaviorsPlot{1}, '  UMAP M56 ', num2str(nUmapDim), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM, 'interpreter', 'none')
-if nComponents > 2
+if nUmapDim > 2
     scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 40, colorsForPlot, 'MarkerEdgeAlpha', alphaVal)
-elseif nComponents == 2
+elseif nUmapDim == 2
     scatter(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
 end
 grid on;
@@ -1609,11 +1708,11 @@ xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel([
 
 % figure(221+i); clf; hold on;
 figure(521); clf; hold on;
-titleD = [behaviorsPlot{1}, '  UMAP DS ', num2str(nComponents), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = [behaviorsPlot{1}, '  UMAP DS ', num2str(nUmapDim), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD, 'interpreter', 'none')
-if nComponents > 2
+if nUmapDim > 2
     scatter3(projectionsDS(randInd, dimPlot(1)), projectionsDS(randInd, dimPlot(2)), projectionsDS(randInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
-elseif nComponents == 2
+elseif nUmapDim == 2
     scatter(projectionsDS(randInd, dimPlot(1)), projectionsDS(randInd, dimPlot(2)), 40, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
 end
 grid on;
@@ -1635,18 +1734,18 @@ bhvPlot = find(strcmp(behaviors, behaviorsPlot)) - 2;
 allInd = bhvID == bhvPlot; % all labeled target behaviors
 
 figure(520);
-if nComponents > 2
+if nUmapDim > 2
     scatter3(projectionsM56(allInd, dimPlot(1)), projectionsM56(allInd, dimPlot(2)), projectionsM56(allInd, dimPlot(3)), 60, fullColor, 'LineWidth', 2)
-elseif nComponents == 2
+elseif nUmapDim == 2
     scatter(projectionsM56(allInd, dimPlot(1)), projectionsM56(allInd, dimPlot(2)), 60, fullColor, 'LineWidth', 2)
 end
 % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 
 
 figure(521);
-if nComponents > 2
+if nUmapDim > 2
     scatter3(projectionsDS(allInd, dimPlot(1)), projectionsDS(allInd, dimPlot(2)), projectionsDS(allInd, dimPlot(3)), 60, fullColor, 'LineWidth', 2)
-elseif nComponents == 2
+elseif nUmapDim == 2
     scatter(projectionsDS(allInd, dimPlot(1)), projectionsDS(allInd, dimPlot(2)), 60, fullColor, 'LineWidth', 2)
 end
 % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
@@ -1675,18 +1774,18 @@ colorsForPlot = arrayfun(@(x) colors(x,:), bhvID(transitionsInd) + 2, 'UniformOu
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
 figure(520)
-if nComponents > 2
+if nUmapDim > 2
     scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
+elseif nUmapDim == 2
     scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colorsForPlot, 'LineWidth', 2)
     % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
     % scatter(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
 end
 
 figure(521)
-if nComponents > 2
+if nUmapDim > 2
     scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nComponents == 2
+elseif nUmapDim == 2
     scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colorsForPlot, 'LineWidth', 2)
     % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
     % scatter(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
