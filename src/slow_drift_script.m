@@ -1,8 +1,9 @@
 %% Get data from get_standard_data
 
 opts = neuro_behavior_options;
+opts.minActTime = .16;
 opts.collectStart = 0; % seconds
-opts.collectFor = 60*60*4; % seconds
+opts.collectFor = 60*60*3.5; % seconds
 
 get_standard_data
 
@@ -32,11 +33,12 @@ winSlideFrame = winSlideTime / opts.frameSize;
 nWind = (size(dataMat, 1) - bigWinFrame)/ winSlideFrame;
 %%
 % Which brain area to analyze?
-idInd = idDS;
+idInd = idM56;
+brainArea = 'M56';
 % idInd = cell2mat(idAll);
 
 % which behavior to analyze?
-behavior = 'contra_body_groom';
+% behavior = 'contra_body_groom';
 behavior = 'locomotion';
 bhvID = analyzeCodes(strcmp(analyzeBhv, behavior));
 bhvInd = find(strcmp(analyzeBhv, behavior));
@@ -44,7 +46,8 @@ bhvInd = find(strcmp(analyzeBhv, behavior));
 periTime = -.2 : opts.frameSize : .2;
 periWindow = periTime(1:end-1) / opts.frameSize; % frames around onset w.r.t. zWindow (remove last frame)
 
-startFrame = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvID & validBhv(:, codes == bhvID)) / opts.frameSize);
+% startFrame = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvID & validBhv(:, codes == bhvID)) / opts.frameSize);
+startFrame = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvID) / opts.frameSize);
 
 % Get mean of spike counts in peri-onset windows, across session, to
 % calculate residual spikes
@@ -83,7 +86,7 @@ scatter(1:length(slowDriftProj), slowDriftProj, '.')
 xlabel('Bouts')
 ylabel(['Slow drift PC ', num2str(i)])
 end
-sgtitle(['Slow drift for ', behavior], 'interpreter', 'none')
+sgtitle([brainArea, ' Slow drift for ', behavior], 'interpreter', 'none')
 fprintf('First 3 components explained variance:\n %.2f\n %.2f\n %.2f\n', explained(1),  explained(2),  explained(3));
 
 
