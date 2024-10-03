@@ -1373,7 +1373,8 @@ get_standard_data
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
 firstHourSpan = 1 : length(bhvIDMat) / 4;
-lastHourSpan = 1 + 3*length(bhvIDMat)/4 : length(bhvIDMat);
+hourToTestSpan = 1 + 3*length(bhvIDMat)/4 : length(bhvIDMat);
+hourToTestSpan = 1 + 3*length(bhvIDMat)/4 : length(bhvIDMat);
 
 %% =============================================================================
 % --------    RUN UMAP SVM FITS FOR VARIOUS CONDITIONS ON VARIOUS DATA
@@ -1479,7 +1480,7 @@ for k = 1:length(forDim)
         % colorsForPlot = [.2 .2 .2];
 
         % Plot on second monitor, half-width
-        plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
+        plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
         fig = figure(figHFull);
         set(fig, 'Position', plotPos); clf; hold on;
         titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
@@ -1928,10 +1929,13 @@ svmFitModelIdx = svmInd(svmInd <= firstHourSpan(end));
 
 end
 
-%% Use the fit SVM model to test the last hour of data
+% Use the fit SVM model to test the last hour of data
 %
-svmLastHourID = svmID(svmInd >= lastHourSpan(1) & svmInd <= lastHourSpan(end));
-svmLastHourIdx = svmInd(svmInd >= lastHourSpan(1) & svmInd <= lastHourSpan(end));
+
+for iHour = 1 : 3
+    hourToTestSpan = 1 + iHour*length(bhvIDMat)/4 : (iHour+1)*length(bhvIDMat)/4;
+svmLastHourID = svmID(svmInd >= hourToTestSpan(1) & svmInd <= hourToTestSpan(end));
+svmLastHourIdx = svmInd(svmInd >= hourToTestSpan(1) & svmInd <= hourToTestSpan(end));
 
 testData = projSelect(svmLastHourIdx, :);
 testLabels = svmLastHourID;
@@ -1940,8 +1944,7 @@ testLabels = svmLastHourID;
 
     % Calculate and display the overall accuracy
     accuracyLast = sum(predictedLabels == testLabels) / length(testLabels);
-    fprintf('%s %s Last Hour Overall Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracyLast);
+    fprintf('%s %s Hour %d Overall Accuracy: %.4f%%\n', selectFrom, transWithinLabel, iHour, accuracyLast);
 
-
-
+end
 

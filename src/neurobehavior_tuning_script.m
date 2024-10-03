@@ -3,19 +3,22 @@
 opts = neuro_behavior_options;
 opts.frameSize = .1; % 100 ms framesize for now
 opts.collectStart = 0*60*60; % Start collection here
-opts.collectFor = 45*60; % Get 45 min
+opts.collectFor = 60*60; % Get 45 min
 
 
+getDataType = 'all';
 get_standard_data
 
 colors = colors_for_behaviors(codes);
+%%
+[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 %% Truncate the ends of the behaviors since we want a window that reaches backward and forward in time
 dataBhvTrunc = dataBhv(3:end-2, :);
 validBhvTrunc = validBhv(3:end-2,:);
 
 
 %% What peri-onset window do you want to use?
-periTime = -.15 : opts.frameSize : .15; % seconds around onset
+periTime = -.25 : opts.frameSize : .25; % seconds around onset
 periWindow = periTime(1:end-1) / opts.frameSize; % frames around onset w.r.t. zWindow (remove last frame)
 
 
@@ -583,6 +586,33 @@ sgtitle('PCA: M56')
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+%% some figure pretty things
+fname = 'myfigure';
+
+picturewidth = 20; % set this parameter and keep it forever
+hw_ratio = 0.65; % feel free to play with this ratio
+set(findall(hfig,'-property','FontSize'),'FontSize',17) % adjust fontsize to your document
+
+set(findall(hfig,'-property','Box'),'Box','off') % optional
+set(findall(hfig,'-property','Interpreter'),'Interpreter','latex')
+set(findall(hfig,'-property','TickLabelInterpreter'),'TickLabelInterpreter','latex')
+set(hfig,'Units','centimeters','Position',[3 3 picturewidth hw_ratio*picturewidth])
+pos = get(hfig,'Position');
+set(hfig,'PaperPositionMode','Auto','PaperUnits','centimeters','PaperSize',[pos(3), pos(4)])
+%print(hfig,fname,'-dpdf','-vector','-fillpage')
+print(hfig,fname,'-dpng','-vector')
 
 
 

@@ -50,9 +50,9 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 % Select which data to run analyses on, UMAP dimensions, etc
 
-forDim = 2:8; % Loop through these dimensions to fit UMAP
-% forDim = 3; % Loop through these dimensions to fit UMAP
-newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
+% forDim = 4:2:8; % Loop through these dimensions to fit UMAP
+forDim = 8; % Loop through these dimensions to fit UMAP
+newUmapModel = 0; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 
 
 % Change these (and check their sections below) to determine which
@@ -60,7 +60,7 @@ newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tw
 % ==========================
 
 % Modeling variables
-nPermutations = 1; % How many random permutations to run to compare with best fit model?
+nPermutations = 2; % How many random permutations to run to compare with best fit model?
 accuracy = zeros(length(forDim), 1);
 accuracyPermuted = zeros(length(forDim), nPermutations);
 
@@ -69,12 +69,12 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
 plotFullMap = 0;
 plotFullModelData = 1;
 plotModelData = 1;
-changeBhvLabels = 0;
+changeBhvLabels = 1;
 
 % Transition or within variables
 % -------------------------
 % transOrWithin = 'trans';
-transOrWithin = 'within';
+transOrWithin = 'within';  
 matchTransitionCount = 0;
 minFramePerBout = 0;
 
@@ -83,8 +83,8 @@ minFramePerBout = 0;
 collapseBhv = 0;
 minBoutNumber = 0;
 downSampleBouts = 0;
-minFrames = 0;
-downSampleFrames = 0;
+minFrames = 1;
+downSampleFrames = 1;
 
 
 selectFrom = 'M56';
@@ -183,7 +183,7 @@ for k = 1:length(forDim)
         % colorsForPlot = [.2 .2 .2];
 
         % Plot on second monitor, half-width
-        plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
+        plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
         fig = figure(figHFull);
         set(fig, 'Position', plotPos); clf; hold on;
         titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
@@ -199,8 +199,8 @@ for k = 1:length(forDim)
             xlim([min(projSelect(:, iDim-2)), max(projSelect(:, iDim-2))]);
             ylim([min(projSelect(:, iDim-1)), max(projSelect(:, iDim-1))]);
             zlim([min(projSelect(:, iDim)), max(projSelect(:, iDim))]);
-            set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
-            set(findall(fig,'-property','Box'),'Box','off') % optional
+            % set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+            % set(findall(fig,'-property','Box'),'Box','off') % optional
 
         elseif nUmapDim == 2
             scatter(projSelect(:, 1), projSelect(:, 2), 60, colorsForPlot, 'LineWidth', 2)
@@ -208,6 +208,7 @@ for k = 1:length(forDim)
         grid on;
         xlabel(['D', num2str(iDim-1)]); ylabel(['D', num2str(iDim)]); zlabel(['D', num2str(dimPlot(3))])
         % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
+        figure_pretty_things
         print('-dpdf', fullfile(paths.figurePath, [titleM, '.pdf']), '-bestfit')
     end
 
@@ -223,21 +224,55 @@ for k = 1:length(forDim)
     % -----------------     TWEAK THE BEHAVIOR LABELS IF YOU WANT       -----------------
     % --------------------------------------------------------------------------------------------------------------
     if changeBhvLabels
-        bhvToChange = [1, 15];
-        newBhvCode = 16;
-        minDurFrames = 4;
+        % bhvToChange = [1, 15];
+        % newBhvCode = 16;
+        % minDurFrames = 4;
+        % 
+        % for iBhv = 1 : length(bhvToChange)
+        % 
+        %     valIndices = (bhvID == bhvToChange(iBhv));
+        % 
+        %     % Identify the start and end of stretches of the target value
+        %     diffIndices = [false; diff(valIndices) ~= 0]; % Find where the value changes
+        %     startIndices = find(diffIndices & valIndices); % Starts of stretches
+        %     endIndices = find(diffIndices & ~valIndices) - 1; % Ends of stretches
+        % 
+        %     % Handle case where the last stretch runs until the end of the vector
+        %     if isempty(endIndices) || endIndices(end) < numel(bhvID) && valIndices(end)
+        %         endIndices = [endIndices; numel(bhvID)];
+        %     end
+        % 
+        %     % Calculate the durations of each stretch
+        %     durations = endIndices - startIndices + 1;
+        % 
+        %     % Get the indices of stretches with durations <= 2
+        %     shortBhvs = find(durations <= minDurFrames);
+        % 
+        %     % Optionally, get the specific indices for these stretches
+        %     shortIndices = [];
+        %     for kBhv = 1:length(shortBhvs)
+        %         shortIndices = [shortIndices, startIndices(shortBhvs(kBhv)):endIndices(shortBhvs(kBhv))];
+        %     end
+        % 
+        %     bhvID(shortIndices) = newBhvCode;
+        % end
+        % 
+        % % figure(2343)
+        % % histogram(durations)
+        % 
+        % behaviors = [behaviors, 'explore'];
 
-        for iBhv = 1 : length(bhvToChange)
 
-            valIndices = (bhvID == bhvToChange(iBhv));
 
+minDurFrames = 6;
+valIdx = bhvID == 15;
             % Identify the start and end of stretches of the target value
-            diffIndices = [false; diff(valIndices) ~= 0]; % Find where the value changes
-            startIndices = find(diffIndices & valIndices); % Starts of stretches
-            endIndices = find(diffIndices & ~valIndices) - 1; % Ends of stretches
+            diffIndices = [false; diff(valIdx) ~= 0]; % Find where the value changes
+            startIndices = find(diffIndices & valIdx); % Starts of stretches
+            endIndices = find(diffIndices & ~valIdx) - 1; % Ends of stretches
 
             % Handle case where the last stretch runs until the end of the vector
-            if isempty(endIndices) || endIndices(end) < numel(bhvID) && valIndices(end)
+            if isempty(endIndices) || endIndices(end) < numel(bhvID) && valIdx(end)
                 endIndices = [endIndices; numel(bhvID)];
             end
 
@@ -245,21 +280,17 @@ for k = 1:length(forDim)
             durations = endIndices - startIndices + 1;
 
             % Get the indices of stretches with durations <= 2
-            shortBhvs = find(durations <= minDurFrames);
+            switchBhvs = find(durations <= minDurFrames);
+            % switchBhvs = find(durations > minDurFrames);
 
             % Optionally, get the specific indices for these stretches
-            shortIndices = [];
-            for kBhv = 1:length(shortBhvs)
-                shortIndices = [shortIndices, startIndices(shortBhvs(kBhv)):endIndices(shortBhvs(kBhv))];
+            switchIdx = [];
+            for kBhv = 1:length(switchBhvs)
+                switchIdx = [switchIdx, startIndices(switchBhvs(kBhv)):endIndices(switchBhvs(kBhv))];
             end
 
-            bhvID(shortIndices) = newBhvCode;
-        end
+            bhvID(switchIdx) = 1;
 
-        % figure(2343)
-        % histogram(durations)
-
-        behaviors = [behaviors, 'meander'];
 
     end
 
@@ -296,7 +327,8 @@ for k = 1:length(forDim)
             % transWithinLabel = ['transitions pre minBout ', num2str(nMinFrames)];
 
 
-        case 'within'%% WITHIN-BEHAVIOR of all behaviors (for now, include behaviors that last one frame)
+        %% WITHIN-BEHAVIOR of all behaviors (for now, include behaviors that last one frame)
+        case 'within'
 
             transIndLog = zeros(length(bhvID), 1);
             transIndLog(preInd) = 1;
@@ -335,7 +367,9 @@ for k = 1:length(forDim)
 
             %
             if changeBhvLabels
-                transWithinLabel = [transWithinLabel, ' short inv2-loco as new bhv'];
+                % transWithinLabel = [transWithinLabel, ' short inv2-loco as new bhv'];
+                transWithinLabel = [transWithinLabel, ' short loco as inv2'];
+                % transWithinLabel = [transWithinLabel, ' long loco as inv2'];
                 % transWithinLabel = 'within-behavior xxxxx';
             end
 
@@ -457,7 +491,7 @@ for k = 1:length(forDim)
 [uniqueVals, ~, idx] = unique(svmID); % Find unique integers and indices
 bhvDataCount = accumarray(idx, 1); % Count occurrences of each unique integer
         % bhvDataCount = histcounts(svmID, (min(bhvID)-0.5):(max(bhvID)+0.5));
-        rmvBehaviors = find(bhvDataCount < nMinFrames) - 2;
+        rmvBehaviors = uniqueVals(bhvDataCount < nMinFrames);
 
         rmvBhvInd = find(ismember(bhvID, rmvBehaviors));
         rmvSvmInd = intersect(svmInd, rmvBhvInd);
@@ -488,7 +522,7 @@ bhvDataCount = accumarray(idx, 1); % Count occurrences of each unique integer
 frameCounts = accumarray(idx, 1); % Count occurrences of each unique integer
         downSample = min(frameCounts(frameCounts > 0));
         for iBhv = 1 : length(frameCounts)
-            iBhvInd = find(svmID == iBhv - 2);
+            iBhvInd = find(svmID == uniqueVals(iBhv));
             if ~isempty(iBhvInd)
                 nRemove = length(iBhvInd) - downSample;
                 rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
@@ -497,6 +531,7 @@ frameCounts = accumarray(idx, 1); % Count occurrences of each unique integer
             end
         end
         transWithinLabel = [transWithinLabel, ', downsample to ', num2str(downSample), ' data points'];
+
     end
 
 
@@ -736,10 +771,23 @@ sound(y(1:3*Fs),Fs)
     tic
     % Randomize labels and Train model on single hold-out set
     % tic
+    shuffleInd = zeros(length(trainLabels), nPermutations);
     for iPerm = 1:nPermutations
 
+
         % Shuffle the labels
-        shuffledLabels = trainLabels(randperm(length(trainLabels)));
+        % shuffledLabels = trainLabels(randperm(length(trainLabels)));
+
+        iRandom = 1 : length(trainLabels);
+
+        randShift = randi([1 length(trainLabels)]);
+    % Shuffle the data by moving the last randShift elements to the front
+    lastNElements = iRandom(end - randShift + 1:end);  % Extract the last randShift elements
+    iRandom(randShift+1:end) = iRandom(1:end-randShift); % Shift the remaining elements to the end
+    iRandom(1:randShift) = lastNElements; % Place the last n elements at the beginning
+    shuffleInd(:, iPerm) = iRandom;
+    shuffledLabels = trainLabels(shuffleInd(:, iPerm));
+
 
         % Set SVM template with the current kernel
         t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
@@ -806,15 +854,25 @@ sound(y(1:3*Fs),Fs)
         end
 
         barH.BarWidth = 1;
-        set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
-        set(findall(fig,'-property','Box'),'Box','off') % optional
+        % set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+        % set(findall(fig,'-property','Box'),'Box','off') % optional
+        titlePos = get(ax(iBhv).Title, 'Position');  % Get the position of the title
+
+% Add the text object at the title position with a background color
+
         iTitle = sprintf('%s (%d): %.2f', bhv2ModelNames{iBhv}, bhv2ModelCodes(iBhv), iAccuracy(iBhv));
-        title(iTitle, 'interpreter', 'none');
+        % title(iTitle, 'Color', bhv2ModelColors(iBhv,:), 'interpreter', 'none');
+        % title(iTitle, 'interpreter', 'none');
+text(titlePos(1), titlePos(2), iTitle, ...
+    'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
+    'FontSize', 14, 'Color', [1 1 1], 'BackgroundColor', bhv2ModelColors(iBhv,:), 'interpreter', 'none'); % Specify the background color here
     end
-    iTitle = sprintf('%s %s %s Errors due to other behaviors', selectFrom, fitType, transWithinLabel);
-    sgtitle(iTitle)
-    % saveas(gcf, fullfile(paths.figurePath, [iTitle, '.png']), 'png')
-    print('-dpdf', fullfile(paths.figurePath, [iTitle, '.pdf']), '-bestfit')
+    sTitle = sprintf('%s %s %s Errors due to other behaviors', selectFrom, fitType, transWithinLabel);
+figure_pretty_things    
+    sgtitle(sTitle)
+%  set(gcf, 'PaperOrientation', 'landscape');   % Set orientation to landscape
+% set(gcf, 'PaperPositionMode', 'auto');       % Adjust the paper size automatically
+   print('-dpdf', fullfile(paths.figurePath, [sTitle, '.pdf']), '-fillpage')
 
     %% Accuracies and F-scores
     accuracyPosition = [monitorOne(1:2), monitorOne(3)/3, monitorOne(4)/2.2];
@@ -838,7 +896,7 @@ sound(y(1:3*Fs),Fs)
     % xtickangle(45);
     titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Bhv Accuracies'];
     title(titleE)
-    print('-dpdf', fullfile(paths.figurePath, [iTitle, '.pdf']), '-bestfit')
+    print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
 
     % F1 score
     % Initialize arrays to store precision, recall, and F1 scores for each label
@@ -1129,7 +1187,7 @@ print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
 
 
     load handel
-sound(y(1:2.2*Fs),Fs)
+sound(y(1:round(2.2*Fs)),Fs)
 
 
 
