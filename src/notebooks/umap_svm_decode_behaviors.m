@@ -53,7 +53,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
 forDim = 8; % Loop through these dimensions to fit UMAP
-newUmapModel = 0; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
+newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 
 
 % Change these (and check their sections below) to determine which
@@ -68,9 +68,9 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
 % Apply to all:
 % -------------
 plotFullMap = 0;
-plotFullModelData = 1;
-plotModelData = 1;
-changeBhvLabels = 1;
+plotFullModelData = 0;
+plotModelData = 0;
+changeBhvLabels = 0;
 
 % Transition or within variables
 % -------------------------
@@ -84,8 +84,8 @@ minFramePerBout = 0;
 collapseBhv = 0;
 minBoutNumber = 0;
 downSampleBouts = 0;
-minFrames = 1;
-downSampleFrames = 1;
+minFrames = 0;
+downSampleFrames = 0;
 
 
 selectFrom = 'M56';
@@ -142,7 +142,6 @@ for k = 1:length(forDim)
 
 
     %% Run UMAPto get projections in low-D space
-    % if runAll
     if newUmapModel
         umapFrameSize = opts.frameSize;
 
@@ -150,7 +149,6 @@ for k = 1:length(forDim)
         [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
         pause(3); close
     end
-    % end
 
 
 

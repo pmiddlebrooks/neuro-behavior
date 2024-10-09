@@ -1,7 +1,20 @@
-    %% Analzyze the predictions vs observed
+    
 
-    % Use above code to establish model to analyze
+%% Confusion matrix
 
+% Generate predictions
+predictedLabels = predict(svmModel, testData);
+
+% Confusion matrix
+confusionMat = confusionmat(testLabels, predictedLabels);
+disp('Confusion Matrix:');
+disp(confusionMat);
+
+% Plot the confusion matrix
+confusionchart(testLabels, predictedLabels);
+
+
+%% Analzyze the predictions vs observed
 
 
     % Create a maximized figure on the second monitor
