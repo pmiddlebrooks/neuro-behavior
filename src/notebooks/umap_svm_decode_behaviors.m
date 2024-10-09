@@ -16,6 +16,7 @@ opts.frameSize = .1;
 getDataType = 'all';
 get_standard_data
 
+        colors = colors_for_behaviors(codes);
 
 %% for plotting consistency
 %
@@ -136,7 +137,6 @@ allFontSize = 12;
 
 for k = 1:length(forDim)
     iDim = forDim(k);
-    nUmapDim = iDim;
     fitType = ['UMAP ', num2str(iDim), 'D'];
     % fitType = 'NeuralSpace';
 
@@ -147,7 +147,7 @@ for k = 1:length(forDim)
         umapFrameSize = opts.frameSize;
 
         % rng(1);
-        [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', nUmapDim, 'randomize', false);
+        [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
         pause(3); close
     end
     % end
@@ -175,41 +175,13 @@ for k = 1:length(forDim)
     %% --------------------------------------------
     % Plot FULL TIME OF ALL BEHAVIORS
     if plotFullMap
-
-        colors = colors_for_behaviors(codes);
         colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + 2, 'UniformOutput', false);
         colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-
         % colorsForPlot = [.2 .2 .2];
-
-        % Plot on second monitor, half-width
+        figH = figHFull;
         plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
-        fig = figure(figHFull);
-        set(fig, 'Position', plotPos); clf; hold on;
         titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-        title(titleM)
-        if nUmapDim > 2
-            scatter3(projSelect(:, iDim-2), projSelect(:, iDim-1), projSelect(:, iDim), 60, colorsForPlot, 'LineWidth', 2)
-            % Variable to set the viewing angle
-            azimuth = 60;  % Angle for rotation around the z-axis
-            elevation = 20;  % Angle for elevation
-            % Set the viewing angle
-            view(azimuth, elevation);
-            % Set axes ranges based on the data
-            xlim([min(projSelect(:, iDim-2)), max(projSelect(:, iDim-2))]);
-            ylim([min(projSelect(:, iDim-1)), max(projSelect(:, iDim-1))]);
-            zlim([min(projSelect(:, iDim)), max(projSelect(:, iDim))]);
-            % set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
-            % set(findall(fig,'-property','Box'),'Box','off') % optional
-
-        elseif nUmapDim == 2
-            scatter(projSelect(:, 1), projSelect(:, 2), 60, colorsForPlot, 'LineWidth', 2)
-        end
-        grid on;
-        xlabel(['D', num2str(iDim-1)]); ylabel(['D', num2str(iDim)]); zlabel(['D', num2str(dimPlot(3))])
-        % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
-        figure_pretty_things
-        print('-dpdf', fullfile(paths.figurePath, [titleM, '.pdf']), '-bestfit')
+        plot_3d_scatter
     end
 
 
@@ -347,24 +319,6 @@ valIdx = bhvID == 15;
             transWithinLabel = 'within-behavior';
 
 
-
-            if matchTransitionCount
-                frameCounts = histcounts(bhvID(preInd + 1));
-
-                for iBhv = 1 : length(frameCounts)
-                    iBhvInd = find(svmID == iBhv - 2);
-                    if length(iBhvInd) > frameCounts(iBhv)
-                        nRemove = length(iBhvInd) - frameCounts(iBhv);
-                        rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-                        svmID(rmvBhvInd) = [];
-                        svmInd(rmvBhvInd) = [];
-                    end
-                end
-                transWithinLabel = [transWithinLabel, ' match transitions'];
-            end
-
-
-
             %
             if changeBhvLabels
                 % transWithinLabel = [transWithinLabel, ' short inv2-loco as new bhv'];
@@ -374,167 +328,11 @@ valIdx = bhvID == 15;
             end
 
 
-
-            %% IF YOU WANT, GET RID OF DATA FOR WHICH THE BOUTS ARE UNDER A MINIMUM NUMBER OF FRAMES
-            if minFramePerBout
-                % Define the minimum number of frames
-                nMinFrames = 6;  % The minimum number of consecutive repetitions
-
-                % Find all unique integers in the vector
-                uniqueInts = unique(bhvID);
-
-                % Initialize a structure to hold the result indices for each unique integer
-                rmvIndices = zeros(length(bhvID), 1);
-
-                % Loop through each unique integer
-                for iBhv = 1:length(uniqueInts)
-                    targetInt = uniqueInts(iBhv);  % The current integer to check
-
-                    % Find the indices where the target integer appears
-                    indices = find(bhvID == targetInt);
-
-                    % Loop through the found indices and check for repetitions
-                    startIdx = 1;
-                    while startIdx <= length(indices)
-                        endIdx = startIdx;
-
-                        % Check how long the sequence of consecutive targetInt values is
-                        while endIdx < length(indices) && indices(endIdx + 1) == indices(endIdx) + 1
-                            endIdx = endIdx + 1;
-                        end
-
-                        % If the sequence is shorter than nMinFrames, add all its indices to tempIndices
-                        if (endIdx - startIdx + 1) < nMinFrames
-                            rmvIndices(indices(startIdx:endIdx)) = 1;
-                        end
-
-                        % Move to the next sequence
-                        startIdx = endIdx + 1;
-                    end
-                end
-                rmvIndices = find(rmvIndices);
-
-                % Remove any frames of behaviors that lasted less than nMinFrames
-                rmvSvmInd = intersect(svmInd, rmvIndices);
-                svmInd = setdiff(svmInd, rmvSvmInd);
-                svmID = bhvID(svmInd);
-
-                transWithinLabel = [transWithinLabel, ', minBoutDur ', num2str(nMinFrames)];
-            end
-
-
     end
-    %% TWEAK THE BEHAVIOR LABELS IF YOU WANT
-    if collapseBhv
-        % IF YOU WANT, COLLAPSE MULTIPLE BEHAVIOR LABELS INTO A SINGLE LABEL
-        % bhvID(bhvID == 2) = 15;
+   
 
-        % Remove all investigate/locomotion/orients
-        rmvIndices = find(svmID == 0 | svmID == 1 | svmID == 2 | svmID == 13 | svmID == 14 | svmID == 15);
-        svmID(rmvIndices) = [];
-        svmInd(rmvIndices) = [];
-        % svmInd
-        % rmvSvmInd = intersect(svmInd, rmvIndices);
-        % svmInd = setdiff(svmInd, rmvSvmInd);
-        % svmID = bhvID(svmInd);
-
-        transWithinLabel = [transWithinLabel, ', remove loco-invest-orients'];
-    end
-    %% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF BOUTS
-    if minBoutNumber
-        nMinBouts = 100;
-
-        % Remove consecutive repetitions
-        noRepsVec = svmID([true; diff(svmID) ~= 0]);
-
-        % Count instances of each unique integer (each bout)
-        [bhvDataCount, ~] = histcounts(noRepsVec, (min(bhvID)-0.5):(max(bhvID)+0.5));
-
-        % bhvBoutCount = histcounts(noRepsVec);
-        rmvBehaviors = find(bhvDataCount < nMinBouts) - 2;
-
-        rmvBhvInd = find(ismember(bhvID, rmvBehaviors)); % find bhvID indices to remove
-        rmvSvmInd = intersect(svmInd, rmvBhvInd); % find those indices that are also in svmInd
-        svmInd = setdiff(svmInd, rmvSvmInd); % the remaining svmInd are the ones to keep (from the original bhvInd)
-        svmID = bhvID(svmInd);
-
-        transWithinLabel = [transWithinLabel, ', minBouts ', num2str(nMinBouts)];
-        [codes'; bhvDataCount]
-    end
-    %% IF YOU WANT, DOWNSAMPLE TO A CERTAIN NUMBER OF BOUTS (THE BEHAVIOR WITH THE MINUMUM NUMBER OF BOUTS)
-    if downSampleBouts
-
-        % Remove consecutive repetitions
-        noRepsVec = svmID([true; diff(svmID) ~= 0]);
-
-        % Count instances of each unique integer (each bout)
-        [bhvDataCount, ~] = histcounts(noRepsVec, (min(bhvID)-0.5):(max(bhvID)+0.5));
-
-        % subsampling to match single frame transition number
-        downSample = min(bhvDataCount(bhvDataCount > 0));
-        for iBhv = 1 : length(bhvDataCount)
-            iBhvInd = find(svmID == iBhv - 2);
-            if ~isempty(iBhvInd)
-                nRemove = length(iBhvInd) - downSample;
-                rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-                svmID(rmvBhvInd) = [];
-                svmInd(rmvBhvInd) = [];
-            end
-        end
-        transWithinLabel = [transWithinLabel, ', downsample to ', num2str(downSample), ' bouts'];
-    end
-
-     %% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
-    if minFrames
-        nMinFrames = 500;
-
-[uniqueVals, ~, idx] = unique(svmID); % Find unique integers and indices
-bhvDataCount = accumarray(idx, 1); % Count occurrences of each unique integer
-        % bhvDataCount = histcounts(svmID, (min(bhvID)-0.5):(max(bhvID)+0.5));
-        rmvBehaviors = uniqueVals(bhvDataCount < nMinFrames);
-
-        rmvBhvInd = find(ismember(bhvID, rmvBehaviors));
-        rmvSvmInd = intersect(svmInd, rmvBhvInd);
-        svmInd = setdiff(svmInd, rmvSvmInd);
-        svmID = bhvID(svmInd);
-
-        transWithinLabel = [transWithinLabel, ', minTotalFrames ', num2str(nMinFrames)];
-        [uniqueVals'; bhvDataCount']
-    end
-
-    %% IF YOU WANT, DOWNSAMPLE TO A CERTAIN NUMBER OF DATA POINTS
-    if downSampleFrames
-        %     cutoff = 1000;
-        % frameCounts = histcounts(svmID);
-        % for iBhv = 2 : length(frameCounts)
-        %     iBhvInd = find(svmID == iBhv - 2);
-        %     if length(iBhvInd) > cutoff
-        %         nRemove = length(iBhvInd) - cutoff;
-        %         rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-        %         svmID(rmvBhvInd) = [];
-        %         svmInd(rmvBhvInd) = [];
-        %     end
-        % end
-        % transWithinLabel = ['within-behavior max frames ', num2str(cutoff)];
-
-        % subsampling to match single frame transition number
-[uniqueVals, ~, idx] = unique(svmID); % Find unique integers and indices
-frameCounts = accumarray(idx, 1); % Count occurrences of each unique integer
-        downSample = min(frameCounts(frameCounts > 0));
-        for iBhv = 1 : length(frameCounts)
-            iBhvInd = find(svmID == uniqueVals(iBhv));
-            if ~isempty(iBhvInd)
-                nRemove = length(iBhvInd) - downSample;
-                rmvBhvInd = iBhvInd(randperm(length(iBhvInd), nRemove));
-                svmID(rmvBhvInd) = [];
-                svmInd(rmvBhvInd) = [];
-            end
-        end
-        transWithinLabel = [transWithinLabel, ', downsample to ', num2str(downSample), ' data points'];
-
-    end
-
-
+    %%
+    modify_data_frames_to_model
 
 
 
@@ -550,7 +348,6 @@ frameCounts = accumarray(idx, 1); % Count occurrences of each unique integer
     bhv2ModelNames = behaviors(bhv2ModelCodes+2);
 
 
-    colors = colors_for_behaviors(codes);
     bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
 
 
@@ -560,75 +357,32 @@ frameCounts = accumarray(idx, 1); % Count occurrences of each unique integer
     if plotFullModelData
         allBhvModeled = ismember(bhvID, bhv2ModelCodes);
 
-        colors = colors_for_behaviors(codes);
         colorsForPlot = arrayfun(@(x) colors(x,:), bhvID(allBhvModeled) + 2, 'UniformOutput', false);
         colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
-        % colorsForPlot = [.2 .2 .2];
-
+        figH = figHFullModel;
         % Plot on second monitor, half-width
         plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
-        fig = figure(figHFull);
-        set(fig, 'Position', plotPos); clf; hold on;
         titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-        title(titleM)
-        if nUmapDim > 2
-            scatter3(projSelect(allBhvModeled, iDim-2), projSelect(allBhvModeled, iDim-1), projSelect(allBhvModeled, iDim), 60, colorsForPlot, 'LineWidth', 2)
-            % Variable to set the viewing angle
-            azimuth = 60;  % Angle for rotation around the z-axis
-            elevation = 20;  % Angle for elevation
-            % Set the viewing angle
-            view(azimuth, elevation);
-            % Set axes ranges based on the data
-            xlim([min(projSelect(:, iDim-2)), max(projSelect(:, iDim-2))]);
-            ylim([min(projSelect(:, iDim-1)), max(projSelect(:, iDim-1))]);
-            zlim([min(projSelect(:, iDim)), max(projSelect(:, iDim))]);
-            set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
-            set(findall(fig,'-property','Box'),'Box','off') % optional
-        xlabel(['D', num2str(iDim-2)]); ylabel(['D', num2str(iDim-1)]); zlabel(['D', num2str(iDim)])
-
-        elseif nUmapDim == 2
-            scatter(projSelect(allBhvModeled, 1), projSelect(allBhvModeled, 2), 60, colorsForPlot, 'LineWidth', 2)
-        xlabel(['D', num2str(iDim-1)]); ylabel(['D', num2str(iDim)])
-        end
-        grid on;
-        % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
-        print('-dpdf', fullfile(paths.figurePath, [titleM, '.pdf']), '-bestfit')
+        plot_3d_scatter
     end
 
     %% Plot data to model
     if plotModelData
-        colors = colors_for_behaviors(codes);
         colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 2, 'UniformOutput', false);
         colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
+        figH = figHModel;
+        % Plot on second monitor, half-width
         plotPos = [monitorTwo(1) + monitorTwo(3)/2, 1, monitorTwo(3)/2, monitorTwo(4)];
-        fig = figure(figHModel);
-        set(fig, 'Position', plotPos); clf; hold on;
         titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-        title(titleM)
-        if nUmapDim > 2
-            scatter3(projSelect(svmInd, iDim-2), projSelect(svmInd, iDim-1), projSelect(svmInd, iDim), 60, colorsForPlot, 'LineWidth', 2)
-            % Variable to set the viewing angle
-            azimuth = 60;  % Angle for rotation around the z-axis
-            elevation = 20;  % Angle for elevation
-            % Set the viewing angle
-            view(azimuth, elevation);
-            % Set axes ranges based on the data
-            xlim([min(projSelect(:, iDim-2)), max(projSelect(:, iDim-2))]);
-            ylim([min(projSelect(:, iDim-1)), max(projSelect(:, iDim-1))]);
-            zlim([min(projSelect(:, iDim)), max(projSelect(:, iDim))]);
-            set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
-            set(findall(fig,'-property','Box'),'Box','off') % optional
-        xlabel(['D', num2str(iDim-2)]); ylabel(['D', num2str(iDim-1)]); zlabel(['D', num2str(iDim)])
-        elseif nUmapDim == 2
-            scatter(projSelect(svmInd, 1), projSelect(svmInd, 2), 60, colorsForPlot, 'LineWidth', 2)
-        xlabel(['D', num2str(iDim-1)]); ylabel(['D', num2str(iDim)])
-        end
-        grid on;
-        print('-dpdf', fullfile(paths.figurePath, [titleM, '.pdf']), '-bestfit')
+        plot_3d_scatter
 
     end
+
+
+
+
 
 
     %%                  SVM classifier to predict behavior ID
@@ -726,7 +480,7 @@ sound(y(1:3*Fs),Fs)
     disp('=================================================================')
 
     % UMAP dimension version
-    fprintf('\n\n%s %s DIMENSIONS %d\n\n', selectFrom, transWithinLabel, nUmapDim)  % UMAP Dimensions
+    fprintf('\n\n%s %s DIMENSIONS %d\n\n', selectFrom, transWithinLabel, iDim)  % UMAP Dimensions
     % Choose which data to model
     svmProj = projSelect(svmInd, :);
     trainData = svmProj(training(cv), :);  % UMAP Dimensions
@@ -820,153 +574,7 @@ sound(y(1:3*Fs),Fs)
 
     %% Analzyze the predictions vs observed
 
-    % Use above code to establish model to analyze
-
-
-
-    % Create a maximized figure on the second monitor
-    fig = figure(54); clf
-    set(fig, 'Position', monitorTwo);
-    nPlot = length(bhv2ModelCodes);
-    [ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
-
-    edges = -.5 : 1 : bhv2ModelCodes(end)+1;
-    iAccuracy = zeros(length(bhv2ModelCodes), 1);
-    for iBhv = 1 : length(bhv2ModelCodes)
-        iObsInd = testLabels == bhv2ModelCodes(iBhv);
-        iObs = testLabels(iObsInd);
-        iPred = predictedLabels(iObsInd);
-        iAccuracy(iBhv) = sum(iObs == iPred) / length(iObs);
-        iPredWrong = iPred(iObs ~= iPred);
-        % N = histcounts(iPredWrong, edges, 'Normalization', 'pdf');
-        bhv2ModelErrProp = zeros(length(bhv2ModelCodes), 1);
-        for kBhv = 1 : length(bhv2ModelCodes)
-        bhv2ModelErrProp(kBhv) = sum(iPredWrong == bhv2ModelCodes(kBhv)) / length(iPredWrong);
-        end
-        % barCodes = 0:bhv2ModelCodes(end);
-
-        axes(ax(iBhv))
-        % barH = bar(barCodes, N);
-        barH = bar(bhv2ModelCodes, bhv2ModelErrProp);
-        for kBar = 1:length(bhv2ModelCodes)
-            barH.FaceColor = 'flat';        % Enable face color for each bar
-            barH.CData(kBar,:) = bhv2ModelColors(kBar,:);  % Assign color to each bar
-        end
-
-        barH.BarWidth = 1;
-        % set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
-        % set(findall(fig,'-property','Box'),'Box','off') % optional
-        titlePos = get(ax(iBhv).Title, 'Position');  % Get the position of the title
-
-% Add the text object at the title position with a background color
-
-        iTitle = sprintf('%s (%d): %.2f', bhv2ModelNames{iBhv}, bhv2ModelCodes(iBhv), iAccuracy(iBhv));
-        % title(iTitle, 'Color', bhv2ModelColors(iBhv,:), 'interpreter', 'none');
-        % title(iTitle, 'interpreter', 'none');
-text(titlePos(1), titlePos(2), iTitle, ...
-    'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
-    'FontSize', 14, 'Color', [1 1 1], 'BackgroundColor', bhv2ModelColors(iBhv,:), 'interpreter', 'none'); % Specify the background color here
-    end
-    sTitle = sprintf('%s %s %s Errors due to other behaviors', selectFrom, fitType, transWithinLabel);
-figure_pretty_things    
-    sgtitle(sTitle)
-%  set(gcf, 'PaperOrientation', 'landscape');   % Set orientation to landscape
-% set(gcf, 'PaperPositionMode', 'auto');       % Adjust the paper size automatically
-   print('-dpdf', fullfile(paths.figurePath, [sTitle, '.pdf']), '-fillpage')
-
-    %% Accuracies and F-scores
-    accuracyPosition = [monitorOne(1:2), monitorOne(3)/3, monitorOne(4)/2.2];
-    fig = figure(55); clf;
-    set(fig, 'Position', accuracyPosition);
-    % barH = bar(bhv2ModelCodes, iAccuracy);
-    barH = bar(bhv2ModelCodes, iAccuracy);
-    for kBar = 1:length(iAccuracy)
-        barH.FaceColor = 'flat';        % Enable face color for each bar
-        barH.CData(kBar,:) = bhv2ModelColors(kBar,:);  % Assign color to each bar
-    end
-    barH.BarWidth = 1;
-    xticks(bhv2ModelCodes)
-    ylim([0 1])
-    set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
-    set(findall(fig,'-property','Box'),'Box','off') % optional
-    xlabel('Behavior')
-    ylabel('Proportion Accurate')
-    % bvhLabels = behaviors(2:end)
-    % xticklabels(bhvLabels)
-    % xtickangle(45);
-    titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Bhv Accuracies'];
-    title(titleE)
-    print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
-
-    % F1 score
-    % Initialize arrays to store precision, recall, and F1 scores for each label
-    % observedLabels = svmID;
-    uniqueLabels = unique(testLabels);
-    precision = zeros(size(uniqueLabels));
-    recall = zeros(size(uniqueLabels));
-    f1Score = zeros(size(uniqueLabels));
-
-    % Calculate F1 score for each unique label
-    for iBhv = 1:length(uniqueLabels)
-        label = uniqueLabels(iBhv);
-
-        % True positives (TP)
-        tp = sum((predictedLabels == label) & (testLabels == label));
-
-        % False positives (FP)
-        fp = sum((predictedLabels == label) & (testLabels ~= label));
-
-        % False negatives (FN)
-        fn = sum((predictedLabels ~= label) & (testLabels == label));
-
-        % Precision
-        if (tp + fp) > 0
-            precision(iBhv) = tp / (tp + fp);
-        else
-            precision(iBhv) = 0;
-        end
-
-        % Recall
-        if (tp + fn) > 0
-            recall(iBhv) = tp / (tp + fn);
-        else
-            recall(iBhv) = 0;
-        end
-
-        % F1 Score
-        if (precision(iBhv) + recall(iBhv)) > 0
-            f1Score(iBhv) = 2 * (precision(iBhv) * recall(iBhv)) / (precision(iBhv) + recall(iBhv));
-        else
-            f1Score(iBhv) = 0;
-        end
-    end
-
-    % % Display the results
-    % resultsTable = table(uniqueLabels', precision', recall', f1Score', ...
-    %                      'VariableNames', {'Label', 'Precision', 'Recall', 'F1_Score'});
-    % disp(resultsTable);
-
-    f1Position = [monitorOne(1), monitorOne(4)/2, monitorOne(3)/3, monitorOne(4)/2.2];
-    fig = figure(56); clf;
-    set(fig, 'Position', f1Position);
-    % bar(codes(2:end), f1Score);
-    % xticks(0:codes(end))
-    barH = bar(uniqueLabels, f1Score);
-    for kBar = 1:length(f1Score)
-        barH.FaceColor = 'flat';        % Enable face color for each bar
-        barH.CData(kBar,:) = bhv2ModelColors(kBar,:);  % Assign color to each bar
-    end
-    barH.BarWidth = 1;
-    set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
-    set(findall(fig,'-property','Box'),'Box','off') % optional
-    xticks(uniqueLabels)
-    ylim([0 1])
-    xlabel('Behavior')
-    ylabel('F-score')
-    titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Bhv F1 scores'];
-    title(titleE)
-    print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
-
+analyze_model_predictions
 
 
     %% This needs to be updated  --------------------------------------------
@@ -1258,13 +866,13 @@ periEventTime = -opts.frameSize : opts.frameSize : 0; % seconds around onset
 dataWindow = floor(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 figure(230); clf; hold on;
-titleM = ['UMAP M56 ', num2str(nUmapDim), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleM = ['UMAP M56 ', num2str(iDim), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM)
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 
 figure(231); clf; hold on;
-titleD = ['UMAP DS ', num2str(nUmapDim), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = ['UMAP DS ', num2str(iDim), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
@@ -1285,18 +893,18 @@ for i = 1 : length(behaviorsPlot)
     end
 
     figure(230)
-    if nUmapDim > 2
+    if iDim > 2
         scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
-    elseif nUmapDim == 2
+    elseif iDim == 2
         scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
         % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
         % scatter(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
     end
 
     figure(231)
-    if nUmapDim > 2
+    if iDim > 2
         scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
-    elseif nUmapDim == 2
+    elseif iDim == 2
         scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
         % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
         % scatter(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
@@ -1328,13 +936,13 @@ frameShift = [0 opts.frameSize];
 periEventTime = -opts.frameSize : opts.frameSize : 0; % seconds around onset
 
 figure(230); clf; hold on;
-titleM = ['UMAP M56 ', num2str(nUmapDim), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleM = ['UMAP M56 ', num2str(iDim), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM)
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
 
 figure(231); clf; hold on;
-titleD = ['UMAP DS ', num2str(nUmapDim), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = ['UMAP DS ', num2str(iDim), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD)
 grid on;
 xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
@@ -1360,17 +968,17 @@ for k = 1 : length(frameShift)
         end
 
         figure(230)
-        if nUmapDim > 2
+        if iDim > 2
             scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, colors(k,:), 'LineWidth', 2)
-        elseif nUmapDim == 2
+        elseif iDim == 2
             scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(k,:), 'LineWidth', 2)
             % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
         end
 
         figure(231)
-        if nUmapDim > 2
+        if iDim > 2
             scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, colors(k,:), 'LineWidth', 2)
-        elseif nUmapDim == 2
+        elseif iDim == 2
             scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colors(k,:), 'LineWidth', 2)
             % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
         end
@@ -1752,11 +1360,11 @@ propSample = .5; % subsample the data to keep the plot clean (but still sample t
 randInd = randperm(length(bhvID), floor(length(bhvID) * propSample));
 
 figure(520); clf; hold on;
-titleM = [behaviorsPlot{1}, '  UMAP M56 ', num2str(nUmapDim), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleM = [behaviorsPlot{1}, '  UMAP M56 ', num2str(iDim), 'D,  bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleM, 'interpreter', 'none')
-if nUmapDim > 2
+if iDim > 2
     scatter3(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), projectionsM56(randInd, dimPlot(3)), 40, colorsForPlot, 'MarkerEdgeAlpha', alphaVal)
-elseif nUmapDim == 2
+elseif iDim == 2
     scatter(projectionsM56(randInd, dimPlot(1)), projectionsM56(randInd, dimPlot(2)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
 end
 grid on;
@@ -1766,11 +1374,11 @@ xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel([
 
 % figure(221+i); clf; hold on;
 figure(521); clf; hold on;
-titleD = [behaviorsPlot{1}, '  UMAP DS ', num2str(nUmapDim), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+titleD = [behaviorsPlot{1}, '  UMAP DS ', num2str(iDim), 'D, bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 title(titleD, 'interpreter', 'none')
-if nUmapDim > 2
+if iDim > 2
     scatter3(projectionsDS(randInd, dimPlot(1)), projectionsDS(randInd, dimPlot(2)), projectionsDS(randInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
-elseif nUmapDim == 2
+elseif iDim == 2
     scatter(projectionsDS(randInd, dimPlot(1)), projectionsDS(randInd, dimPlot(2)), 40, colorsForPlot, 'LineWidth', 1, 'MarkerEdgeAlpha', alphaVal)
 end
 grid on;
@@ -1792,18 +1400,18 @@ bhvPlot = find(strcmp(behaviors, behaviorsPlot)) - 2;
 allInd = bhvID == bhvPlot; % all labeled target behaviors
 
 figure(520);
-if nUmapDim > 2
+if iDim > 2
     scatter3(projectionsM56(allInd, dimPlot(1)), projectionsM56(allInd, dimPlot(2)), projectionsM56(allInd, dimPlot(3)), 60, fullColor, 'LineWidth', 2)
-elseif nUmapDim == 2
+elseif iDim == 2
     scatter(projectionsM56(allInd, dimPlot(1)), projectionsM56(allInd, dimPlot(2)), 60, fullColor, 'LineWidth', 2)
 end
 % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 
 
 figure(521);
-if nUmapDim > 2
+if iDim > 2
     scatter3(projectionsDS(allInd, dimPlot(1)), projectionsDS(allInd, dimPlot(2)), projectionsDS(allInd, dimPlot(3)), 60, fullColor, 'LineWidth', 2)
-elseif nUmapDim == 2
+elseif iDim == 2
     scatter(projectionsDS(allInd, dimPlot(1)), projectionsDS(allInd, dimPlot(2)), 60, fullColor, 'LineWidth', 2)
 end
 % saveas(gcf, fullfile(paths.figurePath, [titleD, '.png']), 'png')
@@ -1832,18 +1440,18 @@ colorsForPlot = arrayfun(@(x) colors(x,:), bhvID(transitionsInd) + 2, 'UniformOu
 colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
 figure(520)
-if nUmapDim > 2
+if iDim > 2
     scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), projectionsM56(transitionsInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nUmapDim == 2
+elseif iDim == 2
     scatter3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colorsForPlot, 'LineWidth', 2)
     % plot3(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, '-', 'color', [.6 .6 .6])
     % scatter(projectionsM56(transitionsInd, dimPlot(1)), projectionsM56(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
 end
 
 figure(521)
-if nUmapDim > 2
+if iDim > 2
     scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), projectionsDS(transitionsInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
-elseif nUmapDim == 2
+elseif iDim == 2
     scatter3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), 60, colorsForPlot, 'LineWidth', 2)
     % plot3(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), opts.frameSize * (transitionsInd-1), '-', 'color', [.6 .6 .6])
     % scatter(projectionsDS(transitionsInd, dimPlot(1)), projectionsDS(transitionsInd, dimPlot(2)), 60, colors(bhvPlot+2,:), 'LineWidth', 2)
