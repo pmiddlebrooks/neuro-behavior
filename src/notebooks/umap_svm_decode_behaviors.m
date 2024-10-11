@@ -61,7 +61,7 @@ newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tw
 % ==========================
 
 % Modeling variables
-nPermutations = 2; % How many random permutations to run to compare with best fit model?
+nPermutations = 1; % How many random permutations to run to compare with best fit model?
 accuracy = zeros(length(forDim), 1);
 accuracyPermuted = zeros(length(forDim), nPermutations);
 
@@ -179,6 +179,7 @@ for k = 1:length(forDim)
         figH = figHFull;
         plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
         titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+        plotFrames = 1:length(bhvID);
         plot_3d_scatter
     end
 
@@ -362,6 +363,7 @@ valIdx = bhvID == 15;
         % Plot on second monitor, half-width
         plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
         titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+        plotFrames = allBhvModeled;
         plot_3d_scatter
     end
 
@@ -374,6 +376,7 @@ valIdx = bhvID == 15;
         % Plot on second monitor, half-width
         plotPos = [monitorTwo(1) + monitorTwo(3)/2, 1, monitorTwo(3)/2, monitorTwo(4)];
         titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+                plotFrames = svmInd;
         plot_3d_scatter
 
     end
