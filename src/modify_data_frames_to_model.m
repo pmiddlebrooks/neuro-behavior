@@ -1,6 +1,51 @@
 %%
+if strcmp(transOrWithin, 'within') && firstNFrames
+withinRange = 1:3;
+% withinRange = 2:4;
+
+    % Initialize an empty array to store selected indices
+    selectedIndices = [];
+    
+    % Find the changes in the bhvID vector (where consecutive integers break)
+    starts = [find(diff(bhvID) ~= 0) + 1; length(bhvID) + 1];
+
+    % Iterate through each stretch of consecutive integers
+    for i = 1:length(starts)-1
+        % Find the start and end indices of the current stretch
+        % startIdx = starts(i) + withinRange(1) - 1;
+        startIdx = starts(i);
+        endIdx = starts(i+1) - 1;
+
+        % Length of the current stretch of consecutive integers
+        stretchLength = endIdx - startIdx + 1;
+
+
+        % Edit code below to exclude any stretches shorter than withinRange
+
+        % Check if the stretch is long enough for [x:n]
+        if stretchLength >= withinRange(end) - withinRange(1) + 1
+            % If yes, take the indices from x to n
+            selectedIndices = [selectedIndices, startIdx + (withinRange(1)-1):(startIdx + withinRange(end) - 1)];
+        else
+            % If not, take the indices from x as close to n as possible
+            if withinRange(1) <= stretchLength
+                selectedIndices = [selectedIndices, startIdx + (withinRange(1)-1):endIdx];
+            end
+        end
+    end
+
+    % Remove indices that directly precede a change in bhvID
+    excludeIdx = starts(2:end) - 1;
+    svmInd = setdiff(selectedIndices, excludeIdx);
+    svmID = bhvID(svmInd);
+
+        transWithinLabel = [transWithinLabel, ' frame ', num2str(withinRange(1)), '-', num2str(withinRange(end))];
+
+end
+%%
 if matchTransitionCount
     frameCounts = histcounts(bhvID(preInd + 1));
+    warning('Make sure if you are comparing to multiple frames per transition, you account for it in within-behavior')
 
     for iBhv = 1 : length(frameCounts)
         iBhvInd = find(svmID == iBhv - 2);
@@ -79,7 +124,7 @@ if collapseBhv
 
     transWithinLabel = [transWithinLabel, ', remove loco-invest-orients'];
 end
-%% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF BOUTS
+%% REMOVE ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF BOUTS
 if minBoutNumber
     nMinBouts = 100;
 
@@ -100,7 +145,7 @@ if minBoutNumber
     transWithinLabel = [transWithinLabel, ', minBouts ', num2str(nMinBouts)];
     [codes'; bhvDataCount]
 end
-%% IF YOU WANT, DOWNSAMPLE TO A CERTAIN NUMBER OF BOUTS (THE BEHAVIOR WITH THE MINUMUM NUMBER OF BOUTS)
+%% DOWNSAMPLE TO A CERTAIN NUMBER OF BOUTS (THE BEHAVIOR WITH THE MINUMUM NUMBER OF BOUTS)
 if downSampleBouts
 
     % Remove consecutive repetitions
@@ -123,7 +168,7 @@ if downSampleBouts
     transWithinLabel = [transWithinLabel, ', downsample to ', num2str(downSample), ' bouts'];
 end
 
-%% IF YOU WANT, GET RID OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
+%% REMOVE OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
 if minFrames
     nMinFrames = 400;
 
@@ -141,7 +186,7 @@ if minFrames
     [uniqueVals'; bhvDataCount']
 end
 
-%% IF YOU WANT, DOWNSAMPLE TO A CERTAIN NUMBER OF DATA POINTS
+%% DOWNSAMPLE TO A CERTAIN NUMBER OF DATA POINTS
 if downSampleFrames
     %     cutoff = 1000;
     % frameCounts = histcounts(svmID);

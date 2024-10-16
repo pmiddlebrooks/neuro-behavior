@@ -208,7 +208,10 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'neural')
 
 
 
-    return
+    % return
+
+
+    
     %%         Standard PSTHS to use for analyses (b/c they have the same trials, etc)
     % Create 3-D psth data matrix of stacked peri-event start time windows (time X neuron X trial)
     % Make one of spike counts and one of zscored spike counts

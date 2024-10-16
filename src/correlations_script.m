@@ -2,7 +2,8 @@
 
 opts = neuro_behavior_options;
 opts.frameSize = .05; % 50 ms framesize for now
-opts.collectFor = 60*45; % Get 45 min
+opts.collectFor = 60*60; % Get 45 min
+opts.minActTime = .16;
 
 get_standard_data
 
@@ -73,6 +74,74 @@ for iBhv = 1 : length(analyzeCodes)
 
     sgtitle(['Peri and Pre within area correlations: ', analyzeBhv(iBhv)])
 end
+
+
+
+
+
+
+
+%% Which area has modulation first? Cross-correlation across behaviors
+% For each behavior onset, determine the cross-correlation of mean spiking across neurons between M56 and DS
+% plotCodes = codes(codes>-1);
+% plotBhv = behaviors(codes>-1);
+
+fig = figure(88); clf
+set(fig, 'Position', monitorTwo);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
+colors = colors_for_behaviors(analyzeCodes);
+for iBhv = 1 : length(analyzeCodes)
+    % Get mean peri-event spiking data from the two areas for this behavior
+    iPeriM56 = mean(mean(eventMatZ{iBhv}(:, idM56, :), 2), 3);
+    iPeriDS = mean(mean(eventMatZ{iBhv}(:, idDS, :), 2), 3);
+    % iPeriM56 = mean(eventMat{iBhv}(14:end, idM56, 1), 2);
+    % iPeriDS = mean(eventMat{iBhv}(14:end, idDS, 1), 2);
+
+    [c, lags] = xcorr(iPeriM56, iPeriDS, 30, 'normalized');
+    % [cM56, ~] = xcorr(iPeriM56, iPeriM56, 30, 'normalized');
+    % [cDS, ~] = xcorr(iPeriDS, iPeriDS, 30, 'normalized');
+    R = corrcoef(iPeriM56, iPeriDS);
+
+    axes(ax(iBhv)); %hold on;
+    plot(lags, c, 'color', colors(iBhv,:), 'lineWidth', 3)
+    % plot(lags, cM56, '--k', 'lineWidth', 2)
+    % plot(lags, cDS, '--r', 'lineWidth', 2)
+    xline(0)
+
+        title(analyzeBhv{iBhv}, 'interpreter', 'none');
+
+    % title(num2str(corr(mean(dataMat(plotFrames, idM56), 2), mean(dataMat(plotFrames, idDS), 2))))
+end
+sgtitle('M56 X DS Cross-correlations peri-behavior-transitions (z-scored)')
+
+%% Across some time, regardless of aligning to transitions
+randWindow = randi([50 70000]) + fullWindow;
+firstFrames = find(diff(bhvIDMat) ~= 0) + 1; % 1 frame prior to all behavior transitions
+preIndID = bhvIDMat(firstFrames);
+
+plotFrames = firstFrames(19) + fullWindow;
+% plotFrames = 40001:44350;
+meanM56 = mean(dataMat(plotFrames, idM56), 2);
+meanDS = mean(dataMat(plotFrames, idDS), 2);
+meanM56Z = zscore(mean(dataMat(plotFrames, idM56), 2));
+meanDSZ = zscore(mean(dataMat(plotFrames, idDS), 2));
+% plot(meanM56);
+% hold on
+% plot(meanDS, 'r');
+    % [c, lags] = xcorr(meanM56, meanDS, 50, 'normalized');
+    [cZ, lags] = xcorr(meanM56Z, meanDSZ, 30, 'normalized');
+    % [c, lags] = xcorr(meanM56, meanDS, 50);
+    % [c, lags] = xcorr(meanM56, meanDS(randperm(length(meanDS))), 50);
+    % R = corrcoef(meanM56, meanDS)
+    % [c, lags] = xcorr(meanM56, meanDS, 50, 'normalized');
+    % R = corrcoef(meanM56, meanDS);
+    figure(89); clf; hold on;
+    % plot(lags, c, 'linewidth', 2)
+    plot(lags, cZ, '--b', 'linewidth', 2)
+    xline(0)
+
+
 
 
 
@@ -670,7 +739,7 @@ if plotFlag
 
     % Get monitor positions and size
     % monitorPositions = get(0, 'MonitorPositions');
-% secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+    % secondMonitorPosition = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
     % Create a maximized figure on the second monitor
     fig = figure(70);
     clf
@@ -1035,7 +1104,7 @@ for iBhv = 1 : length(analyzeCodes)
     bar(binCenters, N, 'FaceColor', colors(iBhv,:), 'BarWidth', 1);
 
     N = histcounts(iSigCorr, edges, 'Normalization', 'pdf');
-bar(binCenters, N, 'FaceColor', [.5 .5 .5], 'BarWidth', 1, 'FaceAlpha', .6);
+    bar(binCenters, N, 'FaceColor', [.5 .5 .5], 'BarWidth', 1, 'FaceAlpha', .6);
 
     ca = gca;
     % ca.YTickLabel = ca.YTick;
@@ -1434,6 +1503,25 @@ for seq = 1 : over40
     plot([median(seqM56DSCorrCurr(:)) median(seqM56DSCorrCurr(:))], [.9*yl(2) yl(2)], 'r', 'linewidth', 4)
     title(['M56 - DS correlations: ', sequenceNames{seq}], 'interpreter', 'none')
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
