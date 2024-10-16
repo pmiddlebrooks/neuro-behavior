@@ -69,13 +69,16 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
 % -------------
 plotFullMap = 0;
 plotFullModelData = 0;
-plotModelData = 0;
+plotModelData = 1;
+plotTransitions = 0;
 changeBhvLabels = 0;
 
 % Transition or within variables
 % -------------------------
 % transOrWithin = 'trans';
 transOrWithin = 'within';  
+transOrWithin = 'transVsWithin';  
+firstNFrames = 0;
 matchTransitionCount = 0;
 minFramePerBout = 0;
 
@@ -134,7 +137,7 @@ end
 % Some figure properties
 allFontSize = 12;
 
-
+%
 for k = 1:length(forDim)
     iDim = forDim(k);
     fitType = ['UMAP ', num2str(iDim), 'D'];
@@ -325,12 +328,18 @@ valIdx = bhvID == 15;
                 % transWithinLabel = [transWithinLabel, ' long loco as inv2'];
                 % transWithinLabel = 'within-behavior xxxxx';
             end
-
+        case 'transVsWithin'
+            svmID = bhvID;
+svmID(diff(bhvID) ~= 0) = 9;
+svmID(diff(bhvID) == 0) = 12;
+svmID(end) = [];
+svmInd = 1 : length(svmID);
+            transWithinLabel = 'trans-vs-within';
 
     end
    
 
-    %%
+    %% If you set any behavior/data curation flags:
     modify_data_frames_to_model
 
 
@@ -343,12 +352,15 @@ valIdx = bhvID == 15;
 
 
     %% Keep track of the behavior IDs you end up using
+    if strcmp(transOrWithin, 'transVsWithin')
+    bhv2ModelCodes = [9 12];
+    bhv2ModelNames = {'transitions', 'within'};
+    % bhv2ModelColors = [0 0 1; 1 .33 0];
+    else
     bhv2ModelCodes = unique(svmID);
     bhv2ModelNames = behaviors(bhv2ModelCodes+2);
-
-
     bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
-
+    end
 
 
     %% --------------------------------------------
@@ -682,6 +694,7 @@ analyze_model_predictions
     % points used to generate the model. Thus, the accuracy my differ (be
     % lower than in many cases) than the model tested on the test set.
 
+    if plotTransitions
     fprintf('\nPredicting each frame going into transitions:\n')
     frames = -2 : 4; % 2 frames pre to two frames post transition
 
@@ -735,7 +748,7 @@ analyze_model_predictions
     % saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
     print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
 
-
+    end
     % %% Use the model to predict all within-behavior frames
     %
     % transIndLog = zeros(length(bhvID), 1);

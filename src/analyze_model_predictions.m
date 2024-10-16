@@ -7,10 +7,11 @@ predictedLabels = predict(svmModel, testData);
 
 % Confusion matrix
 confusionMat = confusionmat(testLabels, predictedLabels);
-disp('Confusion Matrix:');
-disp(confusionMat);
+% disp('Confusion Matrix:');
+% disp(confusionMat);
 
 % Plot the confusion matrix
+figure(342)
 confusionchart(testLabels, predictedLabels);
 
 

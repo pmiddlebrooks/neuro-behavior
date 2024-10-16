@@ -13,8 +13,8 @@ zDim = 3;
         if iDim > 2
             scatter3(projSelect(plotFrames, xDim), projSelect(plotFrames, yDim), projSelect(plotFrames, zDim), 60, colorsForPlot, 'LineWidth', 2)
             % Variable to set the viewing angle
-            azimuth = 60;  % Angle for rotation around the z-axis
-            elevation = 20;  % Angle for elevation
+            azimuth = 30;  % Angle for rotation around the z-axis
+            elevation = 50;  % Angle for elevation
             % Set the viewing angle
             view(azimuth, elevation);
             % Set axes ranges based on the data
