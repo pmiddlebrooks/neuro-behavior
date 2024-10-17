@@ -52,7 +52,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % Select which data to run analyses on, UMAP dimensions, etc
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
-forDim = 8; % Loop through these dimensions to fit UMAP
+forDim = [3 8]; % Loop through these dimensions to fit UMAP
 newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 
 
@@ -61,7 +61,7 @@ newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tw
 % ==========================
 
 % Modeling variables
-nPermutations = 1; % How many random permutations to run to compare with best fit model?
+nPermutations = 3; % How many random permutations to run to compare with best fit model?
 accuracy = zeros(length(forDim), 1);
 accuracyPermuted = zeros(length(forDim), nPermutations);
 
@@ -88,7 +88,7 @@ collapseBhv = 0;
 minBoutNumber = 0;
 downSampleBouts = 0;
 minFrames = 0;
-downSampleFrames = 0;
+downSampleFrames = 1;
 
 
 selectFrom = 'M56';
@@ -163,11 +163,6 @@ for k = 1:length(forDim)
 
 
     projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
-    % projectionsM56 = projM56(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
-    % projectionsDS = projDS(1:end-shiftFrame, :);
-
-
-
 
 
 
@@ -338,10 +333,8 @@ svmInd = 1 : length(svmID);
 
     end
    
-
     %% If you set any behavior/data curation flags:
     modify_data_frames_to_model
-
 
 
     %% Get rid of sleeping/in_nest/irrelavents

@@ -47,7 +47,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % Select which data to run analyses on, pca dimensions, etc
 
 forDim = 3:8; % Loop through these dimensions to fit pca
-% forDim = 8; % Loop through these dimensions to fit pca
+forDim = [3 8]; % Loop through these dimensions to fit UMAP
 newPcaModel = 1; % Do we need to get a new pca model to analyze (or did you tweak some things that come after pca?)
 
 
@@ -63,14 +63,16 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
 % Apply to all:
 % -------------
 plotFullMap = 0;
-plotFullModelData = 1;
+plotFullModelData = 0;
 plotModelData = 1;
+plotTransitions = 0;
 changeBhvLabels = 0;
 
 % Transition or within variables
 % -------------------------
 % transOrWithin = 'trans';
 transOrWithin = 'within';
+transOrWithin = 'transVsWithin';  
 matchTransitionCount = 0;
 minFramePerBout = 0;
 
@@ -79,12 +81,12 @@ minFramePerBout = 0;
 collapseBhv = 0;
 minBoutNumber = 0;
 downSampleBouts = 0;
-minFrames = 1;
+minFrames = 0;
 downSampleFrames = 1;
 
 
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -169,7 +171,6 @@ for k = 1:length(forDim)
         figH = figHFull;
         plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
         titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-
         plotFrames = 1:length(bhvID);
         plot_3d_scatter
     end
@@ -316,14 +317,17 @@ for k = 1:length(forDim)
                 % transWithinLabel = [transWithinLabel, ' long loco as inv2'];
                 % transWithinLabel = 'within-behavior xxxxx';
             end
-
-
-
-
+        case 'transVsWithin'
+            svmID = bhvID;
+svmID(diff(bhvID) ~= 0) = 9;
+svmID(diff(bhvID) == 0) = 12;
+svmID(end) = [];
+svmInd = 1 : length(svmID);
+            transWithinLabel = 'trans-vs-within';
 
     end
 
-    %%
+    %% If you set any behavior/data curation flags:
     modify_data_frames_to_model
 
 
@@ -335,13 +339,15 @@ for k = 1:length(forDim)
 
 
     %% Keep track of the behavior IDs you end up using
+    if strcmp(transOrWithin, 'transVsWithin')
+    bhv2ModelCodes = [9 12];
+    bhv2ModelNames = {'transitions', 'within'};
+    % bhv2ModelColors = [0 0 1; 1 .33 0];
+    else
     bhv2ModelCodes = unique(svmID);
     bhv2ModelNames = behaviors(bhv2ModelCodes+2);
-
-
     bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
-
-
+    end
 
 
     %% --------------------------------------------
@@ -355,8 +361,7 @@ for k = 1:length(forDim)
         figH = figHFullModel;
         % Plot on second monitor, half-width
         plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
-        titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-        
+        titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];        
         plotFrames = allBhvModeled;
         plot_3d_scatter
     end
@@ -677,6 +682,7 @@ analyze_model_predictions
     % points used to generate the model. Thus, the accuracy my differ (be
     % lower than in many cases) than the model tested on the test set.
 
+    if plotTransitions
     fprintf('\nPredicting each frame going into transitions:\n')
     frames = -2 : 4; % 2 frames pre to two frames post transition
 
@@ -730,7 +736,7 @@ analyze_model_predictions
     % saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
     print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
 
-
+    end
     % %% Use the model to predict all within-behavior frames
     %
     % transIndLog = zeros(length(bhvID), 1);
