@@ -245,7 +245,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'neural')
         end
         meanPsth = mean(iDataMat, 3);
         meanWindow = mean(meanPsth, 1);
-        stdWindow = std(meanPsth, 1);
+        stdWindow = std(meanPsth, [], 1);
 
         iDataMatZ = (iDataMat - meanWindow) ./ stdWindow;
 

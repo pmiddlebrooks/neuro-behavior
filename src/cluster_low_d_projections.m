@@ -191,15 +191,15 @@ minPOutlier = .25;
 nCluster = zeros(length(dimFit), length(minpts), length(minClusterSize));
 pOutlier = zeros(length(dimFit), length(minpts), length(minClusterSize));
 
+if size(projSelect, 1) <= maxFrames
+    fitFrames = 1 : size(projSelect, 1);
+else
+    fitFrames = randperm(size(projSelect, 1), maxFrames);
+end
+
 for kDim = 1 : length(dimFit)
 
-    if size(projSelect, 1) <= maxFrames
-        fitFrames = 1 : size(projSelect, 1);
-        clusterer = HDBSCAN(projSelect(:,1:dimFit(kDim))); % creates a class
-    else
-        fitFrames = randperm(size(projSelect, 1), maxFrames);
-        clusterer = HDBSCAN(projSelect(fitFrames,1:dimFit(kDim))); % creates a class
-    end
+    clusterer = HDBSCAN(projSelect(fitFrames,1:dimFit)); % creates a class
 
     for iMin = 1:length(minpts)
 
@@ -267,10 +267,18 @@ for kDim = 1 : length(dimFit)
 end
 
 %% Which are the good regions of parameters?
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(length(minClusterSize),fun);
 
-figure(991);
-plot(nCluster(1,1,:));
-
+figure(991); clf; hold on;
+for i = 2 : length(dimFit)
+    clf; hold on;
+    title(num2str(dimFit(i)))
+    for j = 1 :length(minClusterSize)
+        plot(minpts, squeeze(nCluster(i,:,j)), 'color', colors(j,:), 'lineWidth', 2);
+    end
+    legend
+end
 
 %%  Scan over a good range of params to find a suitable one
 fig = figure(916); clf
@@ -294,15 +302,14 @@ minClusterSize = [2 3 4 8 16 32 64];
 
 maxFrames = 20000;
 
-for kDim = 1 : length(dimFit)
+if size(projSelect, 1) <= maxFrames
+    fitFrames = 1 : size(projSelect, 1);
+else
+    fitFrames = randperm(size(projSelect, 1), maxFrames);
+end
 
-    if size(projSelect, 1) <= maxFrames
-        fitFrames = 1 : size(projSelect, 1);
-        clusterer = HDBSCAN(projSelect(:,1:dimFit(kDim))); % creates a class
-    else
-        fitFrames = randperm(size(projSelect, 1), maxFrames);
-        clusterer = HDBSCAN(projSelect(fitFrames,1:dimFit(kDim))); % creates a class
-    end
+for kDim = 1 : length(dimFit)
+    clusterer = HDBSCAN(projSelect(fitFrames,1:dimFit)); % creates a class
 
     for iMin = 1:length(minpts)
 
@@ -341,7 +348,9 @@ for kDim = 1 : length(dimFit)
                     % plot dbscan assignments
                     axes(ax(1))
                     % gscatter(projSelect(:,dim1),projSelect(:,dim2),idx, hsv(length(clusters)));
-                    dbscanClusterColors = hsv(length(clusters));
+                    % dbscanClusterColors = hsv(length(clusters));
+                    fun = @sRGB_to_OKLab;
+                    dbscanClusterColors = maxdistcolor(length(clusters),fun)
                     dbscanColors = arrayfun(@(x) dbscanClusterColors(x,:), rankedVec, 'UniformOutput', false);
                     dbscanColors = vertcat(dbscanColors{:}); % Convert cell array to a matrix
                     % If there are outliers, color them gray
@@ -371,9 +380,76 @@ end
 
 
 
-%%
-                fun = @sRGB_to_OKLab;
-                dbscanClusterColors = maxdistcolor(5,fun)
+%% Predict data based on good model found above
+
+% Fit a model on a subset of the data if you have too many points
+dimFit = 3;
+minpts = 4;
+minClusterSize = 4;
+
+maxFrames = 10000;
+
+if size(projSelect, 1) <= maxFrames
+    fitFrames = 1 : size(projSelect, 1);
+else
+    fitFrames = randperm(size(projSelect, 1), maxFrames);
+end
+    clusterer = HDBSCAN(projSelect(fitFrames,1:dimFit)); % creates a class
+
+    clusterer.minpts = minpts; %size(projSelect, 2) + 1; %tends to govern cluster number  %was 3? with all neurons
+    clusterer.minclustsize = minClusterSize; %governs accuracy  %was 4? with all neurons
+    clusterer.minClustNum = 5;
+    % clusterer.outlierThresh = .95;
+    clusterer.fit_model(); 		% trains a cluster hierarchy
+    clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
+    clusterer.get_membership();		% assigns cluster labels to the points in X
+
+    labels = clusterer.predict(projSelect(fitFrames,1:dimFit));
+
+            idx = clusterer.labels;
+            clusters = unique(idx);
+            % Create a map from unique integers to their ranks
+            rankMap = containers.Map(clusters, 1:length(clusters));
+            % Replace each integer in the original vector with its corresponding rank
+            rankedVec = arrayfun(@(x) rankMap(x), idx);
+
+            iPOutlier = sum(idx == 0) / length(idx);
+
+
+            % Is this a fairly good clusterer??
+            nCluster = length(clusters);
+            pOutlier = iPOutlier;
+
+    if length(clusters) >= minNCluster && length(clusters) <= maxNCluster && iPOutlier <= minPOutlier
+
+        % plot dbscan assignments
+        axes(ax(1))
+        % gscatter(projSelect(:,dim1),projSelect(:,dim2),idx, hsv(length(clusters)));
+        % dbscanClusterColors = hsv(length(clusters));
+        fun = @sRGB_to_OKLab;
+        dbscanClusterColors = maxdistcolor(length(clusters),fun)
+        dbscanColors = arrayfun(@(x) dbscanClusterColors(x,:), rankedVec, 'UniformOutput', false);
+        dbscanColors = vertcat(dbscanColors{:}); % Convert cell array to a matrix
+        % If there are outliers, color them gray
+        if ismember(0, unique(clusters))
+            dbscanColors(rankedVec == 1, :) = repmat([.2 .2 .2], sum(rankedVec == 1), 1);
+        end
+        scatter3(projSelect(fitFrames,dim1),projSelect(fitFrames,dim2),projSelect(fitFrames,dim3), 50, dbscanColors, '.');
+        view(azimuth, elevation);
+        sgtitle(sprintf('%s HDBSCAN: Dim: %d\t minpts: %d\t minClust: %d\t nCluster: %d\t pOutlier: %.2f', selectFrom, dimFit, minpts, minClusterSize, length(clusters), sum(idx == 0) / length(idx)))
+
+        % compare with behavior labels
+        axes(ax(2))
+        scatter3(projSelect(fitFrames,dim1),projSelect(fitFrames,dim2),projSelect(fitFrames,dim3), 50, colorsForPlot, '.'); %, 'filled', '.');
+        view(azimuth, elevation);
+        figure_pretty_things
+        titleM = sprintf('%s HDBSCAN %s %dD minpts %d nClust %d pOutlier %.2f', selectFrom, transWithinLabel, dimFit, minpts, length(clusters), iPOutlier);
+        print('-dpdf', fullfile(paths.figurePath, [titleM, '.pdf']), '-bestfit')
+        disp('pause')
+end
+
+
+
 %%
 
 
@@ -411,7 +487,7 @@ end
 
 
 %% If I predict the data with the clusterer, do unlabled data get labeled?
-    clusterPredict = clusterer.predict(projSelect);
+clusterPredict = clusterer.predict(projSelect);
 
 %% Fit data to a good HDBSCAN set of parameters to predict labels
 
@@ -425,7 +501,7 @@ end
 
 % I have a matrix of data, projSelect. I have a vector of behavior labels, svmID. I fit a svm to projSelect, which predicts labels in a vector svmIDPredict. Separately, I used hdbscan to cluster the data in projSelect, which predicts cluster labels in the vector clusterPredict.
 %  - For each label in clusterPredict, from the most common label to least common label, computes the distribution and variability of svmID labels.
- 
+
 % Count the occurrence of each cluster label
 [uniqueClusters, ~, clusterIdx] = unique(clusterPredict);
 clusterCounts = accumarray(clusterIdx, 1);
