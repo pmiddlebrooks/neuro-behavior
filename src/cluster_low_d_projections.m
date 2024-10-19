@@ -7,7 +7,13 @@ close
 
 
 
+%% plotting contants
 
+% Set the viewing angle
+azimuth = 30;  % Angle for rotation around the z-axis
+elevation = 50;  % Angle for elevation
+
+        colorsData = colors_for_behaviors(codes);
 
 
 
@@ -61,45 +67,63 @@ gscatter(projSelect(:,dim1),projSelect(:,dim2),idx, hsv(length(clusters)));
 axes(ax(2))
 scatter(projSelect(:,dim1),projSelect(:,dim2), 50, colorsForPlot, '.'); %, 'filled', '.');
 
-%%
+%% DBSCAN: test a wide variety of parameters
 fig = figure(916); clf
 set(fig, 'Position', monitorTwo);
 [ax, pos] = tight_subplot(1,2, [.08 .02], .1);
-azimuth = 60;  % Angle for rotation around the z-axis
-elevation = 20;  % Angle for elevation
-% Set the viewing angle
+                 fun = @sRGB_to_OKLab;
+
 dim1 = 1;
 dim2 = 2;
 dim3 = 3;
 
 
-
 dimFit = 3:8;
-minpts = 8 : 8 : 64;
-epsilon = .04 : .02 : .2;
+minpts = 2 : 18;
+epsilon = .2 : .05 : 1;
+
+nCluster = zeros(length(dimFit), length(minpts), length(epsilon));
+pOutlier = zeros(length(dimFit), length(minpts), length(epsilon));
+
+maxNCluster = 30;
+minNCluster = 5; % Including outliers
+minPOutlier = .25;
+
+maxFrames = 10000;
+    fitFrames = randperm(size(projSelect, 1), maxFrames);
+% fitFrames = 1:size(projSelect, 1);
+
 for kDim = 1 : length(dimFit)
     for iMin = 1:length(minpts)
         for jEps = 1 : length(epsilon)
-            idx = dbscan(projSelect(:,1:dimFit(kDim)), epsilon(jEps), minpts(iMin));
+            idx = dbscan(projSelect(fitFrames,1:dimFit(kDim)), epsilon(jEps), minpts(iMin));
             idx(idx == -1) = 0;
             clusters = unique(idx);
+           
             nCluster(kDim, iMin, jEps) = length(clusters);
             pOutlier(kDim, iMin, jEps) = sum(idx == 0) / length(idx);
 
-            if length(clusters) > 5 && length(clusters) < 32
+            fprintf('\nDim: %d\t minpts: %d\t epsilon: %.2f\t nCluster: %d\t pOutlier: %.2f\n', dimFit(kDim), minpts(iMin), epsilon(jEps), length(clusters), sum(idx == 0) / length(idx))
+            if length(clusters) >= minNCluster && length(clusters) <= maxNCluster && pOutlier(kDim, iMin, jEps) <= minPOutlier 
                 % plot dbscan assignments
                 axes(ax(1))
                 % gscatter(projSelect(:,dim1),projSelect(:,dim2),idx, hsv(length(clusters)));
-                dbscanClusterColors = hsv(length(clusters)+1);
+                % dbscanClusterColors = hsv(length(clusters)+1);
+                dbscanClusterColors = maxdistcolor(length(clusters),fun);               
                 dbscanColors = arrayfun(@(x) dbscanClusterColors(x,:), idx+1, 'UniformOutput', false);
                 dbscanColors = vertcat(dbscanColors{:}); % Convert cell array to a matrix
-                scatter3(projSelect(:,dim1),projSelect(:,dim2),projSelect(:,dim3), 50, dbscanColors, '.');
+                 % if ismember(0, unique(clusters))
+                    dbscanColors(ismember(idx, 0), :) = repmat([.4 .4 .4], sum(ismember(idx, 0)), 1);
+                % end
+               scatter3(projSelect(fitFrames,dim1),projSelect(fitFrames,dim2),projSelect(fitFrames,dim3), 50, dbscanColors, '.');
                 view(azimuth, elevation);
                 sgtitle(sprintf('Dim: %d\t minpts: %d\t epsilon: %.2f\t nCluster: %d\t pOutlier: %.2f', dimFit(kDim), minpts(iMin), epsilon(jEps), length(clusters), sum(idx == 0) / length(idx)))
 
                 % compare with behavior labels
                 axes(ax(2))
-                scatter3(projSelect(:,dim1),projSelect(:,dim2),projSelect(:,dim3), 50, colorsForPlot, '.'); %, 'filled', '.');
+                    colorsForPlot = arrayfun(@(x) colorsData(x,:), bhvID(fitFrames) + 2, 'UniformOutput', false);
+                    colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+                scatter3(projSelect(fitFrames,dim1),projSelect(fitFrames,dim2),projSelect(fitFrames,dim3), 50, colorsForPlot, '.'); %, 'filled', '.');
                 view(azimuth, elevation);
                 fprintf('DBSCAN: Dim: %d\t minpts: %d\t epsilon: %.2f\t nCluster: %d\t pOutlier: %.2f', dimFit(kDim), minpts(iMin), epsilon(jEps), length(clusters), sum(idx == 0) / length(idx))
                 disp('pause')
@@ -155,8 +179,6 @@ end
 fig = figure(916); clf
 set(fig, 'Position', monitorTwo);
 [ax, pos] = tight_subplot(1,2, [.08 .02], .1);
-azimuth = 60;  % Angle for rotation around the z-axis
-elevation = 20;  % Angle for elevation
 % Set the viewing angle
 dim1 = 1;
 dim2 = 2;
@@ -167,8 +189,6 @@ dim3 = 3;
 fig = figure(916); clf
 set(fig, 'Position', monitorTwo);
 [ax, pos] = tight_subplot(1,2, [.08 .02], .1);
-azimuth = 60;  % Angle for rotation around the z-axis
-elevation = 20;  % Angle for elevation
 % Set the viewing angle
 dim1 = 1;
 dim2 = 2;
@@ -238,9 +258,9 @@ for kDim = 1 : length(dimFit)
                 % plot dbscan assignments
                 axes(ax(1))
                 % gscatter(projSelect(:,dim1),projSelect(:,dim2),idx, hsv(length(clusters)));
-                dbscanClusterColors = hsv(length(clusters));
+                % dbscanClusterColors = hsv(length(clusters));
                 fun = @sRGB_to_OKLab;
-                dbscanClusterColors = maxdistcolor(length(clusters),fun)
+                dbscanClusterColors = maxdistcolor(length(clusters),fun);
                 dbscanColors = arrayfun(@(x) dbscanClusterColors(x,:), rankedVec, 'UniformOutput', false);
                 dbscanColors = vertcat(dbscanColors{:}); % Convert cell array to a matrix
                 % If there are outliers, color them gray
@@ -268,14 +288,14 @@ end
 
 %% Which are the good regions of parameters?
 fun = @sRGB_to_OKLab;
-colors = maxdistcolor(length(minClusterSize),fun);
+colorsModel = maxdistcolor(length(minClusterSize),fun);
 
 figure(991); clf; hold on;
 for i = 2 : length(dimFit)
     clf; hold on;
     title(num2str(dimFit(i)))
     for j = 1 :length(minClusterSize)
-        plot(minpts, squeeze(nCluster(i,:,j)), 'color', colors(j,:), 'lineWidth', 2);
+        plot(minpts, squeeze(nCluster(i,:,j)), 'color', colorsModel(j,:), 'lineWidth', 2);
     end
     legend
 end
@@ -284,8 +304,6 @@ end
 fig = figure(916); clf
 set(fig, 'Position', monitorTwo);
 [ax, pos] = tight_subplot(1,2, [.08 .02], .1);
-azimuth = 60;  % Angle for rotation around the z-axis
-elevation = 20;  % Angle for elevation
 % Set the viewing angle
 dim1 = 1;
 dim2 = 2;
@@ -404,7 +422,8 @@ end
     clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
     clusterer.get_membership();		% assigns cluster labels to the points in X
 
-    labels = clusterer.predict(projSelect(fitFrames,1:dimFit));
+    % labels = clusterer.predict(projSelect(fitFrames,1:dimFit));
+    labels = clusterer.predict(projSelect(1:400,1:dimFit));
 
             idx = clusterer.labels;
             clusters = unique(idx);
