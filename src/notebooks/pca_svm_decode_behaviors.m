@@ -279,9 +279,9 @@ for k = 1:length(forDim)
             svmInd = preInd;% + 1; % First bin after transition
 
             % Pre & Post: Comment/uncomment to use more than one bin
-            % svmID = [svmID; svmID];
-            % svmInd = [svmInd - 1; svmInd]; % two bins before transition
-            % svmInd = [svmInd; svmInd + 1]; % Last bin before transition and first bin after
+            % svmID = repelem(svmID, 2);
+            % svmInd = sort([svmInd - 1; svmInd]); % two bins before transition
+            % svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
 
             transWithinLabel = 'transitions pre';
             % transWithinLabel = 'transitions 200ms pre';
