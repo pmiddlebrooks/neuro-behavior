@@ -8,7 +8,7 @@ yDim = 2;
 zDim = 3;
 
         fig = figure(figH);
-        fig.Visible = 'off';
+        % fig.Visible = 'off';
         set(fig, 'Position', plotPos); clf; hold on;
         title(titleM, 'interpreter', 'none')
         if iDim > 2
