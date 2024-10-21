@@ -1,6 +1,7 @@
 % cluster_low_d_projections
 
 %%
+
 [projSelect, ~, uIdx, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
 close
 

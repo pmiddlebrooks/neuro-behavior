@@ -208,7 +208,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'neural')
 
 
 
-    % return
+    return
 
 
     

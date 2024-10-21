@@ -11,7 +11,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .1;
+opts.frameSize = .05;
 
 getDataType = 'all';
 get_standard_data
@@ -21,9 +21,11 @@ get_standard_data
 %% for plotting consistency
 %
 monitorPositions = get(0, 'MonitorPositions');
+if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
+    monitorPositions = flipud(monitorPositions);
+end
 monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
 monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
-
 
 
 %%
@@ -53,6 +55,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
 forDim = [3 8]; % Loop through these dimensions to fit UMAP
+forDim = 5; % Loop through these dimensions to fit UMAP
 newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 
 
@@ -67,7 +70,7 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
 
 % Apply to all:
 % -------------
-plotFullMap = 0;
+plotFullMap = 1;
 plotFullModelData = 0;
 plotModelData = 1;
 plotTransitions = 0;
@@ -92,7 +95,7 @@ downSampleFrames = 1;
 
 
 selectFrom = 'M56';
-selectFrom = 'DS';
+% selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -137,20 +140,34 @@ end
 % Some figure properties
 allFontSize = 12;
 
-%
-for k = 1:length(forDim)
+
+min_dist = (.1 : .1 : .5);
+min_dist = (.01 : .03 : .1);
+spread = [1 1.3 1.6];
+% n_neighbors = [150];
+n_neighbors = [ 4 6 8 10 12 15];
+
+% for k = 1:length(forDim)
+
+
     iDim = forDim(k);
     fitType = ['UMAP ', num2str(iDim), 'D'];
     % fitType = 'NeuralSpace';
 
 
+for x = 1:length(min_dist)
+    for y = 1:length(spread)
+        for z = 1:length(n_neighbors)
     %% Run UMAPto get projections in low-D space
+    fprintf('\n%s %s min_dist %.2f spread %.1f n_n %d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
     if newUmapModel
         umapFrameSize = opts.frameSize;
 
         % rng(1);
-        [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
-        pause(3); close
+        % [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
+        [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+            'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+        pause(4); close
     end
 
 
@@ -176,12 +193,15 @@ for k = 1:length(forDim)
         % colorsForPlot = [.2 .2 .2];
         figH = figHFull;
         plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
-        titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+        titleM = sprintf('%s %s min_dist %.2f spread %.1f n_n %d', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
+        % titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
         plotFrames = 1:length(bhvID);
         plot_3d_scatter
     end
 
-
+        end
+    end
+end
 
 
 
@@ -777,7 +797,10 @@ analyze_model_predictions
 
 
 
-end
+% end
+
+
+
 % Plot the accuracy results per dimension
 
 
