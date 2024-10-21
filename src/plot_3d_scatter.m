@@ -8,8 +8,9 @@ yDim = 2;
 zDim = 3;
 
         fig = figure(figH);
+        fig.Visible = 'off';
         set(fig, 'Position', plotPos); clf; hold on;
-        title(titleM)
+        title(titleM, 'interpreter', 'none')
         if iDim > 2
             scatter3(projSelect(plotFrames, xDim), projSelect(plotFrames, yDim), projSelect(plotFrames, zDim), 60, colorsForPlot, 'LineWidth', 2)
             % Variable to set the viewing angle
