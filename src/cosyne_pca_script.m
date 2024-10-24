@@ -13,12 +13,7 @@ get_standard_data
 
 colors = colors_for_behaviors(codes);
 
-%%
-third = size(dataMat, 1) / 3;
-frames1 = 1:third;
-frames2 = third + 1:third*2;
-frames3 = third*2 + 1:size(dataMat, 1);
-%% for plotting consistency
+% for plotting consistency
 %
 monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
@@ -26,12 +21,12 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 
 
-%%
+%
 bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
     'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
     'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...
     'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
-%%
+%
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
 bhvID = double(bhvIDMat); % Shift bhvIDMat to account for time shift
@@ -63,14 +58,14 @@ newPcaModel = 1; % Do we need to get a new pca model to analyze (or did you twea
 
 % Modeling variables
 nPermutations = 2; % How many random permutations to run to compare with best fit model?
-accuracy = zeros(length(forDim), 1);
-accuracyPermuted = zeros(length(forDim), nPermutations);
+accuracy = zeros(length(forDim), 3);
+accuracyPermuted = zeros(length(forDim), 3);
 
 % Apply to all:
 % -------------
 plotFullMap = 1;
 plotFullModelData = 0;
-plotModelData = 1;
+plotModelData = 0;
 plotTransitions = 0;
 changeBhvLabels = 0;
 
@@ -92,7 +87,7 @@ downSampleFrames = 1;
 
 
 selectFrom = 'M56';
-selectFrom = 'DS';
+% selectFrom = 'DS';
 switch selectFrom
     case 'M56'
         % projSelect = projectionsM56;
@@ -121,6 +116,11 @@ end
 allFontSize = 12;
 
 
+third = size(dataMat, 1) / 3;
+frames1 = 1:third;
+frames2 = third + 1:third*2;
+frames3 = third*2 + 1:size(dataMat, 1);
+
 % Run PCA to get projections in low-D space for the first third
 if newPcaModel
     % rng(1);
@@ -133,6 +133,7 @@ iDim = 8;
 % iDim = forDim(k);
 fitType = ['PCA ', num2str(iDim), 'D'];
 % fitType = 'NeuralSpace';
+
 
 
 projSelect1 = score(:, 1:iDim);
@@ -255,6 +256,8 @@ svmInd3(deleteInd3) = [];
 warning('Some indices may be multiply labeled, b/c some behaviors last only one frame')
 
 % Loop of nModel models/predictions
+    tic
+
 nModel = 20;
 for m = 1 : nModel
     svmID1Model = svmID1;
@@ -289,7 +292,7 @@ for m = 1 : nModel
         svmID3Model(rmvBhvInd3) = [];
         svmInd3Model(rmvBhvInd3) = [];
 
-    %     transWithinLabel = [transWithinLabel, ', minTotalFrames ', num2str(nMinFrames)];
+        %     transWithinLabel = [transWithinLabel, ', minTotalFrames ', num2str(nMinFrames)];
     end
     %% Subsample frames so all behaviors have same # of data points
     if downSampleFrames
@@ -353,7 +356,7 @@ for m = 1 : nModel
         bhv2ModelNames = {'transitions', 'within'};
         % bhv2ModelColors = [0 0 1; 1 .33 0];
     else
-        bhv2ModelCodes = unique(svmID);
+        bhv2ModelCodes = unique(svmID1);
         bhv2ModelNames = behaviors(bhv2ModelCodes+2);
         bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
     end
@@ -369,7 +372,7 @@ for m = 1 : nModel
         % Plot on second monitor, half-width
         plotPos = [monitorTwo(1) + monitorTwo(3)/2, 1, monitorTwo(3)/2, monitorTwo(4)];
         titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin=', num2str(opts.frameSize), ' shift=', num2str(shiftSec)];
-projSelect = projSelect1;
+        projSelect = projSelect1;
         plotFrames = svmInd1Model;
         plot_3d_scatter
 
@@ -387,7 +390,6 @@ projSelect = projSelect1;
     appendModelName = selectFrom;
 
 
-    tic
 
 
     % Split data into training (80%) and testing (20%) sets
@@ -402,7 +404,7 @@ projSelect = projSelect1;
     trainData = svmProj(training(cv), :);  % pca Dimensions
     testData = svmProj(test(cv), :); % pca Dimensions
 
-testData(1:10)
+    % testData(1:10)
 
     % % Neural space version
     % fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
@@ -415,7 +417,7 @@ testData(1:10)
     trainLabels = svmID1Model(training(cv));
     testLabels = svmID1Model(test(cv));
 
-testLabels(1:10)
+    % testLabels(1:10)
     % Define different kernel functions to try
     % kernelFunctions = {'linear', 'gaussian', 'polynomial', 'rbf'};
     kernelFunction = 'polynomial';
@@ -436,63 +438,178 @@ testLabels(1:10)
     predictedLabels3 = predict(svmModel, projSelect3(svmInd3Model, :));
 
     % Calculate and display the overall accuracy
-    accuracy1(m) = sum(predictedLabels1 == testLabels) / length(testLabels);
-    accuracy2(m) = sum(predictedLabels2 == svmID2Model) / length(svmID2Model);
-    accuracy3(m) = sum(predictedLabels3 == svmID3Model) / length(svmID3Model);
-    fprintf('%s %s First 3rd Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy1(m));
-    fprintf('%s %s Second 3rd Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy2(m));
-    fprintf('%s %s Third 3rd Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy3(m));
+    accuracy(m, 1) = sum(predictedLabels1 == testLabels) / length(testLabels);
+    accuracy(m, 2) = sum(predictedLabels2 == svmID2Model) / length(svmID2Model);
+    accuracy(m, 3) = sum(predictedLabels3 == svmID3Model) / length(svmID3Model);
+    fprintf('%s %s First 3rd Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy(m, 1));
+    fprintf('%s %s Second 3rd Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy(m, 2));
+    fprintf('%s %s Third 3rd Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy(m, 3));
 
     fprintf('Model fit took %.2f min\n', toc/60)
 
-    % tic
-    % % Randomize labels and Train model on single hold-out set
-    % % tic
-    % shuffleInd = zeros(length(trainLabels), nPermutations);
-    % for iPerm = 1:nPermutations
-    %
-    %
-    %     % Shuffle the labels
-    %     % shuffledLabels = trainLabels(randperm(length(trainLabels)));
-    %
-    %     iRandom = 1 : length(trainLabels);
-    %
-    %     randShift = randi([1 length(trainLabels)]);
-    %     % Shuffle the data by moving the last randShift elements to the front
-    %     lastNElements = iRandom(end - randShift + 1:end);  % Extract the last randShift elements
-    %     iRandom(randShift+1:end) = iRandom(1:end-randShift); % Shift the remaining elements to the end
-    %     iRandom(1:randShift) = lastNElements; % Place the last n elements at the beginning
-    %     shuffleInd(:, iPerm) = iRandom;
-    %     shuffledLabels = trainLabels(shuffleInd(:, iPerm));
-    %
-    %
-    %     % Set SVM template with the current kernel
-    %     t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
-    %
-    %     % Train the SVM model on shuffled training data
-    %     svmModelPermuted = fitcecoc(trainData, shuffledLabels, 'Learners', t);
-    %
-    %     % Predict the labels using observed test data
-    %     predictedLabelsPermuted = predict(svmModelPermuted, testData);
-    %
-    %     % Calculate the permuted accuracy
-    %     accuracyPermuted(k, iPerm) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
-    %     fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f%%\n', selectFrom, transWithinLabel, k, accuracyPermuted(k, iPerm));
-    %
-    % end
-    % modelName = ['svmModelPermuted', appendModelName];
-    % % Reassign the value of modelName to the new variable name using eval
-    % eval([modelName, ' = svmModelPermuted;']);
-    %
-    %
-    %
-    % % Get the elapsed time
-    % fprintf('Permutation model fit(s) took %.2f min\n', toc/60)
 
-    %     load handel
-    % sound(y(1:3*Fs),Fs)
+
+
+
+    iPerm = 1;
+
+    % Shuffle the labels from each third and make a prediction
+    shuffleInd = zeros(length(projSelect1(svmInd1Model, :)), iPerm);
+    iRandom = 1 : length(svmID1Model);
+
+    randShift = randi([1 length(svmInd1Model)]);
+    % Shuffle the labels by moving the last randShift elements to the front
+    lastNElements = iRandom(end - randShift + 1:end);  % Extract the last randShift elements
+    iRandom(randShift+1:end) = iRandom(1:end-randShift); % Shift the remaining elements to the end
+    iRandom(1:randShift) = lastNElements; % Place the last n elements at the beginning
+    shuffleInd(:, iPerm) = iRandom;
+    svmID1Shuffle = svmID1Model(shuffleInd(:, iPerm));
+
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+
+    % Train the SVM model on shuffled training data
+    svmModelPermuted = fitcecoc(projSelect1(svmInd1Model, :), svmID1Shuffle, 'Learners', t);
+
+    % Predict the labels using observed test data
+    predictedLabelsPermuted = predict(svmModelPermuted, projSelect1(svmInd1Model, :));
+
+    % Calculate the permuted accuracy
+    % accuracyPermuted(m, 1) = sum(predictedLabelsPermuted == svmID1Shuffle) / length(svmID1Shuffle);
+     randomBhvAll = ones(length(svmID1Model), 1) * 15;
+   accuracyPermuted(m, 1) = sum(predictedLabelsPermuted == randomBhvAll) / length(svmID1Shuffle);
+    fprintf('Permuted %s %s Overall Accuracy permutation 1 %d: %.4f%%\n', selectFrom, transWithinLabel, 1, accuracyPermuted(m, 1));
+
+
+        % Shuffle the labels from each third and make a prediction
+    shuffleInd = zeros(length(projSelect2(svmInd2Model, :)), iPerm);
+    iRandom = 1 : length(svmID2Model);
+
+    randShift = randi([1 length(svmInd2Model)]);
+    % Shuffle the labels by moving the last randShift elements to the front
+    lastNElements = iRandom(end - randShift + 1:end);  % Extract the last randShift elements
+    iRandom(randShift+1:end) = iRandom(1:end-randShift); % Shift the remaining elements to the end
+    iRandom(1:randShift) = lastNElements; % Place the last n elements at the beginning
+    shuffleInd(:, iPerm) = iRandom;
+    svmID2Shuffle = svmID2Model(shuffleInd(:, iPerm));
+
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+
+    % Train the SVM model on shuffled training data
+    svmModelPermuted = fitcecoc(projSelect2(svmInd2Model, :), svmID2Shuffle, 'Learners', t);
+
+    % Predict the labels using observed test data
+    predictedLabelsPermuted = predict(svmModelPermuted, projSelect2(svmInd2Model, :));
+
+    % Calculate the permuted accuracy
+    % accuracyPermuted(m, 2) = sum(predictedLabelsPermuted == svmID2Shuffle) / length(svmID2Shuffle);
+     randomBhvAll = ones(length(svmID2Model), 1) * 15;
+    accuracyPermuted(m, 2) = sum(predictedLabelsPermuted == randomBhvAll) / length(svmID2Shuffle);
+    fprintf('Permuted %s %s Overall Accuracy permutation 2 %d: %.4f%%\n', selectFrom, transWithinLabel, 2, accuracyPermuted(m, 2));
+
+
+        % Shuffle the labels from each third and make a prediction
+    shuffleInd = zeros(length(projSelect3(svmInd3Model, :)), iPerm);
+    iRandom = 1 : length(svmID3Model);
+
+    randShift = randi([1 length(svmInd3Model)]);
+    % Shuffle the labels by moving the last randShift elements to the front
+    lastNElements = iRandom(end - randShift + 1:end);  % Extract the last randShift elements
+    iRandom(randShift+1:end) = iRandom(1:end-randShift); % Shift the remaining elements to the end
+    iRandom(1:randShift) = lastNElements; % Place the last n elements at the beginning
+    shuffleInd(:, iPerm) = iRandom;
+    svmID3Shuffle = svmID3Model(shuffleInd(:, iPerm));
+
+    % Set SVM template with the current kernel
+    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+
+    % Train the SVM model on shuffled training data
+    svmModelPermuted = fitcecoc(projSelect3(svmInd3Model, :), svmID3Shuffle, 'Learners', t);
+
+    % Predict the labels using observed test data
+    predictedLabelsPermuted = predict(svmModelPermuted, projSelect3(svmInd3Model, :));
+
+    % Calculate the permuted accuracy
+    % accuracyPermuted(m, 3) = sum(predictedLabelsPermuted == svmID3Shuffle) / length(svmID3Shuffle);
+     randomBhvAll = ones(length(svmID3Model), 1) * 15;
+    accuracyPermuted(m, 3) = sum(predictedLabelsPermuted == randomBhvAll) / length(svmID3Shuffle);
+    fprintf('Permuted %s %s Overall Accuracy permutation 3 %d: %.4f%%\n', selectFrom, transWithinLabel, 3, accuracyPermuted(m, 3));
+
+
+
+toc
+
+
+
+
+
+
+
+
+
+
 end
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% accuracyDS = accuracy;
+% accuracyPermutedDS = accuracyPermuted;
+% 
+accuracyMS = accuracy;
+accuracyPermutedMS = accuracyPermuted;
+
+%%
+accuracy = accuracyDS;
+accuracyPermuted = accuracyPermutedDS;
+selectFrom = 'DS';
+%%
+accuracy = accuracyMS;
+accuracyPermuted = accuracyPermutedMS;
+selectFrom = 'M56'
+
+%% Plot the accuracy per recording duration
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(size(accuracy, 1),fun);
+
+figure(44); clf; hold on;
+for m = 1 : nModel
+    % plot(1:3, accuracy(m, :), '-o', 'color', colors(m,:), 'lineWidth', 3, 'markerSize', 10)
+    plot(1:3, accuracy(m, :), '.r', 'lineWidth', 2, 'markerSize', 35)
+    plot(1:3, accuracyPermuted(m, :), '.', 'color', [.7 .7 .7], 'lineWidth', 2, 'markerSize', 35)
+end
+% yline(1/16, '--', 'lineWidth', 3)
+ylabel('Accuracy (%)')
+xlabel('Session Thirds')
+xlim([.8 3.2])
+ylim([0 .35])
+xticks(1:3)
+yticks(0:.1:.3)
+figure_pretty_things
+titleSave = [selectFrom, ' PCA Decoding Accuracy'];
+title(titleSave)
+saveas(gcf, fullfile(paths.figurePath, titleSave) , 'svg');
+legend('Predicted', 'Shuffled')
 
 
 %% Analzyze the predictions vs observed
