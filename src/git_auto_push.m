@@ -15,7 +15,7 @@ end
 for i = 1 : length(pathsToUpdate)
     % Navigate to the specified folder
     cd(pathsToUpdate{i});
-
+fprintf('Updating %s\n', pathsToUpdate{i})
     % Git add
     system('git add .');
 
