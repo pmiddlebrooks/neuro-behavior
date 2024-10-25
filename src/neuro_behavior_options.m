@@ -13,6 +13,7 @@ function opts = neuro_behavior_options
 opts.fsBhv = 60;
 opts.fsSpike = 30000;
 opts.fsLfp = 1250;
+opts.fsKinematics = 60;
 
 opts.frameSize = .1; % how many s per time step (frame)
 % How many sec (not frames) do we want to regress before and after events?

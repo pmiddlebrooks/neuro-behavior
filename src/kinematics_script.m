@@ -7,42 +7,137 @@ opts.frameSize = .1;
 
 getDataType = 'all';
 get_standard_data
+
+
+
+
+%% Set up variables for plotting
+bodyParts = unique(headerData(3,:));
+bodyParts(strcmp(bodyParts, 'bodyparts')) = [];
+
+
+% frames = 1000:2000;
+% figure(2342); clf; hold on;
+% for i = 1:length(bodyParts)
+% iTrack = find(strcmp(headerData(3,:), bodyParts{i}), 2);
+% plot(kinData{frames, iTrack(1)}, kinData{frames, iTrack(2)}, 'lineWidth', 2);
+% end
+% legend(bodyParts)
+xMin = 10e3;
+yMin = 10e3;
+xMax = 0;
+yMax = 0;
+for i = 1:length(bodyParts)
+iTrack = find(strcmp(headerData(3,:), bodyParts{i}), 2);
+xMin = floor(min([xMin; kinData{:, iTrack(1)}]));
+yMin = floor(min([yMin; kinData{:, iTrack(2)}]));
+xMax = floor(max([xMax; kinData{:, iTrack(1)}]));
+yMax = floor(max([yMax; kinData{:, iTrack(2)}]));
+% plot(kinData{frames, iTrack(1)}, kinData{frames, iTrack(2)}, 'lineWidth', 2);
+end
+
+snoutCol = find(strcmp(headerData(3,:), 'snout'), 2);
+buttCol = find(strcmp(headerData(3,:), 'tail-base'), 2);
+
+timeStamp = kinData(:,1) / opts.fsKinematics;
+
 %%
-bhvDataPath = 'E:/Projects/neuro-behavior/data/processed_behavior/';
-animal = 'ag25290';
-sessionBhv = '112321_1';
-sessionNrn = '112321';
-if strcmp(sessionBhv, '112321_1')
-    sessionSave = '112321';
+delete(fullfile(paths.figurePath,'slidingWindowMovie.mp4'))
+
+% Parameters
+windowLength = 100; % Define the length of the sliding window
+frameRate = 60; % Frame rate for the movie playback
+
+% Assume dataSet1, dataSet2, dataSet3, dataSet4, dataSet5 are your 5 two-column matrices
+% dataSets = {dataSet1, dataSet2, dataSet3, dataSet4, dataSet5};
+maxRows = size(kinData, 1)/1000; % Find the minimum number of rows among datasets
+maxRows = 500;
+
+% Create a figure for plotting
+figure(811); clf
+% hold on;
+
+% Prepare video writer
+v = VideoWriter(fullfile(paths.figurePath,'slidingWindowMovie'), 'MPEG-4');
+v.FrameRate = frameRate;
+open(v);
+
+startI = 500000;
+% Loop over the rows for sliding window
+for i = startI:startI+maxRows
+    % Define the window range
+    % windowStart = max(1, i - windowLength + 1);
+    % windowEnd = i;
+
+    % Clear the plot for the new frame
+    clf;
+    hold on;
+xlim([xMin xMax])
+ylim([yMin yMax])
+    % Loop over each dataset and plot the windowed segment
+    plot([kinData{i, snoutCol(1)} kinData{i, buttCol(1)}], [kinData{i, snoutCol(2)} kinData{i, buttCol(2)}], 'k')
+    for j = 1:length(bodyParts)
+jTrack = find(strcmp(headerData(3,:), bodyParts{j}), 2);
+        % Ensure we don't exceed the available rows in the dataset
+        if windowStart <= size(kinData, 1)
+            % plot(kinData{windowStart:windowEnd, jTrack(1)}, kinData{windowStart:windowEnd, jTrack(2)}, 'LineWidth', 2);
+            scatter(kinData{i, jTrack(1)}, kinData{i, jTrack(2)}, 50, 'filled');
+        end
+    end
+
+    % Set plot limits and labels
+    % xlim([min(cellfun(@(x) min(x(:,1)), dataSets)), max(cellfun(@(x) max(x(:,1)), dataSets))]);
+    % ylim([min(cellfun(@(x) min(x(:,2)), dataSets)), max(cellfun(@(x) max(x(:,2)), dataSets))]);
+    xlabel('X');
+    ylabel('Y');
+    % title(['Sliding Window from Row ' num2str(windowStart) ' to ' num2str(windowEnd)]);
+    title(sprintf('Time: %.3f', timeStamp(i)));
+    legend(['spine', bodyParts], 'Location', 'best');
+
+    % Capture the frame
+    frame = getframe(gcf);
+    writeVideo(v, frame);
 end
-    bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-    bhvFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000.csv';
 
-% Define the path to your CSV file
-csvFilePath = [bhvDataPath, bhvFileName];
+% Close the video writer
+close(v);
 
-% Read the first 3 rows to get headers using readmatrix, assuming the CSV is not too large
-% This step is primarily for obtaining the headers
-headerData = readmatrix(csvFilePath, 'OutputType', 'string', 'Range', '1:3');
+% Display completion message
+disp('Movie creation complete: slidingWindowMovie.mp4');
 
-% Concatenate the strings from the 2nd and 3rd row for each column to form column names
-concatenatedHeader = headerData(2,:) + "_" + headerData(3,:);
 
-% Now, prepare to read the entire file with custom headers
-% Initialize detectImportOptions again to specify the DataLines and VariableNames
-opts = detectImportOptions(csvFilePath, 'NumHeaderLines', 3); % Skip the first 3 header lines
-opts.VariableNames = matlab.lang.makeValidName(concatenatedHeader); % Make valid MATLAB variable names
 
-% Assuming data starts from the 4th row, adjust VariableTypes if your data differs
-for i = 1:length(opts.VariableTypes)
-    opts = setvartype(opts, repmat({'double'}, 1, length(opts.VariableTypes))); % Assuming all data are type double
-end
 
-% Read the CSV data with the new settings
-kinData = readtable(csvFilePath, opts);
 
-% Display the first few rows of the table to check
-disp(head(kinData));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

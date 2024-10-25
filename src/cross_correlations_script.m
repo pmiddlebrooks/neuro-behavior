@@ -1,14 +1,23 @@
 %% Get data from get_standard_data
 
 opts = neuro_behavior_options;
-opts.frameSize = .05; % 50 ms framesize for now
+opts.frameSize = .1; % 50 ms framesize for now
 opts.collectFor = 60*60; % Get 45 min
 opts.minActTime = .16;
+
+getDataType = 'all';
 
 get_standard_data
 bhvID = double(bhvIDMat);
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
+
+monitorPositions = get(0, 'MonitorPositions');
+if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
+    monitorPositions = flipud(monitorPositions);
+end
+monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
+monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
 %% Which area has modulation first? Cross-correlation across behaviors
 % For each behavior onset, determine the cross-correlation of mean spiking across neurons between M56 and DS
@@ -19,9 +28,10 @@ bhvID = double(bhvIDMat);
 zTime = -3 : opts.frameSize : 2;  % zscore on a 5sec window peri-onset
 zWindow = round(zTime(1:end-1) / opts.frameSize);
 zStartInd = find(zTime == 0);
-fullTime = -.5 : opts.frameSize : .5; % seconds around onset
+fullTime = -1 : opts.frameSize : 1; % seconds around onset
 fullWindow = round(fullTime(1:end-1) / opts.frameSize); % frames around onset w.r.t. zWindow (remove last frame)
-maxLag = 30;
+maxLag = 40;
+% maxLag = round(length(fullWindow)*1.5);
 
 xCorrData = cell(iBhv, 1);
 xCorrRand = xCorrData;
@@ -38,6 +48,7 @@ xcorrRandPop = cell(length(analyzeCodes), 1);
 xcorrDataPopMean = zeros(maxLag*2+1, length(analyzeCodes));
 xcorrDataPopStd = xcorrDataPopMean;
 for iBhv = 1 : length(analyzeCodes)
+    fprintf('\n%s\n  ', analyzeBhv{iBhv})
 tic
 
     % Get the starting indices of every bout for this behavior
@@ -97,13 +108,22 @@ tic
 end
 toc
 
-%
+%%
+xcorrDataPopMean10 = xcorrDataPopMean;
+
+%%
+xcorrDataPopMean = xcorrDataPopMean01;
+%%
 fig = figure(88); clf
 set(fig, 'Position', monitorTwo);
 nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
 % hold all;
 colors = colors_for_behaviors(analyzeCodes);
+plotSec = .5001;
+lagSec = lags * opts.frameSize;
+plotWindowIdx = find(lagSec > -plotSec & lagSec < plotSec);
+
 
 for iBhv = 1 : length(analyzeCodes)
     axes(ax(iBhv)); % hold on;
@@ -111,15 +131,19 @@ for iBhv = 1 : length(analyzeCodes)
     % plot(lags, xCorrMeanRand(:, iBhv), '--', 'color', [.5 .5 .5], 'lineWidth', 2)
     % hold on;
     % plot(lags, c, 'color', colors(iBhv,:), 'lineWidth', 3)
-    plot(lags*opts.frameSize, xcorrDataPopMean(:, iBhv), 'color', colors(iBhv,:), 'lineWidth', 3)
+    
+    plot(lags(plotWindowIdx)*opts.frameSize, xcorrDataPopMean(plotWindowIdx, iBhv), 'color', colors(iBhv,:), 'lineWidth', 3)
     % plot(lags, cM56, '--k', 'lineWidth', 2)
     % plot(lags, cDS, '--r', 'lineWidth', 2)
     xline(0)
     yline(0)
-
+xlim([-plotSec plotSec]);
     title(analyzeBhv{iBhv}, 'interpreter', 'none');
 end
-sgtitle('M56 X DS Cross-correlations peri-behavior-transitions (z-scored)')
+figTitle = sprintf('M56 X DS Cross-correlations peri-behavior-transitions, frame=%.2f', opts.frameSize);
+sgtitle(figTitle)
+set(gcf, 'PaperOrientation', 'landscape');
+    print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
 
 %
 %

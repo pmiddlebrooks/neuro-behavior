@@ -764,6 +764,8 @@ permAccuracy(k, x, y, z) = accuracyPermuted(k, iPerm);
                     titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Accuracy into transitions'];
                     title(titleE)
                     % saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
+                    set(gcf, 'PaperOrientation', 'landscape');
+
                     print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
 
                 end
