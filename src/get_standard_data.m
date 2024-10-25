@@ -115,6 +115,37 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior')
 end
 
 
+%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+if strcmp(getDataType, 'all') || strcmp(getDataType, 'kinematics')
+    bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+    % kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000.csv';
+    kinFileName = 'TrackingAligned.csv';
+% Define the path to your CSV file
+csvFilePath = [bhvDataPath, kinFileName];
+
+% Read the first 3 rows to get headers using readmatrix, assuming the CSV is not too large
+% This step is primarily for obtaining the headers
+headerData = readmatrix(csvFilePath, 'OutputType', 'string', 'Range', '1:3');
+
+% Concatenate the strings from the 2nd and 3rd row for each column to form column names
+concatenatedHeader = headerData(2,:) + "_" + headerData(3,:);
+
+% Now, prepare to read the entire file with custom headers
+% Initialize detectImportOptions again to specify the DataLines and VariableNames
+optsK = detectImportOptions(csvFilePath, 'NumHeaderLines', 3); % Skip the first 3 header lines
+optsK.VariableNames = matlab.lang.makeValidName(concatenatedHeader); % Make valid MATLAB variable names
+
+% Assuming data starts from the 4th row, adjust VariableTypes if your data differs
+for i = 1:length(optsK.VariableTypes)
+    optsK = setvartype(optsK, repmat({'double'}, 1, length(optsK.VariableTypes))); % Assuming all data are type double
+end
+
+% Read the CSV data with the new settings
+kinData = readtable(csvFilePath, optsK);
+
+% disp(head(kinData));
+
+end
 
 
 %%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -209,9 +240,6 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'neural')
 
 
     return
-
-
-    
     %%         Standard PSTHS to use for analyses (b/c they have the same trials, etc)
     % Create 3-D psth data matrix of stacked peri-event start time windows (time X neuron X trial)
     % Make one of spike counts and one of zscored spike counts
@@ -245,7 +273,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'neural')
         end
         meanPsth = mean(iDataMat, 3);
         meanWindow = mean(meanPsth, 1);
-        stdWindow = std(meanPsth, [], 1);
+        stdWindow = std(meanPsth, 1);
 
         iDataMatZ = (iDataMat - meanWindow) ./ stdWindow;
 
