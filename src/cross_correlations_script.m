@@ -40,16 +40,21 @@ xCorrRand = xCorrData;
 starts = find(diff(bhvID) ~= 0) + 1;
 starts(starts < -zWindow(1)+1 | starts > length(bhvID) - zWindow(end)-1) = []; % Remove starts too close to begin/end of session
 % Preallocate a cell array to store the xcorr results
+spikeDataM56 = cell(length(analyzeCodes), 1);
+spikeDataDS = cell(length(analyzeCodes), 1);
 xcorrData = cell(length(analyzeCodes), 1);
 xcorrRand = cell(length(analyzeCodes), 1);
 xcorrDataPop = cell(length(analyzeCodes), 1);
 xcorrRandPop = cell(length(analyzeCodes), 1);
 
+xcorrDataMeanPsth = cell(length(analyzeCodes), 1);
+
 xcorrDataPopMean = zeros(maxLag*2+1, length(analyzeCodes));
 xcorrDataPopStd = xcorrDataPopMean;
+xcorrDataMeanPsthMean = xcorrDataPopMean;
 for iBhv = 1 : length(analyzeCodes)
     fprintf('\n%s\n  ', analyzeBhv{iBhv})
-tic
+    tic
 
     % Get the starting indices of every bout for this behavior
     iStarts = intersect(starts, find(bhvID == analyzeCodes(iBhv)));
@@ -64,8 +69,10 @@ tic
     for j = 1 : length(iStarts)
         jZWindowM56 = zscore(dataMat(iStarts(j) + zWindow, idM56), [], 1);
         iM56Data(:, :, j) = jZWindowM56(zStartInd + fullWindow, :);
+        spikeDataM56{iBhv}(:, :, j) = jZWindowM56(zStartInd + fullWindow, :);
         jZWindowDS = zscore(dataMat(iStarts(j) + zWindow, idDS), [], 1);
         iDSData(:, :, j) = jZWindowDS(zStartInd + fullWindow, :);
+        spikeDataDS{iBhv}(:, :, j) = jZWindowDS(zStartInd + fullWindow, :);
 
         % Get randomized windows of spiking data from the two areas for
         % comparison
@@ -99,6 +106,17 @@ tic
 
     end
 
+    for x = 1:length(idM56)
+        for y = 1:length(idDS)
+            % xcorr the mean psths between all neurons
+            xcorrDataMeanPsth{iBhv}(:, x, y) = xcorr(mean(spikeDataM56{iBhv}(:, x, :), 3), mean(spikeDataDS{iBhv}(:, y, :), 3), ...
+                maxLag, 'normalized');
+
+        end
+    end
+
+    xcorrDataMeanPsthMean(:, iBhv) = mean(mean(xcorrDataMeanPsth{iBhv}, 2), 3);
+
     xcorrDataPopMean(:, iBhv) = mean(xcorrDataPop{iBhv}, 2);
     xcorrDataPopStd(:, iBhv) = std(xcorrDataPop{iBhv}, [], 2);
     % xcorrRandPopMean(:, iBhv) = mean(xcorrRandPop{iBhv}, 2);
@@ -113,7 +131,7 @@ xcorrDataPopMean10 = xcorrDataPopMean;
 
 %%
 xcorrDataPopMean = xcorrDataPopMean01;
-%%
+%% Plot mean of trial-wise xcorrs between averaged populations psths in each area
 fig = figure(88); clf
 set(fig, 'Position', monitorTwo);
 nPlot = length(analyzeCodes);
@@ -131,19 +149,53 @@ for iBhv = 1 : length(analyzeCodes)
     % plot(lags, xCorrMeanRand(:, iBhv), '--', 'color', [.5 .5 .5], 'lineWidth', 2)
     % hold on;
     % plot(lags, c, 'color', colors(iBhv,:), 'lineWidth', 3)
-    
+
     plot(lags(plotWindowIdx)*opts.frameSize, xcorrDataPopMean(plotWindowIdx, iBhv), 'color', colors(iBhv,:), 'lineWidth', 3)
     % plot(lags, cM56, '--k', 'lineWidth', 2)
     % plot(lags, cDS, '--r', 'lineWidth', 2)
     xline(0)
     yline(0)
-xlim([-plotSec plotSec]);
+    xlim([-plotSec plotSec]);
     title(analyzeBhv{iBhv}, 'interpreter', 'none');
 end
 figTitle = sprintf('M56 X DS Cross-correlations peri-behavior-transitions, frame=%.2f', opts.frameSize);
 sgtitle(figTitle)
 set(gcf, 'PaperOrientation', 'landscape');
-    print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
+print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
+
+
+%% Plot mean xcorrs of pairwise neuron average psths
+fig = figure(88); clf
+set(fig, 'Position', monitorTwo);
+nPlot = length(analyzeCodes);
+[ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
+% hold all;
+colors = colors_for_behaviors(analyzeCodes);
+plotSec = .5001;
+lagSec = lags * opts.frameSize;
+plotWindowIdx = find(lagSec > -plotSec & lagSec < plotSec);
+
+
+for iBhv = 1 : length(analyzeCodes)
+    axes(ax(iBhv)); % hold on;
+    % plot(lags, cRand, '--', 'color', [.5 .5 .5], 'lineWidth', 2)
+    % plot(lags, xCorrMeanRand(:, iBhv), '--', 'color', [.5 .5 .5], 'lineWidth', 2)
+    % hold on;
+    % plot(lags, c, 'color', colors(iBhv,:), 'lineWidth', 3)
+
+    plot(lags(plotWindowIdx)*opts.frameSize, xcorrDataMeanPsthMean(plotWindowIdx, iBhv), 'color', colors(iBhv,:), 'lineWidth', 3)
+    % plot(lags, cM56, '--k', 'lineWidth', 2)
+    % plot(lags, cDS, '--r', 'lineWidth', 2)
+    xline(0)
+    yline(0)
+    xlim([-plotSec plotSec]);
+    title(analyzeBhv{iBhv}, 'interpreter', 'none');
+end
+figTitle = sprintf('M56 X DS Cross-correlations peri-behavior-transitions, frame=%.2f', opts.frameSize);
+sgtitle(figTitle)
+set(gcf, 'PaperOrientation', 'landscape');
+print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
+
 
 %
 %
@@ -206,7 +258,7 @@ set(gcf, 'PaperOrientation', 'landscape');
 % randWindow = randi([50 70000]) + fullWindow;
 % firstFrames = find(diff(bhvIDMat) ~= 0) + 1; % 1 frame prior to all behavior transitions
 % preIndID = bhvIDMat(firstFrames);
-% 
+%
 % plotFrames = firstFrames(19) + fullWindow;
 % % plotFrames = 40001:44350;
 % meanM56 = mean(dataMat(plotFrames, idM56), 2);
@@ -227,4 +279,4 @@ set(gcf, 'PaperOrientation', 'landscape');
 % % plot(lags, c, 'linewidth', 2)
 % plot(lags, cZ, '--b', 'linewidth', 2)
 % xline(0)
-% 
+%
