@@ -231,15 +231,19 @@ print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
 
 
 
+
+
 %% Non-negative matrix factorization to find common distinct patterns of xcorrs
 warning('currently only doind nnmf for locomotion- test on others as well')
 % resize xcorrData so every column is a pair of neurons, every row is a lag
 % of the xcorr
-minXcorr = min(xcorrData{end}(:));
+bhvIdx = 16;
 
-[n, x, y, j] = size(xcorrData{end});
+minXcorr = min(xcorrData{bhvIdx}(:));
+
+[n, x, y, j] = size(xcorrData{bhvIdx});
 % Reshape the matrix to (n, x*y*j)
-nnmfData = reshape(xcorrData{end}, n, x * y * j);
+nnmfData = reshape(xcorrData{bhvIdx}, n, x * y * j);
 % Only do nnmf on bouts with spiking data in both neuron's of the pair
 zeroBoutPair = isnan(nnmfData(1,:));
 
@@ -255,7 +259,7 @@ indexMatrix = [originalM56(:)'; originalDS(:)'; originalBout(:)'];
 nnmfData = nnmfData + abs(minXcorr);
 
 % Define the range of rank values to test
-rankRange = 1:8;
+rankRange = 5:20;
 reconstructionErrors = zeros(size(rankRange));  % Store reconstruction errors
 
 
@@ -271,28 +275,10 @@ for i = 1:length(rankRange)
     reconstructedData = W{i} * H{i};
     reconstructionErrors(i) = norm(nnmfData(:,~zeroBoutPair) - reconstructedData, 'fro');
 end
-%%
-fig = figure(101); clf
-nPlot = length(rankRange);
-[ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
-for i = 1:length(rankRange)
-    % Current rank
-    rank = rankRange(i);
-
-    % Plot each basis function (each column in W) in a single plot
-    % subplot(1, length(rankRange), i);  % Create subplot for each rank
-axes(ax(i));
-plot(xcorrWindow, W{i});  % Plot columns of W to visualize basis functions
-    title(['Rank = ', num2str(rank)]);
-    xlabel('Lags (frames)');
-    ylabel('Basis Function Value');
-    xline(0)
-    % pause(1);  % Pause for inspection before moving to the next rank
-end
 
 % Plot reconstruction error across ranks
 figure(102);
-plot(rankRange, reconstructionErrors, '-o');
+plot(rankRange, reconstructionErrors, '-o', 'lineWidth', 2);
 xlabel('Rank');
 ylabel('Reconstruction Error (Frobenius Norm)');
 title('Reconstruction Error vs. Rank');
@@ -301,6 +287,30 @@ title('Reconstruction Error vs. Rank');
 [~, elbowIdx] = min(diff(reconstructionErrors));
 elbowRank = rankRange(elbowIdx);
 disp(['Suggested Rank (Elbow Point): ', num2str(elbowRank)]);
+
+
+%%
+fig = figure(101); clf
+nPlot = 8; %length(rankRange);
+[ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
+for i = 1:length(nPlot)
+    % Current rank
+    rank = rankRange(i);
+
+    % Plot each basis function (each column in W) in a single plot
+    % subplot(1, length(rankRange), i);  % Create subplot for each rank
+axes(ax(i));
+plot(xcorrWindow, W{i}, 'linewidth', 2);  % Plot columns of W to visualize basis functions
+    title(['Rank = ', num2str(rank)]);
+    xlabel('Lags (frames)');
+    ylabel('Basis Function Value');
+    xline(0)
+    % pause(1);  % Pause for inspection before moving to the next rank
+end
+titleN = sprintf('NNMF Basis Functions- %s', analyzeBhv{bhvIdx});
+sgtitle(titleN, 'interpreter', 'none')
+    print('-dpdf', fullfile(paths.figurePath, [titleN, '.pdf']), '-bestfit')
+
 
 
 
