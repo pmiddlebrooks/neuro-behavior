@@ -1,7 +1,7 @@
 %% Get data from get_standard_data
 
 opts = neuro_behavior_options;
-opts.frameSize = .1; % 50 ms framesize for now
+opts.frameSize = .02; % 50 ms framesize for now
 opts.collectFor = 60*60; % Get 45 min
 opts.minActTime = .16;
 
@@ -30,8 +30,18 @@ zWindow = round(zTime(1:end-1) / opts.frameSize);
 zStartInd = find(zTime == 0);
 fullTime = -1 : opts.frameSize : 1; % seconds around onset
 fullWindow = round(fullTime(1:end-1) / opts.frameSize); % frames around onset w.r.t. zWindow (remove last frame)
-maxLag = 40;
+
+
+maxLag = min(50, length(fullWindow)-1);
 % maxLag = round(length(fullWindow)*1.5);
+% Once xcorr is performed, what window do you want to plot/analyze?
+if opts.frameSize >= .05
+xcorrTime = -.5 : opts.frameSize : .5;
+else
+xcorrTime = -.3 : opts.frameSize : .3;
+end
+    xcorrWindow = round(xcorrTime / opts.frameSize);
+cDataZeroInd = (maxLag * 2 + 2)/2; % When xcorr is performed, find index in cData where lag = 0
 
 xCorrData = cell(iBhv, 1);
 xCorrRand = xCorrData;
@@ -49,10 +59,13 @@ xcorrRandPop = cell(length(analyzeCodes), 1);
 
 xcorrDataMeanPsth = cell(length(analyzeCodes), 1);
 
-xcorrDataPopMean = zeros(maxLag*2+1, length(analyzeCodes));
+xcorrDataPopMean = zeros(length(xcorrWindow), length(analyzeCodes));
 xcorrDataPopStd = xcorrDataPopMean;
 xcorrDataMeanPsthMean = xcorrDataPopMean;
+
+
 for iBhv = 1 : length(analyzeCodes)
+% for iBhv = length(analyzeCodes)
     fprintf('\n%s\n  ', analyzeBhv{iBhv})
     tic
 
@@ -85,41 +98,54 @@ for iBhv = 1 : length(analyzeCodes)
 
         % Do xcorrs for pairwise single neuron responses between the areas
 
-        % Loop over each pair of variables (columns)
+        % Loop over each pair of neurons for each bout
         for x = 1:length(idM56)
             for y = 1:length(idDS)
 
-                % Perform cross-correlation with maxLag
-                [cData, lags] = xcorr(iM56Data(:, x, j), iDSData(:, y, j), maxLag, 'normalized');
-                % [cRand, ~] = xcorr(iM56Rand(:, x, j), iDSRand(:, y, j), maxLag, 'normalized');
+                % Only xcorr if there are any spikes
+                if sum(iM56Data(:, x, j)) || sum(iDSData(:, x, j))
+                    % Perform cross-correlation with maxLag
+                    [cData, lags] = xcorr(iM56Data(:, x, j), iDSData(:, y, j), maxLag, 'normalized');
+                    % [cRand, ~] = xcorr(iM56Rand(:, x, j), iDSRand(:, y, j), maxLag, 'normalized');
 
-                % Store the result in the cell array
-                xcorrData{iBhv}(:, x, y, j) = cData;
-                % xcorrRand{iBhv}(:, x, y) = cRand;
+                    % Store the result in the cell array
+                    xcorrData{iBhv}(:, x, y, j) = cData(cDataZeroInd + xcorrWindow);
+                    % xcorrRand{iBhv}(:, x, y) = cRand;
+
+                else
+                    % Lots of individual bouts won't have any spikes for lots
+                    % of individual neurons. If that's the case, return nans
+                    % for the xcorr:
+                    xcorrData{iBhv}(:, x, y, j) = nan(length(xcorrWindow), 1);
+                end
             end
         end
 
-        % Do xcorrs for mean population responses between the areas
-        [xcorrDataPop{iBhv}(:, j), ~] = xcorr(mean(iM56Data(:,:,j), 2), mean(iDSData(:,:,j), 2), maxLag, 'normalized');
+        % Do xcorrs for mean population responses between the areas (each
+        % bout averaged across neurons)
+        [cData, ~] = xcorr(mean(iM56Data(:,:,j), 2), mean(iDSData(:,:,j), 2), maxLag, 'normalized');
+        xcorrDataPop{iBhv}(:, j) = cData(cDataZeroInd + xcorrWindow);
         % [xcorrRandPop{iBhv}(:, j), ~] = xcorr(mean(iM56Rand(:,:,j), 2), mean(iDSRand(:,:,j), 2), maxlag, 'normalized');
-
 
     end
 
+        xcorrDataPopMean(:, iBhv) = mean(xcorrDataPop{iBhv}, 2);
+    xcorrDataPopStd(:, iBhv) = std(xcorrDataPop{iBhv}, [], 2);
+    % xcorrRandPopMean(:, iBhv) = mean(xcorrRandPop{iBhv}, 2);
+
+    % Do xcorrs for mean neuron psths (each neuron averaged across bouts)
     for x = 1:length(idM56)
         for y = 1:length(idDS)
             % xcorr the mean psths between all neurons
-            xcorrDataMeanPsth{iBhv}(:, x, y) = xcorr(mean(spikeDataM56{iBhv}(:, x, :), 3), mean(spikeDataDS{iBhv}(:, y, :), 3), ...
+            [cData, lags] = xcorr(mean(spikeDataM56{iBhv}(:, x, :), 3), mean(spikeDataDS{iBhv}(:, y, :), 3), ...
                 maxLag, 'normalized');
+            xcorrDataMeanPsth{iBhv}(:, x, y) = cData(cDataZeroInd + xcorrWindow);
 
         end
     end
 
     xcorrDataMeanPsthMean(:, iBhv) = mean(mean(xcorrDataMeanPsth{iBhv}, 2), 3);
 
-    xcorrDataPopMean(:, iBhv) = mean(xcorrDataPop{iBhv}, 2);
-    xcorrDataPopStd(:, iBhv) = std(xcorrDataPop{iBhv}, [], 2);
-    % xcorrRandPopMean(:, iBhv) = mean(xcorrRandPop{iBhv}, 2);
     toc
     a = whos('xcorrData');
     a.bytes / 10e6
@@ -138,10 +164,11 @@ nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
 % hold all;
 colors = colors_for_behaviors(analyzeCodes);
-plotSec = .5001;
-lagSec = lags * opts.frameSize;
+plotSec = xcorrTime(end) + .001;
+lagSec = xcorrWindow * opts.frameSize;
 plotWindowIdx = find(lagSec > -plotSec & lagSec < plotSec);
-
+ymax = max(xcorrDataPopMean(:));
+ymin = min(xcorrDataPopMean(:));
 
 for iBhv = 1 : length(analyzeCodes)
     axes(ax(iBhv)); % hold on;
@@ -150,15 +177,16 @@ for iBhv = 1 : length(analyzeCodes)
     % hold on;
     % plot(lags, c, 'color', colors(iBhv,:), 'lineWidth', 3)
 
-    plot(lags(plotWindowIdx)*opts.frameSize, xcorrDataPopMean(plotWindowIdx, iBhv), 'color', colors(iBhv,:), 'lineWidth', 3)
+    plot(xcorrWindow(plotWindowIdx)*opts.frameSize, xcorrDataPopMean(plotWindowIdx, iBhv), 'color', colors(iBhv,:), 'lineWidth', 3)
     % plot(lags, cM56, '--k', 'lineWidth', 2)
     % plot(lags, cDS, '--r', 'lineWidth', 2)
     xline(0)
     yline(0)
+    ylim([ymin ymax])
     xlim([-plotSec plotSec]);
     title(analyzeBhv{iBhv}, 'interpreter', 'none');
 end
-figTitle = sprintf('M56 X DS Cross-correlations peri-behavior-transitions, frame=%.2f', opts.frameSize);
+figTitle = sprintf('XCORR (M56 X DS) behavior-transitions, Pop avg across bouts, frame=%.2f', opts.frameSize);
 sgtitle(figTitle)
 set(gcf, 'PaperOrientation', 'landscape');
 print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
@@ -171,9 +199,11 @@ nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
 % hold all;
 colors = colors_for_behaviors(analyzeCodes);
-plotSec = .5001;
-lagSec = lags * opts.frameSize;
+plotSec = xcorrTime(end) + .001;
+lagSec = xcorrWindow * opts.frameSize;
 plotWindowIdx = find(lagSec > -plotSec & lagSec < plotSec);
+ymax = max(xcorrDataMeanPsthMean(:));
+ymin = min(xcorrDataMeanPsthMean(:));
 
 
 for iBhv = 1 : length(analyzeCodes)
@@ -183,18 +213,112 @@ for iBhv = 1 : length(analyzeCodes)
     % hold on;
     % plot(lags, c, 'color', colors(iBhv,:), 'lineWidth', 3)
 
-    plot(lags(plotWindowIdx)*opts.frameSize, xcorrDataMeanPsthMean(plotWindowIdx, iBhv), 'color', colors(iBhv,:), 'lineWidth', 3)
+    plot(xcorrWindow(plotWindowIdx)*opts.frameSize, xcorrDataMeanPsthMean(plotWindowIdx, iBhv), 'color', colors(iBhv,:), 'lineWidth', 3)
     % plot(lags, cM56, '--k', 'lineWidth', 2)
     % plot(lags, cDS, '--r', 'lineWidth', 2)
     xline(0)
     yline(0)
+    ylim([ymin ymax])
     xlim([-plotSec plotSec]);
     title(analyzeBhv{iBhv}, 'interpreter', 'none');
 end
-figTitle = sprintf('M56 X DS Cross-correlations peri-behavior-transitions, frame=%.2f', opts.frameSize);
+figTitle = sprintf('XCORR (M56 X DS) behavior-transitions, PSTH avg across bouts, frame=%.2f', opts.frameSize);
 sgtitle(figTitle)
 set(gcf, 'PaperOrientation', 'landscape');
 print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
+
+
+
+
+
+%% Non-negative matrix factorization to find common distinct patterns of xcorrs
+warning('currently only doind nnmf for locomotion- test on others as well')
+% resize xcorrData so every column is a pair of neurons, every row is a lag
+% of the xcorr
+minXcorr = min(xcorrData{end}(:));
+
+[n, x, y, j] = size(xcorrData{end});
+% Reshape the matrix to (n, x*y*j)
+nnmfData = reshape(xcorrData{end}, n, x * y * j);
+% Only do nnmf on bouts with spiking data in both neuron's of the pair
+zeroBoutPair = isnan(nnmfData(1,:));
+
+% Keep track of original indices
+% Create index arrays for x, y, and j indices for each element
+[originalM56, originalDS, originalBout] = ndgrid(1:x, 1:y, 1:j);
+
+% Reshape each array to a 1D vector and combine into a 3 x numElements matrix
+indexMatrix = [originalM56(:)'; originalDS(:)'; originalBout(:)'];
+
+
+% Ensure no negative values in the pattern.
+nnmfData = nnmfData + abs(minXcorr);
+
+% Define the range of rank values to test
+rankRange = 1:8;
+reconstructionErrors = zeros(size(rankRange));  % Store reconstruction errors
+
+
+for i = 1:length(rankRange)
+    % Current rank
+    rank = rankRange(i);
+
+    % Perform NMF with the current rank
+    [iW, iH] = nnmf(nnmfData(:,~zeroBoutPair), rank);
+    W{i} = iW;
+    H{i} = iH;
+    % Calculate the reconstruction error (Frobenius norm)
+    reconstructedData = W{i} * H{i};
+    reconstructionErrors(i) = norm(nnmfData(:,~zeroBoutPair) - reconstructedData, 'fro');
+end
+%%
+fig = figure(101); clf
+nPlot = length(rankRange);
+[ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
+for i = 1:length(rankRange)
+    % Current rank
+    rank = rankRange(i);
+
+    % Plot each basis function (each column in W) in a single plot
+    % subplot(1, length(rankRange), i);  % Create subplot for each rank
+axes(ax(i));
+plot(xcorrWindow, W{i});  % Plot columns of W to visualize basis functions
+    title(['Rank = ', num2str(rank)]);
+    xlabel('Lags (frames)');
+    ylabel('Basis Function Value');
+    xline(0)
+    % pause(1);  % Pause for inspection before moving to the next rank
+end
+
+% Plot reconstruction error across ranks
+figure(102);
+plot(rankRange, reconstructionErrors, '-o');
+xlabel('Rank');
+ylabel('Reconstruction Error (Frobenius Norm)');
+title('Reconstruction Error vs. Rank');
+
+% Finding the elbow point
+[~, elbowIdx] = min(diff(reconstructionErrors));
+elbowRank = rankRange(elbowIdx);
+disp(['Suggested Rank (Elbow Point): ', num2str(elbowRank)]);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 %
