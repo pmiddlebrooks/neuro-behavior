@@ -1,7 +1,7 @@
 %%
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 2 * 60 * 60; % seconds
+opts.collectFor = 1 * 30 * 60; % seconds
 opts.frameSize = 1/60;
 opts.frameSize = .1;
 
@@ -39,7 +39,7 @@ end
 snoutCol = find(strcmp(headerData(3,:), 'snout'), 2);
 buttCol = find(strcmp(headerData(3,:), 'tail-base'), 2);
 
-timeStamp = kinData(:,1) / opts.fsKinematics;
+timeStamp = kinData{:,1} / opts.fsKinematics;
 
 %%
 delete(fullfile(paths.figurePath,'slidingWindowMovie.mp4'))
@@ -62,7 +62,7 @@ v = VideoWriter(fullfile(paths.figurePath,'slidingWindowMovie'), 'MPEG-4');
 v.FrameRate = frameRate;
 open(v);
 
-startI = 500000;
+startI = 1;
 % Loop over the rows for sliding window
 for i = startI:startI+maxRows
     % Define the window range
@@ -72,6 +72,7 @@ for i = startI:startI+maxRows
     % Clear the plot for the new frame
     clf;
     hold on;
+    set(gca, 'YDir', 'reverse')
 xlim([xMin xMax])
 ylim([yMin yMax])
     % Loop over each dataset and plot the windowed segment
@@ -79,10 +80,10 @@ ylim([yMin yMax])
     for j = 1:length(bodyParts)
 jTrack = find(strcmp(headerData(3,:), bodyParts{j}), 2);
         % Ensure we don't exceed the available rows in the dataset
-        if windowStart <= size(kinData, 1)
+        % if windowStart <= size(kinData, 1)
             % plot(kinData{windowStart:windowEnd, jTrack(1)}, kinData{windowStart:windowEnd, jTrack(2)}, 'LineWidth', 2);
             scatter(kinData{i, jTrack(1)}, kinData{i, jTrack(2)}, 50, 'filled');
-        end
+        % end
     end
 
     % Set plot limits and labels
