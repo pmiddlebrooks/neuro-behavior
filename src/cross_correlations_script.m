@@ -2,7 +2,7 @@
 
 opts = neuro_behavior_options;
 opts.frameSize = .02; % 50 ms framesize for now
-opts.collectFor = 60*60; % Get 45 min
+opts.collectFor = 45*60; % Get 45 min
 opts.minActTime = .16;
 
 getDataType = 'all';
@@ -43,9 +43,6 @@ end
     xcorrWindow = round(xcorrTime / opts.frameSize);
 cDataZeroInd = (maxLag * 2 + 2)/2; % When xcorr is performed, find index in cData where lag = 0
 
-xCorrData = cell(iBhv, 1);
-xCorrRand = xCorrData;
-
 
 starts = find(diff(bhvID) ~= 0) + 1;
 starts(starts < -zWindow(1)+1 | starts > length(bhvID) - zWindow(end)-1) = []; % Remove starts too close to begin/end of session
@@ -53,9 +50,9 @@ starts(starts < -zWindow(1)+1 | starts > length(bhvID) - zWindow(end)-1) = []; %
 spikeDataM56 = cell(length(analyzeCodes), 1);
 spikeDataDS = cell(length(analyzeCodes), 1);
 xcorrData = cell(length(analyzeCodes), 1);
-xcorrRand = cell(length(analyzeCodes), 1);
+% xcorrRand = cell(length(analyzeCodes), 1);
 xcorrDataPop = cell(length(analyzeCodes), 1);
-xcorrRandPop = cell(length(analyzeCodes), 1);
+% xcorrRandPop = cell(length(analyzeCodes), 1);
 
 xcorrDataMeanPsth = cell(length(analyzeCodes), 1);
 
@@ -106,6 +103,7 @@ for iBhv = 1 : length(analyzeCodes)
                 if sum(iM56Data(:, x, j)) || sum(iDSData(:, x, j))
                     % Perform cross-correlation with maxLag
                     [cData, lags] = xcorr(iM56Data(:, x, j), iDSData(:, y, j), maxLag, 'normalized');
+                    % [cData, lags] = xcorr(iM56Data(:, x, j), iDSData(:, y, j), maxLag);
                     % [cRand, ~] = xcorr(iM56Rand(:, x, j), iDSRand(:, y, j), maxLag, 'normalized');
 
                     % Store the result in the cell array
@@ -124,6 +122,7 @@ for iBhv = 1 : length(analyzeCodes)
         % Do xcorrs for mean population responses between the areas (each
         % bout averaged across neurons)
         [cData, ~] = xcorr(mean(iM56Data(:,:,j), 2), mean(iDSData(:,:,j), 2), maxLag, 'normalized');
+        % [cData, ~] = xcorr(mean(iM56Data(:,:,j), 2), mean(iDSData(:,:,j), 2), maxLag);
         xcorrDataPop{iBhv}(:, j) = cData(cDataZeroInd + xcorrWindow);
         % [xcorrRandPop{iBhv}(:, j), ~] = xcorr(mean(iM56Rand(:,:,j), 2), mean(iDSRand(:,:,j), 2), maxlag, 'normalized');
 
@@ -139,6 +138,8 @@ for iBhv = 1 : length(analyzeCodes)
             % xcorr the mean psths between all neurons
             [cData, lags] = xcorr(mean(spikeDataM56{iBhv}(:, x, :), 3), mean(spikeDataDS{iBhv}(:, y, :), 3), ...
                 maxLag, 'normalized');
+            % [cData, lags] = xcorr(mean(spikeDataM56{iBhv}(:, x, :), 3), mean(spikeDataDS{iBhv}(:, y, :), 3), ...
+            %     maxLag);
             xcorrDataMeanPsth{iBhv}(:, x, y) = cData(cDataZeroInd + xcorrWindow);
 
         end
@@ -158,7 +159,7 @@ xcorrDataPopMean10 = xcorrDataPopMean;
 %%
 xcorrDataPopMean = xcorrDataPopMean01;
 %% Plot mean of trial-wise xcorrs between averaged populations psths in each area
-fig = figure(88); clf
+fig = figure(89); clf
 set(fig, 'Position', monitorTwo);
 nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
@@ -193,7 +194,7 @@ print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
 
 
 %% Plot mean xcorrs of pairwise neuron average psths
-fig = figure(88); clf
+fig = figure(98); clf
 set(fig, 'Position', monitorTwo);
 nPlot = length(analyzeCodes);
 [ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
@@ -233,51 +234,61 @@ print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
 
 
 
+
+
+
+
+
+
+
+
 %% Non-negative matrix factorization to find common distinct patterns of xcorrs
-warning('currently only doind nnmf for locomotion- test on others as well')
+warning('currently only doing nnmf for locomotion- test on others as well')
 % resize xcorrData so every column is a pair of neurons, every row is a lag
 % of the xcorr
 bhvIdx = 16;
 
-minXcorr = min(xcorrData{bhvIdx}(:));
-
-[n, x, y, j] = size(xcorrData{bhvIdx});
+[nLag, nM56, nDS, nBout] = size(xcorrData{bhvIdx});
 % Reshape the matrix to (n, x*y*j)
-nnmfData = reshape(xcorrData{bhvIdx}, n, x * y * j);
+nnmfData = reshape(xcorrData{bhvIdx}, nLag, nM56 * nDS * nBout);
 % Only do nnmf on bouts with spiking data in both neuron's of the pair
 zeroBoutPair = isnan(nnmfData(1,:));
+nnmfData = nnmfData(:, ~zeroBoutPair);
 
 % Keep track of original indices
 % Create index arrays for x, y, and j indices for each element
-[originalM56, originalDS, originalBout] = ndgrid(1:x, 1:y, 1:j);
+[originalM56, originalDS, originalBout] = ndgrid(1:nM56, 1:nDS, 1:nBout);
 
 % Reshape each array to a 1D vector and combine into a 3 x numElements matrix
 indexMatrix = [originalM56(:)'; originalDS(:)'; originalBout(:)'];
-
+indexMatrix = indexMatrix(:, ~zeroBoutPair);
 
 % Ensure no negative values in the pattern.
+minXcorr = min(xcorrData{bhvIdx}(:));
 nnmfData = nnmfData + abs(minXcorr);
 
 % Define the range of rank values to test
-rankRange = 5:20;
+rankRange = 7;
+W = cell(length(rankRange), 1);
+H = W;
 reconstructionErrors = zeros(size(rankRange));  % Store reconstruction errors
 
 
-for i = 1:length(rankRange)
+for iRank = 1:length(rankRange)
     % Current rank
-    rank = rankRange(i);
+    rank = rankRange(iRank);
 
-    % Perform NMF with the current rank
-    [iW, iH] = nnmf(nnmfData(:,~zeroBoutPair), rank);
-    W{i} = iW;
-    H{i} = iH;
+    % Perform NNMF with the current rank
+    [iW, iH] = nnmf(nnmfData, rank);
+    W{iRank} = iW;
+    H{iRank} = iH;
     % Calculate the reconstruction error (Frobenius norm)
-    reconstructedData = W{i} * H{i};
-    reconstructionErrors(i) = norm(nnmfData(:,~zeroBoutPair) - reconstructedData, 'fro');
+    reconstructedData = W{iRank} * H{iRank};
+    reconstructionErrors(iRank) = norm(nnmfData - reconstructedData, 'fro');
 end
 
-% Plot reconstruction error across ranks
-figure(102);
+%% Plot reconstruction error across ranks
+figure(112);
 plot(rankRange, reconstructionErrors, '-o', 'lineWidth', 2);
 xlabel('Rank');
 ylabel('Reconstruction Error (Frobenius Norm)');
@@ -289,11 +300,11 @@ elbowRank = rankRange(elbowIdx);
 disp(['Suggested Rank (Elbow Point): ', num2str(elbowRank)]);
 
 
-%%
-fig = figure(101); clf
+%% Plot basis functions for each rank
+fig = figure(111); clf
 nPlot = 8; %length(rankRange);
 [ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
-for i = 1:length(nPlot)
+for i = 1:nPlot
     % Current rank
     rank = rankRange(i);
 
@@ -314,7 +325,59 @@ sgtitle(titleN, 'interpreter', 'none')
 
 
 
+    %% Which basis functions dominate for each pair of neurons? 
 
+
+% Initialize cell array to store percentage dominance for each (originalM56, originalDS) pair
+percentageDominance = cell(nM56, nDS);
+domBasisIdx = zeros(nM56, nDS);
+tic
+% Loop through each unique (originalM56, originalDS) pair
+for m = 1:nM56
+    for d = 1:nDS
+        % Get indices in indexMatrix where originalM56 == m and originalDS == d
+        relevantIndices = find(indexMatrix(1, :) == m & indexMatrix(2, :) == d);
+        
+        % Extract the H values for this (m, d) pair across all originalBouts
+        H_subset = H{1}(:, relevantIndices);
+        
+        % Determine the dominant basis function for each Bout
+        [~, dominantBasisForBouts] = max(H_subset, [], 1);
+        
+        % Calculate the percentage dominance of each basis function within this pair
+        counts = histcounts(dominantBasisForBouts, 1:(size(H_subset, 1)+1));
+        [~, domBasisIdx(m, d)] = max(counts);
+        percentageDominance{m, d} = (counts / length(dominantBasisForBouts)) * 100;
+    end
+end
+toc
+
+% Which basis functions are most prevelantly dominant among the pairs of neurons, in terms of 
+figure(219);
+histogram(domBasisIdx(:))
+
+%% How well-separated are the basis functions in terms of how much each contributes to the pairs of neurons?
+
+separationRatios = zeros(size(percentageDominance));
+
+for i = 1:numel(percentageDominance)
+    sortedValues = sort(percentageDominance{i}, 'descend');  % Sort in descending order
+    if numel(sortedValues) >= 2
+        separationRatios(i) = sortedValues(1) / sortedValues(2);  % Ratio of highest to next-highest
+    else
+        separationRatios(i) = NaN;  % Handle cases with fewer values if applicable
+    end
+end
+figure(216); 
+histogram(separationRatios, [1 : .02 : 3])
+%% Display the percentage dominance for each (originalM56, originalDS) pair
+disp('Percentage of bouts dominated by each basis function for each (originalM56, originalDS) pair:');
+for m = 1:M56
+    for d = 1:DS
+        fprintf('M56 = %d, DS = %d: ', m, d);
+        disp(percentageDominance{m, d});
+    end
+end
 
 
 
