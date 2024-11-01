@@ -39,7 +39,6 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 
 
-
 %% =============================================================================
 % --------    RUN PCA SVM FITS FOR VARIOUS CONDITIONS ON VARIOUS DATA
 % =============================================================================
@@ -70,9 +69,9 @@ changeBhvLabels = 0;
 
 % Transition or within variables
 % -------------------------
-% transOrWithin = 'trans';
-transOrWithin = 'within';
-transOrWithin = 'transVsWithin';  
+transOrWithin = 'trans';
+% transOrWithin = 'within';
+% transOrWithin = 'transVsWithin';  
 matchTransitionCount = 0;
 minFramePerBout = 0;
 
@@ -82,7 +81,7 @@ collapseBhv = 0;
 minBoutNumber = 0;
 downSampleBouts = 0;
 minFrames = 0;
-downSampleFrames = 1;
+downSampleFrames = 0;
 
 
 selectFrom = 'M56';
