@@ -5,16 +5,19 @@ opts.collectFor = 1 * 30 * 60; % seconds
 opts.frameSize = 1/60;
 opts.frameSize = .1;
 
-getDataType = 'all';
+getDataType = 'kinematics';
 get_standard_data
 
 
-
-
-%% Set up variables for plotting
-bodyParts = unique(headerData(3,:));
+%% Get list of each body part tracked
+bodyParts = unique(kinHeader(3,:));
 bodyParts(strcmp(bodyParts, 'bodyparts')) = [];
 
+%%
+kinematics_velocities_relative_angles
+
+%% Plot a movie of the body tracked positions over time
+% Set up variables for plotting
 
 % frames = 1000:2000;
 % figure(2342); clf; hold on;
@@ -28,7 +31,7 @@ yMin = 10e3;
 xMax = 0;
 yMax = 0;
 for i = 1:length(bodyParts)
-iTrack = find(strcmp(headerData(3,:), bodyParts{i}), 2);
+iTrack = find(strcmp(kinHeader(3,:), bodyParts{i}), 2); % The first two columns of body part are x and y, respectively
 xMin = floor(min([xMin; kinData{:, iTrack(1)}]));
 yMin = floor(min([yMin; kinData{:, iTrack(2)}]));
 xMax = floor(max([xMax; kinData{:, iTrack(1)}]));
@@ -36,8 +39,8 @@ yMax = floor(max([yMax; kinData{:, iTrack(2)}]));
 % plot(kinData{frames, iTrack(1)}, kinData{frames, iTrack(2)}, 'lineWidth', 2);
 end
 
-snoutCol = find(strcmp(headerData(3,:), 'snout'), 2);
-buttCol = find(strcmp(headerData(3,:), 'tail-base'), 2);
+snoutCol = find(strcmp(kinHeader(3,:), 'snout'), 2);
+buttCol = find(strcmp(kinHeader(3,:), 'tail-base'), 2);
 
 timeStamp = kinData{:,1} / opts.fsKinematics;
 
