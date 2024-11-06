@@ -125,10 +125,11 @@ csvFilePath = [bhvDataPath, kinFileName];
 
 % Read the first 3 rows to get headers using readmatrix, assuming the CSV is not too large
 % This step is primarily for obtaining the headers
-headerData = readmatrix(csvFilePath, 'OutputType', 'string', 'Range', '1:3');
+kinHeader = readmatrix(csvFilePath, 'OutputType', 'string', 'Range', '1:4');
 
 % Concatenate the strings from the 2nd and 3rd row for each column to form column names
-concatenatedHeader = headerData(2,:) + "_" + headerData(3,:);
+% concatenatedHeader = kinHeader(2,:) + "_" + kinHeader(3,:);
+concatenatedHeader = kinHeader(3,:) + "_" + kinHeader(4,:);
 
 % Now, prepare to read the entire file with custom headers
 % Initialize detectImportOptions again to specify the DataLines and VariableNames
