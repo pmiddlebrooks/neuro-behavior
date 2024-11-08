@@ -58,9 +58,20 @@ for i = 1:numPositions - 1
         angles(:, pairIdx) = acos(dotProduct ./ (mag1 .* mag2));
         pairIdx = pairIdx + 1;
 
+        if sum(isnan(angles(:,pairIdx-1)))
+            disp('asdf')
+        end
         angleNames = [angleNames, bodyParts(i) + "_" + bodyParts(j)];
     end
 end
+headers = [velNames, angleNames];
+velocitiesAngles = [velocities, angles];
+
+% Convert the matrix to a table and assign column headers
+velocitiesAnglesTable = array2table(velocitiesAngles, 'VariableNames', headers);
+
+% Save the table as a CSV file
+writetable(velocitiesAnglesTable, [paths.saveDataPath,  'velocitiesAngles.csv']);
 
 % Outputs: velocities and angles matrices containing the velocities for each
 % body position and the relative angles between each pair of body positions.

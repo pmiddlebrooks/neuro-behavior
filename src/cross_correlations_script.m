@@ -2,7 +2,7 @@
 
 opts = neuro_behavior_options;
 opts.frameSize = .02; % 50 ms framesize for now
-opts.collectFor = 45*60; % Get 45 min
+opts.collectFor = 60*60; % Get 45 min
 opts.minActTime = .16;
 
 getDataType = 'all';
@@ -153,6 +153,13 @@ for iBhv = 1 : length(analyzeCodes)
 end
 toc
 
+
+
+
+
+
+
+
 %%
 xcorrDataPopMean10 = xcorrDataPopMean;
 
@@ -242,11 +249,11 @@ print('-dpdf', fullfile(paths.figurePath, [figTitle, '.pdf']), '-bestfit')
 
 
 
-%% Non-negative matrix factorization to find common distinct patterns of xcorrs
+%% Non-negative matrix factorization to find common distinct patterns of xcorrs among pairs across individual bouts
 warning('currently only doing nnmf for locomotion- test on others as well')
 % resize xcorrData so every column is a pair of neurons, every row is a lag
 % of the xcorr
-bhvIdx = 16;
+bhvIdx = 7;
 
 [nLag, nM56, nDS, nBout] = size(xcorrData{bhvIdx});
 % Reshape the matrix to (n, x*y*j)
@@ -268,7 +275,7 @@ minXcorr = min(xcorrData{bhvIdx}(:));
 nnmfData = nnmfData + abs(minXcorr);
 
 % Define the range of rank values to test
-rankRange = 7;
+rankRange = 1:8;
 W = cell(length(rankRange), 1);
 H = W;
 reconstructionErrors = zeros(size(rankRange));  % Store reconstruction errors
@@ -303,6 +310,8 @@ disp(['Suggested Rank (Elbow Point): ', num2str(elbowRank)]);
 %% Plot basis functions for each rank
 fig = figure(111); clf
 nPlot = 8; %length(rankRange);
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(nPlot, fun);
 [ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
 for i = 1:nPlot
     % Current rank
@@ -311,11 +320,15 @@ for i = 1:nPlot
     % Plot each basis function (each column in W) in a single plot
     % subplot(1, length(rankRange), i);  % Create subplot for each rank
 axes(ax(i));
+% Apply colors to each line using set function
+set(gca, 'ColorOrder', colors(1:i,:), 'NextPlot', 'replacechildren');
+
 plot(xcorrWindow, W{i}, 'linewidth', 2);  % Plot columns of W to visualize basis functions
     title(['Rank = ', num2str(rank)]);
     xlabel('Lags (frames)');
     ylabel('Basis Function Value');
     xline(0)
+    legend
     % pause(1);  % Pause for inspection before moving to the next rank
 end
 titleN = sprintf('NNMF Basis Functions- %s', analyzeBhv{bhvIdx});
@@ -326,7 +339,7 @@ sgtitle(titleN, 'interpreter', 'none')
 
 
     %% Which basis functions dominate for each pair of neurons? 
-
+rankIdxToTest = 4;
 
 % Initialize cell array to store percentage dominance for each (originalM56, originalDS) pair
 percentageDominance = cell(nM56, nDS);
@@ -339,7 +352,7 @@ for m = 1:nM56
         relevantIndices = find(indexMatrix(1, :) == m & indexMatrix(2, :) == d);
         
         % Extract the H values for this (m, d) pair across all originalBouts
-        H_subset = H{1}(:, relevantIndices);
+        H_subset = H{rankIdxToTest}(:, relevantIndices);
         
         % Determine the dominant basis function for each Bout
         [~, dominantBasisForBouts] = max(H_subset, [], 1);
@@ -355,8 +368,13 @@ toc
 % Which basis functions are most prevelantly dominant among the pairs of neurons, in terms of 
 figure(219);
 histogram(domBasisIdx(:))
+xlabel('Basis Function')
+ylabel('Counts of neuron pairs')
+title('Dominant basis functions per neuron pairs across bouts')
 
-%% How well-separated are the basis functions in terms of how much each contributes to the pairs of neurons?
+
+
+% How well-separated are the basis functions in terms of how much each contributes to the pairs of neurons?
 
 separationRatios = zeros(size(percentageDominance));
 
@@ -369,15 +387,166 @@ for i = 1:numel(percentageDominance)
     end
 end
 figure(216); 
-histogram(separationRatios, [1 : .02 : 3])
-%% Display the percentage dominance for each (originalM56, originalDS) pair
-disp('Percentage of bouts dominated by each basis function for each (originalM56, originalDS) pair:');
-for m = 1:M56
-    for d = 1:DS
-        fprintf('M56 = %d, DS = %d: ', m, d);
-        disp(percentageDominance{m, d});
-    end
+% histogram(separationRatios, [1 : .02 : 3])
+histogram(separationRatios(:))
+title('NNMF Basis functions separation ratios per neuron pair')
+xlabel('Separation ratio')
+ylabel('Counts')
+
+
+
+
+
+
+
+
+
+
+
+%% Non-negative matrix factorization to find common distinct patterns of xcorrs among pairs averaged across bouts
+% warning('currently only doing nnmf for locomotion- test on others as well')
+
+bhvIdx = 12;
+[nLag, nM56, nDS, nBout] = size(xcorrData{bhvIdx});
+
+        xcorrPairs = nanmean(xcorrData{bhvIdx}, 4);
+
+%
+[nLag, nM56, nDS] = size(xcorrPairs);
+
+% Reshape the matrix to (n, x*y*j)
+nnmfData = reshape(xcorrPairs, nLag, nM56 * nDS);
+% Only do nnmf on bouts with spiking data in both neuron's of the pair
+zeroBoutPair = isnan(nnmfData(1,:));
+nnmfData = nnmfData(:, ~zeroBoutPair);
+
+% Keep track of original indices
+% Create index arrays for x, y, and j indices for each element
+[originalM56, originalDS] = ndgrid(1:nM56, 1:nDS);
+
+% Reshape each array to a 1D vector and combine into a 3 x numElements matrix
+indexMatrix = [originalM56(:)'; originalDS(:)'];
+indexMatrix = indexMatrix(:, ~zeroBoutPair);
+
+% Ensure no negative values in the pattern.
+minXcorr = min(nnmfData(:));
+nnmfData = nnmfData + abs(minXcorr);
+
+% Define the range of rank values to test
+rankRange = 1:8;
+W = cell(length(rankRange), 1);
+H = W;
+reconstructionErrors = zeros(size(rankRange));  % Store reconstruction errors
+
+
+for iRank = 1:length(rankRange)
+    % Current rank
+    rank = rankRange(iRank);
+
+    % Perform NNMF with the current rank
+    [iW, iH] = nnmf(nnmfData, rank);
+    W{iRank} = iW;
+    H{iRank} = iH;
+    % Calculate the reconstruction error (Frobenius norm)
+    reconstructedData = W{iRank} * H{iRank};
+    reconstructionErrors(iRank) = norm(nnmfData - reconstructedData, 'fro');
 end
+
+%%
+% figure(722);
+t = var(xcorrPairs, 1);
+t = reshape(t, nM56, nDS);
+figure(); imagesc(t)
+% reshape nnmf
+colorbar
+% for i = 1 : 1000
+%      clf; 
+% plot(nnmfData(:,i))
+% hold on; yline(mean(nnmfData(:,i)))
+% hold on; yline(mean(nnmfData(:,i)) + 2*std(nnmfData(:,i)))
+% hold on; yline(mean(nnmfData(:,i)) - 2*std(nnmfData(:,i)))
+% end
+%% Plot reconstruction error across ranks
+figure(112);
+plot(rankRange, reconstructionErrors, '-o', 'lineWidth', 2);
+xlabel('Rank');
+ylabel('Reconstruction Error (Frobenius Norm)');
+title('Reconstruction Error vs. Rank');
+
+% Finding the elbow point
+[~, elbowIdx] = min(diff(reconstructionErrors));
+elbowRank = rankRange(elbowIdx);
+disp(['Suggested Rank (Elbow Point): ', num2str(elbowRank)]);
+
+
+%% Plot basis functions for each rank
+fig = figure(111); clf
+nPlot = 8; %length(rankRange);
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(nPlot, fun);
+[ax, pos] = tight_subplot(2, ceil(nPlot/2), [.08 .02], .1);
+for i = 1:nPlot
+    % Current rank
+    rank = rankRange(i);
+
+    % Plot each basis function (each column in W) in a single plot
+    % subplot(1, length(rankRange), i);  % Create subplot for each rank
+axes(ax(i));
+% Apply colors to each line using set function
+set(gca, 'ColorOrder', colors(1:i,:), 'NextPlot', 'replacechildren');
+
+plot(xcorrWindow, W{i}, 'linewidth', 2);  % Plot columns of W to visualize basis functions
+    title(['Rank = ', num2str(rank)]);
+    xlabel('Lags (frames)');
+    ylabel('Basis Function Value');
+    xline(0)
+    legend
+    % pause(1);  % Pause for inspection before moving to the next rank
+end
+titleN = sprintf('NNMF Basis Functions- %s', analyzeBhv{bhvIdx});
+sgtitle(titleN, 'interpreter', 'none')
+    print('-dpdf', fullfile(paths.figurePath, [titleN, '.pdf']), '-bestfit')
+
+
+
+
+    %% Which basis functions dominate across pairs of neurons? 
+rankIdxToTest = 3;
+
+% Initialize cell array to store percentage dominance for each (originalM56, originalDS) pair
+percentageDominance = cell(nM56, nDS);
+domBasisIdx = zeros(nM56, nDS);        
+        
+        % Determine the dominant basis function for each Bout
+        [~, dominantBasisForPair] = max(H{rankIdxToTest}, [], 1);
+        
+        % Calculate the percentage dominance of each basis function within this pair
+        counts = histcounts(dominantBasisForPair, 1:rankIdxToTest+1);
+        % % counts = histcounts(dominantBasisForPair, 1:(size(H_subset, 1)+1));
+        % [~, domBasisIdx(m, d)] = max(counts);
+        % percentageDominance{m, d} = (counts / length(dominantBasisForPair)) * 100;
+
+% Which basis functions are most prevelantly dominant among the pairs of neurons, in terms of 
+figure(219);
+bar(1:rankIdxToTest, counts)
+xlabel('Basis Function')
+ylabel('Counts of neuron pairs')
+title('Dominant basis functions among neuron pairs')
+
+
+
+% How well-separated are the basis functions in terms of how much each contributes to the pairs of neurons?
+    sortedValues = sort(H{rankIdxToTest}, 'descend');  % Sort in descending order
+
+separationRatios = sortedValues(1,:) ./ sortedValues(2,:);
+
+figure(216); 
+% histogram(separationRatios, [1 : .02 : 3])
+histogram(separationRatios)
+title('NNMF Basis functions separation ratios among neuron pairs')
+xlabel('Separation ratio')
+ylabel('Counts')
+
 
 
 
