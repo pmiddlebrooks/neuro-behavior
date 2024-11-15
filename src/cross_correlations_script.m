@@ -406,10 +406,11 @@ ylabel('Counts')
 %% Non-negative matrix factorization to find common distinct patterns of xcorrs among pairs averaged across bouts
 % warning('currently only doing nnmf for locomotion- test on others as well')
 
-bhvIdx = 12;
+bhvIdx = 14;
 [nLag, nM56, nDS, nBout] = size(xcorrData{bhvIdx});
 
         xcorrPairs = nanmean(xcorrData{bhvIdx}, 4);
+        % xcorrPairs = mean(xcorrData{bhvIdx}, 4);
 
 %
 [nLag, nM56, nDS] = size(xcorrPairs);
@@ -417,8 +418,8 @@ bhvIdx = 12;
 % Reshape the matrix to (n, x*y*j)
 nnmfData = reshape(xcorrPairs, nLag, nM56 * nDS);
 % Only do nnmf on bouts with spiking data in both neuron's of the pair
-zeroBoutPair = isnan(nnmfData(1,:));
-nnmfData = nnmfData(:, ~zeroBoutPair);
+% zeroBoutPair = isnan(nnmfData(1,:));
+% nnmfData = nnmfData(:, ~zeroBoutPair);
 
 % Keep track of original indices
 % Create index arrays for x, y, and j indices for each element
@@ -433,7 +434,7 @@ minXcorr = min(nnmfData(:));
 nnmfData = nnmfData + abs(minXcorr);
 
 % Define the range of rank values to test
-rankRange = 1:8;
+rankRange = 3:6;
 W = cell(length(rankRange), 1);
 H = W;
 reconstructionErrors = zeros(size(rankRange));  % Store reconstruction errors
@@ -452,11 +453,21 @@ for iRank = 1:length(rankRange)
     reconstructionErrors(iRank) = norm(nnmfData - reconstructedData, 'fro');
 end
 
-%%
+%%                      TESTS FOR WHETHER THE CORRELATION FUNCTIONS ARE STRUCTURED OR FLAT
+
+%% Use magnitude threshold
+
+t = max(abs(xcorrPairs), [], 1);
+t = reshape(t, nM56, nDS);
+figure(); imagesc(t)
+colorbar
+
+%% Plot variance of the pair-wise averaged correlation functions
+
 % figure(722);
 t = var(xcorrPairs, 1);
 t = reshape(t, nM56, nDS);
-figure(); imagesc(t)
+figure(722); imagesc(t)
 % reshape nnmf
 colorbar
 % for i = 1 : 1000
@@ -466,6 +477,33 @@ colorbar
 % hold on; yline(mean(nnmfData(:,i)) + 2*std(nnmfData(:,i)))
 % hold on; yline(mean(nnmfData(:,i)) - 2*std(nnmfData(:,i)))
 % end
+
+%% Plot autocorrelation of the pairwise averaged correlation functions
+
+autoCorrPairs = zeros(nM56, nDS);
+for m = 1 : nM56
+    for d = 1 : nDS
+
+ acf = autocorr(xcorrPairs(:,m,d));
+ autoCorrPairs(m, d) = mean(abs(acf));
+    end
+end
+figure(); imagesc(autoCorrPairs)
+colorbar
+
+%%     Max-min range
+
+t = max(xcorrPairs, [], 1) - min(xcorrPairs, [], 1);
+t = reshape(t, nM56, nDS);
+figure(); imagesc(t)
+% reshape nnmf
+colorbar
+
+
+
+
+
+
 %% Plot reconstruction error across ranks
 figure(112);
 plot(rankRange, reconstructionErrors, '-o', 'lineWidth', 2);
