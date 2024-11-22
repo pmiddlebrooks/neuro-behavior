@@ -58,8 +58,6 @@ newPcaModel = 1; % Do we need to get a new pca model to analyze (or did you twea
 
 % Modeling variables
 nModel = 20;
-accuracy = zeros(nModel, length(bhvIDSegment));
-accuracyPermuted = accuracy;
 
 % Apply to all:
 % -------------
@@ -72,7 +70,7 @@ changeBhvLabels = 0;
 % Transition or within variables
 % -------------------------
 transOrWithin = 'trans';
-transOrWithin = 'within';
+% transOrWithin = 'within';
 % transOrWithin = 'transVsWithin';
 matchTransitionCount = 0;
 minFramePerBout = 0;
@@ -87,7 +85,7 @@ downSampleFrames = 1;
 
 
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 switch selectFrom
     case 'M56'
         % projSelect = projectionsM56;
@@ -143,6 +141,9 @@ bhvIDSegment{1} = bhvID(frames1);
 bhvIDSegment{2} = bhvID(frames2);
 bhvIDSegment{3} = bhvID(frames3);
 
+
+accuracy = zeros(nModel, length(bhvIDSegment));
+accuracyPermuted = accuracy;
 
 
 %
@@ -236,7 +237,7 @@ end
 % REMOVE OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
 if minFrames
     nMinFrames = 200;
-    nMinFrames = 400;
+    % nMinFrames = 400;
 
     for i = 1 : length(bhvIDSegment)
         [uniqueVals, ~, idx] = unique(svmIDModel{i}); % Find unique integers and indices
@@ -463,7 +464,7 @@ yticks(0:.1:.3)
 figure_pretty_things
 titleSave = [selectFrom, ' ', transWithinLabel, ' PCA Decoding Accuracy'];
 title(titleSave)
-saveas(gcf, fullfile(paths.figurePath, titleSave) , 'svg');
+saveas(gcf, fullfile(paths.figurePath, titleSave) , 'pdf');
 legend('Predicted', 'Shuffled')
 
 

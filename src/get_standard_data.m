@@ -118,31 +118,38 @@ end
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if strcmp(getDataType, 'all') || strcmp(getDataType, 'kinematics')
     bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-    % kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000.csv';
-    kinFileName = 'TrackingAligned.csv';
-% Define the path to your CSV file
+    kinFileName = 'AdenKinematicsAligned.csv';
+
+    % Define the path to your CSV file
 csvFilePath = [bhvDataPath, kinFileName];
+kinData = readmatrix(csvFilePath);
 
-% Read the first 3 rows to get headers using readmatrix, assuming the CSV is not too large
-% This step is primarily for obtaining the headers
-kinHeader = readmatrix(csvFilePath, 'OutputType', 'string', 'Range', '1:4');
 
-% Concatenate the strings from the 2nd and 3rd row for each column to form column names
-% concatenatedHeader = kinHeader(2,:) + "_" + kinHeader(3,:);
-concatenatedHeader = kinHeader(3,:) + "_" + kinHeader(4,:);
+% Here if you want to read the original tracking data instead
+    % kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000.csv';
+    % kinFileName = 'TrackingAligned.csv';
+% csvFilePath = [bhvDataPath, kinFileName];
 
-% Now, prepare to read the entire file with custom headers
-% Initialize detectImportOptions again to specify the DataLines and VariableNames
-optsK = detectImportOptions(csvFilePath, 'NumHeaderLines', 3); % Skip the first 3 header lines
-optsK.VariableNames = matlab.lang.makeValidName(concatenatedHeader); % Make valid MATLAB variable names
-
-% Assuming data starts from the 4th row, adjust VariableTypes if your data differs
-for i = 1:length(optsK.VariableTypes)
-    optsK = setvartype(optsK, repmat({'double'}, 1, length(optsK.VariableTypes))); % Assuming all data are type double
-end
+% % Read the first 3 rows to get headers using readmatrix, assuming the CSV is not too large
+% % This step is primarily for obtaining the headers
+% kinHeader = readmatrix(csvFilePath, 'OutputType', 'string', 'Range', '1:4');
+% 
+% % Concatenate the strings from the 2nd and 3rd row for each column to form column names
+% % concatenatedHeader = kinHeader(2,:) + "_" + kinHeader(3,:);
+% concatenatedHeader = kinHeader(3,:) + "_" + kinHeader(4,:);
+% 
+% % Now, prepare to read the entire file with custom headers
+% % Initialize detectImportOptions again to specify the DataLines and VariableNames
+% optsK = detectImportOptions(csvFilePath, 'NumHeaderLines', 3); % Skip the first 3 header lines
+% optsK.VariableNames = matlab.lang.makeValidName(concatenatedHeader); % Make valid MATLAB variable names
+% 
+% % Assuming data starts from the 4th row, adjust VariableTypes if your data differs
+% for i = 1:length(optsK.VariableTypes)
+%     optsK = setvartype(optsK, repmat({'double'}, 1, length(optsK.VariableTypes))); % Assuming all data are type double
+% end
 
 % Read the CSV data with the new settings
-kinData = readtable(csvFilePath, optsK);
+% kinData = readtable(csvFilePath, optsK);
 
 % disp(head(kinData));
 
@@ -151,41 +158,50 @@ end
 
 %%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %           Get LFP Data
+if strcmp(getDataType, 'all') || strcmp(getDataType, 'lfp')
+    % m23 = [0 500];
+    % m56 = [501 1240];
+    % cc = [1241 1540];
+    % ds = [1541 2700];
+    % vs = [2701 3840];
 
 % if strcmp(getDataType, 'all') || strcmp(getDataType, 'lfp')
-%{
+    nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
+    nrnDataPath = [nrnDataPath, 'recording1/'];
+    opts.dataPath = nrnDataPath;
+
 data = load_data(opts, 'lfp');
 data = fliplr(data); % flip data so top row is brain surface
 %%
-frequency_bands = [
-    8 13;  % Alpha band
-    13 30; % Beta band
-    30 80  % Gamma band
-    ];
+% frequency_bands = [
+%     8 13;  % Alpha band
+%     13 30; % Beta band
+%     30 80  % Gamma band
+%     ];
 
 channelSpacing = 100;
 channelDepth = 1 : channelSpacing : channelSpacing * size(data, 2);
-lfpM56 = data(:,10); % Get a sample channel to play with (reduce memory load)
+lfpPerArea = data(:, [3 10 23 33]);
 clear data
 
-%%  Get wavelet time-frequency analysis
-start2Min = 1 + 0 * 60 * opts.fsLfp;
-windowSize = 30 * opts.fsLfp; %30 sec window
-window = 1 : windowSize;
-lfpM56Window = lfpM56(window);
-[wt, f, coi] = cwt(lfpM56Window, opts.fsLfp);
-% cwt(lfpM56Window, opts.fsLfp)
-%%
-% cwt(lfpM56Window, opts.fsLfp)
-
-wtGamma = wt(f >= frequency_bands(1,1) & f <= frequency_bands(1,2),:);
-
-plot(mean(abs(wtGamma).^2, 1));
-%}
-% end
-
-
-
+% %%  Get wavelet time-frequency analysis
+% start2Min = 1 + 0 * 60 * opts.fsLfp;
+% windowSize = 30 * opts.fsLfp; %30 sec window
+% window = 1 : windowSize;
+% lfpM56Window = lfpM56(window);
+% [wt, f, coi] = cwt(lfpM56Window, opts.fsLfp);
+% % cwt(lfpM56Window, opts.fsLfp)
+% %%
+% % cwt(lfpM56Window, opts.fsLfp)
+% 
+% wtGamma = wt(f >= frequency_bands(1,1) & f <= frequency_bands(1,2),:);
+% 
+% plot(mean(abs(wtGamma).^2, 1));
+% 
+% % end
+% 
+% 
+end
 
 
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
