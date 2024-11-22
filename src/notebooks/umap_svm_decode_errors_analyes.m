@@ -30,6 +30,10 @@ scatter(obsCodeFrame, ones(length(svmID), 1), '.k', 'sizeData', 100)
 scatter(corrCodeFrame, 1.1 * ones(length(svmID), 1), '.b', 'sizeData', 100)
 scatter(errCodeFrame, 1.2 * ones(length(svmID), 1), '.r', 'sizeData', 100)
 ylim([0 3])
+xlabel('Frame')
+legend({'Observed', 'CorrectPred', 'ErrPred'})
+
+
 
 %%
 % Initialize variables to store the results

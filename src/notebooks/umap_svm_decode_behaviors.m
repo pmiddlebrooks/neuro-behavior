@@ -18,7 +18,7 @@ get_standard_data
 
 colors = colors_for_behaviors(codes);
 
-%% for plotting consistency
+% for plotting consistency
 %
 monitorPositions = get(0, 'MonitorPositions');
 if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
@@ -28,12 +28,12 @@ monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have
 monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
 
-%%
+%
 bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
     'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
     'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...
     'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
-%%
+%
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
 
@@ -55,6 +55,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
 forDim = [4 6 8]; % Loop through these dimensions to fit UMAP
+% forDim = 8; % Loop through these dimensions to fit UMAP
 % forDim = 5; % Loop through these dimensions to fit UMAP
 newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 
@@ -78,7 +79,7 @@ changeBhvLabels = 0;
 
 % Transition or within variables
 % -------------------------
-% transOrWithin = 'trans';
+transOrWithin = 'trans';
 transOrWithin = 'within';
 % transOrWithin = 'transVsWithin';
 firstNFrames = 0;
@@ -90,12 +91,12 @@ minFramePerBout = 0;
 collapseBhv = 0;
 minBoutNumber = 0;
 downSampleBouts = 0;
-minFrames = 0;
-downSampleFrames = 0;
+minFrames = 1;
+downSampleFrames = 1;
 
 
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -142,10 +143,13 @@ allFontSize = 12;
 
 
 min_dist = (.1 : .1 : .5);
-min_dist = (.01 : .03 : .1);
+min_dist = (.01 : .05 : .36);
+% min_dist = (.02);
 spread = [1 1.3 1.6];
+% spread = [1.3];
 % n_neighbors = [150];
-n_neighbors = [6 8 10 12 15];
+n_neighbors = [6 10 15];
+% n_neighbors = [10];
 
 
 modelAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
@@ -159,18 +163,18 @@ for k = 1:length(forDim)
     % fitType = 'NeuralSpace';
 
 
-    for x = 1:length(min_dist)
-        for y = 1:length(spread)
-            for z = 1:length(n_neighbors)
+    for xMinD = 1:length(min_dist)
+        for ySpread = 1:length(spread)
+            for zNN = 1:length(n_neighbors)
                 %% Run UMAPto get projections in low-D space
-                fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
+                fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(xMinD), spread(ySpread), n_neighbors(zNN));
                 if newUmapModel
                     umapFrameSize = opts.frameSize;
 
                     % rng(1);
                     % [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
                     [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
-                        'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+                        'min_dist', min_dist(xMinD), 'spread', spread(ySpread), 'n_neighbors', n_neighbors(zNN));
                     pause(4); close
                 end
 
@@ -197,7 +201,7 @@ for k = 1:length(forDim)
                     % colorsForPlot = [.2 .2 .2];
                     figH = figHFull;
                     plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
-                    titleM = sprintf('%s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    titleM = sprintf('%s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist(xMinD), spread(ySpread), n_neighbors(zNN));
                     % titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
                     plotFrames = 1:length(bhvID);
                     plot_3d_scatter
@@ -306,14 +310,14 @@ for k = 1:length(forDim)
                         svmInd = preInd;% + 1; % First bin after transition
 
                         % Pre & Post: Comment/uncomment to use more than one bin
-            % svmID = repelem(svmID, 2);
+            svmID = repelem(svmID, 2);
             % svmInd = sort([svmInd - 1; svmInd]); % two bins before transition
-            % svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
+            svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
 
                         transWithinLabel = 'transitions pre';
                         % transWithinLabel = 'transitions 200ms pre';
                         % transWithinLabel = 'transitions post';
-                        % transWithinLabel = 'transitions pre & post';
+                        transWithinLabel = 'transitions pre & post';
                         % transWithinLabel = ['transitions pre minBout ', num2str(nMinFrames)];
 
 
@@ -388,7 +392,7 @@ for k = 1:length(forDim)
                     figH = figHFullModel;
                     % Plot on second monitor, half-width
                     plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
-                    titleM = sprintf('%s %s All Frames %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, transWithinLabel, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    titleM = sprintf('%s %s All Frames %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, transWithinLabel, opts.frameSize, min_dist(xMinD), spread(ySpread), n_neighbors(zNN));
                     % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
                     plotFrames = allBhvModeled;
                     plot_3d_scatter
@@ -402,7 +406,7 @@ for k = 1:length(forDim)
                     figH = figHModel;
                     % Plot on second monitor, half-width
                     plotPos = [monitorTwo(1) + monitorTwo(3)/2, 1, monitorTwo(3)/2, monitorTwo(4)];
-                    titleM = sprintf('%s %s Modeled Data %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, transWithinLabel, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    titleM = sprintf('%s %s Modeled Data %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, transWithinLabel, opts.frameSize, min_dist(xMinD), spread(ySpread), n_neighbors(zNN));
                     % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
                     plotFrames = svmInd;
                     plot_3d_scatter
@@ -547,7 +551,7 @@ sound(y(1:3*Fs),Fs)
 
                 % Calculate and display the overall accuracy
                 accuracy(k) = sum(predictedLabels == testLabels) / length(testLabels);
-                fprintf('%s %s Overall Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy(k));
+                fprintf('%s %s Overall Accuracy: %.4f\n', selectFrom, transWithinLabel, accuracy(k));
 
                 fprintf('Model fit took %.2f min\n', toc/60)
 
@@ -583,7 +587,7 @@ sound(y(1:3*Fs),Fs)
 
                     % Calculate the permuted accuracy
                     accuracyPermuted(k, iPerm) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
-                    fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f%%\n', selectFrom, transWithinLabel, k, accuracyPermuted(k, iPerm));
+                    fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f\n', selectFrom, transWithinLabel, iPerm, accuracyPermuted(k, iPerm));
 
                 end
                 modelName = ['svmModelPermuted', appendModelName];
@@ -598,8 +602,8 @@ sound(y(1:3*Fs),Fs)
                 %     load handel
                 % sound(y(1:3*Fs),Fs)
 
-modelAccuracy(k, x, y, z) = accuracy(k);
-permAccuracy(k, x, y, z) = accuracyPermuted(k, iPerm);
+modelAccuracy(k, xMinD, ySpread, zNN) = accuracy(k);
+permAccuracy(k, xMinD, ySpread, zNN) = accuracyPermuted(k, iPerm);
 
 
 
@@ -810,12 +814,7 @@ permAccuracy(k, x, y, z) = accuracyPermuted(k, iPerm);
 end
 
 
-
 % Plot the accuracy results per dimension
-
-
-
-
 perDimPosition = [monitorOne(3)/2, monitorOne(4)/2, monitorOne(3)/3, monitorOne(4)/2.2];
 fig = figure(65);
 set(fig, 'Position', perDimPosition); clf; hold on;
@@ -839,13 +838,28 @@ sound(y(1:round(2.2*Fs)),Fs)
 
 
 
+%%  Compare the accuracies of the various models
 
+% Find the maximum value and its indices
+[maxValue, linearIdx] = max(modelAccuracy(:)); % Max value and linear index
+[maxDim, maxMinD, maxSpread, maxNN] = ind2sub(size(modelAccuracy), linearIdx); % Convert linear index to subscripts
 
+% Sort all elements from high to low while keeping track of indices
+[sortedValues, sortedLinearIdx] = sort(modelAccuracy(:), 'descend'); % Sort elements
+[sortedDim, sortedMinD, sortedSpread, sortedNN] = ind2sub(size(modelAccuracy), sortedLinearIdx); % Subscripts for sorted indices
 
+% Display results
+fprintf('Max Value: %f at indices (%d, %d, %d, %d)\n', maxValue, maxDim, maxMinD, maxSpread, maxNN);
 
+paramsTbl = table(sortedValues, forDim(sortedDim), min_dist(sortedMinD)', spread(sortedSpread)', n_neighbors(sortedNN)', 'VariableNames', ["Accuracy", "Dimensions", "min_dist", "spread", "n_neigbors"]);
+%% Plot a distribution of the accuracies
+figure();
+histogram(modelAccuracy(:))
+title(['Bin size ', num2str(opts.frameSize)]);
 
-
-
+%%
+accuracyBin05 = modelAccuracy;
+accuracyBin05Perm = permAccuracy;
 
 
 
