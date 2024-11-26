@@ -9,7 +9,21 @@ getDataType = 'lfp';
 get_standard_data
 
 
+% for plotting consistency
+monitorPositions = get(0, 'MonitorPositions');
+if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
+    monitorPositions = flipud(monitorPositions);
+end
+monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
+monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
+%%
+% - get one lfp from each brain area (4 lfps)
+% - Compute lfp power via wavelet
+% - For each band, average the lfp powers within that band's range (4 bands X 4 areas = 16 features
+% - zscore each band
+% - bin lfp bands into frames by averaging lfp band power within each band
+% - fit hmm on frame-binned lfp power
 %%
 % Define frequency bands
 freqBands = struct( ...
@@ -25,28 +39,62 @@ for iArea = 1 : 4
     binnedBandPowers = [binnedBandPowers, iBinnedBandPowers];
 end
 
-
+%%
+figure;
+hold on;
+for i = 5:8
+    plot(1:40, binnedBandPowers(1:40, i), 'DisplayName', sprintf('Column %d', i), 'lineWidth', 2);
+end
+hold off;
 
 
 %% HMM model for state estimation
 % Example inputs
-maxStates = 20; % Maximum number of HMM states to evaluate
+maxStates = 5; % Maximum number of HMM states to evaluate
 numFolds = 5;   % Number of folds for cross-validation
-lambda = 10;
+lambda = 1;
 
 % Use previously computed binnedBandPowers
-[bestNumStates, stateEstimates, hmmModels] = fit_hmm_crossval_cov_penalty(binnedBandPowers, maxStates, numFolds, lambda);
+[bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedBandPowers, maxStates, numFolds, lambda);
 
 % Access optimal HMM properties
 disp('Optimal Number of States:');
-disp(size(optimalHMM.mu, 1));
+disp(bestNumStates);
 
-%% HMM model for 3 states
+%% HMM model for X states
     % Train the best model on the full dataset
-    hmm = fitgmdist(binnedBandPowers, 3, 'Replicates', 10, 'CovarianceType', 'diagonal');
+    hmm = fitgmdist(binnedBandPowers, 4, 'Replicates', 10, 'CovarianceType', 'diagonal');
 
     % State estimations
     stateEstimates = cluster(hmm, binnedBandPowers);
+
+    [uniqueIntegers, ~, indices] = unique(stateEstimates);
+counts = accumarray(indices, 1)
+
+
+%% Re-create fig 1.1 from poster
+    % Create a maximized figure on the second monitor
+    fig = figure(554); clf
+    set(fig, 'Position', monitorTwo);
+    nState = length(uniqueIntegers);
+    [ax, pos] = tight_subplot(1, nState, [.08 .02], .1);
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(nState, fun);
+
+    alphaInd = [1 5 9 13];
+for i = 1 : nState
+    meanPower = mean(binnedBandPowers(stateEstimates == i, :), 1);
+    meanByBand = reshape(meanPower, 4, 4);
+        axes(ax(i)); hold on;
+    for j = 1:4
+        plot(1:4, meanByBand(j,:), 'color', colors(i,:));
+    end
+plot(1:4, mean(meanByBand, 1), 'k', 'lineWidth', 3)
+ylim([-1.1 1.1])
+end
+
+
+
 %%
 fun = @sRGB_to_OKLab;
 colors = maxdistcolor(3, fun);
@@ -130,7 +178,7 @@ end
 
 
 
-function [bestNumStates, stateEstimates, hmmModels] = fit_hmm_crossval_cov_penalty(binnedBandPowers, maxStates, numFolds, lambda)
+function [bestNumStates, stateEstimates, hmmModels, penalizedLikelihoods] = fit_hmm_crossval_cov_penalty(featureMatrix, maxStates, numFolds, lambda)
 % FIT_HMM_CROSSVAL_COV_PENALTY Fits HMM and determines the optimal number of states using penalized log-likelihood.
 %
 % Inputs:
@@ -142,7 +190,7 @@ function [bestNumStates, stateEstimates, hmmModels] = fit_hmm_crossval_cov_penal
 %   stateEstimates - State assignments for the best model.
 %   hmmModels - Cell array of trained HMMs for each number of states.
 
-    numBins = size(binnedBandPowers, 1);
+    numBins = size(featureMatrix, 1);
     foldSize = floor(numBins / numFolds);
 
     % Initialize storage
@@ -156,11 +204,13 @@ function [bestNumStates, stateEstimates, hmmModels] = fit_hmm_crossval_cov_penal
             testIdx = (1:foldSize) + (fold-1)*foldSize;
             trainIdx = setdiff(1:numBins, testIdx);
 
-            trainData = binnedBandPowers(trainIdx, :);
-            testData = binnedBandPowers(testIdx, :);
+            trainData = featureMatrix(trainIdx, :);
+            testData = featureMatrix(testIdx, :);
 
             % Train HMM on training data
-            hmm = fitgmdist(trainData, numStates, 'Replicates', 5, 'CovarianceType', 'diagonal');
+options = statset('MaxIter', 500);
+
+            hmm = fitgmdist(trainData, numStates, 'Replicates', 5, 'CovarianceType', 'full', 'Options', options);
             hmmModels{numStates} = hmm;
 
             % Evaluate log-likelihood on test data
