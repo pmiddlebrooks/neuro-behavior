@@ -181,7 +181,7 @@ data = fliplr(data); % flip data so top row is brain surface
 
 channelSpacing = 100;
 channelDepth = 1 : channelSpacing : channelSpacing * size(data, 2);
-lfpPerArea = data(:, [3 10 23 33]);
+lfpPerArea = data(:, [3 10 21 34]);
 clear data
 
 % %%  Get wavelet time-frequency analysis
