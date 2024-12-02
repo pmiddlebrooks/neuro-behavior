@@ -153,7 +153,7 @@ numFolds = 3;   % Number of folds for cross-validation
 lambda = 1;
 
 % Use previously computed binnedBandPowers
-[bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedEnvelopes(idxFit), maxStates, numFolds, lambda);
+[bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedEnvelopes(idxFit,:), maxStates, numFolds, lambda);
 
 % Access optimal HMM properties
 disp('Optimal Number of States:');
@@ -161,8 +161,8 @@ disp(bestNumStates);
 
 %% HMM model for X states
     % Train the best model on the full dataset
-    featureMatrix = zscore(binnedEnvelopes);
-    hmm = fitgmdist(featureMatrix, 3, 'Replicates', 10, 'CovarianceType', 'diagonal');
+    featureMatrix = zscore(binnedEnvelopes(idxFit,:));
+    hmm = fitgmdist(featureMatrix, 5, 'Replicates', 10, 'CovarianceType', 'diagonal');
 
     % State estimations
     stateEstimates = cluster(hmm, featureMatrix);

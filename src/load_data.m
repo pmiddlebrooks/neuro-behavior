@@ -40,7 +40,7 @@ if strcmp(dataType, 'behavior')
 
     data.Valid = behavior_selection(data, opts);
 
-elseif strcmp(dataType, 'neuron')
+elseif strcmp(dataType, 'spikes')
     fileName = 'cluster_info.tsv';
     ci = readtable([opts.dataPath, fileName], "FileType","text",'Delimiter', '\t');
 

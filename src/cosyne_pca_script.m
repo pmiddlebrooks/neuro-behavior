@@ -8,7 +8,9 @@ opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 210 * 60; % seconds
 opts.frameSize = .1;
 
-getDataType = 'all';
+getDataType = 'spikes';
+get_standard_data
+getDataType = 'behavior';
 get_standard_data
 
 colors = colors_for_behaviors(codes);
