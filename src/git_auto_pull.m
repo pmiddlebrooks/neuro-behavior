@@ -1,5 +1,6 @@
 function git_auto_pull
 
+%%
 if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
         pathsToUpdate = {'/Users/paulmiddlebrooks/Projects/neuro-behavior', ...
             '/Users/paulmiddlebrooks/Projects/dynamics', ...
@@ -15,7 +16,7 @@ end
 for i = 1 : length(pathsToUpdate)
     % Navigate to the specified folder
     cd(pathsToUpdate{i});
-
+    disp(pathsToUpdate{i})
     % Git add
     system('git pull');
 

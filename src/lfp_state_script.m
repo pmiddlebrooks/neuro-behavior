@@ -1,4 +1,4 @@
-% This script more or less follows: 
+% This script more or less follows:
 % Akella et al 2024 bioRxiv: Deciphering neuronal variability across states reveals dynamic sensory encoding
 % https://www.biorxiv.org/content/10.1101/2024.04.03.587408v2
 
@@ -34,18 +34,10 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 % - fit hmm on frame-binned lfp power
 
 %% Definitions
-% Define frequency bands
-freqBands = struct( ...
-    'alpha', [8 13], ...
-    'beta', [13 30], ...
-    'lowGamma', [30 50], ...
-    'highGamma', [50 80] ...
-    );
-%%
 bands = {'alpha', [8 13]; ...
-         'beta', [13 30]; ...
-         'lowGamma', [30 50]; ...
-         'highGamma', [50 80]};
+    'beta', [13 30]; ...
+    'lowGamma', [30 50]; ...
+    'highGamma', [50 80]};
 numBands = size(bands, 1);
 
 %% Plot some lfp powers as Q/A
@@ -64,10 +56,10 @@ bandPowers = zeros(numBands, length(time));
 for i = 1:numBands
     % Extract the frequency range for the current band
     freqRange = bands{i, 2};
-    
+
     % Identify the indices corresponding to the band frequencies
     freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
-    
+
     % Compute power by summing the squared magnitude of the wavelet coefficients
     bandPowers(i, :) = mean(abs(cfs(freqIdx, :)).^2, 1);
 end
@@ -85,13 +77,20 @@ title('LFP Band Power Over Time');
 
 %%
 
+
+
+
+
+
 %% Get binned signals for fitting the hmm
 
 freqIdx = repmat([1 2 3 4], 1, 4);
 binnedBandPowers = [];
 binnedEnvelopes = [];
+method = 'stft';
+method = 'cwt';
 for iArea = 1 : 4
-    [iBinnedZPower, iBinnedEnvelopes, timeBins] = bin_bandpower_by_frames(lfpPerArea(:,iArea), opts.fsLfp, bands, opts.frameSize);
+    [iBinnedZPower, iBinnedEnvelopes, timeBins] = bin_bandpower_by_frames(lfpPerArea(:,iArea), opts.fsLfp, bands, opts.frameSize, method);
     binnedBandPowers = [binnedBandPowers, iBinnedZPower'];
     binnedEnvelopes = [binnedEnvelopes, iBinnedEnvelopes'];
 end
@@ -124,8 +123,8 @@ hold off;
 legend
 
 %% are any of them alpha/beta low, gammas high? and vice versa?
-idx = [1 2 3 4] + 12;
-featureMatrix = binnedEnvelopes;
+idx = [1 2 3 4] + 4;
+featureMatrix = binnedBandPowers;
 lowHigh = sum(featureMatrix(:,idx(1)) < 0 & featureMatrix(:,idx(2)) < 0 & featureMatrix(:,idx(3)) > 0 & featureMatrix(:,idx(4)) > 0) / size(featureMatrix, 1);
 highLow = sum(featureMatrix(:,idx(1)) > 0 & featureMatrix(:,idx(2)) > 0 & featureMatrix(:,idx(3)) < 0 & featureMatrix(:,idx(4)) < 0) / size(featureMatrix, 1);
 allLow = sum(featureMatrix(:,idx(1)) < 0 & featureMatrix(:,idx(2)) < 0 & featureMatrix(:,idx(3)) < 0 & featureMatrix(:,idx(4)) < 0) / size(featureMatrix, 1);
@@ -142,10 +141,94 @@ fprintf('LowHigh: %.3f\tHighLow: %.3f\tAllLow: %.3f\tAllHigh: %.3f\tTotal: %.3f\
 
 
 %% HMM
-                preInd = find(diff(bhvIDMat) ~= 0); % 1 frame prior to all behavior transitions
-                transInd = sort([preInd; preInd+1]);
+preInd = find(diff(bhvIDMat) ~= 0); % 1 frame prior to all behavior transitions
+transInd = sort([preInd; preInd+1]);
 idxFit = transInd;
 
+
+
+%% Test LFPs around behavior transitions
+preInd = find(diff(bhvIDMat) ~= 0); % 1 frame prior to all behavior transitions
+preIndLfp = preInd ./ opts.frameSize * opts.fsLfp;
+fullTime = -1.2 : 1/opts.fsLfp : 1.2; % seconds around onset
+fullWindow = round(fullTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
+windowCenter = find(fullTime == 0);
+
+areaIdx = 2;
+numBands = size(bands, 1);
+
+
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(size(bands, 1), fun);
+
+for i = 1 : length(preIndLfp)
+signal = lfpPerArea(preIndLfp(i) + fullWindow, areaIdx);
+
+    % get the power spectra of the 4 bands
+        [cfs, frequencies] = cwt(signal, 'amor', opts.fsLfp, ...
+            'FrequencyLimits', freqLimits);
+        powerSpectra = abs(cfs).^2;
+
+        % Z-score the power at each frequency
+        zScoredPower = zscore(abs(cfs).^2, 0, 2);
+
+        % Step 2: Allocate matrices for band power and envelopes
+        bandPowerSignals = zeros(numBands, length(signal));
+        bandEnvelopes = zeros(numBands, length(signal));
+
+        % Step 3: Compute power and envelopes for each band
+        for iBand = 1:numBands
+            % Get the frequency range for the current band
+            freqRange = bands{iBand, 2};
+
+            % Identify indices corresponding to the band frequencies
+            freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
+
+            % Average z-scored power within the band
+            bandPowerSignals(iBand, :) = mean(zScoredPower(freqIdx, :), 1);
+
+            % Compute the envelope using the Hilbert transform
+            bandEnvelopes(iBand, :) = abs(hilbert(bandPowerSignals(iBand, :)));
+        end
+        figure(1332);
+plotTime = -1 : 1/opts.fsLfp : 1; % seconds around onset
+plotWindow = round(plotTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
+subplot(2, 1, 1);
+% imagesc(fullWindow, 1:size(bandPowerSignals, 1), bandPowerSignals);
+imagesc(plotTime(1:end-1), 1:size(bandPowerSignals, 1), zscore(bandPowerSignals(:, windowCenter + plotWindow), [], 2));
+colormap('jet');
+colorbar;
+xlabel('Time (s)');
+ylabel('Frequency Bands');
+title('Z-Scored Power');
+
+subplot(2, 1, 2); cla; hold on;
+for iBand = 1 : numBands
+% plot(fullWindow, bandEnvelopes(iBand,:), 'lineWidth', 2, 'Color', colors(iBand,:));
+plot(plotTime(1:end-1), zscore(bandEnvelopes(iBand, windowCenter + plotWindow), [], 2), 'lineWidth', 2, 'Color', colors(iBand,:));
+end
+legend(bands(:, 1));
+xlabel('Time (s)');
+xlim([plotTime(1) plotTime(end-1)])
+yline(0)
+ylabel('Envelope Amplitude');
+title('Z-scored Envelopes');
+
+% Adjust subplot widths to align
+h1 = subplot(2, 1, 1);
+h2 = subplot(2, 1, 2);
+pos1 = get(h1, 'Position');
+pos2 = get(h2, 'Position');
+pos2(3) = pos1(3); % Make bottom subplot same width as top
+set(h2, 'Position', pos2);
+
+
+end
+
+
+
+%%
+idxFit = 1:size(binnedEnvelopes,1);
 %% HMM model for state estimation
 % Example inputs
 maxStates = 8; % Maximum number of HMM states to evaluate
@@ -153,44 +236,47 @@ numFolds = 3;   % Number of folds for cross-validation
 lambda = 1;
 
 % Use previously computed binnedBandPowers
-[bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedEnvelopes(idxFit,:), maxStates, numFolds, lambda);
+% [bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedEnvelopes(idxFit,:), maxStates, numFolds, lambda);
+[bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedEnvelopes(idxFit,:), maxStates, numFolds);
 
 % Access optimal HMM properties
 disp('Optimal Number of States:');
 disp(bestNumStates);
 
+likelihoods
+
 %% HMM model for X states
-    % Train the best model on the full dataset
-    featureMatrix = zscore(binnedEnvelopes(idxFit,:));
-    hmm = fitgmdist(featureMatrix, 5, 'Replicates', 10, 'CovarianceType', 'diagonal');
+% Train the best model on the full dataset
+featureMatrix = zscore(binnedEnvelopes(idxFit,:));
+hmm = fitgmdist(featureMatrix, 8, 'Replicates', 10, 'CovarianceType', 'diagonal');
 
-    % State estimations
-    stateEstimates = cluster(hmm, featureMatrix);
+% State estimations
+stateEstimates = cluster(hmm, featureMatrix);
 
-    [uniqueIntegers, ~, indices] = unique(stateEstimates);
+[uniqueIntegers, ~, indices] = unique(stateEstimates);
 counts = accumarray(indices, 1)
 
 
 %% Re-create fig 1.1 from poster
-    % Create a maximized figure on the second monitor
-    fig = figure(554); clf
-    set(fig, 'Position', monitorTwo);
-    nState = length(uniqueIntegers);
-    [ax, pos] = tight_subplot(1, nState, [.08 .02], .1);
+% Create a maximized figure on the second monitor
+fig = figure(554); clf
+set(fig, 'Position', monitorTwo);
+nState = length(uniqueIntegers);
+[ax, pos] = tight_subplot(1, nState, [.08 .02], .1);
 fun = @sRGB_to_OKLab;
 colors = maxdistcolor(nState, fun);
 
-    alphaInd = [1 5 9 13];
+alphaInd = [1 5 9 13];
 for i = 1 : nState
     meanPower = mean(featureMatrix(stateEstimates == i, :), 1);
     meanByBand = reshape(meanPower, 4, 4);
-        axes(ax(i)); hold on;
+    axes(ax(i)); hold on;
     for j = 1:4
         plot(1:4, meanByBand(j,:), 'color', colors(i,:));
     end
-plot(1:4, mean(meanByBand, 1), 'k', 'lineWidth', 3)
-ylim([-1.1 1.1])
-yline(0, '--', 'color', [.5 .5 .5], 'linewidth', 2)
+    plot(1:4, mean(meanByBand, 1), 'k', 'lineWidth', 3)
+    ylim([-1.1 1.1])
+    yline(0, '--', 'color', [.5 .5 .5], 'linewidth', 2)
 end
 
 
@@ -207,7 +293,7 @@ hold on;
 for i = 1:nSample
     % Draw a segment for each state with its corresponding color
     patch([x(i)-0.5, x(i)+0.5, x(i)+0.5, x(i)-0.5], ...
-          [0, 0, 1, 1], colors(stateEstimates(i),:), 'EdgeColor', 'none');
+        [0, 0, 1, 1], colors(stateEstimates(i),:), 'EdgeColor', 'none');
 end
 
 
@@ -224,194 +310,299 @@ end
 
 
 
-function [binnedZPower, binnedEnvelopes, timeBins] = bin_bandpower_by_frames(signal, fs, bands, frameSize)
-    % bin_bandpower_by_frames: Computes band powers and envelopes of LFP signals,
-    % bins them by frames, and returns results.
-    %
-    % Inputs:
-    %   - signal: LFP signal (1D array).
-    %   - fs: Sampling rate (Hz).
-    %   - bands: Cell array of frequency bands (e.g., {'alpha', [8 13]; 'beta', [13 30]}).
-    %   - frameSize: Frame size in seconds for binning.
-    %
-    % Outputs:
-    %   - binnedZPower: Z-scored band power binned by frames.
-    %   - binnedEnvelopes: Band-specific envelopes binned by frames.
-    %   - timeBins: Time vector for bin midpoints.
-
-    % Step 1: Compute power using cwt
-    freqLimits = [min(cellfun(@(x) x(1), bands(:, 2))), max(cellfun(@(x) x(2), bands(:, 2)))];
-    [cfs, frequencies] = cwt(signal, 'amor', fs, 'FrequencyLimits', freqLimits);
-
-    % Z-score the power at each frequency
-    zScoredPower = zscore(abs(cfs).^2, 0, 2);
-
-    % Step 2: Allocate matrices for band power and envelopes
-    numBands = size(bands, 1);
-    bandPowerSignals = zeros(numBands, length(signal));
-    bandEnvelopes = zeros(numBands, length(signal));
-
-    % Step 3: Compute power and envelopes for each band
-    for i = 1:numBands
-        % Get the frequency range for the current band
-        freqRange = bands{i, 2};
-
-        % Identify indices corresponding to the band frequencies
-        freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
-
-        % Average z-scored power within the band
-        bandPowerSignals(i, :) = mean(zScoredPower(freqIdx, :), 1);
-
-        % Compute the envelope using the Hilbert transform
-        bandEnvelopes(i, :) = abs(hilbert(bandPowerSignals(i, :)));
-    end
-
-    % Step 4: Bin power and envelopes by frames
-    frameSamples = frameSize * fs;
-    numFrames = floor(length(signal) / frameSamples);
-
-    % Preallocate binned outputs
-    binnedZPower = zeros(numBands, numFrames);
-    binnedEnvelopes = zeros(numBands, numFrames);
-    timeBins = zeros(1, numFrames);
-
-    for frameIdx = 1:numFrames
-        % Frame indices
-        startIdx = (frameIdx - 1) * frameSamples + 1;
-        endIdx = startIdx + frameSamples - 1;
-
-        % Extract frame
-        frameZPower = bandPowerSignals(:, startIdx:endIdx);
-        frameEnvelope = bandEnvelopes(:, startIdx:endIdx);
-
-        % Average across the frame
-        binnedZPower(:, frameIdx) = mean(frameZPower, 2);
-        binnedEnvelopes(:, frameIdx) = mean(frameEnvelope, 2);
-
-        % Compute bin midpoint time
-        timeBins(frameIdx) = (startIdx + endIdx) / (2 * fs);
-    end
-end
-
-
-% function binnedBandPowers = bin_bandpower_by_frames(lfpData, freqBands, samplingFreq, frameSize)
-% % BIN_BANDPOWER_BY_FRAMES Computes band power and downsamples into bins.
-% %
-% % Inputs:
-% %   lfpData - Vector of LFP data (1D array).
-% %   samplingFreq - Sampling frequency of the LFP data in Hz.
-% %   frameSize - Bin size in seconds for downsampling the band powers.
-% %
-% % Outputs:
-% %   binnedBandPowers - Struct containing downsampled band powers for:
-% %                      - Alpha (8-13 Hz)
-% %                      - Beta (13-30 Hz)
-% %                      - Low Gamma (30-50 Hz)
-% %                      - High Gamma (50-80 Hz)
-% 
-% 
-% % % Define frequencies for wavelet transform
-% % freqRange = linspace(8, 100, 200); % Adjust range as needed
-% % numFreqs = length(freqRange);
-% 
-% % Perform wavelet transform
-% [waveletCoefs, frequencies] = cwt(lfpData, 'amor', samplingFreq, 'FrequencyLimits', [8 100]);
-% 
-% % Compute power at each frequency
-% waveletPower = abs(waveletCoefs).^2;
-% % Normalize (or z-score) the power
-% waveletPower = zscore(waveletPower);
-% 
-% % Preallocate band powers
-% bandPowers = [];
-% 
-% % Extract power for each frequency band
-% for bandName = fieldnames(freqBands)'
-%     band = freqBands.(bandName{1});
-%     bandIdx = frequencies > band(1) & frequencies < band(2);
-%     bandPowers = [bandPowers, mean(waveletPower(bandIdx, :), 1)'];
-% end
-% 
-% % Downsample into bins
-% frameSamples = round(frameSize * samplingFreq); % Samples per frame
-% numFrames = floor(length(lfpData) / frameSamples);
-% binnedBandPowers = [];
-% 
-% for iBand = 1 : size(bandPowers, 2)
-%     bandData = bandPowers(:,iBand);
-%     binnedBandPowers = [binnedBandPowers, arrayfun(@(i) ...
-%         mean(bandData((i-1)*frameSamples+1:i*frameSamples)), 1:numFrames)'];
-% end
-% end
-
-
-
-function [bestNumStates, stateEstimates, hmmModels, penalizedLikelihoods] = fit_hmm_crossval_cov_penalty(featureMatrix, maxStates, numFolds, lambda)
-% FIT_HMM_CROSSVAL_COV_PENALTY Fits HMM and determines the optimal number of states using penalized log-likelihood.
+function [binnedZPower, binnedEnvelopes, timeBins] = bin_bandpower_by_frames(signal, fs, bands, frameSize, method)
+% bin_bandpower_by_frames: Computes band powers and envelopes of LFP signals,
+% bins them by frames, and returns results.
 %
 % Inputs:
-%   binnedBandPowers - Struct with binned band power data (alpha, beta, lowGamma, highGamma).
+%   - signal: LFP signal (1D array).
+%   - fs: Sampling rate (Hz).
+%   - bands: Cell array of frequency bands (e.g., {'alpha', [8 13]; 'beta', [13 30]}).
+%   - frameSize: Frame size in seconds for binning.
+%
+% Outputs:
+%   - binnedZPower: Z-scored band power binned by frames.
+%   - binnedEnvelopes: Band-specific envelopes binned by frames.
+%   - timeBins: Time vector for bin midpoints.
+
+if nargin < 5
+    method = 'cwt';
+end
+% Frame parameters
+frameSamples = round(frameSize * fs); % Samples per frame
+numFrames = floor(length(signal) / frameSamples);
+        numBands = size(bands, 1);
+
+        signal = zscore(signal, [], 1);
+        % Preallocate binned outputs
+                binnedZPower = zeros(numBands, numFrames);
+        binnedEnvelopes = zeros(numBands, numFrames);
+
+
+% Step 1: Compute power
+% Calculate band powers using the selected method
+switch lower(method)
+    case 'stft'
+        % STFT parameters
+        stftWindowSize = round(0.8 * fs); % ~800 ms window
+        stftOverlap = round(0.7 * fs);    % ~700 ms overlap
+        fftLength = 2^nextpow2(stftWindowSize);     % FFT length
+
+        % Compute STFT
+        [cfs, frequencies, t] = stft(signal, fs, ...
+            'Window', hann(stftWindowSize, 'periodic'), ...
+            'OverlapLength', stftOverlap, ...
+            'FFTLength', fftLength);
+        powerSpectra = abs(cfs).^2; % Power spectrum
+
+        % Z-score the power at each frequency
+        zScoredPower = zscore(abs(cfs).^2, 0, 2);
+
+        % Interpolate STFT results to match 100ms bins
+        timeBins = linspace(0, length(signal) / fs, numFrames);
+        for i = 1:numBands
+            freqRange = bands{i, 2};
+            bandIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2); % Frequency indices for the band
+            bandPower = mean(zScoredPower(bandIdx, :), 1); % Average power across band
+
+            % Interpolate power to align with 100ms bins
+            binnedZPower(i, :) = interp1(t, bandPower, timeBins, 'linear', 0);
+
+            % Compute the envelope using the Hilbert transform
+            binnedEnvelopes(i, :) = abs(hilbert(binnedZPower(i, :)));
+        end
+
+    case 'cwt'
+        freqLimits = [min(cellfun(@(x) x(1), bands(:, 2))), max(cellfun(@(x) x(2), bands(:, 2)))];
+        % Use CWT
+        [cfs, frequencies] = cwt(signal, 'amor', fs, ...
+            'FrequencyLimits', freqLimits);
+        powerSpectra = abs(cfs).^2;
+
+        % Z-score the power at each frequency
+        zScoredPower = zscore(abs(cfs).^2, 0, 2);
+
+        % Step 2: Allocate matrices for band power and envelopes
+        bandPowerSignals = zeros(numBands, length(signal));
+        bandEnvelopes = zeros(numBands, length(signal));
+
+        % Step 3: Compute power and envelopes for each band
+        for i = 1:numBands
+            % Get the frequency range for the current band
+            freqRange = bands{i, 2};
+
+            % Identify indices corresponding to the band frequencies
+            freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
+
+            % Average z-scored power within the band
+            bandPowerSignals(i, :) = mean(zScoredPower(freqIdx, :), 1);
+
+            % Compute the envelope using the Hilbert transform
+            bandEnvelopes(i, :) = abs(hilbert(bandPowerSignals(i, :)));
+        end
+
+        % Step 4: Bin power and envelopes by frames
+        % Preallocate binned outputs
+        timeBins = zeros(1, numFrames);
+
+        for frameIdx = 1:numFrames
+            % Frame indices
+            startIdx = (frameIdx - 1) * frameSamples + 1;
+            endIdx = startIdx + frameSamples - 1;
+
+            % Extract frame
+            frameZPower = bandPowerSignals(:, startIdx:endIdx);
+            frameEnvelope = bandEnvelopes(:, startIdx:endIdx);
+
+            % Average across the frame
+            binnedZPower(:, frameIdx) = mean(frameZPower, 2);
+            binnedEnvelopes(:, frameIdx) = mean(frameEnvelope, 2);
+
+            % Compute bin midpoint time
+            timeBins(frameIdx) = (startIdx + endIdx) / (2 * fs);
+        end
+
+end
+
+end
+
+
+
+
+% function [bestNumStates, stateEstimates, hmmModels, penalizedLikelihoods] = fit_hmm_crossval_cov_penalty(featureMatrix, maxStates, numFolds, lambda)
+% % FIT_HMM_CROSSVAL_COV_PENALTY Fits HMM and determines the optimal number of states using penalized log-likelihood.
+% %
+% % Inputs:
+% %   binnedBandPowers - Struct with binned band power data (alpha, beta, lowGamma, highGamma).
+% %   maxStates - Maximum number of states to evaluate.
+% %
+% % Outputs:
+% %   bestNumStates - Optimal number of states based on penalized likelihood.
+% %   stateEstimates - State assignments for the best model.
+% %   hmmModels - Cell array of trained HMMs for each number of states.
+% featureMatrix = zscore(featureMatrix);
+% numBins = size(featureMatrix, 1);
+% foldSize = floor(numBins / numFolds);
+% 
+% % Initialize storage
+% penalizedLikelihoods = nan(maxStates, 1);
+% hmmModels = cell(maxStates, 1);
+% 
+% for numStates = 2:maxStates
+%     foldLikelihoods = zeros(numFolds, 1);
+%     for fold = 1:numFolds
+%         % Split data into training and test sets
+%         testIdx = (1:foldSize) + (fold-1)*foldSize;
+%         trainIdx = setdiff(1:numBins, testIdx);
+% 
+%         trainData = featureMatrix(trainIdx, :);
+%         testData = featureMatrix(testIdx, :);
+% 
+%         % Train HMM on training data
+%         options = statset('MaxIter', 500);
+% 
+%         hmm = fitgmdist(trainData, numStates, 'Replicates', 5, 'CovarianceType', 'full', 'Options', options);
+%         hmmModels{numStates} = hmm;
+% 
+%         % Evaluate log-likelihood on test data
+%         testLogLikelihood = sum(log(pdf(hmm, testData)));
+% 
+%         % Compute penalty based on covariance similarity
+%         covarianceMatrices = hmm.Sigma; % Covariance matrices for each state
+%         numCovariances = size(covarianceMatrices, 3); % Number of states
+%         similarityPenalty = 0;
+%         for i = 1:numCovariances
+%             for j = i+1:numCovariances
+%                 % Frobenius norm of the difference between covariance matrices
+%                 similarityPenalty = similarityPenalty + norm(covarianceMatrices(:,:,i) - covarianceMatrices(:,:,j), 'fro');
+%             end
+%         end
+%         similarityPenalty = similarityPenalty / (numCovariances * (numCovariances - 1)); % Average penalty
+% 
+%         % Penalize the log-likelihood
+%         foldLikelihoods(fold) = testLogLikelihood - lambda * similarityPenalty;
+%     end
+% 
+%     % Average cross-validated penalized likelihood
+%     penalizedLikelihoods(numStates) = mean(foldLikelihoods);
+% end
+% 
+% % Find the best number of states
+% [~, bestNumStates] = max(penalizedLikelihoods);
+% 
+% % Train the best model on the full dataset
+% bestHMM = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal');
+% 
+% % State estimations
+% stateEstimates = cluster(bestHMM, featureMatrix);
+% hmmModels{bestNumStates} = bestHMM;
+% end
+
+
+
+
+% function [bestNumStates, stateEstimates, hmmModels] = fit_hmm_crossval_cov_penalty(data, samplingFreq, bands, maxStates, numFolds)
+function [bestNumStates, stateEstimates, hmmModels, penalizedLikelihoods] = fit_hmm_crossval_cov_penalty(data, maxStates, numFolds)
+% FIT_HMM_CROSSVAL_COV_PENALTY Fits HMM and determines optimal number of states
+% based on penalized log-likelihood using Baum-Welch optimization and similarity penalty.
+%
+% Inputs:
+%   data - Feature matrix of size (samples x frequency bands).
+%   samplingFreq - Sampling frequency of the data in Hz.
+%   bands - Cell array of frequency bands (e.g., {'alpha', [8, 13]}).
 %   maxStates - Maximum number of states to evaluate.
+%   numFolds - Number of cross-validation folds.
 %
 % Outputs:
 %   bestNumStates - Optimal number of states based on penalized likelihood.
 %   stateEstimates - State assignments for the best model.
 %   hmmModels - Cell array of trained HMMs for each number of states.
-featureMatrix = zscore(featureMatrix);
-    numBins = size(featureMatrix, 1);
-    foldSize = floor(numBins / numFolds);
 
+    % Prepare cross-validation indices
+    numSamples = size(data, 1);
+    foldSize = floor(numSamples / numFolds);
+    
     % Initialize storage
-    penalizedLikelihoods = nan(maxStates, 1);
+    penalizedLikelihoods = NaN(maxStates, 1);
     hmmModels = cell(maxStates, 1);
 
     for numStates = 2:maxStates
-        foldLikelihoods = zeros(numFolds, 1);
+        foldLikelihoods = nan(numFolds, 1);
+        foldConverged = true; % Track if all folds converge
+        
         for fold = 1:numFolds
-            % Split data into training and test sets
+            % Create train and test splits
             testIdx = (1:foldSize) + (fold-1)*foldSize;
-            trainIdx = setdiff(1:numBins, testIdx);
+            trainIdx = setdiff(1:numSamples, testIdx);
+            trainData = data(trainIdx, :);
+            testData = data(testIdx, :);
 
-            trainData = featureMatrix(trainIdx, :);
-            testData = featureMatrix(testIdx, :);
+            % Initialize HMM parameters
+            transitionMatrix = normalize(rand(numStates, numStates), 2);
+            emissionMatrix = normalize(rand(numStates, size(data, 2)), 2);
 
-            % Train HMM on training data
-options = statset('MaxIter', 500);
-
-            hmm = fitgmdist(trainData, numStates, 'Replicates', 5, 'CovarianceType', 'full', 'Options', options);
-            hmmModels{numStates} = hmm;
+            % Train HMM using Baum-Welch
+            try
+                [hmmTrans, hmmEmit] = hmmtrain(trainData', transitionMatrix, emissionMatrix, ...
+                                               'Tolerance', 1e-6, 'MaxIter', 500);
+            catch
+                % Abort if Baum-Welch fails
+                foldConverged = false;
+                break;
+            end
 
             % Evaluate log-likelihood on test data
-            testLogLikelihood = sum(log(pdf(hmm, testData)));
+            [~, logLikelihood] = hmmdecode(testData, hmmTrans, hmmEmit);
 
-            % Compute penalty based on covariance similarity
-            covarianceMatrices = hmm.Sigma; % Covariance matrices for each state
-            numCovariances = size(covarianceMatrices, 3); % Number of states
-            similarityPenalty = 0;
-            for i = 1:numCovariances
-                for j = i+1:numCovariances
-                    % Frobenius norm of the difference between covariance matrices
-                    similarityPenalty = similarityPenalty + norm(covarianceMatrices(:,:,i) - covarianceMatrices(:,:,j), 'fro');
-                end
-            end
-            similarityPenalty = similarityPenalty / (numCovariances * (numCovariances - 1)); % Average penalty
+            % Compute similarity penalty (top eigenvalue)
+            stateDefinitionMatrix = hmmEmit; % State definitions as emission probabilities
+            covarianceMatrix = cov(stateDefinitionMatrix);
+            topEigenvalue = max(eig(covarianceMatrix)); % Maximum variance
+            
+            % Normalize metrics between -1 and 1
+            normLogLikelihood = normalizeMetric(logLikelihood, -1, 1);
+            normEigenvalue = normalizeMetric(topEigenvalue, -1, 1);
 
-            % Penalize the log-likelihood
-            foldLikelihoods(fold) = testLogLikelihood - lambda * similarityPenalty;
+            % Penalized log-likelihood
+            penalizedLikelihood = normLogLikelihood / normEigenvalue;
+            foldLikelihoods(fold) = penalizedLikelihood;
         end
 
-        % Average cross-validated penalized likelihood
+        % Abort if any fold fails
+        if ~foldConverged
+            % break;
+        end
+
+        % Store average penalized likelihood across folds
         penalizedLikelihoods(numStates) = mean(foldLikelihoods);
     end
 
-    % Find the best number of states
-    [~, bestNumStates] = max(penalizedLikelihoods);
+    % Determine best number of states
+    [~, bestNumStates] = max(penalizedLikelihoods, [], 'omitnan');
 
-    % Train the best model on the full dataset
-    bestHMM = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal');
-
-    % State estimations
-    stateEstimates = cluster(bestHMM, featureMatrix);
-    hmmModels{bestNumStates} = bestHMM;
+    % Train final HMM on all data for best number of states
+    if ~isempty(bestNumStates)
+        transitionMatrix = normalize(rand(bestNumStates, bestNumStates), 2);
+        emissionMatrix = normalize(rand(bestNumStates, size(data, 2)), 2);
+        [bestHMMTrans, bestHMMEmit] = hmmtrain(data, transitionMatrix, emissionMatrix, ...
+                                               'Tolerance', 1e-6, 'MaxIter', 100);
+        hmmModels{bestNumStates} = struct('TransitionMatrix', bestHMMTrans, 'EmissionMatrix', bestHMMEmit);
+        
+        % State estimates using Viterbi
+        stateEstimates = hmmviterbi(data, bestHMMTrans, bestHMMEmit);
+    else
+        stateEstimates = [];
+    end
 end
+
+% Helper function: Normalize a metric between minVal and maxVal
+function normMetric = normalizeMetric(metric, minVal, maxVal)
+    normMetric = (metric - minVal) / (maxVal - minVal);
+end
+
+% Helper function: Normalize rows of a matrix to sum to 1
+function normalizedMatrix = normalize(matrix, dim)
+    normalizedMatrix = bsxfun(@rdivide, matrix, sum(matrix, dim));
+end
+
 
