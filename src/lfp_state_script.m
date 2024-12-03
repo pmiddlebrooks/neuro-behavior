@@ -75,9 +75,6 @@ ylabel('Frequency Bands');
 title('LFP Band Power Over Time');
 
 
-%%
-
-
 
 
 
@@ -140,12 +137,6 @@ fprintf('LowHigh: %.3f\tHighLow: %.3f\tAllLow: %.3f\tAllHigh: %.3f\tTotal: %.3f\
 
 
 
-%% HMM
-preInd = find(diff(bhvIDMat) ~= 0); % 1 frame prior to all behavior transitions
-transInd = sort([preInd; preInd+1]);
-idxFit = transInd;
-
-
 
 %% Test LFPs around behavior transitions
 preInd = find(diff(bhvIDMat) ~= 0); % 1 frame prior to all behavior transitions
@@ -162,65 +153,65 @@ fun = @sRGB_to_OKLab;
 colors = maxdistcolor(size(bands, 1), fun);
 
 for i = 1 : length(preIndLfp)
-signal = lfpPerArea(preIndLfp(i) + fullWindow, areaIdx);
+    signal = lfpPerArea(preIndLfp(i) + fullWindow, areaIdx);
 
     % get the power spectra of the 4 bands
-        [cfs, frequencies] = cwt(signal, 'amor', opts.fsLfp, ...
-            'FrequencyLimits', freqLimits);
-        powerSpectra = abs(cfs).^2;
+    [cfs, frequencies] = cwt(signal, 'amor', opts.fsLfp, ...
+        'FrequencyLimits', freqLimits);
+    powerSpectra = abs(cfs).^2;
 
-        % Z-score the power at each frequency
-        zScoredPower = zscore(abs(cfs).^2, 0, 2);
+    % Z-score the power at each frequency
+    zScoredPower = zscore(abs(cfs).^2, 0, 2);
 
-        % Step 2: Allocate matrices for band power and envelopes
-        bandPowerSignals = zeros(numBands, length(signal));
-        bandEnvelopes = zeros(numBands, length(signal));
+    % Step 2: Allocate matrices for band power and envelopes
+    bandPowerSignals = zeros(numBands, length(signal));
+    bandEnvelopes = zeros(numBands, length(signal));
 
-        % Step 3: Compute power and envelopes for each band
-        for iBand = 1:numBands
-            % Get the frequency range for the current band
-            freqRange = bands{iBand, 2};
+    % Step 3: Compute power and envelopes for each band
+    for iBand = 1:numBands
+        % Get the frequency range for the current band
+        freqRange = bands{iBand, 2};
 
-            % Identify indices corresponding to the band frequencies
-            freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
+        % Identify indices corresponding to the band frequencies
+        freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
 
-            % Average z-scored power within the band
-            bandPowerSignals(iBand, :) = mean(zScoredPower(freqIdx, :), 1);
+        % Average z-scored power within the band
+        bandPowerSignals(iBand, :) = mean(zScoredPower(freqIdx, :), 1);
 
-            % Compute the envelope using the Hilbert transform
-            bandEnvelopes(iBand, :) = abs(hilbert(bandPowerSignals(iBand, :)));
-        end
-        figure(1332);
-plotTime = -1 : 1/opts.fsLfp : 1; % seconds around onset
-plotWindow = round(plotTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
-subplot(2, 1, 1);
-% imagesc(fullWindow, 1:size(bandPowerSignals, 1), bandPowerSignals);
-imagesc(plotTime(1:end-1), 1:size(bandPowerSignals, 1), zscore(bandPowerSignals(:, windowCenter + plotWindow), [], 2));
-colormap('jet');
-colorbar;
-xlabel('Time (s)');
-ylabel('Frequency Bands');
-title('Z-Scored Power');
+        % Compute the envelope using the Hilbert transform
+        bandEnvelopes(iBand, :) = abs(hilbert(bandPowerSignals(iBand, :)));
+    end
+    figure(1332);
+    plotTime = -1 : 1/opts.fsLfp : 1; % seconds around onset
+    plotWindow = round(plotTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
+    subplot(2, 1, 1);
+    % imagesc(fullWindow, 1:size(bandPowerSignals, 1), bandPowerSignals);
+    imagesc(plotTime(1:end-1), 1:size(bandPowerSignals, 1), zscore(bandPowerSignals(:, windowCenter + plotWindow), [], 2));
+    colormap('jet');
+    colorbar;
+    xlabel('Time (s)');
+    ylabel('Frequency Bands');
+    title('Z-Scored Power');
 
-subplot(2, 1, 2); cla; hold on;
-for iBand = 1 : numBands
-% plot(fullWindow, bandEnvelopes(iBand,:), 'lineWidth', 2, 'Color', colors(iBand,:));
-plot(plotTime(1:end-1), zscore(bandEnvelopes(iBand, windowCenter + plotWindow), [], 2), 'lineWidth', 2, 'Color', colors(iBand,:));
-end
-legend(bands(:, 1));
-xlabel('Time (s)');
-xlim([plotTime(1) plotTime(end-1)])
-yline(0)
-ylabel('Envelope Amplitude');
-title('Z-scored Envelopes');
+    subplot(2, 1, 2); cla; hold on;
+    for iBand = 1 : numBands
+        % plot(fullWindow, bandEnvelopes(iBand,:), 'lineWidth', 2, 'Color', colors(iBand,:));
+        plot(plotTime(1:end-1), zscore(bandEnvelopes(iBand, windowCenter + plotWindow), [], 2), 'lineWidth', 2, 'Color', colors(iBand,:));
+    end
+    legend(bands(:, 1));
+    xlabel('Time (s)');
+    xlim([plotTime(1) plotTime(end-1)])
+    yline(0)
+    ylabel('Envelope Amplitude');
+    title('Z-scored Envelopes');
 
-% Adjust subplot widths to align
-h1 = subplot(2, 1, 1);
-h2 = subplot(2, 1, 2);
-pos1 = get(h1, 'Position');
-pos2 = get(h2, 'Position');
-pos2(3) = pos1(3); % Make bottom subplot same width as top
-set(h2, 'Position', pos2);
+    % Adjust subplot widths to align
+    h1 = subplot(2, 1, 1);
+    h2 = subplot(2, 1, 2);
+    pos1 = get(h1, 'Position');
+    pos2 = get(h2, 'Position');
+    pos2(3) = pos1(3); % Make bottom subplot same width as top
+    set(h2, 'Position', pos2);
 
 
 end
@@ -248,7 +239,10 @@ likelihoods
 %% HMM model for X states
 % Train the best model on the full dataset
 featureMatrix = zscore(binnedEnvelopes(idxFit,:));
-hmm = fitgmdist(featureMatrix, 8, 'Replicates', 10, 'CovarianceType', 'diagonal');
+        options = statset('MaxIter', 500);
+
+        hmm = fitgmdist(featureMatrix, 3, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
+% hmm = fitgmdist(featureMatrix, 3, 'Replicates', 10, 'CovarianceType', 'diagonal');
 
 % State estimations
 stateEstimates = cluster(hmm, featureMatrix);
@@ -271,14 +265,20 @@ for i = 1 : nState
     meanPower = mean(featureMatrix(stateEstimates == i, :), 1);
     meanByBand = reshape(meanPower, 4, 4);
     axes(ax(i)); hold on;
+        xticks(1:4)
+xticklabels({'alpha', 'beta', 'low gamma', 'high gamma'})
     for j = 1:4
         plot(1:4, meanByBand(j,:), 'color', colors(i,:));
     end
     plot(1:4, mean(meanByBand, 1), 'k', 'lineWidth', 3)
     ylim([-1.1 1.1])
+    xlim([0.5 4.5])
     yline(0, '--', 'color', [.5 .5 .5], 'linewidth', 2)
+    xlabel('Power Band');
+    ylabel('Normalized Power')
+    title(['State ', num2str(i)])
 end
-
+sgtitle('Recreating fig 2E from Akella et al 2024 bioRxiv')
 
 %%
 fun = @sRGB_to_OKLab;
@@ -295,6 +295,93 @@ for i = 1:nSample
     patch([x(i)-0.5, x(i)+0.5, x(i)+0.5, x(i)-0.5], ...
         [0, 0, 1, 1], colors(stateEstimates(i),:), 'EdgeColor', 'none');
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+%% YOu have a fit HMM. Project the state labels into UMAP space defined by spiking
+getDataType = 'spikes';
+get_standard_data
+[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
+
+%%
+mDim = 8;
+colors = colors_for_behaviors(codes);
+
+figHFull = 10;
+figHStates = 11;
+
+selectFrom = 'M56';
+selectFrom = 'DS';
+switch selectFrom
+    case 'M56'
+        idSelect = idM56;
+    case 'DS'
+        idSelect = idDS;
+end
+fitType = ['UMAP ', num2str(mDim), 'D'];
+
+min_dist = (.02);
+spread = 1.3;
+n_neighbors = 10;
+
+
+% Fit umap
+[projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', nDim, 'randomize', false, 'verbose', 'none', ...
+    'min_dist', min_dist, 'spread', spread, 'n_neighbors', n_neighbors);
+pause(4); close
+
+% --------------------------------------------
+% Plot FULL TIME OF ALL BEHAVIORS
+plotFullMap = 1;
+if plotFullMap
+    colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMat + 2, 'UniformOutput', false);
+    colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+    figH = figHFull;
+    plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
+    titleM = sprintf('%s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist, spread, n_neighbors);
+    plotFrames = 1:length(bhvIDMat);
+    plot_3d_scatter
+end
+%% HMM model for X states
+% Train the best model on the full dataset
+numStates = 3;
+featureMatrix = zscore(binnedEnvelopes(idxFit,:));
+        options = statset('MaxIter', 500);
+
+        hmm = fitgmdist(featureMatrix, numStates, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
+
+% State estimations
+stateEstimates = cluster(hmm, featureMatrix);
+
+[uniqueIntegers, ~, indices] = unique(stateEstimates);
+counts = accumarray(indices, 1)
+%
+% Plot LFP states into neural umap
+plotStatesMap = 1;
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(numStates, fun);
+
+if plotStatesMap
+    colorsForPlot = arrayfun(@(x) colors(x,:), stateEstimates, 'UniformOutput', false);
+    colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+    figH = figHStates;
+    plotPos = [monitorOne(1) + monitorOne(3)/2, 1, monitorOne(3)/2, monitorOne(4)];
+    titleM = sprintf('LFP States- %s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist, spread, n_neighbors);
+    plotFrames = 1:length(bhvIDMat);
+    plot_3d_scatter
+end
+
+
 
 
 
@@ -331,12 +418,12 @@ end
 % Frame parameters
 frameSamples = round(frameSize * fs); % Samples per frame
 numFrames = floor(length(signal) / frameSamples);
-        numBands = size(bands, 1);
+numBands = size(bands, 1);
 
-        signal = zscore(signal, [], 1);
-        % Preallocate binned outputs
-                binnedZPower = zeros(numBands, numFrames);
-        binnedEnvelopes = zeros(numBands, numFrames);
+signal = zscore(signal, [], 1);
+% Preallocate binned outputs
+binnedZPower = zeros(numBands, numFrames);
+binnedEnvelopes = zeros(numBands, numFrames);
 
 
 % Step 1: Compute power
@@ -429,180 +516,205 @@ end
 
 
 
-% function [bestNumStates, stateEstimates, hmmModels, penalizedLikelihoods] = fit_hmm_crossval_cov_penalty(featureMatrix, maxStates, numFolds, lambda)
-% % FIT_HMM_CROSSVAL_COV_PENALTY Fits HMM and determines the optimal number of states using penalized log-likelihood.
-% %
-% % Inputs:
-% %   binnedBandPowers - Struct with binned band power data (alpha, beta, lowGamma, highGamma).
-% %   maxStates - Maximum number of states to evaluate.
-% %
-% % Outputs:
-% %   bestNumStates - Optimal number of states based on penalized likelihood.
-% %   stateEstimates - State assignments for the best model.
-% %   hmmModels - Cell array of trained HMMs for each number of states.
-% featureMatrix = zscore(featureMatrix);
-% numBins = size(featureMatrix, 1);
-% foldSize = floor(numBins / numFolds);
-% 
-% % Initialize storage
-% penalizedLikelihoods = nan(maxStates, 1);
-% hmmModels = cell(maxStates, 1);
-% 
-% for numStates = 2:maxStates
-%     foldLikelihoods = zeros(numFolds, 1);
-%     for fold = 1:numFolds
-%         % Split data into training and test sets
-%         testIdx = (1:foldSize) + (fold-1)*foldSize;
-%         trainIdx = setdiff(1:numBins, testIdx);
-% 
-%         trainData = featureMatrix(trainIdx, :);
-%         testData = featureMatrix(testIdx, :);
-% 
-%         % Train HMM on training data
-%         options = statset('MaxIter', 500);
-% 
-%         hmm = fitgmdist(trainData, numStates, 'Replicates', 5, 'CovarianceType', 'full', 'Options', options);
-%         hmmModels{numStates} = hmm;
-% 
-%         % Evaluate log-likelihood on test data
-%         testLogLikelihood = sum(log(pdf(hmm, testData)));
-% 
-%         % Compute penalty based on covariance similarity
-%         covarianceMatrices = hmm.Sigma; % Covariance matrices for each state
-%         numCovariances = size(covarianceMatrices, 3); % Number of states
-%         similarityPenalty = 0;
-%         for i = 1:numCovariances
-%             for j = i+1:numCovariances
-%                 % Frobenius norm of the difference between covariance matrices
-%                 similarityPenalty = similarityPenalty + norm(covarianceMatrices(:,:,i) - covarianceMatrices(:,:,j), 'fro');
-%             end
-%         end
-%         similarityPenalty = similarityPenalty / (numCovariances * (numCovariances - 1)); % Average penalty
-% 
-%         % Penalize the log-likelihood
-%         foldLikelihoods(fold) = testLogLikelihood - lambda * similarityPenalty;
-%     end
-% 
-%     % Average cross-validated penalized likelihood
-%     penalizedLikelihoods(numStates) = mean(foldLikelihoods);
-% end
-% 
-% % Find the best number of states
-% [~, bestNumStates] = max(penalizedLikelihoods);
-% 
-% % Train the best model on the full dataset
-% bestHMM = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal');
-% 
-% % State estimations
-% stateEstimates = cluster(bestHMM, featureMatrix);
-% hmmModels{bestNumStates} = bestHMM;
-% end
-
-
-
-
-% function [bestNumStates, stateEstimates, hmmModels] = fit_hmm_crossval_cov_penalty(data, samplingFreq, bands, maxStates, numFolds)
-function [bestNumStates, stateEstimates, hmmModels, penalizedLikelihoods] = fit_hmm_crossval_cov_penalty(data, maxStates, numFolds)
-% FIT_HMM_CROSSVAL_COV_PENALTY Fits HMM and determines optimal number of states
-% based on penalized log-likelihood using Baum-Welch optimization and similarity penalty.
+function [bestNumStates, stateEstimates, hmmModels, penalizedLikelihoods] = fit_hmm_crossval_cov_penalty(featureMatrix, maxStates, numFolds, lambda)
+% FIT_HMM_CROSSVAL_COV_PENALTY Fits HMM and determines the optimal number of states using penalized log-likelihood.
 %
 % Inputs:
-%   data - Feature matrix of size (samples x frequency bands).
-%   samplingFreq - Sampling frequency of the data in Hz.
-%   bands - Cell array of frequency bands (e.g., {'alpha', [8, 13]}).
+%   binnedBandPowers - Struct with binned band power data (alpha, beta, lowGamma, highGamma).
 %   maxStates - Maximum number of states to evaluate.
-%   numFolds - Number of cross-validation folds.
 %
 % Outputs:
 %   bestNumStates - Optimal number of states based on penalized likelihood.
 %   stateEstimates - State assignments for the best model.
 %   hmmModels - Cell array of trained HMMs for each number of states.
+featureMatrix = zscore(featureMatrix);
+numBins = size(featureMatrix, 1);
+foldSize = floor(numBins / numFolds);
 
-    % Prepare cross-validation indices
-    numSamples = size(data, 1);
-    foldSize = floor(numSamples / numFolds);
-    
-    % Initialize storage
-    penalizedLikelihoods = NaN(maxStates, 1);
-    hmmModels = cell(maxStates, 1);
+% Initialize storage
+testLogLikelihood = nan(maxStates, 1);
+topEigenvalue = nan(maxStates, 1);
+hmmModels = cell(maxStates, 1);
 
-    for numStates = 2:maxStates
-        foldLikelihoods = nan(numFolds, 1);
-        foldConverged = true; % Track if all folds converge
-        
-        for fold = 1:numFolds
-            % Create train and test splits
-            testIdx = (1:foldSize) + (fold-1)*foldSize;
-            trainIdx = setdiff(1:numSamples, testIdx);
-            trainData = data(trainIdx, :);
-            testData = data(testIdx, :);
+for numStates = 2:maxStates
+    foldLikelihoods = zeros(numFolds, 1);
+    iTopEigenvalue = zeros(numFolds, 1);
+    iTestLogLikelihood = zeros(numFolds, 1);
+    for fold = 1:numFolds
+        % Split data into training and test sets
+        testIdx = (1:foldSize) + (fold-1)*foldSize;
+        trainIdx = setdiff(1:numBins, testIdx);
 
-            % Initialize HMM parameters
-            transitionMatrix = normalize(rand(numStates, numStates), 2);
-            emissionMatrix = normalize(rand(numStates, size(data, 2)), 2);
+        trainData = featureMatrix(trainIdx, :);
+        testData = featureMatrix(testIdx, :);
 
-            % Train HMM using Baum-Welch
-            try
-                [hmmTrans, hmmEmit] = hmmtrain(trainData', transitionMatrix, emissionMatrix, ...
-                                               'Tolerance', 1e-6, 'MaxIter', 500);
-            catch
-                % Abort if Baum-Welch fails
-                foldConverged = false;
-                break;
-            end
+        % Train HMM on training data
+        options = statset('MaxIter', 500);
 
-            % Evaluate log-likelihood on test data
-            [~, logLikelihood] = hmmdecode(testData, hmmTrans, hmmEmit);
+        hmm = fitgmdist(trainData, numStates, 'Replicates', 5, 'CovarianceType', 'full', 'Options', options);
+        hmmModels{numStates} = hmm;
 
-            % Compute similarity penalty (top eigenvalue)
-            stateDefinitionMatrix = hmmEmit; % State definitions as emission probabilities
-            covarianceMatrix = cov(stateDefinitionMatrix);
-            topEigenvalue = max(eig(covarianceMatrix)); % Maximum variance
-            
-            % Normalize metrics between -1 and 1
-            normLogLikelihood = normalizeMetric(logLikelihood, -1, 1);
-            normEigenvalue = normalizeMetric(topEigenvalue, -1, 1);
+        % Evaluate log-likelihood on test data
+        iTestLogLikelihood(fold) = sum(log(pdf(hmm, testData)));
 
-            % Penalized log-likelihood
-            penalizedLikelihood = normLogLikelihood / normEigenvalue;
-            foldLikelihoods(fold) = penalizedLikelihood;
-        end
+        % Compute similarity as the top eigenvalue of the state definition
+        % matrix
+        % Extract state definition matrix
+        stateDefinitionMatrix = hmm.mu; % Size: numStates x numFeatures
+        % Compute the covariance matrix of the state definition matrix
+        covMatrix = cov(stateDefinitionMatrix);
 
-        % Abort if any fold fails
-        if ~foldConverged
-            % break;
-        end
+        % Compute the top eigenvalue
+        iTopEigenvalue(fold) = max(eig(covMatrix));
 
-        % Store average penalized likelihood across folds
-        penalizedLikelihoods(numStates) = mean(foldLikelihoods);
+
+        %     % Compute similarity penalty
+        %
+        %
+        %     % Compute penalty based on covariance similarity
+        %     covarianceMatrices = hmm.Sigma; % Covariance matrices for each state
+        %     numCovariances = size(covarianceMatrices, 3); % Number of states
+        %     similarityPenalty = 0;
+        %     for i = 1:numCovariances
+        %         for j = i+1:numCovariances
+        %             % Frobenius norm of the difference between covariance matrices
+        %             similarityPenalty = similarityPenalty + norm(covarianceMatrices(:,:,i) - covarianceMatrices(:,:,j), 'fro');
+        %         end
+        %     end
+        %     similarityPenalty = similarityPenalty / (numCovariances * (numCovariances - 1)); % Average penalty
+        %
+        %     % Penalize the log-likelihood
+        %     foldLikelihoods(fold) = testLogLikelihood - lambda * similarityPenalty;
     end
 
-    % Determine best number of states
-    [~, bestNumStates] = max(penalizedLikelihoods, [], 'omitnan');
-
-    % Train final HMM on all data for best number of states
-    if ~isempty(bestNumStates)
-        transitionMatrix = normalize(rand(bestNumStates, bestNumStates), 2);
-        emissionMatrix = normalize(rand(bestNumStates, size(data, 2)), 2);
-        [bestHMMTrans, bestHMMEmit] = hmmtrain(data, transitionMatrix, emissionMatrix, ...
-                                               'Tolerance', 1e-6, 'MaxIter', 100);
-        hmmModels{bestNumStates} = struct('TransitionMatrix', bestHMMTrans, 'EmissionMatrix', bestHMMEmit);
-        
-        % State estimates using Viterbi
-        stateEstimates = hmmviterbi(data, bestHMMTrans, bestHMMEmit);
-    else
-        stateEstimates = [];
-    end
+    % Average likelihoods and top eigenvalues
+    % penalizedLikelihoods(numStates) = mean(foldLikelihoods);
+    testLogLikelihood(numStates) = mean(iTestLogLikelihood);
+    topEigenvalue(numStates) = mean(iTopEigenvalue);
 end
 
+normLogLike = normalizeMetric(testLogLikelihood);
+normTopEig = normalizeMetric(topEigenvalue);
+
+[maxVal, bestNumStates] = max(normLogLike ./ normTopEig);
+
+
+% % Find the best number of states
+% [~, bestNumStates] = max(penalizedLikelihoods);
+
+% Train the best model on the full dataset
+bestHMM = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal');
+
+% State estimations
+stateEstimates = cluster(bestHMM, featureMatrix);
+hmmModels{bestNumStates} = bestHMM;
+end
+
+
+
+
+% % function [bestNumStates, stateEstimates, hmmModels] = fit_hmm_crossval_cov_penalty(data, samplingFreq, bands, maxStates, numFolds)
+% function [bestNumStates, stateEstimates, hmmModels, penalizedLikelihoods] = fit_hmm_crossval_cov_penalty(data, maxStates, numFolds)
+% % FIT_HMM_CROSSVAL_COV_PENALTY Fits HMM and determines optimal number of states
+% % based on penalized log-likelihood using Baum-Welch optimization and similarity penalty.
+% %
+% % Inputs:
+% %   data - Feature matrix of size (samples x frequency bands).
+% %   samplingFreq - Sampling frequency of the data in Hz.
+% %   bands - Cell array of frequency bands (e.g., {'alpha', [8, 13]}).
+% %   maxStates - Maximum number of states to evaluate.
+% %   numFolds - Number of cross-validation folds.
+% %
+% % Outputs:
+% %   bestNumStates - Optimal number of states based on penalized likelihood.
+% %   stateEstimates - State assignments for the best model.
+% %   hmmModels - Cell array of trained HMMs for each number of states.
+%
+%     % Prepare cross-validation indices
+%     numSamples = size(data, 1);
+%     foldSize = floor(numSamples / numFolds);
+%
+%     % Initialize storage
+%     penalizedLikelihoods = NaN(maxStates, 1);
+%     hmmModels = cell(maxStates, 1);
+%
+%     for numStates = 2:maxStates
+%         foldLikelihoods = nan(numFolds, 1);
+%         foldConverged = true; % Track if all folds converge
+%
+%         for fold = 1:numFolds
+%             % Create train and test splits
+%             testIdx = (1:foldSize) + (fold-1)*foldSize;
+%             trainIdx = setdiff(1:numSamples, testIdx);
+%             trainData = data(trainIdx, :);
+%             testData = data(testIdx, :);
+%
+%             % Initialize HMM parameters
+%             transitionMatrix = normalize(rand(numStates, numStates), 2);
+%             emissionMatrix = normalize(rand(numStates, size(data, 2)), 2);
+%
+%             % Train HMM using Baum-Welch
+%             try
+%                 [hmmTrans, hmmEmit] = hmmtrain(trainData', transitionMatrix, emissionMatrix, ...
+%                                                'Tolerance', 1e-6, 'MaxIter', 500);
+%             catch
+%                 % Abort if Baum-Welch fails
+%                 foldConverged = false;
+%                 break;
+%             end
+%
+%             % Evaluate log-likelihood on test data
+%             [~, logLikelihood] = hmmdecode(testData, hmmTrans, hmmEmit);
+%
+%             % Compute similarity penalty (top eigenvalue)
+%             stateDefinitionMatrix = hmmEmit; % State definitions as emission probabilities
+%             covarianceMatrix = cov(stateDefinitionMatrix);
+%             topEigenvalue = max(eig(covarianceMatrix)); % Maximum variance
+%
+%             % Normalize metrics between -1 and 1
+%             normLogLikelihood = normalizeMetric(logLikelihood, -1, 1);
+%             normEigenvalue = normalizeMetric(topEigenvalue, -1, 1);
+%
+%             % Penalized log-likelihood
+%             penalizedLikelihood = normLogLikelihood / normEigenvalue;
+%             foldLikelihoods(fold) = penalizedLikelihood;
+%         end
+%
+%         % Abort if any fold fails
+%         if ~foldConverged
+%             % break;
+%         end
+%
+%         % Store average penalized likelihood across folds
+%         penalizedLikelihoods(numStates) = mean(foldLikelihoods);
+%     end
+%
+%     % Determine best number of states
+%     [~, bestNumStates] = max(penalizedLikelihoods, [], 'omitnan');
+%
+%     % Train final HMM on all data for best number of states
+%     if ~isempty(bestNumStates)
+%         transitionMatrix = normalize(rand(bestNumStates, bestNumStates), 2);
+%         emissionMatrix = normalize(rand(bestNumStates, size(data, 2)), 2);
+%         [bestHMMTrans, bestHMMEmit] = hmmtrain(data, transitionMatrix, emissionMatrix, ...
+%                                                'Tolerance', 1e-6, 'MaxIter', 100);
+%         hmmModels{bestNumStates} = struct('TransitionMatrix', bestHMMTrans, 'EmissionMatrix', bestHMMEmit);
+%
+%         % State estimates using Viterbi
+%         stateEstimates = hmmviterbi(data, bestHMMTrans, bestHMMEmit);
+%     else
+%         stateEstimates = [];
+%     end
+% end
+
 % Helper function: Normalize a metric between minVal and maxVal
-function normMetric = normalizeMetric(metric, minVal, maxVal)
-    normMetric = (metric - minVal) / (maxVal - minVal);
+function normMetric = normalizeMetric(metric)
+normMetric = 2 * (metric - min(metric)) / (max(metric) - min(metric)) - 1;
 end
 
 % Helper function: Normalize rows of a matrix to sum to 1
 function normalizedMatrix = normalize(matrix, dim)
-    normalizedMatrix = bsxfun(@rdivide, matrix, sum(matrix, dim));
+normalizedMatrix = bsxfun(@rdivide, matrix, sum(matrix, dim));
 end
 
 
