@@ -11,12 +11,12 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .05;
+opts.frameSize = .1;
 
 getDataType = 'spikes';
 get_standard_data
-getDataType = 'behavior';
-get_standard_data
+% getDataType = 'behavior';
+% get_standard_data
 
 colors = colors_for_behaviors(codes);
 

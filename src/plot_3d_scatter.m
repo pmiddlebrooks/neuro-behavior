@@ -1,8 +1,5 @@
   
 %% Plot on second monitor, half-width
-xDim = iDim - 2;
-yDim = iDim - 1;
-zDim = iDim;
 xDim = 1;
 yDim = 2;
 zDim = 3;
