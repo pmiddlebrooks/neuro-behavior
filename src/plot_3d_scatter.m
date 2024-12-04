@@ -8,7 +8,7 @@ zDim = 3;
         % fig.Visible = 'off';
         set(fig, 'Position', plotPos); clf; hold on;
         title(titleM, 'interpreter', 'none')
-        if iDim > 2
+        % if iDim > 2
             scatter3(projSelect(plotFrames, xDim), projSelect(plotFrames, yDim), projSelect(plotFrames, zDim), 60, colorsForPlot, 'LineWidth', 2)
             % Variable to set the viewing angle
             azimuth = 30;  % Angle for rotation around the z-axis
@@ -23,10 +23,11 @@ zDim = 3;
             % set(findall(fig,'-property','Box'),'Box','off') % optional
          xlabel(['D', num2str(xDim)]); ylabel(['D', num2str(yDim)]); zlabel(['D', num2str(zDim)])
 
-        elseif iDim == 2
-            scatter(projSelect(plotFrames, 1), projSelect(plotFrames, 2), 60, colorsForPlot, 'LineWidth', 2)
-         xlabel(['D', num2str(yDim)]); ylabel(['D', num2str(zDim)]);
-       end
+       %  elseif iDim == 2
+       %      scatter(projSelect(plotFrames, 1), projSelect(plotFrames, 2), 60, colorsForPlot, 'LineWidth', 2)
+       %   xlabel(['D', num2str(yDim)]); ylabel(['D', num2str(zDim)]);
+       % end
+       
         grid on;
         % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
         figure_pretty_things
