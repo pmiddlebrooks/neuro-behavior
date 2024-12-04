@@ -119,6 +119,10 @@ end
 hold off;
 legend
 
+%% 
+bandIdx = 5:8; % m56
+corr(binnedBandPowers(:,bandIdx))
+corr(binnedEnvelopes(:,bandIdx))
 %% are any of them alpha/beta low, gammas high? and vice versa?
 idx = [1 2 3 4] + 4;
 featureMatrix = binnedBandPowers;
@@ -314,7 +318,7 @@ get_standard_data
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
 %%
-mDim = 8;
+nDim = 8;
 colors = colors_for_behaviors(codes);
 
 figHFull = 10;
@@ -341,7 +345,7 @@ n_neighbors = 10;
 pause(4); close
 
 % --------------------------------------------
-% Plot FULL TIME OF ALL BEHAVIORS
+%% Plot FULL TIME OF ALL BEHAVIORS
 plotFullMap = 1;
 if plotFullMap
     colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMat + 2, 'UniformOutput', false);
@@ -366,7 +370,7 @@ stateEstimates = cluster(hmm, featureMatrix);
 [uniqueIntegers, ~, indices] = unique(stateEstimates);
 counts = accumarray(indices, 1)
 %
-% Plot LFP states into neural umap
+%% Plot LFP states into neural umap
 plotStatesMap = 1;
 fun = @sRGB_to_OKLab;
 colors = maxdistcolor(numStates, fun);
@@ -380,6 +384,162 @@ if plotStatesMap
     plotFrames = 1:length(bhvIDMat);
     plot_3d_scatter
 end
+
+
+
+
+
+
+
+
+%% Cluster the umap blobs, and plot LFP powers with blob labels
+
+% minpts
+% To select a value for minpts, consider a value greater than or equal to one plus the number of dimensions of the input data [1]. For example, for an n-by-p matrix X, set the value of 'minpts' greater than or equal to p+1.
+% [1] Ester, M., H.-P. Kriegel, J. Sander, and X. Xiaowei. “A density-based algorithm for discovering clusters in large spatial databases with noise.” In Proceedings of the Second International Conference on Knowledge Discovery in Databases and Data Mining, 226-231. Portland, OR: AAAI Press, 1996.
+minpts = size(projSelect, 2) + 1; % Default is 5
+minpts = 9; % Default is 5
+
+%
+% epsilon
+% kD = pdist2(projSelect,projSelect,'euc','Smallest',minpts);
+% % Plot the k-distance graph.
+% plot(sort(kD(end,:)));
+% title('k-distance graph')
+% xlabel('Points sorted with 50th nearest distances')
+% ylabel('50th nearest distances')
+% grid
+
+epsilon = .2; % Default is 0.6
+% epsilon = 1; % Default is 0.6
+
+idx = dbscan(projSelect(:,1:2), epsilon, minpts);
+
+clusters = unique(idx);
+nCluster = length(clusters)
+
+
+% Plot results
+fig = figure(916); clf
+set(fig, 'Position', monitorTwo);
+[ax, pos] = tight_subplot(1,2, [.08 .02], .1);
+
+dim1 = 1;
+dim2 = 2;
+dim3 = 3;
+% plot dbscan assignments
+axes(ax(1))
+gscatter(projSelect(:,dim1),projSelect(:,dim2),idx, hsv(length(clusters)));
+% compare with behavior labels
+axes(ax(2))
+scatter(projSelect(:,dim1),projSelect(:,dim2), 50, colorsForPlot, '.'); %, 'filled', '.');
+
+
+%% Plot the LFP power spectra with the dbscan clusters
+min2plot = .5;
+nSampleLfp = floor(min2plot*60*opts.fsLfp);
+nSampleSpike = floor(min2plot * 60 / opts.frameSize);
+
+for p = 0 : 30
+lfpRange = floor(p * 60 * opts.fsLfp) + 1: floor(p * 60 * opts.fsLfp) + nSampleLfp;
+spikeRange = floor(p * 60 / opts.frameSize) + 1: floor(p * 60 / opts.frameSize) + nSampleSpike;
+
+bandPowersPerArea = zeros(16, nSampleLfp);
+areaIdx = 0;
+powerPerArea = [];
+for iArea = 1:4
+
+[cfs, frequencies] = cwt(lfpPerArea(lfpRange,iArea), 'amor', opts.fsLfp, 'FrequencyLimits', freqLimits);
+
+% Preallocate band power matrix
+time = linspace(0, nSampleLfp, size(cfs, 2));
+bandPowers = zeros(numBands, length(time));
+
+% % Compute power for each band
+% for j = 1:numBands
+%     % Extract the frequency range for the current band
+%     freqRange = bands{j, 2};
+% 
+%     % Identify the indices corresponding to the band frequencies
+%     freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
+% 
+%     % Compute power by summing the squared magnitude of the wavelet coefficients
+%     bandPowers(j, :) = zscore(mean(abs(cfs(freqIdx, :)).^2, 1), 0, 2);
+% end
+% bandPowersPerArea((1:4) + areaIdx,:) = bandPowers;
+areaPower = zscore(abs(cfs).^2, 0, 2);
+powerPerArea = [powerPerArea; areaPower];
+areaIdx = areaIdx + 4;
+end
+
+%
+figure(832); clf;
+hold on;
+% Define the relative heights of the subplots
+heightRatio = [3 1]; % Upper plot is 3 times the height of the lower plot
+totalHeight = sum(heightRatio);
+
+
+% Top subplot (3/4 of the figure height)
+subplot('Position', [0.1, 0.4, 0.8, 0.55]); % [left, bottom, width, height]
+% imagesc(bandPowersPerArea);
+imagesc(powerPerArea);
+% title('Upper Plot');
+xlabel('lfp samples');
+ylabel('frequencies');
+ylim([.5 16.5])
+ylim([.5 size(powerPerArea, 1) + .5])
+% xlim([lfpRange(1) lfpRange(end)])
+xlim([1 size(powerPerArea,2)])
+
+
+% Bottom subplot (1/4 of the figure height)
+subplot('Position', [0.1, 0.1, 0.8, 0.2]); % [left, bottom, width, height]
+
+
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(nCluster, fun);
+x = spikeRange;
+idxPlot = idx(x);
+idxPlot(idxPlot == -1) = 0;
+% Create the bar plot
+for i = 1:nSampleSpike
+    % Draw a segment for each state with its corresponding color
+    patch([x(i)-0.5, x(i)+0.5, x(i)+0.5, x(i)-0.5], ...
+        [0, 0, 1, 1], colors(idxPlot(i)+1,:), 'EdgeColor', 'none');
+end
+xlabel('spiking frames')
+% xlim([0 nSampleSpike])
+xlim([spikeRange(1) spikeRange(end)])
+
+end
+
+%% bin the lfp powers
+powerPerAreaBinned = zeros(size(powerPerArea, 1), nSampleSpike);
+        % timeBins = zeros(1, nSampleSpike);
+frameSamples = round(opts.frameSize * opts.fsLfp); % Samples per frame
+        for frameIdx = 1:nSampleSpike
+            % Frame indices
+            startIdx = (frameIdx - 1) * frameSamples + 1;
+            endIdx = startIdx + frameSamples - 1;
+
+            % Extract frame
+            frameZPower = powerPerArea(:, startIdx:endIdx);
+            % frameEnvelope = bandEnvelopes(:, startIdx:endIdx);
+
+            % Average across the frame
+            powerPerAreaBinned(:, frameIdx) = mean(frameZPower, 2);
+            % binnedEnvelopes(:, frameIdx) = mean(frameEnvelope, 2);
+
+            % Compute bin midpoint time
+            % timeBins(frameIdx) = (startIdx + endIdx) / (2 * fs);
+        end
+
+% writematrix([powerPerArea], [paths.saveDataPath, 'lfp_1250hz.csv'])
+writematrix([powerPerAreaBinned; idx(x)'], [paths.saveDataPath, 'lfp_blobs.csv'])
+% writematrix(idx(x), [paths.saveDataPath, 'blobs_framesize_100ms.csv'])
+writematrix(frequencies, [paths.saveDataPath, 'frequencies.csv'])
+
 
 
 
