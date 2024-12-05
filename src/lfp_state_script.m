@@ -16,6 +16,8 @@ getDataType = 'behavior';
 get_standard_data
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
+% lowpass the LFP at 300hz
+lfpPerArea = lowpass(lfpPerArea, 300, opts.fsLfp);
 
 % for plotting consistency
 monitorPositions = get(0, 'MonitorPositions');
@@ -229,10 +231,13 @@ idxFit = 1:size(binnedEnvelopes,1);
 maxStates = 8; % Maximum number of HMM states to evaluate
 numFolds = 3;   % Number of folds for cross-validation
 lambda = 1;
+areaIdx = 9:12;
+featureMatrix = zscore(binnedEnvelopes(idxFit,[areaIdx]));
+nArea = length(areaIdx)/4;
 
 % Use previously computed binnedBandPowers
 % [bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedEnvelopes(idxFit,:), maxStates, numFolds, lambda);
-[bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedEnvelopes(idxFit,:), maxStates, numFolds);
+[bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(featureMatrix, maxStates, numFolds);
 
 % Access optimal HMM properties
 disp('Optimal Number of States:');
@@ -240,12 +245,12 @@ disp(bestNumStates);
 
 likelihoods
 
-%% HMM model for X states
+% HMM model for X states
 % Train the best model on the full dataset
-featureMatrix = zscore(binnedEnvelopes(idxFit,:));
+featureMatrix = zscore(binnedEnvelopes(idxFit,areaIdx));
         options = statset('MaxIter', 500);
 
-        hmm = fitgmdist(featureMatrix, 3, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
+        hmm = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
 % hmm = fitgmdist(featureMatrix, 3, 'Replicates', 10, 'CovarianceType', 'diagonal');
 
 % State estimations
@@ -255,7 +260,7 @@ stateEstimates = cluster(hmm, featureMatrix);
 counts = accumarray(indices, 1)
 
 
-%% Re-create fig 1.1 from poster
+% Re-create fig 1.1 from poster
 % Create a maximized figure on the second monitor
 fig = figure(554); clf
 set(fig, 'Position', monitorTwo);
@@ -263,26 +268,43 @@ nState = length(uniqueIntegers);
 [ax, pos] = tight_subplot(1, nState, [.08 .02], .1);
 fun = @sRGB_to_OKLab;
 colors = maxdistcolor(nState, fun);
-
 alphaInd = [1 5 9 13];
 for i = 1 : nState
     meanPower = mean(featureMatrix(stateEstimates == i, :), 1);
-    meanByBand = reshape(meanPower, 4, 4);
+    meanByBand = reshape(meanPower, nArea, 4);
+    % meanByBand = meanPower;
     axes(ax(i)); hold on;
         xticks(1:4)
 xticklabels({'alpha', 'beta', 'low gamma', 'high gamma'})
-    for j = 1:4
+    for j = 1:nArea
         plot(1:4, meanByBand(j,:), 'color', colors(i,:));
     end
-    plot(1:4, mean(meanByBand, 1), 'k', 'lineWidth', 3)
-    ylim([-1.1 1.1])
+    plot(1:4, mean(meanByBand, 1), 'o-k', 'lineWidth', 3)
+    ylim([-1.5 1.5])
     xlim([0.5 4.5])
     yline(0, '--', 'color', [.5 .5 .5], 'linewidth', 2)
     xlabel('Power Band');
     ylabel('Normalized Power')
-    title(['State ', num2str(i)])
+    title(['State ', num2str(i), '  n = ',num2str(sum(stateEstimates == i))])
 end
 sgtitle('Recreating fig 2E from Akella et al 2024 bioRxiv')
+load handel
+sound(y(1:round(2.2*Fs)),Fs)
+
+% Plot LFP states into neural umap
+plotStatesMap = 1;
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(nState, fun);
+
+if plotStatesMap
+    colorsForPlot = arrayfun(@(x) colors(x,:), stateEstimates, 'UniformOutput', false);
+    colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+    figH = figHStates;
+    plotPos = [monitorOne(1) + monitorOne(3)/2, 1, monitorOne(3)/2, monitorOne(4)];
+    titleM = sprintf('LFP States- %s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist, spread, n_neighbors);
+    plotFrames = 1:length(bhvIDMat);
+    plot_3d_scatter
+end
 
 %%
 fun = @sRGB_to_OKLab;
@@ -536,9 +558,81 @@ frameSamples = round(opts.frameSize * opts.fsLfp); % Samples per frame
         end
 
 % writematrix([powerPerArea], [paths.saveDataPath, 'lfp_1250hz.csv'])
-writematrix([powerPerAreaBinned; idx(x)'], [paths.saveDataPath, 'lfp_blobs.csv'])
+% writematrix([powerPerAreaBinned; idx(x)'], [paths.saveDataPath, 'lfp_blobs.csv'])
 % writematrix(idx(x), [paths.saveDataPath, 'blobs_framesize_100ms.csv'])
-writematrix(frequencies, [paths.saveDataPath, 'frequencies.csv'])
+% writematrix(frequencies, [paths.saveDataPath, 'frequencies.csv'])
+
+
+
+
+
+
+%%
+lfpl = lowpass(lfpPerArea(1:10^4,3), 300, 1250);
+figure(); hold on;
+plot(lfpPerArea(1:10^4,3))
+plot(lfpl)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%% Do umap on the binned LFP signals
+nDim = 3;
+
+figHFull = 10;
+figHStates = 11;
+fitType = ['UMAP ', num2str(mDim), 'D'];
+
+min_dist = (.02);
+spread = 1.3;
+n_neighbors = 10;
+
+
+% Fit umap
+% [projSelect, ~, ~, ~] = run_umap(binnedBandPowers, 'n_components', nDim, 'randomize', false, 'verbose', 'none', ...
+%     'min_dist', min_dist, 'spread', spread, 'n_neighbors', n_neighbors);
+[projSelect, ~, ~, ~] = run_umap(binnedBandPowers, 'n_components', nDim, 'randomize', false, 'verbose', 'none');
+pause(4); close
+
+% --------------------------------------------
+% Plot FULL TIME OF ALL BEHAVIORS
+plotFullMap = 1;
+if plotFullMap
+colors = colors_for_behaviors(codes);
+    colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMat + 2, 'UniformOutput', false);
+    colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+    figH = figHFull;
+    plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
+    titleM = sprintf('%s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist, spread, n_neighbors);
+    plotFrames = 1:length(bhvIDMat);
+    plot_3d_scatter
+end
+% Plot LFP states into neural umap
+plotStatesMap = 1;
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(nState, fun);
+
+if plotStatesMap
+    colorsForPlot = arrayfun(@(x) colors(x,:), stateEstimates, 'UniformOutput', false);
+    colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+    figH = figHStates;
+    plotPos = [monitorOne(1) + monitorOne(3)/2, 1, monitorOne(3)/2, monitorOne(4)];
+    titleM = sprintf('LFP States- %s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist, spread, n_neighbors);
+    plotFrames = 1:length(bhvIDMat);
+    plot_3d_scatter
+end
 
 
 
@@ -711,7 +805,7 @@ for numStates = 2:maxStates
         % Train HMM on training data
         options = statset('MaxIter', 500);
 
-        hmm = fitgmdist(trainData, numStates, 'Replicates', 5, 'CovarianceType', 'full', 'Options', options);
+        hmm = fitgmdist(trainData, numStates, 'Replicates', 10, 'CovarianceType', 'full', 'Options', options);
         hmmModels{numStates} = hmm;
 
         % Evaluate log-likelihood on test data
@@ -756,7 +850,8 @@ end
 normLogLike = normalizeMetric(testLogLikelihood);
 normTopEig = normalizeMetric(topEigenvalue);
 
-[maxVal, bestNumStates] = max(normLogLike ./ normTopEig);
+penalizedLikelihoods = normLogLike ./ normTopEig;
+[maxVal, bestNumStates] = max(penalizedLikelihoods);
 
 
 % % Find the best number of states
