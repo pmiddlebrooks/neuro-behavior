@@ -27,7 +27,7 @@ zDim = 3;
        %      scatter(projSelect(plotFrames, 1), projSelect(plotFrames, 2), 60, colorsForPlot, 'LineWidth', 2)
        %   xlabel(['D', num2str(yDim)]); ylabel(['D', num2str(zDim)]);
        % end
-       
+
         grid on;
         % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
         figure_pretty_things
