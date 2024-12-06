@@ -82,6 +82,8 @@ title('LFP Band Power Over Time');
 
 
 %% Get binned signals for fitting the hmm
+bands = {'low', [.1 12]};
+numBands = size(bands, 1);
 
 freqIdx = repmat([1 2 3 4], 1, 4);
 binnedBandPowers = [];
@@ -597,14 +599,14 @@ fitType = ['UMAP ', num2str(mDim), 'D'];
 
 min_dist = (.02);
 spread = 1.3;
-n_neighbors = 10;
+n_neighbors = 20;
 
 
 % Fit umap
-% [projSelect, ~, ~, ~] = run_umap(binnedBandPowers, 'n_components', nDim, 'randomize', false, 'verbose', 'none', ...
-%     'min_dist', min_dist, 'spread', spread, 'n_neighbors', n_neighbors);
-[projSelect, ~, ~, ~] = run_umap(binnedBandPowers, 'n_components', nDim, 'randomize', false, 'verbose', 'none');
-pause(4); close
+[projSelect, ~, ~, ~] = run_umap(binnedBandPowers, 'n_components', nDim, 'randomize', false, 'verbose', 'none', ...
+    'min_dist', min_dist, 'spread', spread, 'n_neighbors', n_neighbors);
+% [projSelect, ~, ~, ~] = run_umap(binnedBandPowers, 'n_components', nDim, 'randomize', false, 'verbose', 'none');
+% pause(4); close
 
 % --------------------------------------------
 % Plot FULL TIME OF ALL BEHAVIORS
@@ -642,8 +644,18 @@ end
 
 
 
+%%
+bandPowers = [];
+for iArea = 1:4
 
+[cfs, frequencies] = cwt(lfpPerArea(lfpRange,iArea), 'amor', opts.fsLfp, 'FrequencyLimits', [0 12]);
+areaPower = zscore(abs(cfs).^2, 0, 2);
 
+% Preallocate band power matrix
+time = linspace(0, nSampleLfp, size(cfs, 2));
+bandPowers = [bandPowers; areaPower];
+
+end
 
 
 
