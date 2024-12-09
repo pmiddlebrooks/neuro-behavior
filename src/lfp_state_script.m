@@ -40,6 +40,11 @@ bands = {'alpha', [8 13]; ...
     'beta', [13 30]; ...
     'lowGamma', [30 50]; ...
     'highGamma', [50 80]};
+bands = {'low alpha', [3 5]; ...
+    'high alpha', [8 13]; ...
+    'beta', [13 30]; ...
+    'lowGamma', [30 50]; ...
+    'highGamma', [50 80]};
 numBands = size(bands, 1);
 
 %% Plot some lfp powers as Q/A
@@ -82,10 +87,11 @@ title('LFP Band Power Over Time');
 
 
 %% Get binned signals for fitting the hmm
-bands = {'low', [.1 12]};
+% bands = {'low', [.1 12]};
 numBands = size(bands, 1);
 
-freqIdx = repmat([1 2 3 4], 1, 4);
+freqIdx = repmat(1:numBands, 1, 4);
+% freqIdx = repmat([1 2 3 4], 1, 4);
 binnedBandPowers = [];
 binnedEnvelopes = [];
 method = 'stft';
@@ -97,10 +103,12 @@ for iArea = 1 : 4
 end
 
 %% plot results
+bandIdx = 6:10;
 plotRange = (1:400);
 figure(1232);
 subplot(2, 1, 1);
-imagesc(binnedBandPowers(plotRange,5:8)');
+
+imagesc(binnedBandPowers(plotRange,plotBands)');
 colormap('jet');
 colorbar;
 xlabel('Time (s)');
@@ -108,7 +116,7 @@ ylabel('Frequency Bands');
 title('Binned Z-Scored Power');
 
 subplot(2, 1, 2);
-plot(plotRange, binnedEnvelopes(plotRange,5:8)');
+plot(plotRange, binnedEnvelopes(plotRange,plotBands)');
 legend(bands(:, 1));
 xlabel('Time (s)');
 ylabel('Envelope Amplitude');
@@ -117,14 +125,14 @@ title('Binned Envelopes');
 %%
 figure(228);
 hold on;
-for i = 5:8
+for i = bandIdx
     plot(1:40, binnedBandPowers(1:40, i), 'DisplayName', sprintf('Column %d', i), 'lineWidth', 2);
 end
 hold off;
 legend
 
-%% 
-bandIdx = 5:8; % m56
+%%
+bandIdx = 6:10; % m56
 corr(binnedBandPowers(:,bandIdx))
 corr(binnedEnvelopes(:,bandIdx))
 %% are any of them alpha/beta low, gammas high? and vice versa?
@@ -153,7 +161,7 @@ fullTime = -1.2 : 1/opts.fsLfp : 1.2; % seconds around onset
 fullWindow = round(fullTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
 windowCenter = find(fullTime == 0);
 
-areaIdx = 2;
+areaBandIdx = 2;
 numBands = size(bands, 1);
 
 
@@ -161,7 +169,7 @@ fun = @sRGB_to_OKLab;
 colors = maxdistcolor(size(bands, 1), fun);
 
 for i = 1 : length(preIndLfp)
-    signal = lfpPerArea(preIndLfp(i) + fullWindow, areaIdx);
+    signal = lfpPerArea(preIndLfp(i) + fullWindow, areaBandIdx);
 
     % get the power spectra of the 4 bands
     [cfs, frequencies] = cwt(signal, 'amor', opts.fsLfp, ...
@@ -226,6 +234,9 @@ end
 
 
 
+
+
+
 %%
 idxFit = 1:size(binnedEnvelopes,1);
 %% HMM model for state estimation
@@ -233,9 +244,9 @@ idxFit = 1:size(binnedEnvelopes,1);
 maxStates = 8; % Maximum number of HMM states to evaluate
 numFolds = 3;   % Number of folds for cross-validation
 lambda = 1;
-areaIdx = 9:12;
-featureMatrix = zscore(binnedEnvelopes(idxFit,[areaIdx]));
-nArea = length(areaIdx)/4;
+areaBandIdx = 16:20;
+featureMatrix = zscore(binnedEnvelopes(idxFit,[areaBandIdx]));
+nArea = length(areaBandIdx)/numBands;
 
 % Use previously computed binnedBandPowers
 % [bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedEnvelopes(idxFit,:), maxStates, numFolds, lambda);
@@ -249,20 +260,20 @@ likelihoods
 
 % HMM model for X states
 % Train the best model on the full dataset
-featureMatrix = zscore(binnedEnvelopes(idxFit,areaIdx));
-        options = statset('MaxIter', 500);
+featureMatrix = zscore(binnedEnvelopes(idxFit,areaBandIdx));
+options = statset('MaxIter', 500);
 
-        hmm = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
+hmm = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
 % hmm = fitgmdist(featureMatrix, 3, 'Replicates', 10, 'CovarianceType', 'diagonal');
 
 % State estimations
 stateEstimates = cluster(hmm, featureMatrix);
 
 [uniqueIntegers, ~, indices] = unique(stateEstimates);
-counts = accumarray(indices, 1)
+counts = accumarray(indices, 1);
 
 
-% Re-create fig 1.1 from poster
+%% Re-create fig 1.1 from poster
 % Create a maximized figure on the second monitor
 fig = figure(554); clf
 set(fig, 'Position', monitorTwo);
@@ -270,20 +281,19 @@ nState = length(uniqueIntegers);
 [ax, pos] = tight_subplot(1, nState, [.08 .02], .1);
 fun = @sRGB_to_OKLab;
 colors = maxdistcolor(nState, fun);
-alphaInd = [1 5 9 13];
 for i = 1 : nState
     meanPower = mean(featureMatrix(stateEstimates == i, :), 1);
-    meanByBand = reshape(meanPower, nArea, 4);
+    meanByBand = reshape(meanPower, 1, numBands);
     % meanByBand = meanPower;
     axes(ax(i)); hold on;
-        xticks(1:4)
-xticklabels({'alpha', 'beta', 'low gamma', 'high gamma'})
+    xticks(1:numBands)
+    xticklabels({'low alpha', 'high alpha', 'beta', 'low gamma', 'high gamma'})
     for j = 1:nArea
-        plot(1:4, meanByBand(j,:), 'color', colors(i,:));
+        plot(1:numBands, meanByBand(j,:), 'color', colors(i,:));
     end
-    plot(1:4, mean(meanByBand, 1), 'o-k', 'lineWidth', 3)
-    ylim([-1.5 1.5])
-    xlim([0.5 4.5])
+    plot(1:numBands, mean(meanByBand, 1), 'o-', 'color', colors(i,:), 'lineWidth', 3)
+    ylim([-1 3])
+    xlim([0.5 numBands+.5])
     yline(0, '--', 'color', [.5 .5 .5], 'linewidth', 2)
     xlabel('Power Band');
     ylabel('Normalized Power')
@@ -384,9 +394,9 @@ end
 % Train the best model on the full dataset
 numStates = 3;
 featureMatrix = zscore(binnedEnvelopes(idxFit,:));
-        options = statset('MaxIter', 500);
+options = statset('MaxIter', 500);
 
-        hmm = fitgmdist(featureMatrix, numStates, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
+hmm = fitgmdist(featureMatrix, numStates, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
 
 % State estimations
 stateEstimates = cluster(hmm, featureMatrix);
@@ -465,99 +475,99 @@ nSampleLfp = floor(min2plot*60*opts.fsLfp);
 nSampleSpike = floor(min2plot * 60 / opts.frameSize);
 
 for p = 0 : 30
-lfpRange = floor(p * 60 * opts.fsLfp) + 1: floor(p * 60 * opts.fsLfp) + nSampleLfp;
-spikeRange = floor(p * 60 / opts.frameSize) + 1: floor(p * 60 / opts.frameSize) + nSampleSpike;
+    lfpRange = floor(p * 60 * opts.fsLfp) + 1: floor(p * 60 * opts.fsLfp) + nSampleLfp;
+    spikeRange = floor(p * 60 / opts.frameSize) + 1: floor(p * 60 / opts.frameSize) + nSampleSpike;
 
-bandPowersPerArea = zeros(16, nSampleLfp);
-areaIdx = 0;
-powerPerArea = [];
-for iArea = 1:4
+    bandPowersPerArea = zeros(16, nSampleLfp);
+    areaBandIdx = 0;
+    powerPerArea = [];
+    for iArea = 1:4
 
-[cfs, frequencies] = cwt(lfpPerArea(lfpRange,iArea), 'amor', opts.fsLfp, 'FrequencyLimits', freqLimits);
+        [cfs, frequencies] = cwt(lfpPerArea(lfpRange,iArea), 'amor', opts.fsLfp, 'FrequencyLimits', freqLimits);
 
-% Preallocate band power matrix
-time = linspace(0, nSampleLfp, size(cfs, 2));
-bandPowers = zeros(numBands, length(time));
+        % Preallocate band power matrix
+        time = linspace(0, nSampleLfp, size(cfs, 2));
+        bandPowers = zeros(numBands, length(time));
 
-% % Compute power for each band
-% for j = 1:numBands
-%     % Extract the frequency range for the current band
-%     freqRange = bands{j, 2};
-% 
-%     % Identify the indices corresponding to the band frequencies
-%     freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
-% 
-%     % Compute power by summing the squared magnitude of the wavelet coefficients
-%     bandPowers(j, :) = zscore(mean(abs(cfs(freqIdx, :)).^2, 1), 0, 2);
-% end
-% bandPowersPerArea((1:4) + areaIdx,:) = bandPowers;
-areaPower = zscore(abs(cfs).^2, 0, 2);
-powerPerArea = [powerPerArea; areaPower];
-areaIdx = areaIdx + 4;
-end
+        % % Compute power for each band
+        % for j = 1:numBands
+        %     % Extract the frequency range for the current band
+        %     freqRange = bands{j, 2};
+        %
+        %     % Identify the indices corresponding to the band frequencies
+        %     freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
+        %
+        %     % Compute power by summing the squared magnitude of the wavelet coefficients
+        %     bandPowers(j, :) = zscore(mean(abs(cfs(freqIdx, :)).^2, 1), 0, 2);
+        % end
+        % bandPowersPerArea((1:4) + areaIdx,:) = bandPowers;
+        areaPower = zscore(abs(cfs).^2, 0, 2);
+        powerPerArea = [powerPerArea; areaPower];
+        areaBandIdx = areaBandIdx + 4;
+    end
 
-%
-figure(832); clf;
-hold on;
-% Define the relative heights of the subplots
-heightRatio = [3 1]; % Upper plot is 3 times the height of the lower plot
-totalHeight = sum(heightRatio);
-
-
-% Top subplot (3/4 of the figure height)
-subplot('Position', [0.1, 0.4, 0.8, 0.55]); % [left, bottom, width, height]
-% imagesc(bandPowersPerArea);
-imagesc(powerPerArea);
-% title('Upper Plot');
-xlabel('lfp samples');
-ylabel('frequencies');
-ylim([.5 16.5])
-ylim([.5 size(powerPerArea, 1) + .5])
-% xlim([lfpRange(1) lfpRange(end)])
-xlim([1 size(powerPerArea,2)])
+    %
+    figure(832); clf;
+    hold on;
+    % Define the relative heights of the subplots
+    heightRatio = [3 1]; % Upper plot is 3 times the height of the lower plot
+    totalHeight = sum(heightRatio);
 
 
-% Bottom subplot (1/4 of the figure height)
-subplot('Position', [0.1, 0.1, 0.8, 0.2]); % [left, bottom, width, height]
+    % Top subplot (3/4 of the figure height)
+    subplot('Position', [0.1, 0.4, 0.8, 0.55]); % [left, bottom, width, height]
+    % imagesc(bandPowersPerArea);
+    imagesc(powerPerArea);
+    % title('Upper Plot');
+    xlabel('lfp samples');
+    ylabel('frequencies');
+    ylim([.5 16.5])
+    ylim([.5 size(powerPerArea, 1) + .5])
+    % xlim([lfpRange(1) lfpRange(end)])
+    xlim([1 size(powerPerArea,2)])
 
 
-fun = @sRGB_to_OKLab;
-colors = maxdistcolor(nCluster, fun);
-x = spikeRange;
-idxPlot = idx(x);
-idxPlot(idxPlot == -1) = 0;
-% Create the bar plot
-for i = 1:nSampleSpike
-    % Draw a segment for each state with its corresponding color
-    patch([x(i)-0.5, x(i)+0.5, x(i)+0.5, x(i)-0.5], ...
-        [0, 0, 1, 1], colors(idxPlot(i)+1,:), 'EdgeColor', 'none');
-end
-xlabel('spiking frames')
-% xlim([0 nSampleSpike])
-xlim([spikeRange(1) spikeRange(end)])
+    % Bottom subplot (1/4 of the figure height)
+    subplot('Position', [0.1, 0.1, 0.8, 0.2]); % [left, bottom, width, height]
+
+
+    fun = @sRGB_to_OKLab;
+    colors = maxdistcolor(nCluster, fun);
+    x = spikeRange;
+    idxPlot = idx(x);
+    idxPlot(idxPlot == -1) = 0;
+    % Create the bar plot
+    for i = 1:nSampleSpike
+        % Draw a segment for each state with its corresponding color
+        patch([x(i)-0.5, x(i)+0.5, x(i)+0.5, x(i)-0.5], ...
+            [0, 0, 1, 1], colors(idxPlot(i)+1,:), 'EdgeColor', 'none');
+    end
+    xlabel('spiking frames')
+    % xlim([0 nSampleSpike])
+    xlim([spikeRange(1) spikeRange(end)])
 
 end
 
 %% bin the lfp powers
 powerPerAreaBinned = zeros(size(powerPerArea, 1), nSampleSpike);
-        % timeBins = zeros(1, nSampleSpike);
+% timeBins = zeros(1, nSampleSpike);
 frameSamples = round(opts.frameSize * opts.fsLfp); % Samples per frame
-        for frameIdx = 1:nSampleSpike
-            % Frame indices
-            startIdx = (frameIdx - 1) * frameSamples + 1;
-            endIdx = startIdx + frameSamples - 1;
+for frameIdx = 1:nSampleSpike
+    % Frame indices
+    startIdx = (frameIdx - 1) * frameSamples + 1;
+    endIdx = startIdx + frameSamples - 1;
 
-            % Extract frame
-            frameZPower = powerPerArea(:, startIdx:endIdx);
-            % frameEnvelope = bandEnvelopes(:, startIdx:endIdx);
+    % Extract frame
+    frameZPower = powerPerArea(:, startIdx:endIdx);
+    % frameEnvelope = bandEnvelopes(:, startIdx:endIdx);
 
-            % Average across the frame
-            powerPerAreaBinned(:, frameIdx) = mean(frameZPower, 2);
-            % binnedEnvelopes(:, frameIdx) = mean(frameEnvelope, 2);
+    % Average across the frame
+    powerPerAreaBinned(:, frameIdx) = mean(frameZPower, 2);
+    % binnedEnvelopes(:, frameIdx) = mean(frameEnvelope, 2);
 
-            % Compute bin midpoint time
-            % timeBins(frameIdx) = (startIdx + endIdx) / (2 * fs);
-        end
+    % Compute bin midpoint time
+    % timeBins(frameIdx) = (startIdx + endIdx) / (2 * fs);
+end
 
 % writematrix([powerPerArea], [paths.saveDataPath, 'lfp_1250hz.csv'])
 % writematrix([powerPerAreaBinned; idx(x)'], [paths.saveDataPath, 'lfp_blobs.csv'])
@@ -612,7 +622,7 @@ n_neighbors = 20;
 % Plot FULL TIME OF ALL BEHAVIORS
 plotFullMap = 1;
 if plotFullMap
-colors = colors_for_behaviors(codes);
+    colors = colors_for_behaviors(codes);
     colorsForPlot = arrayfun(@(x) colors(x,:), bhvIDMat + 2, 'UniformOutput', false);
     colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
     figH = figHFull;
@@ -648,12 +658,12 @@ end
 bandPowers = [];
 for iArea = 1:4
 
-[cfs, frequencies] = cwt(lfpPerArea(lfpRange,iArea), 'amor', opts.fsLfp, 'FrequencyLimits', [0 12]);
-areaPower = zscore(abs(cfs).^2, 0, 2);
+    [cfs, frequencies] = cwt(lfpPerArea(lfpRange,iArea), 'amor', opts.fsLfp, 'FrequencyLimits', [0 12]);
+    areaPower = zscore(abs(cfs).^2, 0, 2);
 
-% Preallocate band power matrix
-time = linspace(0, nSampleLfp, size(cfs, 2));
-bandPowers = [bandPowers; areaPower];
+    % Preallocate band power matrix
+    time = linspace(0, nSampleLfp, size(cfs, 2));
+    bandPowers = [bandPowers; areaPower];
 
 end
 
