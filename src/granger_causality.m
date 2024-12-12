@@ -1,17 +1,119 @@
-%%
-maxLag = .1 * opts.fsLfp;
-grangerCausalityResults = compute_granger_causality(lfpPerArea(:, 2:3), maxLag, opts.fsLfp);
+%% Choose some lfp data to test
+lfpIdx = [1:4];
+samples = floor(size(lfpPerArea, 1)/60);
 
-function grangerCausalityResults = compute_granger_causality(lfpSignals, maxLag, samplingFreq)
+%%
+% Script to detrend, normalize, and check stationarity of LFP signals
+
+% Detrend the signals (remove linear trend)
+detrendedLfp = detrend(lfpPerArea(1:samples, lfpIdx), 'linear');
+
+% Normalize the signals (z-score normalization)
+normalizedLfp = zscore(detrendedLfp);
+
+% Stationarity check using Augmented Dickey-Fuller (ADF) test
+% Ensure you have the Econometrics Toolbox for the adftest function
+[numSamples, numAreas] = size(normalizedLfp);
+stationarityResults = zeros(1, numAreas); % Store p-values
+
+for area = 1:numAreas
+    [h, pValue] = adftest(normalizedLfp(:, area)); % ADF test
+    stationarityResults(area) = pValue; % Save p-value
+
+    % Display result
+    if h == 1
+        fprintf('Signal %d is stationary (p = %.4f).\n', area, pValue);
+    else
+        fprintf('Signal %d is not stationary (p = %.4f).', area, pValue);
+    end
+end
+
+% Plot the signals for visualization
+% figure(91); clf;
+% for area = 1:numAreas
+%     subplot(numAreas, 1, area);
+%     plot(normalizedLfp(:, area));
+%     title(sprintf('Normalized LFP Signal (Area %d)', area));
+%     xlabel('Time');
+%     ylabel('Amplitude');
+% end
+% sgtitle('Detrended and Normalized LFP Signals');
+
+
+
+
+
+
+
+
+%% My granger function
+maxLag = .1 * opts.fsLfp;
+[grangerCausalityResults, bestLag] = compute_granger_causality(normalizedLfp, opts.fsLfp);
+
+
+
+
+
+
+
+%% MVGC1 toolbox (see mvgc_demo_statespace.m for the template)
+
+% Get data, then run mvgc from mvgc_demo_script
+% X = reshape(normalizedLfp', size(normalizedLfp, 2), samples/60, 60);
+X = reshape(lfpPerArea(1:samples, lfpIdx)', size(normalizedLfp, 2), samples/60, 60);
+
+%% Find all time bins preceding all behavior transitions:
+                preInd = find(diff(bhvIDMat) ~= 0); % 1 frame prior to all behavior transitions
+                        id = bhvIDMat(preInd + 1);  % behavior ID being transitioned into
+preIndLfp = preInd * opts.frameSize * opts.fsLfp;
+fullTime = -.2 : 1/opts.fsLfp : .2; % seconds around onset
+fullWindow = round(fullTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
+windowCenter = find(fullTime == 0);
+
+% Build a LFP matrix for the areas of interest, for a given behavior
+% transition
+idTest = 9;
+
+idTestIdx = preInd(id == idTest);
+idTestIdxLfp = floor(idTestIdx * opts.frameSize * opts.fsLfp);
+
+lfpTest = zeros(size(lfpPerArea(:,lfpIdx), 2), length(fullWindow), length(idTestIdxLfp));
+for i = 1: length(idTestIdxLfp)-1
+lfpTest(:,:,i) = lfpPerArea(idTestIdxLfp(i) + fullWindow,lfpIdx)';
+end
+
+X = lfpTest;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function [grangerCausalityResults, bestLag] = compute_granger_causality(lfpSignals, samplingFreq)
 % COMPUTE_GRANGER_CAUSALITY Computes Granger causality between LFP signals.
+% Automatically determines the best maxLag using AIC and evaluates significance using F-statistics.
 % Inputs:
 %   lfpSignals   - Matrix of LFP signals (time x areas).
-%   maxLag       - Maximum lag to consider in the autoregressive model (in samples).
 %   samplingFreq - Sampling frequency of the LFP signals (in Hz).
 %
 % Outputs:
-%   grangerCausalityResults - Matrix of Granger causality values (areas x areas).
-%                             Entry (i, j) indicates the causal influence of area j on area i.
+%   grangerCausalityResults - Struct containing:
+%       .values - Matrix of Granger causality values (areas x areas).
+%       .significance - Matrix of p-values indicating significance of Granger causality.
 
     % Check input dimensions
     [numSamples, numAreas] = size(lfpSignals);
@@ -19,8 +121,16 @@ function grangerCausalityResults = compute_granger_causality(lfpSignals, maxLag,
         error('At least two LFP signals are required for Granger causality analysis.');
     end
 
-    % Initialize results matrix
-    grangerCausalityResults = zeros(numAreas, numAreas);
+    % Determine the best maxLag using AIC
+    % maxPossibleLag = round(numSamples / 10); % Set a reasonable upper limit for lag
+    maxPossibleLag = 625; % Set a reasonable upper limit for lag
+    bestLag = determine_best_lag(lfpSignals, maxPossibleLag);
+    disp('bestLag:');
+    disp(bestLag);
+
+    % Initialize results matrices
+    grangerValues = zeros(numAreas, numAreas);
+    pValues = zeros(numAreas, numAreas);
 
     % Loop over all pairs of areas
     for i = 1:numAreas
@@ -30,179 +140,91 @@ function grangerCausalityResults = compute_granger_causality(lfpSignals, maxLag,
                 x = lfpSignals(:, i); % Target signal
                 y = lfpSignals(:, j); % Source signal
 
-                % Create combined signal matrix
+                % Combine signals for the full model
                 combinedSignals = [x, y];
 
-                % Fit multivariate AR model
-                [coeffsFull, sigmaFull] = armorf(combinedSignals', 1, numSamples, maxLag);
+                % Fit full model (multivariate AR)
+                [coeffsFull, sigmaFull, residualsFull] = fit_ar_model(combinedSignals, bestLag);
 
-                % Fit AR model for target signal alone
-                [coeffsReduced, sigmaReduced] = armorf(x', 1, numSamples, maxLag);
+                % Fit reduced model (AR on target signal only)
+                [~, sigmaReduced, residualsReduced] = fit_ar_model(x, bestLag);
 
                 % Compute Granger causality
-                causalityValue = log(det(sigmaReduced) / det(sigmaFull));
+                grangerValue = log(det(sigmaReduced) / det(sigmaFull));
+                grangerValues(i, j) = grangerValue;
 
-                % Store result
-                grangerCausalityResults(i, j) = causalityValue;
+                % Perform F-test for significance
+                numParamsFull = bestLag * size(combinedSignals, 2)^2;
+                numParamsReduced = bestLag * size(x, 2)^2;
+                fStat = ((det(sigmaReduced) - det(sigmaFull)) / (numParamsFull - numParamsReduced)) / (det(sigmaFull) / (numSamples - numParamsFull));
+                pValues(i, j) = 1 - fcdf(fStat, numParamsFull - numParamsReduced, numSamples - numParamsFull);
             end
         end
     end
 
+    % Package results
+    grangerCausalityResults.values = grangerValues;
+    grangerCausalityResults.significance = pValues;
+
     % Optional: Display results
-    disp('Granger Causality Matrix:');
-    disp(grangerCausalityResults);
+    disp('Granger Causality Values:');
+    disp(grangerValues);
+    disp('Significance Matrix (p-values):');
+    disp(pValues);
 end
 
-% Helper function: AR model fitting (modified ARFIT function)
-function [coeffs, sigma] = armorf(data, order, numSamples, maxLag)
-% ARMORF Fits an autoregressive model to the input data.
+function bestLag = determine_best_lag(data, maxPossibleLag)
+% DETERMINE_BEST_LAG Determines the optimal lag for AR modeling using AIC.
 % Inputs:
-%   data       - Matrix of signals (areas x time).
-%   order      - Order of the AR model (typically 1).
-%   numSamples - Number of time samples.
-%   maxLag     - Maximum lag to consider.
+%   data           - Matrix of signals (time x variables).
+%   maxPossibleLag - Maximum lag to evaluate.
 %
 % Outputs:
-%   coeffs - Coefficients of the fitted AR model.
-%   sigma  - Covariance matrix of the residuals.
+%   bestLag - Optimal lag based on BIC/AIC.
 
-    % Ensure data is row-oriented
-    if size(data, 1) > size(data, 2)
-        data = data';
+    [numSamples, ~] = size(data);
+    aicValues = zeros(maxPossibleLag, 1);
+    bicValues = zeros(maxPossibleLag, 1);
+
+    for lag = 1:maxPossibleLag
+        [~, sigma] = fit_ar_model(data, lag);
+        logLikelihood = -0.5 * numSamples * log(det(sigma));
+        numParams = lag * size(data, 2)^2; % Number of parameters in the AR model
+        % aicValues(lag) = -2 * logLikelihood + 2 * numParams; % AIC formula
+        bicValues(lag) = -2 * logLikelihood + numParams * log(numSamples); % BIC formula
     end
 
-    % Fit AR model
-    coeffs = zeros(size(data, 1), maxLag);
-    sigma = cov(data'); % Initial residual covariance
+    % Find the lag with the minimum AIC
+    % [~, bestLagA] = min(aicValues);
+    [~, bestLag] = min(bicValues);
+end
 
-    % Loop over lags to fit AR coefficients iteratively
+function [coeffs, sigma, residuals] = fit_ar_model(data, maxLag)
+% FIT_AR_MODEL Fits an autoregressive model to the input data.
+% Inputs:
+%   data   - Matrix of signals (time x variables).
+%   maxLag - Maximum lag to consider.
+%
+% Outputs:
+%   coeffs    - Coefficients of the fitted AR model.
+%   sigma     - Covariance matrix of the residuals.
+%   residuals - Residuals of the AR model.
+
+    [numSamples, numVars] = size(data);
+    X = []; % Design matrix
+    Y = data(maxLag+1:end, :); % Target values
+
+    % Build the design matrix using lags
     for lag = 1:maxLag
-        coeffs(:, lag) = regress(data(:, lag), data(:, max(1, lag - order):end));
-        residuals = data - coeffs(:, lag) * data(:, lag - 1:lag - order); % Compute residuals
-        sigma = cov(residuals');
+        X = [X, data(maxLag-lag+1:end-lag, :)];
     end
-end
 
+    % Solve for AR coefficients using least squares
+    coeffs = (X' * X) \ (X' * Y);
 
+    % Compute residuals
+    residuals = Y - X * coeffs;
 
-function [F,c_v] = granger_cause(x,y,alpha,max_lag)
-% [F,c_v] = granger_cause(x,y,alpha,max_lag)
-% Granger Causality test
-% Does Y Granger Cause X?
-%
-% User-Specified Inputs:
-%   x -- A column vector of data
-%   y -- A column vector of data
-%   alpha -- the significance level specified by the user
-%   max_lag -- the maximum number of lags to be considered
-% User-requested Output:
-%   F -- The value of the F-statistic
-%   c_v -- The critical value from the F-distribution
-%
-% The lag length selection is chosen using the Bayesian information
-% Criterion 
-% Note that if F > c_v we reject the null hypothesis that y does not
-% Granger Cause x
-% Chandler Lutz, UCR 2009
-% Questions/Comments: chandler.lutz@email.ucr.edu
-% $Revision: 1.0.0 $  $Date: 09/30/2009 $
-% $Revision: 1.0.1 $  $Date: 10/20/2009 $
-% $Revision: 1.0.2 $  $Date: 03/18/2009 $
-% References:
-% [1] Granger, C.W.J., 1969. "Investigating causal relations by econometric
-%     models and cross-spectral methods". Econometrica 37 (3), 424�438.
-% Acknowledgements:
-%   I would like to thank Mads Dyrholm for his helpful comments and
-%   suggestions
-%Make sure x & y are the same length
-if (length(x) ~= length(y))
-    error('x and y must be the same length');
+    % Compute covariance of residuals
+    sigma = cov(residuals);
 end
-%Make sure x is a column vector
-[a,b] = size(x);
-if (b>a)
-    %x is a row vector -- fix this
-    x = x';
-end
-%Make sure y is a column vector
-[a,b] = size(y);
-if (b>a)
-    %y is a row vector -- fix this
-    y = y';
-end
-%Make sure max_lag is >= 1
-if max_lag < 1
-    error('max_lag must be greater than or equal to one');
-end
-%First find the proper model specification using the Bayesian Information
-%Criterion for the number of lags of x
-T = length(x);
-BIC = zeros(max_lag,1);
-%Specify a matrix for the restricted RSS
-RSS_R = zeros(max_lag,1);
-i = 1;
-while i <= max_lag
-    ystar = x(i+1:T,:);
-    xstar = [ones(T-i,1) zeros(T-i,i)];
-    %Populate the xstar matrix with the corresponding vectors of lags
-    j = 1;
-    while j <= i
-        xstar(:,j+1) = x(i+1-j:T-j);
-        j = j+1;
-    end
-    %Apply the regress function. b = betahat, bint corresponds to the 95%
-    %confidence intervals for the regression coefficients and r = residuals
-    [b,bint,r] = regress(ystar,xstar);
-    
-    %Find the bayesian information criterion
-    BIC(i,:) = T*log(r'*r/T) + (i+1)*log(T);
-    
-    %Put the restricted residual sum of squares in the RSS_R vector
-    RSS_R(i,:) = r'*r;
-    
-    i = i+1;
-    
-end
-[dummy,x_lag] = min(BIC);
-%First find the proper model specification using the Bayesian Information
-%Criterion for the number of lags of y
-BIC = zeros(max_lag,1);
-%Specify a matrix for the unrestricted RSS
-RSS_U = zeros(max_lag,1);
-i = 1;
-while i <= max_lag
-    
-    ystar = x(i+x_lag+1:T,:);
-    xstar = [ones(T-(i+x_lag),1) zeros(T-(i+x_lag),x_lag+i)];
-    %Populate the xstar matrix with the corresponding vectors of lags of x
-    j = 1;
-    while j <= x_lag
-        xstar(:,j+1) = x(i+x_lag+1-j:T-j,:);
-        j = j+1;
-    end
-    %Populate the xstar matrix with the corresponding vectors of lags of y
-    j = 1;
-    while j <= i
-        xstar(:,x_lag+j+1) = y(i+x_lag+1-j:T-j,:);
-        j = j+1;
-    end
-    %Apply the regress function. b = betahat, bint corresponds to the 95%
-    %confidence intervals for the regression coefficients and r = residuals
-    [b,bint,r] = regress(ystar,xstar);
-    
-    %Find the bayesian information criterion
-    BIC(i,:) = T*log(r'*r/T) + (i+1)*log(T);
-    
-    RSS_U(i,:) = r'*r;
-    
-    i = i+1;
-    
-end
-[dummy,y_lag] =min(BIC);
-%The numerator of the F-statistic
-F_num = ((RSS_R(x_lag,:) - RSS_U(y_lag,:))/y_lag);
-%The denominator of the F-statistic
-F_den = RSS_U(y_lag,:)/(T-(x_lag+y_lag+1));
-%The F-Statistic
-F = F_num/F_den;
-c_v = finv(1-alpha,y_lag,(T-(x_lag+y_lag+1)));
