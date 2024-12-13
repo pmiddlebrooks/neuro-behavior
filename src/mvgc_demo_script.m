@@ -74,6 +74,7 @@ mhtc      = 'FDRD'; % multiple hypothesis test correction (see routine 'signific
 
 fs        = opts.fsLfp;    % sample rate (Hz)
 fres      = [];     % frequency resolution (empty for automatic calculation)
+% fres      = [0 100];     % frequency resolution (empty for automatic calculation)
 
 seed      = 0;      % random seed (0 for unseeded)
 

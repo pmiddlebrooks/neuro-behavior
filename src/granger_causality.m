@@ -1,6 +1,7 @@
 %% Choose some lfp data to test
 lfpIdx = [1:4];
 samples = floor(size(lfpPerArea, 1)/60);
+samples = floor(size(lfpPerArea, 1));
 
 %%
 % Script to detrend, normalize, and check stationarity of LFP signals
@@ -62,7 +63,9 @@ maxLag = .1 * opts.fsLfp;
 % X = reshape(normalizedLfp', size(normalizedLfp, 2), samples/60, 60);
 X = reshape(lfpPerArea(1:samples, lfpIdx)', size(normalizedLfp, 2), samples/60, 60);
 
-%% Find all time bins preceding all behavior transitions:
+%% MVGC1 toolbox: peri-behavior transitions
+
+% Find all time bins preceding all behavior transitions:
                 preInd = find(diff(bhvIDMat) ~= 0); % 1 frame prior to all behavior transitions
                         id = bhvIDMat(preInd + 1);  % behavior ID being transitioned into
 preIndLfp = preInd * opts.frameSize * opts.fsLfp;
@@ -72,14 +75,15 @@ windowCenter = find(fullTime == 0);
 
 % Build a LFP matrix for the areas of interest, for a given behavior
 % transition
-idTest = 9;
+idTest = 15;
 
 idTestIdx = preInd(id == idTest);
 idTestIdxLfp = floor(idTestIdx * opts.frameSize * opts.fsLfp);
 
 lfpTest = zeros(size(lfpPerArea(:,lfpIdx), 2), length(fullWindow), length(idTestIdxLfp));
 for i = 1: length(idTestIdxLfp)-1
-lfpTest(:,:,i) = lfpPerArea(idTestIdxLfp(i) + fullWindow,lfpIdx)';
+% lfpTest(:,:,i) = lfpPerArea(idTestIdxLfp(i) + fullWindow,lfpIdx)';
+lfpTest(:,:,i) = normalizedLfp(idTestIdxLfp(i) + fullWindow,lfpIdx)';
 end
 
 X = lfpTest;
