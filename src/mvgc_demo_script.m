@@ -72,7 +72,7 @@ tstat     = 'F';    % statistical test for MVGC:  'F' for Granger's F-test (defa
 alpha     = 0.05;   % significance level for significance test
 mhtc      = 'FDRD'; % multiple hypothesis test correction (see routine 'significance')
 
-fs        = opts.fsLfp;    % sample rate (Hz)
+% fs        = opts.fsLfp;    % sample rate (Hz)
 fres      = [];     % frequency resolution (empty for automatic calculation)
 % fres      = [0 100];     % frequency resolution (empty for automatic calculation)
 
@@ -221,7 +221,7 @@ ptoc;
 
 % Plot spectral causal graph.
 
-figure(3); clf;
+figure(4); clf;
 sgtitlex('Pairwise-conditional Granger causality - frequency domain');
 plot_spw(f,fs);
 

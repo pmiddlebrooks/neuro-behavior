@@ -1,4 +1,4 @@
-%% Choose some lfp data to test
+%% Choose some lfp data to test (get lfp data from lfp_state_script.m
 lfpIdx = [1:4];
 samples = floor(size(lfpPerArea, 1)/60);
 samples = floor(size(lfpPerArea, 1));
@@ -58,7 +58,10 @@ maxLag = .1 * opts.fsLfp;
 
 
 %% MVGC1 toolbox (see mvgc_demo_statespace.m for the template)
+cd E:\Projects\toolboxes\MVGC1
+startup
 
+%%
 % Get data, then run mvgc from mvgc_demo_script
 % X = reshape(normalizedLfp', size(normalizedLfp, 2), samples/60, 60);
 X = reshape(lfpPerArea(1:samples, lfpIdx)', size(normalizedLfp, 2), samples/60, 60);
@@ -90,9 +93,16 @@ X = lfpTest;
 
 
 
+%% MVGC1 toolbox: peri-reach from Mark's data: Get his data from lfp_reach.m
+fullTime = -.2 : 1/fs : .2; % seconds around onset
+fullWindow = round(fullTime(1:end-1) * fs); % frames around onset w.r.t. zWindow (remove last frame)
 
-
-
+nTrial = size(rData.R, 1);
+lfpTest = zeros(size(lfpReach, 2), length(fullWindow), nTrial);
+for i = 1 : nTrial
+    lfpTest(:,:,i) = lfpReach(rData.R(i,1) + fullWindow, lfpIdx)';
+end
+X = lfpTest;
 
 
 
