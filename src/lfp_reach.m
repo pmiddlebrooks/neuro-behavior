@@ -23,6 +23,64 @@ lfpReach = double(flipud([...
     mmf.Data.x(40,:)...
     ])');
     
+
+%% Detrend, normalize, and check stationarity of LFP signals
+
+% Detrend the signals (remove linear trend)
+detrendedLfp = detrend(lfpReach, 'linear');
+
+% Normalize the signals (z-score normalization)
+normalizedLfp = zscore(detrendedLfp);
+clear detrendedLfp
+
+% Stationarity check using Augmented Dickey-Fuller (ADF) test
+% Ensure you have the Econometrics Toolbox for the adftest function
+[numSamples, numAreas] = size(normalizedLfp);
+stationarityResults = zeros(1, numAreas); % Store p-values
+
+for area = 1:numAreas
+    [h, pValue] = adftest(normalizedLfp(:, area)); % ADF test
+    stationarityResults(area) = pValue; % Save p-value
+
+    % Display result
+    if h == 1
+        fprintf('Signal %d is stationary (p = %.4f).\n', area, pValue);
+    else
+        fprintf('Signal %d is not stationary (p = %.4f).', area, pValue);
+    end
+end
+
+%% MVGC1 toolbox: peri-reach from Mark's data: Get his data from lfp_reach.m
+fullTime = -.2 : 1/fs : .2; % seconds around onset
+fullWindow = round(fullTime(1:end-1) * fs); % frames around onset w.r.t. zWindow (remove last frame)
+
+nTrial = size(rData.R, 1);
+lfpTest = [];
+for i = 1 : nTrial
+% check for noise (check if it's a usable trial)
+iLfp = normalizedLfp(rData.R(i,1) + fullWindow, :)';
+if ~any(iLfp(2,:) > 5)
+    lfpTest = cat(3, lfpTest, iLfp);
+end
+end
+
+X = lfpTest;
+
+cd E:\Projects\toolboxes\MVGC1
+startup
+
+% Go to mvgc_demo_script.m
+disp('Go to mvgc_demo_script.m')
+
+
+
+
+
+
+
+
+
+
 %%
 figure(55);
 fullTime = -.2 : 1/fs : .2; % seconds around onset
@@ -128,6 +186,9 @@ for idx = 1:length(spikeIndices)
     end
 end
 
+
+
+
 %% Plot the original and cleaned signals
 figure(8);
 subplot(2, 1, 1);
@@ -157,32 +218,7 @@ lfpReach = lowpass(lfpReach, 300, fs);
     %%
     samples = floor(size(lfpReach, 1)/10);
 
-    %%
-
-
-    % Detrend the signals (remove linear trend)
-detrendedLfp = detrend(lfpReach(1:samples, lfpIdx), 'linear');
-
-% Normalize the signals (z-score normalization)
-normalizedLfp = zscore(detrendedLfp);
-
-% Stationarity check using Augmented Dickey-Fuller (ADF) test
-% Ensure you have the Econometrics Toolbox for the adftest function
-[numSamples, numAreas] = size(normalizedLfp);
-stationarityResults = zeros(1, numAreas); % Store p-values
-
-for area = 1:numAreas
-    [h, pValue] = adftest(normalizedLfp(:, area)); % ADF test
-    stationarityResults(area) = pValue; % Save p-value
-
-    % Display result
-    if h == 1
-        fprintf('Signal %d is stationary (p = %.4f).\n', area, pValue);
-    else
-        fprintf('Signal %d is not stationary (p = %.4f).', area, pValue);
-    end
-end
-
+   
 %%
 % Plot the signals for visualization
 figure(91); clf;

@@ -1,5 +1,10 @@
 function [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix(data, opts)
 
+
+    if opts.shiftAlignFactor ~= 0
+    warning('neural_matrix.m:  You shifted the spike bin time w.r.t. the behavior start time: make sure you wanted to do this.')
+end
+
 % checkTime = 5 * 60;
 durFrames = ceil(sum(data.bhvDur) / opts.frameSize);
 
@@ -35,9 +40,16 @@ for i = 1 : length(idLabels)
     % if keepStart && keepEnd
 
     timeEdges = 0 : opts.frameSize : sum(data.bhvDur); % Create edges of bins from 0 to max time
+if opts.shiftAlignFactor ~= 0
+    timeEdges = timeEdges + opts.shiftAlignFactor;
+end
 
     % Count the number of spikes in each bin
     [iSpikeCount, ~] = histcounts(iSpikeTime, timeEdges);
+% If we shifted where the spike count bin is, account for that here
+    if opts.shiftAlignFactor ~= 0
+    iSpikeCount = [0 iSpikeCount(1:end-1)];
+end
 
     dataMat(:, i) = iSpikeCount';
     % dataMat = [dataMat, iSpikeCount'];
