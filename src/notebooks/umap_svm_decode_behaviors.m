@@ -12,11 +12,16 @@ opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
 opts.frameSize = .1;
+% opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
 getDataType = 'spikes';
 get_standard_data
 % getDataType = 'behavior';
 % get_standard_data
+
+[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
+
+
 
 colors = colors_for_behaviors(codes);
 
@@ -35,8 +40,6 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
     'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
     'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...
     'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
-%%
-[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
 
 
@@ -56,7 +59,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % Select which data to run analyses on, UMAP dimensions, etc
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
-forDim = [4 6 8]; % Loop through these dimensions to fit UMAP
+forDim = 8; % Loop through these dimensions to fit UMAP
 % forDim = 5; % Loop through these dimensions to fit UMAP
 newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 
@@ -72,6 +75,7 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
 
 % Apply to all:
 % -------------
+analyzePredictions = 0;
 plotFullMap = 1;
 plotFullModelData = 0;
 plotModelData = 1;
@@ -80,8 +84,8 @@ changeBhvLabels = 0;
 
 % Transition or within variables
 % -------------------------
-% transOrWithin = 'trans';
-transOrWithin = 'within';
+transOrWithin = 'trans';
+% transOrWithin = 'within';
 % transOrWithin = 'transVsWithin';
 firstNFrames = 0;
 matchTransitionCount = 0;
@@ -145,9 +149,10 @@ allFontSize = 12;
 
 min_dist = (.1 : .1 : .5);
 min_dist = (.01 : .03 : .1);
-spread = [1 1.3 1.6];
-% n_neighbors = [150];
+min_dist = .02;
+spread = 1.3;
 n_neighbors = [6 8 10 12 15];
+n_neighbors = 10;
 
 
 modelAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
@@ -182,7 +187,7 @@ for k = 1:length(forDim)
                 % Shift behavior label w.r.t. neural to account for neuro-behavior latency
                 shiftSec = 0;
                 shiftFrame = ceil(shiftSec / opts.frameSize);
-                bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for time shift
+                bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for frame shift
 
 
                 projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
@@ -305,12 +310,12 @@ for k = 1:length(forDim)
                         svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
 
                         % Pre and/or Post: Adjust which bin(s) to plot (and train SVN on below)
-                        svmInd = preInd;% + 1; % First bin after transition
+                        svmInd = preInd; % + 1; % First bin before or after (+1) transition
 
                         % Pre & Post: Comment/uncomment to use more than one bin
-            % svmID = repelem(svmID, 2);
+            svmID = repelem(svmID, 2);
             % svmInd = sort([svmInd - 1; svmInd]); % two bins before transition
-            % svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
+            svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
 
                         transWithinLabel = 'transitions pre';
                         % transWithinLabel = 'transitions 200ms pre';
@@ -606,9 +611,9 @@ permAccuracy(k, x, y, z) = accuracyPermuted(k, iPerm);
 
 
                 %% Analzyze the predictions vs observed
-
+if analyzePredictions
                 analyze_model_predictions
-
+end
 
                 %% This needs to be updated  --------------------------------------------
                 % % Plot predictions
