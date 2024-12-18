@@ -62,14 +62,14 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 forDim = 8; % Loop through these dimensions to fit UMAP
 % forDim = 5; % Loop through these dimensions to fit UMAP
 newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
-
+umapTransOnly = 1;
 
 % Change these (and check their sections below) to determine which
 % variables to test
 % ==========================
 
 % Modeling variables
-nPermutations = 1; % How many random permutations to run to compare with best fit model?
+nPermutations = 0; % How many random permutations to run to compare with best fit model?
 accuracy = zeros(length(forDim), 1);
 accuracyPermuted = zeros(length(forDim), nPermutations);
 
@@ -101,7 +101,7 @@ downSampleFrames = 0;
 
 
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -171,7 +171,7 @@ for k = 1:length(forDim)
             for z = 1:length(n_neighbors)
                 %% Run UMAPto get projections in low-D space
                 fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
-                if newUmapModel
+                if newUmapModel && ~umapTransOnly
                     umapFrameSize = opts.frameSize;
 
                     % rng(1);
@@ -198,7 +198,7 @@ for k = 1:length(forDim)
 
                 %% --------------------------------------------
                 % Plot FULL TIME OF ALL BEHAVIORS
-                if plotFullMap
+                if plotFullMap && ~umapTransOnly
                     colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + 2, 'UniformOutput', false);
                     colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
                     % colorsForPlot = [.2 .2 .2];
@@ -310,18 +310,37 @@ for k = 1:length(forDim)
                         svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
 
                         % Pre and/or Post: Adjust which bin(s) to plot (and train SVN on below)
-                        svmInd = preInd; % + 1; % First bin before or after (+1) transition
+                        svmInd = preInd + 1; % First bin before or after (+1) transition
 
                         % Pre & Post: Comment/uncomment to use more than one bin
-            svmID = repelem(svmID, 2);
+            % svmID = repelem(svmID, 2);
             % svmInd = sort([svmInd - 1; svmInd]); % two bins before transition
-            svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
+            % svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
 
                         transWithinLabel = 'transitions pre';
                         % transWithinLabel = 'transitions 200ms pre';
                         % transWithinLabel = 'transitions post';
                         % transWithinLabel = 'transitions pre & post';
                         % transWithinLabel = ['transitions pre minBout ', num2str(nMinFrames)];
+
+
+
+                       if umapTransOnly && newUmapModel
+                            % now use only the transition data to fit umap (and decode svm)
+                            disp('You are running umap and fitting decoder only on transition data');
+
+
+                    umapFrameSize = opts.frameSize;
+
+                    % rng(1);
+                    % [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
+                    [projSelect, ~, ~, ~] = run_umap(dataMat(svmInd, idSelect), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                        'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+% whittled down the matrix to transition-only frames, so now fit all the
+% data:
+                    svmInd = 1:size(projSelect, 1);
+                    pause(4); close
+                end
 
 
                         %% WITHIN-BEHAVIOR of all behaviors (for now, include behaviors that last one frame)
@@ -399,7 +418,7 @@ for k = 1:length(forDim)
                     % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
                     plotFrames = allBhvModeled;
                     plot_3d_scatter
-                end
+                    end
 
                 %% Plot data to model
                 if plotModelData
@@ -606,8 +625,9 @@ sound(y(1:3*Fs),Fs)
                 % sound(y(1:3*Fs),Fs)
 
 modelAccuracy(k, x, y, z) = accuracy(k);
+if nPermutations > 0
 permAccuracy(k, x, y, z) = accuracyPermuted(k, iPerm);
-
+end
 
 
                 %% Analzyze the predictions vs observed
