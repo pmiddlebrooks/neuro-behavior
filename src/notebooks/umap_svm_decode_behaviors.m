@@ -62,7 +62,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 forDim = 8; % Loop through these dimensions to fit UMAP
 % forDim = 5; % Loop through these dimensions to fit UMAP
 newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
-umapTransOnly = 1;
+umapTransOnly = 0;
 
 % Change these (and check their sections below) to determine which
 % variables to test
@@ -176,7 +176,7 @@ for k = 1:length(forDim)
 
                     % rng(1);
                     % [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
-                    [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                    [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                         'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
                     pause(4); close
                 end
@@ -186,12 +186,13 @@ for k = 1:length(forDim)
                 %% --------------------------------------------
                 % Shift behavior label w.r.t. neural to account for neuro-behavior latency
                 shiftSec = 0;
+                if shiftSec > 0
                 shiftFrame = ceil(shiftSec / opts.frameSize);
                 bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for frame shift
 
 
                 projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
-
+                end
 
 
 
@@ -580,6 +581,8 @@ sound(y(1:3*Fs),Fs)
                 tic
                 % Randomize labels and Train model on single hold-out set
                 % tic
+                if nPermutations > 0
+
                 shuffleInd = zeros(length(trainLabels), nPermutations);
                 for iPerm = 1:nPermutations
 
@@ -616,7 +619,7 @@ sound(y(1:3*Fs),Fs)
                 % Reassign the value of modelName to the new variable name using eval
                 eval([modelName, ' = svmModelPermuted;']);
 
-
+            end
 
                 % Get the elapsed time
                 fprintf('Permutation model fit(s) took %.2f min\n', toc/60)
