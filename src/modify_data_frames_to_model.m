@@ -170,7 +170,7 @@ end
 
 %% REMOVE OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
 if minFrames
-    nMinFrames = 400;
+    nMinFrames = 100;
 
     [uniqueVals, ~, idx] = unique(svmID); % Find unique integers and indices
     bhvDataCount = accumarray(idx, 1); % Count occurrences of each unique integer

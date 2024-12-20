@@ -78,7 +78,7 @@ windowCenter = find(fullTime == 0);
 
 % Build a LFP matrix for the areas of interest, for a given behavior
 % transition
-idTest = 15;
+idTest = 9;
 
 idTestIdx = preInd(id == idTest);
 idTestIdxLfp = floor(idTestIdx * opts.frameSize * opts.fsLfp);

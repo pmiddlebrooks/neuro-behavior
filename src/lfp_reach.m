@@ -51,7 +51,7 @@ for area = 1:numAreas
 end
 
 %% MVGC1 toolbox: peri-reach from Mark's data: Get his data from lfp_reach.m
-fullTime = -.2 : 1/fs : .2; % seconds around onset
+fullTime = -.2 : 1/fs : .7; % seconds around onset
 fullWindow = round(fullTime(1:end-1) * fs); % frames around onset w.r.t. zWindow (remove last frame)
 
 nTrial = size(rData.R, 1);
