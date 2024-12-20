@@ -1,4 +1,4 @@
- %%                     Compare neuro-behavior in UMAP spaces
+%%                     Compare neuro-behavior in UMAP spaces
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
@@ -11,7 +11,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .1;
+opts.frameSize = .20;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
 getDataType = 'spikes';
@@ -59,9 +59,10 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % Select which data to run analyses on, UMAP dimensions, etc
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
-forDim = 8; % Loop through these dimensions to fit UMAP
-% forDim = 5; % Loop through these dimensions to fit UMAP
-newUmapModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
+forDim = 3; % Loop through these dimensions to fit UMAP
+lowDModel = 'umap';
+% lowDModel = 'tsne';
+newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 umapTransOnly = 0;
 
 % Change these (and check their sections below) to determine which
@@ -69,7 +70,7 @@ umapTransOnly = 0;
 % ==========================
 
 % Modeling variables
-nPermutations = 0; % How many random permutations to run to compare with best fit model?
+nPermutations = 1; % How many random permutations to run to compare with best fit model?
 accuracy = zeros(length(forDim), 1);
 accuracyPermuted = zeros(length(forDim), nPermutations);
 
@@ -85,7 +86,8 @@ changeBhvLabels = 0;
 % Transition or within variables
 % -------------------------
 transOrWithin = 'trans';
-% transOrWithin = 'within';
+transOrWithin = 'within';
+transOrWithin = 'all';
 % transOrWithin = 'transVsWithin';
 firstNFrames = 0;
 matchTransitionCount = 0;
@@ -103,39 +105,36 @@ downSampleFrames = 0;
 selectFrom = 'M56';
 selectFrom = 'DS';
 % selectFrom = 'Both';
+% selectFrom = 'M23';
 % selectFrom = 'VS';
 % selectFrom = 'All';
 switch selectFrom
+    case 'M23'
+        idSelect = idM23;
+        figHFull = 260;
+        figHModel = 270;
+        figHFullModel = 280;
     case 'M56'
-        % projSelect = projectionsM56;
-        % projProject = projectionsDS;
         idSelect = idM56;
         figHFull = 260;
         figHModel = 270;
         figHFullModel = 280;
     case 'DS'
-        % projSelect = projectionsDS;
-        % projProject = projectionsM56;
         idSelect = idDS;
         figHFull = 261;
         figHModel = 271;
         figHFullModel = 281;
     case 'Both'
-        % projSelect = [projectionsM56; projectionsDS];
         idSelect = [idM56, idDS];
         figHFull = 262;
         figHModel = 272;
         figHFullModel = 282;
     case 'VS'
-        % projSelect = projectionsVS;
-        % projProject = projectionsDS;
         idSelect = idVS;
         figHFull = 263;
         figHModel = 273;
         figHFullModel = 283;
     case 'All'
-        % projSelect = projectionsAll;
-        % projProject = projectionsDS;
         idSelect = cell2mat(idAll);
         figHFull = 264;
         figHModel = 274;
@@ -171,14 +170,17 @@ for k = 1:length(forDim)
             for z = 1:length(n_neighbors)
                 %% Run UMAPto get projections in low-D space
                 fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
-                if newUmapModel && ~umapTransOnly
-                    umapFrameSize = opts.frameSize;
-
-                    % rng(1);
-                    % [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
-                    [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
-                        'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
-                    pause(4); close
+                if newLowDModel && ~umapTransOnly
+                    switch lowDModel
+                        case 'umap'
+                            umapFrameSize = opts.frameSize;
+                            rng(1);
+                            [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                                'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+                            pause(4); close
+                        case 'tsne'
+                            projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration',90, 'NumDimensions',iDim);
+                    end
                 end
 
 
@@ -186,13 +188,12 @@ for k = 1:length(forDim)
                 %% --------------------------------------------
                 % Shift behavior label w.r.t. neural to account for neuro-behavior latency
                 shiftSec = 0;
+                shiftFrame = 0;
                 if shiftSec > 0
-                shiftFrame = ceil(shiftSec / opts.frameSize);
-                bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for frame shift
-
-
-                projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
+                    shiftFrame = ceil(shiftSec / opts.frameSize);
+                    projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
                 end
+                bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for frame shift
 
 
 
@@ -314,9 +315,9 @@ for k = 1:length(forDim)
                         svmInd = preInd + 1; % First bin before or after (+1) transition
 
                         % Pre & Post: Comment/uncomment to use more than one bin
-            % svmID = repelem(svmID, 2);
-            % svmInd = sort([svmInd - 1; svmInd]); % two bins before transition
-            % svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
+                        % svmID = repelem(svmID, 2);
+                        % svmInd = sort([svmInd - 1; svmInd]); % two bins before transition
+                        % svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
 
                         transWithinLabel = 'transitions pre';
                         % transWithinLabel = 'transitions 200ms pre';
@@ -326,22 +327,27 @@ for k = 1:length(forDim)
 
 
 
-                       if umapTransOnly && newUmapModel
+                        if umapTransOnly && newLowDModel
                             % now use only the transition data to fit umap (and decode svm)
-                            disp('You are running umap and fitting decoder only on transition data');
+                            disp('You are running a low-d model and fitting decoder only on transition data');
+                            switch lowDModel
+                                case 'umap'
 
+                                    umapFrameSize = opts.frameSize;
 
-                    umapFrameSize = opts.frameSize;
+                                    % rng(1);
+                                    % [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
+                                    [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(svmInd, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                                        'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+                                case 'tsne'
+                                    projSelect = tsne(zscore(dataMat(svmInd, idSelect)),'Exaggeration',90, 'NumDimensions',iDim);
 
-                    % rng(1);
-                    % [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
-                    [projSelect, ~, ~, ~] = run_umap(dataMat(svmInd, idSelect), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
-                        'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
-% whittled down the matrix to transition-only frames, so now fit all the
-% data:
-                    svmInd = 1:size(projSelect, 1);
-                    pause(4); close
-                end
+                            end
+                            % whittled down the matrix to transition-only frames, so now fit all the
+                            % data:
+                            svmInd = 1:size(projSelect, 1);
+                            pause(4); close
+                        end
 
 
                         %% WITHIN-BEHAVIOR of all behaviors (for now, include behaviors that last one frame)
@@ -371,6 +377,12 @@ for k = 1:length(forDim)
                             % transWithinLabel = [transWithinLabel, ' long loco as inv2'];
                             % transWithinLabel = 'within-behavior xxxxx';
                         end
+                    case 'all'
+                        svmInd = 1:length(bhvID);
+                        svmID = bhvID;
+
+                        % choose correct title
+                        transWithinLabel = 'all';
                     case 'transVsWithin'
                         svmID = bhvID;
                         svmID(diff(bhvID) ~= 0) = 9;
@@ -419,7 +431,7 @@ for k = 1:length(forDim)
                     % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
                     plotFrames = allBhvModeled;
                     plot_3d_scatter
-                    end
+                end
 
                 %% Plot data to model
                 if plotModelData
@@ -583,43 +595,43 @@ sound(y(1:3*Fs),Fs)
                 % tic
                 if nPermutations > 0
 
-                shuffleInd = zeros(length(trainLabels), nPermutations);
-                for iPerm = 1:nPermutations
+                    shuffleInd = zeros(length(trainLabels), nPermutations);
+                    for iPerm = 1:nPermutations
 
 
-                    % Shuffle the labels
-                    % shuffledLabels = trainLabels(randperm(length(trainLabels)));
+                        % Shuffle the labels
+                        % shuffledLabels = trainLabels(randperm(length(trainLabels)));
 
-                    iRandom = 1 : length(trainLabels);
+                        iRandom = 1 : length(trainLabels);
 
-                    randShift = randi([1 length(trainLabels)]);
-                    % Shuffle the data by moving the last randShift elements to the front
-                    lastNElements = iRandom(end - randShift + 1:end);  % Extract the last randShift elements
-                    iRandom(randShift+1:end) = iRandom(1:end-randShift); % Shift the remaining elements to the end
-                    iRandom(1:randShift) = lastNElements; % Place the last n elements at the beginning
-                    shuffleInd(:, iPerm) = iRandom;
-                    shuffledLabels = trainLabels(shuffleInd(:, iPerm));
+                        randShift = randi([1 length(trainLabels)]);
+                        % Shuffle the data by moving the last randShift elements to the front
+                        lastNElements = iRandom(end - randShift + 1:end);  % Extract the last randShift elements
+                        iRandom(randShift+1:end) = iRandom(1:end-randShift); % Shift the remaining elements to the end
+                        iRandom(1:randShift) = lastNElements; % Place the last n elements at the beginning
+                        shuffleInd(:, iPerm) = iRandom;
+                        shuffledLabels = trainLabels(shuffleInd(:, iPerm));
 
 
-                    % Set SVM template with the current kernel
-                    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+                        % Set SVM template with the current kernel
+                        t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
 
-                    % Train the SVM model on shuffled training data
-                    svmModelPermuted = fitcecoc(trainData, shuffledLabels, 'Learners', t);
+                        % Train the SVM model on shuffled training data
+                        svmModelPermuted = fitcecoc(trainData, shuffledLabels, 'Learners', t);
 
-                    % Predict the labels using observed test data
-                    predictedLabelsPermuted = predict(svmModelPermuted, testData);
+                        % Predict the labels using observed test data
+                        predictedLabelsPermuted = predict(svmModelPermuted, testData);
 
-                    % Calculate the permuted accuracy
-                    accuracyPermuted(k, iPerm) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
-                    fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f%%\n', selectFrom, transWithinLabel, k, accuracyPermuted(k, iPerm));
+                        % Calculate the permuted accuracy
+                        accuracyPermuted(k, iPerm) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
+                        fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f%%\n', selectFrom, transWithinLabel, k, accuracyPermuted(k, iPerm));
+
+                    end
+                    modelName = ['svmModelPermuted', appendModelName];
+                    % Reassign the value of modelName to the new variable name using eval
+                    eval([modelName, ' = svmModelPermuted;']);
 
                 end
-                modelName = ['svmModelPermuted', appendModelName];
-                % Reassign the value of modelName to the new variable name using eval
-                eval([modelName, ' = svmModelPermuted;']);
-
-            end
 
                 % Get the elapsed time
                 fprintf('Permutation model fit(s) took %.2f min\n', toc/60)
@@ -627,16 +639,16 @@ sound(y(1:3*Fs),Fs)
                 %     load handel
                 % sound(y(1:3*Fs),Fs)
 
-modelAccuracy(k, x, y, z) = accuracy(k);
-if nPermutations > 0
-permAccuracy(k, x, y, z) = accuracyPermuted(k, iPerm);
-end
+                modelAccuracy(k, x, y, z) = accuracy(k);
+                if nPermutations > 0
+                    permAccuracy(k, x, y, z) = accuracyPermuted(k, iPerm);
+                end
 
 
                 %% Analzyze the predictions vs observed
-if analyzePredictions
-                analyze_model_predictions
-end
+                if analyzePredictions
+                    analyze_model_predictions
+                end
 
                 %% This needs to be updated  --------------------------------------------
                 % % Plot predictions
@@ -844,7 +856,7 @@ end
 
 
 
-perDimPosition = [monitorOne(3)/2, monitorOne(4)/2, monitorOne(3)/3, monitorOne(4)/2.2];
+perDimPosition = [monitorOne(3)/2, monitorOne(4)/2.2, monitorOne(3)/3, monitorOne(4)/2.2];
 fig = figure(65);
 set(fig, 'Position', perDimPosition); clf; hold on;
 plot(forDim, accuracy, '-o', 'color', 'blue', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'blue', 'LineWidth', 1.5);

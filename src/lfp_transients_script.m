@@ -3,8 +3,8 @@
 % Script to find transients in power spectra bands and their temporal patterns
 
 % Example input: binned power spectra (time x frequency bands)
-binnedPower = randn(1000, 4); % Replace with actual binned power data
-bandNames = {'Alpha', 'Beta', 'LowGamma', 'HighGamma'}; % Name of each band
+binnedPower = binnedBandPowers(:,5:9);
+bandNames = {'LowAlpha', 'Alpha', 'Beta', 'LowGamma', 'HighGamma'}; % Name of each band
 nStd = 2; % Threshold in standard deviations for identifying transients
 
 % Z-score normalize the power bands
