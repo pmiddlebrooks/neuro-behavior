@@ -11,7 +11,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .20;
+opts.frameSize = .2;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
 getDataType = 'spikes';
@@ -61,7 +61,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
 forDim = 3; % Loop through these dimensions to fit UMAP
 lowDModel = 'umap';
-% lowDModel = 'tsne';
+lowDModel = 'tsne';
 newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 umapTransOnly = 0;
 
@@ -87,7 +87,7 @@ changeBhvLabels = 0;
 % -------------------------
 transOrWithin = 'trans';
 transOrWithin = 'within';
-transOrWithin = 'all';
+% transOrWithin = 'all';
 % transOrWithin = 'transVsWithin';
 firstNFrames = 0;
 matchTransitionCount = 0;
@@ -145,14 +145,18 @@ end
 % Some figure properties
 allFontSize = 12;
 
-
+switch lowDModel
+    case 'umap'
 min_dist = (.1 : .1 : .5);
 min_dist = (.01 : .03 : .1);
 min_dist = .02;
 spread = 1.3;
 n_neighbors = [6 8 10 12 15];
 n_neighbors = 10;
-
+    case 'tsne'
+        exaggeration = [60 90 120];
+        perplexity = [10 30 40 50];
+end
 
 modelAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
 permAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
@@ -161,25 +165,29 @@ for k = 1:length(forDim)
 
 
     iDim = forDim(k);
-    fitType = ['UMAP ', num2str(iDim), 'D'];
+    fitType = [lowDModel, ' ', num2str(iDim), 'D'];
     % fitType = 'NeuralSpace';
 
 
-    for x = 1:length(min_dist)
-        for y = 1:length(spread)
+    for x = 1:length(exaggeration)
+        for y = 1:length(perplexity)
+    % for x = 1:length(min_dist)
+    %     for y = 1:length(spread)
             for z = 1:length(n_neighbors)
-                %% Run UMAPto get projections in low-D space
-                fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
+                 disp('=================================================================')
+               %% Run UMAPto get projections in low-D space
                 if newLowDModel && ~umapTransOnly
                     switch lowDModel
                         case 'umap'
+                fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
                             umapFrameSize = opts.frameSize;
                             rng(1);
                             [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                 'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
                             pause(4); close
                         case 'tsne'
-                            projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration',90, 'NumDimensions',iDim);
+                fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
+                            projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration(x), 'Perplexity', perplexity(y), 'NumDimensions',iDim);
                     end
                 end
 
@@ -206,7 +214,8 @@ for k = 1:length(forDim)
                     % colorsForPlot = [.2 .2 .2];
                     figH = figHFull;
                     plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
-                    titleM = sprintf('%s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    % titleM = sprintf('%s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    titleM = sprintf('%s %s bin=%.2f', selectFrom, fitType, opts.frameSize);
                     % titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
                     plotFrames = 1:length(bhvID);
                     plot_3d_scatter
@@ -427,7 +436,8 @@ for k = 1:length(forDim)
                     figH = figHFullModel;
                     % Plot on second monitor, half-width
                     plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
-                    titleM = sprintf('%s %s All Frames %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, transWithinLabel, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    % titleM = sprintf('%s %s All Frames %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, transWithinLabel, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    titleM = sprintf('%s %s All Frames %s bin=%.2f', selectFrom, fitType, transWithinLabel, opts.frameSize);
                     % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
                     plotFrames = allBhvModeled;
                     plot_3d_scatter
@@ -441,7 +451,8 @@ for k = 1:length(forDim)
                     figH = figHModel;
                     % Plot on second monitor, half-width
                     plotPos = [monitorTwo(1) + monitorTwo(3)/2, 1, monitorTwo(3)/2, monitorTwo(4)];
-                    titleM = sprintf('%s %s Modeled Data %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, transWithinLabel, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    % titleM = sprintf('%s %s Modeled Data %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, transWithinLabel, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    titleM = sprintf('%s %s Modeled Data %s bin=%.2f', selectFrom, fitType, transWithinLabel, opts.frameSize);
                     % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
                     plotFrames = svmInd;
                     plot_3d_scatter
@@ -545,10 +556,9 @@ sound(y(1:3*Fs),Fs)
                 % Split data into training (80%) and testing (20%) sets
                 cv = cvpartition(svmID, 'HoldOut', 0.2);
 
-                disp('=================================================================')
 
                 % UMAP dimension version
-                fprintf('\n\n%s %s DIMENSIONS %d\n\n', selectFrom, transWithinLabel, iDim)  % UMAP Dimensions
+                fprintf('\n\n%s %s %s %d Dim\n\n', selectFrom, lowDModel, transWithinLabel, iDim)  % UMAP Dimensions
                 % Choose which data to model
                 svmProj = projSelect(svmInd, :);
                 trainData = svmProj(training(cv), :);  % UMAP Dimensions

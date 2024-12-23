@@ -225,7 +225,7 @@ figure(4); clf;
 sgtitlex('Pairwise-conditional Granger causality - frequency domain');
 plot_spw(f,fs);
 
-%% Granger causality calculation: frequency domain -> time-domain  (<mvgc_schema.html#3 |A15|>)
+% Granger causality calculation: frequency domain -> time-domain  (<mvgc_schema.html#3 |A15|>)
 
 % Check that spectral causalities average (integrate) to time-domain
 % causalities, as they should according to theory.
