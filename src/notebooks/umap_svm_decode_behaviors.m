@@ -19,7 +19,7 @@ get_standard_data
 % getDataType = 'behavior';
 % get_standard_data
 
-[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
+[dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 
 
 
@@ -199,9 +199,9 @@ for k = 1:length(forDim)
                 shiftFrame = 0;
                 if shiftSec > 0
                     shiftFrame = ceil(shiftSec / opts.frameSize);
-                    projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
+                    projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvID
                 end
-                bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for frame shift
+                bhvID = double(bhvID(1+shiftFrame:end)); % Shift bhvID to account for frame shift
 
 
 

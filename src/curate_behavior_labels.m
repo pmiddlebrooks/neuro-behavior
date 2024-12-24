@@ -1,4 +1,4 @@
-function [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts)
+function [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts)
 
 %UNTITLED2 Summary of this function goes here
 %   Detailed explanation goes here
@@ -46,13 +46,13 @@ dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
 % neural matrix (see get_standard_data.m)
 
 % Use StartFrame and DurFrame method:
-bhvIDMat = int8(zeros(nFrame, 1));
+bhvID = int8(zeros(nFrame, 1));
 for i = 1 : size(dataBhv, 1) - 1
     % iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
     iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
-    bhvIDMat(iInd) = dataBhv.ID(i);
+    bhvID(iInd) = dataBhv.ID(i);
 end
-bhvIDMat(iInd(end) + 1 : end) = dataBhv.ID(end);
+bhvID(iInd(end) + 1 : end) = dataBhv.ID(end);
 
 
 % Use majority time in frame method:
