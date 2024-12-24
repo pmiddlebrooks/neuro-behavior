@@ -9,7 +9,7 @@ opts.frameSize = .1;
 getDataType = 'spikes';
 get_standard_data
 
-[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
+[dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 
 forDim = 3;
 iDim = forDim;
@@ -43,12 +43,16 @@ end
 end
 
 %% Which data to model:
-
                 preInd = [diff(bhvIDMat) ~= 0; 0]; % 1 frame prior to all behavior transitions
+
+%% High-D neral matrix
+modelData = zscore(dataMat);
+
+%%
 
                 %% within-bout
                 modelInd = ~preInd & ~[preInd(2:end); 0] & ~(bhvIDMat == -1);
-                modelID = bhvIDMat(modelInd);
+
                 %% all data
                         modelInd = 1:length(bhvIDMat);
                         modelID = bhvIDMat;
@@ -62,9 +66,9 @@ activation = 'relu';
 epochs = 20;
 batch_size = 16;
 learning_rate = .001;
+max_trials = 30;
 
-[model, history] = build_and_train_ffn(modelData(modelInd,:), bhvIDMat(modelInd),input_dim, output_dim, hidden_layers,...
-    activation, epochs, batch_size, learning_rate);
+[bestModel, bestHistory, hyperparamResults] = build_and_train_ffn(modelData(modelInd,:), bhvID(modelInd),input_dim, output_dim, max_trials, epochs, batch_size);
 
 
 
