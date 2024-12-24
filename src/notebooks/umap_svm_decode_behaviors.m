@@ -11,7 +11,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .2;
+opts.frameSize = .15;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
 getDataType = 'spikes';
