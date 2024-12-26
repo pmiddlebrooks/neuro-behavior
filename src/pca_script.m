@@ -1,25 +1,70 @@
 %% Get data from get_standard_data
 
 opts = neuro_behavior_options;
-opts.frameSize = .1; % 100 ms framesize for now
-opts.collectFor = 60*60; % Get 45 min
+opts.minActTime = .16;
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 60 * 60; % seconds
+opts.frameSize = .2;
+% opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
+getDataType = 'spikes';
 get_standard_data
 
-%% Create a neural matrix. Each column is a neuron. Each row are spike counts peri-onset of each behavior.
-% behaviorID = [];
-% neuralMatrix = [];
-% periEventTime = -.2 : opts.frameSize : .2; % seconds around onset
-% dataWindow = round(periEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
-% 
-% for iBhv = 1 : length(analyzeCodes)
-%     iStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv)) ./ opts.frameSize);
-%     iStartFrames = iStartFrames(3:end-3);
-%     behaviorID = [behaviorID; analyzeCodes(iBhv) * ones(length(iStartFrames), 1)];
-%     for jStart = 1 : length(iStartFrames)
-%         neuralMatrix = [neuralMatrix; sum(dataMatZ(iStartFrames(jStart) + dataWindow, :))];
-%     end
-% end
+[dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
+
+colors = colors_for_behaviors(codes);
+
+%% What to fit
+forDim = 3;
+iDim = forDim;
+idSelect = idDS;
+selectFrom = 'DS';
+fitType = 'PCA';
+%% Which data to model:
+preInd = [diff(bhvIDMat) ~= 0; 0]; % 1 frame prior to all behavior transitions
+
+%% High-D neral matrix
+modelData = zscore(dataMat);
+
+%%
+
+%% within-bout
+modelInd = ~preInd & ~[preInd(2:end); 0] & ~(bhvID == -1);
+modelID = bhvID(modelInd);
+%% all data
+modelInd = 1:length(bhvIDMat);
+modelID = bhvID;
+
+
+%% Perform PCA
+[coeff, projSelect, ~, ~, explained] = pca(modelData(modelInd, idSelect));
+
+%% Plot results
+if plotFullMap && ~umapTransOnly
+                    colorsForPlot = arrayfun(@(x) colors(x,:), modelID + 2, 'UniformOutput', false);
+                    colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
+                    % colorsForPlot = [.2 .2 .2];
+                    figH = figHFull;
+                    plotPos = [monitorOne(1), 1, monitorOne(3)/2, monitorOne(4)];
+                    % titleM = sprintf('%s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist(x), spread(y), n_neighbors(z));
+                    titleM = sprintf('%s %s bin=%.2f', selectFrom, fitType, opts.frameSize);
+                    % titleM = [selectFrom, ' ', fitType, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
+                    plotFrames = 1:size(projSelect, 1);
+                    plot_3d_scatter
+                end
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 %% Create a neural matrix. Each column is a neuron. Each row are spike counts peri-onset of each behavior.
 behaviorID = [];
