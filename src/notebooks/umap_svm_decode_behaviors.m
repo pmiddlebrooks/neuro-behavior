@@ -1,11 +1,6 @@
 %%                     Compare neuro-behavior in UMAP spaces
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
-    cd '/Users/paulmiddlebrooks/Projects/toolboxes/umapFileExchange (4.4)/umap/'
-else
-    cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
-end
 
 opts = neuro_behavior_options;
 opts.minActTime = .16;
@@ -153,6 +148,13 @@ min_dist = .02;
 spread = 1.3;
 n_neighbors = [6 8 10 12 15];
 n_neighbors = 10;
+
+    if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
+    cd '/Users/paulmiddlebrooks/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+else
+    cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+end
+
     case 'tsne'
         exaggeration = [60 90 120];
         perplexity = [10 30 40 50];
