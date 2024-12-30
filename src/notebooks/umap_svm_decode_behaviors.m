@@ -6,7 +6,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .15;
+opts.frameSize = .2;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
 getDataType = 'spikes';
@@ -56,7 +56,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
 forDim = 3; % Loop through these dimensions to fit UMAP
 lowDModel = 'umap';
-lowDModel = 'tsne';
+% lowDModel = 'tsne';
 newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 umapTransOnly = 0;
 
@@ -72,9 +72,9 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
 % Apply to all:
 % -------------
 analyzePredictions = 0;
-plotFullMap = 1;
+plotFullMap = 0;
 plotFullModelData = 0;
-plotModelData = 1;
+plotModelData = 0;
 plotTransPred = 0; % Predicting transitions based on whatever model you fit
 changeBhvLabels = 0;
 
@@ -99,7 +99,7 @@ downSampleFrames = 0;
 
 selectFrom = 'M56';
 selectFrom = 'DS';
-% selectFrom = 'Both';
+selectFrom = 'Both';
 % selectFrom = 'M23';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -171,10 +171,10 @@ for k = 1:length(forDim)
     % fitType = 'NeuralSpace';
 
 
-    for x = 1:length(exaggeration)
-        for y = 1:length(perplexity)
-    % for x = 1:length(min_dist)
-    %     for y = 1:length(spread)
+    % for x = 1:length(exaggeration)
+    %     for y = 1:length(perplexity)
+    for x = 1:length(min_dist)
+        for y = 1:length(spread)
             for z = 1:length(n_neighbors)
                  disp('=================================================================')
                %% Run UMAPto get projections in low-D space
