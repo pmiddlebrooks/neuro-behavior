@@ -11,11 +11,11 @@ get_standard_data
 
 [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 %% Which data to model
-forDim = 8;
+forDim = 3;
 iDim = forDim;
 idSelect = [idM23 idDS];
 %% Get a low-D representation of dataMat
-lowDModel = 'umap';
+lowDModel = 'tsne';
 switch lowDModel
     case 'umap'
         min_dist = .02;
@@ -60,10 +60,10 @@ modelID = bhvID;
 
 %% Train and test the FFN
 input_dim = size(modelData, 2);
-output_dim = length(unique(modelID));
+output_dim = length(unique(bhvID(modelInd)));
 hidden_layers = [64 32 16];
 activation = 'relu';
-epochs = 20;
+epochs = 25;
 batch_size = 16;
 learning_rate = .001;
 max_trials = 30;
