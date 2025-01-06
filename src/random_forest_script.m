@@ -16,12 +16,16 @@ get_standard_data
 %% Which data to model
 forDim = 3;
 iDim = forDim;
-idSelect = [idM23 idDS];
+idSelect = [idM56 idDS];
 
 
 %% Get a low-D representation of dataMat
-lowDModel = 'tsne';
+
+lowDModel = 'none';
 switch lowDModel
+    case 'none'
+        %% High-D neral matrix
+modelData = zscore(dataMat(:, idSelect));
     case 'umap'
         min_dist = .02;
         spread = 1.3;
@@ -47,20 +51,33 @@ switch lowDModel
         modelData = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration, 'Perplexity', perplexity, 'NumDimensions',iDim);
 end
 
+
+
+
+
+
+
 %% Which data to model:
-preInd = [diff(bhvIDMat) ~= 0; 0]; % 1 frame prior to all behavior transitions
+%FIX ALL THIS USING POSTIND
+
+% preInd = [diff(bhvID) ~= 0; 0]; % 1 frame prior to all behavior transitions
+postInd = [0; diff(bhvID) ~= 0]; % 1 frame prior to all behavior transitions
 
 
-
-%% High-D neral matrix
-modelData = zscore(dataMat(:, idSelect));
-
+%% transitions-only
+modelInd = preInd;
+idInd = [0; preInd(2:end)];
+idInd(bhvID == -1) = 0;  % get rid of in-nest/sleeping
+modelInd([bhvID(2:end) 0] == -1) = 0;
+modelData = modelData(modelInd,:);
+modelID = bhvID(idInd);
 
 %% within-bout
-modelInd = ~preInd & ~[preInd(2:end); 0] & ~(bhvID == -1);
+modelInd = ~preInd & ~[preInd(2:end); 0] & ~(bhvID == -1); % not before or after transition, and not in-nest
+modelData = modelData(modelInd,:);
+modelID = bhvID(modelInd);
 
 %% all data
-modelInd = 1:length(bhvID);
 modelID = bhvID;
 
 
@@ -160,7 +177,7 @@ k(k < 5) = 5;
 
 numTrees = 500; % Define the number of trees
 
-randomForestModel = TreeBagger(numTrees, modelData(modelInd, :), bhvID(modelInd), ...
+randomForestModel = TreeBagger(numTrees, modelData, modelID, ...
     OOBPrediction='On', OOBPredictorImportance='On');
 
 % Calculate OOB Error
