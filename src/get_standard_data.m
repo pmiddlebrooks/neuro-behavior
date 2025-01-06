@@ -74,17 +74,17 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDa
 
 
 
-    % Create bhvIDMat, a vector of ID labels, one element per frame to match the
+    % Create bhvID, a vector of ID labels, one element per frame to match the
     % neural matrix
 
     % Use StartFrame and DurFrame method:
-    bhvIDMat = int8(zeros(nFrame, 1));
+    bhvID = int8(zeros(nFrame, 1));
     for i = 1 : size(dataBhv, 1) - 1
         % iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
         iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
-        bhvIDMat(iInd) = dataBhv.ID(i);
+        bhvID(iInd) = dataBhv.ID(i);
     end
-    bhvIDMat(iInd(end) + 1 : end) = dataBhv.ID(end);
+    bhvID(iInd(end) + 1 : end) = dataBhv.ID(end);
 
 
     % Use majority time in frame method:
@@ -100,7 +100,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDa
     % idFull(end) = dataBhv.ID(end);
     %
     % % 2. Find majority behavior in each opts.frameSize window
-    % for i = 1 : size(bhvIDMat, 1)
+    % for i = 1 : size(bhvID, 1)
     %     % if i == 100
     %     %     disp('here')
     %     % end
@@ -109,7 +109,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDa
     %     iStartFrame = round(1 + iStartTime * opts.fsBhv);
     %     iStopFrame = round(iStopTime * opts.fsBhv);
     %     iID = idFull(iStartFrame : iStopFrame);
-    %     bhvIDMat(i) = mode(iID);
+    %     bhvID(i) = mode(iID);
     % end
 
 
