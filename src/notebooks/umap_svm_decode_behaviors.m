@@ -6,8 +6,10 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .2;
+opts.frameSize = .1;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
+
+opts.minFiringRate = 1;
 
 getDataType = 'spikes';
 get_standard_data
@@ -56,7 +58,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
 forDim = 3; % Loop through these dimensions to fit UMAP
 lowDModel = 'umap';
-% lowDModel = 'tsne';
+lowDModel = 'tsne';
 newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 umapTransOnly = 0;
 
@@ -98,8 +100,8 @@ downSampleFrames = 0;
 
 
 selectFrom = 'M56';
-selectFrom = 'DS';
-selectFrom = 'Both';
+% selectFrom = 'DS';
+% selectFrom = 'Both';
 % selectFrom = 'M23';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -136,6 +138,8 @@ switch selectFrom
         figHFullModel = 284;
 end
 
+
+idSelect = idDS(fStatZ > 25);
 
 % Some figure properties
 allFontSize = 12;
@@ -886,12 +890,14 @@ print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
 
 
 
-load handel
-sound(y(1:round(2.2*Fs)),Fs)
+% load handel
+% sound(y(1:round(2.2*Fs)),Fs)
 
 
 
-
+webhook = 'https://hooks.slack.com/services/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';
+% - Send the notification, with the attached message
+SendSlackNotification(webhook,'Code Done!');
 
 
 
