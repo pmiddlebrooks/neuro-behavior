@@ -6,12 +6,15 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .1;
+opts.frameSize = .2;
 
-getDataType = 'all';
+getDataType = 'spikes';
 get_standard_data
 
 colors = colors_for_behaviors(codes);
+
+[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
+
 
 %% for plotting consistency
 %
@@ -26,8 +29,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
     'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
     'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...
     'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
-%%
-[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
+
 
 
 
@@ -85,7 +87,7 @@ downSampleFrames = 0;
 
 
 selectFrom = 'M56';
-selectFrom = 'DS';
+% selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -135,8 +137,11 @@ allFontSize = 12;
 if newPcaModel
     % rng(1);
     [coeff, score, ~, ~, explained] = pca(dataMat(:, idSelect));
+    % [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
 end
 
+
+%%
 for k = 1:length(forDim)
     iDim = forDim(k);
     fitType = ['PCA ', num2str(iDim), 'D'];
