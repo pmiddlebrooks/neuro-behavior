@@ -6,14 +6,14 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .2;
+opts.frameSize = .1;
 
 getDataType = 'spikes';
 get_standard_data
 
 colors = colors_for_behaviors(codes);
 
-[dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
+[dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 
 
 %% for plotting consistency
@@ -157,7 +157,7 @@ for k = 1:length(forDim)
     % Shift behavior label w.r.t. neural to account for neuro-behavior latency
     shiftSec = 0;
     shiftFrame = ceil(shiftSec / opts.frameSize);
-    bhvID = double(bhvIDMat(1+shiftFrame:end)); % Shift bhvIDMat to account for time shift
+    bhvID = double(bhvID(1+shiftFrame:end)); % Shift bhvIDMat to account for time shift
 
 
     projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat

@@ -139,7 +139,7 @@ switch selectFrom
 end
 
 
-idSelect = idDS(fStatZ > 25);
+% idSelect = idDS(fStatZ > 25);
 
 % Some figure properties
 allFontSize = 12;
