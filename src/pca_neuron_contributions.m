@@ -94,12 +94,23 @@ for b = 1:numBehaviors
 end
 
 %% Example: Plot distributions of contributions for the first neuron
-figure;
-iNeuron = 20;
+iNeuron = 42;
+figure(2222); clf;
+[ax, pos] = tight_subplot(1, numBehaviors, [.04 .01], .1);
+ymax = 0;
 for b = 1:numBehaviors
-    subplot(1, numBehaviors, b);
-    histogram(contributions{iNeuron, b}, 'Normalization', 'pdf');
-    title(['Neuron 1, Behavior ' num2str(uniqueLabels(b))]);
-    xlabel('Contribution');
+            axes(ax(b))
+            if b == 1
     ylabel('Density');
+            end
+    % subplot(1, numBehaviors, b);
+    histogram(contributions{iNeuron, b}, 'Normalization', 'pdf');
+    title(['Nrn ', num2str(iNeuron), ' Bhv ' num2str(uniqueLabels(b))]);
+    xlabel('Contribution');
+    ylimits = ylim;
+    ymax = max(ymax, ylimits(2));
+end
+for b = 1:numBehaviors
+            axes(ax(b))
+            ylim([0 ymax])
 end
