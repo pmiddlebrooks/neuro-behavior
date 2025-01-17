@@ -49,7 +49,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 forDim = 3:8; % Loop through these dimensions to fit pca
 forDim = [3 8]; % Loop through these dimensions to fit UMAP
-newPcaModel = 1; % Do we need to get a new pca model to analyze (or did you tweak some things that come after pca?)
+newPcaModel = 0; % Do we need to get a new pca model to analyze (or did you tweak some things that come after pca?)
 
 
 % Change these (and check their sections below) to determine which
@@ -71,9 +71,9 @@ changeBhvLabels = 0;
 
 % Transition or within variables
 % -------------------------
-transOrWithin = 'trans';
-% transOrWithin = 'within';
-% transOrWithin = 'transVsWithin';  
+% transOrWithin = 'trans';
+transOrWithin = 'within';
+% transOrWithin = 'transVsWithin';
 matchTransitionCount = 0;
 minFramePerBout = 0;
 
@@ -148,8 +148,9 @@ for k = 1:length(forDim)
     % fitType = 'NeuralSpace';
 
 
-    projSelect = score(:, 1:iDim);
-
+    % projSelect = score(:, 1:iDim);
+    projSelect = dataMat(:,idSelect) * coeff;
+projSelect = projSelect(:,1:iDim);
 
 
 
@@ -323,10 +324,10 @@ for k = 1:length(forDim)
             end
         case 'transVsWithin'
             svmID = bhvID;
-svmID(diff(bhvID) ~= 0) = 9;
-svmID(diff(bhvID) == 0) = 12;
-svmID(end) = [];
-svmInd = 1 : length(svmID);
+            svmID(diff(bhvID) ~= 0) = 9;
+            svmID(diff(bhvID) == 0) = 12;
+            svmID(end) = [];
+            svmInd = 1 : length(svmID);
             transWithinLabel = 'trans-vs-within';
 
     end
@@ -344,13 +345,13 @@ svmInd = 1 : length(svmID);
 
     %% Keep track of the behavior IDs you end up using
     if strcmp(transOrWithin, 'transVsWithin')
-    bhv2ModelCodes = [9 12];
-    bhv2ModelNames = {'transitions', 'within'};
-    % bhv2ModelColors = [0 0 1; 1 .33 0];
+        bhv2ModelCodes = [9 12];
+        bhv2ModelNames = {'transitions', 'within'};
+        % bhv2ModelColors = [0 0 1; 1 .33 0];
     else
-    bhv2ModelCodes = unique(svmID);
-    bhv2ModelNames = behaviors(bhv2ModelCodes+2);
-    bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
+        bhv2ModelCodes = unique(svmID);
+        bhv2ModelNames = behaviors(bhv2ModelCodes+2);
+        bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
     end
 
 
@@ -365,7 +366,7 @@ svmInd = 1 : length(svmID);
         figH = figHFullModel;
         % Plot on second monitor, half-width
         plotPos = [monitorTwo(1), 1, monitorTwo(3)/2, monitorTwo(4)];
-        titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];        
+        titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' All Frames' ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
         plotFrames = allBhvModeled;
         plot_3d_scatter
     end
@@ -380,8 +381,8 @@ svmInd = 1 : length(svmID);
         plotPos = [monitorTwo(1) + monitorTwo(3)/2, 1, monitorTwo(3)/2, monitorTwo(4)];
         titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
 
-                plotFrames = svmInd;
-plot_3d_scatter
+        plotFrames = svmInd;
+        plot_3d_scatter
 
     end
 
@@ -579,7 +580,7 @@ sound(y(1:3*Fs),Fs)
 
     %% Analzyze the predictions vs observed
 
-analyze_model_predictions
+    analyze_model_predictions
 
 
     %% This needs to be updated  --------------------------------------------
@@ -687,58 +688,58 @@ analyze_model_predictions
     % lower than in many cases) than the model tested on the test set.
 
     if plotTransitions
-    fprintf('\nPredicting each frame going into transitions:\n')
-    frames = -2 : 4; % 2 frames pre to two frames post transition
+        fprintf('\nPredicting each frame going into transitions:\n')
+        frames = -2 : 4; % 2 frames pre to two frames post transition
 
-    svmIDTest = bhvID(preInd + 1);  % behavior ID being transitioned into
-    svmIndTest = preInd + 1;
+        svmIDTest = bhvID(preInd + 1);  % behavior ID being transitioned into
+        svmIndTest = preInd + 1;
 
-    % Get rid of behaviors you didn't model
-    rmvBhv = setdiff(unique(bhvID), bhv2ModelCodes);
-    deleteInd = ismember(svmIDTest, rmvBhv);
-    svmIDTest(deleteInd) = [];
-    svmIndTest(deleteInd) = [];
+        % Get rid of behaviors you didn't model
+        rmvBhv = setdiff(unique(bhvID), bhv2ModelCodes);
+        deleteInd = ismember(svmIDTest, rmvBhv);
+        svmIDTest(deleteInd) = [];
+        svmIndTest(deleteInd) = [];
 
 
-    accuracyTrans = zeros(length(frames), 1);
-    accuracyPermutedTrans = zeros(length(frames), 1);
-    for iFrame = 1 : length(frames)
-        % Get relevant frame to test (w.r.t. transition frame)
-        iSvmInd = svmIndTest + frames(iFrame);
-        testData = projSelect(iSvmInd, 1:iDim); % pca Dimensions
+        accuracyTrans = zeros(length(frames), 1);
+        accuracyPermutedTrans = zeros(length(frames), 1);
+        for iFrame = 1 : length(frames)
+            % Get relevant frame to test (w.r.t. transition frame)
+            iSvmInd = svmIndTest + frames(iFrame);
+            testData = projSelect(iSvmInd, 1:iDim); % pca Dimensions
 
-        % Calculate and display the overall accuracy (make sure it matches the
-        % original fits to ensure we're modeling the same way)
-        predictedLabels = predict(svmModel, testData);
-        accuracyTrans(iFrame) = sum(predictedLabels == svmIDTest) / length(svmIDTest);
-        fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(iFrame), accuracyTrans(iFrame));
+            % Calculate and display the overall accuracy (make sure it matches the
+            % original fits to ensure we're modeling the same way)
+            predictedLabels = predict(svmModel, testData);
+            accuracyTrans(iFrame) = sum(predictedLabels == svmIDTest) / length(svmIDTest);
+            fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(iFrame), accuracyTrans(iFrame));
 
-        % Calculate and display the overall accuracy (make sure it matches the
-        % original fits to ensure we're modeling the same way)
-        predictedLabelsPermuted = predict(svmModelPermuted, testData);
-        accuracyPermutedTrans(iFrame) = sum(predictedLabelsPermuted == svmIDTest) / length(svmIDTest);
-        % fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(iFrame), accuracyPermuted(iFrame));
+            % Calculate and display the overall accuracy (make sure it matches the
+            % original fits to ensure we're modeling the same way)
+            predictedLabelsPermuted = predict(svmModelPermuted, testData);
+            accuracyPermutedTrans(iFrame) = sum(predictedLabelsPermuted == svmIDTest) / length(svmIDTest);
+            % fprintf('%s %d Frames Overall Accuracy: %.4f%%\n', selectFrom, frames(iFrame), accuracyPermuted(iFrame));
 
-    end
+        end
 
-    goingInPosition = [monitorOne(3)/2, monitorOne(2), monitorOne(3)/3, monitorOne(4)/2.2];
-    fig = figure(67);
-    set(fig, 'Position', goingInPosition); clf; hold on;
-    % bar(codes(2:end), f1Score);
-    % xticks(0:codes(end))
-    plot(frames, accuracyTrans, '-o', 'color', 'blue', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'blue', 'LineWidth', 1.5);
-    plot(frames, accuracyPermutedTrans, '-o', 'color', 'red', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'red', 'LineWidth', 1.5);
-    set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
-    set(findall(fig,'-property','Box'),'Box','off') % optional
-    xticks(frames)
-    ylim([0 1])
-    ylabel('Accuracy')
-    xlabel('Frames relative to transition')
-    xline(0)
-    titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Accuracy into transitions'];
-    title(titleE)
-    % saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
-    print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
+        goingInPosition = [monitorOne(3)/2, monitorOne(2), monitorOne(3)/3, monitorOne(4)/2.2];
+        fig = figure(67);
+        set(fig, 'Position', goingInPosition); clf; hold on;
+        % bar(codes(2:end), f1Score);
+        % xticks(0:codes(end))
+        plot(frames, accuracyTrans, '-o', 'color', 'blue', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'blue', 'LineWidth', 1.5);
+        plot(frames, accuracyPermutedTrans, '-o', 'color', 'red', 'MarkerFaceColor', 'none', 'MarkerEdgeColor', 'red', 'LineWidth', 1.5);
+        set(findall(fig,'-property','FontSize'),'FontSize',allFontSize) % adjust fontsize to your document
+        set(findall(fig,'-property','Box'),'Box','off') % optional
+        xticks(frames)
+        ylim([0 1])
+        ylabel('Accuracy')
+        xlabel('Frames relative to transition')
+        xline(0)
+        titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Accuracy into transitions'];
+        title(titleE)
+        % saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
+        print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
 
     end
     % %% Use the model to predict all within-behavior frames
@@ -777,3 +778,129 @@ analyze_model_predictions
 
 
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%% Get mean of within-trial behaivors and check how low-D it is (averaging removes bout-by-bout "noise")
+idSelect = idM56;
+
+preInd = [diff(bhvID) ~= 0; 0]; % 1 frame prior to all behavior transitions
+withinInd = ~preInd & ~[0; preInd(1:end-1)];
+modelID = bhvID(find(preInd)+1);
+
+bhvCheck = 15;
+bhvInd = withinInd & bhvID == bhvCheck;
+
+[coeff, score, ~, ~, explained] = pca(dataMat(bhvInd, idSelect));
+
+
+%%
+% Inputs:
+% bhvID: Vector of behavior labels (samples x 1)
+% dataMat: Neural activity matrix (samples x neurons)
+
+% Find all unique behavior IDs
+uniqueBhvIDs = unique(bhvID);
+
+% Preallocate storage
+nBehaviors = length(uniqueBhvIDs);
+medianTrimmedLengths = NaN(1, nBehaviors); % Median trimmed length per behavior
+stackedActivity = []; % To hold vertically stacked averaged activity
+stackedLabels = []; % To track behavior labels for stacked rows
+
+% Loop through each behavior
+for bhvIdx = 1:nBehaviors
+    % Get the current behavior ID
+    bhvCheck = uniqueBhvIDs(bhvIdx);
+    
+    % Find indices of the specified behavior
+    isBhvCheck = (bhvID == bhvCheck);
+    
+    % Identify the start and end indices of each bout
+    boutStart = find(diff([0; isBhvCheck]) == 1); % Start when switching to bhvCheck
+    boutEnd = find(diff([isBhvCheck; 0]) == -1);  % End when switching away from bhvCheck
+    
+    % Filter bouts to include only those with length >= 3
+    validBouts = (boutEnd - boutStart + 1) >= 3;
+    boutStart = boutStart(validBouts);
+    boutEnd = boutEnd(validBouts);
+    
+    % Recalculate number of valid bouts
+    nValidBouts = length(boutStart);
+    
+    % Skip if no valid bouts
+    if nValidBouts == 0
+        continue;
+    end
+    
+    % Compute the trimmed bout lengths (2nd to next-to-last bin)
+    boutLengths = boutEnd - boutStart + 1; % Length of valid bouts
+    trimmedBoutLengths = boutLengths - 2; % Length after trimming
+    medianLength = median(trimmedBoutLengths); % Median trimmed length
+    medianTrimmedLengths(bhvIdx) = medianLength;
+    
+    % Initialize the 3D matrix with NaNs for trimmed bouts
+    neuralDataByBout = NaN(max(trimmedBoutLengths), size(dataMat, 2), nValidBouts);
+    
+    % Loop through each valid bout and collect the neural data
+    for boutIdx = 1:nValidBouts
+        % Get the current bout's start and end indices
+        boutRange = (boutStart(boutIdx) + 1):(boutEnd(boutIdx) - 1); % 2nd to next-to-last bins
+        
+        % Collect neural data for the current bout
+        neuralData = dataMat(boutRange, :);
+        
+        % Assign the neural data into the 3D matrix
+        neuralDataByBout(1:length(boutRange), :, boutIdx) = neuralData;
+    end
+    
+    % Compute the nanmean across bouts
+    meanNeuralActivity = nanmean(neuralDataByBout, 3);
+    
+    % Trim the data to the first `medianLength` time bins
+    trimmedActivity = meanNeuralActivity(1:medianLength, :);
+    
+    % Stack the trimmed activity vertically
+    stackedActivity = [stackedActivity; trimmedActivity];
+    
+    % Track the behavior labels for each row in the stacked activity
+    stackedLabels = [stackedLabels; repmat(bhvCheck, medianLength, 1)];
+end
+
+% Output results
+disp('Stacked activity matrix created.');
+disp('Behavior labels corresponding to rows are saved.');
+
+% Final results:
+% stackedActivity: Vertically stacked averaged neural activity (time bins x neurons)
+% stackedLabels: Corresponding behavior labels for each row in stackedActivity
+
+%%
+[coeff, score, ~, ~, explained] = pca(zscore(stackedActivity(:,idSelect)));
+explained
+
+% modelData = nanmean(neuralDataByBout(1:10, idSelect, :), 3);
+% 
+% [coeff, score, ~, ~, explained] = pca(zscore(modelData));
