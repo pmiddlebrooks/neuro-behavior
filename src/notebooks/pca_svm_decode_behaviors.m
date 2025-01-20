@@ -804,6 +804,8 @@ end
 
 
 %% Get mean of within-trial behaivors and check how low-D it is (averaging removes bout-by-bout "noise")
+
+% Test normal PCA (on all data) to get that explained variance:
 idSelect = idM56;
 
 preInd = [diff(bhvID) ~= 0; 0]; % 1 frame prior to all behavior transitions
@@ -897,9 +899,10 @@ disp('Behavior labels corresponding to rows are saved.');
 % stackedActivity: Vertically stacked averaged neural activity (time bins x neurons)
 % stackedLabels: Corresponding behavior labels for each row in stackedActivity
 
-%%
+%
 [coeff, score, ~, ~, explained] = pca(zscore(stackedActivity(:,idSelect)));
-explained
+
+figure(); plot(cumsum(explained));
 
 % modelData = nanmean(neuralDataByBout(1:10, idSelect, :), 3);
 % 
