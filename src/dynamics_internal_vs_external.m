@@ -1,97 +1,99 @@
-%%
+%% Goal is to determine how much of the dynamics in the data is generated internally
+% versus how much is input from external source.
+% Fit a model with the neural data
+
+
 idSelect = idM56;
-dataModel = zscore(dataMat(:, idSelect));
-% dataModel = zscore(dataMat(:, idSelect(1:3)));
 bhvIDModel = bhvID;
 
+%% Get data based on which model you want to use
+modelType = 'glm'; % 'glm'
+switch modelType
+    case 'glm'
+        dataModel = dataMat(:, idSelect);
+    case 'svr'
+dataModel = zscore(dataMat(:, idSelect));
+end        
+
+%% Or use low-d (pca) projected data (get pca data from pca_svm_decode_behaviors.m)
+    projSelect = dataMat(:,idSelect) * coeff;
+    nDim = find(cumsum(explained) > 90, 1);
+dataModel = projSelect(:,1:nDim);
+%% fitlm was taking too long. Trying GLM (fitglm) or SVR (support vector regression)
 % Inputs:
 % dataModel: Neural activity matrix (samples x neurons)
 
 % Parameters
-maxLag = 2; % Maximum lag for the autoregressive model
+maxLag = 5; % Maximum lag for the autoregressive model
 nSamples = size(dataModel, 1); % Number of samples
 nNeurons = size(dataModel, 2); % Number of neurons
+kernelFunction = 'rbf'; % Radial Basis Function kernel for SVR
 
 % Preallocate results
 varianceInternal = zeros(1, nNeurons); % Variance explained by internal dynamics
 varianceAugmented = zeros(1, nNeurons); % Variance explained by augmented model
-externalInputCell = cell(1, nNeurons); % Temporary storage for external inputs
 
+% SVR options
+svrOptions = struct(...
+    'KernelFunction', kernelFunction, ...
+    'BoxConstraint', 1, ...        % Regularization parameter (adjust as needed)
+    'Epsilon', 0.1);               % Epsilon-tube width for regression
 
-
-% poolID = parpool(4, 'IdleTimeout', Inf);
 % Parallel loop for computation
-% parfor neuronIdx = 1:nNeurons
-for neuronIdx = 1
+for neuronIdx = 1:nNeurons
     tic
-    % Extract the target neuron activity and create a lagged version
-    targetNeuron = dataModel(:, neuronIdx);    
+    % parfor neuronIdx = 1:nNeurons
+    % Extract the target neuron activity
+    targetNeuron = dataModel(:, neuronIdx);
 
-        % Create lagged matrix for autoregressive modeling
+    % Create lagged matrix for autoregressive modeling
     laggedMatrix = lagmatrix(dataModel, 1:maxLag); % Lags for all neurons
     laggedMatrix = laggedMatrix(maxLag+1:end, :); % Remove NaNs due to lagging
-targetNeuronLagged = targetNeuron(maxLag+1:end); % Align target neuron activity
-    
+    targetNeuronLagged = targetNeuron(maxLag+1:end); % Align target neuron activity
+
     % Exclude the target neuron's own data from the lagged matrix
     targetNeuronMask = true(1, nNeurons); % Create a mask
     targetNeuronMask(neuronIdx) = false; % Exclude the current neuron
     laggedMatrix = laggedMatrix(:, targetNeuronMask); % Keep only other neurons' data
-    
-    % Define the loss function for optimization
-    lossFunction = @(u) computeModelLoss(targetNeuronLagged, laggedMatrix, u);
-    
-    % Initialize the external input (random guess)
-    uInit = randn(size(targetNeuronLagged));
-    
 
+    % Generate external predictors (e.g., random noise or other sources)
+    externalPredictors = randn(size(targetNeuronLagged, 1), 2); % Two external predictors as example
 
+    switch modelType
+        case 'glm'
+            % Model 1: Internal dynamics only
+            mdlInternal = fitglm(laggedMatrix, targetNeuronLagged, 'Distribution', 'poisson'); % GLM with Gaussian
+            varianceInternal(neuronIdx) = 1 - mdlInternal.Rsquared.Ordinary; % Residual variance explained
 
-    % Trying alternatives to speed up fitting the external input
+            % Model 2: Internal dynamics + external predictors
+            mdlAugmented = fitglm([laggedMatrix, externalPredictors], targetNeuronLagged, 'Distribution', 'poisson');
+            varianceAugmented(neuronIdx) = 1 - mdlAugmented.Rsquared.Ordinary; % Residual variance explained
 
-    % Optimize the external input
-% Optimization options
-% optimOptions = optimoptions('fminunc', 'Display', 'off', 'Algorithm', 'quasi-newton','MaxIterations',20);
-    % [uOptimized, ~] = fminunc(lossFunction, uInit, optimOptions);
+        case 'svr'
+            % Model 1: Internal dynamics only
+            mdlInternal = fitrsvm(laggedMatrix, targetNeuronLagged, ...
+                'KernelFunction', svrOptions.KernelFunction, ...
+                'BoxConstraint', svrOptions.BoxConstraint, ...
+                'Epsilon', svrOptions.Epsilon);
+            predictedInternal = predict(mdlInternal, laggedMatrix);
+            residualsInternal = targetNeuronLagged - predictedInternal;
+            varianceInternal(neuronIdx) = 1 - (var(residualsInternal) / var(targetNeuronLagged)); % Variance explained
 
-%     optimOptions = optimoptions('fmincon', 'Algorithm', 'interior-point', ...
-%                             'Display', 'off', 'MaxIterations', 100);
-% lb = -10 * ones(size(uInit)); % Lower bound
-% ub = 10 * ones(size(uInit)); % Upper bound
-% [uOptimized, ~] = fmincon(lossFunction, uInit, [], [], [], [], lb, ub, [], optimOptions);
+            % Model 2: Internal dynamics + external predictors
+            mdlAugmented = fitrsvm([laggedMatrix, externalPredictors], targetNeuronLagged, ...
+                'KernelFunction', svrOptions.KernelFunction, ...
+                'BoxConstraint', svrOptions.BoxConstraint, ...
+                'Epsilon', svrOptions.Epsilon);
+            predictedAugmented = predict(mdlAugmented, [laggedMatrix, externalPredictors]);
+            residualsAugmented = targetNeuronLagged - predictedAugmented;
+            varianceAugmented(neuronIdx) = 1 - (var(residualsAugmented) / var(targetNeuronLagged)); % Variance explained
+    end
 
-
-[uOptimized, ~] = fminsearch(lossFunction, uInit, optimset('Display', 'off'));
-
-    toc
-
-
-
-
-
-
-    % Store results in temporary variables
-    externalInputCell{neuronIdx} = uOptimized; % Optimized external input
-    
-    % Model 1: Internal dynamics only
-    mdlInternal = fitlm(laggedMatrix, targetNeuronLagged); % Linear model
-    varianceInternal(neuronIdx) = 1 - mdlInternal.Rsquared.Ordinary; % Residual variance explained
-    toc
-    % Model 2: Internal dynamics + estimated external input
-    mdlAugmented = fitlm([laggedMatrix, uOptimized], targetNeuronLagged);
-    varianceAugmented(neuronIdx) = 1 - mdlAugmented.Rsquared.Ordinary; % Residual variance explained
-    toc
+    disp(toc)
 end
-% delete(poolID)
-
-% Combine results from the cell array
-externalInputEstimated = NaN(nSamples, nNeurons);
-for neuronIdx = 1:nNeurons
-    externalInputEstimated(maxLag+1:end, neuronIdx) = externalInputCell{neuronIdx};
-end
-
 % Compare variance explained
-totalVariance = 1 - varianceInternal; % Total variance explained by internal dynamics
-externalVariance = totalVariance - (1 - varianceAugmented); % Variance explained by external input
+totalVariance = varianceInternal; % Total variance explained by internal dynamics
+externalVariance = varianceAugmented - totalVariance; % Variance explained by external input
 
 % Output results
 disp('Variance explained by internal dynamics:');
@@ -104,14 +106,6 @@ figure;
 bar([mean(totalVariance), mean(externalVariance)]);
 set(gca, 'XTickLabel', {'Internal Dynamics', 'External Input'});
 ylabel('Variance Explained');
-title('Variance Partitioning with Estimated External Input');
+title('Variance Partitioning with GLM');
 
-% Subfunction to compute model loss
-function loss = computeModelLoss(target, laggedMatrix, externalInput)
-    % Fit a linear model with internal dynamics and external input
-    mdl = fitlm([laggedMatrix, externalInput], target);
-    % Compute the residual sum of squares (RSS) as the loss
-    residuals = target - mdl.Fitted;
-    loss = sum(residuals.^2);
-end
 

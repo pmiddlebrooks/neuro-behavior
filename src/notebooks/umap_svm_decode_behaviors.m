@@ -58,7 +58,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
 forDim = 3; % Loop through these dimensions to fit UMAP
 lowDModel = 'umap';
-lowDModel = 'tsne';
+% lowDModel = 'tsne';
 newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 umapTransOnly = 0;
 
@@ -188,8 +188,13 @@ for k = 1:length(forDim)
                 fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
                             umapFrameSize = opts.frameSize;
                             rng(1);
-                            [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                            % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                            %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+
+                            [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID);
+                            [~, umap, ~, ~] = run_umap(zscore(stackedActivity(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                 'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+                            projSelect = umap.transform(zscore(dataMat(:, idSelect)));
                             pause(4); close
                         case 'tsne'
                 fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
