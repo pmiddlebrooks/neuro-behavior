@@ -9,7 +9,7 @@ opts.collectFor = 60 * 60; % seconds
 opts.frameSize = .1;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
-opts.minFiringRate = 1;
+opts.minFiringRate = .5;
 
 getDataType = 'spikes';
 get_standard_data
@@ -56,7 +56,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % Select which data to run analyses on, UMAP dimensions, etc
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
-forDim = 3; % Loop through these dimensions to fit UMAP
+forDim = 8; % Loop through these dimensions to fit UMAP
 lowDModel = 'umap';
 % lowDModel = 'tsne';
 newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
