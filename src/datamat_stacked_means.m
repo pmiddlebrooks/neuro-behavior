@@ -1,4 +1,4 @@
-function [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID)
+function [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID, minFrames)
 %%
 % Inputs:
 % bhvID: Vector of behavior labels (samples x 1)
@@ -29,8 +29,8 @@ for bhvIdx = 1:nBehaviors
     boutStart = find(diff([0; isBhvCheck]) == 1); % Start when switching to bhvCheck
     boutEnd = find(diff([isBhvCheck; 0]) == -1);  % End when switching away from bhvCheck
     
-    % Filter bouts to include only those with length >= 3
-    validBouts = (boutEnd - boutStart + 1) >= 3;
+    % Filter bouts to include only those with length >= minFrames
+    validBouts = (boutEnd - boutStart + 1) >= minFrames;
     boutStart = boutStart(validBouts);
     boutEnd = boutEnd(validBouts);
     
@@ -44,8 +44,8 @@ for bhvIdx = 1:nBehaviors
     
     % Compute the trimmed bout lengths (2nd to next-to-last bin)
     boutLengths = boutEnd - boutStart + 1; % Length of valid bouts
-    trimmedBoutLengths = boutLengths - 2; % Length after trimming
-    medianLength = median(trimmedBoutLengths); % Median trimmed length
+    trimmedBoutLengths = boutLengths - 0; % Length after trimming
+    medianLength = median(trimmedBoutLengths(trimmedBoutLengths >= minFrames)); % Median trimmed length
     medianTrimmedLengths(bhvIdx) = medianLength;
     
     % Initialize the 3D matrix with NaNs for trimmed bouts
@@ -54,7 +54,7 @@ for bhvIdx = 1:nBehaviors
     % Loop through each valid bout and collect the neural data
     for boutIdx = 1:nValidBouts
         % Get the current bout's start and end indices
-        boutRange = (boutStart(boutIdx) + 1):(boutEnd(boutIdx) - 1); % 2nd to next-to-last bins
+        boutRange = (boutStart(boutIdx)):(boutEnd(boutIdx) - 1); % 1st to next-to-last bins
         
         % Collect neural data for the current bout
         neuralData = dataMat(boutRange, :);

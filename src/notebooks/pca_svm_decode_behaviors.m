@@ -6,7 +6,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .1;
+opts.frameSize = .2;
 
 getDataType = 'spikes';
 get_standard_data
@@ -16,7 +16,7 @@ colors = colors_for_behaviors(codes);
 [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 
 
-%% for plotting consistency
+% for plotting consistency
 %
 monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
@@ -24,7 +24,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 
 
-%%
+%
 bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
     'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
     'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...
@@ -49,7 +49,8 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 forDim = 3:8; % Loop through these dimensions to fit pca
 forDim = [3 8]; % Loop through these dimensions to fit UMAP
-newPcaModel = 0; % Do we need to get a new pca model to analyze (or did you tweak some things that come after pca?)
+forDim = 3; % Loop through these dimensions to fit UMAP
+newPcaModel = 1; % Do we need to get a new pca model to analyze (or did you tweak some things that come after pca?)
 usePCAFromMeans = 1;
 
 % Change these (and check their sections below) to determine which
@@ -63,7 +64,7 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
 
 % Apply to all:
 % -------------
-plotFullMap = 0;
+plotFullMap = 1;
 plotFullModelData = 0;
 plotModelData = 1;
 plotTransitions = 0;
@@ -74,6 +75,7 @@ changeBhvLabels = 0;
 % transOrWithin = 'trans';
 transOrWithin = 'within';
 % transOrWithin = 'transVsWithin';
+firstNFrames = 0;
 matchTransitionCount = 0;
 minFramePerBout = 0;
 
@@ -82,7 +84,7 @@ minFramePerBout = 0;
 collapseBhv = 0;
 minBoutNumber = 0;
 downSampleBouts = 0;
-minFrames = 0;
+minTotalFrames = 0;
 downSampleFrames = 0;
 
 
@@ -135,11 +137,20 @@ allFontSize = 12;
 
 % Run PCA to get projections in low-D space
 if newPcaModel
-    % rng(1);
-    [coeff, score, ~, ~, explained] = pca(dataMat(:, idSelect));
-    % [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
-end
+    if usePCAFromMeans
+        minFrames = 2;
+        [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat(:, idSelect), bhvID, minFrames);
+        [coeff, score, ~, ~, explained] = pca(stackedActivity);
+        forDim = find(cumsum(explained) > 75, 1);
 
+    else
+        % rng(1);
+        [coeff, score, ~, ~, explained] = pca(dataMat(:, idSelect));
+        % [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+        forDim = find(cumsum(explained) > 75, 1);
+    end
+end
+forDim = 19;
 
 %%
 for k = 1:length(forDim)
@@ -147,13 +158,13 @@ for k = 1:length(forDim)
     fitType = ['PCA ', num2str(iDim), 'D'];
     % fitType = 'NeuralSpace';
 
-if usePCAFromMeans
-    warning('You are using PCA projections from mean neural activity within each bout')
-    projSelect = dataMat(:,idSelect) * coeff;
-projSelect = projSelect(:,1:iDim);
-else
+    if usePCAFromMeans
+        warning('You are using PCA projections from mean neural activity within each bout')
+        projSelect = dataMat(:,idSelect) * coeff;
+        projSelect = projSelect(:,1:iDim);
+    else
         projSelect = score(:, 1:iDim);
-end
+    end
 
 
     %% --------------------------------------------
@@ -526,7 +537,7 @@ sound(y(1:3*Fs),Fs)
 
     % Calculate and display the overall accuracy
     accuracy(k) = sum(predictedLabels == testLabels) / length(testLabels);
-    fprintf('%s %s Overall Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy(k));
+    fprintf('%s %s Overall Accuracy: %.4f\n', selectFrom, transWithinLabel, accuracy(k));
 
     fprintf('Model fit took %.2f min\n', toc/60)
 
@@ -562,9 +573,12 @@ sound(y(1:3*Fs),Fs)
 
         % Calculate the permuted accuracy
         accuracyPermuted(k, iPerm) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
-        fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f%%\n', selectFrom, transWithinLabel, k, accuracyPermuted(k, iPerm));
+        fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f\n', selectFrom, transWithinLabel, k, accuracyPermuted(k, iPerm));
 
     end
+
+    fprintf('Mean Permuted = %.4f\n', mean(accuracyPermuted(k, :)));
+
     modelName = ['svmModelPermuted', appendModelName];
     % Reassign the value of modelName to the new variable name using eval
     eval([modelName, ' = svmModelPermuted;']);
@@ -577,6 +591,9 @@ sound(y(1:3*Fs),Fs)
     %     load handel
     % sound(y(1:3*Fs),Fs)
 
+webhook = 'https://hooks.slack.com/services/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';
+% - Send the notification, with the attached message
+SendSlackNotification(webhook,'Code Done!');
 
 
 
@@ -817,17 +834,24 @@ modelID = bhvID(find(preInd)+1);
 bhvCheck = 15;
 bhvInd = withinInd & bhvID == bhvCheck;
 
-[coeff, score, ~, ~, explained] = pca(dataMat(bhvInd, idSelect));
-
+[coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+figure(); plot(cumsum(explained));
+xlabel('PCA components');
+ylabel('Explained')
+xline(find(cumsum(explained) > 75, 1))
 %%
-[stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID);
+[stackedActivity, stackedLabels] = datamat_stacked_means(zscore(dataMat), bhvID);
 
 
 %
-[coeff, score, ~, ~, explained] = pca(zscore(stackedActivity(:,idSelect)));
+% [coeff, score, ~, ~, explained] = pca(zscore(stackedActivity(:,idSelect)));
+[coeff, score, ~, ~, explained] = pca(stackedActivity(:,idSelect));
 
 figure(); plot(cumsum(explained));
+xlabel('PCA components');
+ylabel('Explained')
+xline(find(cumsum(explained) > 75, 1))
 
 % modelData = nanmean(neuralDataByBout(1:10, idSelect, :), 3);
-% 
+%
 % [coeff, score, ~, ~, explained] = pca(zscore(modelData));

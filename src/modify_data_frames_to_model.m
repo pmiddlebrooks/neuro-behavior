@@ -169,7 +169,7 @@ if downSampleBouts
 end
 
 %% REMOVE OF ENTIRE BEHAVIORS WITH UNDER A MINIMUM NUMBER OF FRAMES/DATA POINTS
-if minFrames
+if minTotalFrames
     nMinFrames = 100;
 
     [uniqueVals, ~, idx] = unique(svmID); % Find unique integers and indices
