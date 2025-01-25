@@ -191,11 +191,12 @@ for k = 1:length(forDim)
                             % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                             %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
 
-                            [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID);
+        minFrames = 2;
+                            [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID, minFrames);
                             [~, umap, ~, ~] = run_umap(zscore(stackedActivity(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                 'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
                             projSelect = umap.transform(zscore(dataMat(:, idSelect)));
-                            pause(4); close
+                            pause(2); close
                         case 'tsne'
                 fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
                             projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration(x), 'Perplexity', perplexity(y), 'NumDimensions',iDim);
