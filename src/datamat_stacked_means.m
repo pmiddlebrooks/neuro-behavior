@@ -45,7 +45,7 @@ for bhvIdx = 1:nBehaviors
     % Compute the trimmed bout lengths (2nd to next-to-last bin)
     boutLengths = boutEnd - boutStart + 1; % Length of valid bouts
     trimmedBoutLengths = boutLengths - 0; % Length after trimming
-    medianLength = median(trimmedBoutLengths(trimmedBoutLengths >= minFrames)); % Median trimmed length
+    medianLength = round(median(trimmedBoutLengths(trimmedBoutLengths >= minFrames))); % Median trimmed length
     medianTrimmedLengths(bhvIdx) = medianLength;
     
     % Initialize the 3D matrix with NaNs for trimmed bouts

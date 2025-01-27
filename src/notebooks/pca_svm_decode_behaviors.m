@@ -6,7 +6,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .2;
+opts.frameSize = .1;
 
 getDataType = 'spikes';
 get_standard_data
@@ -89,7 +89,7 @@ downSampleFrames = 0;
 
 
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -139,7 +139,8 @@ allFontSize = 12;
 if newPcaModel
     if usePCAFromMeans
         minFrames = 2;
-        [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat(:, idSelect), bhvID, minFrames);
+        % [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat(:, idSelect), bhvID, minFrames);
+        [stackedActivity, stackedLabels] = datamat_stacked_means(zscore(dataMat(:, idSelect)), bhvID, minFrames);
         [coeff, score, ~, ~, explained] = pca(stackedActivity);
         forDim = find(cumsum(explained) > 75, 1);
 
@@ -150,7 +151,7 @@ if newPcaModel
         forDim = find(cumsum(explained) > 75, 1);
     end
 end
-forDim = 19;
+% forDim = 26;
 
 %%
 for k = 1:length(forDim)
@@ -591,10 +592,7 @@ sound(y(1:3*Fs),Fs)
     %     load handel
     % sound(y(1:3*Fs),Fs)
 
-webhook = 'https://hooks.slack.com/services/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';
-% - Send the notification, with the attached message
-SendSlackNotification(webhook,'Code Done!');
-
+slack_code_done
 
 
     %% Analzyze the predictions vs observed
