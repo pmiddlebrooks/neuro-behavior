@@ -162,3 +162,157 @@ end
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% Example Input
+% bhvID = randi([1, 5], 1, 1000); % Example behavior labels (1 to 5) over 1000 time points
+
+%%
+allLabels = unique(bhvID);
+time = 1:length(bhvID);        % Time vector
+
+% Parameters
+windowSizes = [10, 50, 100];   % Multi-resolution window sizes
+overlapFraction = 0.5;         % Fraction of overlap between windows
+
+% Preallocate Results
+segmentationResults = cell(length(windowSizes), 1);
+
+%% Multi-Resolution Segmentation
+for wIdx = 1:length(windowSizes)
+    windowSize = windowSizes(wIdx);
+    stepSize = round(windowSize * (1 - overlapFraction));
+    boundaries = []; % Store segment boundaries
+    prevDistribution = []; % Initialize previous distribution
+    
+    % Loop through the sequence
+    for startIdx = 1:stepSize:(length(bhvID) - windowSize + 1)
+        % Define the current window
+        window = bhvID(startIdx:(startIdx + windowSize - 1));
+        
+        % Compute the distribution of categories in the window
+        distribution = histcounts(window, [allLabels', max(allLabels)], 'Normalization', 'probability');
+        
+        % Compare to previous window (if not the first)
+        if ~isempty(prevDistribution)
+            % Compute the difference between this and the previous distribution
+            diffDist = abs(distribution - prevDistribution);
+            
+            % Set a threshold to detect boundaries
+            if max(diffDist) > 0.5 % Change this threshold as needed
+                boundaries = [boundaries, startIdx]; %#ok<AGROW>
+            end
+        end
+        
+        % Update the previous distribution
+        prevDistribution = distribution;
+    end
+    
+    % Save segmentation results
+    segmentationResults{wIdx} = boundaries;
+end
+
+%% Visualization
+figure;
+
+% Plot the original behavior sequence
+subplot(length(windowSizes)+1, 1, 1);
+plot(time, double(bhvID), 'k');
+title('Original Behavior Sequence');
+xlabel('Time');
+ylabel('Behavior Labels');
+
+% Plot segmentation results at each resolution
+for wIdx = 1:length(windowSizes)
+    subplot(length(windowSizes)+1, 1, wIdx+1);
+    hold on;
+    plot(time, double(bhvID), 'k');
+    for b = segmentationResults{wIdx}
+        xline(b, '--r', 'LineWidth', 1.5); % Mark boundaries
+    end
+    title(['Segmentation with Window Size ', num2str(windowSizes(wIdx))]);
+    xlabel('Time');
+    ylabel('Behavior Labels');
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%% Example Input
+% bhvID = categorical(randi([1, 5], 1, 1000)); % Categorical behavior labels (1 to 5)
+
+% Parameters
+allLabels = unique(bhvID);  % All unique behaviors (nodes in the graph)
+numLabels = numel(allLabels);
+
+% Transition Matrix Construction
+transitionMatrix = zeros(numLabels); % Initialize transition matrix
+for i = 1:(length(bhvID) - 1)
+    fromIdx = find(allLabels == bhvID(i));       % Index of current behavior
+    toIdx = find(allLabels == bhvID(i + 1));    % Index of next behavior
+    transitionMatrix(fromIdx, toIdx) = transitionMatrix(fromIdx, toIdx) + 1;
+end
+
+% Normalize the Transition Matrix
+rowSums = sum(transitionMatrix, 2); % Row sums for normalization
+validRows = rowSums > 0;            % Identify rows with valid transitions
+normalizedMatrix = transitionMatrix; % Initialize normalized matrix
+normalizedMatrix(validRows, :) = normalizedMatrix(validRows, :) ./ rowSums(validRows);
+
+% Graph Construction
+% Extract edges from the normalized transition matrix
+[s, t, weights] = find(normalizedMatrix); % Nonzero entries as edges
+behaviorGraph = digraph(s, t, weights, string(allLabels)); % Create directed graph
+
+% Community Detection (Louvain Method)
+% Convert the graph to an undirected version for community detection
+undirectedGraph = graph(normalizedMatrix + normalizedMatrix'); % Symmetric adjacency
+communities = conncomp(undirectedGraph); % Connected components (simplified community detection)
+
+% Plot the Graph with Communities
+figure;
+plot(behaviorGraph, 'Layout', 'force', ...
+    'NodeLabel', string(allLabels), ...
+    'EdgeColor', [0.5, 0.5, 0.5], ...
+    'NodeCData', communities, ...
+    'LineWidth', 2);
+colorbar;
+title('Behavior Transition Graph with Community Detection');
+xlabel('Communities are indicated by node colors');
+
+% Output Results
+disp('Transition Matrix:');
+disp(array2table(transitionMatrix, 'VariableNames', string(allLabels), 'RowNames', string(allLabels)));
+
+disp('Community Assignments:');
+for i = 1:numLabels
+    fprintf('Behavior %s is in Community %d\n', string(allLabels(i)), communities(i));
+end
