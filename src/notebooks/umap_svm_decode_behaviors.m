@@ -9,7 +9,7 @@ opts.collectFor = 60 * 60; % seconds
 opts.frameSize = .1;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
-opts.minFiringRate = .5;
+opts.minFiringRate = .75;
 
 getDataType = 'spikes';
 get_standard_data
@@ -22,7 +22,7 @@ get_standard_data
 
 colors = colors_for_behaviors(codes);
 
-%% for plotting consistency
+% for plotting consistency
 %
 monitorPositions = get(0, 'MonitorPositions');
 if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
@@ -75,7 +75,7 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
 % -------------
 analyzePredictions = 0;
 plotFullMap = 0;
-plotFullModelData = 0;
+plotFullModelData = 1;
 plotModelData = 0;
 plotTransPred = 0; % Predicting transitions based on whatever model you fit
 changeBhvLabels = 0;
@@ -83,7 +83,7 @@ changeBhvLabels = 0;
 % Transition or within variables
 % -------------------------
 transOrWithin = 'trans';
-% transOrWithin = 'within';
+transOrWithin = 'within';
 % transOrWithin = 'all';
 % transOrWithin = 'transVsWithin';
 firstNFrames = 0;
@@ -146,18 +146,18 @@ allFontSize = 12;
 
 switch lowDModel
     case 'umap'
-min_dist = (.1 : .1 : .5);
-min_dist = (.01 : .03 : .1);
-min_dist = .02;
-spread = 1.3;
-n_neighbors = [6 8 10 12 15];
-n_neighbors = 10;
+        min_dist = (.1 : .1 : .5);
+        min_dist = (.01 : .03 : .1);
+        min_dist = .02;
+        spread = 1.3;
+        n_neighbors = [6 8 10 12 15];
+        n_neighbors = 10;
 
-    if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
-    cd '/Users/paulmiddlebrooks/Projects/toolboxes/umapFileExchange (4.4)/umap/'
-else
-    cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
-end
+        if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
+            cd '/Users/paulmiddlebrooks/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+        else
+            cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
+        end
 
     case 'tsne'
         exaggeration = [60 90 120];
@@ -180,25 +180,34 @@ for k = 1:length(forDim)
     for x = 1:length(min_dist)
         for y = 1:length(spread)
             for z = 1:length(n_neighbors)
-                 disp('=================================================================')
-               %% Run UMAPto get projections in low-D space
+                disp('=================================================================')
+                %% Run UMAPto get projections in low-D space
                 if newLowDModel && ~umapTransOnly
                     switch lowDModel
                         case 'umap'
-                fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
+                            fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
                             umapFrameSize = opts.frameSize;
                             rng(1);
+
+                            warning('Function: %s, Line: %d - Using PCA before UMAP.', mfilename, dbstack(1).line);
+                            [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+                            expVar = 75;
+                            dimExplained = find(cumsum(explained) > expVar, 1);
+
+                            [projSelect, ~, ~, ~] = run_umap(score(:, 1:dimExplained), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                                'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+
                             % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                             %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
 
-        minFrames = 2;
-                            [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID, minFrames);
-                            [~, umap, ~, ~] = run_umap(zscore(stackedActivity(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
-                                'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
-                            projSelect = umap.transform(zscore(dataMat(:, idSelect)));
+                            % minFrames = 2;
+                            %                     [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID, minFrames);
+                            %                     [~, umap, ~, ~] = run_umap(zscore(stackedActivity(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                            %                         'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+                            %                     projSelect = umap.transform(zscore(dataMat(:, idSelect)));
                             pause(2); close
                         case 'tsne'
-                fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
+                            fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
                             projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration(x), 'Perplexity', perplexity(y), 'NumDimensions',iDim);
                     end
                 end
@@ -454,6 +463,7 @@ for k = 1:length(forDim)
                     plotFrames = allBhvModeled;
                     plot_3d_scatter
                 end
+                copy_figure_to_clipboard
 
                 %% Plot data to model
                 if plotModelData
@@ -570,18 +580,18 @@ sound(y(1:3*Fs),Fs)
 
 
                 % UMAP dimension version
-                % fprintf('\n\n%s %s %s %d Dim\n\n', selectFrom, lowDModel, transWithinLabel, iDim)  % UMAP Dimensions
+                fprintf('\n\n%s %s %s %d Dim\n\n', selectFrom, lowDModel, transWithinLabel, iDim)  % UMAP Dimensions
                 % Choose which data to model
-                % svmProj = projSelect(svmInd, :);
-                % trainData = svmProj(training(cv), :);  % UMAP Dimensions
-                % testData = svmProj(test(cv), :); % UMAP Dimensions
+                svmProj = projSelect(svmInd, :);
+                trainData = svmProj(training(cv), :);  % UMAP Dimensions
+                testData = svmProj(test(cv), :); % UMAP Dimensions
 
 
-                % % Neural space version
-                fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
-                svmProj = zscore(dataMat(svmInd, idSelect));
-                trainData = svmProj(training(cv), :);  % Neural Space
-                testData = svmProj(test(cv), :); % Neural Space
+                % % % Neural space version
+                % fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
+                % svmProj = zscore(dataMat(svmInd, idSelect));
+                % trainData = svmProj(training(cv), :);  % Neural Space
+                % testData = svmProj(test(cv), :); % Neural Space
 
 
 
