@@ -56,7 +56,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % Select which data to run analyses on, UMAP dimensions, etc
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
-forDim = 8; % Loop through these dimensions to fit UMAP
+forDim = 3; % Loop through these dimensions to fit UMAP
 lowDModel = 'umap';
 % lowDModel = 'tsne';
 newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
@@ -167,6 +167,26 @@ end
 modelAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
 permAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
 
+
+
+
+
+
+
+% PCA testing....
+                            [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+expVarThresh = [10 20 30 50 70 90];
+pcaDim = zeros(1, length(expVarThresh));
+expVar = zeros(1, length(expVarThresh));
+for p = 1:length(expVar)
+    expVar(p) = find(cumsum(explained) > expVarThresh(p), 1);
+pcaDim(p) = find(cumsum(explained) > expVarThresh(p), 1);
+end
+
+
+
+for p = 1 : length(pcaDim)
+
 for k = 1:length(forDim)
 
 
@@ -190,11 +210,12 @@ for k = 1:length(forDim)
                             rng(1);
 
                             warning('Function: %s, Line: %d - Using PCA before UMAP.', mfilename, dbstack(1).line);
-                            [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
-                            expVar = 75;
-                            dimExplained = find(cumsum(explained) > expVar, 1);
-
-                            [projSelect, ~, ~, ~] = run_umap(score(:, 1:dimExplained), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                            % [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+                            % expVarThresh = 25;
+                            % dimExplained = find(cumsum(explained) > expVarThresh, 1);
+                            % expVar = sum(explained(1:pcaDim(p)));
+disp(['PCA: Exp Var = ', num2str(expVar(p)), ' nComponents = ', num2str(pcaDim(p))])
+                            [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(p)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                 'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
 
                             % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
@@ -881,13 +902,27 @@ sound(y(1:3*Fs),Fs)
 
 end
 
+end
+
+
+figure(92); clf; hold on;
+plot(expVar, accuracy, '-b');
+plot(expVar, mean(accuracyPermuted, 1), '-r');
+plot(expVar, accuracy - mean(accuracyPermuted, 1), '--k');
+legend({'Accuracy', 'Permuted', 'Difference'})
+
+
+
+
+
+
 
 
 % Plot the accuracy results per dimension
 
 
 
-
+if analyzePredictions
 perDimPosition = [monitorOne(3)/2, monitorOne(4)/2.2, monitorOne(3)/3, monitorOne(4)/2.2];
 fig = figure(65);
 set(fig, 'Position', perDimPosition); clf; hold on;
@@ -903,7 +938,7 @@ titleE = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' Accuracy per dimens
 title(titleE);
 % saveas(gcf, fullfile(paths.figurePath, [titleE, '.png']), 'png')
 print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
-
+end
 
 
 % load handel
@@ -911,10 +946,7 @@ print('-dpdf', fullfile(paths.figurePath, [titleE, '.pdf']), '-bestfit')
 
 
 
-webhook = 'https://hooks.slack.com/services/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';
-% - Send the notification, with the attached message
-SendSlackNotification(webhook,'Code Done!');
-
+slack_code_done
 
 
 

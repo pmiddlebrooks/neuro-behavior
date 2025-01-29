@@ -51,19 +51,16 @@ forDim = 3:8; % Loop through these dimensions to fit pca
 forDim = [3 8]; % Loop through these dimensions to fit UMAP
 forDim = 3; % Loop through these dimensions to fit UMAP
 newPcaModel = 1; % Do we need to get a new pca model to analyze (or did you tweak some things that come after pca?)
-usePCAFromMeans = 1;
+usePCAFromMeans = 0;
 
 % Change these (and check their sections below) to determine which
 % variables to test
 % ==========================
 
-% Modeling variables
-nPermutations = 2; % How many random permutations to run to compare with best fit model?
-accuracy = zeros(length(forDim), 1);
-accuracyPermuted = zeros(length(forDim), nPermutations);
 
 % Apply to all:
 % -------------
+analyzePredictions = 0;
 plotFullMap = 1;
 plotFullModelData = 0;
 plotModelData = 1;
@@ -146,12 +143,26 @@ if newPcaModel
 
     else
         % rng(1);
-        [coeff, score, ~, ~, explained] = pca(dataMat(:, idSelect));
-        % [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+        % [coeff, score, ~, ~, explained] = pca(dataMat(:, idSelect));
+        [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
         forDim = find(cumsum(explained) > 75, 1);
     end
 end
+expVarThresh = [10 20 30 50 70 90];
+forDim = zeros(1, length(expVarThresh));
+expVar = zeros(1, length(expVarThresh));
+for i = 1:length(expVar)
+    expVar(i) = find(cumsum(explained) > expVarThresh(i), 1);
+forDim(i) = find(cumsum(explained) > expVarThresh(i), 1);
+end
 % forDim = 26;
+
+
+% Modeling variables
+nPermutations = 3; % How many random permutations to run to compare with best fit model?
+accuracy = zeros(length(forDim), 1);
+accuracyPermuted = zeros(length(forDim), nPermutations);
+
 
 %%
 for k = 1:length(forDim)
@@ -596,9 +607,9 @@ slack_code_done
 
 
     %% Analzyze the predictions vs observed
-
+                if analyzePredictions
     analyze_model_predictions
-
+                end
 
     %% This needs to be updated  --------------------------------------------
     % % Plot predictions
@@ -666,10 +677,15 @@ slack_code_done
 
 
 
+end
 
 
 
-
+figure(92); clf; hold on;
+plot(expVar, accuracy, '-b');
+plot(expVar, mean(accuracyPermuted, 1), '-r');
+plot(expVar, accuracy - mean(accuracyPermuted, 1), '--k');
+legend({'Accuracy', 'Permuted', 'Difference'})
 
 
 
@@ -794,7 +810,6 @@ slack_code_done
 
 
 
-end
 
 
 
