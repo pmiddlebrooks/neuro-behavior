@@ -56,7 +56,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % Select which data to run analyses on, UMAP dimensions, etc
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
-forDim = 3; % Loop through these dimensions to fit UMAP
+forDim = 4; % Loop through these dimensions to fit UMAP
 lowDModel = 'umap';
 % lowDModel = 'tsne';
 newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
@@ -66,10 +66,6 @@ umapTransOnly = 0;
 % variables to test
 % ==========================
 
-% Modeling variables
-nPermutations = 1; % How many random permutations to run to compare with best fit model?
-accuracy = zeros(length(forDim), 1);
-accuracyPermuted = zeros(length(forDim), nPermutations);
 
 % Apply to all:
 % -------------
@@ -175,7 +171,7 @@ permAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_
 
 % PCA testing....
 [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
-expVarThresh = [10 20 30 50 70 90];
+expVarThresh = [15 20 30 45 65 90];
 pcaDim = zeros(1, length(expVarThresh));
 expVar = zeros(1, length(expVarThresh));
 for p = 1:length(expVar)
@@ -183,14 +179,18 @@ for p = 1:length(expVar)
     expVar(p) = sum(explained(1:pcaDim(p)));
 end
 
+% Modeling variables
+nPermutations = 2; % How many random permutations to run to compare with best fit model?
+accuracy = zeros(length(pcaDim), 1);
+accuracyPermuted = zeros(length(pcaDim), nPermutations);
 
 
-for p = 1 : length(pcaDim)
 
-    for k = 1:length(forDim)
+    % for k = 1:length(forDim)
+    for k = 1:length(pcaDim)
 
 
-        iDim = forDim(k);
+        iDim = forDim(1);
         fitType = [lowDModel, ' ', num2str(iDim), 'D'];
         % fitType = 'NeuralSpace';
 
@@ -213,8 +213,8 @@ for p = 1 : length(pcaDim)
                                 % [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
                                 % expVarThresh = 25;
                                 % dimExplained = find(cumsum(explained) > expVarThresh, 1);
-                                disp(['PCA: Exp Var = ', num2str(expVar(p)), ' nComponents = ', num2str(pcaDim(p))])
-                                [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(p)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                                disp(['PCA: Exp Var = ', num2str(expVar(k)), ' nComponents = ', num2str(pcaDim(k))])
+                                [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(k)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
 
                                 % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
@@ -638,7 +638,7 @@ sound(y(1:3*Fs),Fs)
 
                     % Calculate and display the overall accuracy
                     accuracy(k) = sum(predictedLabels == testLabels) / length(testLabels);
-                    fprintf('%s %s Overall Accuracy: %.4f%%\n', selectFrom, transWithinLabel, accuracy(k));
+                    fprintf('%s %s Overall Accuracy: %.4f\n', selectFrom, transWithinLabel, accuracy(k));
 
                     fprintf('Model fit took %.2f min\n', toc/60)
 
@@ -646,6 +646,7 @@ sound(y(1:3*Fs),Fs)
                     % Randomize labels and Train model on single hold-out set
                     % tic
                     if nPermutations > 0
+rng('shuffle'); % Seeds based on the current time
 
                         shuffleInd = zeros(length(trainLabels), nPermutations);
                         for iPerm = 1:nPermutations
@@ -657,6 +658,7 @@ sound(y(1:3*Fs),Fs)
                             iRandom = 1 : length(trainLabels);
 
                             randShift = randi([1 length(trainLabels)]);
+                            randShift = randShift + iPerm * 17;
                             % Shuffle the data by moving the last randShift elements to the front
                             lastNElements = iRandom(end - randShift + 1:end);  % Extract the last randShift elements
                             iRandom(randShift+1:end) = iRandom(1:end-randShift); % Shift the remaining elements to the end
@@ -676,7 +678,7 @@ sound(y(1:3*Fs),Fs)
 
                             % Calculate the permuted accuracy
                             accuracyPermuted(k, iPerm) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
-                            fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f%%\n', selectFrom, transWithinLabel, k, accuracyPermuted(k, iPerm));
+                            fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f\n', selectFrom, transWithinLabel, iPerm, accuracyPermuted(k, iPerm));
 
                         end
                         modelName = ['svmModelPermuted', appendModelName];
@@ -901,7 +903,6 @@ sound(y(1:3*Fs),Fs)
 
     end
 
-end
 
 
 figure(92); clf; hold on;
