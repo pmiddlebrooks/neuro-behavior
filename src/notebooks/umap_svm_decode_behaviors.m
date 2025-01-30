@@ -179,8 +179,8 @@ expVarThresh = [10 20 30 50 70 90];
 pcaDim = zeros(1, length(expVarThresh));
 expVar = zeros(1, length(expVarThresh));
 for p = 1:length(expVar)
-    expVar(p) = find(cumsum(explained) > expVarThresh(p), 1);
     pcaDim(p) = find(cumsum(explained) > expVarThresh(p), 1);
+    expVar(p) = sum(explained(1:pcaDim(p)));
 end
 
 
@@ -213,7 +213,6 @@ for p = 1 : length(pcaDim)
                                 % [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
                                 % expVarThresh = 25;
                                 % dimExplained = find(cumsum(explained) > expVarThresh, 1);
-                                % expVar = sum(explained(1:pcaDim(p)));
                                 disp(['PCA: Exp Var = ', num2str(expVar(p)), ' nComponents = ', num2str(pcaDim(p))])
                                 [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(p)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
