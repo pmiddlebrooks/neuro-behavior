@@ -61,8 +61,8 @@ usePCAFromMeans = 0;
 % Apply to all:
 % -------------
 analyzePredictions = 0;
-plotFullMap = 1;
-plotFullModelData = 0;
+plotFullMap = 0;
+plotFullModelData = 1;
 plotModelData = 1;
 plotTransitions = 0;
 changeBhvLabels = 0;
@@ -151,9 +151,9 @@ end
 expVarThresh = [10 20 30 50 70 90];
 forDim = zeros(1, length(expVarThresh));
 expVar = zeros(1, length(expVarThresh));
-for i = 1:length(expVar)
-    expVar(i) = find(cumsum(explained) > expVarThresh(i), 1);
-forDim(i) = find(cumsum(explained) > expVarThresh(i), 1);
+for p = 1:length(expVar)
+forDim(p) = find(cumsum(explained) > expVarThresh(p), 1);
+    expVar(p) = sum(explained(1:forDim(p)));
 end
 % forDim = 26;
 
