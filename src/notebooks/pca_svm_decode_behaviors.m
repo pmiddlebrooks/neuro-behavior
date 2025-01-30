@@ -585,7 +585,7 @@ sound(y(1:3*Fs),Fs)
 
         % Calculate the permuted accuracy
         accuracyPermuted(k, iPerm) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
-        fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f\n', selectFrom, transWithinLabel, k, accuracyPermuted(k, iPerm));
+        fprintf('Permuted %s %s Overall Accuracy permutation %d: %.4f\n', selectFrom, transWithinLabel, iPerm, accuracyPermuted(k, iPerm));
 
     end
 
