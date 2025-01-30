@@ -63,7 +63,7 @@ usePCAFromMeans = 0;
 analyzePredictions = 0;
 plotFullMap = 0;
 plotFullModelData = 1;
-plotModelData = 1;
+plotModelData = 0;
 plotTransitions = 0;
 changeBhvLabels = 0;
 
@@ -159,7 +159,7 @@ end
 
 
 % Modeling variables
-nPermutations = 3; % How many random permutations to run to compare with best fit model?
+nPermutations = 2; % How many random permutations to run to compare with best fit model?
 accuracy = zeros(length(forDim), 1);
 accuracyPermuted = zeros(length(forDim), nPermutations);
 
