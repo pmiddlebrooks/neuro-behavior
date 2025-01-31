@@ -144,11 +144,17 @@ if newPcaModel
     else
         % rng(1);
         % [coeff, score, ~, ~, explained] = pca(dataMat(:, idSelect));
-        [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+        % dataMatModel = dataMat(:, idSelect);
+        % dataMatModel = data_mat_add_noise(dataMat(:, idSelect), 10);
+        dataMatModel = data_mat_add_noise(dataMat(:, idSelect), -10);
+        [coeff, score, ~, ~, explained] = pca(zscore(dataMatModel));
         forDim = find(cumsum(explained) > 75, 1);
+
+        figure(); plot(cumsum(explained)); hold on; xline(forDim);
     end
 end
 expVarThresh = [10 20 30 50 70 90];
+expVarThresh = 50;
 forDim = zeros(1, length(expVarThresh));
 expVar = zeros(1, length(expVarThresh));
 for p = 1:length(expVar)
@@ -159,13 +165,14 @@ end
 
 
 % Modeling variables
-nPermutations = 2; % How many random permutations to run to compare with best fit model?
+nPermutations = 1; % How many random permutations to run to compare with best fit model?
 accuracy = zeros(length(forDim), 1);
 accuracyPermuted = zeros(length(forDim), nPermutations);
 
 
 %%
 for k = 1:length(forDim)
+    
     iDim = forDim(k);
     fitType = ['PCA ', num2str(iDim), 'D'];
     % fitType = 'NeuralSpace';
@@ -510,19 +517,23 @@ sound(y(1:3*Fs),Fs)
 
     disp('=================================================================')
 
-    % pca dimension version
-    fprintf('\n\n%s %s DIMENSIONS %d Explained %.2f\n\n', selectFrom, transWithinLabel, iDim, sum(explained(1:iDim)))  % pca Dimensions
-    % Choose which data to model
-    svmProj = projSelect(svmInd, :);
-    trainData = svmProj(training(cv), :);  % pca Dimensions
-    testData = svmProj(test(cv), :); % pca Dimensions
+    % % pca dimension version
+    % fprintf('\n\n%s %s DIMENSIONS %d Explained %.2f\n\n', selectFrom, transWithinLabel, iDim, sum(explained(1:iDim)))  % pca Dimensions
+    % % Choose which data to model
+    % svmProj = projSelect(svmInd, :);
+    % trainData = svmProj(training(cv), :);  % pca Dimensions
+    % testData = svmProj(test(cv), :); % pca Dimensions
 
 
-    % % Neural space version
-    % fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
+    % Neural space version
+    fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
+        % dataMatModel = dataMat(:, idSelect);
+        % dataMatModel = data_mat_add_noise(dataMat(:, idSelect), 10);
+        dataMatModel = data_mat_add_noise(dataMat(:, idSelect), -10);
+    svmProj = dataMatModel(svmInd, :);
     % svmProj = dataMat(svmInd, idSelect);
-    % trainData = svmProj(training(cv), :);  % Neural Space
-    % testData = svmProj(test(cv), :); % Neural Space
+    trainData = svmProj(training(cv), :);  % Neural Space
+    testData = svmProj(test(cv), :); % Neural Space
 
 
 
