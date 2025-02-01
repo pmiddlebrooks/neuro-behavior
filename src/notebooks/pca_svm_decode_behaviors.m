@@ -86,7 +86,7 @@ downSampleFrames = 0;
 
 
 selectFrom = 'M56';
-selectFrom = 'DS';
+% selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -150,11 +150,12 @@ if newPcaModel
         [coeff, score, ~, ~, explained] = pca(zscore(dataMatModel));
         forDim = find(cumsum(explained) > 75, 1);
 
-        figure(); plot(cumsum(explained)); hold on; xline(forDim);
+        figure(33); plot(cumsum(explained)); grid on;
+        ylabel('Explained Var'); xlabel('Num PCA Components'); title('Exp Var'); ylim([0 100])
     end
 end
 expVarThresh = [10 20 30 50 70 90];
-expVarThresh = 50;
+% expVarThresh = 50;
 forDim = zeros(1, length(expVarThresh));
 expVar = zeros(1, length(expVarThresh));
 for p = 1:length(expVar)
@@ -517,23 +518,23 @@ sound(y(1:3*Fs),Fs)
 
     disp('=================================================================')
 
-    % % pca dimension version
-    % fprintf('\n\n%s %s DIMENSIONS %d Explained %.2f\n\n', selectFrom, transWithinLabel, iDim, sum(explained(1:iDim)))  % pca Dimensions
-    % % Choose which data to model
-    % svmProj = projSelect(svmInd, :);
-    % trainData = svmProj(training(cv), :);  % pca Dimensions
-    % testData = svmProj(test(cv), :); % pca Dimensions
+    % pca dimension version
+    fprintf('\n\n%s %s DIMENSIONS %d Explained %.2f\n\n', selectFrom, transWithinLabel, iDim, sum(explained(1:iDim)))  % pca Dimensions
+    % Choose which data to model
+    svmProj = projSelect(svmInd, :);
+    trainData = svmProj(training(cv), :);  % pca Dimensions
+    testData = svmProj(test(cv), :); % pca Dimensions
 
 
-    % Neural space version
-    fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
-        % dataMatModel = dataMat(:, idSelect);
-        % dataMatModel = data_mat_add_noise(dataMat(:, idSelect), 10);
-        dataMatModel = data_mat_add_noise(dataMat(:, idSelect), -10);
-    svmProj = dataMatModel(svmInd, :);
-    % svmProj = dataMat(svmInd, idSelect);
-    trainData = svmProj(training(cv), :);  % Neural Space
-    testData = svmProj(test(cv), :); % Neural Space
+    % % Neural space version
+    % fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
+    %     % dataMatModel = dataMat(:, idSelect);
+    %     % dataMatModel = data_mat_add_noise(dataMat(:, idSelect), 10);
+    %     dataMatModel = data_mat_add_noise(dataMat(:, idSelect), -10);
+    % svmProj = dataMatModel(svmInd, :);
+    % % svmProj = dataMat(svmInd, idSelect);
+    % trainData = svmProj(training(cv), :);  % Neural Space
+    % testData = svmProj(test(cv), :); % Neural Space
 
 
 
@@ -691,12 +692,15 @@ slack_code_done
 end
 
 
-
+%%
 figure(92); clf; hold on;
 plot(expVar, accuracy, '-b');
-plot(expVar, mean(accuracyPermuted, 1), '-r');
-plot(expVar, accuracy - mean(accuracyPermuted, 1), '--k');
-legend({'Accuracy', 'Permuted', 'Difference'})
+plot(expVar, mean(accuracyPermuted, 2), '-r');
+plot(expVar, accuracy - mean(accuracyPermuted, 2), '--k');
+legend({'Accuracy', 'Permuted', 'Difference'}, 'Location','northwest')
+title('SVM Accuracy w.r.t. #PCA compononents')
+ylabel('Accuracy')
+xlabel('Explained Variance')
 
 
 
