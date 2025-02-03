@@ -67,7 +67,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDa
 
     nFrame = ceil(opts.collectFor / opts.frameSize);
 
-    dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
+    dataBhv.StartFrame = 1 + round(dataBhv.StartTime / opts.frameSize);
     % dataBhv.DurFrame = [diff(dataBhv.StartFrame); nFrame - sum(dataBhv.StartFrame)];
     % dataBhv.DurFrame = floor(dataBhv.Dur ./ opts.frameSize);
 
