@@ -144,9 +144,12 @@ if newPcaModel
     else
         % rng(1);
         % [coeff, score, ~, ~, explained] = pca(dataMat(:, idSelect));
-        % dataMatModel = dataMat(:, idSelect);
+        dataMatModel = dataMat(:, idSelect);
         % dataMatModel = data_mat_add_noise(dataMat(:, idSelect), 10);
-        dataMatModel = data_mat_add_noise(dataMat(:, idSelect), -10);
+        % dataMatModel = data_mat_add_noise(dataMat(:, idSelect), -75);
+        % opts.shuffleWithReplacement = true;  % Spikes can be added to bins that already have spikes
+        % noisePct = 70;
+        % dataMatModel = data_mat_optimal(dataMat(:, idSelect), bhvID, noisePct, opts);
         [coeff, score, ~, ~, explained] = pca(zscore(dataMatModel));
         forDim = find(cumsum(explained) > 75, 1);
 
@@ -154,7 +157,7 @@ if newPcaModel
         ylabel('Explained Var'); xlabel('Num PCA Components'); title('Exp Var'); ylim([0 100])
     end
 end
-expVarThresh = [10 20 30 50 70 90];
+expVarThresh = [10 25 40 55 70 95];
 % expVarThresh = 50;
 forDim = zeros(1, length(expVarThresh));
 expVar = zeros(1, length(expVarThresh));
@@ -163,7 +166,7 @@ forDim(p) = find(cumsum(explained) > expVarThresh(p), 1);
     expVar(p) = sum(explained(1:forDim(p)));
 end
 % forDim = 26;
-
+[forDim; expVar]
 
 % Modeling variables
 nPermutations = 1; % How many random permutations to run to compare with best fit model?
@@ -694,13 +697,21 @@ end
 
 %%
 figure(92); clf; hold on;
-plot(expVar, accuracy, '-b');
-plot(expVar, mean(accuracyPermuted, 2), '-r');
-plot(expVar, accuracy - mean(accuracyPermuted, 2), '--k');
+plot(expVar, accuracy, '-ob', 'LineWidth', 2);
+plot(expVar, mean(accuracyPermuted, 2), '-or', 'LineWidth', 2);
+plot(expVar, accuracy - mean(accuracyPermuted, 2), '--ok', 'LineWidth', 2);
 legend({'Accuracy', 'Permuted', 'Difference'}, 'Location','northwest')
 title('SVM Accuracy w.r.t. #PCA compononents')
 ylabel('Accuracy')
 xlabel('Explained Variance')
+% Add text labels for each point
+for i = 1:length(expVar)
+    text(expVar(i), accuracy(i), sprintf('%d', forDim(i)), ...
+        'VerticalAlignment', 'top', 'HorizontalAlignment', 'right', ...
+        'FontSize', 16, 'FontWeight', 'bold', 'Color', 'k');
+end
+grid on;
+
 
 
 
