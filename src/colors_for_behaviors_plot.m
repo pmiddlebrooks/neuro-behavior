@@ -60,7 +60,7 @@ hold off;
 numBehaviors = length(behaviors);
 
 % Figure settings
-figure;
+figure(801); clf
 hold on;
 axis off; % Hide axes for clean display
 
@@ -68,7 +68,9 @@ axis off; % Hide axes for clean display
 squareSize = 0.25;    % Size of the color squares (Increase for bigger squares)
 spacing = 0.6;        % Vertical spacing between rows (Increase to prevent overlap)
 textSize = 14;        % Font size for labels
-xOffset = 0.35;       % Space between square and label (Increase if text is too close)
+xOffset = 0.2;       % Space between square and label (Increase if text is too close)
+textAdjust = 0.00;    % Fine-tune vertical alignment of text relative to squares
+xStart = -0.15;        % Adjust to shift squares closer to left edge
 % ###################################
 
 % Set limits for proper spacing
@@ -83,18 +85,21 @@ for i = 1:numBehaviors
     yPos = -i * spacing; % Adjust vertical position
     
     % Define square coordinates
-    xSquare = [-0.2, -0.2+squareSize, -0.2+squareSize, -0.2];
+    xSquare = [xStart, xStart+squareSize, xStart+squareSize, xStart];
     ySquare = [yPos, yPos, yPos+squareSize, yPos+squareSize];
     
     % Draw square with fill()
     fill(xSquare, ySquare, colors(i, :), 'EdgeColor', 'none', 'LineWidth', 1.5);
     
-    % Display behavior name with adjusted spacing
-    text(-0.2 + squareSize + xOffset, yPos + squareSize / 3, behaviors{i}, ...
-         'FontSize', textSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'left');
+    % % Display behavior name with adjusted spacing
+    % text(-0.2 + squareSize + xOffset, yPos + squareSize / 3, behaviors{i}, ...
+    %      'FontSize', textSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle', 'interpreter', 'none');
+    % Adjust text y-position manually using textAdjust
+    text(-0.2 + squareSize + xOffset, yPos + squareSize / 2 - textAdjust, behaviors{i}, ...
+         'FontSize', textSize, 'FontWeight', 'bold', 'HorizontalAlignment', 'left', 'interpreter', 'none');
 end
 
 % Set title
-title('Behavior Colors Legend', 'FontSize', textSize+2, 'FontWeight', 'bold');
+% title('Behavior Colors Legend', 'FontSize', textSize+2, 'FontWeight', 'bold');
 
 hold off;
