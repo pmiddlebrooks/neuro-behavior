@@ -9,7 +9,7 @@ opts.collectFor = 60 * 60; % seconds
 opts.frameSize = .1;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
-opts.minFiringRate = .75;
+opts.minFiringRate = .5;
 
 getDataType = 'spikes';
 get_standard_data
@@ -59,7 +59,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 forDim = 4; % Loop through these dimensions to fit UMAP
 lowDModel = 'umap';
 % lowDModel = 'tsne';
-newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
+newLowDModel = 0; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 umapTransOnly = 0;
 
 % Change these (and check their sections below) to determine which
@@ -69,10 +69,10 @@ umapTransOnly = 0;
 
 % Apply to all:
 % -------------
-analyzePredictions = 0;
-plotFullMap = 0;
+analyzePredictions = 1;
+plotFullMap = 1;
 plotFullModelData = 1;
-plotModelData = 0;
+plotModelData = 1;
 plotTransPred = 0; % Predicting transitions based on whatever model you fit
 changeBhvLabels = 0;
 
@@ -83,7 +83,7 @@ transOrWithin = 'within';
 % transOrWithin = 'all';
 % transOrWithin = 'transVsWithin';
 firstNFrames = 0;
-matchTransitionCount = 0;
+matchTransitionCount = 1;
 minFramePerBout = 0;
 
 % Apply to all:
@@ -96,7 +96,7 @@ downSampleFrames = 0;
 
 
 selectFrom = 'M56';
-selectFrom = 'DS';
+% selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'M23';
 % selectFrom = 'VS';
@@ -169,25 +169,25 @@ permAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_
 
 
 
-% PCA testing....
-[coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
-expVarThresh = [15 20 30 45 65 90];
-pcaDim = zeros(1, length(expVarThresh));
-expVar = zeros(1, length(expVarThresh));
-for p = 1:length(expVar)
-    pcaDim(p) = find(cumsum(explained) > expVarThresh(p), 1);
-    expVar(p) = sum(explained(1:pcaDim(p)));
-end
+% % PCA testing....
+% [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+% expVarThresh = [15 20 30 45 65 90];
+% pcaDim = zeros(1, length(expVarThresh));
+% expVar = zeros(1, length(expVarThresh));
+% for p = 1:length(expVar)
+%     pcaDim(p) = find(cumsum(explained) > expVarThresh(p), 1);
+%     expVar(p) = sum(explained(1:pcaDim(p)));
+% end
 
 % Modeling variables
 nPermutations = 2; % How many random permutations to run to compare with best fit model?
-accuracy = zeros(length(pcaDim), 1);
-accuracyPermuted = zeros(length(pcaDim), nPermutations);
+accuracy = zeros(length(forDim), 1);
+accuracyPermuted = zeros(length(forDim), nPermutations);
 
 
 
-    % for k = 1:length(forDim)
-    for k = 1:length(pcaDim)
+    for k = 1:length(forDim)
+    % for k = 1:length(pcaDim)
 
 
         iDim = forDim(1);
@@ -213,12 +213,12 @@ accuracyPermuted = zeros(length(pcaDim), nPermutations);
                                 % [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
                                 % expVarThresh = 25;
                                 % dimExplained = find(cumsum(explained) > expVarThresh, 1);
-                                disp(['PCA: Exp Var = ', num2str(expVar(k)), ' nComponents = ', num2str(pcaDim(k))])
-                                [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(k)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
-                                    'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
-
-                                % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                                % disp(['PCA: Exp Var = ', num2str(expVar(k)), ' nComponents = ', num2str(pcaDim(k))])
+                                % [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(k)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                 %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+
+                                [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                                    'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
 
                                 % minFrames = 2;
                                 %                     [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID, minFrames);
@@ -365,14 +365,14 @@ accuracyPermuted = zeros(length(pcaDim), nPermutations);
                             svmInd = preInd; % + 1; % First bin before or after (+1) transition
 
                             % Pre & Post: Comment/uncomment to use more than one bin
-                            svmID = repelem(svmID, 2);
+                            % svmID = repelem(svmID, 2);
                             % svmInd = sort([svmInd - 1; svmInd]); % two bins before transition
-                            svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
+                            % svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
 
                             transWithinLabel = 'transitions pre';
                             % transWithinLabel = 'transitions 200ms pre';
                             % transWithinLabel = 'transitions post';
-                            transWithinLabel = 'transitions pre & post';
+                            % transWithinLabel = 'transitions pre & post';
                             % transWithinLabel = ['transitions pre minBout ', num2str(nMinFrames)];
 
 
@@ -599,19 +599,19 @@ sound(y(1:3*Fs),Fs)
                     cv = cvpartition(svmID, 'HoldOut', 0.2);
 
 
-                    % UMAP dimension version
-                    fprintf('\n\n%s %s %s %d Dim\n\n', selectFrom, lowDModel, transWithinLabel, iDim)  % UMAP Dimensions
-                    % Choose which data to model
-                    svmProj = projSelect(svmInd, :);
-                    trainData = svmProj(training(cv), :);  % UMAP Dimensions
-                    testData = svmProj(test(cv), :); % UMAP Dimensions
+                    % % UMAP dimension version
+                    % fprintf('\n\n%s %s %s %d Dim\n\n', selectFrom, lowDModel, transWithinLabel, iDim)  % UMAP Dimensions
+                    % % Choose which data to model
+                    % svmProj = projSelect(svmInd, :);
+                    % trainData = svmProj(training(cv), :);  % UMAP Dimensions
+                    % testData = svmProj(test(cv), :); % UMAP Dimensions
 
 
-                    % % % Neural space version
-                    % fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
-                    % svmProj = zscore(dataMat(svmInd, idSelect));
-                    % trainData = svmProj(training(cv), :);  % Neural Space
-                    % testData = svmProj(test(cv), :); % Neural Space
+                    % % Neural space version
+                    fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
+                    svmProj = zscore(dataMat(svmInd, idSelect));
+                    trainData = svmProj(training(cv), :);  % Neural Space
+                    testData = svmProj(test(cv), :); % Neural Space
 
 
 
@@ -687,7 +687,8 @@ rng('shuffle'); % Seeds based on the current time
 
                     end
 
-                    % Get the elapsed time
+fprintf('Mean Permuted = %.4f\n', mean(accuracyPermuted(k, :)));
+% Get the elapsed time
                     fprintf('Permutation model fit(s) took %.2f min\n', toc/60)
 
                     %     load handel
@@ -905,11 +906,11 @@ rng('shuffle'); % Seeds based on the current time
 
 
 
-figure(92); clf; hold on;
-plot(expVar, accuracy, '-b');
-plot(expVar, mean(accuracyPermuted, 1), '-r');
-plot(expVar, accuracy - mean(accuracyPermuted, 1), '--k');
-legend({'Accuracy', 'Permuted', 'Difference'})
+% figure(92); clf; hold on;
+% plot(expVar, accuracy, '-b');
+% plot(expVar, mean(accuracyPermuted, 1), '-r');
+% plot(expVar, accuracy - mean(accuracyPermuted, 1), '--k');
+% legend({'Accuracy', 'Permuted', 'Difference'})
 
 
 
