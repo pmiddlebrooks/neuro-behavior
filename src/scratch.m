@@ -111,56 +111,6 @@ for i = 1:length(uniqueIntegers)
 end
 
 
-function sortedFrequenciesAroundAll = getSortedFrequenciesForAll(inputVector, windowSize)
-    % Initialize the output structure
-    sortedFrequenciesAroundAll = struct();
-    
-    % Get the unique integers in the input vector
-    uniqueIntegers = unique(inputVector);
-    
-    % Adjust window size to be symmetric
-    halfWindow = floor(windowSize / 2);
-    
-    % Loop over each unique integer
-    for uniqueInt = transpose(uniqueIntegers) % Ensure column vector for iteration
-        % Identify indices of the current unique integer
-        targetIndices = find(inputVector == uniqueInt);
-        
-        % Initialize a cell array for storing sorted frequencies for each occurrence
-        sortedFrequenciesAroundTarget = cell(1, length(targetIndices));
-        
-        % Loop over each occurrence of the current unique integer
-        for i = 1:length(targetIndices)
-            idx = targetIndices(i);
-            
-            % Determine the start and end indices of the window
-            startIdx = max(1, idx - halfWindow);
-            endIdx = min(length(inputVector), idx + halfWindow);
-            
-            % Extract window elements including the target itself
-            windowElements = inputVector(startIdx:endIdx);
-            
-            % Count the frequency of each unique element in the window
-            uniqueElements = unique(windowElements);
-            counts = zeros(length(uniqueElements), 1);
-            for j = 1:length(uniqueElements)
-                counts(j) = sum(windowElements == uniqueElements(j));
-            end
-            
-            % Sort the elements by frequency (descending) and then by value (ascending for ties)
-            [~, sortIdx] = sortrows([counts, -uniqueElements], [-1, 2]);
-            sortedUniqueElements = uniqueElements(sortIdx);
-            
-            % Store the sorted elements by frequency in the current cell
-            sortedFrequenciesAroundTarget{i} = sortedUniqueElements;
-        end
-        
-        % Assign to output structure
-        sortedFrequenciesAroundAll.(['Int' num2str(uniqueInt)]) = sortedFrequenciesAroundTarget;
-    end
-end
-
-
 
 
 
@@ -316,3 +266,165 @@ disp('Community Assignments:');
 for i = 1:numLabels
     fprintf('Behavior %s is in Community %d\n', string(allLabels(i)), communities(i));
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%%
+plot_behavior_durations(bhvID)
+function plot_behavior_durations(bhvID)
+    % PLOT_BEHAVIOR_DURATIONS Generates a horizontal box plot of behavior durations.
+    % Each behavior is stacked vertically and color-coded.
+    %
+    % Parameters:
+    %   - bhvID: Vector of behavior labels corresponding to each time bin.
+    %   - colors: Matrix where each row corresponds to an RGB color for a unique behavior.
+
+    unique_behaviors = unique(bhvID);  % Get unique behavior labels
+    unique_behaviors(unique_behaviors == -1) = [];
+    all_durations = [];  % Store all durations
+    all_labels = [];  % Store corresponding behavior labels for durations
+    
+    % Compute behavior durations
+    start_idx = 1;
+    for i = 2:length(bhvID)
+        if bhvID(i) ~= bhvID(i - 1) % Behavior transition
+            bhv = bhvID(i - 1);
+            duration = i - start_idx;
+            all_durations = [all_durations; duration]; % Store duration
+            all_labels = [all_labels; bhv];  % Store behavior label
+            start_idx = i; % Update start position
+        end
+    end
+    % Store the last segment
+    bhv = bhvID(end);
+    duration = length(bhvID) - start_idx + 1;
+    all_durations = [all_durations; duration];
+    all_labels = [all_labels; bhv];
+
+    % Remove in-nest/sleeping
+    idxRmv = all_labels == -1;
+    all_labels(idxRmv) = [];
+    all_durations(idxRmv) = [];
+
+colors = colors_for_behaviors(unique_behaviors);
+
+    % Convert behavior labels to categorical for grouping
+    all_labels = categorical(all_labels, unique_behaviors, string(unique_behaviors));
+
+
+    figure;
+    h = boxplot(all_durations, all_labels, 'Orientation', 'horizontal', 'Whisker', 1.5);
+    
+   % Apply colors to each box
+    hold on;
+    h_boxes = findobj(gca, 'Tag', 'Box');
+    for i = 1:length(unique_behaviors)
+        color = colors(unique_behaviors(i)+1 - min(unique_behaviors), :);
+        patch(get(h_boxes(i), 'XData'), get(h_boxes(i), 'YData'), color, ...
+              'FaceAlpha', 0.6, 'EdgeColor', 'none');
+    end    
+    hold off;
+    
+    % Formatting
+    xlabel('Duration (time bins)');
+    ylabel('Behavior');
+    title('Behavior Duration Box Plot');
+    set(gca, 'YDir', 'reverse');  % Keep the order consistent with ethogram
+    grid on;
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function sortedFrequenciesAroundAll = getSortedFrequenciesForAll(inputVector, windowSize)
+    % Initialize the output structure
+    sortedFrequenciesAroundAll = struct();
+    
+    % Get the unique integers in the input vector
+    uniqueIntegers = unique(inputVector);
+    
+    % Adjust window size to be symmetric
+    halfWindow = floor(windowSize / 2);
+    
+    % Loop over each unique integer
+    for uniqueInt = transpose(uniqueIntegers) % Ensure column vector for iteration
+        % Identify indices of the current unique integer
+        targetIndices = find(inputVector == uniqueInt);
+        
+        % Initialize a cell array for storing sorted frequencies for each occurrence
+        sortedFrequenciesAroundTarget = cell(1, length(targetIndices));
+        
+        % Loop over each occurrence of the current unique integer
+        for i = 1:length(targetIndices)
+            idx = targetIndices(i);
+            
+            % Determine the start and end indices of the window
+            startIdx = max(1, idx - halfWindow);
+            endIdx = min(length(inputVector), idx + halfWindow);
+            
+            % Extract window elements including the target itself
+            windowElements = inputVector(startIdx:endIdx);
+            
+            % Count the frequency of each unique element in the window
+            uniqueElements = unique(windowElements);
+            counts = zeros(length(uniqueElements), 1);
+            for j = 1:length(uniqueElements)
+                counts(j) = sum(windowElements == uniqueElements(j));
+            end
+            
+            % Sort the elements by frequency (descending) and then by value (ascending for ties)
+            [~, sortIdx] = sortrows([counts, -uniqueElements], [-1, 2]);
+            sortedUniqueElements = uniqueElements(sortIdx);
+            
+            % Store the sorted elements by frequency in the current cell
+            sortedFrequenciesAroundTarget{i} = sortedUniqueElements;
+        end
+        
+        % Assign to output structure
+        sortedFrequenciesAroundAll.(['Int' num2str(uniqueInt)]) = sortedFrequenciesAroundTarget;
+    end
+end
+
+
