@@ -62,15 +62,15 @@ usePCAFromMeans = 0;
 % -------------
 analyzePredictions = 0;
 plotFullMap = 0;
-plotFullModelData = 1;
-plotModelData = 0;
+plotFullModelData = 0;
+plotModelData = 1;
 plotTransitions = 0;
 changeBhvLabels = 0;
 
 % Transition or within variables
 % -------------------------
-% transOrWithin = 'trans';
-transOrWithin = 'within';
+transOrWithin = 'trans';
+% transOrWithin = 'within';
 % transOrWithin = 'transVsWithin';
 firstNFrames = 0;
 matchTransitionCount = 0;
@@ -86,7 +86,7 @@ downSampleFrames = 0;
 
 
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -158,6 +158,7 @@ if newPcaModel
     end
 end
 expVarThresh = [10 25 40 55 70 95];
+expVarThresh = [50 75];
 % expVarThresh = 50;
 forDim = zeros(1, length(expVarThresh));
 expVar = zeros(1, length(expVarThresh));
@@ -314,7 +315,8 @@ for k = 1:length(forDim)
             %% TRANSITIONS of all behaviors (for now, include behaviors that last one frame)
             % svmID: vector of category labels for each data point to be analyzed/fit
 
-            svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
+            svmID = bhvID(preInd);  % last frame of each bout
+            % svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
 
             % Pre and/or Post: Adjust which bin(s) to plot (and train SVN on below)
             svmInd = preInd;% + 1; % First bin after transition
@@ -325,6 +327,7 @@ for k = 1:length(forDim)
             % svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
 
             transWithinLabel = 'transitions pre';
+            transWithinLabel = 'transitions last';
             % transWithinLabel = 'transitions 200ms pre';
             % transWithinLabel = 'transitions post';
             % transWithinLabel = 'transitions pre & post';
