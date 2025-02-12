@@ -6,7 +6,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .1;
+opts.frameSize = .2;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
 opts.minFiringRate = .5;
@@ -57,9 +57,9 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
 forDim = 4; % Loop through these dimensions to fit UMAP
-lowDModel = 'umap';
-% lowDModel = 'tsne';
-newLowDModel = 0; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
+% lowDModel = 'umap';
+lowDModel = 'tsne';
+newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 umapTransOnly = 0;
 
 % Change these (and check their sections below) to determine which
@@ -70,7 +70,7 @@ umapTransOnly = 0;
 % Apply to all:
 % -------------
 analyzePredictions = 1;
-plotFullMap = 1;
+plotFullMap = 0;
 plotFullModelData = 1;
 plotModelData = 1;
 plotTransPred = 0; % Predicting transitions based on whatever model you fit
@@ -83,7 +83,7 @@ transOrWithin = 'within';
 % transOrWithin = 'all';
 % transOrWithin = 'transVsWithin';
 firstNFrames = 0;
-matchTransitionCount = 1;
+matchTransitionCount = 0;
 minFramePerBout = 0;
 
 % Apply to all:
@@ -180,7 +180,7 @@ permAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_
 % end
 
 % Modeling variables
-nPermutations = 2; % How many random permutations to run to compare with best fit model?
+nPermutations = 1; % How many random permutations to run to compare with best fit model?
 accuracy = zeros(length(forDim), 1);
 accuracyPermuted = zeros(length(forDim), nPermutations);
 
@@ -599,19 +599,19 @@ sound(y(1:3*Fs),Fs)
                     cv = cvpartition(svmID, 'HoldOut', 0.2);
 
 
-                    % % UMAP dimension version
-                    % fprintf('\n\n%s %s %s %d Dim\n\n', selectFrom, lowDModel, transWithinLabel, iDim)  % UMAP Dimensions
-                    % % Choose which data to model
-                    % svmProj = projSelect(svmInd, :);
-                    % trainData = svmProj(training(cv), :);  % UMAP Dimensions
-                    % testData = svmProj(test(cv), :); % UMAP Dimensions
+                    % UMAP dimension version
+                    fprintf('\n\n%s %s %s %d Dim\n\n', selectFrom, lowDModel, transWithinLabel, iDim)  % UMAP Dimensions
+                    % Choose which data to model
+                    svmProj = projSelect(svmInd, :);
+                    trainData = svmProj(training(cv), :);  % UMAP Dimensions
+                    testData = svmProj(test(cv), :); % UMAP Dimensions
 
 
-                    % % Neural space version
-                    fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
-                    svmProj = zscore(dataMat(svmInd, idSelect));
-                    trainData = svmProj(training(cv), :);  % Neural Space
-                    testData = svmProj(test(cv), :); % Neural Space
+                    % % % Neural space version
+                    % fprintf('\n\n%s %s Neural Space\n\n', selectFrom, transWithinLabel)  % Neural Space
+                    % svmProj = zscore(dataMat(svmInd, idSelect));
+                    % trainData = svmProj(training(cv), :);  % Neural Space
+                    % testData = svmProj(test(cv), :); % Neural Space
 
 
 
