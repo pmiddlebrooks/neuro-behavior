@@ -127,6 +127,9 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'kinematics')
 csvFilePath = [bhvDataPath, kinFileName];
 kinData = readmatrix(csvFilePath);
 
+% kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000_kinematics.npy';
+% csvFilePath = [bhvDataPath, kinFileName];
+% kinData = readNPY(csvFilePath);
 
 % Here if you want to read the original tracking data instead
     % kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000.csv';

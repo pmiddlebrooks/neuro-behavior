@@ -31,10 +31,10 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 %%
 selectFrom = 'M56';
 idSelect = idM56;
-% selectFrom = 'DS';
-% idSelect = idDS;
-selectFrom = 'VS';
-idSelect = idVS;
+selectFrom = 'DS';
+idSelect = idDS;
+% selectFrom = 'VS';
+% idSelect = idVS;
 
 
 
@@ -77,7 +77,7 @@ copy_figure_to_clipboard
 
 
 %%
-n_components = 10;
+n_components = 4;
 [angleMatrix, overlapMatrix, grassmanMatrix] = analyze_behavior_pca(dataMat(:, idSelect), bhvID, n_components);
  
 % Display the confusion matrices
