@@ -70,8 +70,8 @@ umapTransOnly = 0;
 % Apply to all:
 % -------------
 analyzePredictions = 1;
-plotFullMap = 0;
-plotFullModelData = 1;
+plotFullMap = 1;
+plotFullModelData = 0;
 plotModelData = 1;
 plotTransPred = 0; % Predicting transitions based on whatever model you fit
 changeBhvLabels = 0;

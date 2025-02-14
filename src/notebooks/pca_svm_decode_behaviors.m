@@ -8,12 +8,18 @@ opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
 opts.frameSize = .1;
 
+opts.frameSize = 1/60;
+
+opts.useOverlappingBins = 1;
+opts.windowSize = .2;
+opts.stepSize = opts.frameSize;
+
 getDataType = 'spikes';
 get_standard_data
 
 colors = colors_for_behaviors(codes);
 
-[dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
+% [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 
 
 % for plotting consistency
@@ -49,7 +55,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 forDim = 3:8; % Loop through these dimensions to fit pca
 forDim = [3 8]; % Loop through these dimensions to fit UMAP
-forDim = 3; % Loop through these dimensions to fit UMAP
+forDim = 8; % Loop through these dimensions to fit UMAP
 newPcaModel = 1; % Do we need to get a new pca model to analyze (or did you tweak some things that come after pca?)
 usePCAFromMeans = 0;
 
@@ -70,7 +76,7 @@ changeBhvLabels = 0;
 % Transition or within variables
 % -------------------------
 transOrWithin = 'trans';
-% transOrWithin = 'within';
+transOrWithin = 'within';
 % transOrWithin = 'transVsWithin';
 firstNFrames = 0;
 matchTransitionCount = 0;
@@ -86,7 +92,7 @@ downSampleFrames = 0;
 
 
 selectFrom = 'M56';
-selectFrom = 'DS';
+% selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -315,8 +321,8 @@ for k = 1:length(forDim)
             %% TRANSITIONS of all behaviors (for now, include behaviors that last one frame)
             % svmID: vector of category labels for each data point to be analyzed/fit
 
-            svmID = bhvID(preInd);  % last frame of each bout
-            % svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
+            % svmID = bhvID(preInd);  % last frame of each bout
+            svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
 
             % Pre and/or Post: Adjust which bin(s) to plot (and train SVN on below)
             svmInd = preInd;% + 1; % First bin after transition
@@ -327,7 +333,7 @@ for k = 1:length(forDim)
             % svmInd = sort([svmInd; svmInd + 1]); % Last bin before transition and first bin after
 
             transWithinLabel = 'transitions pre';
-            transWithinLabel = 'transitions last';
+            % transWithinLabel = 'transitions last';
             % transWithinLabel = 'transitions 200ms pre';
             % transWithinLabel = 'transitions post';
             % transWithinLabel = 'transitions pre & post';
