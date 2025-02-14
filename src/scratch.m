@@ -111,56 +111,6 @@ for i = 1:length(uniqueIntegers)
 end
 
 
-function sortedFrequenciesAroundAll = getSortedFrequenciesForAll(inputVector, windowSize)
-    % Initialize the output structure
-    sortedFrequenciesAroundAll = struct();
-    
-    % Get the unique integers in the input vector
-    uniqueIntegers = unique(inputVector);
-    
-    % Adjust window size to be symmetric
-    halfWindow = floor(windowSize / 2);
-    
-    % Loop over each unique integer
-    for uniqueInt = transpose(uniqueIntegers) % Ensure column vector for iteration
-        % Identify indices of the current unique integer
-        targetIndices = find(inputVector == uniqueInt);
-        
-        % Initialize a cell array for storing sorted frequencies for each occurrence
-        sortedFrequenciesAroundTarget = cell(1, length(targetIndices));
-        
-        % Loop over each occurrence of the current unique integer
-        for i = 1:length(targetIndices)
-            idx = targetIndices(i);
-            
-            % Determine the start and end indices of the window
-            startIdx = max(1, idx - halfWindow);
-            endIdx = min(length(inputVector), idx + halfWindow);
-            
-            % Extract window elements including the target itself
-            windowElements = inputVector(startIdx:endIdx);
-            
-            % Count the frequency of each unique element in the window
-            uniqueElements = unique(windowElements);
-            counts = zeros(length(uniqueElements), 1);
-            for j = 1:length(uniqueElements)
-                counts(j) = sum(windowElements == uniqueElements(j));
-            end
-            
-            % Sort the elements by frequency (descending) and then by value (ascending for ties)
-            [~, sortIdx] = sortrows([counts, -uniqueElements], [-1, 2]);
-            sortedUniqueElements = uniqueElements(sortIdx);
-            
-            % Store the sorted elements by frequency in the current cell
-            sortedFrequenciesAroundTarget{i} = sortedUniqueElements;
-        end
-        
-        % Assign to output structure
-        sortedFrequenciesAroundAll.(['Int' num2str(uniqueInt)]) = sortedFrequenciesAroundTarget;
-    end
-end
-
-
 
 
 
@@ -327,17 +277,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 %% Raw high-d spiking data
 
 acc = [.252 .197 .440 .221 .289 .187 .467 .251];
@@ -378,6 +317,8 @@ figure_pretty_things
         print('-dpng', fullfile(paths.dropPath, t))
 
 
+=======
+>>>>>>> 7e268d3fb526841c08b25309c8aeff03a6fedf2b
 %% chatgpt code to save transparent backgorund images
 
  % Create a sample figure (Replace with your own figure)
@@ -405,3 +346,87 @@ print(fig, pngFileName, '-dpng', '-r300', '-transparent');
 
 disp(['PDF saved as ', pdfFileName]);
 disp(['PNG saved as ', pngFileName]);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%% 
+fromCodes = codes(contains(behaviors, 'groom'));
+fromCodes = codes(contains(behaviors, 'ate_2'));
+opts.transTo = 15;
+opts.transFrom = fromCodes;
+opts.minBoutDur = .25;
+opts.minTransFromDur = .25;
+goodTransitions = find_good_transitions(bhvID, opts);
+length(goodTransitions)
+
+
+
+
+
+
+
+
+%%
+function sortedFrequenciesAroundAll = getSortedFrequenciesForAll(inputVector, windowSize)
+    % Initialize the output structure
+    sortedFrequenciesAroundAll = struct();
+    
+    % Get the unique integers in the input vector
+    uniqueIntegers = unique(inputVector);
+    
+    % Adjust window size to be symmetric
+    halfWindow = floor(windowSize / 2);
+    
+    % Loop over each unique integer
+    for uniqueInt = transpose(uniqueIntegers) % Ensure column vector for iteration
+        % Identify indices of the current unique integer
+        targetIndices = find(inputVector == uniqueInt);
+        
+        % Initialize a cell array for storing sorted frequencies for each occurrence
+        sortedFrequenciesAroundTarget = cell(1, length(targetIndices));
+        
+        % Loop over each occurrence of the current unique integer
+        for i = 1:length(targetIndices)
+            idx = targetIndices(i);
+            
+            % Determine the start and end indices of the window
+            startIdx = max(1, idx - halfWindow);
+            endIdx = min(length(inputVector), idx + halfWindow);
+            
+            % Extract window elements including the target itself
+            windowElements = inputVector(startIdx:endIdx);
+            
+            % Count the frequency of each unique element in the window
+            uniqueElements = unique(windowElements);
+            counts = zeros(length(uniqueElements), 1);
+            for j = 1:length(uniqueElements)
+                counts(j) = sum(windowElements == uniqueElements(j));
+            end
+            
+            % Sort the elements by frequency (descending) and then by value (ascending for ties)
+            [~, sortIdx] = sortrows([counts, -uniqueElements], [-1, 2]);
+            sortedUniqueElements = uniqueElements(sortIdx);
+            
+            % Store the sorted elements by frequency in the current cell
+            sortedFrequenciesAroundTarget{i} = sortedUniqueElements;
+        end
+        
+        % Assign to output structure
+        sortedFrequenciesAroundAll.(['Int' num2str(uniqueInt)]) = sortedFrequenciesAroundTarget;
+    end
+end
+
+
+>>>>>>> 7e268d3fb526841c08b25309c8aeff03a6fedf2b

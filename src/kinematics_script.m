@@ -21,11 +21,16 @@ bodyParts(strcmp(bodyParts, 'bodyparts')) = [];
 kinematics_velocities_relative_angles
 
 
+%% PCA on the kinematics
+
+[coeff, score, ~, ~, explained] = pca(kinData(1:size(dataMat, 1),:));
+figure(33); plot(cumsum(explained)); grid on;
+
 %% Umap on the kinematics
 
 % [projSelect, ~, ~, ~] = run_umap(velocitiesAngles, 'n_components', 8, 'randomize', false, 'verbose', 'none', ...
 %                         'min_dist', min_dist, 'spread', spread, 'n_neighbors', n_neighbors);
-[umapVelAngles, ~, ~, ~] = run_umap(velocitiesAngles, 'n_components', 8, 'randomize', true, 'verbose', 'none');
+[projSelect, ~, ~, ~] = run_umap(kinData(1:size(dataMat, 1),:), 'n_components', 8, 'randomize', true, 'verbose', 'none');
 
 
 %% Plot a movie of the body tracked positions over time
