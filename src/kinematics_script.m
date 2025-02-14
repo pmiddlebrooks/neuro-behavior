@@ -1,12 +1,16 @@
 %%
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 1 * 30 * 60; % seconds
+opts.collectFor = 1 * 60 * 60; % seconds
+% opts.frameSize = 1/60;
 opts.frameSize = 1/60;
-opts.frameSize = .1;
 
-getDataType = 'kinematics';
+opts.minFiringRate = .5;
+
+getDataType = 'spikes';
 get_standard_data
+% getDataType = 'kinematics';
+% get_standard_data
 
 
 %% Get list of each body part tracked
