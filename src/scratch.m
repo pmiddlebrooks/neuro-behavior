@@ -316,3 +316,92 @@ disp('Community Assignments:');
 for i = 1:numLabels
     fprintf('Behavior %s is in Community %d\n', string(allLabels(i)), communities(i));
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%% Raw high-d spiking data
+
+acc = [.252 .197 .440 .221 .289 .187 .467 .251];
+x = [1 2 4 5 7 8 10 11];
+%% UMAP low-D (4-dim)
+
+acc = [.273 .221 .365 .284 .291 .213 .463 .233];
+acc = [.273 .221 .365 .284 .291 .213 .463 .233];
+x = [1 2 4 5 7 8 10 11];
+
+
+figure(39); clf
+b = bar(x, acc, 'FaceColor', 'flat');
+
+colors = [...
+    0 0 1;...
+    1 0 0;...
+    0 0 1;...
+    1 0 0;...
+    0 0 1;...
+    1 0 0;...
+    0 0 1;...
+    1 0 0;...
+    ];
+for i = 1:length(colors)
+b.CData(i,:) = colors(i,:);
+end
+xticklabels(' ')
+ylabel('Accuracy')
+% title('SVM decoding accuracy on raw neural spiking')
+t = [selectFrom, ' SVM decoding accuracy on 4D UMAP projections'];
+title(t)
+% t = [t, 'pdf'];
+t = [t, 'png'];
+figure_pretty_things
+        % print('-dpdf', fullfile(paths.dropPath, t), '-bestfit')
+        % print('-dpdf', fullfile(paths.dropPath, t))
+        print('-dpng', fullfile(paths.dropPath, t))
+
+
+%% chatgpt code to save transparent backgorund images
+
+ % Create a sample figure (Replace with your own figure)
+fig = figure;
+plot(rand(10,1), 'LineWidth', 2);
+xlabel('X-axis');
+ylabel('Y-axis');
+title('Sample Plot');
+grid on;
+
+% Set figure background to transparent
+set(fig, 'Color', 'none');
+ax = gca;
+set(ax, 'Color', 'none');
+
+% Define file names
+pdfFileName = 'figure_transparent.pdf';
+pngFileName = 'figure_transparent.png';
+
+% Save as PDF with transparent background
+print(fig, pdfFileName, '-dpdf', '-r300', '-vector');
+
+% Save as PNG with transparent background
+print(fig, pngFileName, '-dpng', '-r300', '-transparent');
+
+disp(['PDF saved as ', pdfFileName]);
+disp(['PNG saved as ', pngFileName]);
