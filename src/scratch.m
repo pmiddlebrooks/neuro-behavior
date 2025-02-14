@@ -322,11 +322,14 @@ disp(['PNG saved as ', pngFileName]);
 
 
 %% 
-a = repmat(2, 50, 1);
-std(a)
-a(1) = 4;
-std(a)
-
+fromCodes = codes(contains(behaviors, 'groom'));
+fromCodes = codes(contains(behaviors, 'ate_2'));
+opts.transTo = 15;
+opts.transFrom = fromCodes;
+opts.minBoutDur = .25;
+opts.minTransFromDur = .25;
+goodTransitions = find_good_transitions(bhvID, opts);
+length(goodTransitions)
 
 
 
