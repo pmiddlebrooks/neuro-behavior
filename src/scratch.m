@@ -317,8 +317,6 @@ figure_pretty_things
         print('-dpng', fullfile(paths.dropPath, t))
 
 
-=======
->>>>>>> 7e268d3fb526841c08b25309c8aeff03a6fedf2b
 %% chatgpt code to save transparent backgorund images
 
  % Create a sample figure (Replace with your own figure)
@@ -429,4 +427,3 @@ function sortedFrequenciesAroundAll = getSortedFrequenciesForAll(inputVector, wi
 end
 
 
->>>>>>> 7e268d3fb526841c08b25309c8aeff03a6fedf2b
