@@ -71,7 +71,7 @@ for i = 1 : length(codes) % length(actList)
 
     andNotRepeated = sum(actAndLong);
 
-    fprintf('%d: %s: Valid: %d\t (%.1f)%%\n', codes(i), behaviors{i}, andNotRepeated, 100 * andNotRepeated / allPossible)
+    % fprintf('%d: %s: Valid: %d\t (%.1f)%%\n', codes(i), behaviors{i}, andNotRepeated, 100 * andNotRepeated / allPossible)
 
     validBhv(actAndLong) = 1;
 end
