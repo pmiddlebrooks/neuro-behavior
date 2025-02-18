@@ -65,7 +65,7 @@ set(gca, 'FontSize', 12, 'XTickLabelRotation', 45);
 
 
 
-%% Set the various step sizes and windows to test
+%% Get a dataMat for bhvID to find good transitions below
 
 monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
@@ -87,14 +87,6 @@ opts.stepSize = opts.frameSize;
 
 getDataType = 'spikes';
 
-nDim = 6;
-
-frameSizes = [1/60 2/60];
-% frameSizes = 1/60;
-windowSizes = [.05 .1 .15 .2 .25];
-% windowSizes = [.15];
-windowAligns = {'center', 'left', 'right'};
-% windowSizes = [.2];
 
 get_standard_data
 %% Save some dataMats to load them quicker than forming them each time
@@ -125,7 +117,20 @@ get_standard_data
 % opts.stepSize = opts.frameSize;
 % getDataType = 'behavior';
 % get_standard_data
-%%
+
+
+
+
+%% Set the various step sizes and windows to test
+
+nDim = 6;
+
+frameSizes = [1/60 2/60];
+% frameSizes = 1/60;
+windowSizes = [.05 .1 .15 .2 .25];
+% windowSizes = [.15];
+windowAligns = {'center', 'left', 'right'};
+% windowSizes = [.2];
 
 
 %% How much around transitions do you want to decode?
@@ -135,10 +140,10 @@ opts.mPreTime = .2;
 opts.mPostTime = .2;
 
 
-fromBehavior = 'itch';
-fromBehavior = 'investigate_2';
-toBehavior = 'locomotion';
-% toBehavior = 'groom';
+% fromBehavior = 'itch';
+fromBehavior = 'locomotion';
+% toBehavior = 'locomotion';
+toBehavior = 'investigate_2';
 % fromCodes = codes(contains(behaviors, 'groom'));
 fromCodes = codes(contains(behaviors, fromBehavior));
 toCode = codes(contains(behaviors, toBehavior));
@@ -227,8 +232,8 @@ for f = 1:length(frameSizes)
     for w = 1 : length(windowSizes)
         for a = 1:length(windowAligns)
             disp('======================================================================')
-            fprintf('\n\n%s Predicting %s to %s... %s f %s w %s a %s\n', selectFrom, fromBehavior, toBehavior, ...
-                lowDModel, num2str(frameSizes(f)), num2str(windowSizes(w)), windowAligns{a});
+            fprintf('\n\n%s Predicting %s to %s... %s f %.3f w %.2f a %s\n', selectFrom, fromBehavior, toBehavior, ...
+                lowDModel, frameSizes(f), windowSizes(w), windowAligns{a});
 
             opts.frameSize = frameSizes(f);
             opts.stepSize = frameSizes(f);
@@ -333,7 +338,7 @@ colors = [0 0 0; 0 .6 .2];
 
             % pca dimension version
             fprintf('%s DIM %d %.2f Window\n', selectFrom, nDim, windowSizes(w))  % pca Dimensions
-
+tic
             for k = 1:kFolds
                 % Choose which data to model
                 trainData = svmProj(training(cv, k), :);  % pca Dimensions
