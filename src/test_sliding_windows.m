@@ -310,7 +310,8 @@ colors = [0 0 0; 0 .6 .2];
             % Plot on second monitor, half-width
             plotPos = [monitorTwo(1) + monitorTwo(3)/2, 1, monitorTwo(3)/2, monitorTwo(4)];
             % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-            titleM = [selectFrom, ' ', lowDModel, ' ', fromBehavior, ' to ', toBehavior, ' step=', num2str(opts.stepSize), ' win=', num2str(opts.windowSize), '  align=', opts.windowAlign];
+            % titleM = [selectFrom, ' ', lowDModel, ' ', fromBehavior, ' to ', toBehavior, ' step=', num2str(opts.stepSize), ' win=', num2str(opts.windowSize), '  align=', opts.windowAlign];
+            titleM = sprintf('%s %s %s to %s step=%.3f win=%.2f align=%s', selectFrom, lowDModel, fromBehavior, toBehavior, opts.stepSize, opts.windowSize, opts.windowAlign);
 
             plotFrames = svmInd;
             plotFrames = 1:length(svmID);
@@ -459,8 +460,8 @@ end
 sgtitle(titleS, 'interpreter', 'none')
 
 % print('-dpdf', fullfile(paths.dropPath, [titleS, '.pdf']), '-bestfit')
-print('-dpng', fullfile(paths.dropPath, [titleS, '.png']), '-bestfit')
-
+print('-dpng', fullfile(paths.dropPath, [titleS, '.png']))
+copy_figure_to_clipboard
 
 %%
 selectFrom = 'M56';
@@ -488,3 +489,4 @@ for f = 1 : length(frameSizes)
 end
   titleS = sprintf('%s %s %s to %s', selectFrom, lowDModel, fromBehavior, toBehavior);
 sgtitle(titleS, 'interpreter', 'none')
+copy_figure_to_clipboard
