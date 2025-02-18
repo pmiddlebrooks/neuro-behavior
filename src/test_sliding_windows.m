@@ -79,9 +79,9 @@ opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
 opts.frameSize = .1;
 
-opts.frameSize = 1/60;
+% opts.frameSize = 1/60;
 
-opts.useOverlappingBins = 1;
+opts.useOverlappingBins = 0;
 opts.windowSize = .2;
 opts.stepSize = opts.frameSize;
 
@@ -96,40 +96,49 @@ windowSizes = [.05 .1 .15 .2 .25];
 windowAligns = {'center', 'left', 'right'};
 % windowSizes = [.2];
 
-% get_standard_data
-%% Save some dataMats to load them quicker than forming them each time
-for f = 2:length(frameSizes)
-    for w = 1 : length(windowSizes)
-        for a = 1:length(windowAligns)
-            tic
-            fprintf('\n%s %s f %s w %s a %s\n', selectFrom, lowDModel, num2str(frameSizes(f)), num2str(windowSizes(w)), windowAligns{a});
-
-            opts.frameSize = frameSizes(f);
-            opts.stepSize = frameSizes(f);
-            opts.windowSize = windowSizes(w);
-            opts.windowAlign = windowAligns{a};
-
-            get_standard_data
-            fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
-            save(fullfile(paths.dropPath, fileName), 'dataMat', '-mat');
-            toc
-        end
-    end
-end
-
-%%
-
-opts.useOverlappingBins = 1;
-opts.frameSize = 1/60;
-opts.windowSize = .2;
-opts.stepSize = opts.frameSize;
-getDataType = 'behavior';
 get_standard_data
+%% Save some dataMats to load them quicker than forming them each time
+% for f = 2:length(frameSizes)
+%     for w = 1 : length(windowSizes)
+%         for a = 1:length(windowAligns)
+%             tic
+%             fprintf('\n%s %s f %s w %s a %s\n', selectFrom, lowDModel, num2str(frameSizes(f)), num2str(windowSizes(w)), windowAligns{a});
+% 
+%             opts.frameSize = frameSizes(f);
+%             opts.stepSize = frameSizes(f);
+%             opts.windowSize = windowSizes(w);
+%             opts.windowAlign = windowAligns{a};
+% 
+%             get_standard_data
+%             fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+%             save(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat', '-mat');
+%             toc
+%         end
+%     end
+% end
+
 %%
+
+% opts.useOverlappingBins = 1;
+% opts.frameSize = 1/60;
+% opts.windowSize = .2;
+% opts.stepSize = opts.frameSize;
+% getDataType = 'behavior';
+% get_standard_data
+%%
+
+
+%% How much around transitions do you want to decode?
+opts.mPreTime = .15;
+opts.mPostTime = .15;
+opts.mPreTime = .2;
+opts.mPostTime = .2;
+
+
 fromBehavior = 'itch';
-% fromBehavior = 'groom';
+fromBehavior = 'investigate_2';
 toBehavior = 'locomotion';
-% toBehavior = 'itch';
+% toBehavior = 'groom';
 % fromCodes = codes(contains(behaviors, 'groom'));
 fromCodes = codes(contains(behaviors, fromBehavior));
 toCode = codes(contains(behaviors, toBehavior));
@@ -137,29 +146,28 @@ opts.transTo = toCode;
 opts.transFrom = fromCodes;
 opts.minBoutDur = .25;
 opts.minTransFromDur = .25;
-opts.minBoutDur = .165;
-opts.minTransFromDur = .165;
+% opts.minBoutDur = .165;
+% opts.minTransFromDur = .165;
 goodTransitions = find_good_transitions(bhvID, opts);
 length(goodTransitions)
 svmInd = [];
+            transWindow = round(-opts.mPreTime/opts.frameSize : opts.mPostTime/opts.frameSize - 1);
+
 for i = 1 : length(goodTransitions)
     svmInd = [svmInd; goodTransitions(i) + transWindow'];
 end
 
 
-%% How much around transitions do you want to decode?
-opts.mPreTime = .15;
-opts.mPostTime = .15;
 
 kFolds = 3; % How many folds for cross-validation?
-nPermutations = 5;
+nPermutations = 3;
 accuracyPermuted = zeros(length(frameSizes), length(windowSizes), length(windowAligns), nPermutations);
 accuracy = zeros(length(frameSizes), length(windowSizes), length(windowAligns), kFolds);
 
 lowDModel = 'umap';
 
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -230,8 +238,9 @@ for f = 1:length(frameSizes)
 
             getDataType = 'behavior';
             get_standard_data
-            fileName = sprintf('dataMat_step%.3f_window%.2f_align_%s.mat', opts.stepSize, opts.windowSize, opts.windowAlign);
-            load(fullfile(paths.dropPath, fileName), 'dataMat');
+            % fileName = sprintf('dataMat_step%.3f_window%.2f_align_%s.mat', opts.stepSize, opts.windowSize, opts.windowAlign);
+            fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+            load(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat');
 
             % tic
             % fileName = sprintf('dataMat_step%.3f_window%.2f_align_%s.mat', opts.stepSize, opts.windowSize, opts.windowAlign);
@@ -267,7 +276,8 @@ for f = 1:length(frameSizes)
                     %                     projSelect = umap.transform(zscore(dataMat(:, idSelect)));
                     % pause(2); close
                 case 'pca'
-                    % [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+                    [coeff, projSelect, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+                   
                     % expVarThresh = 25;
                     % dimExplained = find(cumsum(explained) > expVarThresh, 1);
                     % disp(['PCA: Exp Var = ', num2str(expVar(k)), ' nComponents = ', num2str(pcaDim(k))])
@@ -277,7 +287,7 @@ for f = 1:length(frameSizes)
                 case 'tsne'
                     % fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
                     % projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration(x), 'Perplexity', perplexity(y), 'NumDimensions',iDim);
-                    projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', 'NumDimensions',nDim);
+                    projSelect = tsne(zscore(dataMat(:, idSelect)), 'NumDimensions',nDim);
             end
 
 
@@ -286,11 +296,13 @@ for f = 1:length(frameSizes)
             svmProj = projSelect(svmInd,:);
             % svmProj = projSelect;
             svmID = bhvID(svmInd);
-
-
+svmID(ismember(svmID, fromCodes)) = -4;
+svmID(ismember(svmID, toCode)) = -3;
+colors = [0 0 0; 0 .6 .2];
 
             % Plot data to model
-            colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 2, 'UniformOutput', false);
+            % colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 2, 'UniformOutput', false);
+            colorsForPlot = arrayfun(@(x) colors(x,:), svmID+5, 'UniformOutput', false);
             colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
 
             figH = figHModel;
@@ -298,7 +310,7 @@ for f = 1:length(frameSizes)
             % Plot on second monitor, half-width
             plotPos = [monitorTwo(1) + monitorTwo(3)/2, 1, monitorTwo(3)/2, monitorTwo(4)];
             % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
-            titleM = [selectFrom, ' ', fromBehavior, ' to ', toBehavior, ' step=', num2str(opts.stepSize), ' win=', num2str(opts.windowSize), '  align=', opts.windowAlign];
+            titleM = [selectFrom, ' ', lowDModel, ' ', fromBehavior, ' to ', toBehavior, ' step=', num2str(opts.stepSize), ' win=', num2str(opts.windowSize), '  align=', opts.windowAlign];
 
             plotFrames = svmInd;
             plotFrames = 1:length(svmID);
@@ -309,7 +321,7 @@ for f = 1:length(frameSizes)
 
 
 
-
+%%
             % Use SVM to decode the behaviors
             % Split data into training (80%) and testing (20%) sets
             % cv = cvpartition(svmID, 'HoldOut', 0.2);
@@ -413,15 +425,12 @@ for f = 1:length(frameSizes)
 end
 % Reassign accuracy variables
 accName = ['acc_', selectFrom, '_', fromBehavior, '_', toBehavior]
-eval([accName, ' = accuracyM56;']);
+eval([accName, ' = accuracy;']);
 
 accNameP = ['accPerm_', selectFrom, '_', fromBehavior, '_', toBehavior]
-eval([accNameP, ' = accuracyPermutedM56;']);
+eval([accNameP, ' = accuracyPermuted;']);
 
 % slack_code_done
-
-
-
 
 
 
@@ -430,19 +439,12 @@ eval([accNameP, ' = accuracyPermutedM56;']);
 %% Compare the accuracy between the various dataMats
 
 % f, w, a
-
-
-meanWin = mean(accuracy(1,:,a,:), 4);
-meanAlign = mean(accuracy(1,w,:,:), 4);
-mean(accuracy(1,:,1,:), 4)
-mean(accuracy(1,:,2,:), 4)
-
 figure(883); clf;
 for f = 1 : length(frameSizes)
     subplot(1,2,f)
     hold on;
     for a = 1 : 3
-        plot(mean(accuracy(f,:,a,:), 4), 'linewidth', 2)
+        plot(mean(accuracy(f,:,a,:), 4), '-o', 'linewidth', 2)
     end
     ylim([.5 .7])
     xticks(1:length(windowSizes))
@@ -453,5 +455,36 @@ for f = 1 : length(frameSizes)
     ylabel('Accuracy')
     xlabel('Window size')
 end
-  titleS = sprintf('%s %s to %s', selectFrom, fromBehavior, toBehavior);
-sgtitle(titleS)
+  titleS = sprintf('%s %s %s to %s', selectFrom, lowDModel, fromBehavior, toBehavior);
+sgtitle(titleS, 'interpreter', 'none')
+
+% print('-dpdf', fullfile(paths.dropPath, [titleS, '.pdf']), '-bestfit')
+print('-dpng', fullfile(paths.dropPath, [titleS, '.png']), '-bestfit')
+
+
+%%
+selectFrom = 'M56';
+fromBehavior = 'locomotion';
+toBehavior = 'investigate_2';
+% toBehavior = 'investigate_2';
+accPlot2 = acc_M56_locomotion_investigate_2;
+accPlot = acc_M56_investigate_2_locomotion;
+figure(883); clf;
+for f = 1 : length(frameSizes)
+    subplot(1,2,f)
+    hold on;
+    for a = 1 : 3
+        plot(mean(accPlot(f,:,a,:), 4), 'linewidth', 2)
+        plot(mean(accPlot2(f,:,a,:), 4), 'linewidth', 2)
+    end
+    ylim([.5 .7])
+    xticks(1:length(windowSizes))
+    xlim([.5 .5 + length(windowSizes)])
+    xticklabels(windowSizes)
+    legend({'Center', 'Left', 'Right'})
+    title(['Step size ', num2str(frameSizes(f))])
+    ylabel('Accuracy')
+    xlabel('Window size')
+end
+  titleS = sprintf('%s %s %s to %s', selectFrom, lowDModel, fromBehavior, toBehavior);
+sgtitle(titleS, 'interpreter', 'none')

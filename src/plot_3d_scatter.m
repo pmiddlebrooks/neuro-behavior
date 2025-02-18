@@ -33,4 +33,4 @@ end
 grid on;
 % saveas(gcf, fullfile(paths.figurePath, [titleM, '.png']), 'png')
 figure_pretty_things
-print('-dpdf', fullfile(paths.figurePath, [titleM, '.pdf']), '-bestfit')
+print('-dpdf', fullfile(paths.dropPath, [titleM, '.pdf']), '-bestfit')
