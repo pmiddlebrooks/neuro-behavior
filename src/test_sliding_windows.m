@@ -1,4 +1,17 @@
 %%
+opts.method = 'gaussian';
+opts.frameSize = 1/60;
+opts.gaussWidth = 10; % ms
+getDataType = 'spikes';
+get_standard_data
+%%
+            fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
+            save(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat', '-mat');
+            %%
+            fileName = sprintf('dataMat_%d_min_gaussian%d.mat', opts.collectFor/60, opts.gaussWidth);
+            load(fullfile(paths.dropPath, 'dataMat', fileName));
+
+%%
 minCount = 50;
 % Extract unique behaviors
 uniqueBhv = unique(bhvID);
@@ -81,7 +94,7 @@ opts.frameSize = .1;
 
 % opts.frameSize = 1/60;
 
-opts.useOverlappingBins = 0;
+opts.method = 'standard';
 opts.windowSize = .2;
 opts.stepSize = opts.frameSize;
 
@@ -170,9 +183,11 @@ accuracyPermuted = zeros(length(frameSizes), length(windowSizes), length(windowA
 accuracy = zeros(length(frameSizes), length(windowSizes), length(windowAligns), kFolds);
 
 lowDModel = 'umap';
+lowDModel = 'tsne';
+lowDModel = 'pca';
 
 selectFrom = 'M56';
-selectFrom = 'DS';
+% selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -223,17 +238,20 @@ end
 
 
 
-
+lowDs = {'pca', 'umap', 'tsne'};
 
 
 %% Loop over the parameters to test them
-
-for f = 1:length(frameSizes)
-    for w = 1 : length(windowSizes)
-        for a = 1:length(windowAligns)
+for m = 1 :length(lowDs)
+    lowDModel = lowDs{m};
+% for f = 1:length(frameSizes)
+%     for w = 1 : length(windowSizes)
+%         for a = 1:length(windowAligns)
             disp('======================================================================')
-            fprintf('\n\n%s Predicting %s to %s... %s f %.3f w %.2f a %s\n', selectFrom, fromBehavior, toBehavior, ...
-                lowDModel, frameSizes(f), windowSizes(w), windowAligns{a});
+            % fprintf('\n\n%s Predicting %s to %s... %s f %.3f w %.2f a %s\n', selectFrom, fromBehavior, toBehavior, ...
+            %     lowDModel, frameSizes(f), windowSizes(w), windowAligns{a});
+            fprintf('\n\n%s Predicting %s to %s... %s %s\n', selectFrom, fromBehavior, toBehavior, ...
+                lowDModel, opts.method);
 
             opts.frameSize = frameSizes(f);
             opts.stepSize = frameSizes(f);
@@ -244,7 +262,8 @@ for f = 1:length(frameSizes)
             getDataType = 'behavior';
             get_standard_data
             % fileName = sprintf('dataMat_step%.3f_window%.2f_align_%s.mat', opts.stepSize, opts.windowSize, opts.windowAlign);
-            fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+            % fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+            fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
             load(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat');
 
             % tic
@@ -279,7 +298,6 @@ for f = 1:length(frameSizes)
                     %                     [~, umap, ~, ~] = run_umap(zscore(stackedActivity(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                     %                         'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
                     %                     projSelect = umap.transform(zscore(dataMat(:, idSelect)));
-                    % pause(2); close
                 case 'pca'
                     [coeff, projSelect, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
                    
@@ -317,6 +335,7 @@ colors = [0 0 0; 0 .6 .2];
             % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
             % titleM = [selectFrom, ' ', lowDModel, ' ', fromBehavior, ' to ', toBehavior, ' step=', num2str(opts.stepSize), ' win=', num2str(opts.windowSize), '  align=', opts.windowAlign];
             titleM = sprintf('%s %s %s to %s step=%.3f win=%.2f align=%s', selectFrom, lowDModel, fromBehavior, toBehavior, opts.stepSize, opts.windowSize, opts.windowAlign);
+            titleM = sprintf('%s %s %s to %s %s', selectFrom, lowDModel, fromBehavior, toBehavior, opts.method);
 
             plotFrames = svmInd;
             plotFrames = 1:length(svmID);
@@ -336,8 +355,9 @@ colors = [0 0 0; 0 .6 .2];
 
             disp('===========================================')
 
-            % pca dimension version
-            fprintf('%s DIM %d %.2f Window\n', selectFrom, nDim, windowSizes(w))  % pca Dimensions
+            % low dimension version
+            % fprintf('%s DIM %d %.2f Window\n', selectFrom, nDim, windowSizes(w))  % 
+            fprintf('%s DIM %d %s\n', selectFrom, nDim, opts.method)  % 
 tic
             for k = 1:kFolds
                 % Choose which data to model
@@ -426,9 +446,11 @@ tic
 
 
 
-        end
-    end
+%         end
+%     end
+% end
 end
+
 % Reassign accuracy variables
 accName = ['acc_', selectFrom, '_', fromBehavior, '_', toBehavior]
 eval([accName, ' = accuracy;']);
@@ -442,7 +464,7 @@ eval([accNameP, ' = accuracyPermuted;']);
 
 
 
-%% Compare the accuracy between the various dataMats
+% Compare the accuracy between the various dataMats
 
 % f, w, a
 figure(883); clf;
@@ -452,11 +474,11 @@ for f = 1 : length(frameSizes)
     for a = 1 : 3
         plot(mean(accuracy(f,:,a,:), 4), '-o', 'linewidth', 2)
     end
-    ylim([.5 .7])
+    ylim([.4 round(max(accuracy(:)))])
     xticks(1:length(windowSizes))
     xlim([.5 .5 + length(windowSizes)])
     xticklabels(windowSizes)
-    legend({'Center', 'Left', 'Right'})
+    legend({'Center', 'Left', 'Right'}, 'Location','southeast')
     title(['Step size ', num2str(frameSizes(f))])
     ylabel('Accuracy')
     xlabel('Window size')
@@ -483,7 +505,7 @@ for f = 1 : length(frameSizes)
         plot(mean(accPlot(f,:,a,:), 4), 'linewidth', 2)
         plot(mean(accPlot2(f,:,a,:), 4), 'linewidth', 2)
     end
-    ylim([.5 .7])
+    ylim([.4 round(max(accuracy(:)))])
     xticks(1:length(windowSizes))
     xlim([.5 .5 + length(windowSizes)])
     xticklabels(windowSizes)

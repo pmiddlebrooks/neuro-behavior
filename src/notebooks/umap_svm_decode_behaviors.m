@@ -19,7 +19,16 @@ get_standard_data
 [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 
 
+%%
+opts.method = 'gaussian';
+opts.frameSize = 1/60;
+opts.gaussWidth = 10; % ms
+getDataType = 'behavior';
+get_standard_data
 
+
+
+%%
 colors = colors_for_behaviors(codes);
 
 % for plotting consistency
