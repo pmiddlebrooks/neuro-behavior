@@ -5,14 +5,14 @@ opts.gaussWidth = 10; % ms
 getDataType = 'spikes';
 get_standard_data
 %%
-            fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
-            save(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat', '-mat');
-            %%
-            fileName = sprintf('dataMat_%d_min_gaussian%d.mat', opts.collectFor/60, opts.gaussWidth);
-            load(fullfile(paths.dropPath, 'dataMat', fileName));
+fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
+save(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat', '-mat');
+%%
+fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
+load(fullfile(paths.dropPath, 'dataMat', fileName));
 
 %%
-minCount = 50;
+minCount = 30;
 % Extract unique behaviors
 uniqueBhv = unique(bhvID);
 numBhv = length(uniqueBhv);
@@ -39,9 +39,19 @@ transitionMatrix(isnan(transitionMatrix)) = 0;
 % Plot the transition matrix
 figure(65); clf
 subplot(1,2,1);
+colormap(parula); % Use a visually effective colormap
 imagesc(transitionMatrix);
-colormap(jet); % Use a visually effective colormap
 colorbar;
+% Overlay numbers on the matrix
+num_rows = size(transitionMatrix, 1);
+num_cols = size(transitionMatrix, 2);
+for i = 1:num_rows
+    for j = 1:num_cols
+        text(j, i, num2str(transitionMatrix(i, j)), 'HorizontalAlignment', 'center', ...
+            'Color', 'w', 'FontSize', 12, 'FontWeight', 'bold');
+    end
+end
+
 
 % Set axis labels
 xticks(1:numBhv);
@@ -61,7 +71,7 @@ binaryMatrix = transitionMatrix >= minCount;
 % Plot the binary transition matrix
 subplot(1,2,2);
 imagesc(binaryMatrix);
-colormap([1 1 1; 0 0 0]); % White for below minCount, Black for above
+% colormap([1 1 1; 0 0 0]); % White for below minCount, Black for above
 
 % Set axis labels
 xticks(1:numBhv);
@@ -92,13 +102,13 @@ opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
 opts.frameSize = .1;
 
-% opts.frameSize = 1/60;
+opts.frameSize = 1/60;
 
 opts.method = 'standard';
 opts.windowSize = .2;
 opts.stepSize = opts.frameSize;
 
-getDataType = 'spikes';
+getDataType = 'behavior';
 
 
 get_standard_data
@@ -108,12 +118,12 @@ get_standard_data
 %         for a = 1:length(windowAligns)
 %             tic
 %             fprintf('\n%s %s f %s w %s a %s\n', selectFrom, lowDModel, num2str(frameSizes(f)), num2str(windowSizes(w)), windowAligns{a});
-% 
+%
 %             opts.frameSize = frameSizes(f);
 %             opts.stepSize = frameSizes(f);
 %             opts.windowSize = windowSizes(w);
 %             opts.windowAlign = windowAligns{a};
-% 
+%
 %             get_standard_data
 %             fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
 %             save(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat', '-mat');
@@ -149,27 +159,26 @@ windowAligns = {'center', 'left', 'right'};
 %% How much around transitions do you want to decode?
 opts.mPreTime = .15;
 opts.mPostTime = .15;
-opts.mPreTime = .2;
-opts.mPostTime = .2;
+transWindow = ceil(-opts.mPreTime/opts.frameSize : opts.mPostTime/opts.frameSize - 1);
 
 
 % fromBehavior = 'itch';
-fromBehavior = 'locomotion';
+fromBehavior = 'investigate';
+% fromBehavior = 'locomotion';
 % toBehavior = 'locomotion';
-toBehavior = 'investigate_2';
+toBehavior = 'face_groom';
 % fromCodes = codes(contains(behaviors, 'groom'));
 fromCodes = codes(contains(behaviors, fromBehavior));
 toCode = codes(contains(behaviors, toBehavior));
 opts.transTo = toCode;
 opts.transFrom = fromCodes;
-opts.minBoutDur = .25;
-opts.minTransFromDur = .25;
-% opts.minBoutDur = .165;
-% opts.minTransFromDur = .165;
+% opts.minBoutDur = .25;
+% opts.minTransFromDur = .25;
+opts.minBoutDur = .165;
+opts.minTransFromDur = .165;
 goodTransitions = find_good_transitions(bhvID, opts);
 length(goodTransitions)
 svmInd = [];
-            transWindow = round(-opts.mPreTime/opts.frameSize : opts.mPostTime/opts.frameSize - 1);
 
 for i = 1 : length(goodTransitions)
     svmInd = [svmInd; goodTransitions(i) + transWindow'];
@@ -183,11 +192,11 @@ accuracyPermuted = zeros(length(frameSizes), length(windowSizes), length(windowA
 accuracy = zeros(length(frameSizes), length(windowSizes), length(windowAligns), kFolds);
 
 lowDModel = 'umap';
-lowDModel = 'tsne';
-lowDModel = 'pca';
+% lowDModel = 'tsne';
+% lowDModel = 'pca';
 
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -238,20 +247,21 @@ end
 
 
 
-lowDs = {'pca', 'umap', 'tsne'};
+lowDs = {'pca', 'umap'};
+lowDs = {'umap'};
 
 
 %% Loop over the parameters to test them
 for m = 1 :length(lowDs)
     lowDModel = lowDs{m};
-% for f = 1:length(frameSizes)
-%     for w = 1 : length(windowSizes)
-%         for a = 1:length(windowAligns)
+for f = 1:length(frameSizes)
+    for w = 1 : length(windowSizes)
+        for a = 1:length(windowAligns)
             disp('======================================================================')
-            % fprintf('\n\n%s Predicting %s to %s... %s f %.3f w %.2f a %s\n', selectFrom, fromBehavior, toBehavior, ...
-            %     lowDModel, frameSizes(f), windowSizes(w), windowAligns{a});
-            fprintf('\n\n%s Predicting %s to %s... %s %s\n', selectFrom, fromBehavior, toBehavior, ...
-                lowDModel, opts.method);
+            fprintf('\n\n%s Predicting %s to %s... %s f %.3f w %.2f a %s\n', selectFrom, fromBehavior, toBehavior, ...
+                lowDModel, frameSizes(f), windowSizes(w), windowAligns{a});
+            % fprintf('\n\n%s Predicting %s to %s... %s %s\n', selectFrom, fromBehavior, toBehavior, ...
+            % lowDModel, opts.method);
 
             opts.frameSize = frameSizes(f);
             opts.stepSize = frameSizes(f);
@@ -261,9 +271,8 @@ for m = 1 :length(lowDs)
 
             getDataType = 'behavior';
             get_standard_data
-            % fileName = sprintf('dataMat_step%.3f_window%.2f_align_%s.mat', opts.stepSize, opts.windowSize, opts.windowAlign);
-            % fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
-            fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
+            fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+            % fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
             load(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat');
 
             % tic
@@ -281,47 +290,72 @@ for m = 1 :length(lowDs)
 
             colors = colors_for_behaviors(codes);
 
-            % Project into low-D
+            % Project into low-D. Load the files if there are saved
+            % versions. Otherwise, project here
             switch lowDModel
                 case 'umap'
-                    % fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
-                    umapFrameSize = opts.frameSize;
-                    rng(1);
-                    % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, 'randomize', false, 'verbose', 'none', ...
-                    %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+                    
+                    fileName = sprintf('umap_%ddim_%d_min_step%.3f_window%.2f_align_%s.mat', nDim, opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+                    saveP = fullfile(paths.dropPath, 'dataMat', fileName);
+                    if exist(saveP, 'file')
+                        load(saveP);
+                    else
+                        % fprintf('\n%s %s min_dist=%.2f spread=%.1f n_n=%d\n\n', selectFrom, fitType, min_dist(x), spread(y), n_neighbors(z));
+                        umapFrameSize = opts.frameSize;
+                        rng(1);
+                        % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, 'randomize', false, 'verbose', 'none', ...
+                        %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
 
-                    [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, 'randomize', true, 'verbose', 'none');
-                    % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(svmInd, idSelect)), 'n_components', nDim, 'randomize', true, 'verbose', 'none');
+                        [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, 'randomize', true, 'verbose', 'none');
+                        % [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(svmInd, idSelect)), 'n_components', nDim, 'randomize', true, 'verbose', 'none');
 
-                    % minFrames = 2;
-                    %                     [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID, minFrames);
-                    %                     [~, umap, ~, ~] = run_umap(zscore(stackedActivity(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
-                    %                         'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
-                    %                     projSelect = umap.transform(zscore(dataMat(:, idSelect)));
+                        % minFrames = 2;
+                        %                     [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID, minFrames);
+                        %                     [~, umap, ~, ~] = run_umap(zscore(stackedActivity(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                        %                         'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+                        %                     projSelect = umap.transform(zscore(dataMat(:, idSelect)));
+                        save(saveP, 'projSelect');
+                    end
                 case 'pca'
-                    [coeff, projSelect, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
-                   
-                    % expVarThresh = 25;
-                    % dimExplained = find(cumsum(explained) > expVarThresh, 1);
-                    % disp(['PCA: Exp Var = ', num2str(expVar(k)), ' nComponents = ', num2str(pcaDim(k))])
-                    % [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(k)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
-                    %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+                    % fileName = sprintf('pca_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+                    % saveP = fullfile(paths.dropPath, 'dataMat', fileName);
+                    % if exist(saveP, 'file')
+                    %     load(saveP);
+                    % else
+                        [coeff, projSelect, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
 
+                        % expVarThresh = 25;
+                        % dimExplained = find(cumsum(explained) > expVarThresh, 1);
+                        % disp(['PCA: Exp Var = ', num2str(expVar(k)), ' nComponents = ', num2str(pcaDim(k))])
+                        % [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(k)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                        %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
+                        save(saveP, 'projSelect', 'coeff', 'explained');
+                    % end
                 case 'tsne'
-                    % fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
-                    % projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration(x), 'Perplexity', perplexity(y), 'NumDimensions',iDim);
-                    projSelect = tsne(zscore(dataMat(:, idSelect)), 'NumDimensions',nDim);
+                    fileName = sprintf('tsne_%ddim_%d_min_step%.3f_window%.2f_align_%s.mat', nDim, opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+                    saveP = fullfile(paths.dropPath, 'dataMat', fileName);
+                    if exist(saveP, 'file')
+                        load(saveP);
+                    else
+                        % fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
+                        % projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration(x), 'Perplexity', perplexity(y), 'NumDimensions',iDim);
+                        projSelect = tsne(zscore(dataMat(:, idSelect)), 'NumDimensions',nDim);
+                        save(saveP, 'projSelect');
+                    end
             end
 
 
-
-            %% Get the neural frames and labels for decoding
-            svmProj = projSelect(svmInd,:);
+            % Create a neural matrix and labels vector for the decoding
+            svmProj = projSelect(svmInd,1:nDim);
             % svmProj = projSelect;
             svmID = bhvID(svmInd);
-svmID(ismember(svmID, fromCodes)) = -4;
-svmID(ismember(svmID, toCode)) = -3;
-colors = [0 0 0; 0 .6 .2];
+
+
+            %% Get the neural frames and labels for decoding
+
+            svmID(ismember(svmID, fromCodes)) = -4;
+            svmID(ismember(svmID, toCode)) = -3;
+            colors = [0 0 0; 0 .6 .2];
 
             % Plot data to model
             % colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 2, 'UniformOutput', false);
@@ -335,10 +369,10 @@ colors = [0 0 0; 0 .6 .2];
             % titleM = [selectFrom, ' ', fitType, ' ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
             % titleM = [selectFrom, ' ', lowDModel, ' ', fromBehavior, ' to ', toBehavior, ' step=', num2str(opts.stepSize), ' win=', num2str(opts.windowSize), '  align=', opts.windowAlign];
             titleM = sprintf('%s %s %s to %s step=%.3f win=%.2f align=%s', selectFrom, lowDModel, fromBehavior, toBehavior, opts.stepSize, opts.windowSize, opts.windowAlign);
-            titleM = sprintf('%s %s %s to %s %s', selectFrom, lowDModel, fromBehavior, toBehavior, opts.method);
+            % titleM = sprintf('%s %s %s to %s %s', selectFrom, lowDModel, fromBehavior, toBehavior, opts.method);
 
             plotFrames = svmInd;
-            plotFrames = 1:length(svmID);
+            % plotFrames = 1:length(svmID);
             plot_3d_scatter
 
 
@@ -346,7 +380,7 @@ colors = [0 0 0; 0 .6 .2];
 
 
 
-%%
+            %%
             % Use SVM to decode the behaviors
             % Split data into training (80%) and testing (20%) sets
             % cv = cvpartition(svmID, 'HoldOut', 0.2);
@@ -356,9 +390,9 @@ colors = [0 0 0; 0 .6 .2];
             disp('===========================================')
 
             % low dimension version
-            % fprintf('%s DIM %d %.2f Window\n', selectFrom, nDim, windowSizes(w))  % 
-            fprintf('%s DIM %d %s\n', selectFrom, nDim, opts.method)  % 
-tic
+            fprintf('%s DIM %d %.2f Window\n', selectFrom, nDim, windowSizes(w))  %
+            % fprintf('%s DIM %d %s\n', selectFrom, nDim, opts.method)  %
+            tic
             for k = 1:kFolds
                 % Choose which data to model
                 trainData = svmProj(training(cv, k), :);  % pca Dimensions
@@ -446,9 +480,9 @@ tic
 
 
 
-%         end
-%     end
-% end
+        end
+    end
+end
 end
 
 % Reassign accuracy variables
@@ -464,7 +498,7 @@ eval([accNameP, ' = accuracyPermuted;']);
 
 
 
-% Compare the accuracy between the various dataMats
+%% Compare the accuracy between the various dataMats
 
 % f, w, a
 figure(883); clf;
@@ -479,11 +513,11 @@ for f = 1 : length(frameSizes)
     xlim([.5 .5 + length(windowSizes)])
     xticklabels(windowSizes)
     legend({'Center', 'Left', 'Right'}, 'Location','southeast')
-    title(['Step size ', num2str(frameSizes(f))])
+    title(sprintf('Step size %.3f', frameSizes(f)))
     ylabel('Accuracy')
     xlabel('Window size')
 end
-  titleS = sprintf('%s %s %s to %s', selectFrom, lowDModel, fromBehavior, toBehavior);
+titleS = sprintf('%s %s %s to %s n=%d', selectFrom, lowDModel, fromBehavior, toBehavior, length(goodTransitions));
 sgtitle(titleS, 'interpreter', 'none')
 
 % print('-dpdf', fullfile(paths.dropPath, [titleS, '.pdf']), '-bestfit')
@@ -514,6 +548,6 @@ for f = 1 : length(frameSizes)
     ylabel('Accuracy')
     xlabel('Window size')
 end
-  titleS = sprintf('%s %s %s to %s', selectFrom, lowDModel, fromBehavior, toBehavior);
+titleS = sprintf('%s %s %s to %s', selectFrom, lowDModel, fromBehavior, toBehavior);
 sgtitle(titleS, 'interpreter', 'none')
 copy_figure_to_clipboard

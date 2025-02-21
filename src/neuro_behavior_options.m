@@ -50,6 +50,7 @@ opts.nOneBackKeep = 6;
 
 
 % Neural activity options
+opts.method = 'standard'; % gaussian, useOverlap
 opts.removeSome = true;
 opts.minFiringRate = 0.5;
 opts.maxFiringRate = 40;
