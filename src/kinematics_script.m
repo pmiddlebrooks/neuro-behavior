@@ -7,8 +7,12 @@ opts.frameSize = 1/60;
 
 opts.minFiringRate = .5;
 
-getDataType = 'spikes';
-get_standard_data
+getDataType = 'kinematics';
+opts.bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+getDataType = 'kinematics';
+% kinData = load_data(opts, getDataType);
+kinData = load_data(opts, getDataType);
+% get_standard_data
 % getDataType = 'kinematics';
 % get_standard_data
 
@@ -23,9 +27,17 @@ kinematics_velocities_relative_angles
 
 %% PCA on the kinematics
 
-[coeff, score, ~, ~, explained] = pca(kinData(1:size(dataMat, 1),:));
+[coeff, score, ~, ~, explained] = pca(kinData);
 figure(33); plot(cumsum(explained)); grid on;
 
+
+
+%% Find matching sequences
+opts.window = round(.5 / opts.frameSize);
+opts.thresholdCorr = .9;
+opts.matchFrame = 1000;
+dim = 1;
+[matchFrames, matchCorr] = find_matched_sequences(kinData(:,dim), opts);
 %% Umap on the kinematics
 
 % [projSelect, ~, ~, ~] = run_umap(velocitiesAngles, 'n_components', 8, 'randomize', false, 'verbose', 'none', ...
