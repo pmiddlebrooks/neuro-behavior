@@ -6,7 +6,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
-opts.frameSize = .2;
+opts.frameSize = .1;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
 opts.minFiringRate = .5;
@@ -20,12 +20,18 @@ get_standard_data
 
 
 %%
+opts = neuro_behavior_options;
 opts.method = 'gaussian';
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 60 * 60; % seconds
 opts.frameSize = 1/60;
 opts.gaussWidth = 10; % ms
 getDataType = 'behavior';
 get_standard_data
 
+            %%
+            fileName = sprintf('dataMat_%d_min_gaussian%d.mat', opts.collectFor/60, opts.gaussWidth);
+            load(fullfile(paths.dropPath, 'dataMat', fileName));
 
 
 %%
@@ -65,9 +71,9 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % Select which data to run analyses on, UMAP dimensions, etc
 
 % forDim = 4:2:8; % Loop through these dimensions to fit UMAP
-forDim = 4; % Loop through these dimensions to fit UMAP
-% lowDModel = 'umap';
-lowDModel = 'tsne';
+forDim = 6; % Loop through these dimensions to fit UMAP
+lowDModel = 'umap';
+% lowDModel = 'tsne';
 newLowDModel = 1; % Do we need to get a new umap model to analyze (or did you tweak some things that come after umap?)
 umapTransOnly = 0;
 
@@ -163,14 +169,16 @@ switch lowDModel
         else
             cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
         end
+modelAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
+permAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
 
     case 'tsne'
         exaggeration = [60 90 120];
         perplexity = [10 30 40 50];
+modelAccuracy = zeros(length(forDim), length(exaggeration), length(perplexity));
+permAccuracy = zeros(length(forDim), length(exaggeration), length(perplexity));
 end
 
-modelAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
-permAccuracy = zeros(length(forDim), length(min_dist), length(spread), length(n_neighbors));
 
 
 
@@ -204,11 +212,11 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
         % fitType = 'NeuralSpace';
 
 
-        % for x = 1:length(exaggeration)
-        %     for y = 1:length(perplexity)
-        for x = 1:length(min_dist)
-            for y = 1:length(spread)
-                for z = 1:length(n_neighbors)
+        for x = 1:length(exaggeration)
+            for y = 1:length(perplexity)
+        % for x = 1:length(min_dist)
+        %     for y = 1:length(spread)
+        %         for z = 1:length(n_neighbors)
                     disp('=================================================================')
                     %% Run UMAPto get projections in low-D space
                     if newLowDModel && ~umapTransOnly
@@ -234,7 +242,6 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
                                 %                     [~, umap, ~, ~] = run_umap(zscore(stackedActivity(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                 %                         'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
                                 %                     projSelect = umap.transform(zscore(dataMat(:, idSelect)));
-                                pause(2); close
                             case 'tsne'
                                 fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
                                 projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration(x), 'Perplexity', perplexity(y), 'NumDimensions',iDim);
@@ -909,7 +916,7 @@ fprintf('Mean Permuted = %.4f\n', mean(accuracyPermuted(k, :)));
 
                 end
             end
-        end
+        % end
 
     end
 
