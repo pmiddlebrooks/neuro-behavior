@@ -1,8 +1,17 @@
 %%
+opts = neuro_behavior_options;
+
 opts.method = 'gaussian';
 opts.frameSize = 1/60;
 opts.gaussWidth = 10; % ms
+getDataType = 'behavior';
+get_standard_data
+%%
+opts.frameSize = .2;
 getDataType = 'spikes';
+opts.method = 'standard';
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 60 * 60; % seconds
 get_standard_data
 %%
 fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
@@ -10,6 +19,23 @@ save(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat', '-mat');
 %%
 fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
 load(fullfile(paths.dropPath, 'dataMat', fileName));
+
+
+
+%%
+transitionMatix = zeros(length(behaviors), length(behaviors));
+
+for i = 1:length(behaviors)
+    for j = 1:length(behaviors)
+
+opts.transFrom = codes(i);
+opts.transTo = codes(j);
+opts.minBoutDur = .12;
+opts.minTransFromDur = .12;
+transitions =  find_good_transitions(bhvID, opts);
+        transitionMatix(i,j) = length(transitions);
+    end
+end
 
 %%
 minCount = 30;
@@ -163,7 +189,7 @@ transWindow = ceil(-opts.mPreTime/opts.frameSize : opts.mPostTime/opts.frameSize
 
 
 % fromBehavior = 'itch';
-fromBehavior = 'locomotion';
+fromBehavior = ['groom'];
 % fromBehavior = 'locomotion';
 % toBehavior = 'locomotion';
 toBehavior = 'itch';
@@ -196,7 +222,7 @@ lowDModel = 'umap';
 lowDModel = 'pca';
 
 selectFrom = 'M56';
-% selectFrom = 'DS';
+selectFrom = 'DS';
 % selectFrom = 'Both';
 % selectFrom = 'VS';
 % selectFrom = 'All';
@@ -330,7 +356,7 @@ for m = 1 :length(lowDs)
                         % disp(['PCA: Exp Var = ', num2str(expVar(k)), ' nComponents = ', num2str(pcaDim(k))])
                         % [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(k)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                         %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
-                        save(saveP, 'projSelect', 'coeff', 'explained');
+                        % save(saveP, 'projSelect', 'coeff', 'explained');
                         % end
                     case 'tsne'
                         fileName = sprintf('tsne_%ddim_%d_min_step%.3f_window%.2f_align_%s.mat', nDim, opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);

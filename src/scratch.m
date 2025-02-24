@@ -376,6 +376,10 @@ length(goodTransitions)
 
 
 
+
+
+
+
 %%
 function sortedFrequenciesAroundAll = getSortedFrequenciesForAll(inputVector, windowSize)
     % Initialize the output structure
