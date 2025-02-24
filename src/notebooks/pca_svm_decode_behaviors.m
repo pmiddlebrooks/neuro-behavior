@@ -8,9 +8,9 @@ opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 60 * 60; % seconds
 opts.frameSize = .1;
 
-opts.frameSize = 1/60;
+% opts.frameSize = 1/60;
 
-opts.useOverlappingBins = 1;
+opts.useOverlappingBins = 0;
 opts.windowSize = .2;
 opts.stepSize = opts.frameSize;
 
