@@ -131,24 +131,24 @@ for b = 1 : length(binSizes)
         [brPeak(iter, 1, b), tau(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
 
 
-        % % Mark's data
-        % [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
-        % % Ensure dataMatR is same size as dataMat
-        % dataMatR = dataMatR(1:size(dataMat, 1),:);
-        %
-        %
-        % idM23R = find(strcmp(areaLabels, 'M23'));
-        % idM56R = find(strcmp(areaLabels, 'M56'));
-        % idDSR = find(strcmp(areaLabels, 'DS'));
-        % idVSR = find(strcmp(areaLabels, 'VS'));
-        %
-        % % Randomize a subsample of neurons
-        % idSelect = idM56R(randperm(length(idM56R), nSubsample));
-        %
-        % asdfMatM23R = rastertoasdf2(dataMatR(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
-        % AvR = avprops(asdfMatM23R, 'ratio', 'fingerprint');
-        %
-        % [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
+        % Mark's data
+        [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+        % Ensure dataMatR is same size as dataMat
+        dataMatR = dataMatR(1:size(dataMat, 1),:);
+
+
+        idM23R = find(strcmp(areaLabels, 'M23'));
+        idM56R = find(strcmp(areaLabels, 'M56'));
+        idDSR = find(strcmp(areaLabels, 'DS'));
+        idVSR = find(strcmp(areaLabels, 'VS'));
+
+        % Randomize a subsample of neurons
+        idSelect = idM56R(randperm(length(idM56R), nSubsample));
+
+        asdfMatM23R = rastertoasdf2(dataMatR(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
+        AvR = avprops(asdfMatM23R, 'ratio', 'fingerprint');
+
+        [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
 
 
 
