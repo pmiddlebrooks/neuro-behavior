@@ -22,7 +22,7 @@ lfpReach = double(flipud([...
     mmf.Data.x(170,:);...
     mmf.Data.x(40,:)...
     ])');
-    
+
 
 %% Detrend, normalize, and check stationarity of LFP signals
 
@@ -57,11 +57,11 @@ fullWindow = round(fullTime(1:end-1) * fs); % frames around onset w.r.t. zWindow
 nTrial = size(rData.R, 1);
 lfpTest = [];
 for i = 1 : nTrial
-% check for noise (check if it's a usable trial)
-iLfp = normalizedLfp(rData.R(i,1) + fullWindow, :)';
-if ~any(iLfp(2,:) > 5)
-    lfpTest = cat(3, lfpTest, iLfp);
-end
+    % check for noise (check if it's a usable trial)
+    iLfp = normalizedLfp(rData.R(i,1) + fullWindow, :)';
+    if ~any(iLfp(2,:) > 5)
+        lfpTest = cat(3, lfpTest, iLfp);
+    end
 end
 
 X = lfpTest;
@@ -116,8 +116,8 @@ imagesc(1:size(pws, 2), frequencies, pws);
 %% from matlab: https://www.mathworks.com/help/signal/ug/remove-the-60-hz-hum-from-a-signal.html
 
 d = designfilt('bandstopiir','FilterOrder',2, ...
-               'HalfPowerFrequency1',59,'HalfPowerFrequency2',61, ...
-               'DesignMethod','butter','SampleRate',fs);
+    'HalfPowerFrequency1',59,'HalfPowerFrequency2',61, ...
+    'DesignMethod','butter','SampleRate',fs);
 t = (1:length(lfpSample)) / fs;
 buttLoop = filtfilt(d,lfpSample);
 
@@ -147,11 +147,11 @@ figure(19); plot(zscore(lfpSample))
 % lfpReach = medfilt1(lfpReach, 3, [], 2);
 
 % See Mark's pic for depth...
-    % m23 = [3300 3800];
-    % m56 = [2300 3200];
-    % cc = [2100 2200];
-    % ds = [1100 2000];
-    % vs = [0 1000];
+% m23 = [3300 3800];
+% m56 = [2300 3200];
+% cc = [2100 2200];
+% ds = [1100 2000];
+% vs = [0 1000];
 
 
 
@@ -159,7 +159,7 @@ figure(19); plot(zscore(lfpSample))
 
 
 
-    %% Script to remove spikes from raw LFP signal
+%% Script to remove spikes from raw LFP signal
 % Parameters for spike removal
 spikeThreshold = 5; % Threshold in standard deviations to identify spikes
 windowSize = 1000; % Window size around the spike to interpolate (in samples)
@@ -215,10 +215,10 @@ legend('Cleaned LFP');
 lfpReach = lowpass(lfpReach, 300, fs);
 
 
-    %%
-    samples = floor(size(lfpReach, 1)/10);
+%%
+samples = floor(size(lfpReach, 1)/10);
 
-   
+
 %%
 % Plot the signals for visualization
 figure(91); clf;
