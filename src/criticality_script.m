@@ -113,67 +113,84 @@ sigmaNuZInvSD = tau;
 opts.minFiringRate = .1;
 opts.collectFor = 20 * 60;
 getDataType = 'spikes';
+opts.frameSize = .001;
+get_standard_data
 
-nIter = 10;
+
+% Mark's reach data
+dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
+[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+% Ensure dataMatR is same size as dataMat
+dataMatR = dataMatR(1:size(dataMat, 1),:);
+idM23R = find(strcmp(areaLabels, 'M23'));
+idM56R = find(strcmp(areaLabels, 'M56'));
+idDSR = find(strcmp(areaLabels, 'DS'));
+idVSR = find(strcmp(areaLabels, 'VS'));
+
+
+nIter = 2;
 nSubsample = 20;
 % binSizes = [.005, .01, .015, .02];
 binSizes = [.01, .015, .02 .025];
 % binSizes = [.005, .05];
 % binSizes = [.005];
 
-% reach data
-dataR = load(fullfile(paths.saveDataPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
 
-brPeak = zeros(nIter, 2, length(binSizes));
+
+%%    Is naturalistic data closer to criticality than reach data?
+% brPeak = zeros(nIter, 2, length(binSizes));
+brPeak = zeros(nIter, 2);
 tau = brPeak;
 alpha = tau;
 sigmaNuZInvSD = tau;
-%%    Is naturalistic data closer to criticality than reach data?
+optBinSize = tau;
+
 tic
-for b = 1 : length(binSizes)
-    for iter = 1:nIter
-        fprintf('\nIteration: %d\tBinSize: %.3f\t Time Elapsed: %.1f min\n', iter, binSizes(b), toc/60)
+% for b = 1 : length(binSizes)
+for iter = 1:nIter
+    % fprintf('\nIteration: %d\tBinSize: %.3f\t Time Elapsed: %.1f min\n', iter, binSizes(b), toc/60)
 
-        opts.frameSize = binSizes(b);
+    % opts.frameSize = binSizes(b);
 
+    % Naturalistich data4
+    % get_standard_data
 
-        % Naturalistich data4
-        get_standard_data
+    % Randomize a subsample of neurons
+    idSelect = idDS(randperm(length(idDS), nSubsample));
 
-        % Randomize a subsample of neurons
-        idSelect = idDS(randperm(length(idDS), nSubsample));
+    % Find optimal bin size for this group of neurons (to nearest ms)
+    optBinSize(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
+    if optBinSize(iter, 1) == 0; optBinSize(iter, 1) = .001; end
+    fprintf('\nNatural\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize(iter, 1))
 
+    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, idSelect), opts.frameSize);
+    asdfMat = rastertoasdf2(dataMatNat', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
+    Av = avprops(asdfMat, 'ratio', 'fingerprint');
 
-        asdfMat = rastertoasdf2(dataMat(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
-        Av = avprops(asdfMat, 'ratio', 'fingerprint');
-
-        [brPeak(iter, 1, b), tau(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
-
-
-        % Mark's data
-        [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
-        % Ensure dataMatR is same size as dataMat
-        dataMatR = dataMatR(1:size(dataMat, 1),:);
-
-
-        idM23R = find(strcmp(areaLabels, 'M23'));
-        idM56R = find(strcmp(areaLabels, 'M56'));
-        idDSR = find(strcmp(areaLabels, 'DS'));
-        idVSR = find(strcmp(areaLabels, 'VS'));
-
-        % Randomize a subsample of neurons
-        idSelect = idDSR(randperm(length(idDSR), nSubsample));
-
-        asdfMatR = rastertoasdf2(dataMatR(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
-        AvR = avprops(asdfMatR, 'ratio', 'fingerprint');
-
-        [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
+    % [brPeak(iter, 1, b), tau(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
+    [brPeak(iter, 1), tau(iter, 1), alpha(iter, 1), sigmaNuZInvSD(iter, 1)] = avalanche_log(Av);
 
 
 
-    end
+    % Randomize a subsample of neurons
+    idSelect = idDSR(randperm(length(idDSR), nSubsample));
+
+    % Find optimal bin size for this group of neurons
+    optBinSize(iter, 2) = round(mean(diff(find(sum(dataMatR(:, idSelect), 2))))) / 1000;
+    if optBinSize(iter, 2) == 0; optBinSize(iter, 2) = .001; end
+    fprintf('\nReach\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize(iter, 2))
+    dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, idSelect), optBinSize(iter, 2));
+
+    asdfMatR = rastertoasdf2(dataMatReach', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
+    AvR = avprops(asdfMatR, 'ratio', 'fingerprint');
+
+    % [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
+    [brPeak(iter, 2), tau(iter, 2), alpha(iter, 2), sigmaNuZInvSD(iter, 2)] = avalanche_log(AvR);
+
+    fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
+
 end
-
+% end
 
 
 %%
@@ -199,31 +216,43 @@ save(fileName, 'brPeakDS', 'tauDS', 'alphaDS', 'sigmaNuZInvSDDS', '-append')
 
 
 
-%% Test transition vs. within-bout criticality across all behaviors. 
+%% Test transition vs. within-bout criticality across all behaviors.
 opts.minFiringRate = .1;
 opts.collectFor = 45 * 60;
 getDataType = 'spikes';
 
 opts.frameSize = .015;
-        get_standard_data
+get_standard_data
 %%
-        preTime = .15;
+preTime = .15;
 postTime = .15;
 transWindow = (-preTime/opts.frameSize : postTime/opts.frameSize - 1);
 
+transMat = [];
+withinMat = [];
 % Transition indices
 preInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
 
 for bout = 1 : length(preInd)
-% transInd = unique(sort(reshape(preInd + transWindow(:)', [], 1)))
+    % transInd = unique(sort(reshape(preInd + transWindow(:)', [], 1)))
 
-% Collect transition avalanche data
-transInd = preInd(bout) + transWindow;
+    % Collect transition avalanche data
+    transInd = preInd(bout) + transWindow;
+    % Find avalances within the data
+    zeroBins = find(sum(dataMat(transInd, idSelect), 2) == 0);
+    if length(zeroBins > 1) && any(diff(zeroBins)>1)
+    transMat = [transMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
+    end
 
-
-% Collect within-bout avalanche data
-withinInd = preInd(bout) + transWindow(end) + 1 : preInd(bout+1) + transWindow(1) - 1;
-
+    % Collect within-bout avalanche data
+    withinInd = preInd(bout) + transWindow(end) + 1 : preInd(bout+1) + transWindow(1) - 1;
+    % If there is any within-bout data...
+    if ~isempty(withinInd)
+    zeroBins = find(sum(dataMat(withinInd, idSelect), 2) == 0);
+    if length(zeroBins > 1) && any(diff(zeroBins)>1)
+    withinMat = [withinMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
+    end
+    end
 
 end
 
