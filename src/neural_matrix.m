@@ -86,7 +86,7 @@ for i = 1:length(idLabels)
     switch opts.method
         case 'useOverlap'
             % Overlapping bin edges
-            timeEdges = 0:stepSize:sum(data.bhvDur); % Define steps
+            timeEdges = 0:opts.frameSize:numFrames * opts.frameSize;
             dataMatTemp = zeros(length(timeEdges) - 1, 1);
 
             % Apply sliding window approach
@@ -112,7 +112,7 @@ for i = 1:length(idLabels)
             dataMat(:, i) = dataMatTemp;
         case 'standard'
             % Standard non-overlapping binning
-            timeEdges = 0:opts.frameSize:sum(data.bhvDur);
+            timeEdges = 0:opts.frameSize:numFrames * opts.frameSize;
             if opts.shiftAlignFactor ~= 0
                 timeEdges = timeEdges + opts.shiftAlignFactor;
             end
@@ -130,9 +130,6 @@ for i = 1:length(idLabels)
             smoothedRate = conv(spikeTrain, gaussKernel, 'same'); % divide by 1000 to get smoothed rate
             spikeRateMs(:, i) = smoothedRate * opts.fsSpike; % Convert to Hz
             spikeRateMs(:, i) = smoothedRate * 1000; % Convert to Hz
-
-                % Convert bin width from seconds to milliseconds
-    % binWidthMs = round(opts.frameSize * 1000);
 
     end
 
