@@ -142,7 +142,6 @@ end
 
 
 % Remove neurons that do not meet firing rate criteria
-rmvNeurons = [];
 if opts.removeSome
     checkTime = 5 * 60;
     checkFrames = floor(checkTime / opts.frameSize);
