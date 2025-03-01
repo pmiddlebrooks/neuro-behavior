@@ -141,7 +141,7 @@ for b = 1 : length(binSizes)
         get_standard_data
 
         % Randomize a subsample of neurons
-        idSelect = idDS(randperm(length(idDS), nSubsample));
+        idSelect = idVS(randperm(length(idVS), nSubsample));
 
 
         asdfMat = rastertoasdf2(dataMat(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
@@ -162,7 +162,7 @@ for b = 1 : length(binSizes)
         idVSR = find(strcmp(areaLabels, 'VS'));
 
         % Randomize a subsample of neurons
-        idSelect = idDSR(randperm(length(idDSR), nSubsample));
+        idSelect = idVSR(randperm(length(idVSR), nSubsample));
 
         asdfMatR = rastertoasdf2(dataMatR(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
         AvR = avprops(asdfMatR, 'ratio', 'fingerprint');
