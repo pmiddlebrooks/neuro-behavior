@@ -146,7 +146,7 @@ sigmaNuZInvSD = tau;
 optBinSize = tau;
 
 tic
-% for b = 1 : length(binSizes)
+for b = 1 : length(binSizes)
 for iter = 1:nIter
     % fprintf('\nIteration: %d\tBinSize: %.3f\t Time Elapsed: %.1f min\n', iter, binSizes(b), toc/60)
 
@@ -190,19 +190,17 @@ for iter = 1:nIter
     fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
 
 end
-% end
+end
 
 
 %%
-brPeakDS = brPeak;
-tauDS = tau;
-alphaDS = alpha;
-sigmaNuZInvSDDS = sigmaNuZInvSD;
+brPeakVS = brPeak;
+tauVS = tau;
+alphaVS = alpha;
+sigmaNuZInvSDVS = sigmaNuZInvSD;
 
-fileName = fullfile(paths.saveDataPath, 'criticality_parameters.mat');
-save(fileName, 'brPeakDS', 'tauDS', 'alphaDS', 'sigmaNuZInvSDDS', '-append')
-
-
+fileName = fullfile(paths.dropPath, 'criticality_parameters.mat');
+save(fileName, 'brPeakVS', 'tauVS', 'alphaVS', 'sigmaNuZInvSDVS', '-append')
 
 
 
@@ -216,7 +214,9 @@ save(fileName, 'brPeakDS', 'tauDS', 'alphaDS', 'sigmaNuZInvSDDS', '-append')
 
 
 
-%% Test transition vs. within-bout criticality across all behaviors.
+
+
+%%   =============     Test transition vs. within-bout criticality across all behaviors.   =============
 opts.minFiringRate = .1;
 opts.collectFor = 45 * 60;
 getDataType = 'spikes';
@@ -238,20 +238,24 @@ for bout = 1 : length(preInd)
 
     % Collect transition avalanche data
     transInd = preInd(bout) + transWindow;
-    % Find avalances within the data
-    zeroBins = find(sum(dataMat(transInd, idSelect), 2) == 0);
-    if length(zeroBins > 1) && any(diff(zeroBins)>1)
-    transMat = [transMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
+    % Only use transitions that are consitent behaviors going into and out
+    % of the transition
+    if sum(diff(bhvID(transInd)) == 0) == length(transWindow) - 2
+        % Find avalances within the data
+        zeroBins = find(sum(dataMat(transInd, idSelect), 2) == 0);
+        if length(zeroBins > 1) && any(diff(zeroBins)>1)
+            transMat = [transMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
+        end
     end
 
     % Collect within-bout avalanche data
     withinInd = preInd(bout) + transWindow(end) + 1 : preInd(bout+1) + transWindow(1) - 1;
     % If there is any within-bout data...
     if ~isempty(withinInd)
-    zeroBins = find(sum(dataMat(withinInd, idSelect), 2) == 0);
-    if length(zeroBins > 1) && any(diff(zeroBins)>1)
-    withinMat = [withinMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
-    end
+        zeroBins = find(sum(dataMat(withinInd, idSelect), 2) == 0);
+        if length(zeroBins > 1) && any(diff(zeroBins)>1)
+            withinMat = [withinMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
+        end
     end
 
 end
