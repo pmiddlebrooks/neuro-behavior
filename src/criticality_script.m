@@ -350,6 +350,12 @@ end
 
 
 
+
+
+
+
+
+
 %%   =======================     Sliding window of criticality parameters   =======================
 % Slide a window from 1sec prior to 100ms after each time point
 % Get criticality parameters at each time piont
@@ -401,12 +407,11 @@ for a = 1 : length(areas)
         asdfMat = rastertoasdf2(dataMatNat(i + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
         Av = avprops(asdfMat, 'ratio', 'fingerprint');
 
-        [iBrPeak(i), iTau(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av);
+        [iBrPeak(i), iTau(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av, 0);
 
-            fprintf('\n\Area %s\t %.1f\n\n', areas{a}, toc/60)
 
     end
-            fprintf('\n\Area %s\t %.1f\n\n', areas{a}, toc/60)
+            fprintf('\nArea %s\t %.1f\n\n', areas{a}, toc/60)
 
     brPeak{a} = iBrPeak;
     tau{a} = iTau;
@@ -416,6 +421,7 @@ end
 fileName = fullfile(paths.dropPath, 'avalanche_mat.mat');
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
 save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
+save(fileName, 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
 
 
 
@@ -647,7 +653,7 @@ function [brPeak, tau, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag)
 if plotFlag == 1
     plotFlag = 'plot';
 else
-    plotFlag = [];
+    plotFlag = 'nothing';
 end
 
 minBR = min(Av.branchingRatio);
