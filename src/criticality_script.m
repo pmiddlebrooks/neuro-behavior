@@ -128,47 +128,48 @@ idDSR = find(strcmp(areaLabels, 'DS'));
 idVSR = find(strcmp(areaLabels, 'VS'));
 
 
-nIter = 2;
-nSubsample = 20;
-% binSizes = [.005, .01, .015, .02];
-binSizes = [.01, .015, .02 .025];
-% binSizes = [.005, .05];
-% binSizes = [.005];
-
-
 
 %%    Is naturalistic data closer to criticality than reach data?
-% brPeak = zeros(nIter, 2, length(binSizes));
-brPeak = zeros(nIter, 2);
+nIter = 1;
+nSubsample = 20;
+
+areas = {'M23', 'M56', 'VS', 'DS'};
+brPeak = cell(length(areas, 1));
 tau = brPeak;
 alpha = tau;
 sigmaNuZInvSD = tau;
 optBinSize = tau;
+Av = tau;
 
+for a = 1 : length(areas)
+% brPeak = zeros(nIter, 2, length(binSizes));
+switch areas{a}
+    case 'M23'
+        aID = idM23;
+    case 'M56'
+        aID = idM56;
+    case 'DS'
+        aID = idDS;
+    case 'VS'
+        aID = idVS;
+end
 tic
-for b = 1 : length(binSizes)
 for iter = 1:nIter
-    % fprintf('\nIteration: %d\tBinSize: %.3f\t Time Elapsed: %.1f min\n', iter, binSizes(b), toc/60)
-
-    % opts.frameSize = binSizes(b);
-
-    % Naturalistich data4
-    % get_standard_data
-
     % Randomize a subsample of neurons
-    idSelect = idDS(randperm(length(idDS), nSubsample));
+    pause; % Fix this - get area id
+    idSelect = idDS(randperm(length(aID), nSubsample));
 
     % Find optimal bin size for this group of neurons (to nearest ms)
-    optBinSize(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
-    if optBinSize(iter, 1) == 0; optBinSize(iter, 1) = .001; end
-    fprintf('\nNatural\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize(iter, 1))
+    optBinSize{a}(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
+    if optBinSize{a}(iter, 1) == 0; optBinSize{a}(iter, 1) = .001; end
+    fprintf('\nNatural\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize{a}(iter, 1))
 
-    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, idSelect), opts.frameSize);
-    asdfMat = rastertoasdf2(dataMatNat', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
-    Av = avprops(asdfMat, 'ratio', 'fingerprint');
+    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, idSelect), optBinSize{a}(iter, 1));
+    asdfMat = rastertoasdf2(dataMatNat', optBinSize{a}(iter, 1)*1000, 'CBModel', 'Spikes', 'DS');
+    Av{a}(1) = avprops(asdfMat, 'ratio', 'fingerprint');
 
     % [brPeak(iter, 1, b), tau(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
-    [brPeak(iter, 1), tau(iter, 1), alpha(iter, 1), sigmaNuZInvSD(iter, 1)] = avalanche_log(Av);
+    [brPeak{a}(iter, 1), tau{a}(iter, 1), alpha{a}(iter, 1), sigmaNuZInvSD{a}(iter, 1)] = avalanche_log(Av{a}(1));
 
 
 
@@ -176,24 +177,91 @@ for iter = 1:nIter
     idSelect = idDSR(randperm(length(idDSR), nSubsample));
 
     % Find optimal bin size for this group of neurons
-    optBinSize(iter, 2) = round(mean(diff(find(sum(dataMatR(:, idSelect), 2))))) / 1000;
-    if optBinSize(iter, 2) == 0; optBinSize(iter, 2) = .001; end
-    fprintf('\nReach\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize(iter, 2))
-    dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, idSelect), optBinSize(iter, 2));
+    optBinSize{a}(iter, 2) = round(mean(diff(find(sum(dataMatR(:, idSelect), 2))))) / 1000;
+    if optBinSize{a}(iter, 2) == 0; optBinSize{a}(iter, 2) = .001; end
+    fprintf('\nReach\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize{a}(iter, 2))
+    dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, idSelect), optBinSize{a}(iter, 2));
 
-    asdfMatR = rastertoasdf2(dataMatReach', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
-    AvR = avprops(asdfMatR, 'ratio', 'fingerprint');
+    asdfMatR = rastertoasdf2(dataMatReach', optBinSize{a}(iter, 2)*1000, 'CBModel', 'Spikes', 'DS');
+    Av{a}(2) = avprops(asdfMatR, 'ratio', 'fingerprint');
 
     % [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
-    [brPeak(iter, 2), tau(iter, 2), alpha(iter, 2), sigmaNuZInvSD(iter, 2)] = avalanche_log(AvR);
+    [brPeak{a}(iter, 2), tau{a}(iter, 2), alpha{a}(iter, 2), sigmaNuZInvSD{a}(iter, 2)] = avalanche_log(Av{a}(2));
 
     fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
 
 end
+
+slack_code_done
+end
+fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
+save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
+
+
+%%    Is naturalistic data closer to criticality than reach data?
+nIter = 10;
+nSubsample = 20;
+% binSizes = [.005, .01, .015, .02];
+binSizes = [.01, .015, .02 .025];
+% binSizes = [.005, .05];
+% binSizes = [.005];
+
+% brPeak = zeros(nIter, 2, length(binSizes));
+brPeak = zeros(nIter, 2, length(binSizes));
+tau = brPeak;
+alpha = tau;
+sigmaNuZInvSD = tau;
+optBinSize = tau;
+
+tic
+for b = 1 : length(binSizes)
+    for iter = 1:nIter
+        % fprintf('\nIteration: %d\tBinSize: %.3f\t Time Elapsed: %.1f min\n', iter, binSizes(b), toc/60)
+
+        opts.frameSize = binSizes(b);
+
+        % Naturalistich data4
+        get_standard_data
+
+        % Randomize a subsample of neurons
+        idSelect = idVS(randperm(length(idVS), nSubsample));
+
+        % Find optimal bin size for this group of neurons (to nearest ms)
+        % optBinSize(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
+        % if optBinSize(iter, 1) == 0; optBinSize(iter, 1) = .001; end
+        fprintf('\nNatural\tIteration: %d\tBinSize: %.3f\n', iter, opts.frameSize)
+
+        asdfMat = rastertoasdf2(dataMat(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
+        Av = avprops(asdfMat, 'ratio', 'fingerprint');
+
+        [brPeak(iter, 1, b), tau(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
+        % [brPeak(iter, 1), tau(iter, 1), alpha(iter, 1), sigmaNuZInvSD(iter, 1)] = avalanche_log(Av);
+
+
+
+dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
+dataMatR = neural_matrix_mark_data(dataR, opts);
+        % Randomize a subsample of neurons
+        idSelect = idVSR(randperm(length(idVSR), nSubsample));
+
+        % Find optimal bin size for this group of neurons
+        % optBinSize(iter, 2) = round(mean(diff(find(sum(dataMatR(:, idSelect), 2))))) / 1000;
+        % if optBinSize(iter, 2) == 0; optBinSize(iter, 2) = .001; end
+        fprintf('\nReach\tIteration: %d\tBinSize: %.3f\n', iter, opts.frameSize)
+
+        asdfMatR = rastertoasdf2(dataMatR(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
+        AvR = avprops(asdfMatR, 'ratio', 'fingerprint');
+
+        [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
+        % [brPeak(iter, 2), tau(iter, 2), alpha(iter, 2), sigmaNuZInvSD(iter, 2)] = avalanche_log(AvR);
+
+        fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
+
+    end
 end
 
 
-%%
+%
 brPeakVS = brPeak;
 tauVS = tau;
 alphaVS = alpha;
@@ -202,8 +270,7 @@ sigmaNuZInvSDVS = sigmaNuZInvSD;
 fileName = fullfile(paths.dropPath, 'criticality_parameters.mat');
 save(fileName, 'brPeakVS', 'tauVS', 'alphaVS', 'sigmaNuZInvSDVS', '-append')
 
-
-
+slack_code_done
 
 
 
@@ -260,6 +327,83 @@ for bout = 1 : length(preInd)
 
 end
 
+% fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
+% save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
+
+
+
+
+
+
+
+
+
+
+
+
+%%   =======================     Sliding window of criticality parameters   =======================
+% Slide a window from 1sec prior to 100ms after each time point
+% Get criticality parameters at each time piont
+% Assess metastability of criticality over time
+opts.frameSize = .001;
+opts.minFiringRate = .1;
+getDataType = 'spikes';
+get_standard_data
+
+
+preTime = 1;
+postTime = .1;
+
+
+idSelect = idM56;
+    % Initialize variables
+areas = {'M23', 'M56', 'VS', 'DS'};
+brPeak = cell(length(areas, 1));
+    tau = brPeak;
+    alpha = brPeak;
+    sigmaNuZInvSD = brPeak;
+
+for a = 1 : length(areas)
+switch areas{a}
+    case 'M23'
+        aID = idM23;
+    case 'M56'
+        aID = idM56;
+    case 'DS'
+        aID = idDS;
+    case 'VS'
+        aID = idVS;
+end
+
+optBinSize = mean(diff(find(sum(dataMat(:, aID), 2)))) / 1000;
+
+    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize);
+
+    
+transWindow = (-preTime/opts.frameSize : postTime/opts.frameSize - 1);
+
+iTau = nan(size(dataMatNat, 1));
+iBrPeak = iTau;
+iAlpha = iTau;
+iSigmaNuZInvSD = iTau;
+
+for i = -transWindow(1): size(dataMat, 1) - transWindow(end)
+        asdfMat = rastertoasdf2(dataMatNat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+        Av = avprops(asdfMat, 'ratio', 'fingerprint');
+
+    [iBrPeak(i), iTau(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av);
+
+    fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
+
+end
+brPeak{a} = iBrPeak;
+tau{a} = iTau;
+alpha{a} = iAlpha;
+alpha{a} = iSigmaNuZInvSD;
+end
+fileName = fullfile(paths.dropPath, 'avalanche_mat.mat');
+% save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
+save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample')
 
 
 
@@ -274,8 +418,7 @@ end
 
 
 
-
-%% Behavior scale-free?
+%% =======================    Behavior scale-free?     =======================
 % Define behaviors to include (input as a vector)
 bhvInclude = analyzeCodes           ; % Modify this as needed
 someBhvs = 'groom';
