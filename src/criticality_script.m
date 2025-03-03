@@ -30,8 +30,6 @@ sum(sumSpikes == 0) / length(sumSpikes)
 %% go to demoempdata.m
 
 asdfMat = rastertoasdf2(dataMat(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS')
-
-
 Av = avprops(asdfMat, 'ratio', 'fingerprint');
 
 % Go to demoempdata.m to run rest of codes using Av
@@ -111,7 +109,7 @@ alpha = tau;
 sigmaNuZInvSD = tau;
 %% Set variables and get data
 opts.minFiringRate = .1;
-opts.collectFor = 20 * 60;
+opts.collectFor = 5 * 60;
 getDataType = 'spikes';
 opts.frameSize = .001;
 get_standard_data
@@ -134,7 +132,7 @@ nIter = 1;
 nSubsample = 20;
 
 areas = {'M23', 'M56', 'VS', 'DS'};
-brPeak = cell(length(areas, 1));
+brPeak = cell(length(areas), 1);
 tau = brPeak;
 alpha = tau;
 sigmaNuZInvSD = tau;
@@ -142,57 +140,68 @@ optBinSize = tau;
 Av = tau;
 
 for a = 1 : length(areas)
-% brPeak = zeros(nIter, 2, length(binSizes));
-switch areas{a}
-    case 'M23'
-        aID = idM23;
-    case 'M56'
-        aID = idM56;
-    case 'DS'
-        aID = idDS;
-    case 'VS'
-        aID = idVS;
-end
-tic
-for iter = 1:nIter
-    % Randomize a subsample of neurons
-    pause; % Fix this - get area id
-    idSelect = idDS(randperm(length(aID), nSubsample));
-
-    % Find optimal bin size for this group of neurons (to nearest ms)
-    optBinSize{a}(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
-    if optBinSize{a}(iter, 1) == 0; optBinSize{a}(iter, 1) = .001; end
-    fprintf('\nNatural\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize{a}(iter, 1))
-
-    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, idSelect), optBinSize{a}(iter, 1));
-    asdfMat = rastertoasdf2(dataMatNat', optBinSize{a}(iter, 1)*1000, 'CBModel', 'Spikes', 'DS');
-    Av{a}(1) = avprops(asdfMat, 'ratio', 'fingerprint');
-
-    % [brPeak(iter, 1, b), tau(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
-    [brPeak{a}(iter, 1), tau{a}(iter, 1), alpha{a}(iter, 1), sigmaNuZInvSD{a}(iter, 1)] = avalanche_log(Av{a}(1));
+    % brPeak = zeros(nIter, 2, length(binSizes));
+    switch areas{a}
+        case 'M23'
+            aID = idM23;
+            aIDR = idM23R;
+        case 'M56'
+            aID = idM56;
+            aIDR = idM56R;
+        case 'DS'
+            aID = idDS;
+            aIDR = idDSR;
+        case 'VS'
+            aID = idVS;
+            aIDR = idVSR;
+    end
+    tic
+    for iter = 1:nIter
 
 
+        % Naturalistic data
+        % --------------------
 
-    % Randomize a subsample of neurons
-    idSelect = idDSR(randperm(length(idDSR), nSubsample));
+        % Randomize a subsample of neurons
+        idSelect = aID(randperm(length(aID), nSubsample));
 
-    % Find optimal bin size for this group of neurons
-    optBinSize{a}(iter, 2) = round(mean(diff(find(sum(dataMatR(:, idSelect), 2))))) / 1000;
-    if optBinSize{a}(iter, 2) == 0; optBinSize{a}(iter, 2) = .001; end
-    fprintf('\nReach\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize{a}(iter, 2))
-    dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, idSelect), optBinSize{a}(iter, 2));
+        % Find optimal bin size for this group of neurons (to nearest ms)
+        optBinSize{a}(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
+        if optBinSize{a}(iter, 1) == 0; optBinSize{a}(iter, 1) = .001; end
+        fprintf('\nNatural\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize{a}(iter, 1))
 
-    asdfMatR = rastertoasdf2(dataMatReach', optBinSize{a}(iter, 2)*1000, 'CBModel', 'Spikes', 'DS');
-    Av{a}(2) = avprops(asdfMatR, 'ratio', 'fingerprint');
+        dataMatNat = neural_matrix_ms_to_frames(dataMat(:, idSelect), optBinSize{a}(iter, 1));
+        asdfMat = rastertoasdf2(dataMatNat', optBinSize{a}(iter, 1)*1000, 'CBModel', 'Spikes', 'area');
+        Av{a}(1) = avprops(asdfMat, 'ratio', 'fingerprint');
 
-    % [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
-    [brPeak{a}(iter, 2), tau{a}(iter, 2), alpha{a}(iter, 2), sigmaNuZInvSD{a}(iter, 2)] = avalanche_log(Av{a}(2));
+        % [brPeak(iter, 1, b), tau(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
+        [brPeak{a}(iter, 1), tau{a}(iter, 1), alpha{a}(iter, 1), sigmaNuZInvSD{a}(iter, 1)] = avalanche_log(Av{a}(1));
 
-    fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
 
-end
 
-slack_code_done
+        % Mark reach data
+        % --------------------
+
+        % Randomize a subsample of neurons
+        idSelect = aIDR(randperm(length(aIDR), nSubsample));
+
+        % Find optimal bin size for this group of neurons
+        optBinSize{a}(iter, 2) = round(mean(diff(find(sum(dataMatR(:, idSelect), 2))))) / 1000;
+        if optBinSize{a}(iter, 2) == 0; optBinSize{a}(iter, 2) = .001; end
+        fprintf('\nReach\tIteration: %d\tBinSize: %.3f\n', iter, optBinSize{a}(iter, 2))
+        dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, idSelect), optBinSize{a}(iter, 2));
+
+        asdfMatR = rastertoasdf2(dataMatReach', optBinSize{a}(iter, 2)*1000, 'CBModel', 'Spikes', 'area');
+        Av{a}(2) = avprops(asdfMatR, 'ratio', 'fingerprint');
+
+        % [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
+        [brPeak{a}(iter, 2), tau{a}(iter, 2), alpha{a}(iter, 2), sigmaNuZInvSD{a}(iter, 2)] = avalanche_log(Av{a}(2));
+
+        fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
+
+    end
+
+    slack_code_done
 end
 fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
 save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
@@ -239,8 +248,8 @@ for b = 1 : length(binSizes)
 
 
 
-dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
-dataMatR = neural_matrix_mark_data(dataR, opts);
+        dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
+        dataMatR = neural_matrix_mark_data(dataR, opts);
         % Randomize a subsample of neurons
         idSelect = idVSR(randperm(length(idVSR), nSubsample));
 
@@ -350,60 +359,208 @@ opts.minFiringRate = .1;
 getDataType = 'spikes';
 get_standard_data
 
-
-preTime = 1;
-postTime = .1;
+%%
+preTime = 2;
+postTime = .2;
 
 
 idSelect = idM56;
-    % Initialize variables
+% Initialize variables
 areas = {'M23', 'M56', 'VS', 'DS'};
-brPeak = cell(length(areas, 1));
-    tau = brPeak;
-    alpha = brPeak;
-    sigmaNuZInvSD = brPeak;
+brPeak = cell(length(areas), 1);
+tau = brPeak;
+alpha = brPeak;
+sigmaNuZInvSD = brPeak;
 
 for a = 1 : length(areas)
-switch areas{a}
-    case 'M23'
-        aID = idM23;
-    case 'M56'
-        aID = idM56;
-    case 'DS'
-        aID = idDS;
-    case 'VS'
-        aID = idVS;
-end
+    tic
+    switch areas{a}
+        case 'M23'
+            aID = idM23;
+        case 'M56'
+            aID = idM56;
+        case 'DS'
+            aID = idDS;
+        case 'VS'
+            aID = idVS;
+    end
 
-optBinSize = mean(diff(find(sum(dataMat(:, aID), 2)))) / 1000;
+    optBinSize = ceil(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
 
     dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize);
 
-    
-transWindow = (-preTime/opts.frameSize : postTime/opts.frameSize - 1);
 
-iTau = nan(size(dataMatNat, 1));
-iBrPeak = iTau;
-iAlpha = iTau;
-iSigmaNuZInvSD = iTau;
+    transWindow = (-preTime/opts.frameSize : postTime/opts.frameSize - 1);
 
-for i = -transWindow(1): size(dataMat, 1) - transWindow(end)
-        asdfMat = rastertoasdf2(dataMatNat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+    iTau = nan(size(dataMatNat, 1), 1);
+    iBrPeak = iTau;
+    iAlpha = iTau;
+    iSigmaNuZInvSD = iTau;
+
+    for i = -transWindow(1): size(dataMat, 1) - transWindow(end)
+        asdfMat = rastertoasdf2(dataMatNat(i + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
         Av = avprops(asdfMat, 'ratio', 'fingerprint');
 
-    [iBrPeak(i), iTau(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av);
+        [iBrPeak(i), iTau(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av);
 
-    fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
+            fprintf('\n\Area %s\t %.1f\n\n', areas{a}, toc/60)
 
-end
-brPeak{a} = iBrPeak;
-tau{a} = iTau;
-alpha{a} = iAlpha;
-alpha{a} = iSigmaNuZInvSD;
+    end
+            fprintf('\n\Area %s\t %.1f\n\n', areas{a}, toc/60)
+
+    brPeak{a} = iBrPeak;
+    tau{a} = iTau;
+    alpha{a} = iAlpha;
+    sigmaNuZInvSD{a} = iSigmaNuZInvSD;
 end
 fileName = fullfile(paths.dropPath, 'avalanche_mat.mat');
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
-save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample')
+save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%% =======================    Mark's reaching vs ITI     =======================
+opts.minFiringRate = .1;
+opts.collectFor = 5 * 60;
+getDataType = 'spikes';
+opts.frameSize = .001;
+
+% Load Mark's reach data and make it a ms neural data matrix
+dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
+[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+idM23R = find(strcmp(areaLabels, 'M23'));
+idM56R = find(strcmp(areaLabels, 'M56'));
+idDSR = find(strcmp(areaLabels, 'DS'));
+idVSR = find(strcmp(areaLabels, 'VS'));
+
+timeEmJs = dataR.und_time_EM_JS;
+% align arduino time with neural time
+timeEmJs(:,1) = timeEmJs(:,1) + dataR.ArduinoOffset;
+
+%%
+% timeEvJs(7000:7040,2)
+% unique(timeEvJs(7000:end,2))
+
+sum(timeEmJs(:,2) == 0) / size(timeEmJs, 1)
+figure(11); clf;
+plot(timeEmJs(1:6000, 2)*10);
+hold on;
+plot(timeEmJs(1:6000, 3));
+notIn = timeEmJs(:,2) == 0;
+% figure(11); clf;
+% plot(timeEmJs(notIn, 2));
+% hold on;
+% plot(timeEmJs(notIn(1:20000), 3));
+
+%%
+% firstIdx = find(~isnan(timeEmJs(:,2)), 1);
+firstIdx = find(timeEmJs(:,1) == rStarts(1));
+% firstIdx = rStarts(1);
+figure(11); clf;
+plot(timeEmJs(firstIdx-30000:firstIdx+30000, 2)*10);
+hold on;
+plot(timeEmJs(firstIdx-30000:firstIdx+30000, 3));
+
+%%
+idSelect = idDSR;
+        optBinSize = ceil(mean(diff(find(sum(dataMatR(:, idSelect), 2))))) / 1000;
+        % optBinSize = optBinSize*2;
+        if optBinSize == 0; optBinSize = .001; dataMatReach = dataMatR(:,idSelect);
+        else
+        dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, idSelect), optBinSize);
+        end
+
+%%
+preTime = .2; % ms before reach onset
+postTime = 2;
+reachWindow = floor(-preTime/optBinSize) : ceil(postTime/optBinSize) - 1;
+baseWindow = reachWindow - floor(2.2/optBinSize) - 1;
+baseWindow = reachWindow - floor(3/optBinSize) - 1;
+
+
+% Find all reach starts
+block1Cor = dataR.block(:, 3) == 2;
+rStarts = round(dataR.R(block1Cor,1)/optBinSize/1000);  % inframe time
+
+% initialize data mats
+baseMat = [];
+reachMat = [];
+for i = 1 : length(rStarts) - 1
+    % find index in timeEmJs that corresponds to this reach start
+    % firstIdx = find(timeEmJs(:,1) == rStarts(i));
+    % nextIdx = find(timeEmJs(:,1) == rStarts(i+1));
+
+    % find last index of sixes before the next reach
+% iEm = timeEmJs(firstIdx : nextIdx, 2);
+% last6 = find(iEm == 6, 1, 'last');
+
+% baseline matrix
+iBaseMat = dataMatReach(rStarts(i) + baseWindow, :);
+        % Find avalances within the data
+        zeroBins = find(sum(iBaseMat, 2) == 0);
+        if length(zeroBins > 1) && any(diff(zeroBins)>1)
+            baseMat = [baseMat; iBaseMat(zeroBins(1) : zeroBins(end)-1, :)];
+        end
+        baseMat = [baseMat; zeros(1, size(baseMat, 2))]; % add a final row of zeros to close out last avalanche
+
+        % reach data matrix
+iReachMat = dataMatReach(rStarts(i) + reachWindow, :);
+        % Find avalances within the data
+        zeroBins = find(sum(iReachMat, 2) == 0);
+        if length(zeroBins > 1) && any(diff(zeroBins)>1)
+            reachMat = [reachMat; iReachMat(zeroBins(1) : zeroBins(end)-1, :)];
+        end
+        reachMat = [reachMat; zeros(1, size(reachMat, 2))]; % add a final row of zeros to close out last avalanche
+
+end
+%%
+
+plotFlag = 1;
+
+asdfMat = rastertoasdf2(baseMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+Av = avprops(asdfMat, 'ratio', 'fingerprint');
+[brPeakB, tauB, alphaB, sigmaNuZInvSDB] = avalanche_log(Av, plotFlag);
+
+
+%%
+asdfMat = rastertoasdf2(reachMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+Av = avprops(asdfMat, 'ratio', 'fingerprint');
+[brPeak, tau, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag);
+
+[brPeakB, tauB, alphaB, sigmaNuZInvSDB]
+[brPeak, tau, alpha, sigmaNuZInvSD]
+
+
+
+
+
+
+
+
 
 
 
@@ -485,43 +642,55 @@ legend('Empirical Data', 'Power-Law Fit');
 
 
 %%
-function [brPeak, tau, alpha, sigmaNuZInvSD] = avalanche_log(Av)
+function [brPeak, tau, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag)
+
+if plotFlag == 1
+    plotFlag = 'plot';
+else
+    plotFlag = [];
+end
 
 minBR = min(Av.branchingRatio);
 maxBR = max(Av.branchingRatio);
 
 nEdges = 25;
 edges = minBR:((maxBR-minBR)/(nEdges - 1)):maxBR;
+centers = edges(1:end-1) + diff(edges) / 2;
 
 BRhist = histcounts(Av.branchingRatio, edges);
+if strcmp(plotFlag, 'plot')
+    figure();
+plot(centers, BRhist);
+title('Reach: Histogram of Avalanche Branching Ratios', 'fontsize', 14)
+xlabel('Branching Ratio (s_{t+1} / s_t)', 'fontsize', 14)
+ylabel('Frequency of Occurrence', 'fontsize', 14)
+end
+
 [m, idx] = max(BRhist(2:end));
 brPeak = edges(idx+1);
 
 % size distribution (SZ)
 [tau, xminSZ, xmaxSZ, sigmaSZ, pSZ, pCritSZ, ksDR, DataSZ] =...
-    avpropvals(Av.size, 'size');
-% avpropvals(Av.size, 'size', 'plot');
+avpropvals(Av.size, 'size', plotFlag);
 
 % size distribution (SZ) with cutoffs
 UniqSizes = unique(Av.size);
 Occurances = hist(Av.size,UniqSizes);
 AllowedSizes = UniqSizes(Occurances >= 20);
+AllowedSizes = UniqSizes(Occurances >= 10);
 AllowedSizes(AllowedSizes < 4) = [];
 LimSize = Av.size(ismember(Av.size,AllowedSizes));
 [tau, xminSZ, xmaxSZ, sigmaSZ, pSZ, pCritSZ, DataSZ] =...
-    avpropvals(LimSize, 'size');
-% avpropvals(LimSize, 'size', 'plot');
+avpropvals(LimSize, 'size', plotFlag);
 tau = cell2mat(tau);
 
 % duration distribution (DR)
 [alpha, xminDR, xmaxDR, sigmaDR, pDR, pCritDR, ksDR, DataDR] =...
-    avpropvals(Av.duration, 'duration');
-% avpropvals(Av.duration, 'duration', 'plot');
+avpropvals(Av.duration, 'duration', plotFlag);
 alpha = cell2mat(alpha);
 
 % size given duration distribution (SD)
 [sigmaNuZInvSD, waste, waste, sigmaSD] = avpropvals({Av.size, Av.duration},...
-    'sizgivdur', 'durmin', xminDR{1}, 'durmax', xmaxDR{1});
-% 'sizgivdur', 'durmin', xminDR{1}, 'durmax', xmaxDR{1}, 'plot');
+'sizgivdur', 'durmin', xminDR{1}, 'durmax', xmaxDR{1}, plotFlag);
 end
 
