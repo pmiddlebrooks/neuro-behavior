@@ -109,7 +109,7 @@ alpha = tau;
 sigmaNuZInvSD = tau;
 %% Set variables and get data
 opts.minFiringRate = .1;
-opts.collectFor = 5 * 60;
+opts.collectFor = 30 * 60;
 getDataType = 'spikes';
 opts.frameSize = .001;
 get_standard_data
@@ -128,16 +128,11 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 
 
 %%    Is naturalistic data closer to criticality than reach data?
-nIter = 1;
+nIter = 10;
 nSubsample = 20;
 
-areas = {'M23', 'M56', 'VS', 'DS'};
-brPeak = cell(length(areas), 1);
-tau = brPeak;
-alpha = tau;
-sigmaNuZInvSD = tau;
-optBinSize = tau;
-Av = tau;
+areas = {'M23', 'M56', 'DS', 'VS'};
+[brPeak, tau, alpha, sigmaNuZInvSD, optBinSize, Av] = deal(cell(length(areas), 1));
 
 for a = 1 : length(areas)
     % brPeak = zeros(nIter, 2, length(binSizes));
@@ -155,6 +150,7 @@ for a = 1 : length(areas)
             aID = idVS;
             aIDR = idVSR;
     end
+    fprintf('\n\n\n\nArea %s\n\n', areas{a})
     tic
     for iter = 1:nIter
 
@@ -172,10 +168,10 @@ for a = 1 : length(areas)
 
         dataMatNat = neural_matrix_ms_to_frames(dataMat(:, idSelect), optBinSize{a}(iter, 1));
         asdfMat = rastertoasdf2(dataMatNat', optBinSize{a}(iter, 1)*1000, 'CBModel', 'Spikes', 'area');
-        Av{a}(1) = avprops(asdfMat, 'ratio', 'fingerprint');
+        Av{a}(iter, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
 
         % [brPeak(iter, 1, b), tau(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
-        [brPeak{a}(iter, 1), tau{a}(iter, 1), alpha{a}(iter, 1), sigmaNuZInvSD{a}(iter, 1)] = avalanche_log(Av{a}(1));
+        [brPeak{a}(iter, 1), tau{a}(iter, 1), alpha{a}(iter, 1), sigmaNuZInvSD{a}(iter, 1)] = avalanche_log(Av{a}(iter, 1), 0);
 
 
 
@@ -192,94 +188,38 @@ for a = 1 : length(areas)
         dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, idSelect), optBinSize{a}(iter, 2));
 
         asdfMatR = rastertoasdf2(dataMatReach', optBinSize{a}(iter, 2)*1000, 'CBModel', 'Spikes', 'area');
-        Av{a}(2) = avprops(asdfMatR, 'ratio', 'fingerprint');
+        Av{a}(iter, 2) = avprops(asdfMatR, 'ratio', 'fingerprint');
 
         % [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
-        [brPeak{a}(iter, 2), tau{a}(iter, 2), alpha{a}(iter, 2), sigmaNuZInvSD{a}(iter, 2)] = avalanche_log(Av{a}(2));
+        [brPeak{a}(iter, 2), tau{a}(iter, 2), alpha{a}(iter, 2), sigmaNuZInvSD{a}(iter, 2)] = avalanche_log(Av{a}(iter, 2), 0);
 
         fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
 
     end
 
-    slack_code_done
+    
 end
-fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
-save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
-
-
-%%    Is naturalistic data closer to criticality than reach data?
-nIter = 10;
-nSubsample = 20;
-% binSizes = [.005, .01, .015, .02];
-binSizes = [.01, .015, .02 .025];
-% binSizes = [.005, .05];
-% binSizes = [.005];
-
-% brPeak = zeros(nIter, 2, length(binSizes));
-brPeak = zeros(nIter, 2, length(binSizes));
-tau = brPeak;
-alpha = tau;
-sigmaNuZInvSD = tau;
-optBinSize = tau;
-
-tic
-for b = 1 : length(binSizes)
-    for iter = 1:nIter
-        % fprintf('\nIteration: %d\tBinSize: %.3f\t Time Elapsed: %.1f min\n', iter, binSizes(b), toc/60)
-
-        opts.frameSize = binSizes(b);
-
-        % Naturalistich data4
-        get_standard_data
-
-        % Randomize a subsample of neurons
-        idSelect = idVS(randperm(length(idVS), nSubsample));
-
-        % Find optimal bin size for this group of neurons (to nearest ms)
-        % optBinSize(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
-        % if optBinSize(iter, 1) == 0; optBinSize(iter, 1) = .001; end
-        fprintf('\nNatural\tIteration: %d\tBinSize: %.3f\n', iter, opts.frameSize)
-
-        asdfMat = rastertoasdf2(dataMat(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
-        Av = avprops(asdfMat, 'ratio', 'fingerprint');
-
-        [brPeak(iter, 1, b), tau(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
-        % [brPeak(iter, 1), tau(iter, 1), alpha(iter, 1), sigmaNuZInvSD(iter, 1)] = avalanche_log(Av);
-
-
-
-        dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
-        dataMatR = neural_matrix_mark_data(dataR, opts);
-        % Randomize a subsample of neurons
-        idSelect = idVSR(randperm(length(idVSR), nSubsample));
-
-        % Find optimal bin size for this group of neurons
-        % optBinSize(iter, 2) = round(mean(diff(find(sum(dataMatR(:, idSelect), 2))))) / 1000;
-        % if optBinSize(iter, 2) == 0; optBinSize(iter, 2) = .001; end
-        fprintf('\nReach\tIteration: %d\tBinSize: %.3f\n', iter, opts.frameSize)
-
-        asdfMatR = rastertoasdf2(dataMatR(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
-        AvR = avprops(asdfMatR, 'ratio', 'fingerprint');
-
-        [brPeak(iter, 2, b), tau(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
-        % [brPeak(iter, 2), tau(iter, 2), alpha(iter, 2), sigmaNuZInvSD(iter, 2)] = avalanche_log(AvR);
-
-        fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
-
-    end
-end
-
-
-%
-brPeakVS = brPeak;
-tauVS = tau;
-alphaVS = alpha;
-sigmaNuZInvSDVS = sigmaNuZInvSD;
-
-fileName = fullfile(paths.dropPath, 'criticality_parameters.mat');
-save(fileName, 'brPeakVS', 'tauVS', 'alphaVS', 'sigmaNuZInvSDVS', '-append')
+fileName = fullfile(paths.dropPath, 'avalanches_natural_vs_reach.mat');
+save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample')
 
 slack_code_done
+%%
+plotFlag = 1;
+% [brPeak, tau, alpha, sigmaNuZInvSD] = avalanche_log(Av{1}(1), plotFlag);
+
+
+%%
+fileName = fullfile(paths.dropPath, 'avalanches_natural_vs_reach.mat');
+save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample')
+% save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
+
+
+
+
+
+
+
+
 
 
 
@@ -294,21 +234,42 @@ slack_code_done
 
 %%   =============     Test transition vs. within-bout criticality across all behaviors.   =============
 opts.minFiringRate = .1;
-opts.collectFor = 45 * 60;
+opts.collectFor = 30 * 60;
 getDataType = 'spikes';
 
-opts.frameSize = .015;
+opts.frameSize = .001;
 get_standard_data
 %%
+areas{1} = 'M56';
+    switch areas{a}
+        case 'M23'
+            aID = idM23;
+        case 'M56'
+            aID = idM56;
+        case 'DS'
+            aID = idDS;
+        case 'VS'
+            aID = idVS;
+    end
+
+% Find optimal bin size
+optBinSize = ceil(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
+    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize);
+
+
 preTime = .15;
 postTime = .15;
-transWindow = (-preTime/opts.frameSize : postTime/opts.frameSize - 1);
+transWindow = (-preTime/optBinSize : postTime/optBinSize - 1);
+
+
+
 
 transMat = [];
 withinMat = [];
 % Transition indices
 preInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
 
+% Build the dataMats for avalanche analysis
 for bout = 1 : length(preInd)
     % transInd = unique(sort(reshape(preInd + transWindow(:)', [], 1)))
 
@@ -318,9 +279,9 @@ for bout = 1 : length(preInd)
     % of the transition
     if sum(diff(bhvID(transInd)) == 0) == length(transWindow) - 2
         % Find avalances within the data
-        zeroBins = find(sum(dataMat(transInd, idSelect), 2) == 0);
+        zeroBins = find(sum(dataMatNat(transInd, :), 2) == 0);
         if length(zeroBins > 1) && any(diff(zeroBins)>1)
-            transMat = [transMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
+            transMat = [transMat; dataMatNat(zeroBins(1) : zeroBins(end)-1, :)];
         end
     end
 
@@ -328,13 +289,29 @@ for bout = 1 : length(preInd)
     withinInd = preInd(bout) + transWindow(end) + 1 : preInd(bout+1) + transWindow(1) - 1;
     % If there is any within-bout data...
     if ~isempty(withinInd)
-        zeroBins = find(sum(dataMat(withinInd, idSelect), 2) == 0);
+        zeroBins = find(sum(dataMatNat(withinInd, :), 2) == 0);
         if length(zeroBins > 1) && any(diff(zeroBins)>1)
-            withinMat = [withinMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
+            withinMat = [withinMat; dataMatNat(zeroBins(1) : zeroBins(end)-1, :)];
         end
     end
 
 end
+
+%% Perform avalanche analyses on the two datasets
+plotFlag = 1;
+
+asdfMat = rastertoasdf2(transMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+AvTrans = avprops(asdfMat, 'ratio', 'fingerprint');
+[brPeakT, tauT, alphaT, sigmaNuZInvSDT] = avalanche_log(AvTrans, plotFlag);
+
+
+asdfMat = rastertoasdf2(withinMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+AvWithin = avprops(asdfMat, 'ratio', 'fingerprint');
+[brPeakW, tauW, alphaW, sigmaNuZInvSDW] = avalanche_log(AvWithin, plotFlag);
+
+[brPeakB, tauB, alphaB, sigmaNuZInvSDB]
+[brPeakW, tauW, alphaW, sigmaNuZInvSDW]
+
 
 % fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
@@ -372,7 +349,7 @@ postTime = .2;
 
 idSelect = idM56;
 % Initialize variables
-areas = {'M23', 'M56', 'VS', 'DS'};
+areas = {'M23', 'M56', 'DS', 'VS'};
 brPeak = cell(length(areas), 1);
 tau = brPeak;
 alpha = brPeak;
@@ -404,7 +381,7 @@ for a = 1 : length(areas)
     iSigmaNuZInvSD = iTau;
 
     for i = -transWindow(1): size(dataMat, 1) - transWindow(end)
-        asdfMat = rastertoasdf2(dataMatNat(i + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+        asdfMat = rastertoasdf2(dataMatNat(i + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'area');
         Av = avprops(asdfMat, 'ratio', 'fingerprint');
 
         [iBrPeak(i), iTau(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av, 0);
@@ -492,7 +469,25 @@ hold on;
 plot(timeEmJs(firstIdx-30000:firstIdx+30000, 3));
 
 %%
-idSelect = idDSR;
+areas = {'M23', 'M56', 'DS', 'VS'};
+
+preTime = .2; % ms before reach onset
+postTime = 2;
+
+for a = 2 : length(areas)
+        switch areas{a}
+        case 'M23'
+            aIDR = idM23R;
+        case 'M56'
+            aIDR = idM56R;
+        case 'DS'
+            aIDR = idDSR;
+        case 'VS'
+            aIDR = idVSR;
+    end
+    fprintf('\n\n\n\nArea %s\n\n', areas{a})
+
+idSelect = iIDR;
         optBinSize = ceil(mean(diff(find(sum(dataMatR(:, idSelect), 2))))) / 1000;
         % optBinSize = optBinSize*2;
         if optBinSize == 0; optBinSize = .001; dataMatReach = dataMatR(:,idSelect);
@@ -500,11 +495,9 @@ idSelect = idDSR;
         dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, idSelect), optBinSize);
         end
 
-%%
-preTime = .2; % ms before reach onset
-postTime = 2;
+
 reachWindow = floor(-preTime/optBinSize) : ceil(postTime/optBinSize) - 1;
-baseWindow = reachWindow - floor(2.2/optBinSize) - 1;
+% baseWindow = reachWindow - floor(2.2/optBinSize) - 1;
 baseWindow = reachWindow - floor(3/optBinSize) - 1;
 
 
@@ -547,20 +540,20 @@ end
 
 plotFlag = 1;
 
-asdfMat = rastertoasdf2(baseMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
-Av = avprops(asdfMat, 'ratio', 'fingerprint');
-[brPeakB, tauB, alphaB, sigmaNuZInvSDB] = avalanche_log(Av, plotFlag);
+asdfMat = rastertoasdf2(baseMat', optBinSize*1000, 'CBModel', 'Spikes', 'base');
+AvB = avprops(asdfMat, 'ratio', 'fingerprint');
+[brPeakB, tauB, alphaB, sigmaNuZInvSDB] = avalanche_log(AvB, plotFlag);
 
 
 %%
-asdfMat = rastertoasdf2(reachMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
-Av = avprops(asdfMat, 'ratio', 'fingerprint');
-[brPeak, tau, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag);
+asdfMat = rastertoasdf2(reachMat', optBinSize*1000, 'CBModel', 'Spikes', 'reach');
+AvR = avprops(asdfMat, 'ratio', 'fingerprint');
+[brPeakR, tauR, alphaR, sigmaNuZInvSDR] = avalanche_log(AvR, plotFlag);
 
 [brPeakB, tauB, alphaB, sigmaNuZInvSDB]
-[brPeak, tau, alpha, sigmaNuZInvSD]
+[brPeakR, tauR, alphaR, sigmaNuZInvSDR]
 
-
+end
 
 
 
