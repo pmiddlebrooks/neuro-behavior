@@ -154,7 +154,7 @@ end
 % Remove neurons that do not meet firing rate criteria
 rmvNeurons = [];
 if opts.removeSome
-    checkTime = 5 * 60;
+    checkTime = opts.firingRateCheckTime;
     checkFrames = floor(checkTime / opts.frameSize);
     if ~strcmp(opts.method, 'standard')
         meanStart = mean(dataMat(1:checkFrames, :), 1);
