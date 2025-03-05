@@ -392,7 +392,7 @@ for a = 1 : length(areas)
     end
 
     optBinSize = ceil(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
-
+        if optBinSize == 0; optBinSize = .001; end
     dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize);
 
 
@@ -466,6 +466,12 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 timeEmJs = dataR.und_time_EM_JS;
 % align arduino time with neural time
 timeEmJs(:,1) = timeEmJs(:,1) + dataR.ArduinoOffset;
+
+
+%% Figure out optimal bin size
+idSelect = idDSR;
+
+
 
 %%
 % timeEvJs(7000:7040,2)
