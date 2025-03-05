@@ -353,22 +353,23 @@ end
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 20 * 60;
+opts.collectFor = 15 * 60;
 opts.firingRateCheckTime = 1 * 60;
 get_standard_data
 
 %%
 preTime = 3;
 postTime = .2;
+stepSize = 0.2;       % Step size in seconds
 
 
 % Initialize variables
 areas = {'M23', 'M56', 'DS', 'VS'};
 [brPeak, tau, tauC, alpha, sigmaNuZInvSDVS] = deal(cell(length(areas), 1));
 idList = {idM23, idM56, idDS, idVS};
-poolID = parpool(4, 'IdleTimeout', Inf);
-parfor a = 1  : length(areas)
-% for a = 1 % : length(areas)
+% poolID = parpool(4, 'IdleTimeout', Inf);
+% parfor a = 1  : length(areas)
+for a = 1 : length(areas)
     tic
     % switch areas{a}
     %     case 'M23'
@@ -386,26 +387,72 @@ parfor a = 1  : length(areas)
     dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize);
 
 
+    % Compute number of rows per time unit
+    rowsPerSecond = 1 / optBinSize;
+
+    % Convert times to row indices
+    preRows = round(preTime * rowsPerSecond);
+    postRows = round(postTime * rowsPerSecond);
+    stepRows = round(stepSize * rowsPerSecond);
+
+
+
     transWindow = (floor(-preTime/optBinSize) : ceil(postTime/optBinSize - 1));
 
-    iTau = nan(size(dataMatNat, 1), 1);
+    % % Calculate number of windows to preallocate
+    numWindows = floor((size(dataMatNat, 1) - 1) / stepRows) + 1;
+
+    iTau = nan(numWindows, 1);
+    % iTau = nan(size(dataMatNat, 1));
     iTauC = iTau;
     iBrPeak = iTau;
     iAlpha = iTau;
     iSigmaNuZInvSD = iTau;
 
-    for i = -transWindow(1): size(dataMatNat, 1) - transWindow(end)
-        fprintf('\t%s\t %.3f  finished \n', areas{a}, i/size(dataMatNat, 1))
-        zeroBins = find(sum(dataMatNat(i + transWindow + 1, :), 2) == 0);
-        if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+    % % Step through data matrix with given step size
+    % windowIdx = 1;  % Initialize index for storing results
 
-            asdfMat = rastertoasdf2(dataMatNat(i + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
-            Av = avprops(asdfMat, 'ratio', 'fingerprint');
+    % for centerRow = 1:stepRows:size(dataMatNat, 1)
+    %     % Define the window range
+    %     startRow = max(1, centerRow - preRows);
+    %     endRow = min(size(dataMatNat, 1), centerRow + postRows);
+    %     fprintf('\t%s\t %.3f  finished \n', areas{a}, windowIdx/numWindows)
+    %     zeroBins = find(sum(dataMatNat(startRow:endRow, :), 2) == 0);
+    %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+    % 
+    %         asdfMat = rastertoasdf2(dataMatNat(startRow:endRow, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+    %         Av = avprops(asdfMat, 'ratio', 'fingerprint');
+    % 
+    %         [iBrPeak(windowIdx), iTau(windowIdx), iTauC(windowIdx), iAlpha(windowIdx), iSigmaNuZInvSD(windowIdx)] = avalanche_log(Av, 0);
+    %     end
 
-            [iBrPeak(i), iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av, 0);
-        end
+        for i = 1: numWindows %-transWindow(1): size(dataMatNat, 1) - transWindow(end)
+            iIdx = -transWindow(1) + round((i-1) * stepRows);
+            fprintf('\t%s\t %.3f  finished \n', areas{a}, i/numWindows)
+            zeroBins = find(sum(dataMatNat(iIdx + transWindow + 1, :), 2) == 0);
+            if length(zeroBins) > 1 && any(diff(zeroBins)>1)
 
+                asdfMat = rastertoasdf2(dataMatNat(iIdx + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+                Av = avprops(asdfMat, 'ratio', 'fingerprint');
+
+                [iBrPeak(i), iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av, 0);
+            end
+
+        % windowIdx = windowIdx + 1;
     end
+    %     for i = -transWindow(1): size(dataMatNat, 1) - transWindow(end)
+    %         fprintf('\t%s\t %.3f  finished \n', areas{a}, i/size(dataMatNat, 1))
+    %         zeroBins = find(sum(dataMatNat(i + transWindow + 1, :), 2) == 0);
+    %         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+    % 
+    %             asdfMat = rastertoasdf2(dataMatNat(i + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+    %             Av = avprops(asdfMat, 'ratio', 'fingerprint');
+    % 
+    %             [iBrPeak(i), iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av, 0);
+    %         end
+    % 
+    %     % windowIdx = windowIdx + 1;
+    % end
     fprintf('\nArea %s\t %.1f\n\n', areas{a}, toc/60)
 
     brPeak{a} = iBrPeak;
@@ -414,7 +461,7 @@ parfor a = 1  : length(areas)
     alpha{a} = iAlpha;
     sigmaNuZInvSD{a} = iSigmaNuZInvSD;
 end
-delete(poolID)
+% delete(poolID)
 %%
 fileName = fullfile(paths.dropPath, 'avalanche_mat.mat');
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
