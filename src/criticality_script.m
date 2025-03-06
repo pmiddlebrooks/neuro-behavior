@@ -287,45 +287,82 @@ opts.minFiringRate = .1;
 opts.collectFor = 45 * 60;
 getDataType = 'spikes';
 
-opts.frameSize = .015;
+opts.frameSize = .001;
 get_standard_data
 %%
-preTime = .15;
-postTime = .15;
-transWindow = (-preTime/opts.frameSize : postTime/opts.frameSize - 1);
+preTime = .2;
+postTime = .2;
 
-transMat = [];
-withinMat = [];
-% Transition indices
-preInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
 
-for bout = 1 : length(preInd)
-    % transInd = unique(sort(reshape(preInd + transWindow(:)', [], 1)))
+areas = {'M23', 'M56', 'DS', 'VS'};
+[optBinSize, tau, tauC, alpha, sigmaNuZInvSD] = deal(zeros(length(areas), 2));
+idList = {idM23, idM56, idDS, idVS};
 
-    % Collect transition avalanche data
-    transInd = preInd(bout) + transWindow;
-    % Only use transitions that are consitent behaviors going into and out
-    % of the transition
-    if sum(diff(bhvID(transInd)) == 0) == length(transWindow) - 2
-        % Find avalances within the data
-        zeroBins = find(sum(dataMat(transInd, idSelect), 2) == 0);
-        if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-            transMat = [transMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
+for a = 1 : length(areas)
+    fprintf('Area %s\n', areas{a})
+    tic
+    aID = idList{a};
+
+    % Find optimal bin size for avalannce analyses
+    optBinSize = ceil(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
+    if optBinSize == 0; optBinSize = .001; end
+
+
+    % Make the matrices of the transitions and within-bouts at 1 kHz
+    transWindow = (-preTime/opts.frameSize : postTime/opts.frameSize - 1);
+
+    transMat = [];
+    withinMat = [];
+    % Transition indices
+    preInd = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
+
+    for bout = 1 : length(preInd)-1
+
+
+        % Collect transition avalanche data
+        transInd = preInd(bout) + transWindow;
+        % Only use transitions that are consitent behaviors going into and out
+        % of the transition
+        if sum(diff(bhvID(transInd)) == 0) == length(transWindow) - 2
+
+            % Convert the 1 kHz dataMats to the optimal bin size for avalanche analysis
+            tempMat = neural_matrix_ms_to_frames(dataMat(transInd, aID), optBinSize);
+            % Find avalances within the data
+            zeroBins = find(sum(tempMat, 2) == 0);
+            if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+                transMat = [transMat; tempMat(zeroBins(1) : zeroBins(end)-1, :)];
+            end
         end
+
+        % Collect within-bout avalanche data
+        withinInd = preInd(bout) + transWindow(end) + 1 : preInd(bout+1) + transWindow(1) - 1;
+        % If there is any within-bout data...
+        if ~isempty(withinInd)
+            % Convert the 1 kHz dataMats to the optimal bin size for avalanche analysis
+            tempMat = neural_matrix_ms_to_frames(dataMat(withinInd, aID), optBinSize);
+            zeroBins = find(sum(tempMat, 2) == 0);
+            if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+                withinMat = [withinMat; tempMat(zeroBins(1) : zeroBins(end)-1, :)];
+            end
+        end
+
     end
 
-    % Collect within-bout avalanche data
-    withinInd = preInd(bout) + transWindow(end) + 1 : preInd(bout+1) + transWindow(1) - 1;
-    % If there is any within-bout data...
-    if ~isempty(withinInd)
-        zeroBins = find(sum(dataMat(withinInd, idSelect), 2) == 0);
-        if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-            withinMat = [withinMat; dataMat(zeroBins(1) : zeroBins(end), idSelect)];
-        end
-    end
+
+
+
+    % dataMatT = neural_matrix_ms_to_frames(transMat, optBinSize);
+    asdfMat = rastertoasdf2(transMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+    Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
+    [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1)] = avalanche_log(Av(a, 1), 0);
+
+
+    % dataMatW = neural_matrix_ms_to_frames(withinMat, optBinSize);
+    asdfMat = rastertoasdf2(withinMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+    Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
+    [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2)] = avalanche_log(Av(a, 2), 0);
 
 end
-
 % fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
 
@@ -353,109 +390,66 @@ end
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 15 * 60;
-opts.firingRateCheckTime = 1 * 60;
+opts.collectFor = 30 * 60;
+opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
 %%
-preTime = 3;
+preTime = 2;
 postTime = .2;
-stepSize = 0.2;       % Step size in seconds
-
+stepSize = 0.15;       % Step size in seconds
+numSteps = floor((size(dataMat, 1) / 1000 - stepSize) / stepSize) - 1;
 
 % Initialize variables
 areas = {'M23', 'M56', 'DS', 'VS'};
-[brPeak, tau, tauC, alpha, sigmaNuZInvSDVS] = deal(cell(length(areas), 1));
+[brPeak, tau, tauC, alpha, sigmaNuZInvSD] = deal(cell(length(areas), 1));
 idList = {idM23, idM56, idDS, idVS};
+% Branching ratio histogram values
+minBR = 0; maxBR = 4;
+edges = minBR : .1 : maxBR;
+centers = edges(1:end-1) + diff(edges) / 2;
+
 % poolID = parpool(4, 'IdleTimeout', Inf);
 % parfor a = 1  : length(areas)
 for a = 1 : length(areas)
     tic
-    % switch areas{a}
-    %     case 'M23'
-    %         aID = idM23;
-    %     case 'M56'
-    %         aID = idM56;
-    %     case 'DS'
-    %         aID = idDS;
-    %     case 'VS'
-    %         aID = idVS;
-    % end
     aID = idList{a};
     optBinSize = ceil(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
     if optBinSize == 0; optBinSize = .001; end
     dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize);
 
-
-    % Compute number of rows per time unit
-    rowsPerSecond = 1 / optBinSize;
-
-    % Convert times to row indices
-    preRows = round(preTime * rowsPerSecond);
-    postRows = round(postTime * rowsPerSecond);
-    stepRows = round(stepSize * rowsPerSecond);
-
-
-
-    transWindow = (floor(-preTime/optBinSize) : ceil(postTime/optBinSize - 1));
+    transWindow = (floor(-preTime/optBinSize) : ceil(postTime/optBinSize) - 1);
 
     % % Calculate number of windows to preallocate
-    numWindows = floor((size(dataMatNat, 1) - 1) / stepRows) + 1;
+    % numWindows = floor((size(dataMatNat, 1) - 1) / stepRows) + 1;
 
-    iTau = nan(numWindows, 1);
-    % iTau = nan(size(dataMatNat, 1));
-    iTauC = iTau;
-    iBrPeak = iTau;
-    iAlpha = iTau;
-    iSigmaNuZInvSD = iTau;
+    [iTau, iTauC, iAlpha, iSigmaNuZInvSD] = deal(nan(numSteps, 1));
 
-    % % Step through data matrix with given step size
-    % windowIdx = 1;  % Initialize index for storing results
+    iBrHist = nan(numSteps, length(centers));
 
-    % for centerRow = 1:stepRows:size(dataMatNat, 1)
-    %     % Define the window range
-    %     startRow = max(1, centerRow - preRows);
-    %     endRow = min(size(dataMatNat, 1), centerRow + postRows);
-    %     fprintf('\t%s\t %.3f  finished \n', areas{a}, windowIdx/numWindows)
-    %     zeroBins = find(sum(dataMatNat(startRow:endRow, :), 2) == 0);
-    %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-    % 
-    %         asdfMat = rastertoasdf2(dataMatNat(startRow:endRow, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
-    %         Av = avprops(asdfMat, 'ratio', 'fingerprint');
-    % 
-    %         [iBrPeak(windowIdx), iTau(windowIdx), iTauC(windowIdx), iAlpha(windowIdx), iSigmaNuZInvSD(windowIdx)] = avalanche_log(Av, 0);
-    %     end
+    % Find firsst valid index to start collecting windowed data
+    firstIdx = ceil(preTime / stepSize);
+    for i = firstIdx: numSteps %-transWindow(1): size(dataMatNat, 1) - transWindow(end)
+        % Find the index in dataMatNat for this step
+        iRealTime = i * stepSize;
+        iIdx = round(iRealTime / optBinSize);
+        % Find the index in dataMatNat for this step
+        % iIdx = -transWindow(1) + round((i-1) * stepRows);
+        fprintf('\t%s\t %d of %d: %.3f  finished \n', areas{a}, i, numSteps, i/numSteps)
+        % Make sure there are avalanches in the window
+        zeroBins = find(sum(dataMatNat(iIdx + transWindow + 1, :), 2) == 0);
+        if length(zeroBins) > 1 && any(diff(zeroBins)>1)
 
-        for i = 1: numWindows %-transWindow(1): size(dataMatNat, 1) - transWindow(end)
-            iIdx = -transWindow(1) + round((i-1) * stepRows);
-            fprintf('\t%s\t %.3f  finished \n', areas{a}, i/numWindows)
-            zeroBins = find(sum(dataMatNat(iIdx + transWindow + 1, :), 2) == 0);
-            if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+            asdfMat = rastertoasdf2(dataMatNat(iIdx + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
+            Av = avprops(asdfMat, 'ratio', 'fingerprint');
+            iBrHist(i,:) = histcounts(Av.branchingRatio, edges);
+            [iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av, 0);
+        end
 
-                asdfMat = rastertoasdf2(dataMatNat(iIdx + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
-                Av = avprops(asdfMat, 'ratio', 'fingerprint');
-
-                [iBrPeak(i), iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av, 0);
-            end
-
-        % windowIdx = windowIdx + 1;
     end
-    %     for i = -transWindow(1): size(dataMatNat, 1) - transWindow(end)
-    %         fprintf('\t%s\t %.3f  finished \n', areas{a}, i/size(dataMatNat, 1))
-    %         zeroBins = find(sum(dataMatNat(i + transWindow + 1, :), 2) == 0);
-    %         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-    % 
-    %             asdfMat = rastertoasdf2(dataMatNat(i + transWindow + 1, :)', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
-    %             Av = avprops(asdfMat, 'ratio', 'fingerprint');
-    % 
-    %             [iBrPeak(i), iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av, 0);
-    %         end
-    % 
-    %     % windowIdx = windowIdx + 1;
-    % end
     fprintf('\nArea %s\t %.1f\n\n', areas{a}, toc/60)
 
-    brPeak{a} = iBrPeak;
+    brPeak{a} = iBrHist;
     tau{a} = iTau;
     tauC{a} = iTauC;
     alpha{a} = iAlpha;
@@ -463,7 +457,7 @@ for a = 1 : length(areas)
 end
 % delete(poolID)
 %%
-fileName = fullfile(paths.dropPath, 'avalanche_mat.mat');
+fileName = fullfile(paths.dropPath, 'avalanche_data_30min.mat');
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
 save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
 save(fileName, 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
@@ -600,16 +594,16 @@ plotFlag = 1;
 
 asdfMat = rastertoasdf2(baseMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
 Av = avprops(asdfMat, 'ratio', 'fingerprint');
-[brPeakB, tauB, tauCB, alphaB, sigmaNuZInvSDB] = avalanche_log(Av, plotFlag);
+[tauB, tauCB, alphaB, sigmaNuZInvSDB] = avalanche_log(Av, plotFlag);
 
 
 %%
 asdfMat = rastertoasdf2(reachMat', optBinSize*1000, 'CBModel', 'Spikes', 'DS');
 Av = avprops(asdfMat, 'ratio', 'fingerprint');
-[brPeak, tau, tauC, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag);
+[tau, tauC, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag);
 
-[brPeakB, tauB, alphaB, sigmaNuZInvSDB]
-[brPeak, tau, alpha, sigmaNuZInvSD]
+[tauB, alphaB, sigmaNuZInvSDB]
+[tau, alpha, sigmaNuZInvSD]
 
 
 
@@ -699,32 +693,13 @@ legend('Empirical Data', 'Power-Law Fit');
 
 
 %%
-function [brPeak, tau, tauC, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag)
+function [tau, tauC, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag)
 
 if plotFlag == 1
     plotFlag = 'plot';
 else
     plotFlag = 'nothing';
 end
-
-minBR = min(Av.branchingRatio);
-maxBR = max(Av.branchingRatio);
-
-nEdges = 25;
-edges = minBR:((maxBR-minBR)/(nEdges - 1)):maxBR;
-centers = edges(1:end-1) + diff(edges) / 2;
-
-BRhist = histcounts(Av.branchingRatio, edges);
-if strcmp(plotFlag, 'plot')
-    figure();
-    plot(centers, BRhist);
-    title('Reach: Histogram of Avalanche Branching Ratios', 'fontsize', 14)
-    xlabel('Branching Ratio (s_{t+1} / s_t)', 'fontsize', 14)
-    ylabel('Frequency of Occurrence', 'fontsize', 14)
-end
-
-[m, idx] = max(BRhist(2:end));
-brPeak = edges(idx+1);
 
 % size distribution (SZ)
 [tau, xminSZ, xmaxSZ, sigmaSZ, pSZ, pCritSZ, ksDR, DataSZ] =...
