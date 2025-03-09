@@ -131,7 +131,7 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 nIter = 1;
 nSubsample = 20;
 
-areas = {'M23', 'M56', 'VS', 'DS'};
+areas = {'M23', 'M56', 'DS', 'VS'};
 [brPeak, tau, tauC, alpha, sigmaNuZInvSD, optBinSize, Av] = cell(length(areas), 1);
 
 
@@ -270,6 +270,16 @@ fileName = fullfile(paths.dropPath, 'criticality_parameters.mat');
 save(fileName, 'brPeakVS', 'tauVS', 'tauCVS', 'alphaVS', 'sigmaNuZInvSDVS', '-append')
 
 slack_code_done
+
+
+
+
+
+
+
+
+
+
 
 
 
