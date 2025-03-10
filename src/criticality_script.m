@@ -562,8 +562,8 @@ end
 %%
 fileName = fullfile(paths.dropPath, 'avalanche_data_30min.mat');
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
-save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
-save(fileName, 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'areas')
+% save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
+save(fileName, 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'stepSize', 'preTime', 'postTme', 'areas')
 
 
 
