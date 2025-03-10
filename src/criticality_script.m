@@ -131,7 +131,7 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 nIter = 1;
 nSubsample = 20;
 
-areas = {'M23', 'M56', 'DS', 'VS'};
+areas = {'M23', 'M56', 'VS', 'DS'};
 [brPeak, tau, tauC, alpha, sigmaNuZInvSD, optBinSize, Av] = cell(length(areas), 1);
 
 
@@ -270,16 +270,6 @@ fileName = fullfile(paths.dropPath, 'criticality_parameters.mat');
 save(fileName, 'brPeakVS', 'tauVS', 'tauCVS', 'alphaVS', 'sigmaNuZInvSDVS', '-append')
 
 slack_code_done
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -433,10 +423,10 @@ end
 fileName = fullfile(paths.dropPath, 'avalanche_data_30min_sliding_window.mat');
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
-save(fileName, 'brPeak', 'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'areas')
+save(fileName, 'brPeak', 'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'preTime', 'postTime', 'stepSize', 'centers', 'areas')
 
 
-
+    
 
 
 
