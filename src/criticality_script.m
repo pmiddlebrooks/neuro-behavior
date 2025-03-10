@@ -423,7 +423,12 @@ end
 fileName = fullfile(paths.dropPath, 'avalanche_data_30min_sliding_window.mat');
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
 % save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
+<<<<<<< HEAD
 save(fileName, 'brPeak', 'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'preTime', 'postTime', 'stepSize', 'centers', 'areas')
+=======
+save(fileName, 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'stepSize', 'preTime', 'postTme', 'areas')
+
+>>>>>>> c90bd27df4452e7dcf57e6091eae1137f12725a2
 
 
     
