@@ -505,10 +505,11 @@ copy_figure_to_clipboard
 % Slide a window from 1sec prior to 100ms after each time point
 % Get criticality parameters at each time piont
 % Assess metastability of criticality over time
+opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 30 * 60;
+opts.collectFor = 15 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
@@ -521,7 +522,7 @@ numSteps = floor((size(dataMat, 1) / 1000 - stepSize) / stepSize) - 1;
 % Initialize variables
 areas = {'M23', 'M56', 'DS', 'VS'};
 [brPeak, tau, tauC, alpha, sigmaNuZInvSD] = deal(cell(length(areas), 1));
-optBinSize = nan(length(areas));
+optBinSize = nan(length(areas), 1);
 idList = {idM23, idM56, idDS, idVS};
 % Branching ratio histogram values
 minBR = 0; maxBR = 2.5;
