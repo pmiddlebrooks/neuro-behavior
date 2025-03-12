@@ -10,80 +10,81 @@ tauRange = [1.2 2.5];
 alphaRange = [1.5 2.2];
 sigmaRange = [1.3 1.7];
 
-%% Need to find an appropriate bin size for each brain area
-opts.frameSize = .005; % DS
-% opts.frameSize = .01; % M56
 
-opts.useOverlappingBins = 0;
-opts.windowSize = .2;
-opts.stepSize = opts.frameSize;
 
+
+
+
+
+
+%%   =======================     Check a few min of each area   =======================
+% Slide a window from 1sec prior to 100ms after each time point
+% Get criticality parameters at each time piont
+% Assess metastability of criticality over time
+opts = neuro_behavior_options;
+opts.frameSize = .001;
+opts.minFiringRate = .1;
 getDataType = 'spikes';
+opts.collectFor = 10 * 60;
+opts.firingRateCheckTime = 2 * 60;
 get_standard_data
 
-idSelect = idDS;
-% idSelect = idM56;
-
 %%
-sumSpikes = sum(dataMat(:, idSelect), 2);
-figure(91);
-histogram(sumSpikes)
-sum(sumSpikes == 0) / length(sumSpikes)
+pcaFlag = 0;
+thresholdFlag = 0;
+thresholdBinSize = .02;
+
+
+% Initialize variables
+areas = {'M23', 'M56', 'DS', 'VS'};
+[optBinSize, tau, tauC, alpha, sigmaNuZInvSD] = deal(nan(length(areas), 1));
+idList = {idM23, idM56, idDS, idVS};
+% Branching ratio histogram values
+minBR = 0; maxBR = 2.5;
+edges = minBR : .1 : maxBR;
+centers = edges(1:end-1) + diff(edges) / 2;
+brHist = nan(length(areas), length(centers));
+
+for a = 1 : length(areas)
+    aID = idList{a};
+
+    % If using the threshold method
+    if thresholdFlag
+        optBinSize(a) = thresholdBinSize;
+    else
+        optBinSize(a) = optimal_bin_size(dataMat(:,aID));
+    end
+    fprintf('Area: %s\tBinsize: %.3f\n', areas{a}, optBinSize(a))
+
+    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize(a));
+
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(dataMatNat);
+        forDim = find(cumsum(explained) > 30, 1);
+        nDim = forDim+1:size(score, 2);
+        % nDim = 1:3;
+        dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
+    end
+
+    if thresholdFlag
+        dataMatNat = round(sum(dataMatNat, 2));
+        threshPct = .08;
+        % threshSpikes = threshPct * max(dataMatReach);
+        threshSpikes = .9*median(dataMatNat);
+        dataMatNat(dataMatNat < threshSpikes) = 0;
+    end
+
+    asdfMat = rastertoasdf2(dataMatNat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
+    Av(a) = avprops(asdfMat, 'ratio', 'fingerprint');
+    brHist(a,:) = histcounts(Av(a).branchingRatio, edges, 'Normalization', 'pdf');
+    [tau(a), tauC(a), alpha(a), sigmaNuZInvSD(a)] = avalanche_log(Av(a), 0);
+
+end
 
 
 
-%% go to demoempdata.m
-
-asdfMat = rastertoasdf2(dataMat(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS')
-Av = avprops(asdfMat, 'ratio', 'fingerprint');
-
-% Go to demoempdata.m to run rest of codes using Av
 
 
-
-
-
-
-
-
-
-
-
-
-%% Mark's reaching data
-opts.frameSize = .005; % DS
-opts.frameSize = .01; % DS
-opts.frameSize = .0075; % M56
-opts.minFiringRate = .1;
-
-data = load(fullfile(paths.saveDataPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
-[dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(data, opts);
-
-idM23 = find(strcmp(areaLabels, 'M23'));
-idM56 = find(strcmp(areaLabels, 'M56'));
-idDS = find(strcmp(areaLabels, 'DS'));
-idVS = find(strcmp(areaLabels, 'VS'));
-fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
-
-%%
-idSelect = idDS;
-idSelect = idM56;
-
-%
-sumSpikes = sum(dataMat(:, idSelect), 2);
-figure(91);
-histogram(sumSpikes, 'Normalization', 'pdf')
-% sum(sumSpikes == 0) / length(sumSpikes)
-
-
-%% go to demoempdata.m
-
-asdfMat = rastertoasdf2(dataMat(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS')
-
-
-Av = avprops(asdfMat, 'ratio', 'fingerprint');
-
-% Go to demoempdata.m to run rest of codes using Av
 
 
 
@@ -606,7 +607,7 @@ end
 % delete(poolID)
 %%
 fileName = fullfile(paths.dropPath, 'avalanche_data_15min.mat');
-save(fileName, 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'stepSize', 'preTime', 'postTime', 'areas')
+save(fileName, 'brPeak', 'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'stepSize', 'preTime', 'postTime', 'areas')
 
 
 
