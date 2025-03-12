@@ -291,6 +291,10 @@ slack_code_done
 
 
 
+
+
+
+
 %%   =============     Test transition vs. within-bout criticality BETWEEN behaviors.   =============
 opts = neuro_behavior_options;
 opts.minFiringRate = .1;
@@ -302,6 +306,7 @@ opts.frameSize = .001;
 get_standard_data
 
 %%
+thresholdFlag = 0;
 preTime = .2;
 postTime = .2;
 
@@ -322,7 +327,12 @@ for a = 1 : length(areas)
     aID = idList{a};
 
     % Find optimal bin size for avalannce analyses
-    optBinSize(a) = optimal_bin_size(dataMat(:, aID));
+    % If using the threshold method
+    if thresholdFlag
+        optBinSize(a) = thresholdBinSize;
+    else
+        optBinSize(a) = optimal_bin_size(dataMat(:, aID));
+    end
 
 
     % Make the matrices of the transitions and within-bouts at 1 kHz
@@ -333,8 +343,12 @@ for a = 1 : length(areas)
         bID = analyzeCodes(b);
 
         % First row of zeros so first spike counts as avalanche
-    transMat = zeros(1, length(aID));
-    withinMat = transMat;
+        if thresholdFlag
+            transMat = 0;
+        else
+            transMat = zeros(1, length(aID));
+        end
+        withinMat = transMat;
 
         % Transition indices
         preIndAll = find(diff(bhvID) ~= 0); % 1 frame prior to all behavior transitions
@@ -352,6 +366,13 @@ for a = 1 : length(areas)
 
                 % Convert the 1 kHz dataMats to the optimal bin size for avalanche analysis
                 tempMat = neural_matrix_ms_to_frames(dataMat(transInd, aID), optBinSize(a));
+                if thresholdFlag
+                    tempMat = sum(tempMat, 2);
+                    threshPct = .08;
+                    % threshSpikes = threshPct * max(dataMatReach);
+                    threshSpikes = .9*median(tempMat);
+                    tempMat(tempMat < threshSpikes) = 0;
+                end
                 % Find avalances within the data
                 zeroBins = find(sum(tempMat, 2) == 0);
                 if length(zeroBins) > 1 && any(diff(zeroBins)>1)
@@ -359,7 +380,7 @@ for a = 1 : length(areas)
                 end
             end
 
-         
+
             preIndNext = preIndAll(find(preIndAll > preInd(bout), 1));
             % Collect within-bout avalanche data
             withinInd = preInd(bout) + transWindow(end) + 1 : preIndNext + transWindow(1) - 1;
@@ -367,6 +388,13 @@ for a = 1 : length(areas)
             if ~isempty(withinInd)
                 % Convert the 1 kHz dataMats to the optimal bin size for avalanche analysis
                 tempMat = neural_matrix_ms_to_frames(dataMat(withinInd, aID), optBinSize(a));
+                if thresholdFlag
+                    tempMat = sum(tempMat, 2);
+                    threshPct = .08;
+                    % threshSpikes = threshPct * max(dataMatReach);
+                    threshSpikes = .9*median(tempMat);
+                    tempMat(tempMat < threshSpikes) = 0;
+                end
                 zeroBins = find(sum(tempMat, 2) == 0);
                 if length(zeroBins) > 1 && any(diff(zeroBins)>1)
                     withinMat = [withinMat; tempMat(zeroBins(1) : zeroBins(end)-1, :)];
@@ -374,8 +402,8 @@ for a = 1 : length(areas)
             end
 
         end
-    transMat = [transMat; zeros(1, size(transMat, 2))]; % add a final row of zeros to close out last avalanche
-    withinMat = [withinMat; zeros(1, size(withinMat, 2))]; % add a final row of zeros to close out last avalanche
+        transMat = [transMat; zeros(1, size(transMat, 2))]; % add a final row of zeros to close out last avalanche
+        withinMat = [withinMat; zeros(1, size(withinMat, 2))]; % add a final row of zeros to close out last avalanche
 
 
 
@@ -408,9 +436,9 @@ ha = tight_subplot(2, ceil(length(analyzeCodes)/2), [0.05 0.02], [0.15 0.1], [0.
 for b = 1 : length(analyzeCodes)
     axes(ha(b));
     hold on; grid on;
-plot(centers(2:end), reshape(brHist(a,b,2:end,1), length(centers(2:end)), 1), 'k', 'LineWidth',linewidth)
-plot(centers(2:end), reshape(brHist(a,b,2:end,2), length(centers(2:end)), 1), 'r', 'LineWidth',linewidth)
-title(analyzeBhv{b}, 'Interpreter','none')
+    plot(centers(2:end), reshape(brHist(a,b,2:end,1), length(centers(2:end)), 1), 'k', 'LineWidth',linewidth)
+    plot(centers(2:end), reshape(brHist(a,b,2:end,2), length(centers(2:end)), 1), 'r', 'LineWidth',linewidth)
+    title(analyzeBhv{b}, 'Interpreter','none')
     set(ha(b), 'XTickLabelMode', 'auto');  % Enable Y-axis labels
     xlim([0 2])
     if b == 1
@@ -428,7 +456,7 @@ ha = tight_subplot(2, ceil(length(analyzeCodes)/2), [0.05 0.02], [0.15 0.1], [0.
 for b = 1 : length(analyzeCodes)
     % Activate subplot
     axes(ha(b));
-% for a = 1 : length(areas)
+    % for a = 1 : length(areas)
     hold on;
 
     plot(1, tau(a,b,1), 'ok', 'LineWidth', linewidth)
@@ -509,8 +537,8 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 15 * 60;
-opts.firingRateCheckTime = 5 * 60;
+opts.collectFor = 10 * 60;
+opts.firingRateCheckTime = 2 * 60;
 get_standard_data
 
 %%
@@ -606,7 +634,10 @@ save(fileName, 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers
 
 
 
-%% =======================    Mark's reaching vs ITI     =======================
+
+
+
+%% ==============================================             Mark's reaching vs ITI             ==============================================
 opts.minFiringRate = .1;
 getDataType = 'spikes';
 opts.frameSize = .001;
@@ -626,6 +657,10 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 
 
 %%
+pcaFlag = 1;
+thresholdFlag = 1;
+thresholdBinSize = .02;
+
 preTime = .2; % ms before reach onset
 postTime = 2;
 
@@ -644,23 +679,45 @@ optBinSize = nan(length(areas), 1);
 idList = {idM23R, idM56R, idDSR, idVSR};
 
 % Find all reach starts
+block1Err = 1;
 block1Corr = 2;
-block2Corr = 3;
-block1Cor = dataR.block(:, 3) == block2Corr;
+block2Err = 3;
+block2Corr = 4;
+trialIdx = dataR.block(:, 3) == block2Err;
 
 for a = 1 : length(areas)
     fprintf('Area %s\n', areas{a})
     tic
     aID = idList{a};
 
-optBinSize(a) = optimal_bin_size(dataMatR(:, aID));
-reachWindow = floor(-preTime/optBinSize(a)) : ceil(postTime/optBinSize(a)) - 1;
-baseWindow = reachWindow - floor(3/optBinSize(a)) - 1;
+    % If using the threshold method
+    if thresholdFlag
+        optBinSize(a) = thresholdBinSize;
+    else
+        optBinSize(a) = optimal_bin_size(dataMatR(:, aID));
+    end
+
+    reachWindow = floor(-preTime/optBinSize(a)) : ceil(postTime/optBinSize(a)) - 1;
+    baseWindow = reachWindow - floor(3/optBinSize(a)) - 1;
 
     dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, aID), optBinSize(a));
 
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(dataMatReach);
+        forDim = find(cumsum(explained) > 30, 1);
+        nDim = forDim+1:size(score, 2);
+        % nDim = 1:3;
+        dataMatReach = score(:,nDim) * coeff(:,nDim)' + mu;
+    end
 
-    rStarts = round(dataR.R(block1Cor,1)/optBinSize(a)/1000);  % in frame time
+    if thresholdFlag
+        dataMatReach = round(sum(dataMatReach, 2));
+        threshPct = .08;
+        % threshSpikes = threshPct * max(dataMatReach);
+        threshSpikes = .9*median(dataMatReach);
+        dataMatReach(dataMatReach < threshSpikes) = 0;
+    end
+    rStarts = round(dataR.R(trialIdx,1)/optBinSize(a)/1000);  % in frame time
 
     % initialize data mats: start with a row of zeros so first spike counts as
     % avalanche
@@ -693,14 +750,16 @@ baseWindow = reachWindow - floor(3/optBinSize(a)) - 1;
 
     asdfMat = rastertoasdf2(baseMat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'reach');
     Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
-    brHist(a,:, 1) = histcounts(Av(a, 1).branchingRatio, edges, 'Normalization','pdf');
+    br = Av(a, 1).branchingRatio;
+    brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization','pdf');
     [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1)] = avalanche_log(Av(a, 1), plotFlag);
 
 
     %
     asdfMat = rastertoasdf2(reachMat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'ITI');
     Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
-    brHist(a,:, 2) = histcounts(Av(a, 2).branchingRatio, edges, 'Normalization','pdf');
+    br = Av(a, 2).branchingRatio;
+    brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization','pdf');
     [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
 
     % [tauB, alphaB, sigmaNuZInvSDB]
@@ -714,16 +773,17 @@ ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [
 for a = 1 : length(areas)
     axes(ha(a));
     hold on;
-linewidth = 2;
-% for a = 1 : length(areas)
-plot(centers(2:end), brHist(a,2:end,1), 'k', 'LineWidth',linewidth)
-plot(centers(2:end), brHist(a,2:end,2), 'r', 'LineWidth',linewidth)
-xlim([0 2.5])
-grid on;
+    linewidth = 2;
+    % for a = 1 : length(areas)
+    plot(centers(2:end), brHist(a,2:end,1), 'k', 'LineWidth',linewidth)
+    plot(centers(2:end), brHist(a,2:end,2), 'r', 'LineWidth',linewidth)
+    xlim([0 2])
+    grid on;
     set(ha(a), 'XTickLabelMode', 'auto');  % Enable Y-axis labels
-    title([areas{a}, ' Branching Ratios'])
+    title([areas{a}])
 end
 legend({'ITI', 'Reach'})
+sgtitle('Branching Ratio PDFs')
 copy_figure_to_clipboard
 %%
 figure(37); clf;
@@ -757,7 +817,7 @@ for a = 1 : length(areas)
 end
 legend({'ITI', 'Reaches'})
 sgtitle('Avalanche Params Reaching vs ITI')
-
+copy_figure_to_clipboard
 
 
 
@@ -890,12 +950,12 @@ end
 function optBinSize = optimal_bin_size(dataMat)
 spikeFrames = sum(dataMat, 2);
 positiveIndices = find(spikeFrames > 0);
-checkITI = repelem(positiveIndices, spikeFrames(positiveIndices));
-optBinSize = ceil(mean(diff(checkITI))) / 1000;
-    if optBinSize == 0; optBinSize = .001; end
+checkISI = repelem(positiveIndices, spikeFrames(positiveIndices));
+optBinSize = ceil(mean(diff(checkISI))) / 1000;
+if optBinSize == 0; optBinSize = .001; end
 
-    % Old version:
-        %     optBinSize{a}(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
-        % if optBinSize{a}(iter, 1) == 0; optBinSize{a}(iter, 1) = .001; end
+% Old version:
+%     optBinSize{a}(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
+% if optBinSize{a}(iter, 1) == 0; optBinSize{a}(iter, 1) = .001; end
 
 end
