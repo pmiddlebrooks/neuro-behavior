@@ -17,10 +17,19 @@ sigmaRange = [1.3 1.7];
 
 
 
-%%   =======================     Check a few min of each area   =======================
-% Slide a window from 1sec prior to 100ms after each time point
-% Get criticality parameters at each time piont
-% Assess metastability of criticality over time
+
+
+
+
+
+
+
+
+
+
+
+
+%%   ====================================       Naturalistic: Check a few min of each area       ==============================================
 opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
@@ -30,9 +39,10 @@ opts.firingRateCheckTime = 2 * 60;
 get_standard_data
 
 %%
-pcaFlag = 0;
-thresholdFlag = 0;
-thresholdBinSize = .02;
+pcaFlag = 1;
+pcaFirstFlag = 1;
+thresholdFlag = 1;
+thresholdBinSize = .05;
 
 
 % Initialize variables
@@ -40,11 +50,12 @@ areas = {'M23', 'M56', 'DS', 'VS'};
 [optBinSize, tau, tauC, alpha, sigmaNuZInvSD] = deal(nan(length(areas), 1));
 idList = {idM23, idM56, idDS, idVS};
 % Branching ratio histogram values
-minBR = 0; maxBR = 2.5;
+minBR = 0; maxBR = 3;
 edges = minBR : .1 : maxBR;
 centers = edges(1:end-1) + diff(edges) / 2;
 brHist = nan(length(areas), length(centers));
 
+tic
 for a = 1 : length(areas)
     aID = idList{a};
 
@@ -54,32 +65,100 @@ for a = 1 : length(areas)
     else
         optBinSize(a) = optimal_bin_size(dataMat(:,aID));
     end
-    fprintf('Area: %s\tBinsize: %.3f\n', areas{a}, optBinSize(a))
+    fprintf('-------------\tArea: %s\n', areas{a})
 
     dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize(a));
 
     if pcaFlag
         [coeff, score, ~, ~, explained, mu] = pca(dataMatNat);
         forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim)
+        if pcaFirstFlag
+        fprintf('Using PCA first few\n')
+        % nDim = 1:forDim;
+        else
+        fprintf('Using PCA Last many\n')
         nDim = forDim+1:size(score, 2);
-        % nDim = 1:3;
+        end
         dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
     end
 
     if thresholdFlag
+        fprintf('Using Threshold method \tBinsize: %.3f\n', optBinSize(a))
         dataMatNat = round(sum(dataMatNat, 2));
         threshPct = .08;
         % threshSpikes = threshPct * max(dataMatReach);
-        threshSpikes = .9*median(dataMatNat);
+        threshSpikes = .8*median(dataMatNat);
         dataMatNat(dataMatNat < threshSpikes) = 0;
+        sum(dataMatNat == 0) / length(dataMatNat)
     end
 
     asdfMat = rastertoasdf2(dataMatNat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
     Av(a) = avprops(asdfMat, 'ratio', 'fingerprint');
-    brHist(a,:) = histcounts(Av(a).branchingRatio, edges, 'Normalization', 'pdf');
+        br = Av(a).branchingRatio;
+
+    brHist(a,:) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
     [tau(a), tauC(a), alpha(a), sigmaNuZInvSD(a)] = avalanche_log(Av(a), 0);
 
 end
+toc/60
+%%
+figure(36); clf;
+ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
+for a = 1 : length(areas)
+    axes(ha(a));
+    hold on;
+    linewidth = 2;
+    % for a = 1 : length(areas)
+    plot(centers(2:end), brHist(a,2:end), 'k', 'LineWidth',linewidth)
+    % plot(centers(2:end), brHist(a,2:end,2), 'r', 'LineWidth',linewidth)
+    xlim([0 2])
+    grid on;
+    set(ha(a), 'XTickLabelMode', 'auto');  % Enable Y-axis labels
+    title([areas{a}])
+end
+legend({'ITI', 'Reach'})
+sgtitle('Branching Ratio PDFs')
+copy_figure_to_clipboard
+%
+pause
+figure(37); clf;
+ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
+for a = 1 : length(areas)
+    % Activate subplot
+    axes(ha(a));
+    hold on;
+    plot(1, tau(a), 'ok', 'LineWidth', linewidth)
+    % plot(1, tau(a,2), 'or', 'LineWidth', linewidth)
+
+    plot(2, tauC(a), 'ok', 'LineWidth', linewidth)
+    % plot(2, tauC(a,2), 'or', 'LineWidth', linewidth)
+
+    plot(3, alpha(a), 'ok', 'LineWidth', linewidth)
+    % plot(3, alpha(a,2), 'or', 'LineWidth', linewidth)
+
+    plot(4, sigmaNuZInvSD(a), 'ok', 'LineWidth', linewidth)
+    % plot(4, sigmaNuZInvSD(a,2), 'or', 'LineWidth', linewidth)
+
+    plot([1 1], tauRange, 'b', 'LineWidth', 1)
+    plot([2 2], tauRange, 'b', 'LineWidth', 1)
+    plot([3 3], alphaRange, 'b', 'LineWidth', 1)
+    plot([4 4], sigmaRange, 'b', 'LineWidth', 1)
+    xticks(1:4)
+    xticklabels({'tau', 'tauC', 'alpha', 'sigmaNuZInvSD'})
+    xlim([.5 4.5])
+    ylim([.5 5])
+    grid on;
+    title(areas{a})
+end
+% legend({'ITI', 'Reaches'})
+sgtitle('Avalanche Params Reaching vs ITI')
+copy_figure_to_clipboard
+
+
+
+
 
 
 
@@ -412,7 +491,8 @@ for a = 1 : length(areas)
         % dataMatT = neural_matrix_ms_to_frames(transMat, optBinSize);
         asdfMat = rastertoasdf2(transMat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'trans');
         Av(a, b, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
-        brHist(a,b,:,1) = histcounts(Av(a, b, 1).branchingRatio, edges, 'Normalization','pdf');
+        br = Av(a, b, 1).branchingRatio;
+        brHist(a,b,:,1) = histcounts(br(br>0), edges, 'Normalization','pdf');
 
         [tau(a, b, 1), tauC(a, b, 1), alpha(a, b, 1), sigmaNuZInvSD(a, b, 1)] = avalanche_log(Av(a, b, 1), 0);
 
@@ -420,7 +500,8 @@ for a = 1 : length(areas)
         % dataMatW = neural_matrix_ms_to_frames(withinMat, optBinSize);
         asdfMat = rastertoasdf2(withinMat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'within');
         Av(a, b, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
-        brHist(a,b,:,2) = histcounts(Av(a, b, 2).branchingRatio, edges, 'Normalization','pdf');
+        br = Av(a, b, 2).branchingRatio;
+        brHist(a,b,:,2) = histcounts(br(br>0), edges, 'Normalization','pdf');
         [tau(a, b, 2), tauC(a, b, 2), alpha(a, b, 2), sigmaNuZInvSD(a, b, 2)] = avalanche_log(Av(a, b, 2), 0);
     end
 end
@@ -530,7 +611,7 @@ copy_figure_to_clipboard
 
 
 
-%%   =======================     Sliding window of criticality parameters   =======================
+%%   ================================            Sliding window of criticality parameters          ================================
 % Slide a window from 1sec prior to 100ms after each time point
 % Get criticality parameters at each time piont
 % Assess metastability of criticality over time
@@ -767,7 +848,6 @@ for a = 1 : length(areas)
     % [tau, alpha, sigmaNuZInvSD]
 end
 
-
 %%
 figure(36); clf;
 ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
@@ -786,7 +866,8 @@ end
 legend({'ITI', 'Reach'})
 sgtitle('Branching Ratio PDFs')
 copy_figure_to_clipboard
-%%
+%
+pause
 figure(37); clf;
 ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
 for a = 1 : length(areas)
@@ -819,6 +900,7 @@ end
 legend({'ITI', 'Reaches'})
 sgtitle('Avalanche Params Reaching vs ITI')
 copy_figure_to_clipboard
+
 
 
 
@@ -906,7 +988,12 @@ legend('Empirical Data', 'Power-Law Fit');
 
 
 
+
+
+
+
 %%
+
 function [tau, tauC, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag)
 
 if plotFlag == 1
@@ -960,3 +1047,8 @@ if optBinSize == 0; optBinSize = .001; end
 % if optBinSize{a}(iter, 1) == 0; optBinSize{a}(iter, 1) = .001; end
 
 end
+
+
+
+
+
