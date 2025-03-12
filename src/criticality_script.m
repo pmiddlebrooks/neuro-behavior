@@ -577,7 +577,7 @@ for a = 1 : length(areas)
 end
 % delete(poolID)
 %%
-fileName = fullfile(paths.dropPath, 'avalanche_data_30min.mat');
+fileName = fullfile(paths.dropPath, 'avalanche_data_15min.mat');
 save(fileName, 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'stepSize', 'preTime', 'postTime', 'areas')
 
 
