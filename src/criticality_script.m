@@ -42,7 +42,7 @@ get_standard_data
 pcaFlag = 1;
 pcaFirstFlag = 0;
 thresholdFlag = 1;
-thresholdBinSize = .02;
+thresholdBinSize = .05;
 
 
 % Initialize variables
@@ -73,25 +73,24 @@ for a = 1 : length(areas)
         [coeff, score, ~, ~, explained, mu] = pca(dataMatNat);
         forDim = find(cumsum(explained) > 30, 1);
         forDim = max(3, forDim);
-        forDim = min(6, forDim)
+        forDim = min(6, forDim);
         if pcaFirstFlag
-        fprintf('Using PCA first few\n')
+        fprintf('Using PCA first %d\n', forDim)
         nDim = 1:forDim;
         else
-        fprintf('Using PCA Last many\n')
+        fprintf('Using PCA Last many from %d to %D\n', forDim+1, size(score, 2))
         nDim = forDim+1:size(score, 2);
         end
         dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
     end
 
     if thresholdFlag
-        fprintf('Using Threshold method \tBinsize: %.3f\n', optBinSize(a))
         dataMatNat = round(sum(dataMatNat, 2));
         threshPct = .08;
         % threshSpikes = threshPct * max(dataMatReach);
         threshSpikes = .8*median(dataMatNat);
         dataMatNat(dataMatNat < threshSpikes) = 0;
-        sum(dataMatNat == 0) / length(dataMatNat)
+        fprintf('Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a), sum(dataMatNat == 0) / length(dataMatNat))
     end
 
     asdfMat = rastertoasdf2(dataMatNat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
@@ -99,7 +98,7 @@ for a = 1 : length(areas)
         br = Av(a).branchingRatio;
 
     brHist(a,:) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
-    [tau(a), tauC(a), alpha(a), sigmaNuZInvSD(a)] = avalanche_log(Av(a), 0);
+    [tau(a), tauC(a), alpha(a), sigmaNuZInvSD(a), decades(a)] = avalanche_log(Av(a), 0);
 
 end
 toc/60
@@ -254,7 +253,7 @@ for a = 1 : length(areas)
         asdfMat = rastertoasdf2(dataMatNat', optBinSize{a}(iter, 1)*1000, 'CBModel', 'Spikes', 'area');
         Av{a}(1) = avprops(asdfMat, 'ratio', 'fingerprint');
 
-        [brPeak{a}(iter, 1), tau{a}(iter, 1), tauC{a}(iter, 1), alpha{a}(iter, 1), sigmaNuZInvSD{a}(iter, 1)] = avalanche_log(Av{a}(1));
+        [brPeak{a}(iter, 1), tau{a}(iter, 1), tauC{a}(iter, 1), alpha{a}(iter, 1), sigmaNuZInvSD{a}(iter, 1), decades{a}(iter, 1)] = avalanche_log(Av{a}(1));
 
 
 
@@ -272,7 +271,7 @@ for a = 1 : length(areas)
         asdfMatR = rastertoasdf2(dataMatReach', optBinSize{a}(iter, 2)*1000, 'CBModel', 'Spikes', 'area');
         Av{a}(2) = avprops(asdfMatR, 'ratio', 'fingerprint');
 
-        [brPeak{a}(iter, 2), tau{a}(iter, 2), tauC{a}(iter, 2), alpha{a}(iter, 2), sigmaNuZInvSD{a}(iter, 2)] = avalanche_log(Av{a}(2));
+        [brPeak{a}(iter, 2), tau{a}(iter, 2), tauC{a}(iter, 2), alpha{a}(iter, 2), sigmaNuZInvSD{a}(iter, 2), decades{a}(iter, 2)] = avalanche_log(Av{a}(2));
 
         fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
 
@@ -315,7 +314,7 @@ for b = 1 : length(binSizes)
         asdfMat = rastertoasdf2(dataMat(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
         Av = avprops(asdfMat, 'ratio', 'fingerprint');
 
-        [brPeak(iter, 1, b), tau(iter, 1, b), tauC(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b)] = avalanche_log(Av);
+        [brPeak(iter, 1, b), tau(iter, 1, b), tauC(iter, 1, b), alpha(iter, 1, b), sigmaNuZInvSD(iter, 1, b), decades(iter, 1, b)] = avalanche_log(Av);
 
 
 
@@ -330,7 +329,7 @@ for b = 1 : length(binSizes)
         asdfMatR = rastertoasdf2(dataMatR(:,idSelect)', opts.frameSize*1000, 'CBModel', 'Spikes', 'DS');
         AvR = avprops(asdfMatR, 'ratio', 'fingerprint');
 
-        [brPeak(iter, 2, b), tau(iter, 2, b), tauC(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b)] = avalanche_log(AvR);
+        [brPeak(iter, 2, b), tau(iter, 2, b), tauC(iter, 2, b), alpha(iter, 2, b), sigmaNuZInvSD(iter, 2, b), decades(iter, 2, b)] = avalanche_log(AvR);
 
         fprintf('\n\nInteration %d\t %.1f\n\n', iter, toc/60)
 
@@ -494,7 +493,7 @@ for a = 1 : length(areas)
         br = Av(a, b, 1).branchingRatio;
         brHist(a,b,:,1) = histcounts(br(br>0), edges, 'Normalization','pdf');
 
-        [tau(a, b, 1), tauC(a, b, 1), alpha(a, b, 1), sigmaNuZInvSD(a, b, 1)] = avalanche_log(Av(a, b, 1), 0);
+        [tau(a, b, 1), tauC(a, b, 1), alpha(a, b, 1), sigmaNuZInvSD(a, b, 1), decades(a, b, 1)] = avalanche_log(Av(a, b, 1), 0);
 
 
         % dataMatW = neural_matrix_ms_to_frames(withinMat, optBinSize);
@@ -502,7 +501,7 @@ for a = 1 : length(areas)
         Av(a, b, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
         br = Av(a, b, 2).branchingRatio;
         brHist(a,b,:,2) = histcounts(br(br>0), edges, 'Normalization','pdf');
-        [tau(a, b, 2), tauC(a, b, 2), alpha(a, b, 2), sigmaNuZInvSD(a, b, 2)] = avalanche_log(Av(a, b, 2), 0);
+        [tau(a, b, 2), tauC(a, b, 2), alpha(a, b, 2), sigmaNuZInvSD(a, b, 2), decades(a, b, 2)] = avalanche_log(Av(a, b, 2), 0);
     end
 end
 % fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
@@ -624,9 +623,14 @@ opts.firingRateCheckTime = 2 * 60;
 get_standard_data
 
 %%
-preTime = 2;
+pcaFlag = 0;
+pcaFirstFlag = 0;
+thresholdFlag = 1;
+thresholdBinSize = .015;
+
+preTime = 3;
 postTime = .2;
-stepSize = 0.15;       % Step size in seconds
+stepSize = 0.1;       % Step size in seconds
 numSteps = floor((size(dataMat, 1) / 1000 - stepSize) / stepSize) - 1;
 
 % Initialize variables
@@ -644,9 +648,42 @@ centers = edges(1:end-1) + diff(edges) / 2;
 for a = 1 : length(areas)
     tic
     aID = idList{a};
+
     % Find optimal bin size for avalanche analyses
-    optBinSize(a) = optimal_bin_size(dataMat(:,aID));
+        % If using the threshold method
+    if thresholdFlag
+        optBinSize(a) = thresholdBinSize;
+    else
+        optBinSize(a) = optimal_bin_size(dataMat(:,aID));
+    end
+    fprintf('-------------\tArea: %s\n', areas{a})
+
     dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize(a));
+
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(dataMatNat);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+        fprintf('Using PCA first %d\n', forDim)
+        nDim = 1:forDim;
+        else
+        fprintf('Using PCA Last many from %d to %D\n', forDim+1, size(score, 2))
+        nDim = forDim+1:size(score, 2);
+        end
+        dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
+    end
+
+    if thresholdFlag
+        dataMatNat = round(sum(dataMatNat, 2));
+        threshPct = .08;
+        % threshSpikes = threshPct * max(dataMatReach);
+        threshSpikes = .8*median(dataMatNat);
+        dataMatNat(dataMatNat < threshSpikes) = 0;
+        fprintf('Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a), sum(dataMatNat == 0) / length(dataMatNat))
+    end
+
 
     transWindow = (floor(-preTime/optBinSize(a)) : ceil(postTime/optBinSize(a)) - 1);
 
@@ -673,7 +710,7 @@ for a = 1 : length(areas)
             asdfMat = rastertoasdf2(dataMatNat(iIdx + transWindow + 1, :)', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
             Av = avprops(asdfMat, 'ratio', 'fingerprint');
             iBrHist(i,:) = histcounts(Av.branchingRatio, edges, 'Normalization', 'pdf');
-            [iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i)] = avalanche_log(Av, 0);
+            [iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i), decades(i)] = avalanche_log(Av, 0);
         end
 
     end
@@ -834,7 +871,7 @@ for a = 1 : length(areas)
     Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
     br = Av(a, 1).branchingRatio;
     brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization','pdf');
-    [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1)] = avalanche_log(Av(a, 1), plotFlag);
+    [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), plotFlag);
 
 
     %
@@ -842,7 +879,7 @@ for a = 1 : length(areas)
     Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
     br = Av(a, 2).branchingRatio;
     brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization','pdf');
-    [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
+    [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
 
     % [tauB, alphaB, sigmaNuZInvSDB]
     % [tau, alpha, sigmaNuZInvSD]
@@ -994,7 +1031,7 @@ legend('Empirical Data', 'Power-Law Fit');
 
 %%
 
-function [tau, tauC, alpha, sigmaNuZInvSD] = avalanche_log(Av, plotFlag)
+function [tau, tauC, alpha, sigmaNuZInvSD, decades] = avalanche_log(Av, plotFlag)
 
 if plotFlag == 1
     plotFlag = 'plot';
@@ -1006,6 +1043,8 @@ end
 [tau, xminSZ, xmaxSZ, sigmaSZ, pSZ, pCritSZ, ksDR, DataSZ] =...
     avpropvals(Av.size, 'size', plotFlag);
 tau = cell2mat(tau);
+
+decades = log10(xmaxSZ/xminSZ);
 
 % size distribution (SZ) with cutoffs
 tauC = nan;
@@ -1022,6 +1061,8 @@ if length(AllowedSizes) > 1
         avpropvals(LimSize, 'size', plotFlag);
     tauC = cell2mat(tauC);
 end
+
+decades = log10(xmaxSZ/xminSZ);
 
 % duration distribution (DR)
 [alpha, xminDR, xmaxDR, sigmaDR, pDR, pCritDR, ksDR, DataDR] =...
