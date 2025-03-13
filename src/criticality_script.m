@@ -40,9 +40,9 @@ get_standard_data
 
 %%
 pcaFlag = 1;
-pcaFirstFlag = 1;
+pcaFirstFlag = 0;
 thresholdFlag = 1;
-thresholdBinSize = .05;
+thresholdBinSize = .02;
 
 
 % Initialize variables
@@ -76,7 +76,7 @@ for a = 1 : length(areas)
         forDim = min(6, forDim)
         if pcaFirstFlag
         fprintf('Using PCA first few\n')
-        % nDim = 1:forDim;
+        nDim = 1:forDim;
         else
         fprintf('Using PCA Last many\n')
         nDim = forDim+1:size(score, 2);
