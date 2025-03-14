@@ -618,8 +618,9 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
+opts.collectStart = 3*60*60;
 opts.collectFor = 10 * 60;
-opts.firingRateCheckTime = 2 * 60;
+opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
 %%
@@ -635,7 +636,7 @@ numSteps = floor((size(dataMat, 1) / 1000 - stepSize) / stepSize) - 1;
 
 % Initialize variables
 areas = {'M23', 'M56', 'DS', 'VS'};
-[brPeak, tau, tauC, alpha, sigmaNuZInvSD] = deal(cell(length(areas), 1));
+[brPeak, tau, tauC, alpha, sigmaNuZInvSD, decades] = deal(cell(length(areas), 1));
 optBinSize = nan(length(areas), 1);
 idList = {idM23, idM56, idDS, idVS};
 % Branching ratio histogram values
@@ -690,7 +691,7 @@ for a = 1 : length(areas)
     % % Calculate number of windows to preallocate
     % numWindows = floor((size(dataMatNat, 1) - 1) / stepRows) + 1;
 
-    [iTau, iTauC, iAlpha, iSigmaNuZInvSD] = deal(nan(numSteps, 1));
+    [iTau, iTauC, iAlpha, iSigmaNuZInvSD, iDecades] = deal(nan(numSteps, 1));
 
     iBrHist = nan(numSteps, length(centers));
 
@@ -710,7 +711,7 @@ for a = 1 : length(areas)
             asdfMat = rastertoasdf2(dataMatNat(iIdx + transWindow + 1, :)', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
             Av = avprops(asdfMat, 'ratio', 'fingerprint');
             iBrHist(i,:) = histcounts(Av.branchingRatio, edges, 'Normalization', 'pdf');
-            [iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i), decades(i)] = avalanche_log(Av, 0);
+            [iTau(i), iTauC(i), iAlpha(i), iSigmaNuZInvSD(i), iDecades(i)] = avalanche_log(Av, 0);
         end
 
     end
@@ -721,10 +722,11 @@ for a = 1 : length(areas)
     tauC{a} = iTauC;
     alpha{a} = iAlpha;
     sigmaNuZInvSD{a} = iSigmaNuZInvSD;
+    decades{a} = iDecades;
 end
 % delete(poolID)
 %%
-fileName = fullfile(paths.dropPath, 'avalanche_data_15min.mat');
+fileName = fullfile(paths.dropPath, 'avalanche_data_10min.mat');
 save(fileName, 'brPeak', 'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'stepSize', 'preTime', 'postTime', 'areas')
 
 
@@ -1044,7 +1046,7 @@ end
     avpropvals(Av.size, 'size', plotFlag);
 tau = cell2mat(tau);
 
-decades = log10(xmaxSZ/xminSZ);
+decades = log10(cell2mat(xmaxSZ)/cell2mat(xminSZ));
 
 % size distribution (SZ) with cutoffs
 tauC = nan;
@@ -1062,7 +1064,7 @@ if length(AllowedSizes) > 1
     tauC = cell2mat(tauC);
 end
 
-decades = log10(xmaxSZ/xminSZ);
+% decades = log10(xmaxSZ/xminSZ);
 
 % duration distribution (DR)
 [alpha, xminDR, xmaxDR, sigmaDR, pDR, pCritDR, ksDR, DataDR] =...
