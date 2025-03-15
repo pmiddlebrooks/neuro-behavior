@@ -10,9 +10,6 @@ opts.frameSize = .1;
 
 getDataType = 'spikes';
 get_standard_data
-getDataType = 'behavior';
-get_standard_data
-
 colors = colors_for_behaviors(codes);
 
 % for plotting consistency
@@ -171,6 +168,7 @@ accuracyPermuted = accuracy;
 % ---------------   TRANSITIONS OR WITHIN-BEHAVIOR     ----------------------------------------------------------
 % --------------------------------------------------------------------------------------------------------------
 % Find all time bins preceding all behavior transitions:
+preInd = cell(length(bhvIDSegment), 1);
 for i = 1 : length(bhvIDSegment)
 
     preInd{i} = find(diff(bhvIDSegment{i}) ~= 0); % 1 frame prior to all behavior transitions
