@@ -748,6 +748,14 @@ for a = 1 : length(areas)
 end
 % delete(poolID)
 %%
+a = 3
+ figure(); clf;
+ plot(tau{a})
+ hold on;
+ plot(alpha{a})
+ plot(decades{a})
+
+%%
 fileName = fullfile(paths.dropPath, 'avalanche_data_10min.mat');
 save(fileName, 'brPeak', 'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'stepSize', 'preTime', 'postTime', 'areas')
 
