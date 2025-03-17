@@ -34,40 +34,56 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 10 * 60;
+opts.collectFor = 40 * 60;
 opts.firingRateCheckTime = 2 * 60;
 get_standard_data
 
+% Mark's reach data
+dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
+[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+% Ensure dataMatR is same size as dataMat
+dataMatR = dataMatR(1:size(dataMat, 1),:);
+idM23R = find(strcmp(areaLabels, 'M23'));
+idM56R = find(strcmp(areaLabels, 'M56'));
+idDSR = find(strcmp(areaLabels, 'DS'));
+idVSR = find(strcmp(areaLabels, 'VS'));
+
+
 %%
-pcaFlag = 1;
+pcaFlag = 0;
 pcaFirstFlag = 0;
 thresholdFlag = 1;
-thresholdBinSize = .05;
+thresholdBinSize = .02;
 
 
 % Initialize variables
 areas = {'M23', 'M56', 'DS', 'VS'};
-[optBinSize, tau, tauC, alpha, sigmaNuZInvSD] = deal(nan(length(areas), 1));
+[optBinSize, tau, tauC, alpha, sigmaNuZInvSD, decades] = deal(nan(length(areas), 2));
 idList = {idM23, idM56, idDS, idVS};
+idListR = {idM23R, idM56R, idDSR, idVSR};
 % Branching ratio histogram values
 minBR = 0; maxBR = 3;
 edges = minBR : .1 : maxBR;
 centers = edges(1:end-1) + diff(edges) / 2;
-brHist = nan(length(areas), length(centers));
+brHist = nan(length(areas), length(centers), 2);
 
 tic
 for a = 1 : length(areas)
     aID = idList{a};
+    aIDR = idListR{a};
 
     % If using the threshold method
     if thresholdFlag
-        optBinSize(a) = thresholdBinSize;
+        optBinSize(a, 1) = thresholdBinSize;
+        optBinSize(a, 2) = thresholdBinSize;
     else
-        optBinSize(a) = optimal_bin_size(dataMat(:,aID));
+        optBinSize(a, 1) = optimal_bin_size(dataMat(:,aID));
+        optBinSize(a, 2) = optimal_bin_size(dataMatR(:,aIDR));
     end
-    fprintf('-------------\tArea: %s\n', areas{a})
+    fprintf('-------------------------\tArea: %s\n', areas{a})
 
-    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize(a));
+    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize(a, 1));
+    dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, aIDR), optBinSize(a, 2));
 
     if pcaFlag
         [coeff, score, ~, ~, explained, mu] = pca(dataMatNat);
@@ -75,33 +91,61 @@ for a = 1 : length(areas)
         forDim = max(3, forDim);
         forDim = min(6, forDim);
         if pcaFirstFlag
-            fprintf('Using PCA first %d\n', forDim)
+            fprintf('Natural Using PCA first %d\n', forDim)
             nDim = 1:forDim;
         else
-            fprintf('Using PCA Last many from %d to %d\n', forDim+1, size(score, 2))
+            fprintf('Natural Using PCA Last many from %d to %d\n', forDim+1, size(score, 2))
             nDim = forDim+1:size(score, 2);
         end
         dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
-    end
+
+            [coeff, score, ~, ~, explained, mu] = pca(dataMatReach);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+            fprintf('Reach Using PCA first %d\n', forDim)
+            nDim = 1:forDim;
+        else
+            fprintf('Reach Using PCA Last many from %d to %d\n', forDim+1, size(score, 2))
+            nDim = forDim+1:size(score, 2);
+        end
+        dataMatReach = score(:,nDim) * coeff(:,nDim)' + mu;
+end
 
     if thresholdFlag
         dataMatNat = round(sum(dataMatNat, 2));
+        dataMatReach = round(sum(dataMatReach, 2));
+
         threshPct = .08;
         % threshSpikes = threshPct * max(dataMatReach);
         threshSpikes = .8*median(dataMatNat);
         dataMatNat(dataMatNat < threshSpikes) = 0;
-        fprintf('Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a), sum(dataMatNat == 0) / length(dataMatNat))
+        fprintf('Natural: Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a, 1), sum(dataMatNat == 0) / length(dataMatNat))
+
+        threshSpikes = .8*median(dataMatReach);
+        dataMatReach(dataMatReach < threshSpikes) = 0;
+        fprintf('Reach: Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a, 2), sum(dataMatReach == 0) / length(dataMatReach))
     end
 
-    asdfMat = rastertoasdf2(dataMatNat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
-    Av(a) = avprops(asdfMat, 'ratio', 'fingerprint');
-    br = Av(a).branchingRatio;
+    % Natural avalanches
+    sufficient = avalanches_bin_sufficiency(dataMatNat);
+    asdfMat = rastertoasdf2(dataMatNat', optBinSize(a, 1)*1000, 'CBModel', 'Spikes', 'DS');
+    Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
+    br = Av(a, 1).branchingRatio;
+    brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
+    [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), 0);
 
-    brHist(a,:) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
-    [tau(a), tauC(a), alpha(a), sigmaNuZInvSD(a), decades(a)] = avalanche_log(Av(a), 0);
+    % Reach avalanches
+    sufficient = avalanches_bin_sufficiency(dataMatReach);
+    asdfMat = rastertoasdf2(dataMatReach', optBinSize(a, 2)*1000, 'CBModel', 'Spikes', 'DS');
+    Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
+    br = Av(a, 2).branchingRatio;
+    brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
+    [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), 0);
+toc/60
 
 end
-toc/60
 %%
 figure(36); clf;
 ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
@@ -111,7 +155,7 @@ for a = 1 : length(areas)
     linewidth = 2;
     % for a = 1 : length(areas)
     plot(centers(2:end), brHist(a,2:end), 'k', 'LineWidth',linewidth)
-    % plot(centers(2:end), brHist(a,2:end,2), 'r', 'LineWidth',linewidth)
+    plot(centers(2:end), brHist(a,2:end,2), 'r', 'LineWidth',linewidth)
     xlim([0 2])
     grid on;
     set(ha(a), 'XTickLabelMode', 'auto');  % Enable Y-axis labels
@@ -129,16 +173,16 @@ for a = 1 : length(areas)
     axes(ha(a));
     hold on;
     plot(1, tau(a), 'ok', 'LineWidth', linewidth)
-    % plot(1, tau(a,2), 'or', 'LineWidth', linewidth)
+    plot(1, tau(a,2), 'or', 'LineWidth', linewidth)
 
     plot(2, tauC(a), 'ok', 'LineWidth', linewidth)
-    % plot(2, tauC(a,2), 'or', 'LineWidth', linewidth)
+    plot(2, tauC(a,2), 'or', 'LineWidth', linewidth)
 
     plot(3, alpha(a), 'ok', 'LineWidth', linewidth)
-    % plot(3, alpha(a,2), 'or', 'LineWidth', linewidth)
+    plot(3, alpha(a,2), 'or', 'LineWidth', linewidth)
 
     plot(4, sigmaNuZInvSD(a), 'ok', 'LineWidth', linewidth)
-    % plot(4, sigmaNuZInvSD(a,2), 'or', 'LineWidth', linewidth)
+    plot(4, sigmaNuZInvSD(a,2), 'or', 'LineWidth', linewidth)
 
     plot([1 1], tauRange, 'b', 'LineWidth', 1)
     plot([2 2], tauRange, 'b', 'LineWidth', 1)
@@ -151,7 +195,7 @@ for a = 1 : length(areas)
     grid on;
     title(areas{a})
 end
-% legend({'ITI', 'Reaches'})
+legend({'ITI', 'Reaches'})
 sgtitle('Avalanche Params Reaching vs ITI')
 copy_figure_to_clipboard
 
@@ -175,7 +219,6 @@ copy_figure_to_clipboard
 
 %% Set variables and get data
 opts.minFiringRate = .1;
-opts.collectFor = 45 * 60;
 getDataType = 'spikes';
 
 nIter = 20;
@@ -193,7 +236,7 @@ alpha = tau;
 sigmaNuZInvSD = tau;
 %% Set variables and get data
 opts.minFiringRate = .1;
-opts.collectFor = 5 * 60;
+opts.collectFor = 30 * 60;
 getDataType = 'spikes';
 opts.frameSize = .001;
 get_standard_data
@@ -216,26 +259,18 @@ nIter = 1;
 nSubsample = 20;
 
 areas = {'M23', 'M56', 'DS', 'VS'};
-[brPeak, tau, tauC, alpha, sigmaNuZInvSD, optBinSize, Av] = cell(length(areas), 1);
+[tau, tauC, alpha, sigmaNuZInvSD, decades] = deal(nan(length(areas), 2));
+brHist = nan(length(areas), length(centers), 2);
+optBinSize = nan(length(areas), 2);
+idList = {idM23, idM56, idDS, idVS};
 
 
 for a = 1 : length(areas)
     % brPeak = zeros(nIter, 2, length(binSizes));
-    switch areas{a}
-        case 'M23'
-            aID = idM23;
-            aIDR = idM23R;
-        case 'M56'
-            aID = idM56;
-            aIDR = idM56R;
-        case 'DS'
-            aID = idDS;
-            aIDR = idDSR;
-        case 'VS'
-            aID = idVS;
-            aIDR = idVSR;
-    end
+    fprintf('Area %s\n', areas{a})
     tic
+    aID = idList{a};
+
     for iter = 1:nIter
 
 
@@ -279,8 +314,8 @@ for a = 1 : length(areas)
 
     slack_code_done
 end
-fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
-save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
+% fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
+% save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
 
 
 %%    Is naturalistic data closer to criticality than reach data?
@@ -640,8 +675,8 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectStart = 3*60*60;
-opts.collectFor = 10 * 60;
+opts.collectStart = 0*60*60;
+opts.collectFor = 15 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
@@ -668,7 +703,7 @@ centers = edges(1:end-1) + diff(edges) / 2;
 
 % poolID = parpool(4, 'IdleTimeout', Inf);
 % parfor a = 1  : length(areas)
-for a = 1 : length(areas)
+for a = 2 : length(areas)
     tic
     aID = idList{a};
 
@@ -692,7 +727,7 @@ for a = 1 : length(areas)
             fprintf('Using PCA first %d\n', forDim)
             nDim = 1:forDim;
         else
-            fprintf('Using PCA Last many from %d to %D\n', forDim+1, size(score, 2))
+            fprintf('Using PCA Last many from %d to %d\n', forDim+1, size(score, 2))
             nDim = forDim+1:size(score, 2);
         end
         dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
@@ -727,6 +762,7 @@ for a = 1 : length(areas)
         % iIdx = -transWindow(1) + round((i-1) * stepRows);
         fprintf('\t%s\t %d of %d: %.3f  finished \n', areas{a}, i, numSteps, i/numSteps)
         % Make sure there are avalanches in the window
+        sufficient = avalanches_bin_sufficiency(dataMatNat(iIdx + transWindow + 1, :));
         zeroBins = find(sum(dataMatNat(iIdx + transWindow + 1, :), 2) == 0);
         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
 
@@ -749,14 +785,15 @@ end
 % delete(poolID)
 %%
 a = 3
+t = stepSize * (1 : numSteps);
  figure(); clf;
- plot(tau{a})
+ plot(t, tau{a})
  hold on;
- plot(alpha{a})
- plot(decades{a})
+ plot(t, alpha{a})
+ plot(t, decades{a})
 
 %%
-fileName = fullfile(paths.dropPath, 'avalanche_data_10min.mat');
+fileName = fullfile(paths.dropPath, 'avalanche_data_last10min.mat');
 save(fileName, 'brPeak', 'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers', 'stepSize', 'preTime', 'postTime', 'areas')
 
 
