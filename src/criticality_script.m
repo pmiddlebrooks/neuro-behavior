@@ -29,13 +29,13 @@ sigmaRange = [1.3 1.7];
 
 
 
-%%   ====================================       Naturalistic: Check a few min of each area       ==============================================
+%%   ====================================       Naturalistic vs. Mark Task       ==============================================
 opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
 opts.collectFor = 40 * 60;
-opts.firingRateCheckTime = 2 * 60;
+opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
 % Mark's reach data
@@ -53,7 +53,7 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 pcaFlag = 0;
 pcaFirstFlag = 0;
 thresholdFlag = 1;
-thresholdBinSize = .02;
+thresholdBinSize = .05;
 
 
 % Initialize variables
