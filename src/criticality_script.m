@@ -34,12 +34,12 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 40 * 60;
+opts.collectFor = 43 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
 % Mark's reach data
-dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
+dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 % Ensure dataMatR is same size as dataMat
 dataMatR = dataMatR(1:size(dataMat, 1),:);
@@ -49,11 +49,93 @@ idDSR = find(strcmp(areaLabels, 'DS'));
 idVSR = find(strcmp(areaLabels, 'VS'));
 
 
+%%      test avalance durations
+areas = {'M23', 'M56', 'DS', 'VS'};
+idList = {idM23, idM56, idDS, idVS};
+idListR = {idM23R, idM56R, idDSR, idVSR};
+
+thresholds = 1:12;
+binSizes = .002 : .002 : .05;
+% thresholds = 1:2;
+% binSizes = .005 : .005 : .02;
+[numAvalanchesN, uniqueSizesN, numAvalanchesR, uniqueSizesR] = deal(zeros(length(areas), length(thresholds), length(binSizes)));
+for a = 1 : length(areas)
+    aID = idList{a};
+    aIDR = idListR{a};
+    for t = 1:length(thresholds)
+        threshold = thresholds(t);
+        for b = 1:length(binSizes)
+            dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), binSizes(b));
+            dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, aIDR), binSizes(b));
+            [numAvalanchesN(a,t,b), uniqueSizesN(a,t,b)] = avalanches(dataMatNat, threshold);
+            [numAvalanchesR(a,t,b), uniqueSizesR(a,t,b)] = avalanches(dataMatReach, threshold);
+        end
+    end
+end
+
+%%
+plotMat = numAvalanchesR;
+matrices = {squeeze(plotMat(1,:,:)), squeeze(plotMat(2,:,:)), squeeze(plotMat(3,:,:)), squeeze(plotMat(4,:,:))};
+% Find global color limits across all matrices
+minC = min(cellfun(@(x) min(x(:)), matrices));
+maxC = max(cellfun(@(x) max(x(:)), matrices));
+
+plotMat2 = uniqueSizesR;
+matrices2 = {squeeze(plotMat2(1,:,:)), squeeze(plotMat2(2,:,:)), squeeze(plotMat2(3,:,:)), squeeze(plotMat2(4,:,:))};
+% Find global color limits across all matrices
+minC2 = min(cellfun(@(x) min(x(:)), matrices2));
+maxC2 = max(cellfun(@(x) max(x(:)), matrices2));
+
+figure(88); clf;
+% ha = tight_subplot(2, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
+for a = 1 : length(areas)
+    subplot(2,4,a)
+    % axes(ha(a));
+    hold on;
+
+    imagesc('XData',binSizes,'YData',thresholds,'CData',matrices{a}, [minC maxC])
+    colormap hot;
+    colorbar;
+
+    % Find max value and its index
+    [maxVal, linearIdx] = max(matrices{a}(:));
+    [rowIdxS, colIdxS] = ind2sub(size(matrices{a}), linearIdx);
+
+    % Set title
+    title(areas{a});
+    % Display max row, column, and value
+    fprintf('%s: Max Value = %.2f at thresh= %.3f, binSize=%.3f)\n', areas{a}, maxVal, thresholds(rowIdx), binSizes(colIdx));
+
+
+    subplot(2,4,a+4)
+    % axes(ha(a));
+    hold on;
+
+    imagesc('XData',binSizes,'YData',thresholds,'CData',matrices2{a}, [minC2 maxC2])
+    colormap hot;
+    colorbar;
+    ylabel('Thresholds')
+    xlabel('Bin Sizes')
+    % Find max value and its index
+    [maxVal, linearIdx] = max(matrices2{a}(:));
+    [rowIdxN, colIdxN] = ind2sub(size(matrices2{a}), linearIdx);
+
+    % Display max row, column, and value
+    fprintf('%s: Max Value = %.2f at thresh= %.3f, binSize=%.3f)\n', areas{a}, maxVal, thresholds(rowIdx), binSizes(colIdx));
+
+    % Compute the compromise row and column (average of the two max locations)
+compromiseRow = round((rowIdxS + rowIdxN) / 2);
+compromiseCol = round((colIdxS + colIdxN) / 2);
+
+    fprintf('%s: Best threshold: %.3f, best binSize: %.3f\n', areas{a}, thresholds(compromiseRow), binSizes(compromiseCol));
+end
+
 %%
 pcaFlag = 0;
 pcaFirstFlag = 0;
-thresholdFlag = 1;
-thresholdBinSize = .05;
+thresholdFlag = 0;
+thresholdBinSize = .025;
+medianPct = .75; % set threshold at medianPct of the median of the summed signal
 
 
 % Initialize variables
@@ -67,6 +149,12 @@ edges = minBR : .1 : maxBR;
 centers = edges(1:end-1) + diff(edges) / 2;
 brHist = nan(length(areas), length(centers), 2);
 
+% tpct = [.7 .75 .8 .85];
+% tpct = [.08 .15 .25 .5];
+% threshods = 1:10;
+% for t = 1:length(tpct)
+% medianPct = tpct(t);
+minSpike = tpct(t);
 tic
 for a = 1 : length(areas)
     aID = idList{a};
@@ -99,7 +187,7 @@ for a = 1 : length(areas)
         end
         dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
 
-            [coeff, score, ~, ~, explained, mu] = pca(dataMatReach);
+        [coeff, score, ~, ~, explained, mu] = pca(dataMatReach);
         forDim = find(cumsum(explained) > 30, 1);
         forDim = max(3, forDim);
         forDim = min(6, forDim);
@@ -111,41 +199,48 @@ for a = 1 : length(areas)
             nDim = forDim+1:size(score, 2);
         end
         dataMatReach = score(:,nDim) * coeff(:,nDim)' + mu;
-end
+    end
 
     if thresholdFlag
         dataMatNat = round(sum(dataMatNat, 2));
         dataMatReach = round(sum(dataMatReach, 2));
 
-        threshPct = .08;
-        % threshSpikes = threshPct * max(dataMatReach);
-        threshSpikes = .8*median(dataMatNat);
+        % threshPct = .08;
+        % threshSpikes = threshPct * max(dataMatNat);
+        threshSpikes = medianPct * median(dataMatNat);
         dataMatNat(dataMatNat < threshSpikes) = 0;
         fprintf('Natural: Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a, 1), sum(dataMatNat == 0) / length(dataMatNat))
 
-        threshSpikes = .8*median(dataMatReach);
+        % threshSpikes = threshPct * max(dataMatReach);
+        threshSpikes = medianPct * median(dataMatReach);
         dataMatReach(dataMatReach < threshSpikes) = 0;
         fprintf('Reach: Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a, 2), sum(dataMatReach == 0) / length(dataMatReach))
     end
 
-    % Natural avalanches
-    sufficient = avalanches_bin_sufficiency(dataMatNat);
-    asdfMat = rastertoasdf2(dataMatNat', optBinSize(a, 1)*1000, 'CBModel', 'Spikes', 'DS');
-    Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
-    br = Av(a, 1).branchingRatio;
-    brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
-    [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), 0);
+    % dataMatNat = round(sum(dataMatNat, 2));
+    % dataMatReach = round(sum(dataMatReach, 2));
+    % dataMatNat(dataMatNat <= minSpike) = 0;
+    % dataMatReach(dataMatReach <= minSpike) = 0;
 
-    % Reach avalanches
-    sufficient = avalanches_bin_sufficiency(dataMatReach);
-    asdfMat = rastertoasdf2(dataMatReach', optBinSize(a, 2)*1000, 'CBModel', 'Spikes', 'DS');
-    Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
-    br = Av(a, 2).branchingRatio;
-    brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
-    [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), 0);
-toc/60
+    % sufficient = avalanches_bin_sufficiency(dataMatNat);
+    % sufficient = avalanches_bin_sufficiency(dataMatReach);
 
+    % % Natural avalanches
+    % asdfMat = rastertoasdf2(dataMatNat', optBinSize(a, 1)*1000, 'CBModel', 'Spikes', 'DS');
+    % Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
+    % br = Av(a, 1).branchingRatio;
+    % brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
+    % [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), 0);
+    %
+    % % Reach avalanches
+    % asdfMat = rastertoasdf2(dataMatReach', optBinSize(a, 2)*1000, 'CBModel', 'Spikes', 'DS');
+    % Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
+    % br = Av(a, 2).branchingRatio;
+    % brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
+    % [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), 0);
+    % toc/60
 end
+% end
 %%
 figure(36); clf;
 ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
@@ -786,11 +881,11 @@ end
 %%
 a = 3
 t = stepSize * (1 : numSteps);
- figure(); clf;
- plot(t, tau{a})
- hold on;
- plot(t, alpha{a})
- plot(t, decades{a})
+figure(); clf;
+plot(t, tau{a})
+hold on;
+plot(t, alpha{a})
+plot(t, decades{a})
 
 %%
 fileName = fullfile(paths.dropPath, 'avalanche_data_last10min.mat');
@@ -1482,18 +1577,42 @@ end
 
 
 function optBinSize = optimal_bin_size(dataMat)
-spikeFrames = sum(dataMat, 2);
-positiveIndices = find(spikeFrames > 0);
-checkISI = repelem(positiveIndices, spikeFrames(positiveIndices));
+timeSeries = sum(dataMat, 2);
+positiveIndices = find(timeSeries > 0);
+checkISI = repelem(positiveIndices, timeSeries(positiveIndices));
 optBinSize = ceil(mean(diff(checkISI))) / 1000;
 if optBinSize == 0; optBinSize = .001; end
-
 % Old version:
 %     optBinSize{a}(iter, 1) = round(mean(diff(find(sum(dataMat(:, idSelect), 2))))) / 1000;
 % if optBinSize{a}(iter, 1) == 0; optBinSize{a}(iter, 1) = .001; end
 
 end
 
+
+function [numAvalanches, uniqueSizes] = avalanches(dataMat, threshold)
+% thresholds = 1:10; % Define threshold for avalanche detection
+timeSeries = sum(dataMat, 2);
+
+% timeSeries(timeSeries < threshold) = 0;
+
+inAvalanche = false;
+currentAvalancheDuration = 0;
+avalancheLengths = []; % Store avalanche sizes
+for t = 1:length(timeSeries)
+    if timeSeries(t) >= threshold
+        currentAvalancheDuration = currentAvalancheDuration + 1;
+        inAvalanche = true;
+    elseif inAvalanche
+        avalancheLengths = [avalancheLengths, currentAvalancheDuration];
+        currentAvalancheDuration = 0;
+        inAvalanche = false;
+    end
+end
+
+% Step 2: Check Minimum Avalanche Count and Unique Sizes
+numAvalanches = length(avalancheLengths);
+uniqueSizes = length(unique(avalancheLengths));
+end
 
 
 

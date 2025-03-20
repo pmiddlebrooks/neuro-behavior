@@ -13,7 +13,7 @@ dataMat = zeros(durFrames, size(data, 2));
 for i = 1 : durFrames
 
     iStartWin = 1 + (i-1) * dataIndPerFrame;
-    iWind = iStartWin : iStartWin + dataIndPerFrame - 1;
+    iWind = round(iStartWin : iStartWin + dataIndPerFrame - 1);
     dataMat(i,:) = sum(data(iWind, :));
 
 end
