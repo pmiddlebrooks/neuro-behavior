@@ -241,6 +241,11 @@ for a = 1 : length(areas)
     % toc/60
 end
 % end
+
+%%
+fileName = fullfile(paths.dropPath, 'avalanches_criticality_naturalistic_vs_reaching_50ms_threshold.mat');
+save(fileName, 'README', 'Av', 'brHist', 'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas')
+
 %%
 figure(36); clf;
 ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
@@ -249,14 +254,14 @@ for a = 1 : length(areas)
     hold on;
     linewidth = 2;
     % for a = 1 : length(areas)
-    plot(centers(2:end), brHist(a,2:end), 'k', 'LineWidth',linewidth)
+    plot(centers(2:end), brHist(a,2:end,1), 'k', 'LineWidth',linewidth)
     plot(centers(2:end), brHist(a,2:end,2), 'r', 'LineWidth',linewidth)
     xlim([0 2])
     grid on;
     set(ha(a), 'XTickLabelMode', 'auto');  % Enable Y-axis labels
     title([areas{a}])
 end
-legend({'ITI', 'Reach'})
+legend({'Natural', 'Reach'})
 sgtitle('Branching Ratio PDFs')
 copy_figure_to_clipboard
 %
@@ -267,16 +272,16 @@ for a = 1 : length(areas)
     % Activate subplot
     axes(ha(a));
     hold on;
-    plot(1, tau(a), 'ok', 'LineWidth', linewidth)
+    plot(1, tau(a,1), 'ok', 'LineWidth', linewidth)
     plot(1, tau(a,2), 'or', 'LineWidth', linewidth)
 
-    plot(2, tauC(a), 'ok', 'LineWidth', linewidth)
+    plot(2, tauC(a,1), 'ok', 'LineWidth', linewidth)
     plot(2, tauC(a,2), 'or', 'LineWidth', linewidth)
 
-    plot(3, alpha(a), 'ok', 'LineWidth', linewidth)
+    plot(3, alpha(a,1), 'ok', 'LineWidth', linewidth)
     plot(3, alpha(a,2), 'or', 'LineWidth', linewidth)
 
-    plot(4, sigmaNuZInvSD(a), 'ok', 'LineWidth', linewidth)
+    plot(4, sigmaNuZInvSD(a,1), 'ok', 'LineWidth', linewidth)
     plot(4, sigmaNuZInvSD(a,2), 'or', 'LineWidth', linewidth)
 
     plot([1 1], tauRange, 'b', 'LineWidth', 1)
@@ -290,7 +295,7 @@ for a = 1 : length(areas)
     grid on;
     title(areas{a})
 end
-legend({'ITI', 'Reaches'})
+legend({'Natural', 'Reach'})
 sgtitle('Avalanche Params Reaching vs ITI')
 copy_figure_to_clipboard
 
