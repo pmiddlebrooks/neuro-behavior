@@ -50,6 +50,8 @@ function sufficient = avalanches_bin_sufficiency(dataMat)
     if numAvalanches >= numCriterion && uniqueSizes >= sizesCriterion
         sufficient = 1;
     end
+
+    
     % Step 3: Fit Power Law (using MLE)
     if numAvalanches > 1000
 % Fit power-law distribution using Clauset's plfit (ensure you have plfit.m)

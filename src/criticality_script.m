@@ -54,88 +54,174 @@ areas = {'M23', 'M56', 'DS', 'VS'};
 idList = {idM23, idM56, idDS, idVS};
 idListR = {idM23R, idM56R, idDSR, idVSR};
 
+pcaFlag = 1;
+pcaFirstFlag = 1;
+thresholdFlag = 1;
+
 thresholds = 1:12;
+thresholds = .1:.05:.8;
 binSizes = .002 : .002 : .05;
 % thresholds = 1:2;
 % binSizes = .005 : .005 : .02;
-[numAvalanchesN, uniqueSizesN, numAvalanchesR, uniqueSizesR] = deal(zeros(length(areas), length(thresholds), length(binSizes)));
+
+[numAvalanchesN, uniqueSizesN, numAvalanchesR, uniqueSizesR, thresholdN, thresholdR] = deal(zeros(length(areas), length(thresholds), length(binSizes)));
 for a = 1 : length(areas)
     aID = idList{a};
     aIDR = idListR{a};
     for t = 1:length(thresholds)
-        threshold = thresholds(t);
         for b = 1:length(binSizes)
             dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), binSizes(b));
             dataMatReach = neural_matrix_ms_to_frames(dataMatR(:, aIDR), binSizes(b));
-            [numAvalanchesN(a,t,b), uniqueSizesN(a,t,b)] = avalanches(dataMatNat, threshold);
-            [numAvalanchesR(a,t,b), uniqueSizesR(a,t,b)] = avalanches(dataMatReach, threshold);
+
+            if pcaFlag
+                [coeff, score, ~, ~, explained, mu] = pca(dataMatNat);
+                forDim = find(cumsum(explained) > 30, 1);
+                forDim = max(3, forDim);
+                forDim = min(6, forDim);
+                if pcaFirstFlag
+                    fprintf('Natural Using PCA first %d\n', forDim)
+                    nDim = 1:forDim;
+                else
+                    fprintf('Natural Using PCA Last many from %d to %d\n', forDim+1, size(score, 2))
+                    nDim = forDim+1:size(score, 2);
+                end
+                dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
+
+                [coeff, score, ~, ~, explained, mu] = pca(dataMatReach);
+                forDim = find(cumsum(explained) > 30, 1);
+                forDim = max(3, forDim);
+                forDim = min(6, forDim);
+                if pcaFirstFlag
+                    fprintf('Reach Using PCA first %d\n', forDim)
+                    nDim = 1:forDim;
+                else
+                    fprintf('Reach Using PCA Last many from %d to %d\n', forDim+1, size(score, 2))
+                    nDim = forDim+1:size(score, 2);
+                end
+                dataMatReach = score(:,nDim) * coeff(:,nDim)' + mu;
+            end
+
+
+            if thresholdFlag
+                dataMatNat = round(sum(dataMatNat, 2));
+                dataMatReach = round(sum(dataMatReach, 2));
+
+                thresholdN = thresholds(t) * median(dataMatNat);
+                thresholdR = thresholds(t) * median(dataMatReach);
+            else
+            thresholdN = thresholds(t);
+            thresholdR = thresholds(t);
+
+            end
+
+
+
+            [numAvalanchesN(a,t,b), uniqueSizesN(a,t,b)] = avalanches(dataMatNat, thresholdN);
+            [numAvalanchesR(a,t,b), uniqueSizesR(a,t,b)] = avalanches(dataMatReach, thresholdR);
         end
     end
 end
 
-%%
-plotMat = numAvalanchesR;
-matrices = {squeeze(plotMat(1,:,:)), squeeze(plotMat(2,:,:)), squeeze(plotMat(3,:,:)), squeeze(plotMat(4,:,:))};
-% Find global color limits across all matrices
-minC = min(cellfun(@(x) min(x(:)), matrices));
-maxC = max(cellfun(@(x) max(x(:)), matrices));
+%%     Find the minimum bin size that produces enough avalanches
+% Minimum avalanche number and unique number of sizes
+minAvN = 10000;
+minSizeN = 50;
 
-plotMat2 = uniqueSizesR;
-matrices2 = {squeeze(plotMat2(1,:,:)), squeeze(plotMat2(2,:,:)), squeeze(plotMat2(3,:,:)), squeeze(plotMat2(4,:,:))};
+% plotMat = numAvalanchesR;
+plotMat = numAvalanchesN;
+nAvMat = {squeeze(plotMat(1,:,:)), squeeze(plotMat(2,:,:)), squeeze(plotMat(3,:,:)), squeeze(plotMat(4,:,:))};
 % Find global color limits across all matrices
-minC2 = min(cellfun(@(x) min(x(:)), matrices2));
-maxC2 = max(cellfun(@(x) max(x(:)), matrices2));
+minC = min(cellfun(@(x) min(x(:)), nAvMat));
+maxC = max(cellfun(@(x) max(x(:)), nAvMat));
 
-figure(88); clf;
-% ha = tight_subplot(2, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
+% plotMat2 = uniqueSizesR;
+plotMat2 = uniqueSizesN;
+nSizeMat = {squeeze(plotMat2(1,:,:)), squeeze(plotMat2(2,:,:)), squeeze(plotMat2(3,:,:)), squeeze(plotMat2(4,:,:))};
+% Find global color limits across all matrices
+minC2 = min(cellfun(@(x) min(x(:)), nSizeMat));
+maxC2 = max(cellfun(@(x) max(x(:)), nSizeMat));
+
+figure(89); clf;
+ha = tight_subplot(2, length(areas), [0.07 0.03], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
 for a = 1 : length(areas)
-    subplot(2,4,a)
-    % axes(ha(a));
+
+    % subplot(2,4,a)
+    axes(ha(a));
     hold on;
 
-    imagesc('XData',binSizes,'YData',thresholds,'CData',matrices{a}, [minC maxC])
+    imagesc('XData',binSizes,'YData',thresholds,'CData',nAvMat{a}, [minC maxC])
     colormap hot;
     colorbar;
-
-    % Find max value and its index
-    [maxVal, linearIdx] = max(matrices{a}(:));
-    [rowIdxS, colIdxS] = ind2sub(size(matrices{a}), linearIdx);
-
+    set(ha(a), 'XTickLabelMode', 'auto');  % Enable Y-axis labels
+    set(ha(a), 'YTickLabelMode', 'auto');  % Enable Y-axis labels
+    % Optional: remove background axes color
+    set(gca, 'Color', 'none');
     % Set title
-    title(areas{a});
-    % Display max row, column, and value
-    fprintf('%s: Max Value = %.2f at thresh= %.3f, binSize=%.3f)\n', areas{a}, maxVal, thresholds(rowIdx), binSizes(colIdx));
+    title([areas{a}, ' nAvalances']);
 
-
-    subplot(2,4,a+4)
-    % axes(ha(a));
+    % subplot(2,4,a+length(areas)
+    axes(ha(a+length(areas)));
     hold on;
 
-    imagesc('XData',binSizes,'YData',thresholds,'CData',matrices2{a}, [minC2 maxC2])
+    imagesc('XData',binSizes,'YData',thresholds,'CData',nSizeMat{a}, [minC2 maxC2])
     colormap hot;
     colorbar;
     ylabel('Thresholds')
     xlabel('Bin Sizes')
-    % Find max value and its index
-    [maxVal, linearIdx] = max(matrices2{a}(:));
-    [rowIdxN, colIdxN] = ind2sub(size(matrices2{a}), linearIdx);
+    set(ha(a+length(areas)), 'XTickLabelMode', 'auto');  % Enable Y-axis labels
+    set(ha(a+length(areas)), 'YTickLabelMode', 'auto');  % Enable Y-axis labels
+    set(gca, 'Color', 'none');
+    % Set title
+    title([areas{a}, ' nUnique Sizes']);
 
-    % Display max row, column, and value
-    fprintf('%s: Max Value = %.2f at thresh= %.3f, binSize=%.3f)\n', areas{a}, maxVal, thresholds(rowIdx), binSizes(colIdx));
 
-    % Compute the compromise row and column (average of the two max locations)
-compromiseRow = round((rowIdxS + rowIdxN) / 2);
-compromiseCol = round((colIdxS + colIdxN) / 2);
+        highAvIdx = nAvMat{a} >= minAvN;
+        highSizeIdx = nSizeMat{a} >= minSizeN;
+% Find common indices where both matrices have high values
+commonIdx = highAvIdx & highSizeIdx;  
+% Get row and column indices of common elements
+[rowIdx, colIdx] = find(commonIdx);
 
-    fprintf('%s: Best threshold: %.3f, best binSize: %.3f\n', areas{a}, thresholds(compromiseRow), binSizes(compromiseCol));
+if isempty(rowIdx)
+    fprintf('No common near-optimal element found.\n');
+    return;
 end
 
-%%
-pcaFlag = 0;
-pcaFirstFlag = 0;
-thresholdFlag = 0;
+% Among the common indices, find the one with the smallest binSize (smallest column index)
+rowOptions = rowIdx(colIdx == min(colIdx));
+
+% Step 3: Among those rows, find the best mutual trade-off
+% Use a scoring function, e.g., sum of normalized values
+scores = zeros(size(rowOptions));
+for i = 1:length(rowOptions)
+    r = rowOptions(i);
+    v = nAvMat{a}(r, min(colIdx));
+    u = nSizeMat{a}(r, min(colIdx));
+    
+    % Normalize by their respective maxima
+    scores(i) = (v / max(nAvMat{a}(:))) + (u / max(nSizeMat{a}(:)));
+end
+
+% Pick the row with the highest combined score
+[~, bestIdx] = max(scores);
+bestRow = rowOptions(bestIdx);
+bestCol = min(colIdx);
+
+% Display result
+fprintf('---------------   Area %s -------------\n', areas{a})
+fprintf('Chosen Threshold: %.3f\t BinSize: %.3f \t(Row=%d, Col=%d)\n', thresholds(bestRow), binSizes(bestCol), bestRow, bestCol);
+fprintf('NumAvalanches: %.2f\n', nAvMat{a}(bestRow, bestCol));
+fprintf('UniqueSizes: %.2f\n', nSizeMat{a}(bestRow, bestCol));
+
+end
+
+%%               Run the data
+pcaFlag = 1;
+pcaFirstFlag = 1;
+thresholdFlag = 1;
 thresholdBinSize = .025;
-medianPct = .75; % set threshold at medianPct of the median of the summed signal
+medianPct = .5; % set threshold at medianPct of the median of the summed signal
+% medianPct = .75; % set threshold at medianPct of the median of the summed signal
 
 
 % Initialize variables
@@ -154,9 +240,9 @@ brHist = nan(length(areas), length(centers), 2);
 % threshods = 1:10;
 % for t = 1:length(tpct)
 % medianPct = tpct(t);
-minSpike = tpct(t);
+% minSpike = tpct(t);
 tic
-for a = 1 : length(areas)
+for a = 2 : length(areas)
     aID = idList{a};
     aIDR = idListR{a};
 
@@ -217,28 +303,29 @@ for a = 1 : length(areas)
         fprintf('Reach: Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a, 2), sum(dataMatReach == 0) / length(dataMatReach))
     end
 
+    % % For testing threshold, etc
     % dataMatNat = round(sum(dataMatNat, 2));
     % dataMatReach = round(sum(dataMatReach, 2));
     % dataMatNat(dataMatNat <= minSpike) = 0;
     % dataMatReach(dataMatReach <= minSpike) = 0;
-
+    %
     % sufficient = avalanches_bin_sufficiency(dataMatNat);
     % sufficient = avalanches_bin_sufficiency(dataMatReach);
 
-    % % Natural avalanches
-    % asdfMat = rastertoasdf2(dataMatNat', optBinSize(a, 1)*1000, 'CBModel', 'Spikes', 'DS');
-    % Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
-    % br = Av(a, 1).branchingRatio;
-    % brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
-    % [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), 0);
-    %
-    % % Reach avalanches
-    % asdfMat = rastertoasdf2(dataMatReach', optBinSize(a, 2)*1000, 'CBModel', 'Spikes', 'DS');
-    % Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
-    % br = Av(a, 2).branchingRatio;
-    % brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
-    % [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), 0);
-    % toc/60
+    % Natural avalanches
+    asdfMat = rastertoasdf2(dataMatNat', optBinSize(a, 1)*1000, 'CBModel', 'Spikes', 'DS');
+    Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
+    br = Av(a, 1).branchingRatio;
+    brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
+    [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), 0);
+
+    % Reach avalanches
+    asdfMat = rastertoasdf2(dataMatReach', optBinSize(a, 2)*1000, 'CBModel', 'Spikes', 'DS');
+    Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
+    br = Av(a, 2).branchingRatio;
+    brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
+    [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), 0);
+    toc/60
 end
 % end
 
