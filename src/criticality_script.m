@@ -28,7 +28,6 @@ sigmaRange = [1.3 1.7];
 
 
 
-
 %%   ====================================       Naturalistic vs. Mark Task       ==============================================
 opts = neuro_behavior_options;
 opts.frameSize = .001;
