@@ -235,7 +235,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'spikes')
     % Find the neuron clusters (ids) in each brain region
 
     allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
-    allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua');
+    allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | (strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua'));
 
     goodM23 = allGood & strcmp(data.ci.area, 'M23');
     goodM56= allGood & strcmp(data.ci.area, 'M56');
