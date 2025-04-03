@@ -58,7 +58,7 @@ pcaFirstFlag = 1;
 thresholdFlag = 1;
 
 thresholds = 1:12;
-thresholds = .1:.05:.8;
+thresholds = .5:.05:.8;
 binSizes = .002 : .002 : .05;
 % thresholds = 1:2;
 % binSizes = .005 : .005 : .02;
@@ -128,15 +128,15 @@ end
 minAvN = 10000;
 minSizeN = 50;
 
-plotMat = numAvalanchesR;
-% plotMat = numAvalanchesN;
+% plotMat = numAvalanchesR;
+plotMat = numAvalanchesN;
 nAvMat = {squeeze(plotMat(1,:,:)), squeeze(plotMat(2,:,:)), squeeze(plotMat(3,:,:)), squeeze(plotMat(4,:,:))};
 % Find global color limits across all matrices
 minC = min(cellfun(@(x) min(x(:)), nAvMat));
 maxC = max(cellfun(@(x) max(x(:)), nAvMat));
 
-plotMat2 = uniqueSizesR;
-% plotMat2 = uniqueSizesN;
+% plotMat2 = uniqueSizesR;
+plotMat2 = uniqueSizesN;
 nSizeMat = {squeeze(plotMat2(1,:,:)), squeeze(plotMat2(2,:,:)), squeeze(plotMat2(3,:,:)), squeeze(plotMat2(4,:,:))};
 % Find global color limits across all matrices
 minC2 = min(cellfun(@(x) min(x(:)), nSizeMat));
@@ -601,20 +601,31 @@ slack_code_done
 opts = neuro_behavior_options;
 opts.minFiringRate = .1;
 opts.collectStart = 0;
-opts.collectFor = 45 * 60;
+opts.collectFor = 60 * 60;
 getDataType = 'spikes';
 
 opts.frameSize = .001;
 get_standard_data
 
+
 %%
-pcaFlag = 0;
-pcaFirstFlag = 0;
+bhvIDAlt = zeros(length(bhvID), 1);
+groomIdx = ismember(bhvID, 5:10);
+locIdx = ismember(bhvID, [0 1 2 13 14 15]);
+bhvIDAlt(locIdx) = 1;
+bhvIDAlt(groomIdx) = 2;
+analyzeCodes = 1:2;
+analyzeBhv = {'locomotions', 'grooms'};
+bhvID = bhvIDAlt;
+%%
+pcaFlag = 1;
+pcaFirstFlag = 1;
 thresholdFlag = 1;
-thresholdBinSize = .02;
+thresholdBinSize = [.026 .008 .006 .008];
+thresholds = [.5 .55 .7 .55];
 
 preTime = .2;
-postTime = .2;
+postTime = .1;
 
 minBR = 0; maxBR = 2.5;
 edges = minBR : .1 : maxBR;
@@ -630,12 +641,40 @@ idList = {idM23, idM56, idDS, idVS};
 for a = 1 : length(areas)
     fprintf('Area %s\n', areas{a})
     tic
+
+
     aID = idList{a};
 
     % Find optimal bin size for avalannce analyses
     % If using the threshold method
     if thresholdFlag
-        optBinSize(a) = thresholdBinSize;
+        optBinSize(a) = thresholdBinSize(a);
+        opts.frameSize = optBinSize(a);
+        get_standard_data
+
+        bhvIDAlt = zeros(length(bhvID), 1);
+        groomIdx = ismember(bhvID, 5:10);
+        locIdx = ismember(bhvID, [0 1 2 13 14 15]);
+        bhvIDAlt(locIdx) = 1;
+        bhvIDAlt(groomIdx) = 2;
+        analyzeCodes = 1:2;
+        analyzeBhv = {'locomotions', 'grooms'};
+        bhvID = bhvIDAlt;
+
+        if pcaFlag
+            [coeff, score, ~, ~, explained, mu] = pca(dataMat(:,aID));
+            forDim = find(cumsum(explained) > 30, 1);
+            forDim = max(3, forDim);
+            forDim = min(6, forDim);
+            if pcaFirstFlag
+                fprintf('Using PCA first %d\n', forDim)
+                nDim = 1:forDim;
+            else
+                fprintf('Using PCA Last many from %d to %D\n', forDim+1, size(score, 2))
+                nDim = forDim+1:size(score, 2);
+            end
+            pcaMat = score(:,nDim) * coeff(:,nDim)' + mu;
+        end
     else
         optBinSize(a) = optimal_bin_size(dataMat(:, aID));
     end
@@ -673,29 +712,30 @@ for a = 1 : length(areas)
             if transInd(1) > 0 && sum(diff(bhvID(transInd)) == 0) == length(transWindow) - 2
 
                 % Convert the 1 kHz dataMats to the optimal bin size for avalanche analysis
-                tempMat = neural_matrix_ms_to_frames(dataMat(transInd, aID), optBinSize(a));
-                if pcaFlag
-                    [coeff, score, ~, ~, explained, mu] = pca(tempMat);
-                    forDim = find(cumsum(explained) > 30, 1);
-                    forDim = max(3, forDim);
-                    forDim = min(6, forDim);
-                    if pcaFirstFlag
-                        fprintf('Using PCA first %d\n', forDim)
-                        nDim = 1:forDim;
-                    else
-                        fprintf('Using PCA Last many from %d to %D\n', forDim+1, size(score, 2))
-                        nDim = forDim+1:size(score, 2);
-                    end
-                    tempMat = score(:,nDim) * coeff(:,nDim)' + mu;
-                end
+                % tempMat = neural_matrix_ms_to_frames(dataMat(transInd, aID), optBinSize(a));
+                tempMat = pcaMat(transInd,:);
+                % if pcaFlag
+                %     [coeff, score, ~, ~, explained, mu] = pca(tempMat);
+                %     forDim = find(cumsum(explained) > 30, 1);
+                %     forDim = max(3, forDim);
+                %     forDim = min(6, forDim);
+                %     if pcaFirstFlag
+                %         fprintf('Using PCA first %d\n', forDim)
+                %         nDim = 1:forDim;
+                %     else
+                %         fprintf('Using PCA Last many from %d to %D\n', forDim+1, size(score, 2))
+                %         nDim = forDim+1:size(score, 2);
+                %     end
+                %     tempMat = score(:,nDim) * coeff(:,nDim)' + mu;
+                % end
 
                 if thresholdFlag
                     tempMat = round(sum(tempMat, 2));
-                    threshPct = .08;
+                    % threshPct = .08;
                     % threshSpikes = threshPct * max(dataMatReach);
-                    threshSpikes = .8*median(dataMatNat);
+                    threshSpikes = thresholds(a) * median(tempMat);
                     tempMat(tempMat < threshSpikes) = 0;
-                    fprintf('Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a), sum(dataMatNat == 0) / length(dataMatNat))
+                    % fprintf('Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a), sum(dataMatNat == 0) / length(dataMatNat))
                 end
                 % Find avalances within the data
                 zeroBins = find(sum(tempMat, 2) == 0);
@@ -711,12 +751,13 @@ for a = 1 : length(areas)
             % If there is any within-bout data...
             if ~isempty(withinInd)
                 % Convert the 1 kHz dataMats to the optimal bin size for avalanche analysis
-                tempMat = neural_matrix_ms_to_frames(dataMat(withinInd, aID), optBinSize(a));
+                % tempMat = neural_matrix_ms_to_frames(dataMat(withinInd, aID), optBinSize(a));
+                tempMat = pcaMat(withinInd,:);
                 if thresholdFlag
-                    tempMat = sum(tempMat, 2);
-                    threshPct = .08;
+                    tempMat = round(sum(tempMat, 2));
+                    % threshPct = .08;
                     % threshSpikes = threshPct * max(dataMatReach);
-                    threshSpikes = .9*median(tempMat);
+                    threshSpikes = thresholds(a) * median(tempMat);
                     tempMat(tempMat < threshSpikes) = 0;
                 end
                 zeroBins = find(sum(tempMat, 2) == 0);
@@ -797,13 +838,16 @@ for b = 1 : length(analyzeCodes)
     plot(4, sigmaNuZInvSD(a,b,1), 'ok', 'LineWidth', linewidth)
     plot(4, sigmaNuZInvSD(a,b,2), 'or', 'LineWidth', linewidth)
 
+    plot(5, decades(a,b,1), 'ok', 'LineWidth', linewidth)
+    plot(5, decades(a,b,2), 'or', 'LineWidth', linewidth)
+
     plot([1 1], tauRange, 'b', 'LineWidth', 1)
     plot([2 2], tauRange, 'b', 'LineWidth', 1)
     plot([3 3], alphaRange, 'b', 'LineWidth', 1)
     plot([4 4], sigmaRange, 'b', 'LineWidth', 1)
 
-    xticks(1:4)
-    xticklabels({'tau', 'tauC', 'alpha', 'sigmaNuZInvSD'})
+    xticks(1:5)
+    xticklabels({'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'decades'})
     xlim([.5 4.5])
     ylim([.5 5])
     set(ha(b), 'YTickLabelMode', 'auto');  % Enable Y-axis labels
@@ -1035,6 +1079,7 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 
 %%
 pcaFlag = 1;
+pcaFirstFlag = 1;
 thresholdFlag = 1;
 
 preTime = .3; % ms before reach onset
@@ -1112,67 +1157,34 @@ for a = 1 : length(areas)
 
 
 
-    % rStarts = round(dataR.R(trialIdx,1)/optBinSize(a)/1000);  % in frame time
-    % endEpochs = round(sort([eventTimes.ERtimes, eventTimes.SOLtimes])/optBinSize(a)/1000)';
-    % % get rid of trials with negative epochs
-    % goodTrials = find((endEpochs - rStarts) > 1);
-    %
-    % % initialize data mats: start with a row of zeros so first spike counts as
-    % % avalanche
-    % baseMat = zeros(1, size(dataMatReach, 2));
-    % reachMat = zeros(1, size(dataMatReach, 2));
-    % for i = 1 : length(goodTrials)
-    %     iTrial = goodTrials(i);
-    %
-    %     reachWindow = rStarts(iTrial) - floor(preTime/optBinSize(a)) : endEpochs(iTrial);
-    %     baseWindow = reachWindow - length(reachWindow);
-    %
-    %     % baseline matrix
-    %     % iBaseMat = dataMatReach(rStarts(iTrial) + baseWindow, :);
-    %     iBaseMat = dataMatReach(baseWindow, :);
-    %     % Find avalances within the data
-    %     zeroBins = find(sum(iBaseMat, 2) == 0);
-    %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-    %         baseMat = [baseMat; iBaseMat(zeroBins(1) : zeroBins(end)-1, :)];
-    %     end
-    %
-    %     % reach data matrix
-    %     % iReachMat = dataMatReach(rStarts(iTrial) + reachWindow, :);
-    %     iReachMat = dataMatReach(reachWindow, :);
-    %     % Find avalances within the data
-    %     zeroBins = find(sum(iReachMat, 2) == 0);
-    %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-    %         reachMat = [reachMat; iReachMat(zeroBins(1) : zeroBins(end)-1, :)];
-    %     end
-    %
-    % end
+    % Reach vs ITI
+    rStarts = round(dataR.R(trialIdx,1)/optBinSize(a)/1000);  % in frame time
+    endEpochs = round(sort([eventTimes.ERtimes, eventTimes.SOLtimes])/optBinSize(a)/1000)';
+    % get rid of trials with negative epochs
+    goodTrials = find((endEpochs - rStarts) > 1);
 
-
-    % Block 1 vs Block 2
-    rStarts1 = round(dataR.R(trialIdx1,1)/optBinSize(a)/1000);  % in frame time
-    rStarts2 = round(dataR.R(trialIdx2,1)/optBinSize(a)/1000);  % in frame time
     % initialize data mats: start with a row of zeros so first spike counts as
     % avalanche
     baseMat = zeros(1, size(dataMatReach, 2));
     reachMat = zeros(1, size(dataMatReach, 2));
-    for i = 1 : length(rStarts1)
+    for i = 1 : length(goodTrials)
+        iTrial = goodTrials(i);
 
-        %     reachWindow = rStarts(iTrial) - floor(preTime/optBinSize(a)) : endEpochs(iTrial);
-        window = rStarts1(i) - floor(preTime/optBinSize(a)) : rStarts1(i) + floor(postTime/optBinSize(a));
+        reachWindow = rStarts(iTrial) - floor(preTime/optBinSize(a)) : endEpochs(iTrial);
+        baseWindow = reachWindow - length(reachWindow);
 
         % baseline matrix
-        iBaseMat = dataMatReach(window, :);
+        % iBaseMat = dataMatReach(rStarts(iTrial) + baseWindow, :);
+        iBaseMat = dataMatReach(baseWindow, :);
         % Find avalances within the data
         zeroBins = find(sum(iBaseMat, 2) == 0);
         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
             baseMat = [baseMat; iBaseMat(zeroBins(1) : zeroBins(end)-1, :)];
         end
-    end
-    for i = 1 : length(rStarts2)
 
-        window = rStarts2(i) - floor(preTime/optBinSize(a)) : rStarts2(i) + floor(postTime/optBinSize(a));
         % reach data matrix
-        iReachMat = dataMatReach(window, :);
+        % iReachMat = dataMatReach(rStarts(iTrial) + reachWindow, :);
+        iReachMat = dataMatReach(reachWindow, :);
         % Find avalances within the data
         zeroBins = find(sum(iReachMat, 2) == 0);
         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
@@ -1180,6 +1192,40 @@ for a = 1 : length(areas)
         end
 
     end
+
+
+    % Block 1 vs Block 2
+    % rStarts1 = round(dataR.R(trialIdx1,1)/optBinSize(a)/1000);  % in frame time
+    % rStarts2 = round(dataR.R(trialIdx2,1)/optBinSize(a)/1000);  % in frame time
+    % % initialize data mats: start with a row of zeros so first spike counts as
+    % % avalanche
+    % baseMat = zeros(1, size(dataMatReach, 2));
+    % reachMat = zeros(1, size(dataMatReach, 2));
+    % for i = 1 : length(rStarts1)
+    %
+    %     %     reachWindow = rStarts(iTrial) - floor(preTime/optBinSize(a)) : endEpochs(iTrial);
+    %     window = rStarts1(i) - floor(preTime/optBinSize(a)) : rStarts1(i) + floor(postTime/optBinSize(a));
+    %
+    %     % baseline matrix
+    %     iBaseMat = dataMatReach(window, :);
+    %     % Find avalances within the data
+    %     zeroBins = find(sum(iBaseMat, 2) == 0);
+    %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+    %         baseMat = [baseMat; iBaseMat(zeroBins(1) : zeroBins(end)-1, :)];
+    %     end
+    % end
+    % for i = 1 : length(rStarts2)
+    %
+    %     window = rStarts2(i) - floor(preTime/optBinSize(a)) : rStarts2(i) + floor(postTime/optBinSize(a));
+    %     % reach data matrix
+    %     iReachMat = dataMatReach(window, :);
+    %     % Find avalances within the data
+    %     zeroBins = find(sum(iReachMat, 2) == 0);
+    %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+    %         reachMat = [reachMat; iReachMat(zeroBins(1) : zeroBins(end)-1, :)];
+    %     end
+    %
+    % end
 
 
 
@@ -1242,7 +1288,7 @@ for a = 1 : length(areas)
 end
 
 %%
-figure(38); clf;
+figure(36); clf;
 ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
 for a = 1 : length(areas)
     axes(ha(a));
@@ -1261,7 +1307,7 @@ sgtitle('Branching Ratio PDFs')
 copy_figure_to_clipboard
 %
 %%
-figure(39); clf;
+figure(37); clf;
 ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
 for a = 1 : length(areas)
     % Activate subplot
@@ -1279,7 +1325,7 @@ for a = 1 : length(areas)
     plot(4, sigmaNuZInvSD(a,1), 'ok', 'LineWidth', linewidth)
     plot(4, sigmaNuZInvSD(a,2), 'or', 'LineWidth', linewidth)
 
-        plot(5, decades(a,1), 'ok', 'LineWidth', linewidth)
+    plot(5, decades(a,1), 'ok', 'LineWidth', linewidth)
     plot(5, decades(a,2), 'or', 'LineWidth', linewidth)
 
     plot([1 1], tauRange, 'b', 'LineWidth', 1)
