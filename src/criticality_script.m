@@ -14,6 +14,9 @@ sigmaRange = [1.3 1.7];
 
 
 
+monitorPositions = get(0, 'MonitorPositions');
+monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
+monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
 
 
@@ -592,6 +595,154 @@ slack_code_done
 
 
 
+%%   =============     Test transition vs. within-bout criticality BETWEEN behaviors.   =============
+opts = neuro_behavior_options;
+opts.minFiringRate = .1;
+opts.collectStart = 0;
+opts.collectFor = 60 * 60;
+getDataType = 'lfp';
+
+opts.frameSize = .001;
+nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
+nrnDataPath = [nrnDataPath, 'recording1/'];
+opts.dataPath = nrnDataPath;
+
+data = readmatrix([opts.dataPath, 'lfp.txt']);
+data = data(1 + (opts.collectStart * opts.fsLfp) : (opts.collectStart + opts.collectFor) * opts.fsLfp, :);
+data = fliplr(data); % flip data so first column (channel) is brain surface
+
+channelSpacing = 100;
+channelDepth = 1 : channelSpacing : channelSpacing * size(data, 2);
+
+lfpM56 = data(:,7:12);
+%%
+nChannels = size(lfpM56, 2);
+
+% Keep only peaks below threshold
+nSTD = 1;
+binSize = .02;
+samplesPerBin = round(binSize * opts.fsLfp);  % Samples per bin
+
+% z-score the lfps
+lfpZ = zscore(lfpM56);
+
+% Initialize binned counts
+nBins = floor(size(lfpZ, 1) / samplesPerBin);
+binnedCounts = zeros(nBins, 1);
+
+for a = 1:nChannels %: length(areas)
+
+    % Find negative peaks (invert the signal)
+    [negPeaks, locs] = findpeaks(-lfpZ(:,a));  % Peaks in -lfp_z are troughs in lfp_z
+    realPeaks = -negPeaks;                 % Convert back to true LFP peak values
+    % Keep only peaks that exceed threshold
+    validIdx = realPeaks < -nSTD;
+    peakLocs = locs(validIdx);  % Indices of valid peaks
+
+
+    % Bin the crossing events
+    for i = 1:length(peakLocs)
+        binIdx = floor(peakLocs(i) / samplesPerBin) + 1;
+        if binIdx <= nBins
+            binnedCounts(binIdx) = binnedCounts(binIdx) + 1;
+        end
+    end
+end
+%%
+threshold = 0;
+[numAvalanches, uniqueSizes] = avalanches(binnedCounts, threshold)
+
+        % dataMatT = neural_matrix_ms_to_frames(transMat, optBinSize);
+        asdfMat = rastertoasdf2(binnedCounts', binSize*1000, 'CBModel', 'Spikes', 'trans');
+        Av = avprops(asdfMat, 'ratio', 'fingerprint');
+        br = Av.branchingRatio;
+        brHist = histcounts(br(br>0), edges, 'Normalization','pdf');
+
+        % [tau(a, b, 1), tauC(a, b, 1), alpha(a, b, 1), sigmaNuZInvSD(a, b, 1), decades(a, b, 1)] = avalanche_log(Av(a, b, 1), 0);
+        [tau, tauC, alpha, sigmaNuZInvSD, decades] = avalanche_log(Av, 1)
+
+
+
+%%
+figure(36); clf;
+ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
+for a = 1 %: length(areas)
+    axes(ha(a));
+    hold on;
+    linewidth = 2;
+    % for a = 1 : length(areas)
+    plot(centers(2:end), brHist(2:end), 'k', 'LineWidth',linewidth)
+    % plot(centers(2:end), brHist(a,2:end,2), 'r', 'LineWidth',linewidth)
+    xlim([0 2])
+    grid on;
+    set(ha(a), 'XTickLabelMode', 'auto');  % Enable Y-axis labels
+    title([areas{a}])
+end
+legend({'ITI', 'Reach'})
+sgtitle('Branching Ratio PDFs')
+copy_figure_to_clipboard
+%
+%%
+figure(37); clf;
+ha = tight_subplot(1, length(areas), [0.05 0.05], [0.15 0.1], [0.07 0.05]);  % [gap, lower margin, upper margin]
+for a = 1 %: length(areas)
+    % Activate subplot
+    axes(ha(a));
+    hold on;
+    plot(1, tau, 'ok', 'LineWidth', linewidth)
+    % plot(1, tau(a,2), 'or', 'LineWidth', linewidth)
+
+    plot(2, tauC, 'ok', 'LineWidth', linewidth)
+    % plot(2, tauC(a,2), 'or', 'LineWidth', linewidth)
+
+    plot(3, alpha, 'ok', 'LineWidth', linewidth)
+    % plot(3, alpha(a,2), 'or', 'LineWidth', linewidth)
+
+    plot(4, sigmaNuZInvSD, 'ok', 'LineWidth', linewidth)
+    % plot(4, sigmaNuZInvSD(a,2), 'or', 'LineWidth', linewidth)
+
+    plot(5, decades, 'ok', 'LineWidth', linewidth)
+    % plot(5, decades(a,2), 'or', 'LineWidth', linewidth)
+
+    plot([1 1], tauRange, 'b', 'LineWidth', 1)
+    plot([2 2], tauRange, 'b', 'LineWidth', 1)
+    plot([3 3], alphaRange, 'b', 'LineWidth', 1)
+
+    plot([4 4], sigmaRange, 'b', 'LineWidth', 1)
+    xticks(1:5)
+    xticklabels({'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'decades'})
+    xlim([.5 5.5])
+    ylim([.5 4])
+    grid on;
+    set(ha(a), 'YTickLabelMode', 'auto');  % Enable Y-axis labels
+    title(areas{a})
+end
+legend({'ITI', 'Reaches'})
+sgtitle('Avalanche Params Reaching vs ITI')
+copy_figure_to_clipboard
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -795,7 +946,7 @@ end
 
 
 %%
-a = 4;
+a = 2;
 fig = figure(37); clf;
 set(fig, 'Position', monitorTwo);
 linewidth = 2;
@@ -848,7 +999,7 @@ for b = 1 : length(analyzeCodes)
 
     xticks(1:5)
     xticklabels({'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'decades'})
-    xlim([.5 4.5])
+    xlim([.5 5.5])
     ylim([.5 5])
     set(ha(b), 'YTickLabelMode', 'auto');  % Enable Y-axis labels
     grid on;
@@ -1839,7 +1990,7 @@ inAvalanche = false;
 currentAvalancheDuration = 0;
 avalancheLengths = []; % Store avalanche sizes
 for t = 1:length(timeSeries)
-    if timeSeries(t) >= threshold
+    if timeSeries(t) > threshold
         currentAvalancheDuration = currentAvalancheDuration + 1;
         inAvalanche = true;
     elseif inAvalanche
