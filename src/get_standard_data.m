@@ -177,8 +177,8 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'lfp')
     opts.dataPath = nrnDataPath;
 
 data = load_data(opts, 'lfp');
-data = fliplr(data); % flip data so top row is brain surface
-%%
+data = fliplr(data); % flip data so first column (channel) is brain surface
+%
 % frequency_bands = [
 %     8 13;  % Alpha band
 %     13 30; % Beta band
