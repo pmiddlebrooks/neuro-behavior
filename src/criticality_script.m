@@ -614,9 +614,11 @@ data = fliplr(data); % flip data so first column (channel) is brain surface
 channelSpacing = 100;
 channelDepth = 1 : channelSpacing : channelSpacing * size(data, 2);
 
-lfpM56 = data(:,7:12);
 %%
-nChannels = size(lfpM56, 2);
+lfpAnalyze = data(:,7:12);
+% lfpAnalyze = data(:,17:26);
+%%
+nChannels = size(lfpAnalyze, 2);
 
 % Keep only peaks below threshold
 nSTD = 1;
@@ -624,7 +626,7 @@ binSize = .02;
 samplesPerBin = round(binSize * opts.fsLfp);  % Samples per bin
 
 % z-score the lfps
-lfpZ = zscore(lfpM56);
+lfpZ = zscore(lfpAnalyze);
 
 % Initialize binned counts
 nBins = floor(size(lfpZ, 1) / samplesPerBin);
@@ -648,9 +650,12 @@ for a = 1:nChannels %: length(areas)
         end
     end
 end
+
 %%
 threshold = 0;
 [numAvalanches, uniqueSizes] = avalanches(binnedCounts, threshold)
+
+%%
 
         % dataMatT = neural_matrix_ms_to_frames(transMat, optBinSize);
         asdfMat = rastertoasdf2(binnedCounts', binSize*1000, 'CBModel', 'Spikes', 'trans');
