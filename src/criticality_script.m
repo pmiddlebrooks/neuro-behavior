@@ -603,6 +603,8 @@ opts.collectFor = 60 * 60;
 getDataType = 'lfp';
 
 opts.frameSize = .001;
+animal = 'ag25290';
+sessionNrn = '112321';
 nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
 nrnDataPath = [nrnDataPath, 'recording1/'];
 opts.dataPath = nrnDataPath;
@@ -615,14 +617,16 @@ channelSpacing = 100;
 channelDepth = 1 : channelSpacing : channelSpacing * size(data, 2);
 
 %%
-lfpAnalyze = data(:,7:12);
-% lfpAnalyze = data(:,17:26);
-%%
+% lfpAnalyze = data(:,[1 3 5]);
+% lfpAnalyze = data(:,[7 9 11]);
+lfpAnalyze = data(:,[18 20 22 24]);
+% lfpAnalyze = data(:,[29 33 37]);
+%
 nChannels = size(lfpAnalyze, 2);
 
 % Keep only peaks below threshold
-nSTD = 1;
-binSize = .02;
+nSTD = 2;
+binSize = .05;
 samplesPerBin = round(binSize * opts.fsLfp);  % Samples per bin
 
 % z-score the lfps
@@ -651,10 +655,13 @@ for a = 1:nChannels %: length(areas)
     end
 end
 
-%%
+%
 threshold = 0;
-[numAvalanches, uniqueSizes] = avalanches(binnedCounts, threshold)
-
+sum(binnedCounts == 0) / length(binnedCounts)
+[avalancheLengths, avalancheSizes] = avalanches(binnedCounts, threshold);
+numAv = length(avalancheSizes)
+uniqueAv = length(unique(avalancheLengths))
+kappa = compute_kappa(avalancheSizes)
 %%
 
         % dataMatT = neural_matrix_ms_to_frames(transMat, optBinSize);
@@ -1985,31 +1992,79 @@ if optBinSize == 0; optBinSize = .001; end
 end
 
 
-function [numAvalanches, uniqueSizes] = avalanches(dataMat, threshold)
-% thresholds = 1:10; % Define threshold for avalanche detection
-timeSeries = sum(dataMat, 2);
+% function [numAvalanches, uniqueSizes] = avalanches(dataMat, threshold)
+% % thresholds = 1:10; % Define threshold for avalanche detection
+% timeSeries = sum(dataMat, 2);
+% 
+% % timeSeries(timeSeries < threshold) = 0;
+% 
+% inAvalanche = false;
+% currentAvalancheDuration = 0;
+% avalancheLengths = []; % Store avalanche sizes
+% for t = 1:length(timeSeries)
+%     if timeSeries(t) > threshold
+%         currentAvalancheDuration = currentAvalancheDuration + 1;
+%         inAvalanche = true;
+%     elseif inAvalanche
+%         avalancheLengths = [avalancheLengths, currentAvalancheDuration];
+%         currentAvalancheDuration = 0;
+%         inAvalanche = false;
+%     end
+% end
+% 
+% % Step 2: Check Minimum Avalanche Count and Unique Sizes
+% numAvalanches = length(avalancheLengths);
+% uniqueSizes = length(unique(avalancheLengths));
+% end
+function [avalancheLengths, avalancheSizes] = avalanches(dataMat, threshold)
+% Detects avalanches and computes their sizes.
+% INPUTS:
+%   dataMat   - matrix [time x channels] or [time x neurons]
+%   threshold - scalar threshold for defining avalanche activity
+% OUTPUTS:
+%   numAvalanches   - number of detected avalanches
+%   uniqueSizes     - number of unique avalanche sizes
+%   avalancheSizes  - vector of avalanche sizes (sum of activity per avalanche)
 
-% timeSeries(timeSeries < threshold) = 0;
+    % Sum activity across columns to get a time series
+    timeSeries = sum(dataMat, 2);
 
-inAvalanche = false;
-currentAvalancheDuration = 0;
-avalancheLengths = []; % Store avalanche sizes
-for t = 1:length(timeSeries)
-    if timeSeries(t) > threshold
-        currentAvalancheDuration = currentAvalancheDuration + 1;
-        inAvalanche = true;
-    elseif inAvalanche
-        avalancheLengths = [avalancheLengths, currentAvalancheDuration];
-        currentAvalancheDuration = 0;
-        inAvalanche = false;
+    % Initialize variables
+    inAvalanche = false;
+    avalancheLengths = [];     % For duration (optional)
+    avalancheSizes = [];       % Stores the sum of activity per avalanche
+    startIdx = 0;
+
+    for t = 1:length(timeSeries)
+        if timeSeries(t) > threshold
+            if ~inAvalanche
+                startIdx = t;  % Mark the beginning of an avalanche
+                inAvalanche = true;
+            end
+        elseif inAvalanche
+            % End of avalanche
+            endIdx = t - 1;
+            duration = endIdx - startIdx + 1;
+            sizeSum = sum(timeSeries(startIdx:endIdx, :)); % Total activity
+            avalancheLengths = [avalancheLengths, duration];
+            avalancheSizes = [avalancheSizes, sizeSum];
+            inAvalanche = false;
+        end
     end
-end
 
-% Step 2: Check Minimum Avalanche Count and Unique Sizes
-numAvalanches = length(avalancheLengths);
-uniqueSizes = length(unique(avalancheLengths));
-end
+    % Handle if signal ends during an avalanche
+    if inAvalanche
+        endIdx = length(timeSeries);
+        duration = endIdx - startIdx + 1;
+        sizeSum = sum(sum(dataMat(startIdx:endIdx, :)));
+        avalancheLengths = [avalancheLengths, duration];
+        avalancheSizes = [avalancheSizes, sizeSum];
+    end
 
+    % Summary outputs
+    numAvalanches = length(avalancheSizes);
+    uniqueSizes = length(unique(avalancheSizes));
+end
 
 
 

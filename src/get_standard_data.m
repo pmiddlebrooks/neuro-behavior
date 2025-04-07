@@ -236,6 +236,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'spikes')
 
     allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
     allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | (strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua'));
+warning('Warning in get_standard_data: you are loading muas with the good spiking units.')
 
     goodM23 = allGood & strcmp(data.ci.area, 'M23');
     goodM56= allGood & strcmp(data.ci.area, 'M56');
