@@ -1,10 +1,10 @@
-function dcc = distance_to_criticality(alphaFitted, tauFitted, gammaFitted)
+function dcc = distance_to_criticality(tauFitted, alphaFitted, gammaFitted)
     % computeDCC calculates the Distance to Criticality Coefficient
     % from Ma et al 2019
     %
     % INPUTS:
-    %   alpha_fitted  - avalanche size exponent
-    %   tau_fitted    - avalanche duration exponent
+    %   alpha_fitted  - avalanche duration exponent
+    %   tau_fitted    - avalanche size exponent
     %   gamma_fitted  - exponent from size-duration scaling
     % OUTPUT:
     %   dcc - distance to criticality coefficient
