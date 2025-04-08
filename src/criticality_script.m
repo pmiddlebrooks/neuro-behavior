@@ -621,7 +621,8 @@ channelDepth = 1 : channelSpacing : channelSpacing * size(data, 2);
 % lfpAnalyze = data(:,[7 9 11]);
 lfpAnalyze = data(:,[18 20 22 24]);
 % lfpAnalyze = data(:,[29 33 37]);
-%
+areas = {'DS'};
+
 nChannels = size(lfpAnalyze, 2);
 
 % Keep only peaks below threshold
@@ -690,7 +691,7 @@ for a = 1 %: length(areas)
     set(ha(a), 'XTickLabelMode', 'auto');  % Enable Y-axis labels
     title([areas{a}])
 end
-legend({'ITI', 'Reach'})
+% legend({'ITI', 'Reach'})
 sgtitle('Branching Ratio PDFs')
 copy_figure_to_clipboard
 %
@@ -729,7 +730,7 @@ for a = 1 %: length(areas)
     set(ha(a), 'YTickLabelMode', 'auto');  % Enable Y-axis labels
     title(areas{a})
 end
-legend({'ITI', 'Reaches'})
+% legend({'ITI', 'Reaches'})
 sgtitle('Avalanche Params Reaching vs ITI')
 copy_figure_to_clipboard
 
@@ -1222,7 +1223,6 @@ save(fileName, 'brPeak', 'tau', 'tauC', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 
 
 %% ==============================================             Mark's reaching vs ITI             ==============================================
 opts.minFiringRate = .1;
-getDataType = 'spikes';
 opts.frameSize = .001;
 
 % Load Mark's reach data and make it a ms neural data matrix
@@ -1257,7 +1257,7 @@ edges = minBR : .1 : maxBR;
 centers = edges(1:end-1) + diff(edges) / 2;
 
 
-[tau, tauC, alpha, sigmaNuZInvSD, decades] = deal(nan(length(areas), 2));
+[tau, pSz, tauC, pSzC, alpha, pDr, sigmaNuZInvSD, decades] = deal(nan(length(areas), 2));
 brHist = nan(length(areas), length(centers), 2);
 optBinSize = nan(length(areas), 1);
 idList = {idM23R, idM56R, idDSR, idVSR};
@@ -1436,7 +1436,8 @@ for a = 1 : length(areas)
     Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
     br = Av(a, 1).branchingRatio;
     brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization','pdf');
-    [tau(a, 1), tauC(a, 1), alpha(a, 1), sigmaNuZInvSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), plotFlag);
+    [tau(a, 1), pSz(a, 1), tauC(a, 1), pSzC(a, 1), alpha(a, 1), pDr(a, 1), ...
+        sigmaNuZInvSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), plotFlag);
 
 
     %
@@ -1444,7 +1445,8 @@ for a = 1 : length(areas)
     Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
     br = Av(a, 2).branchingRatio;
     brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization','pdf');
-    [tau(a, 2), tauC(a, 2), alpha(a, 2), sigmaNuZInvSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
+    [tau(a, 2), pSz(a, 2), tauC(a, 2), pSzC(a, 2), alpha(a, 2), pDr(a, 2), ...
+sigmaNuZInvSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
 
     % [tauB, alphaB, sigmaNuZInvSDB]
     % [tau, alpha, sigmaNuZInvSD]
@@ -1930,7 +1932,7 @@ copy_figure_to_clipboard
 
 %%
 
-function [tau, tauC, alpha, sigmaNuZInvSD, decades] = avalanche_log(Av, plotFlag)
+function [tau, pSz, tauC, pSzC, alpha, pDr, sigmaNuZInvSD, decades] = avalanche_log(Av, plotFlag)
 
 
 if plotFlag == 1
@@ -1940,14 +1942,16 @@ else
 end
 
 % size distribution (SZ)
-[tau, xminSZ, xmaxSZ, sigmaSZ, pSZ, pCritSZ, ksDR, DataSZ] =...
+[tau, xminSZ, xmaxSZ, sigmaSZ, pSz, pCritSZ, ksDR, DataSZ] =...
     avpropvals(Av.size, 'size', plotFlag);
 tau = cell2mat(tau);
+pSz = cell2mat(pSz);
 
 decades = log10(cell2mat(xmaxSZ)/cell2mat(xminSZ));
 
 % size distribution (SZ) with cutoffs
 tauC = nan;
+pSzC = nan;
 UniqSizes = unique(Av.size);
 Occurances = hist(Av.size,UniqSizes);
 % AllowedSizes = UniqSizes(Occurances >= 20);
@@ -1957,17 +1961,19 @@ AllowedSizes(AllowedSizes < 4) = [];
 % AllowedSizes(AllowedSizes < 3) = [];
 if length(AllowedSizes) > 1
     LimSize = Av.size(ismember(Av.size,AllowedSizes));
-    [tauC, xminSZ, xmaxSZ, sigmaSZ, pSZ, pCritSZ, DataSZ] =...
+    [tauC, xminSZ, xmaxSZ, sigmaSZ, pSzC, pCritSZ, DataSZ] =...
         avpropvals(LimSize, 'size', plotFlag);
     tauC = cell2mat(tauC);
+    pSzC = cell2mat(pSzC);
 end
 % decades = log10(xmaxSZ/xminSZ);
 
 % duration distribution (DR)
 if length(unique(Av.duration)) > 1
-    [alpha, xminDR, xmaxDR, sigmaDR, pDR, pCritDR, ksDR, DataDR] =...
+    [alpha, xminDR, xmaxDR, sigmaDR, pDr, pCritDR, ksDR, DataDR] =...
         avpropvals(Av.duration, 'duration', plotFlag);
     alpha = cell2mat(alpha);
+    pDr = cell2mat(pDr);
     % size given duration distribution (SD)
     [sigmaNuZInvSD, waste, waste, sigmaSD] = avpropvals({Av.size, Av.duration},...
         'sizgivdur', 'durmin', xminDR{1}, 'durmax', xmaxDR{1}, plotFlag);
