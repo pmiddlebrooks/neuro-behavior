@@ -1088,7 +1088,8 @@ edges = minBR : .1 : maxBR;
 centers = edges(1:end-1) + diff(edges) / 2;
 
 
-[brWeighted, brMr, tau, pSz, tauC, pSzC, alpha, pDr, paramSD, decades, dcc, kappa] = deal(nan(length(areas), 2));
+[brWeighted, brStepwise, brMr, tau, pSz, tauC, pSzC, alpha, pDr, paramSD, decades, dcc, kappa] = ...
+    deal(nan(length(areas), 2));
 brHist = nan(length(areas), length(centers), 2);
 optBinSize = nan(length(areas), 1);
 idList = {idM23R, idM56R, idDSR, idVSR};
@@ -1268,12 +1269,13 @@ for a = 1 : length(areas)
     br = Av(a, 1).branchingRatio;
     brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization','pdf');
     brWeighted(a,1) = weighted_branching_ratio(baseMat);
+    brStepwise(a,1) = stepwise_branching_ratio(baseMat);
     [tau(a, 1), pSz(a, 1), tauC(a, 1), pSzC(a, 1), alpha(a, 1), pDr(a, 1), ...
         paramSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), plotFlag);
 kappa(a,1) = compute_kappa(Av(a,1).size);
 dcc(a,1) = distance_to_criticality(tau(a,1), alpha(a,1), paramSD(a,1));
 result = branching_ratio_mr_estimation(baseMat);
-brMr(a,1) = result.branchingRatio;
+brMr(a,1) = result.branching_ratio;
 
     %
     asdfMat = rastertoasdf2(reachMat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'Reach');
@@ -1281,12 +1283,13 @@ brMr(a,1) = result.branchingRatio;
     br = Av(a, 2).branchingRatio;
     brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization','pdf');
     brWeighted(a,2) = weighted_branching_ratio(reachMat);
+    brStepwise(a,2) = stepwise_branching_ratio(reachMat);
     [tau(a, 2), pSz(a, 2), tauC(a, 2), pSzC(a, 2), alpha(a, 2), pDr(a, 2), ...
 paramSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
 kappa(a,2) = compute_kappa(Av(a,2).size);
 dcc(a,2) = distance_to_criticality(tau(a,2), alpha(a,2), paramSD(a,2));
 result = branching_ratio_mr_estimation(reachMat);
-brMr(a,2) = result.branchingRatio;
+brMr(a,2) = result.branching_ratio;
 end
 
 %%
