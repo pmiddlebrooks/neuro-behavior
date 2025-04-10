@@ -13,7 +13,7 @@ function kappa = compute_kappa(avalancheSizes)
     L = max(avalancheSizes);
 
     % Define beta points (log-spaced)
-    beta_k = round(logspace(log10(l), log10(L), m));
+    % beta_k = round(logspace(log10(l), log10(L), m));
 beta_k = round(logspace(log10(l + 1), log10(L), m));
 
     % Empirical CDF
