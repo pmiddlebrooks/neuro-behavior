@@ -15,7 +15,7 @@ function dcc = distance_to_criticality(tauFitted, alphaFitted, gammaFitted)
     end
 
     % Compute predicted gamma from exponent relation
-    gammaPredicted = (alphaFitted - 1) / (tauFitted - 1);
+    gammaPredicted = (alphaFitted - 1) ./ (tauFitted - 1);
 
     % Compute distance to criticality
     dcc = abs(gammaPredicted - gammaFitted);
