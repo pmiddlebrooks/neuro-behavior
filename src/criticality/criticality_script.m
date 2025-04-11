@@ -2,7 +2,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 30 * 60; % seconds
+opts.collectFor = 4*60 * 60; % seconds
 
 paths = get_paths;
 
@@ -1352,6 +1352,31 @@ copy_figure_to_clipboard
 
 
 
+%% Perform avalanche shape collapse for all shapes
+a = 1;
+c = 2;
+% compute average temporal profiles
+avgProfiles = avgshapes(Av(a,c).shape, Av(a,c).duration, 'cutoffs', 4, 20);
+
+%& plot all profiles
+figure;
+for iProfile = 1:length(avgProfiles)
+    hold on
+    plot(1:length(avgProfiles{iProfile}), avgProfiles{iProfile});
+end
+hold off
+
+xlabel('Time Bin, t', 'fontsize', 14)
+ylabel('Neurons Active, s(t)', 'fontsize', 14)
+title('Mean Temporal Profiles', 'fontsize', 14)
+
+% compute shape collapse statistics (SC) and plot
+[sigmaNuZInvSC, secondDrv, range, errors] = avshapecollapse(avgProfiles, 'plot');
+
+sigmaSC = avshapecollapsestd(avgProfiles);
+
+title(['Avalanche Shape Collapse', char(10), '1/(sigma nu z) = ',...
+    num2str(sigmaNuZInvSC), ' +/- ', num2str(sigmaSC)], 'fontsize', 14)
 
 
 
