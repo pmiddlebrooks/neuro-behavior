@@ -223,8 +223,8 @@ pcaFlag = 1;
 pcaFirstFlag = 1;
 thresholdFlag = 1;
 thresholdBinSize = .025;
-medianPct = .5; % set threshold at medianPct of the median of the summed signal
-% medianPct = .75; % set threshold at medianPct of the median of the summed signal
+% medianPct = .5; % set threshold at medianPct of the median of the summed signal
+medianPct = .75; % set threshold at medianPct of the median of the summed signal
 
 
 % Initialize variables
@@ -1152,41 +1152,41 @@ for a = 1 : length(areas)
 
 
 
-    % Reach vs ITI
-    rStarts = round(dataR.R(trialIdx,1)/optBinSize(a)/1000);  % in frame time
-    endEpochs = round(sort([eventTimes.ERtimes, eventTimes.SOLtimes])/optBinSize(a)/1000)';
-    % get rid of trials with negative epochs
-    goodTrials = find((endEpochs - rStarts) > 1);
-
-    % initialize data mats: start with a row of zeros so first spike counts as
-    % avalanche
-    baseMat = zeros(1, size(dataMatReach, 2));
-    reachMat = zeros(1, size(dataMatReach, 2));
-    for i = 1 : length(goodTrials)
-        iTrial = goodTrials(i);
-
-        reachWindow = rStarts(iTrial) - floor(preTime/optBinSize(a)) : endEpochs(iTrial);
-        baseWindow = reachWindow - length(reachWindow);
-
-        % baseline matrix
-        % iBaseMat = dataMatReach(rStarts(iTrial) + baseWindow, :);
-        iBaseMat = dataMatReach(baseWindow, :);
-        % Find avalances within the data
-        zeroBins = find(sum(iBaseMat, 2) == 0);
-        if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-            baseMat = [baseMat; iBaseMat(zeroBins(1) : zeroBins(end)-1, :)];
-        end
-
-        % reach data matrix
-        % iReachMat = dataMatReach(rStarts(iTrial) + reachWindow, :);
-        iReachMat = dataMatReach(reachWindow, :);
-        % Find avalances within the data
-        zeroBins = find(sum(iReachMat, 2) == 0);
-        if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-            reachMat = [reachMat; iReachMat(zeroBins(1) : zeroBins(end)-1, :)];
-        end
-
-    end
+    % % Reach vs ITI
+    % rStarts = round(dataR.R(trialIdx,1)/optBinSize(a)/1000);  % in frame time
+    % endEpochs = round(sort([eventTimes.ERtimes, eventTimes.SOLtimes])/optBinSize(a)/1000)';
+    % % get rid of trials with negative epochs
+    % goodTrials = find((endEpochs - rStarts) > 1);
+    % 
+    % % initialize data mats: start with a row of zeros so first spike counts as
+    % % avalanche
+    % baseMat = zeros(1, size(dataMatReach, 2));
+    % reachMat = zeros(1, size(dataMatReach, 2));
+    % for i = 1 : length(goodTrials)
+    %     iTrial = goodTrials(i);
+    % 
+    %     reachWindow = rStarts(iTrial) - floor(preTime/optBinSize(a)) : endEpochs(iTrial);
+    %     baseWindow = reachWindow - length(reachWindow);
+    % 
+    %     % baseline matrix
+    %     % iBaseMat = dataMatReach(rStarts(iTrial) + baseWindow, :);
+    %     iBaseMat = dataMatReach(baseWindow, :);
+    %     % Find avalances within the data
+    %     zeroBins = find(sum(iBaseMat, 2) == 0);
+    %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+    %         baseMat = [baseMat; iBaseMat(zeroBins(1) : zeroBins(end)-1, :)];
+    %     end
+    % 
+    %     % reach data matrix
+    %     % iReachMat = dataMatReach(rStarts(iTrial) + reachWindow, :);
+    %     iReachMat = dataMatReach(reachWindow, :);
+    %     % Find avalances within the data
+    %     zeroBins = find(sum(iReachMat, 2) == 0);
+    %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+    %         reachMat = [reachMat; iReachMat(zeroBins(1) : zeroBins(end)-1, :)];
+    %     end
+    % 
+    % end
 
 
     % Block 1 vs Block 2
@@ -1259,6 +1259,9 @@ for a = 1 : length(areas)
     %        end
     %
     %    end
+
+
+
     baseMat = [baseMat; zeros(1, size(baseMat, 2))]; % add a final row of zeros to close out last avalanche
     reachMat = [reachMat; zeros(1, size(reachMat, 2))]; % add a final row of zeros to close out last avalanche
 
