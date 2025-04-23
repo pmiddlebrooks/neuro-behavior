@@ -1,4 +1,4 @@
-function alpha = compute_DFA(dataMat)
+function alpha = compute_DFA(dataMat, plotFlag)
     % Compute Long-Range Temporal Correlations using Detrended Fluctuation Analysis (DFA)
     %
     % INPUT:
@@ -63,6 +63,7 @@ end
     p = polyfit(logScales, logF, 1);
     alpha = p(1); % DFA exponent (slope)
 
+    if plotFlag
     % Plot DFA results
     figure;
     loglog(scales, F, 'o-', 'LineWidth', 1.5);
@@ -73,7 +74,7 @@ end
     title(['DFA Analysis: \alpha = ', num2str(alpha)]);
     legend('Data', 'Fit', 'Location', 'best');
     grid on;
-
+    end
     % Display result
     disp(['DFA Exponent (Alpha): ', num2str(alpha)]);
 end
