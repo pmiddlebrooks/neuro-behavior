@@ -50,7 +50,7 @@ switch dataType
         % Define the path to your CSV file
         csvFilePath = [opts.bhvDataPath, kinFileName];
         % kinData = readmatrix(csvFilePath);
-        kinData = readNPY(csvFilePath);
+        kinData = readNPY(csvFilePath)';
 
        %          kinFileName = 'AdenKinematicsAligned.csv';
        %   csvFilePath = [opts.bhvDataPath, kinFileName];
@@ -58,7 +58,7 @@ switch dataType
 
 
         getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectStart + opts.collectFor));
-        data = kinData(:, getWindow)';
+        data = kinData(getWindow, :);
 
 
 

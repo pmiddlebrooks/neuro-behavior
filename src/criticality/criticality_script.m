@@ -1602,6 +1602,89 @@ legend('Empirical Data', 'Power-Law Fit');
 
 
 
+%% =======================    Kinematics scale-free?     =======================
+% Define behaviors to include (input as a vector)
+opts = neuro_behavior_options;
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 1 * 60 * 60; % seconds
+animal = 'ag25290';
+sessionBhv = '112321_1';
+sessionNrn = '112321';
+if strcmp(sessionBhv, '112321_1')
+    sessionSave = '112321';
+end
+
+getDataType = 'kinematics';
+opts.bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+getDataType = 'kinematics';
+% kinData = load_data(opts, getDataType);
+kinData = load_data(opts, getDataType);
+
+                [coeff, score, ~, ~, explained, mu] = pca(kinData);
+                forDim = find(cumsum(explained) > 30, 1);
+                forDim = max(3, forDim);
+                forDim = min(6, forDim);
+                nDim = 1:forDim;
+                kinPCA = score(:,nDim) * coeff(:,nDim)' + mu;
+
+                for i = 1:size(kinData, 2)
+    alpha(i) = compute_DFA(kinData(:, i));
+end
+disp('start here')
+
+% Filter bhvID to only include specified behaviors
+include_mask = ismember(bhvID, bhvInclude);
+bhvFiltered = bhvID(include_mask);
+
+% Compute behavior durations (time spent in each behavior state)
+change_points = find(diff([NaN; bhvFiltered]) ~= 0); % Find transitions
+durations = diff(change_points); % Compute durations
+
+% Fit power-law distribution using Clauset's plfit (ensure you have plfit.m)
+[alpha, xmin, L] = plfit(durations);
+
+% Compare with exponential and lognormal distributions
+% Exponential fit
+lambda = 1/mean(durations);
+L_exp = sum(log(lambda * exp(-lambda * durations)));
+
+% Lognormal fit
+mu = mean(log(durations));
+sigma = std(log(durations));
+L_lognorm = sum(log((1./(durations * sigma * sqrt(2*pi))) .* exp(-((log(durations)-mu).^2) / (2*sigma^2))));
+
+% Compare likelihoods
+R_exp = 2 * (L - L_exp);
+R_lognorm = 2 * (L - L_lognorm);
+
+% Compute p-values
+p_exp = 1 - chi2cdf(R_exp, 1);
+p_lognorm = 1 - chi2cdf(R_lognorm, 1);
+
+% Display results
+fprintf('Power-law exponent (alpha): %.3f\n', alpha);
+fprintf('Comparison with exponential: R=%.3f, p=%.3f\n', R_exp, p_exp);
+fprintf('Comparison with lognormal: R=%.3f, p=%.3f\n', R_lognorm, p_lognorm);
+
+% Plot the distribution
+figure;
+% Define logarithmic bins
+binEdges = logspace(log10(min(durations)), log10(max(durations)), 20); % Adjust number of bins
+% Compute histogram
+[counts, edges] = histcounts(durations, binEdges, 'Normalization', 'pdf');
+% Compute bin centers
+binCenters = sqrt(edges(1:end-1) .* edges(2:end));
+bar(binCenters, counts, 'histc');
+hold on;
+plot(sort(durations), (xmin ./ sort(durations)).^alpha, 'r', 'LineWidth', 2);
+set(gca, 'XScale', 'log', 'YScale', 'log');
+xlabel('Duration'); ylabel('Probability Density');
+title('Scale-Free Test: Behavior Durations');
+legend('Empirical Data', 'Power-Law Fit');
+
+
+
+
 
 
 

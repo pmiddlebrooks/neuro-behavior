@@ -15,8 +15,14 @@ function alpha = compute_DFA(dataMat)
 % 
 % α>1.5 → Highly persistent signals.
 % 
+
+% ensure time is rows.
+if size(dataMat, 2) > size(dataMat, 1)
+    dataMat = dataMat';
+end
+
     % Summing across neurons to create a single time series
-    timeSeries = sum(dataMat, 1);  % Sum spike activity across neurons
+    timeSeries = sum(dataMat, 2);  % Sum spike activity across neurons
 
     % Normalize time series (zero mean)
     timeSeries = timeSeries - mean(timeSeries);
