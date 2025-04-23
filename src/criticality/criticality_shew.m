@@ -18,7 +18,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 4*60 * 60; % seconds
+opts.collectFor = 2*60 * 60; % seconds
 
 paths = get_paths;
 
@@ -40,7 +40,8 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 43 * 60;
+opts.collectStart = 2 * 60 * 60; % seconds
+opts.collectFor = 2 * 60 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
@@ -63,7 +64,7 @@ isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;
 optBinSize = nan(length(areas), 1);
-[d21, d22, d21R, d22R] = ...
+[d21, d22, d21R, d22R, varNoise1, varNoise2, varNoise1R, varNoise2R] = ...
     deal(nan(length(areas), 1));
 
 trialIdx1 = ismember(dataR.block(:, 3), 1:2);
@@ -80,30 +81,35 @@ for a = 1 : length(areas)
     aID = idList{a};
 
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
+optBinSize(a) = .05;
 
     popActivity1 = neural_matrix_ms_to_frames(sum(dataMatR(1:block1End, aID), 2), optBinSize(a));
     popActivity2 = neural_matrix_ms_to_frames(sum(dataMatR(block2First:end, aID), 2), optBinSize(a));
+    % popActivity2 = neural_matrix_ms_to_frames(sum(dataMatR(block2First:block2First+5*60*1000, aID), 2), optBinSize(a));
 
-    [varphi, varNoise] = myYuleWalker3(popActivity1, pOrder);
+    [varphi, varNoise1(a)] = myYuleWalker3(popActivity1, pOrder);
     d21(a) =getFixedPointDistance2(pOrder, critType, varphi);
-    [varphi, varNoise] = myYuleWalker3(popActivity2, pOrder);
+    [varphi, varNoise2(a)] = myYuleWalker3(popActivity2, pOrder);
     d22(a) =getFixedPointDistance2(pOrder, critType, varphi);
 
     popActivity1R = popActivity1(randperm(length(popActivity1)));
     popActivity2R = popActivity2(randperm(length(popActivity2)));
 
-    [varphi, varNoise] = myYuleWalker3(popActivity1R, pOrder);
+    [varphi, varNoise1R(a)] = myYuleWalker3(popActivity1R, pOrder);
     d21R(a) =getFixedPointDistance2(pOrder, critType, varphi);
-    [varphi, varNoise] = myYuleWalker3(popActivity2R, pOrder);
+    [varphi, varNoise2R(a)] = myYuleWalker3(popActivity2R, pOrder);
     d22R(a) =getFixedPointDistance2(pOrder, critType, varphi);
 
 end
 
-
+[d21 d21R d22 d22R]
 
 %% =================        NATURALISTIC DATA              ================
+isiMult = 10; % Multiple of mean ISI to determine minimum bin size
+pOrder = 10; % Order parameter for the autoregressor model
+critType = 2;
 areas = {'M23', 'M56', 'DS', 'VS'};
-[optBinSize, d2, d2R] = ...
+[optBinSize, d2N, d2NR, varNoiseN, varNoiseNR] = ...
     deal(nan(length(areas), 1));
 idList = {idM23, idM56, idDS, idVS};
 
@@ -114,26 +120,40 @@ for a = 1 : length(areas)
     aID = idList{a};
 
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
-
-    popActivity1 = neural_matrix_ms_to_frames(sum(dataMat(:, aID), 2), optBinSize(a));
+optBinSize(a) = .05;
+    popActivityN = neural_matrix_ms_to_frames(sum(dataMat(:, aID), 2), optBinSize(a));
     % popActivity2 = neural_matrix_ms_to_frames(sum(dataMat(block2First:end, aID), 2), optBinSize(a));
 
-    [varphi, varNoise] = myYuleWalker3(popActivity1, pOrder);
-    d2(a) =getFixedPointDistance2(pOrder, critType, varphi);
+    [varphi, varNoiseN(a)] = myYuleWalker3(popActivityN, pOrder);
+    d2N(a) =getFixedPointDistance2(pOrder, critType, varphi);
     % [varphi, varNoise] = myYuleWalker3(popActivity2, pOrder);
     % d22(a) =getFixedPointDistance2(pOrder, critType, varphi);
 
-    popActivity1R = popActivity1(randperm(length(popActivity1)));
+    popActivity1R = popActivityN(randperm(length(popActivityN)));
     % popActivity2R = popActivity2(randperm(length(popActivity2)));
 
-    [varphi, varNoise] = myYuleWalker3(popActivity1R, pOrder);
-    d2R(a) =getFixedPointDistance2(pOrder, critType, varphi);
+    [varphi, varNoiseNR(a)] = myYuleWalker3(popActivity1R, pOrder);
+    d2NR(a) =getFixedPointDistance2(pOrder, critType, varphi);
     % [varphi, varNoise] = myYuleWalker3(popActivity2R, pOrder);
     % d22R(a) =getFixedPointDistance2(pOrder, critType, varphi);
 
 end
 
-
+%%
+figure(45); clf
+plot(1:4, d21, 'ok', 'LineWidth', 2)
+hold all
+plot(1:4, d22, 'or', 'LineWidth', 2)
+plot(1:4, d2N, 'ob', 'LineWidth', 2)
+plot(1:4, d21R, '*k')
+plot(1:4, d22R, '*r')
+plot(1:4, d2NR, '*b')
+legend({'Block 1', 'Block 2', 'Naturalistic', 'B1 Rand', 'B2 Rand', 'Nat Rand'})
+xlim([.5 4.5])
+title('Distance to Criticality')
+xticks(1:4)
+xticklabels({'M23', 'M56', 'DS', 'VS'})
+ylabel('Distance to criticality')
 
 
 
