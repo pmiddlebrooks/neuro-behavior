@@ -1632,10 +1632,12 @@ kinData = load_data(opts, getDataType);
 end
 
 figure();
-plot(alpha, 'o')
+plot(alpha, 'o', 'linewidth', 2)
 xline(15.5)
 xline(30.5)
-
+xlabel('Kinematic parameters')
+ylabel('Alpha')
+title('Long-range temporal correlations')
 
 
 
