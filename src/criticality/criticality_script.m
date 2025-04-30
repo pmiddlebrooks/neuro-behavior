@@ -36,10 +36,10 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 43 * 60;
+opts.collectFor = 20 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
-
+%%
 % Mark's reach data
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
