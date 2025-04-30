@@ -12,9 +12,10 @@ idList = {idM23, idM56, idDS, idVS};
 
 
 %%
-wfPath = 'E:\Projects\neuro-behavior\data\raw_ephys\animal_ag25290\112321\recording1';
+% wfPath = 'E:\Projects\neuro-behavior\data\raw_ephys\animal_ag25290\112321\recording1';
+wfPath = '~/Projects/neuro-behavior/data/raw_ephys/animal_ag25290/112321/recording1';
 load(fullfile(wfPath, 'waveforms.mat'));
-wv = sp_waveforms;
+wf = sp_waveforms;
 
 getDataType = 'spikes';
 animal = 'ag25290';
