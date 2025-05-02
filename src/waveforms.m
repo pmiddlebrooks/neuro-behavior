@@ -1,9 +1,17 @@
+% From Eric in slack
+%
+% A histogram of waveform widths collected across all dual-probe recording sessions exhibited a bimodal distribution that could be well approximated by the sum of two gaussians. Using this model, we defined a width threshold that permits a 5% misclassification rate where tails of the fitted gaussians fall above or below threshold (45). A threshold of 0.417 ms was defined as the difference between wide-waveform and narrow-waveform cells.
+% https://www.biorxiv.org/content/10.1101/2023.09.23.559136v1.full.pdf
+% 5:07
+% and I think most of it comes from this 2004 paper
+% Characterization of neocortical principal cells and interneurons by network interactions and extracellular features
+
 %%
 opts = neuro_behavior_options;
-opts.frameSize = .001;
+opts.frameSize = .01;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 60 * 60;
+opts.collectFor = 5 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 

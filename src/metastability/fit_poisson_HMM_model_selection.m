@@ -1,4 +1,4 @@
-    function hmm = fit_poisson_HMM_model_selection(dataMat, stateRange, numFolds, numReps)
+    function hmm = fit_poisson_HMM_model_selection(dataMat, binSize, stateRange, numFolds, numReps)
 % Build Poisson HMM with model selection via cross-validation
 % Inputs:
 %   dataMat: [T x N] binary spike matrix (1 ms bins)
@@ -6,8 +6,8 @@
 %   numFolds: number of cross-validation folds (default 20)
 %   numReps: number of EM restarts (default 5)
 
-if nargin < 3, numFolds = 20; end
-if nargin < 4, numReps = 5; end
+if nargin < 4, numFolds = 20; end
+if nargin < 5, numReps = 5; end
 
 [T, ~] = size(dataMat);
 cvIdx = crossvalind('Kfold', T, numFolds);
@@ -28,8 +28,11 @@ for i = 1:length(stateRange)
         bestModel = [];
 
         for rep = 1:numReps
-            model = fit_poisson_HMM(trainData, M, 1);
-            [~, ~, ~, ~, llTest] = fwdBwdPoisson(testData, model.pi0, model.A, model.lambda, 0.001);
+            model = fit_poisson_HMM(trainData, binSize, M, 1);
+if isempty(fieldnames(model))
+    continue;  % skip this fold if the model failed
+end
+[~, ~, ~, ~, llTest] = fwdBwdPoisson(testData, model.pi0, model.A, model.lambda, 0.001);
             if llTest > bestLL
                 bestLL = llTest;
                 bestModel = model;
