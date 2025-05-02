@@ -2,16 +2,14 @@ function model = fit_poisson_HMM(dataMat, binSize, numStates, numReps)
 % FIT_POISSON_HMM Fit a Poisson Hidden Markov Model (HMM) to spike train data.
 % This function performs multiple EM initializations and returns the best-fit model.
 % Inputs:
-%   dataMat: [T x N] binary matrix of spikes (1 ms bins)
+%   dataMat: [T x N] binary or count matrix of spikes (e.g., in ms or rebinned)
 %   numStates: number of HMM hidden states to fit
 %   numReps: number of random initializations of EM to run
 % Output:
 %   model: struct containing estimated HMM parameters and decoded states
 
 [T, N] = size(dataMat);
-% dt = 0.001;
-dt = binSize;
-% dataMat(dataMat > 1) = 1;  % Ensure binary spike counts
+dt =binSize;
 dataMat = double(dataMat);  % Convert to double to avoid integer multiplication issues
 
 bestLL = -inf;
@@ -74,16 +72,27 @@ for iter = 1:maxIter
     pi0 = gamma(1,:);
     A = normalize(squeeze(sum(xi,1)), 2);  % transition matrix
 
-    % Update emission rates for each state
+    % Update emission rates for each state with safety clamps
     for m = 1:M
         weightedSum = sum(data .* gamma(:,m), 1);
         totalWeight = sum(gamma(:,m));
-        % lambda(m,:) = -log(1 - (weightedSum / totalWeight)) / dt;
-ratio = weightedSum / totalWeight;
-ratio(ratio >= 1) = 1 - 1e-6;      % clamp maximum
-ratio(ratio <= 0) = 1e-6;          % clamp minimum
-lambda(m,:) = -log(1 - ratio) / dt;
+        ratio = weightedSum / totalWeight;
+
+        % Clamp invalid values
+        ratio(ratio >= 1) = 1 - 1e-6;
+        ratio(ratio <= 0) = 1e-6;
+
+        % Optional warning for debugging
+        if any(ratio >= 1 | ratio <= 0)
+            warning('Clamped λ estimate in EM step: possible instability at state %d', m);
+        end
+
+        lambda(m,:) = -log(1 - ratio) / dt;
     end
+
+    % Clean up any numeric artifacts
+    lambda(~isfinite(lambda)) = 1;
+    lambda(lambda < 0) = 1;
 
     % Check for convergence
     if iter > 1 && abs(logL(iter) - logL(iter-1)) < tol

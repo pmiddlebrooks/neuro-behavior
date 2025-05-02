@@ -41,7 +41,7 @@ end
 
 % Fit the model using the code under test
 numStates = 3;
-for numStates = 4:8
+% for numStates = 4:8
 numReps = 10;
 model = fit_poisson_HMM(dataMat, binSize, numStates, numReps);
 
@@ -50,7 +50,7 @@ if isempty(fieldnames(model))
     disp(numStates)
     warning('Model fitting failed: returned empty model.');
 end
-end
+% end
 fprintf('Log-likelihood: %.2f\n', model.logL(end));
 figure;
 imagesc(model.gamma');
@@ -130,3 +130,25 @@ title('True vs Inferred State Sequence');
 assert(numel(unique(model.stateSeq)) == numStates, 'Mismatch in number of inferred states.');
 
 fprintf('Unit test completed. Log-likelihood: %.2f\n', model.logL(end));
+
+
+
+
+%%
+opts = neuro_behavior_options;
+opts.frameSize = .05;
+opts.minFiringRate = .5;
+getDataType = 'spikes';
+opts.collectFor = 5 * 60;
+opts.firingRateCheckTime = 5 * 60;
+get_standard_data
+
+areas = {'M23', 'M56', 'DS', 'VS'};
+idList = {idM23, idM56, idDS, idVS};
+
+%%
+hmm = fit_poisson_HMM_model_selection(dataMat(:,idM56), opts.frameSize, 3:10, 3);
+
+
+
+
