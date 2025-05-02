@@ -1,7 +1,7 @@
-    function hmm = fit_poisson_HMM_model_selection(dataMat, binSize, stateRange, numFolds, numReps)
+function hmm = fit_poisson_HMM_model_selection(dataMat, binSize, stateRange, numFolds, numReps)
 % Build Poisson HMM with model selection via cross-validation
 % Inputs:
-%   dataMat: [T x N] binary spike matrix (1 ms bins)
+%   dataMat: [T x N] binary spike matrix (binSize s bins)
 %   stateRange: array of candidate state counts, e.g. 6:20
 %   numFolds: number of cross-validation folds (default 20)
 %   numReps: number of EM restarts (default 5)
@@ -17,7 +17,7 @@ models = cell(length(stateRange), numFolds);
 
 for i = 1:length(stateRange)
     M = stateRange(i);
-    fprintf('Testing %d states...\n', M);
+    fprintf('Testing %d states of %d...\n', M, stateRange(end));
     for fold = 1:numFolds
         testIdx = (cvIdx == fold);
         trainIdx = ~testIdx;
@@ -29,10 +29,11 @@ for i = 1:length(stateRange)
 
         for rep = 1:numReps
             model = fit_poisson_HMM(trainData, binSize, M, 1);
-if isempty(fieldnames(model))
-    continue;  % skip this fold if the model failed
-end
-[~, ~, ~, ~, llTest] = fwdBwdPoisson(testData, model.pi0, model.A, model.lambda, 0.001);
+            if isempty(fieldnames(model))
+                continue;  % skip this fold if the model failed
+
+            end
+            [~, ~, ~, ~, llTest] = fwdBwdPoisson(testData, model.pi0, model.A, model.lambda, binSize);
             if llTest > bestLL
                 bestLL = llTest;
                 bestModel = model;
@@ -55,7 +56,7 @@ fprintf('Selected %d states via elbow in log-likelihood curve.\n', bestM);
 % Final model on full data
 bestLL = -inf;
 for rep = 1:numReps
-    model = fitPoissonHMM(dataMat, bestM, 1);
+    model = fit_poisson_HMM(dataMat, binSize, bestM, 1);
     if model.logL(end) > bestLL
         bestLL = model.logL(end);
         hmm = model;
