@@ -1,39 +1,65 @@
 function model = fit_poisson_HMM(dataMat, binSize, numStates, numReps)
 % FIT_POISSON_HMM Fit a Poisson Hidden Markov Model (HMM) to spike train data.
-% This function performs multiple EM initializations and returns the best-fit model.
+% 
 % Inputs:
-%   dataMat: [T x N] binary or count matrix of spikes (e.g., in ms or rebinned)
-%   numStates: number of HMM hidden states to fit
-%   numReps: number of random initializations of EM to run
+%   dataMat   : [T x N] spike count matrix; rows = time bins, columns = neurons
+%   binSize   : bin size in seconds (e.g., 0.05 for 50 ms bins)
+%   numStates : number of HMM hidden states to fit
+%   numReps   : number of EM initializations (repetitions)
+%
 % Output:
 %   model: struct containing estimated HMM parameters and decoded states
+%       .pi0     : 1 x numStates vector, initial state probabilities
+%       .A       : numStates x numStates transition matrix
+%       .lambda  : numStates x N matrix of firing rates (Hz) per state and neuron
+%       .logL    : EM log-likelihood trajectory
+%       .gamma   : posterior probabilities of each state per time bin
+%       .stateSeq: most likely sequence of states (Viterbi path)
 
 [T, N] = size(dataMat);
-dt =binSize;
-dataMat = double(dataMat);  % Convert to double to avoid integer multiplication issues
+dt = binSize;  % bin size in seconds
 
 bestLL = -inf;
 model = struct();  % Ensure model is initialized
 modelFound = false;
+validLL = -Inf(numReps, 1);
+validModels = cell(numReps, 1);
 
 for rep = 1:numReps
     % Random initialization of model parameters
-    pi0 = normalize(rand(1, numStates), 2);
-    A = normalize(rand(numStates, numStates), 2);
-    lambda = rand(numStates, N) * max(mean(dataMat)) / dt;
+    pi0 = normalize_to_1(rand(1, numStates), 2);
+    A = normalize_to_1(rand(numStates, numStates), 2);
+
+    % Manual forced distinct lambda initialization for testing
+    lambda = zeros(numStates, N);
+    % lambda(1,:) = 10 * [1 0.5 0.2 0.1 1];
+    % lambda(2,:) = 10 * [0.2 2.5 0.2 1.5 0.4];
+    % lambda(3,:) = 10 * [0.8 0.9 4.0 0.3 0.1];
+    lambda = lambda(1:numStates, :);  % Clamp in case numStates < 3
 
     try
         % Run EM algorithm for this initialization
         [pi0_new, A_new, lambda_new, ll] = emPoissonHMM(dataMat, pi0, A, lambda, dt);
 
+        % Ensure model is valid before accepting
+        if any(~isfinite(A_new(:))) || any(~isfinite(lambda_new(:))) || ...
+           any(lambda_new(:) < 0) || any(isnan(pi0_new)) || ...
+           any(~isfinite(ll)) || any(imag(ll) ~= 0)
+
+            warning('Rep %d produced invalid model parameters. Skipping.', rep);
+            continue;
+        end
+
         % Check and store best model
-        if all(isfinite(ll)) && ll(end) > bestLL
-            bestLL = ll(end);
-            model.pi0 = pi0_new;
-            model.A = A_new;
-            model.lambda = lambda_new;
-            model.logL = ll;
-            modelFound = true;
+        if all(isfinite(ll)) && isreal(ll(end))
+            validModels{rep}.pi0 = pi0_new;
+            validModels{rep}.A = A_new;
+            validModels{rep}.lambda = lambda_new;
+            validModels{rep}.logL = ll;
+            validLL(rep) = ll(end);
+        else
+            warning('Rep %d failed: logL not finite or complex.', rep);
+            validLL(rep) = -Inf;
         end
     catch
         warning('EM failed on rep %d — skipping.', rep);
@@ -41,160 +67,17 @@ for rep = 1:numReps
     end
 end
 
-if ~modelFound
-    warning('All EM initializations failed to produce a valid model. Returning empty model.');
+[~, bestIdx] = max(validLL);
+if isfinite(validLL(bestIdx))
+    model = validModels{bestIdx};
+    modelFound = true;
+else
+    warning('All EM initializations failed. Returning empty model.');
     model = struct();
-    return;
 end
 
 % Decode the state sequence using Viterbi and posterior probabilities
 [gamma, states] = decodeHMM(dataMat, model.pi0, model.A, model.lambda, dt);
 model.gamma = gamma;
 model.stateSeq = states;
-end
-
-function [pi0, A, lambda, logL] = emPoissonHMM(data, pi0, A, lambda, dt)
-% EMPOISSONHMM Run the Expectation-Maximization (EM) algorithm for Poisson HMM.
-% Inputs: initialized HMM parameters
-% Outputs: updated parameters and log-likelihood per iteration
-
-maxIter = 100;
-tol = 1e-4;
-[T, N] = size(data);
-M = size(A, 1);
-logL = zeros(maxIter,1);
-
-for iter = 1:maxIter
-    [alpha, beta, gamma, xi, logP] = fwdBwdPoisson(data, pi0, A, lambda, dt);
-    logL(iter) = logP;
-
-    % M-step updates
-    pi0 = gamma(1,:);
-    A = normalize(squeeze(sum(xi,1)), 2);  % transition matrix
-
-    % Update emission rates for each state with safety clamps
-    for m = 1:M
-        weightedSum = sum(data .* gamma(:,m), 1);
-        totalWeight = sum(gamma(:,m));
-        ratio = weightedSum / totalWeight;
-
-        % Clamp invalid values
-        ratio(ratio >= 1) = 1 - 1e-6;
-        ratio(ratio <= 0) = 1e-6;
-
-        % Optional warning for debugging
-        if any(ratio >= 1 | ratio <= 0)
-            warning('Clamped λ estimate in EM step: possible instability at state %d', m);
-        end
-
-        lambda(m,:) = -log(1 - ratio) / dt;
-    end
-
-    % Clean up any numeric artifacts
-    lambda(~isfinite(lambda)) = 1;
-    lambda(lambda < 0) = 1;
-
-    % Check for convergence
-    if iter > 1 && abs(logL(iter) - logL(iter-1)) < tol
-        logL = logL(1:iter);
-        break;
-    end
-end
-end
-
-% function [alpha, beta, gamma, xi, logP] = fwdBwdPoisson(data, pi0, A, lambda, dt)
-% % FWDBWDPOISSON Run forward-backward algorithm for Poisson HMM.
-% % Returns posterior probabilities and log-likelihood.
-% 
-% [T, N] = size(data);
-% M = size(lambda,1);
-% data = double(data);
-% logLambda = log(1 - exp(-lambda * dt));
-% 
-% % Compute log-emission probabilities
-% logB = zeros(T, M);
-% for m = 1:M
-%     logB(:,m) = sum(data .* logLambda(m,:), 2);
-% end
-% 
-% % Forward pass
-% alpha = zeros(T, M);
-% scale = zeros(T,1);
-% alpha(1,:) = pi0 .* exp(logB(1,:));
-% scale(1) = sum(alpha(1,:));
-% alpha(1,:) = alpha(1,:) / scale(1);
-% 
-% for t = 2:T
-%     alpha_prev = reshape(alpha(t - 1, :), 1, []);
-%     alpha(t,:) = (alpha_prev * A) .* exp(logB(t,:));
-%     scale(t) = sum(alpha(t,:));
-%     alpha(t,:) = alpha(t,:) / scale(t);
-% end
-% 
-% % Backward pass
-% beta = zeros(T, M);
-% beta(T,:) = ones(1,M) / scale(T);
-% for t = T-1:-1:1
-%     beta(t,:) = (beta(t+1,:) .* exp(logB(t+1,:))) * A';
-%     beta(t,:) = beta(t,:) / scale(t);
-% end
-% 
-% % Compute posteriors
-% gamma = alpha .* beta;
-% gamma = normalize(gamma, 2);
-% 
-% % Compute pairwise state transition probabilities (xi)
-% xi = zeros(T-1, M, M);
-% for t = 1:T-1
-%     prob = (alpha(t,:)' .* A) .* (exp(logB(t+1,:)) .* beta(t+1,:));
-%     xi(t,:,:) = prob / sum(prob(:));
-% end
-% 
-% % Total log-likelihood
-% logP = sum(log(scale));
-% end
-
-function [gamma, states] = decodeHMM(data, pi0, A, lambda, dt)
-% DECODEHMM Decode most likely state sequence and posterior state probabilities.
-
-[T, N] = size(data);
-M = size(lambda,1);
-logLambda = log(1 - exp(-lambda * dt));
-
-% Compute log-emission probabilities
-logB = zeros(T, M);
-for m = 1:M
-    logB(:,m) = sum(data .* logLambda(m,:), 2);
-end
-
-% Viterbi algorithm for most likely state sequence
-delta = zeros(T, M);
-psi = zeros(T, M);
-delta(1,:) = log(pi0 + eps) + logB(1,:);
-for t = 2:T
-    for m = 1:M
-        [delta(t,m), psi(t,m)] = max(delta(t-1,:) + log(A(:,m)' + eps));
-    end
-    delta(t,:) = delta(t,:) + logB(t,:);
-end
-
-% Backtrace
-states = zeros(T,1);
-[~, states(T)] = max(delta(T,:));
-for t = T-1:-1:1
-    states(t) = psi(t+1, states(t+1));
-end
-
-% Posterior probabilities via forward-backward
-[~, ~, gamma, ~, ~] = fwdBwdPoisson(data, pi0, A, lambda, dt);
-end
-
-function out = normalize(mat, dim)
-% NORMALIZE Normalize matrix along given dimension
-if nargin < 2
-    dim = 1;
-end
-sums = sum(mat, dim);
-out = bsxfun(@rdivide, mat, sums);
-out(isnan(out)) = 1 / size(mat,dim);
 end
