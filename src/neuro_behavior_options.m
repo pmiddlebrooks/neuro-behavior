@@ -31,7 +31,7 @@ opts.folds = 10; %nr of folds for cross-validation
 
 
 % Use 30 minutes of data, because 1) neurons move around and 2) animals change beahvioral states
-opts.collectStart = 5 * 60; % (sec) When to start collecting the data
+opts.collectStart = 0 * 60; % (sec) When to start collecting the data
 opts.collectFor = 45 * 60; % (sec) How long to collect data
 
 %  Balance the data (take nTrial of each behavior)
