@@ -18,7 +18,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 2*60 * 60; % seconds
+opts.collectFor = 1*60 * 60; % seconds
 
 paths = get_paths;
 
@@ -39,10 +39,10 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 %% Naturalistic data
 opts = neuro_behavior_options;
 opts.frameSize = .001;
-opts.minFiringRate = .1;
+opts.minFiringRate = .05;
 getDataType = 'spikes';
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 2 * 60 * 60;
+opts.collectFor = 1 * 60 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
@@ -60,6 +60,10 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 idList = {idM23R, idM56R, idDSR, idVSR};
+
+
+
+
 
 
 
@@ -87,6 +91,8 @@ block2First = find(trialIdx2, 1);
 block1End = dataR.R(block1Last, 2);
 block2Start = dataR.R(block2First, 1);
 
+shuffledData1 = shift_shuffle_neurons(dataMatR(1:block1End,:));
+shuffledData2 = shift_shuffle_neurons(dataMatR(block2First:end,:));
 
 for a = 1 : length(areas)
     fprintf('Area %s\n', areas{a})
@@ -105,8 +111,10 @@ optBinSize(a) = .05;
     [varphi, varNoise2(a)] = myYuleWalker3(popActivity2, pOrder);
     d22(a) =getFixedPointDistance2(pOrder, critType, varphi);
 
-    popActivity1R = popActivity1(randperm(length(popActivity1)));
-    popActivity2R = popActivity2(randperm(length(popActivity2)));
+    % popActivity1R = popActivity1(randperm(length(popActivity1)));
+    % popActivity2R = popActivity2(randperm(length(popActivity2)));
+    popActivity1R = sum(shuffledData1(:, aID), 2);
+    popActivity2R = sum(shuffledData2(:, aID), 2);
 
     [varphi, varNoise1R(a)] = myYuleWalker3(popActivity1R, pOrder);
     d21R(a) =getFixedPointDistance2(pOrder, critType, varphi);
@@ -124,6 +132,7 @@ critType = 2;
 [optBinSize, d2N, d2NR, varNoiseN, varNoiseNR] = ...
     deal(nan(length(areas), 1));
 
+shuffledData = shift_shuffle_neurons(dataMat);
 
 for a = 1 : length(areas)
     fprintf('Area %s\n', areas{a})
@@ -133,27 +142,22 @@ for a = 1 : length(areas)
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
 optBinSize(a) = .05;
     popActivityN = neural_matrix_ms_to_frames(sum(dataMat(:, aID), 2), optBinSize(a));
-    % popActivity2 = neural_matrix_ms_to_frames(sum(dataMat(block2First:end, aID), 2), optBinSize(a));
 
     [varphi, varNoiseN(a)] = myYuleWalker3(popActivityN, pOrder);
     d2N(a) =getFixedPointDistance2(pOrder, critType, varphi);
-    % [varphi, varNoise] = myYuleWalker3(popActivity2, pOrder);
-    % d22(a) =getFixedPointDistance2(pOrder, critType, varphi);
 
-    popActivity1R = popActivityN(randperm(length(popActivityN)));
-    % popActivity2R = popActivity2(randperm(length(popActivity2)));
+    % popActivityR = popActivityN(randperm(length(popActivityN)));
+    popActivityR = sum(shuffledData(:, aID), 2);
 
-    [varphi, varNoiseNR(a)] = myYuleWalker3(popActivity1R, pOrder);
+    [varphi, varNoiseNR(a)] = myYuleWalker3(popActivityR, pOrder);
     d2NR(a) =getFixedPointDistance2(pOrder, critType, varphi);
-    % [varphi, varNoise] = myYuleWalker3(popActivity2R, pOrder);
-    % d22R(a) =getFixedPointDistance2(pOrder, critType, varphi);
 
 end
 
 %%
 figure(45); clf
 plot(1:4, d21, 'ok', 'LineWidth', 2)
-hold all
+hold on
 plot(1:4, d22, 'or', 'LineWidth', 2)
 plot(1:4, d2N, 'ob', 'LineWidth', 2)
 plot(1:4, d21R, '*k')
@@ -205,8 +209,8 @@ pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;
 
 % Define sliding window parameters
-windowSize = 2 * 60; % 10 minutes (in seconds)
-stepSize = 1 * 60; % 2 minutes (in seconds)
+windowSize = 1 * 60; % 10 minutes (in seconds)
+stepSize = 2; %1 * 60; % 2 minutes (in seconds)
 Fs = 1000; % dataR is in ms
 
 % Convert window and step size to samples
@@ -229,12 +233,14 @@ block2First = find(trialIdx2, 1);
 block2Start = dataR.R(block2First, 1);
 block2StartMin = block2Start / Fs / 60;
 
+shuffledData = shift_shuffle_neurons(dataMatR);
+
 for a = 1 : length(areas)
     fprintf('Area %s\n', areas{a})
     tic
     aID = idList{a};
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
-% optBinSize(a) = .05;
+optBinSize(a) = .05;
 
 for w = 1:numWindows
     startIdx = (w - 1) * stepSamples + 1;
@@ -246,7 +252,9 @@ for w = 1:numWindows
     [varphi, varNoise(w,a)] = myYuleWalker3(popActivity, pOrder);
     d2(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
-    popActivityR = popActivity(randperm(length(popActivity)));
+    % popActivityR = popActivity(randperm(length(popActivity)));
+    popActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
+
 
     [varphi, varNoiseR(w,a)] = myYuleWalker3(popActivityR, pOrder);
     d2R(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
@@ -255,16 +263,16 @@ end
 toc
 end
 % [d21 d21R d22 d22R]
-%%
-figure(51); clf; hold on;
+%
+figure(52); clf; hold on;
 plot(startMin, d2(:,1), 'ok', 'lineWidth', 2);
 plot(startMin, d2(:,2), 'ob', 'lineWidth', 2);
 plot(startMin, d2(:,3), 'or', 'lineWidth', 2);
-plot(startMin, d2(:,4), 'og', 'lineWidth', 2);
+plot(startMin, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
 plot(startMin, d2R(:,1), '*k');
 plot(startMin, d2R(:,2), '*b');
 plot(startMin, d2R(:,3), '*r');
-plot(startMin, d2R(:,4), '*g');
+plot(startMin, d2R(:,4), '*', 'color', [0 .75 0]);
 xline(block2StartMin)
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
@@ -287,8 +295,8 @@ pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;
 
 % Define sliding window parameters
-windowSize = 5 * 60; % 10 minutes (in seconds)
-stepSize = 1 * 60; % 2 minutes (in seconds)
+windowSize = 1 * 60; % 10 minutes (in seconds)
+stepSize = 5; %1 * 60; % 2 minutes (in seconds)
 Fs = 1/opts.frameSize; % dataR is in ms
 
 % Convert window and step size to samples
@@ -306,12 +314,14 @@ optBinSize = nan(length(areas), 1);
     deal(nan(numWindows, length(areas)));
 startMin = nan(numWindows, 1);
 
+shuffledData = shift_shuffle_neurons(dataMat);
+
 for a = 1 : length(areas)
     fprintf('Area %s\n', areas{a})
     tic
     aID = idList{a};
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
-% optBinSize(a) = .05;
+optBinSize(a) = .05;
 
 for w = 1:numWindows
     startIdx = (w - 1) * stepSamples + 1;
@@ -323,7 +333,8 @@ for w = 1:numWindows
     [varphi, varNoise(w,a)] = myYuleWalker3(popActivity, pOrder);
     d2(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
-    popActivityR = popActivity(randperm(length(popActivity)));
+    % popActivityR = popActivity(randperm(length(popActivity)));
+    popActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
 
     [varphi, varNoiseR(w,a)] = myYuleWalker3(popActivityR, pOrder);
     d2R(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
@@ -337,12 +348,11 @@ figure(51); clf; hold on;
 plot(startMin, d2(:,1), 'ok', 'lineWidth', 2);
 plot(startMin, d2(:,2), 'ob', 'lineWidth', 2);
 plot(startMin, d2(:,3), 'or', 'lineWidth', 2);
-plot(startMin, d2(:,4), 'og', 'lineWidth', 2);
+plot(startMin, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
 plot(startMin, d2R(:,1), '*k');
 plot(startMin, d2R(:,2), '*b');
 plot(startMin, d2R(:,3), '*r');
-plot(startMin, d2R(:,4), '*g');
-xline(block2StartMin)
+plot(startMin, d2R(:,4), '*', 'color', [0 .75 0]);
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('Distance to criticality')
@@ -371,3 +381,24 @@ title('Naturalistic')
 
 
 
+function shuffledData = shift_shuffle_neurons(dataMat)
+% shift_shuffle_neurons circularly shifts each neuron's activity by a random 
+% amount between 1 and half the duration of the data.
+% 
+% dataMat: [time x neurons] matrix
+% shuffledData: matrix of the same size with shuffled neuron time courses
+
+[numTimePoints, numNeurons] = size(dataMat);
+maxShift = floor(numTimePoints / 2);
+
+% Initialize output
+shuffledData = zeros(size(dataMat));
+
+for n = 1:numNeurons
+    % Generate random shift between 1 and half the duration
+    shiftAmount = randi([1, maxShift]);
+    
+    % Circularly shift the neuron's time series
+    shuffledData(:, n) = circshift(dataMat(:, n), shiftAmount);
+end
+end
