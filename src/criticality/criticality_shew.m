@@ -19,6 +19,8 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 1*60 * 60; % seconds
+opts.frameSize = .001;
+opts.minFiringRate = .05;
 
 paths = get_paths;
 
@@ -37,12 +39,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 
 %% Naturalistic data
-opts = neuro_behavior_options;
-opts.frameSize = .001;
-opts.minFiringRate = .05;
 getDataType = 'spikes';
-opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 1 * 60 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
@@ -52,6 +49,11 @@ idList = {idM23, idM56, idDS, idVS};
 %% Mark's reach data
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+
+% Get data until 1 sec after the last reach ending.
+cutOff = (dataR.R(end,2) + 1000) / 1000 / opts.frameSize;
+dataMatR = dataMatR(1:cutOff,:);
+
 % Ensure dataMatR is same size as dataMat
 idM23R = find(strcmp(areaLabels, 'M23'));
 idM56R = find(strcmp(areaLabels, 'M56'));
@@ -202,15 +204,16 @@ ylabel('Distance to criticality')
 
 
 %%   ====================================     Mark Task: Sliding window       ==============================================
-
+% Load the data above (Mark's data)
 
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;
+binSet = .05;
 
 % Define sliding window parameters
-windowSize = 1 * 60; % 10 minutes (in seconds)
-stepSize = 2; %1 * 60; % 2 minutes (in seconds)
+windowSize = 5 * 60; % (in seconds)
+stepSize = 1; %1 * 60; % (in seconds)
 Fs = 1000; % dataR is in ms
 
 % Convert window and step size to samples
@@ -226,13 +229,20 @@ numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
 optBinSize = nan(length(areas), 1);
 [d2,d2R, varNoise, varNoiseR] = ...
     deal(nan(numWindows, length(areas)));
-startMin = nan(numWindows, 1);
+startS = nan(numWindows, 1);
 
 trialIdx2 = ismember(dataR.block(:, 3), 3:4);
 block2First = find(trialIdx2, 1);
-block2Start = dataR.R(block2First, 1);
-block2StartMin = block2Start / Fs / 60;
+block2Start = dataR.R(block2First, 1) / Fs;
 
+       corrVals = [2 4];
+       errVals = [1 3];
+       corrIdx = ismember(dataR.block(:,3), corrVals);
+       errIdx = ismember(dataR.block(:,3), errVals);
+reachCorr = dataR.R(corrIdx, 1) / Fs;
+reachErr = dataR.R(errIdx, 1) / Fs;
+
+% Shuffle data for comparison
 shuffledData = shift_shuffle_neurons(dataMatR);
 
 for a = 1 : length(areas)
@@ -240,13 +250,13 @@ for a = 1 : length(areas)
     tic
     aID = idList{a};
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
-optBinSize(a) = .05;
+optBinSize(a) = binSet;
 
 for w = 1:numWindows
     startIdx = (w - 1) * stepSamples + 1;
     endIdx = startIdx + winSamples - 1;
 
-    startMin(w) = startIdx / 1000 / 60;
+    startS(w) = (startIdx + round(winSamples/2)) / Fs;  % center of window
     popActivity = neural_matrix_ms_to_frames(sum(dataMatR(startIdx:endIdx, aID), 2), optBinSize(a));
 
     [varphi, varNoise(w,a)] = myYuleWalker3(popActivity, pOrder);
@@ -264,21 +274,29 @@ toc
 end
 % [d21 d21R d22 d22R]
 %
-figure(52); clf; hold on;
-plot(startMin, d2(:,1), 'ok', 'lineWidth', 2);
-plot(startMin, d2(:,2), 'ob', 'lineWidth', 2);
-plot(startMin, d2(:,3), 'or', 'lineWidth', 2);
-plot(startMin, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
-plot(startMin, d2R(:,1), '*k');
-plot(startMin, d2R(:,2), '*b');
-plot(startMin, d2R(:,3), '*r');
-plot(startMin, d2R(:,4), '*', 'color', [0 .75 0]);
-xline(block2StartMin)
+figure(54); clf; hold on;
+plot(startS, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
+plot(startS, d2(:,1), 'ok', 'lineWidth', 2);
+plot(startS, d2(:,2), 'ob', 'lineWidth', 2);
+plot(startS, d2(:,3), 'or', 'lineWidth', 2);
+% plot(startS, d2(:,1), '-k', 'lineWidth', 2);
+% plot(startS, d2(:,2), '-b', 'lineWidth', 2);
+% plot(startS, d2(:,3), '-r', 'lineWidth', 2);
+% plot(startS, d2(:,4), '-', 'color', [0 .75 0], 'lineWidth', 2);
+plot(startS, d2R(:,1), '*k');
+plot(startS, d2R(:,2), '*b');
+plot(startS, d2R(:,3), '*r');
+plot(startS, d2R(:,4), '*', 'color', [0 .75 0]);
+xline(block2Start, 'linewidth', 2)
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('Distance to criticality')
 
-
+h1 = plot(reachCorr, 0, '.', 'color', [0 .5 0], 'MarkerSize', 30);
+h2 = plot(reachErr, -.02, '.', 'color', [.3 .3 .3], 'MarkerSize', 30);
+set(h1, 'HandleVisibility', 'off');
+set(h2, 'HandleVisibility', 'off');
+title('Reach Data 5 min w 1 s steps')
 
 
 
@@ -293,11 +311,12 @@ ylabel('Distance to criticality')
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;
+binSet = .05; 
 
 % Define sliding window parameters
-windowSize = 1 * 60; % 10 minutes (in seconds)
-stepSize = 5; %1 * 60; % 2 minutes (in seconds)
-Fs = 1/opts.frameSize; % dataR is in ms
+windowSize = 1 * 60; % (in seconds)
+stepSize = 1; %1 * 60; %  (in seconds)
+Fs = 1/opts.frameSize; % data is in ms
 
 % Convert window and step size to samples
 winSamples = round(windowSize * Fs);
@@ -312,7 +331,7 @@ numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
 optBinSize = nan(length(areas), 1);
 [d2,d2R, varNoise, varNoiseR] = ...
     deal(nan(numWindows, length(areas)));
-startMin = nan(numWindows, 1);
+startS = nan(numWindows, 1);
 
 shuffledData = shift_shuffle_neurons(dataMat);
 
@@ -321,13 +340,13 @@ for a = 1 : length(areas)
     tic
     aID = idList{a};
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
-optBinSize(a) = .05;
+optBinSize(a) = binSet;
 
 for w = 1:numWindows
     startIdx = (w - 1) * stepSamples + 1;
     endIdx = startIdx + winSamples - 1;
 
-    startMin(w) = startIdx / 1000 / 60;
+    startS(w) = (startIdx + round(winSamples/2)) / Fs / 60;  % center of window
     popActivity = neural_matrix_ms_to_frames(sum(dataMat(startIdx:endIdx, aID), 2), optBinSize(a));
 
     [varphi, varNoise(w,a)] = myYuleWalker3(popActivity, pOrder);
@@ -343,16 +362,16 @@ end
 toc
 end
 % [d21 d21R d22 d22R]
-%
+%%
 figure(51); clf; hold on;
-plot(startMin, d2(:,1), 'ok', 'lineWidth', 2);
-plot(startMin, d2(:,2), 'ob', 'lineWidth', 2);
-plot(startMin, d2(:,3), 'or', 'lineWidth', 2);
-plot(startMin, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
-plot(startMin, d2R(:,1), '*k');
-plot(startMin, d2R(:,2), '*b');
-plot(startMin, d2R(:,3), '*r');
-plot(startMin, d2R(:,4), '*', 'color', [0 .75 0]);
+plot(startS, d2(:,1), 'ok', 'lineWidth', 2);
+plot(startS, d2(:,2), 'ob', 'lineWidth', 2);
+plot(startS, d2(:,3), 'or', 'lineWidth', 2);
+plot(startS, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
+plot(startS, d2R(:,1), '*k');
+plot(startS, d2R(:,2), '*b');
+plot(startS, d2R(:,3), '*r');
+plot(startS, d2R(:,4), '*', 'color', [0 .75 0]);
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('Distance to criticality')
