@@ -207,12 +207,12 @@ ylabel('Distance to criticality')
 % Load the data above (Mark's data)
 
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
-pOrder = 10; % Order parameter for the autoregressor model
+pOrder = 20; % Order parameter for the autoregressor model
 critType = 2;
 binSet = .05;
 
 % Define sliding window parameters
-windowSize = 5 * 60; % (in seconds)
+windowSize = 1 * 60; % (in seconds)
 stepSize = 1; %1 * 60; % (in seconds)
 Fs = 1000; % dataR is in ms
 
@@ -300,7 +300,8 @@ title('Reach Data 5 min w 1 s steps')
 
 
 
-
+%%
+maxEig = computeMaxEigenvalue(varphi)
 
 
 
@@ -420,4 +421,27 @@ for n = 1:numNeurons
     % Circularly shift the neuron's time series
     shuffledData(:, n) = circshift(dataMat(:, n), shiftAmount);
 end
+end
+
+
+
+function maxEig = computeMaxEigenvalue(varphi)
+% Computes the maximum eigenvalue of the AR model's companion matrix
+% INPUT:
+%   varphi - AR model coefficients (vector of length equal to model order)
+% OUTPUT:
+%   maxEig - maximum (absolute) eigenvalue of the companion matrix
+
+    p = length(varphi);  % AR model order
+
+    % Construct the companion matrix
+    C = zeros(p);
+    C(1, :) = varphi(:)';  % First row is the AR coefficients
+    C(2:end, 1:end-1) = eye(p-1);  % Sub-diagonal identity matrix
+
+    % Compute eigenvalues
+    eigVals = eig(C);
+
+    % Return the maximum absolute eigenvalue (spectral radius)
+    maxEig = max(abs(eigVals));
 end
