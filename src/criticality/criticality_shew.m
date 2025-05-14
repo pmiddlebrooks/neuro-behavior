@@ -209,10 +209,10 @@ ylabel('Distance to criticality')
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;
-binSet = .05;
+binSize = .03;
 
 % Define sliding window parameters
-windowSize = 5 * 60; % (in seconds)
+windowSize = 1 * 60; % (in seconds)
 stepSize = 1; %1 * 60; % (in seconds)
 Fs = 1000; % dataR is in ms
 
@@ -250,7 +250,7 @@ for a = 1 : length(areas)
     tic
     aID = idList{a};
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
-optBinSize(a) = binSet;
+optBinSize(a) = binSize;
 
 for w = 1:numWindows
     startIdx = (w - 1) * stepSamples + 1;
@@ -311,7 +311,7 @@ title('Reach Data 5 min w 1 s steps')
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;
-binSet = .05; 
+binSize = .05; 
 
 % Define sliding window parameters
 windowSize = 1 * 60; % (in seconds)
@@ -340,7 +340,7 @@ for a = 1 : length(areas)
     tic
     aID = idList{a};
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
-optBinSize(a) = binSet;
+optBinSize(a) = binSize;
 
 for w = 1:numWindows
     startIdx = (w - 1) * stepSamples + 1;
