@@ -230,6 +230,7 @@ optBinSize = nan(length(areas), 1);
 [d2,d2R, varNoise, varNoiseR] = ...
     deal(nan(numWindows, length(areas)));
 startS = nan(numWindows, 1);
+popActivity = cell(4,1);
 
 trialIdx2 = ismember(dataR.block(:, 3), 3:4);
 block2First = find(trialIdx2, 1);
@@ -252,56 +253,81 @@ for a = 1 : length(areas)
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
 optBinSize(a) = binSize;
 
+popActivity{a} = neural_matrix_ms_to_frames(sum(dataMatR(:, aID), 2), optBinSize(a));
 for w = 1:numWindows
     startIdx = (w - 1) * stepSamples + 1;
     endIdx = startIdx + winSamples - 1;
 
     startS(w) = (startIdx + round(winSamples/2)) / Fs;  % center of window
-    popActivity = neural_matrix_ms_to_frames(sum(dataMatR(startIdx:endIdx, aID), 2), optBinSize(a));
+    wPopActivity = neural_matrix_ms_to_frames(sum(dataMatR(startIdx:endIdx, aID), 2), optBinSize(a));
 
-    [varphi, varNoise(w,a)] = myYuleWalker3(popActivity, pOrder);
+    [varphi, varNoise(w,a)] = myYuleWalker3(wPopActivity, pOrder);
     d2(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
     % popActivityR = popActivity(randperm(length(popActivity)));
-    popActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
+    wPopActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
 
 
-    [varphi, varNoiseR(w,a)] = myYuleWalker3(popActivityR, pOrder);
+    [varphi, varNoiseR(w,a)] = myYuleWalker3(wPopActivityR, pOrder);
     d2R(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
 end
 toc
 end
 % [d21 d21R d22 d22R]
-%
+%%
+mins = startS/60;
 figure(54); clf; hold on;
-plot(startS, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
-plot(startS, d2(:,1), 'ok', 'lineWidth', 2);
-plot(startS, d2(:,2), 'ob', 'lineWidth', 2);
-plot(startS, d2(:,3), 'or', 'lineWidth', 2);
-% plot(startS, d2(:,1), '-k', 'lineWidth', 2);
-% plot(startS, d2(:,2), '-b', 'lineWidth', 2);
-% plot(startS, d2(:,3), '-r', 'lineWidth', 2);
-% plot(startS, d2(:,4), '-', 'color', [0 .75 0], 'lineWidth', 2);
-plot(startS, d2R(:,1), '*k');
-plot(startS, d2R(:,2), '*b');
-plot(startS, d2R(:,3), '*r');
-plot(startS, d2R(:,4), '*', 'color', [0 .75 0]);
-xline(block2Start, 'linewidth', 2)
+plot(mins, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
+plot(mins, d2(:,1), 'ok', 'lineWidth', 2);
+plot(mins, d2(:,2), 'ob', 'lineWidth', 2);
+plot(mins, d2(:,3), 'or', 'lineWidth', 2);
+% plot(mins, d2(:,1), '-k', 'lineWidth', 2);
+% plot(mins, d2(:,2), '-b', 'lineWidth', 2);
+% plot(mins, d2(:,3), '-r', 'lineWidth', 2);
+% plot(mins, d2(:,4), '-', 'color', [0 .75 0], 'lineWidth', 2);
+plot(mins, d2R(:,1), '*k');
+plot(mins, d2R(:,2), '*b');
+plot(mins, d2R(:,3), '*r');
+plot(mins, d2R(:,4), '*', 'color', [0 .75 0]);
+xline(block2Start/60, 'linewidth', 2)
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('Distance to criticality')
 
-h1 = plot(reachCorr, 0, '.', 'color', [0 .5 0], 'MarkerSize', 30);
-h2 = plot(reachErr, -.02, '.', 'color', [.3 .3 .3], 'MarkerSize', 30);
+h1 = plot(reachCorr/60, 0, '.', 'color', [0 .5 0], 'MarkerSize', 30);
+h2 = plot(reachErr/60, -.02, '.', 'color', [.3 .3 .3], 'MarkerSize', 30);
 set(h1, 'HandleVisibility', 'off');
 set(h2, 'HandleVisibility', 'off');
 title('Reach Data 5 min w 1 s steps')
 
-
+%%
+areaIdx = 2;
+subplot(2,1,1)
+plot(startS/60, d2(:,areaIdx), 'or', 'lineWidth', 2);
+xlim([0 45])
+subplot(2,1,2)
+popSmooth = movmean(popActivity{areaIdx}, 101);
+popMin = (1:length(popSmooth)) * optBinSize(areaIdx) / 60;
+plot(popMin, popSmooth);
+xlim([0 45])
 
 %%
 maxEig = computeMaxEigenvalue(varphi)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
