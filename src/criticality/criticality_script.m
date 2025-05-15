@@ -496,13 +496,13 @@ uniqueAv = length(unique(avalancheLengths))
 kappa = compute_kappa(avalancheSizes)
 %%
 
-        % dataMatT = neural_matrix_ms_to_frames(transMat, optBinSize);
-        asdfMat = rastertoasdf2(binnedCounts', binSize*1000, 'CBModel', 'Spikes', 'trans');
-        Av = avprops(asdfMat, 'ratio', 'fingerprint');
-        br = Av.branchingRatio;
-        brHist = histcounts(br(br>0), edges, 'Normalization','pdf');
+% dataMatT = neural_matrix_ms_to_frames(transMat, optBinSize);
+asdfMat = rastertoasdf2(binnedCounts', binSize*1000, 'CBModel', 'Spikes', 'trans');
+Av = avprops(asdfMat, 'ratio', 'fingerprint');
+br = Av.branchingRatio;
+brHist = histcounts(br(br>0), edges, 'Normalization','pdf');
 
-        [tau, ~, tauC, ~, alpha, ~, paramSD, decades] = avalanche_log(Av, 1)
+[tau, ~, tauC, ~, alpha, ~, paramSD, decades] = avalanche_log(Av, 1)
 
 
 
@@ -1156,17 +1156,17 @@ for a = 1 : length(areas)
     % endEpochs = round(sort([eventTimes.ERtimes, eventTimes.SOLtimes])/optBinSize(a)/1000)';
     % % get rid of trials with negative epochs
     % goodTrials = find((endEpochs - rStarts) > 1);
-    % 
+    %
     % % initialize data mats: start with a row of zeros so first spike counts as
     % % avalanche
     % baseMat = zeros(1, size(dataMatReach, 2));
     % reachMat = zeros(1, size(dataMatReach, 2));
     % for i = 1 : length(goodTrials)
     %     iTrial = goodTrials(i);
-    % 
+    %
     %     reachWindow = rStarts(iTrial) - floor(preTime/optBinSize(a)) : endEpochs(iTrial);
     %     baseWindow = reachWindow - length(reachWindow);
-    % 
+    %
     %     % baseline matrix
     %     % iBaseMat = dataMatReach(rStarts(iTrial) + baseWindow, :);
     %     iBaseMat = dataMatReach(baseWindow, :);
@@ -1175,7 +1175,7 @@ for a = 1 : length(areas)
     %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
     %         baseMat = [baseMat; iBaseMat(zeroBins(1) : zeroBins(end)-1, :)];
     %     end
-    % 
+    %
     %     % reach data matrix
     %     % iReachMat = dataMatReach(rStarts(iTrial) + reachWindow, :);
     %     iReachMat = dataMatReach(reachWindow, :);
@@ -1184,7 +1184,7 @@ for a = 1 : length(areas)
     %     if length(zeroBins) > 1 && any(diff(zeroBins)>1)
     %         reachMat = [reachMat; iReachMat(zeroBins(1) : zeroBins(end)-1, :)];
     %     end
-    % 
+    %
     % end
 
 
@@ -1274,10 +1274,10 @@ for a = 1 : length(areas)
     brStepwise(a,1) = stepwise_branching_ratio(baseMat);
     [tau(a, 1), pSz(a, 1), tauC(a, 1), pSzC(a, 1), alpha(a, 1), pDr(a, 1), ...
         paramSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), plotFlag);
-kappa(a,1) = compute_kappa(Av(a,1).size);
-dcc(a,1) = distance_to_criticality(tau(a,1), alpha(a,1), paramSD(a,1));
-result = branching_ratio_mr_estimation(baseMat);
-brMr(a,1) = result.branching_ratio;
+    kappa(a,1) = compute_kappa(Av(a,1).size);
+    dcc(a,1) = distance_to_criticality(tau(a,1), alpha(a,1), paramSD(a,1));
+    result = branching_ratio_mr_estimation(baseMat);
+    brMr(a,1) = result.branching_ratio;
 
     %
     asdfMat = rastertoasdf2(reachMat', optBinSize(a)*1000, 'CBModel', 'Spikes', 'Reach');
@@ -1287,11 +1287,11 @@ brMr(a,1) = result.branching_ratio;
     brWeighted(a,2) = weighted_branching_ratio(reachMat);
     brStepwise(a,2) = stepwise_branching_ratio(reachMat);
     [tau(a, 2), pSz(a, 2), tauC(a, 2), pSzC(a, 2), alpha(a, 2), pDr(a, 2), ...
-paramSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
-kappa(a,2) = compute_kappa(Av(a,2).size);
-dcc(a,2) = distance_to_criticality(tau(a,2), alpha(a,2), paramSD(a,2));
-result = branching_ratio_mr_estimation(reachMat);
-brMr(a,2) = result.branching_ratio;
+        paramSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
+    kappa(a,2) = compute_kappa(Av(a,2).size);
+    dcc(a,2) = distance_to_criticality(tau(a,2), alpha(a,2), paramSD(a,2));
+    result = branching_ratio_mr_estimation(reachMat);
+    brMr(a,2) = result.branching_ratio;
 end
 
 %%
@@ -1508,11 +1508,11 @@ for a = 2 : length(areas)
             [iTau(i), ~, iTauC(i), ~, iAlpha(i), ~, iParamSD(i), iDecades(i)] = avalanche_log(Av, 0);
 
             iKappa(i) = compute_kappa(Av.size);
-iDcc(i) = distance_to_criticality(iTauC(i), iAlpha(i), iParamSD(i));
-result = branching_ratio_mr_estimation(dataMatNat(iIdx + transWindow + 1, :));
-iBrMr(i) = result.branching_ratio;
+            iDcc(i) = distance_to_criticality(iTauC(i), iAlpha(i), iParamSD(i));
+            result = branching_ratio_mr_estimation(dataMatNat(iIdx + transWindow + 1, :));
+            iBrMr(i) = result.branching_ratio;
 
-        fprintf('\t%s\t %d of %d: %.3f  finished \n', areas{a}, i, numSteps, i/numSteps)
+            fprintf('\t%s\t %d of %d: %.3f  finished \n', areas{a}, i, numSteps, i/numSteps)
 
         end
 
@@ -1527,8 +1527,8 @@ iBrMr(i) = result.branching_ratio;
     decades{a} = iDecades;
 
     kappa{a} = iKappa;
-dcc{a} = iDcc;
-brMr{a} = iBrMr;
+    dcc{a} = iDcc;
+    brMr{a} = iBrMr;
 
 end
 % delete(poolID)
@@ -1631,14 +1631,14 @@ getDataType = 'kinematics';
 % kinData = load_data(opts, getDataType);
 kinData = load_data(opts, getDataType);
 
-                [coeff, score, ~, ~, explained, mu] = pca(kinData);
-                forDim = find(cumsum(explained) > 30, 1);
-                forDim = max(3, forDim);
-                forDim = min(6, forDim);
-                nDim = 1:forDim;
-                kinPCA = score(:,nDim) * coeff(:,nDim)' + mu;
+[coeff, score, ~, ~, explained, mu] = pca(kinData);
+forDim = find(cumsum(explained) > 30, 1);
+forDim = max(3, forDim);
+forDim = min(6, forDim);
+nDim = 1:forDim;
+kinPCA = score(:,nDim) * coeff(:,nDim)' + mu;
 
-                for i = 1:size(kinData, 2)
+for i = 1:size(kinData, 2)
     alpha(i) = compute_DFA(kinData(:, i), 0);
 end
 
@@ -1925,9 +1925,9 @@ end
 % function [numAvalanches, uniqueSizes] = avalanches(dataMat, threshold)
 % % thresholds = 1:10; % Define threshold for avalanche detection
 % timeSeries = sum(dataMat, 2);
-% 
+%
 % % timeSeries(timeSeries < threshold) = 0;
-% 
+%
 % inAvalanche = false;
 % currentAvalancheDuration = 0;
 % avalancheLengths = []; % Store avalanche sizes
@@ -1941,7 +1941,7 @@ end
 %         inAvalanche = false;
 %     end
 % end
-% 
+%
 % % Step 2: Check Minimum Avalanche Count and Unique Sizes
 % numAvalanches = length(avalancheLengths);
 % uniqueSizes = length(unique(avalancheLengths));
@@ -1956,44 +1956,44 @@ function [avalancheLengths, avalancheSizes] = avalanches(dataMat, threshold)
 %   uniqueSizes     - number of unique avalanche sizes
 %   avalancheSizes  - vector of avalanche sizes (sum of activity per avalanche)
 
-    % Sum activity across columns to get a time series
-    timeSeries = sum(dataMat, 2);
+% Sum activity across columns to get a time series
+timeSeries = sum(dataMat, 2);
 
-    % Initialize variables
-    inAvalanche = false;
-    avalancheLengths = [];     % For duration (optional)
-    avalancheSizes = [];       % Stores the sum of activity per avalanche
-    startIdx = 0;
+% Initialize variables
+inAvalanche = false;
+avalancheLengths = [];     % For duration (optional)
+avalancheSizes = [];       % Stores the sum of activity per avalanche
+startIdx = 0;
 
-    for t = 1:length(timeSeries)
-        if timeSeries(t) > threshold
-            if ~inAvalanche
-                startIdx = t;  % Mark the beginning of an avalanche
-                inAvalanche = true;
-            end
-        elseif inAvalanche
-            % End of avalanche
-            endIdx = t - 1;
-            duration = endIdx - startIdx + 1;
-            sizeSum = sum(timeSeries(startIdx:endIdx, :)); % Total activity
-            avalancheLengths = [avalancheLengths, duration];
-            avalancheSizes = [avalancheSizes, sizeSum];
-            inAvalanche = false;
+for t = 1:length(timeSeries)
+    if timeSeries(t) > threshold
+        if ~inAvalanche
+            startIdx = t;  % Mark the beginning of an avalanche
+            inAvalanche = true;
         end
-    end
-
-    % Handle if signal ends during an avalanche
-    if inAvalanche
-        endIdx = length(timeSeries);
+    elseif inAvalanche
+        % End of avalanche
+        endIdx = t - 1;
         duration = endIdx - startIdx + 1;
-        sizeSum = sum(sum(dataMat(startIdx:endIdx, :)));
+        sizeSum = sum(timeSeries(startIdx:endIdx, :)); % Total activity
         avalancheLengths = [avalancheLengths, duration];
         avalancheSizes = [avalancheSizes, sizeSum];
+        inAvalanche = false;
     end
+end
 
-    % Summary outputs
-    numAvalanches = length(avalancheSizes);
-    uniqueSizes = length(unique(avalancheSizes));
+% Handle if signal ends during an avalanche
+if inAvalanche
+    endIdx = length(timeSeries);
+    duration = endIdx - startIdx + 1;
+    sizeSum = sum(sum(dataMat(startIdx:endIdx, :)));
+    avalancheLengths = [avalancheLengths, duration];
+    avalancheSizes = [avalancheSizes, sizeSum];
+end
+
+% Summary outputs
+numAvalanches = length(avalancheSizes);
+uniqueSizes = length(unique(avalancheSizes));
 end
 
 
