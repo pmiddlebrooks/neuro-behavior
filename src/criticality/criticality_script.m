@@ -1425,9 +1425,9 @@ pcaFirstFlag = 0;
 thresholdFlag = 1;
 thresholdBinSize = .02;
 
-preTime = 3;
-postTime = .2;
-stepSize = 0.1;       % Step size in seconds
+preTime = 3*60;  %3;
+postTime = 3*60;%.2;
+stepSize = 2*60;%0.1;       % Step size in seconds
 numSteps = floor((size(dataMatR, 1) / 1000 - stepSize) / stepSize) - 1;
 
 % Initialize variables
