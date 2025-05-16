@@ -1429,10 +1429,10 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 pcaFlag = 0;
 pcaFirstFlag = 0;
 thresholdFlag = 1;
-thresholdBinSize = .02;
+thresholdBinSize = .05;
 
-preTime = 3*60;  %3;
-postTime = 3*60;%.2;
+preTime = 2*60;  %3;
+postTime = 2*60;%.2;
 stepSize = 2*60;%0.1;       % Step size in seconds
 numSteps = floor((size(dataMatR, 1) / 1000 - stepSize) / stepSize) - 1;
 
@@ -1480,7 +1480,7 @@ for a = 1 : length(areas)
 
     if thresholdFlag
         dataMatFrames = round(sum(dataMatFrames, 2));
-        threshPct = .08;
+        % threshPct = .08;
         % threshSpikes = threshPct * max(dataMatReach);
         threshSpikes = .75*median(dataMatFrames);
         dataMatFrames(dataMatFrames < threshSpikes) = 0;
@@ -1493,7 +1493,7 @@ for a = 1 : length(areas)
     % % Calculate number of windows to preallocate
     % numWindows = floor((size(dataMatFrames, 1) - 1) / stepRows) + 1;
 
-    [iTau, iTauC, iAlpha, iparamSD, iDecades] = deal(nan(numSteps, 1));
+    [iTau, iTauC, iAlpha, iParamSD, iDecades, iDcc, iKappa, iBrMr] = deal(nan(numSteps, 1));
 
     iBrHist = nan(numSteps, length(centers));
 
@@ -1886,7 +1886,7 @@ pSzC = nan;
 UniqSizes = unique(Av.size);
 Occurances = hist(Av.size,UniqSizes);
 % AllowedSizes = UniqSizes(Occurances >= 20);
-AllowedSizes = UniqSizes(Occurances >= 10);
+AllowedSizes = UniqSizes(Occurances >= 5);
 % AllowedSizes = UniqSizes(Occurances >= 2);
 AllowedSizes(AllowedSizes < 4) = [];
 % AllowedSizes(AllowedSizes < 3) = [];
@@ -1928,31 +1928,6 @@ if optBinSize == 0; optBinSize = .001; end
 
 end
 
-
-% function [numAvalanches, uniqueSizes] = avalanches(dataMat, threshold)
-% % thresholds = 1:10; % Define threshold for avalanche detection
-% timeSeries = sum(dataMat, 2);
-%
-% % timeSeries(timeSeries < threshold) = 0;
-%
-% inAvalanche = false;
-% currentAvalancheDuration = 0;
-% avalancheLengths = []; % Store avalanche sizes
-% for t = 1:length(timeSeries)
-%     if timeSeries(t) > threshold
-%         currentAvalancheDuration = currentAvalancheDuration + 1;
-%         inAvalanche = true;
-%     elseif inAvalanche
-%         avalancheLengths = [avalancheLengths, currentAvalancheDuration];
-%         currentAvalancheDuration = 0;
-%         inAvalanche = false;
-%     end
-% end
-%
-% % Step 2: Check Minimum Avalanche Count and Unique Sizes
-% numAvalanches = length(avalancheLengths);
-% uniqueSizes = length(unique(avalancheLengths));
-% end
 function [avalancheLengths, avalancheSizes] = avalanches(dataMat, threshold)
 % Detects avalanches and computes their sizes.
 % INPUTS:
