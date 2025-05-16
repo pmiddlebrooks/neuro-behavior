@@ -302,7 +302,7 @@ set(h2, 'HandleVisibility', 'off');
 title('Reach Data 5 min w 1 s steps')
 
 %%
-areaIdx = 2;
+areaIdx = 3;
 subplot(2,1,1)
 plot(startS/60, d2(:,areaIdx), 'or', 'lineWidth', 2);
 xlim([0 45])
