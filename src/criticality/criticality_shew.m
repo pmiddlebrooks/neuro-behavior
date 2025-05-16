@@ -307,7 +307,7 @@ subplot(2,1,1)
 plot(startS/60, d2(:,areaIdx), 'or', 'lineWidth', 2);
 xlim([0 45])
 subplot(2,1,2)
-popSmooth = movmean(popActivity{areaIdx}, 101);
+popSmooth = movmean(popActivity{areaIdx}, 201);
 popMin = (1:length(popSmooth)) * optBinSize(areaIdx) / 60;
 plot(popMin, popSmooth);
 xlim([0 45])
