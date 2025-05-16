@@ -34,7 +34,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 %%   ====================================       Naturalistic vs. Mark Task       ==============================================
 opts = neuro_behavior_options;
 opts.frameSize = .001;
-opts.minFiringRate = .1;
+opts.minFiringRate = .05;
 getDataType = 'spikes';
 opts.collectFor = 20 * 60;
 opts.firingRateCheckTime = 5 * 60;
@@ -43,6 +43,10 @@ get_standard_data
 % Mark's reach data
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+% Get data until 1 sec after the last reach ending.
+cutOff = (dataR.R(end,2) + 1000) / 1000 / opts.frameSize;
+dataMatR = dataMatR(1:cutOff,:);
+
 % Ensure dataMatR is same size as dataMat
 dataMatR = dataMatR(1:size(dataMat, 1),:);
 idM23R = find(strcmp(areaLabels, 'M23'));
@@ -320,14 +324,14 @@ for a = 2 : length(areas)
     Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
     br = Av(a, 1).branchingRatio;
     brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
-    [tau(a, 1), ~, tauC(a, 1), ~, alpha(a, 1), ~, paramSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), 0);
+    [tau(a, 1), tauC(a, 1), alpha(a, 1), paramSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), 0);
 
     % Reach avalanches
     asdfMat = rastertoasdf2(dataMatReach', optBinSize(a, 2)*1000, 'CBModel', 'Spikes', 'DS');
     Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
     br = Av(a, 2).branchingRatio;
     brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization', 'pdf');
-    [tau(a, 2), ~, tauC(a, 2), ~, alpha(a, 2), ~, paramSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), 0);
+    [tau(a, 2), tauC(a, 2), alpha(a, 2), paramSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), 0);
     toc/60
 end
 % end
@@ -773,7 +777,7 @@ for a = 1 : length(areas)
         br = Av(a, b, 1).branchingRatio;
         brHist(a,b,:,1) = histcounts(br(br>0), edges, 'Normalization','pdf');
 
-        [tau(a, b, 1), ~, tauC(a, b, 1), ~, alpha(a, b, 1), ~, paramSD(a, b, 1), decades(a, b, 1)] = avalanche_log(Av(a, b, 1), 0);
+        [tau(a, b, 1), tauC(a, b, 1), alpha(a, b, 1), paramSD(a, b, 1), decades(a, b, 1)] = avalanche_log(Av(a, b, 1), 0);
 
 
         % dataMatW = neural_matrix_ms_to_frames(withinMat, optBinSize);
@@ -781,7 +785,7 @@ for a = 1 : length(areas)
         Av(a, b, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
         br = Av(a, b, 2).branchingRatio;
         brHist(a,b,:,2) = histcounts(br(br>0), edges, 'Normalization','pdf');
-        [tau(a, b, 2), ~, tauC(a, b, 2), ~, alpha(a, b, 2), ~, paramSD(a, b, 2), decades(a, b, 2)] = avalanche_log(Av(a, b, 2), 0);
+        [tau(a, b, 2), tauC(a, b, 2), alpha(a, b, 2), paramSD(a, b, 2), decades(a, b, 2)] = avalanche_log(Av(a, b, 2), 0);
     end
 end
 % fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
@@ -974,7 +978,7 @@ for a = 2 : length(areas)
     % % Calculate number of windows to preallocate
     % numWindows = floor((size(dataMatNat, 1) - 1) / stepRows) + 1;
 
-    [iTau, iTauC, iAlpha, iParamSD, iDecades] = deal(nan(numSteps, 1));
+    [iTau, iTauC, iAlpha, iparamSD, iDecades] = deal(nan(numSteps, 1));
 
     iBrHist = nan(numSteps, length(centers));
 
@@ -995,7 +999,7 @@ for a = 2 : length(areas)
             asdfMat = rastertoasdf2(dataMatNat(iIdx + transWindow + 1, :)', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
             Av = avprops(asdfMat, 'ratio', 'fingerprint');
             iBrHist(i,:) = histcounts(Av.branchingRatio, edges, 'Normalization', 'pdf');
-            [iTau(i), ~, iTauC(i), ~, iAlpha(i), ~, iParamSD(i), iDecades(i)] = avalanche_log(Av, 0);
+            [iTau(i), iTauC(i), iAlpha(i), iparamSD(i), iDecades(i)] = avalanche_log(Av, 0);
         end
 
     end
@@ -1005,7 +1009,7 @@ for a = 2 : length(areas)
     tau{a} = iTau;
     tauC{a} = iTauC;
     alpha{a} = iAlpha;
-    paramSD{a} = iParamSD;
+    paramSD{a} = iparamSD;
     decades{a} = iDecades;
 end
 % delete(poolID)
@@ -1401,13 +1405,16 @@ title(['Avalanche Shape Collapse', char(10), '1/(sigma nu z) = ',...
 
 
 %% ==============================================             Mark's Sliding Window
-opts.minFiringRate = .05;
-getDataType = 'spikes';
+opts.minFiringRate = .1;
 opts.frameSize = .001;
-
+opts.minFiringRate = .05;
 % Load Mark's reach data and make it a ms neural data matrix
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+% Get data until 1 sec after the last reach ending.
+cutOff = (dataR.R(end,2) + 1000) / 1000 / opts.frameSize;
+dataMatR = dataMatR(1:cutOff,:);
+
 idM23R = find(strcmp(areaLabels, 'M23'));
 idM56R = find(strcmp(areaLabels, 'M56'));
 idDSR = find(strcmp(areaLabels, 'DS'));
@@ -1422,7 +1429,7 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 pcaFlag = 0;
 pcaFirstFlag = 0;
 thresholdFlag = 1;
-thresholdBinSize = .05;
+thresholdBinSize = .02;
 
 preTime = 3*60;  %3;
 postTime = 3*60;%.2;
@@ -1431,7 +1438,7 @@ numSteps = floor((size(dataMatR, 1) / 1000 - stepSize) / stepSize) - 1;
 
 % Initialize variables
 areas = {'M23', 'M56', 'DS', 'VS'};
-[brPeak, tau, tauC, alpha, paramSD, decades, kappa, dcc, brMr] = deal(cell(length(areas), 1));
+[brPeak, tau, tauC, alpha, paramSD, decades] = deal(cell(length(areas), 1));
 optBinSize = nan(length(areas), 1);
 idList = {idM23R, idM56R, idDSR, idVSR};
 % Branching ratio histogram values
@@ -1441,7 +1448,7 @@ centers = edges(1:end-1) + diff(edges) / 2;
 
 % poolID = parpool(4, 'IdleTimeout', Inf);
 % parfor a = 1  : length(areas)
-for a = 2 : length(areas)
+for a = 1 : length(areas)
     tic
     aID = idList{a};
 
@@ -1454,10 +1461,10 @@ for a = 2 : length(areas)
     end
     fprintf('-------------\tArea: %s\n', areas{a})
 
-    dataMatNat = neural_matrix_ms_to_frames(dataMatR(:, aID), optBinSize(a));
+    dataMatFrames = neural_matrix_ms_to_frames(dataMatR(:, aID), optBinSize(a));
 
     if pcaFlag
-        [coeff, score, ~, ~, explained, mu] = pca(dataMatNat);
+        [coeff, score, ~, ~, explained, mu] = pca(dataMatFrames);
         forDim = find(cumsum(explained) > 30, 1);
         forDim = max(3, forDim);
         forDim = min(6, forDim);
@@ -1468,48 +1475,49 @@ for a = 2 : length(areas)
             fprintf('Using PCA Last many from %d to %D\n', forDim+1, size(score, 2))
             nDim = forDim+1:size(score, 2);
         end
-        dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
+        dataMatFrames = score(:,nDim) * coeff(:,nDim)' + mu;
     end
 
     if thresholdFlag
-        dataMatNat = round(sum(dataMatNat, 2));
+        dataMatFrames = round(sum(dataMatFrames, 2));
         threshPct = .08;
         % threshSpikes = threshPct * max(dataMatReach);
-        threshSpikes = .7*median(dataMatNat);
-        dataMatNat(dataMatNat < threshSpikes) = 0;
-        fprintf('Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a), sum(dataMatNat == 0) / length(dataMatNat))
+        threshSpikes = .75*median(dataMatFrames);
+        dataMatFrames(dataMatFrames < threshSpikes) = 0;
+        fprintf('Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a), sum(dataMatFrames == 0) / length(dataMatFrames))
     end
 
 
     transWindow = (floor(-preTime/optBinSize(a)) : ceil(postTime/optBinSize(a)) - 1);
 
     % % Calculate number of windows to preallocate
-    % numWindows = floor((size(dataMatNat, 1) - 1) / stepRows) + 1;
+    % numWindows = floor((size(dataMatFrames, 1) - 1) / stepRows) + 1;
 
-    [iTau, iTauC, iAlpha, iParamSD, iDecades, iKappa, iDcc, iBrMr] = deal(nan(numSteps, 1));
+    [iTau, iTauC, iAlpha, iparamSD, iDecades] = deal(nan(numSteps, 1));
 
     iBrHist = nan(numSteps, length(centers));
 
     % Find firsst valid index to start collecting windowed data
     firstIdx = ceil(preTime / stepSize);
-    for i = 6:8%firstIdx: numSteps %-transWindow(1): size(dataMatNat, 1) - transWindow(end)
-        % Find the index in dataMatNat for this step
+    for i = firstIdx: numSteps %-transWindow(1): size(dataMatFrames, 1) - transWindow(end)
+        % Find the index in dataMatFrames for this step
         iRealTime = i * stepSize;
         iIdx = round(iRealTime / optBinSize(a));
-        % Find the index in dataMatNat for this step
+        % Find the index in dataMatFrames for this step
         % iIdx = -transWindow(1) + round((i-1) * stepRows);
+
         % Make sure there are avalanches in the window
-        zeroBins = find(sum(dataMatNat(iIdx + transWindow + 1, :), 2) == 0);
+        zeroBins = find(sum(dataMatFrames(iIdx + transWindow + 1, :), 2) == 0);
         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
 
-            asdfMat = rastertoasdf2(dataMatNat(iIdx + transWindow + 1, :)', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
+            asdfMat = rastertoasdf2(dataMatFrames(iIdx + transWindow + 1, :)', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
             Av = avprops(asdfMat, 'ratio', 'fingerprint');
             iBrHist(i,:) = histcounts(Av.branchingRatio, edges, 'Normalization', 'pdf');
             [iTau(i), ~, iTauC(i), ~, iAlpha(i), ~, iParamSD(i), iDecades(i)] = avalanche_log(Av, 0);
 
             iKappa(i) = compute_kappa(Av.size);
             iDcc(i) = distance_to_criticality(iTauC(i), iAlpha(i), iParamSD(i));
-            result = branching_ratio_mr_estimation(dataMatNat(iIdx + transWindow + 1, :));
+            result = branching_ratio_mr_estimation(dataMatFrames(iIdx + transWindow + 1, :));
             iBrMr(i) = result.branching_ratio;
 
             fprintf('\t%s\t %d of %d: %.3f  finished \n', areas{a}, i, numSteps, i/numSteps)
@@ -1523,13 +1531,11 @@ for a = 2 : length(areas)
     tau{a} = iTau;
     tauC{a} = iTauC;
     alpha{a} = iAlpha;
-    paramSD{a} = iParamSD;
+    paramSD{a} = iparamSD;
     decades{a} = iDecades;
-
     kappa{a} = iKappa;
     dcc{a} = iDcc;
     brMr{a} = iBrMr;
-
 end
 % delete(poolID)
 
@@ -1777,7 +1783,7 @@ for a = 1 : length(areas)
     Av(a, 1) = avprops(asdfMat, 'ratio', 'fingerprint');
     br = Av(a, 1).branchingRatio;
     brHist(a,:, 1) = histcounts(br(br>0), edges, 'Normalization','pdf');
-    [tau(a, 1), ~, tauC(a, 1), ~, alpha(a, 1), ~, paramSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), plotFlag);
+    [tau(a, 1), tauC(a, 1), alpha(a, 1), paramSD(a, 1), decades(a, 1)] = avalanche_log(Av(a, 1), plotFlag);
 
 
     %
@@ -1785,7 +1791,8 @@ for a = 1 : length(areas)
     Av(a, 2) = avprops(asdfMat, 'ratio', 'fingerprint');
     br = Av(a, 2).branchingRatio;
     brHist(a,:, 2) = histcounts(br(br>0), edges, 'Normalization','pdf');
-    [tau(a, 2), ~, tauC(a, 2), ~, alpha(a, 2), ~, paramSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
+    [tau(a, 2), tauC(a, 2), alpha(a, 2), paramSD(a, 2), decades(a, 2)] = avalanche_log(Av(a, 2), plotFlag);
+
     % [tauB, alphaB, paramSDB]
     % [tau, alpha, paramSD]
 end
@@ -1879,9 +1886,9 @@ pSzC = nan;
 UniqSizes = unique(Av.size);
 Occurances = hist(Av.size,UniqSizes);
 % AllowedSizes = UniqSizes(Occurances >= 20);
-% AllowedSizes = UniqSizes(Occurances >= 10);
-AllowedSizes = UniqSizes(Occurances >= 4);
-AllowedSizes(AllowedSizes < 5) = [];
+AllowedSizes = UniqSizes(Occurances >= 10);
+% AllowedSizes = UniqSizes(Occurances >= 2);
+AllowedSizes(AllowedSizes < 4) = [];
 % AllowedSizes(AllowedSizes < 3) = [];
 if length(AllowedSizes) > 1
     LimSize = Av.size(ismember(Av.size,AllowedSizes));
