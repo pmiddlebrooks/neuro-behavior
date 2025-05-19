@@ -1435,6 +1435,7 @@ preTime = 3*60;  %3;
 postTime = 3*60;%.2;
 stepSize = 2*60;%0.1;       % Step size in seconds
 numSteps = floor((size(dataMatR, 1) / 1000 - stepSize) / stepSize) - 1;
+realTime = nan(numSteps, 1);
 
 % Initialize variables
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -1504,7 +1505,7 @@ for a = 1 : length(areas)
             fprintf('Working on \t%s\t %d of %d: %.3f \n', areas{a}, i, numSteps, i/numSteps)
 
             % Find the index in dataMatFrames for this step
-        iRealTime = i * stepSize;
+        realTime(i) = i * stepSize;
         iIdx = round(iRealTime / optBinSize(a));
         % Find the index in dataMatFrames for this step
         % iIdx = -transWindow(1) + round((i-1) * stepRows);
@@ -1540,6 +1541,18 @@ for a = 1 : length(areas)
     brMr(:,a) = iBrMr;
 end
 % delete(poolID)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
