@@ -209,7 +209,7 @@ ylabel('Distance to criticality')
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 pOrder = 20; % Order parameter for the autoregressor model
 critType = 2;
-binSize = .03;
+binSize = .04;
 
 % Define sliding window parameters
 windowSize = 1 * 60; % (in seconds)
@@ -302,7 +302,8 @@ set(h2, 'HandleVisibility', 'off');
 title('Reach Data 5 min w 1 s steps')
 
 %%
-areaIdx = 3;
+clf
+areaIdx = 2;
 subplot(2,1,1)
 plot(startS/60, d2(:,areaIdx), 'or', 'lineWidth', 2);
 xlim([0 45])
@@ -310,6 +311,13 @@ subplot(2,1,2)
 popSmooth = movmean(popActivity{areaIdx}, 201);
 popMin = (1:length(popSmooth)) * optBinSize(areaIdx) / 60;
 plot(popMin, popSmooth);
+% plot(popMin, popActivity{areaIdx});
+hold on;
+h1 = plot(reachCorr/60,15, '.', 'color', [0 .5 0], 'MarkerSize', 10);
+h2 = plot(reachErr/60, 16, '.', 'color', [.3 .3 .3], 'MarkerSize', 10);
+set(h1, 'HandleVisibility', 'off');
+set(h2, 'HandleVisibility', 'off');
+
 xlim([0 45])
 
 %%

@@ -3,7 +3,8 @@ function kappa = compute_kappa(avalancheSizes)
     % INPUT:
     %   avalanche_sizes - vector of avalanche sizes
     % OUTPUT:
-    %   kappa - criticality metric (κ = 1 at criticality)
+    %   kappa - criticality metric (κ = 1 at criticality; k < 1
+    %   subcritical; k > 1 supercritical)
 
     m = 10;  % Number of beta points
     avalancheSizes = avalancheSizes(avalancheSizes > 0);
