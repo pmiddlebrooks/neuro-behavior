@@ -11,7 +11,9 @@ function dcc = distance_to_criticality(tauFitted, alphaFitted, gammaFitted)
 
     % Check for valid input to avoid division by zero
     if tauFitted <= 1
-        error('tau_fitted must be > 1 to compute gamma_predicted');
+        warning('tau_fitted must be > 1 to compute gamma_predicted - returning nan');
+        dcc = nan;
+        return
     end
 
     % Compute predicted gamma from exponent relation
