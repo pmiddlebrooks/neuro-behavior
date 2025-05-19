@@ -207,7 +207,7 @@ ylabel('Distance to criticality')
 % Load the data above (Mark's data)
 
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
-pOrder = 20; % Order parameter for the autoregressor model
+pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;
 binSize = .04;
 
@@ -250,6 +250,11 @@ for a = 1 : length(areas)
     fprintf('Area %s\n', areas{a})
     tic
     aID = idList{a};
+    
+    % Remove crazy high multi-units
+    % aRmv = max(dataMatR(:,aID)) > 2;
+    % aID(aRmv) = [];
+
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
 optBinSize(a) = binSize;
 
@@ -258,7 +263,7 @@ for w = 1:numWindows
     startIdx = (w - 1) * stepSamples + 1;
     endIdx = startIdx + winSamples - 1;
 
-    startS(w) = (startIdx + round(winSamples/2)) / Fs;  % center of window
+    startS(w) = (startIdx + round(winSamples/2)-1) / Fs;  % center of window
     wPopActivity = neural_matrix_ms_to_frames(sum(dataMatR(startIdx:endIdx, aID), 2), optBinSize(a));
 
     [varphi, varNoise(w,a)] = myYuleWalker3(wPopActivity, pOrder);
@@ -277,7 +282,7 @@ end
 % [d21 d21R d22 d22R]
 %%
 mins = startS/60;
-figure(54); clf; hold on;
+figure(55); clf; hold on;
 plot(mins, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
 plot(mins, d2(:,1), 'ok', 'lineWidth', 2);
 plot(mins, d2(:,2), 'ob', 'lineWidth', 2);
@@ -299,19 +304,20 @@ h1 = plot(reachCorr/60, 0, '.', 'color', [0 .5 0], 'MarkerSize', 30);
 h2 = plot(reachErr/60, -.02, '.', 'color', [.3 .3 .3], 'MarkerSize', 30);
 set(h1, 'HandleVisibility', 'off');
 set(h2, 'HandleVisibility', 'off');
-title('Reach Data 5 min w 1 s steps')
+title(['Reach Data ', num2str(windowSize), ' sec window, ' num2str(stepSize), ' sec steps'])
+xlim([0 45])
 
 %%
-clf
-areaIdx = 2;
+figure(14); clf
+areaIdx = 3;
 subplot(2,1,1)
 plot(startS/60, d2(:,areaIdx), 'or', 'lineWidth', 2);
 xlim([0 45])
 subplot(2,1,2)
-popSmooth = movmean(popActivity{areaIdx}, 201);
-popMin = (1:length(popSmooth)) * optBinSize(areaIdx) / 60;
-plot(popMin, popSmooth);
-% plot(popMin, popActivity{areaIdx});
+popSmooth = movmean(popActivity{areaIdx}, 21);
+popMin = (0:length(popSmooth)-1) * optBinSize(areaIdx) / 60;
+% plot(popMin, popSmooth);
+plot(popMin, popActivity{areaIdx});
 hold on;
 h1 = plot(reachCorr/60,15, '.', 'color', [0 .5 0], 'MarkerSize', 10);
 h2 = plot(reachErr/60, 16, '.', 'color', [.3 .3 .3], 'MarkerSize', 10);
@@ -319,6 +325,20 @@ set(h1, 'HandleVisibility', 'off');
 set(h2, 'HandleVisibility', 'off');
 
 xlim([0 45])
+
+
+
+%%
+figure(12);
+popMin = (0:length(popActivity{areaIdx})-1) * optBinSize(areaIdx) / 60;
+% imagesc(startS/60, 1:length(idDSR), dataMatR(:,idDSR)')
+imagesc(popMin, 1:length(idDSR), dataMatR(:,idDSR)')
+% Customize x-axis ticks
+% xtickPositions = linspace(1, round(size(dataMatR, 1)/Fs/60), 5);  % Choose 5 tick positions evenly
+% xticks(xtickPositions);  % Set tick positions
+% 
+% % Set corresponding timestamp labels
+% xticklabels(arrayfun(@(x) sprintf('%.2f', x), startS(round(xtickPositions)/60), 'UniformOutput', false));
 
 %%
 maxEig = computeMaxEigenvalue(varphi)

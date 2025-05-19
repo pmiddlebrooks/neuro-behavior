@@ -68,7 +68,7 @@ if strcmp(opts.method, 'useOverlap')
     end
 end
 if strcmp(opts.method, 'gaussian')
-    totalTimeMs = ceil(sum(data.bhvDur)*1000); % Ensure time resolution in ms
+    totalTimeMs = lastSecond * 1000; % Ensure time resolution in ms
 
     % Define Gaussian kernel for convolution
     kernelRange = round(5 * opts.gaussWidth); % 5 SD range ensures near-zero tails
@@ -118,12 +118,12 @@ for i = 1:length(idLabels)
             dataMat(:, i) = iSpikeCount';
         case 'gaussian'
             % Convert spike times to binary spike train
+            error('Something is bad about gaussian in mark data version of this function')
             spikeTrain = zeros(totalTimeMs, 1);
             spikeTrain(round(iSpikeTime * 1000)) = 1;
 
             % Convolve with Gaussian kernel to get smoothed firing rate
             smoothedRate = conv(spikeTrain, gaussKernel, 'same'); % divide by 1000 to get smoothed rate
-            spikeRateMs(:, i) = smoothedRate * opts.fsSpike; % Convert to Hz
             spikeRateMs(:, i) = smoothedRate * 1000; % Convert to Hz
 
     end
