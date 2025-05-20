@@ -1433,9 +1433,10 @@ thresholdBinSize = .05;
 
 preTime = 3*60;  %3;
 postTime = 3*60;%.2;
-stepSize = 2*60;%0.1;       % Step size in seconds
+stepSize = 1.5*60;%0.1;       % Step size in seconds
 numSteps = floor((size(dataMatR, 1) / 1000 - stepSize) / stepSize) - 1;
 realTime = nan(numSteps, 1);
+isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 
 % Initialize variables
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -1454,10 +1455,15 @@ for a = 1 : length(areas)
     tic
     aID = idList{a};
 
+    % Remove crazy high multi-units
+    aRmv = max(dataMatR(:,aID)) > 2;
+    aID(aRmv) = [];
+
     % Find optimal bin size for avalanche analyses
     % If using the threshold method
     if thresholdFlag
         optBinSize(a) = thresholdBinSize;
+    optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
     else
         optBinSize(a) = optimal_bin_size(dataMatR(:,aID));
     end
@@ -1495,7 +1501,7 @@ for a = 1 : length(areas)
     % % Calculate number of windows to preallocate
     % numWindows = floor((size(dataMatFrames, 1) - 1) / stepRows) + 1;
 
-    [iTau, iTauC, iAlpha, iParamSD, iDecades, iDcc, iKappa, iBrMr] = deal(nan(numSteps, 1));
+    [iTau, iTauC, iAlpha, iParamSD, iDecades, iDcc, iDccC, iKappa, iBrMr] = deal(nan(numSteps, 1));
 
     iBrHist = nan(numSteps, length(centers));
 
@@ -1521,6 +1527,7 @@ for a = 1 : length(areas)
 
             iKappa(i) = compute_kappa(Av.size);
             iDcc(i) = distance_to_criticality(iTau(i), iAlpha(i), iParamSD(i));
+            iDccC(i) = distance_to_criticality(iTauC(i), iAlpha(i), iParamSD(i));
             result = branching_ratio_mr_estimation(dataMatFrames(iIdx + transWindow + 1, :));
             iBrMr(i) = result.branching_ratio;
 
@@ -1534,15 +1541,37 @@ for a = 1 : length(areas)
     tau(:,a) = iTau;
     tauC(:,a) = iTauC;
     alpha(:,a) = iAlpha;
-    paramSD(:,a) = iparamSD;
+    paramSD(:,a) = iParamSD;
     decades(:,a) = iDecades;
     kappa(:,a) = iKappa;
     dcc(:,a) = iDcc;
+    dccC(:,a) = iDccC;
     brMr(:,a) = iBrMr;
 end
 % delete(poolID)
 
+%%
+mins = realTime/60;
+plotParam =  brMr;
+figure(54); clf; hold on;
+plot(mins, plotParam(:,1), '-ok', 'lineWidth', 2);
+plot(mins, plotParam(:,2), '-ob', 'lineWidth', 2);
+plot(mins, plotParam(:,3), '-or', 'lineWidth', 2);
+plot(mins, plotParam(:,4), '-o', 'color', [0 .75 0], 'lineWidth', 2);
+% plot(mins, plotParam(:,1), '-k', 'lineWidth', 2);
+% plot(mins, plotParam(:,2), '-b', 'lineWidth', 2);
+% plot(mins, plotParam(:,3), '-r', 'lineWidth', 2);
+% plot(mins, plotParam(:,4), '-', 'color', [0 .75 0], 'lineWidth', 2);
+% xline(block2Start/60, 'linewidth', 2)
+legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
+xlabel('Minutes')
+ylabel('Distance to criticality')
 
+% h1 = plot(reachCorr/60, 0, '.', 'color', [0 .5 0], 'MarkerSize', 30);
+% h2 = plot(reachErr/60, -.02, '.', 'color', [.3 .3 .3], 'MarkerSize', 30);
+% set(h1, 'HandleVisibility', 'off');
+% set(h2, 'HandleVisibility', 'off');
+% title('Reach Data 5 min w 1 s steps')
 
 
 

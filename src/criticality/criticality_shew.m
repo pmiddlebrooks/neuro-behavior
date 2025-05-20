@@ -1,4 +1,4 @@
-%%
+ %%
 % Steps:
 % 1.  Make a spike count time series from your data.  (Use a time bin that
 % is at least 10x the mean ISI as a rule of thumb).  Let's call the result 'popActivity'
@@ -30,8 +30,6 @@ paramSDRange = [1.3 1.7];
 
 
 
-
-
 monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
 monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
@@ -45,6 +43,7 @@ get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 idList = {idM23, idM56, idDS, idVS};
+
 
 %% Mark's reach data
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
@@ -252,8 +251,8 @@ for a = 1 : length(areas)
     aID = idList{a};
     
     % Remove crazy high multi-units
-    % aRmv = max(dataMatR(:,aID)) > 2;
-    % aID(aRmv) = [];
+    aRmv = max(dataMatR(:,aID)) > 2;
+    aID(aRmv) = [];
 
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
 optBinSize(a) = binSize;
