@@ -63,9 +63,11 @@ areas = {'M23', 'M56', 'DS', 'VS'};
 idList = {idM23R, idM56R, idDSR, idVSR};
 
 
+%%
+[coeff, score, ~, ~, explained, mu] = pca(dataMatR(:, idM56R));
+nDim = find(cumsum(explained) > 80, 1);
 
-
-
+[bestModel, bestNumStates, stateSeq, allModels, allLogL] = fit_gaussian_hmm(score(:,1:nDim), 2:10, 5, 5);
 
 
 
