@@ -42,7 +42,7 @@ end
 lastSecond = ceil(max(data.CSV(:,1)));
 numFrames = ceil(lastSecond / opts.frameSize);
 
-useNeurons = find(data.idchan(:,end) ~= 0); % Keep everything that isn't corpus collosum
+useNeurons = find(data.idchan(:,end) ~= 0) & ismember(data.idchan(:,4), [1 2]); % Keep everything that isn't corpus collosum
 idLabels = data.idchan(useNeurons, 1);
 brainAreas = data.idchan(useNeurons, end);
 areaLabels = cell(size(brainAreas));

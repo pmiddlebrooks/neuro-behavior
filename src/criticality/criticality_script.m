@@ -1441,8 +1441,9 @@ isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 % Initialize variables
 areas = {'M23', 'M56', 'DS', 'VS'};
 [brPeak] = deal(cell(length(areas), 1));
-[tau, tauC, alpha, paramSD, decades, kappa, dcc, brMr] = deal(nan(numSteps, length(areas)));
+[tau, tauC, alpha, paramSD, decades, kappa, dcc, dccC, brMr] = deal(nan(numSteps, length(areas)));
 optBinSize = nan(length(areas), 1);
+result = struct();
 idList = {idM23R, idM56R, idDSR, idVSR};
 % Branching ratio histogram values
 minBR = 0; maxBR = 2.5;
@@ -1463,7 +1464,7 @@ for a = 1 : length(areas)
     % If using the threshold method
     if thresholdFlag
         optBinSize(a) = thresholdBinSize;
-    optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
+    % optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
     else
         optBinSize(a) = optimal_bin_size(dataMatR(:,aID));
     end
@@ -1528,8 +1529,8 @@ for a = 1 : length(areas)
             iKappa(i) = compute_kappa(Av.size);
             iDcc(i) = distance_to_criticality(iTau(i), iAlpha(i), iParamSD(i));
             iDccC(i) = distance_to_criticality(iTauC(i), iAlpha(i), iParamSD(i));
-            result = branching_ratio_mr_estimation(dataMatFrames(iIdx + transWindow + 1, :));
-            iBrMr(i) = result.branching_ratio;
+            mr = branching_ratio_mr_estimation(dataMatFrames(iIdx + transWindow + 1, :));
+            iBrMr(i) = mr.branching_ratio;
 
 
         end
@@ -1537,22 +1538,22 @@ for a = 1 : length(areas)
     end
     fprintf('\nArea %s\t %.1f\n\n', areas{a}, toc/60)
 
-    brPeak{a} = iBrHist;
-    tau(:,a) = iTau;
-    tauC(:,a) = iTauC;
-    alpha(:,a) = iAlpha;
-    paramSD(:,a) = iParamSD;
-    decades(:,a) = iDecades;
-    kappa(:,a) = iKappa;
-    dcc(:,a) = iDcc;
-    dccC(:,a) = iDccC;
-    brMr(:,a) = iBrMr;
+    result.brPeak{a} = iBrHist;
+    result.tau(:,a) = iTau;
+    result.tauC(:,a) = iTauC;
+    result.alpha(:,a) = iAlpha;
+    result.paramSD(:,a) = iParamSD;
+    result.decades(:,a) = iDecades;
+    result.kappa(:,a) = iKappa;
+    result.dcc(:,a) = iDcc;
+    result.dccC(:,a) = iDccC;
+    result.brMr(:,a) = iBrMr;
 end
 % delete(poolID)
 
 %%
 mins = realTime/60;
-plotParam =  brMr;
+plotParam =  decades;
 figure(54); clf; hold on;
 plot(mins, plotParam(:,1), '-ok', 'lineWidth', 2);
 plot(mins, plotParam(:,2), '-ob', 'lineWidth', 2);
