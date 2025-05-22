@@ -1619,31 +1619,48 @@ bhvFiltered = bhvID(include_mask);
 change_points = find(diff([NaN; bhvFiltered]) ~= 0); % Find transitions
 durations = diff(change_points); % Compute durations
 
-% Fit power-law distribution using Clauset's plfit (ensure you have plfit.m)
-[alpha, xmin, L] = plfit(durations);
+% --- Fit power-law distribution using Clauset's plfit (ensure you have plfit.m)
+[alpha, xmin, L_pl] = plfit(durations);  % log-likelihood already returned
+k_pl = 1;  % only alpha is fitted
+AIC_pl = 2 * k_pl - 2 * L_pl;
 
-% Compare with exponential and lognormal distributions
-% Exponential fit
-lambda = 1/mean(durations);
+% --- Exponential fit
+lambda = 1 / mean(durations);
 L_exp = sum(log(lambda * exp(-lambda * durations)));
+k_exp = 1;
+AIC_exp = 2 * k_exp - 2 * L_exp;
 
-% Lognormal fit
-mu = mean(log(durations));
-sigma = std(log(durations));
-L_lognorm = sum(log((1./(durations * sigma * sqrt(2*pi))) .* exp(-((log(durations)-mu).^2) / (2*sigma^2))));
+% --- Lognormal fit
+log_durations = log(durations);
+mu = mean(log_durations);
+sigma = std(log_durations);
+L_lognorm = sum(log((1./(durations * sigma * sqrt(2*pi))) .* exp(-((log_durations - mu).^2) / (2*sigma^2))));
+k_lognorm = 2;  % mu and sigma
+AIC_lognorm = 2 * k_lognorm - 2 * L_lognorm;
 
-% Compare likelihoods
-R_exp = 2 * (L - L_exp);
-R_lognorm = 2 * (L - L_lognorm);
+% --- Compare AICs
+fprintf('AICs:\n');
+fprintf('  Power-law:  %.2f\n', AIC_pl);
+fprintf('  Exponential: %.2f\n', AIC_exp);
+fprintf('  Lognormal:  %.2f\n', AIC_lognorm);
 
-% Compute p-values
-p_exp = 1 - chi2cdf(R_exp, 1);
-p_lognorm = 1 - chi2cdf(R_lognorm, 1);
+% --- Determine best model
+[AIC_min, idx] = min([AIC_pl, AIC_exp, AIC_lognorm]);
+models = {'Power-law', 'Exponential', 'Lognormal'};
+fprintf('Best fitting model: %s\n', models{idx});
 
-% Display results
-fprintf('Power-law exponent (alpha): %.3f\n', alpha);
-fprintf('Comparison with exponential: R=%.3f, p=%.3f\n', R_exp, p_exp);
-fprintf('Comparison with lognormal: R=%.3f, p=%.3f\n', R_lognorm, p_lognorm);
+% % Compare likelihoods
+% R_exp = 2 * (L - L_exp);
+% R_lognorm = 2 * (L - L_lognorm);
+% 
+% % Compute p-values
+% p_exp = 1 - chi2cdf(R_exp, 1);
+% p_lognorm = 1 - chi2cdf(R_lognorm, 1);
+% 
+% % Display results
+% fprintf('Power-law exponent (alpha): %.3f\n', alpha);
+% fprintf('Comparison with exponential: R=%.3f, p=%.3f\n', R_exp, p_exp);
+% fprintf('Comparison with lognormal: R=%.3f, p=%.3f\n', R_lognorm, p_lognorm);
 
 % Plot the distribution
 figure;

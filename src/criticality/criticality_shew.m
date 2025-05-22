@@ -19,8 +19,8 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 1*60 * 60; % seconds
-opts.frameSize = .001;
 opts.minFiringRate = .05;
+opts.frameSize = .001;
 
 paths = get_paths;
 
@@ -50,7 +50,7 @@ dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BE
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
 % Get data until 1 sec after the last reach ending.
-cutOff = (dataR.R(end,2) + 1000) / 1000 / opts.frameSize;
+cutOff = round((dataR.R(end,2) + 1000) / 1000 / opts.frameSize);
 dataMatR = dataMatR(1:cutOff,:);
 
 % Ensure dataMatR is same size as dataMat
@@ -271,7 +271,7 @@ for w = 1:numWindows
     d2(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
     % popActivityR = popActivity(randperm(length(popActivity)));
-    wPopActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
+    wPopActivityR = neural_matrix_ms_to_frames(sum(shuffledData(startIdx:endIdx, aID), 2), optBinSize(a));
 
 
     [varphi, varNoiseR(w,a)] = myYuleWalker3(wPopActivityR, pOrder);
@@ -284,10 +284,10 @@ end
 %%
 mins = startS/60;
 figure(55); clf; hold on;
-plot(mins, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
 plot(mins, d2(:,1), 'ok', 'lineWidth', 2);
 plot(mins, d2(:,2), 'ob', 'lineWidth', 2);
 plot(mins, d2(:,3), 'or', 'lineWidth', 2);
+plot(mins, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
 % plot(mins, d2(:,1), '-k', 'lineWidth', 2);
 % plot(mins, d2(:,2), '-b', 'lineWidth', 2);
 % plot(mins, d2(:,3), '-r', 'lineWidth', 2);
@@ -310,7 +310,7 @@ xlim([0 45])
 
 %%
 figure(14); clf
-areaIdx = 3;
+areaIdx = 2;
 subplot(2,1,1)
 plot(startS/60, d2(:,areaIdx), 'or', 'lineWidth', 2);
 xlim([0 45])
@@ -388,6 +388,7 @@ optBinSize = nan(length(areas), 1);
 [d2,d2R, varNoise, varNoiseR] = ...
     deal(nan(numWindows, length(areas)));
 startS = nan(numWindows, 1);
+popActivity = cell(length(areas), 1);
 
 shuffledData = shift_shuffle_neurons(dataMat);
 
@@ -398,20 +399,22 @@ for a = 1 : length(areas)
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
 optBinSize(a) = binSize;
 
+popActivity{a} = neural_matrix_ms_to_frames(sum(dataMat(:, aID), 2), optBinSize(a));
+
 for w = 1:numWindows
     startIdx = (w - 1) * stepSamples + 1;
     endIdx = startIdx + winSamples - 1;
 
     startS(w) = (startIdx + round(winSamples/2)) / Fs / 60;  % center of window
-    popActivity = neural_matrix_ms_to_frames(sum(dataMat(startIdx:endIdx, aID), 2), optBinSize(a));
+    wPopActivity = neural_matrix_ms_to_frames(sum(dataMat(startIdx:endIdx, aID), 2), optBinSize(a));
 
-    [varphi, varNoise(w,a)] = myYuleWalker3(popActivity, pOrder);
+    [varphi, varNoise(w,a)] = myYuleWalker3(wPopActivity, pOrder);
     d2(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
     % popActivityR = popActivity(randperm(length(popActivity)));
-    popActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
+    wPopActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
 
-    [varphi, varNoiseR(w,a)] = myYuleWalker3(popActivityR, pOrder);
+    [varphi, varNoiseR(w,a)] = myYuleWalker3(wPopActivityR, pOrder);
     d2R(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
 end
