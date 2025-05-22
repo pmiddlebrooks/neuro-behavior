@@ -1,0 +1,79 @@
+%%
+opts = neuro_behavior_options;
+opts.minActTime = .16;
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 1*60 * 60; % seconds
+opts.minFiringRate = .05;
+opts.frameSize = .001;
+
+paths = get_paths;
+
+tauRange = [1.2 2.5];
+alphaRange = [1.5 2.2];
+paramSDRange = [1.3 1.7];
+
+
+
+monitorPositions = get(0, 'MonitorPositions');
+monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
+monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
+
+
+
+%% Naturalistic data
+getDataType = 'spikes';
+opts.firingRateCheckTime = 5 * 60;
+get_standard_data
+
+areas = {'M23', 'M56', 'DS', 'VS'};
+idList = {idM23, idM56, idDS, idVS};
+
+
+%% Mark's reach data
+dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
+
+opts.frameSize = .02;
+[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+
+% Get data until 1 sec after the last reach ending.
+cutOff = round((dataR.R(end,2) + 1000) / 1000 / opts.frameSize);
+dataMatR = dataMatR(1:cutOff,:);
+
+% Ensure dataMatR is same size as dataMat
+idM23R = find(strcmp(areaLabels, 'M23'));
+idM56R = find(strcmp(areaLabels, 'M56'));
+idDSR = find(strcmp(areaLabels, 'DS'));
+idVSR = find(strcmp(areaLabels, 'VS'));
+
+areas = {'M23', 'M56', 'DS', 'VS'};
+idList = {idM23R, idM56R, idDSR, idVSR};
+
+
+%%  Fit a gaussian HMM on Mark's data in PCA space (up to a certain explained variance)
+expThresh = 70;   % percent explained variance to collect pca component scores for.
+nReps = 4;
+nFolds = 3;
+
+[coeff, score, ~, ~, explained, mu] = pca(dataMatR(:, idM56R));
+nDim = find(cumsum(explained) > expThresh, 1);
+
+[bestModel, bestNumStates, stateSeq, allModels, allLogL] = fit_gaussian_hmm(score(:,1:nDim), 8:14, nReps, nFolds);
+
+%%
+posteriorProb = posterior(bestModel, score(:,1:nDim));
+
+% Plot posterior probability of each state across time
+figure;
+imagesc(posteriorProb'); colorbar;
+xlabel('Time'); ylabel('State');
+title('Posterior Probabilities of States');
+
+
+
+
+
+
+
+
+
+

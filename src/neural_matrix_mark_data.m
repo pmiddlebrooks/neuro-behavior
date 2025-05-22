@@ -42,7 +42,7 @@ end
 lastSecond = ceil(max(data.CSV(:,1)));
 numFrames = ceil(lastSecond / opts.frameSize);
 
-useNeurons = find(data.idchan(:,end) ~= 0) & ismember(data.idchan(:,4), [1 2]); % Keep everything that isn't corpus collosum
+useNeurons = find(data.idchan(:,end) ~= 0 & ismember(data.idchan(:,4), [1 2])); % Keep everything that isn't corpus collosum
 idLabels = data.idchan(useNeurons, 1);
 brainAreas = data.idchan(useNeurons, end);
 areaLabels = cell(size(brainAreas));
@@ -154,7 +154,11 @@ if opts.removeSome
     end
     keepStart = meanStart >= opts.minFiringRate & meanStart <= opts.maxFiringRate;
     keepEnd = meanEnd >= opts.minFiringRate & meanEnd <= opts.maxFiringRate;
-    rmvNeurons = ~(keepStart & keepEnd);
+
+    % Get rid of units that had crazy bursting during the recording (most
+    % likely multi-units)
+    tooCrazy = max(dataMat ./ opts.frameSize) > 500;
+    rmvNeurons = ~(keepStart & keepEnd) | tooCrazy;
     fprintf('\nkeeping %d of %d neurons\n', sum(~rmvNeurons), length(rmvNeurons));
     dataMat(:, rmvNeurons) = [];
     idLabels(rmvNeurons) = [];
