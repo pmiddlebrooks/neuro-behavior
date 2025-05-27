@@ -20,8 +20,7 @@ function [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(d
 %       .minFiringRate   - Minimum firing rate threshold (for removal if enabled)
 %       .maxFiringRate   - Maximum firing rate threshold (for removal if enabled)
 %       For method = 'useOverlap'
-%       .windowSize      - Window size for summing spikes in overlapping binning
-%       .stepSize        - Step size for shifting the sliding window
+%       .windowSize      - Window size for summing spikes in overlapping binning (stepSize is same as frameSize
 %       .windowAlign     - Window alignment ('center', 'left', or 'right', default: 'center')
 %       For method = 'gaussian'
 %       .gaussWidth      - if method is gaussian, width of the kernel in ms
@@ -62,7 +61,7 @@ if strcmp(opts.method, 'useOverlap')
     warning('You are using overlapping bins, so dataMat is in firing rate units (sp/s)')
     % Define window and step size
     windowSize = opts.windowSize; % Summing window size
-    stepSize = opts.stepSize; % Step size for shifting the window
+    stepSize = opts.frameSize; % Step size for shifting the window
     if ~isfield(opts, 'windowAlign')
         opts.windowAlign = 'center'; % Default alignment
     end
@@ -80,7 +79,7 @@ if strcmp(opts.method, 'gaussian')
     spikeRateMs = zeros(totalTimeMs, length(idLabels));
 end
 
-% Loop through each neuron and bin spike counts
+% Loop through each neuron and bin spike counts or rates
 for i = 1:length(idLabels)
     iSpikeTime = data.CSV(data.CSV(:,2) == idLabels(i), 1);
 
@@ -157,7 +156,11 @@ if opts.removeSome
 
     % Get rid of units that had crazy bursting during the recording (most
     % likely multi-units)
-    tooCrazy = max(dataMat ./ opts.frameSize) > 500;
+    if ~strcmp(opts.method, 'standard')
+    tooCrazy = max(dataMat, [], 1) > 600;
+    else
+    tooCrazy = max(dataMat ./ opts.frameSize, [], 1) > 600;
+    end
     rmvNeurons = ~(keepStart & keepEnd) | tooCrazy;
     fprintf('\nkeeping %d of %d neurons\n', sum(~rmvNeurons), length(rmvNeurons));
     dataMat(:, rmvNeurons) = [];

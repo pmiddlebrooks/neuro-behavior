@@ -886,175 +886,6 @@ copy_figure_to_clipboard
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-%%   ================================            Sliding window of criticality parameters          ================================
-% Slide a window from 1sec prior to 100ms after each time point
-% Get criticality parameters at each time piont
-% Assess metastability of criticality over time
-opts = neuro_behavior_options;
-opts.frameSize = .001;
-opts.minFiringRate = .1;
-getDataType = 'spikes';
-opts.collectStart = 0*60*60;
-opts.collectFor = 15 * 60;
-opts.firingRateCheckTime = 5 * 60;
-get_standard_data
-
-%%
-pcaFlag = 0;
-pcaFirstFlag = 0;
-thresholdFlag = 1;
-thresholdBinSize = .015;
-
-preTime = 3;
-postTime = .2;
-stepSize = 0.1;       % Step size in seconds
-numSteps = floor((size(dataMat, 1) / 1000 - stepSize) / stepSize) - 1;
-
-% Initialize variables
-areas = {'M23', 'M56', 'DS', 'VS'};
-[brPeak, tau, tauC, alpha, paramSD, decades] = deal(cell(length(areas), 1));
-optBinSize = nan(length(areas), 1);
-idList = {idM23, idM56, idDS, idVS};
-% Branching ratio histogram values
-minBR = 0; maxBR = 2.5;
-edges = minBR : .1 : maxBR;
-centers = edges(1:end-1) + diff(edges) / 2;
-
-% poolID = parpool(4, 'IdleTimeout', Inf);
-% parfor a = 1  : length(areas)
-for a = 2 : length(areas)
-    tic
-    aID = idList{a};
-
-    % Find optimal bin size for avalanche analyses
-    % If using the threshold method
-    if thresholdFlag
-        optBinSize(a) = thresholdBinSize;
-    else
-        optBinSize(a) = optimal_bin_size(dataMat(:,aID));
-    end
-    fprintf('-------------\tArea: %s\n', areas{a})
-
-    dataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optBinSize(a));
-
-    if pcaFlag
-        [coeff, score, ~, ~, explained, mu] = pca(dataMatNat);
-        forDim = find(cumsum(explained) > 30, 1);
-        forDim = max(3, forDim);
-        forDim = min(6, forDim);
-        if pcaFirstFlag
-            fprintf('Using PCA first %d\n', forDim)
-            nDim = 1:forDim;
-        else
-            fprintf('Using PCA Last many from %d to %d\n', forDim+1, size(score, 2))
-            nDim = forDim+1:size(score, 2);
-        end
-        dataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
-    end
-
-    if thresholdFlag
-        dataMatNat = round(sum(dataMatNat, 2));
-        threshPct = .08;
-        % threshSpikes = threshPct * max(dataMatReach);
-        threshSpikes = .8*median(dataMatNat);
-        dataMatNat(dataMatNat < threshSpikes) = 0;
-        fprintf('Using Threshold method \tBinsize: %.3f\tProp zeros: %.3f\n', optBinSize(a), sum(dataMatNat == 0) / length(dataMatNat))
-    end
-
-
-    transWindow = (floor(-preTime/optBinSize(a)) : ceil(postTime/optBinSize(a)) - 1);
-
-    % % Calculate number of windows to preallocate
-    % numWindows = floor((size(dataMatNat, 1) - 1) / stepRows) + 1;
-
-    [iTau, iTauC, iAlpha, iparamSD, iDecades] = deal(nan(numSteps, 1));
-
-    iBrHist = nan(numSteps, length(centers));
-
-    % Find firsst valid index to start collecting windowed data
-    firstIdx = ceil(preTime / stepSize);
-    for i = firstIdx: numSteps %-transWindow(1): size(dataMatNat, 1) - transWindow(end)
-        % Find the index in dataMatNat for this step
-        iRealTime = i * stepSize;
-        iIdx = round(iRealTime / optBinSize(a));
-        % Find the index in dataMatNat for this step
-        % iIdx = -transWindow(1) + round((i-1) * stepRows);
-        fprintf('\t%s\t %d of %d: %.3f  finished \n', areas{a}, i, numSteps, i/numSteps)
-        % Make sure there are avalanches in the window
-        sufficient = avalanches_bin_sufficiency(dataMatNat(iIdx + transWindow + 1, :));
-        zeroBins = find(sum(dataMatNat(iIdx + transWindow + 1, :), 2) == 0);
-        if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-
-            asdfMat = rastertoasdf2(dataMatNat(iIdx + transWindow + 1, :)', optBinSize(a)*1000, 'CBModel', 'Spikes', 'DS');
-            Av = avprops(asdfMat, 'ratio', 'fingerprint');
-            iBrHist(i,:) = histcounts(Av.branchingRatio, edges, 'Normalization', 'pdf');
-            [iTau(i), iTauC(i), iAlpha(i), iparamSD(i), iDecades(i)] = avalanche_log(Av, 0);
-        end
-
-    end
-    fprintf('\nArea %s\t %.1f\n\n', areas{a}, toc/60)
-
-    brPeak{a} = iBrHist;
-    tau{a} = iTau;
-    tauC{a} = iTauC;
-    alpha{a} = iAlpha;
-    paramSD{a} = iparamSD;
-    decades{a} = iDecades;
-end
-% delete(poolID)
-%%
-a = 3
-t = stepSize * (1 : numSteps);
-figure(); clf;
-plot(t, tau{a})
-hold on;
-plot(t, alpha{a})
-plot(t, decades{a})
-
-%%
-fileName = fullfile(paths.dropPath, 'avalanche_data_last10min.mat');
-save(fileName, 'brPeak', 'tau', 'tauC', 'alpha', 'paramSD', 'optBinSize', 'centers', 'stepSize', 'preTime', 'postTime', 'areas')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 %% ==============================================             Mark's reaching vs ITI             ==============================================
 opts.minFiringRate = .1;
 opts.frameSize = .001;
@@ -1404,10 +1235,27 @@ title(['Avalanche Shape Collapse', char(10), '1/(sigma nu z) = ',...
 
 
 
-%% ==============================================             Mark's Sliding Window
-opts.minFiringRate = .1;
+%% ==============================================              Sliding Window Analysis       ==============================================
+% ==========================================================================================================================================
+% Slide a window from 1sec prior to 100ms after each time point
+% Get criticality parameters at each time piont
+% Assess metastability of criticality over time
+opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .05;
+opts.firingRateCheckTime = 5 * 60;
+
+
+%% ==============================================      Naturalistic
+getDataType = 'spikes';
+opts.collectStart = 0*60*60;
+opts.collectFor = 45 * 60;  % Collect for 45 min to match Mark's data duration
+get_standard_data
+
+dataMatMain = dataMat;
+idList = {idM23, idM56, idDS, idVS};
+
+%% ==============================================       Mark's
 % Load Mark's reach data and make it a ms neural data matrix
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
@@ -1420,11 +1268,11 @@ idM56R = find(strcmp(areaLabels, 'M56'));
 idDSR = find(strcmp(areaLabels, 'DS'));
 idVSR = find(strcmp(areaLabels, 'VS'));
 
-%%
+dataMatMain = dataMatR;
+idList = {idM23R, idM56R, idDSR, idVSR};
 
-% howLong = 10 * 60;
-% dataMatR = dataMatR(1:(howLong * 1000), :);
 
+%%                      Run the analysis
 
 pcaFlag = 0;
 pcaFirstFlag = 0;
@@ -1434,7 +1282,7 @@ thresholdBinSize = .05;
 preTime = 3*60;  %3;
 postTime = 3*60;%.2;
 stepSize = 1.5*60;%0.1;       % Step size in seconds
-numSteps = floor((size(dataMatR, 1) / 1000 - stepSize) / stepSize) - 1;
+numSteps = floor((size(dataMatMain, 1) / 1000 - stepSize) / stepSize) - 1;
 realTime = nan(numSteps, 1);
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 
@@ -1444,7 +1292,6 @@ areas = {'M23', 'M56', 'DS', 'VS'};
 [tau, tauC, alpha, paramSD, decades, kappa, dcc, dccC, brMr] = deal(nan(numSteps, length(areas)));
 optBinSize = nan(length(areas), 1);
 result = struct();
-idList = {idM23R, idM56R, idDSR, idVSR};
 % Branching ratio histogram values
 minBR = 0; maxBR = 2.5;
 edges = minBR : .1 : maxBR;
@@ -1456,21 +1303,18 @@ for a = 1 : length(areas)
     tic
     aID = idList{a};
 
-    % Remove crazy high multi-units
-    aRmv = max(dataMatR(:,aID)) > 2;
-    aID(aRmv) = [];
 
     % Find optimal bin size for avalanche analyses
     % If using the threshold method
     if thresholdFlag
         optBinSize(a) = thresholdBinSize;
-    % optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
+    optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatMain(:, aID), 2))))) / 1000;
     else
-        optBinSize(a) = optimal_bin_size(dataMatR(:,aID));
+        optBinSize(a) = optimal_bin_size(dataMatMain(:,aID));
     end
     fprintf('-------------\tArea: %s\n', areas{a})
 
-    dataMatFrames = neural_matrix_ms_to_frames(dataMatR(:, aID), optBinSize(a));
+    dataMatFrames = neural_matrix_ms_to_frames(dataMatMain(:, aID), optBinSize(a));
 
     if pcaFlag
         [coeff, score, ~, ~, explained, mu] = pca(dataMatFrames);
@@ -1538,6 +1382,7 @@ for a = 1 : length(areas)
     end
     fprintf('\nArea %s\t %.1f\n\n', areas{a}, toc/60)
 
+    result.optBinSize(a) = optBinSize(a);
     result.brPeak{a} = iBrHist;
     result.tau(:,a) = iTau;
     result.tauC(:,a) = iTauC;
@@ -1551,9 +1396,35 @@ for a = 1 : length(areas)
 end
 % delete(poolID)
 
+%%  Assign result to new variable to compare with other datasets
+resultOptN = result;
+resultOptR = resultOpt;
+result50R = result50;
+%
+%%
+dataMatMain = dataMatR;
+idList = {idM23R, idM56R, idDSR, idVSR};
+optBinSize = nan(length(areas), 1);
+for a = 1 : length(areas)
+    aID = idList{a};
+
+
+    % Find optimal bin size for avalanche analyses
+    % If using the threshold method
+    if thresholdFlag
+    optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatMain(:, aID), 2))))) / 1000;
+    else
+        optBinSize(a) = optimal_bin_size(dataMatMain(:,aID));
+    end
+end
+result50R.optBinSize = [.05; .05; .05; .05];
+resultOptR.optBinSize = optBinSize;
+%%
+save([paths.dropPath, 'criticality_sliding_classic.mat'], 'result50R', 'resultOptR', 'result50N', 'resultOptN');    
+
 %%
 mins = realTime/60;
-plotParam =  decades;
+plotParam =  result50.brMr;
 figure(54); clf; hold on;
 plot(mins, plotParam(:,1), '-ok', 'lineWidth', 2);
 plot(mins, plotParam(:,2), '-ob', 'lineWidth', 2);
