@@ -23,6 +23,9 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 %% Naturalistic data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
+opts.frameSize = .05;
+opts.windowSize = .1;
+opts.method = 'useOverlap';
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -32,7 +35,9 @@ idList = {idM23, idM56, idDS, idVS};
 %% Mark's reach data
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 
-opts.frameSize = .02;
+opts.frameSize = .05;
+opts.windowSize = .1;
+opts.method = 'useOverlap';
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
 % Get data until 1 sec after the last reach ending.
@@ -40,24 +45,36 @@ cutOff = round((dataR.R(end,2) + 1000) / 1000 / opts.frameSize);
 dataMatR = dataMatR(1:cutOff,:);
 
 % Ensure dataMatR is same size as dataMat
-idM23R = find(strcmp(areaLabels, 'M23'));
-idM56R = find(strcmp(areaLabels, 'M56'));
-idDSR = find(strcmp(areaLabels, 'DS'));
-idVSR = find(strcmp(areaLabels, 'VS'));
+idM23 = find(strcmp(areaLabels, 'M23'));
+idM56 = find(strcmp(areaLabels, 'M56'));
+idDS = find(strcmp(areaLabels, 'DS'));
+idVS = find(strcmp(areaLabels, 'VS'));
 
 areas = {'M23', 'M56', 'DS', 'VS'};
-idList = {idM23R, idM56R, idDSR, idVSR};
+idList = {idM23, idM56, idDS, idVS};
 
 
-%%  Fit a gaussian HMM on Mark's data in PCA space (up to a certain explained variance)
+
+
+
+
+
+
+
+
+
+%%  Fit a gaussian HMM in PCA space (up to a certain explained variance)
+dataMatMain = dataMat;
+dataMatMain = dataMatR;
+
 expThresh = 70;   % percent explained variance to collect pca component scores for.
-nReps = 4;
+nReps = 5;
 nFolds = 3;
 
-[coeff, score, ~, ~, explained, mu] = pca(dataMatR(:, idM56R));
+[coeff, score, ~, ~, explained, mu] = pca(dataMatMain(:, idM56));
 nDim = find(cumsum(explained) > expThresh, 1);
 
-[bestModel, bestNumStates, stateSeq, allModels, allLogL] = fit_gaussian_hmm(score(:,1:nDim), 8:14, nReps, nFolds);
+[bestModel, bestNumStates, stateSeq, allModels, allLogL] = fit_gaussian_hmm(score(:,1:nDim), 4:30, nReps, nFolds);
 
 %%
 posteriorProb = posterior(bestModel, score(:,1:nDim));

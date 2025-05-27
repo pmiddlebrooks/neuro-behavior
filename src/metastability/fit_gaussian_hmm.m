@@ -27,6 +27,7 @@ allBIC = Inf(numStateOptions, 1);
 
 % Fit models across state numbers
 for idx = 1:numStateOptions
+    tic
     numStates = stateRange(idx);
     disp(['Fitting ', num2str(numStates), ' states'])
     foldLogL = zeros(numFolds, 1);
@@ -49,7 +50,7 @@ for idx = 1:numStateOptions
             try
                 options = statset('MaxIter', 500, 'Display', 'off');
                 gmm = fitgmdist(trainData, numStates, 'CovarianceType', 'full', ...
-                    'RegularizationValue', 1e-6, 'Replicates', 1, 'Options', options);
+                    'RegularizationValue', 1e-3, 'Replicates', 1, 'Options', options);
 
                 if gmm.NegativeLogLikelihood < bestNegLogL
                     bestNegLogL = gmm.NegativeLogLikelihood;
@@ -84,6 +85,7 @@ for idx = 1:numStateOptions
     end
     allBIC(1:idx)
     figure(44); plot(stateRange(1):stateRange(idx), allBIC(1:idx));
+    fprintf('\t Took %.1f min\n', toc/60)
 end
 
 % Select best model based on lowest BIC

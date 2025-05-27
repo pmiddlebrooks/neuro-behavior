@@ -1,4 +1,4 @@
- %%
+%%
 % Steps:
 % 1.  Make a spike count time series from your data.  (Use a time bin that
 % is at least 10x the mean ISI as a rule of thumb).  Let's call the result 'popActivity'
@@ -39,6 +39,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 %% Naturalistic data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
+opts.collectFor = 45 * 60; % seconds
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -63,11 +64,15 @@ areas = {'M23', 'M56', 'DS', 'VS'};
 idList = {idM23R, idM56R, idDSR, idVSR};
 
 
-%%
-[coeff, score, ~, ~, explained, mu] = pca(dataMatR(:, idM56R));
-nDim = find(cumsum(explained) > 80, 1);
 
-[bestModel, bestNumStates, stateSeq, allModels, allLogL] = fit_gaussian_hmm(score(:,1:nDim), 2:10, 5, 5);
+
+
+
+
+
+
+
+
 
 
 
@@ -103,7 +108,7 @@ for a = 1 : length(areas)
     aID = idList{a};
 
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
-optBinSize(a) = .05;
+    optBinSize(a) = .05;
 
     popActivity1 = neural_matrix_ms_to_frames(sum(dataMatR(1:block1End, aID), 2), optBinSize(a));
     popActivity2 = neural_matrix_ms_to_frames(sum(dataMatR(block2First:end, aID), 2), optBinSize(a));
@@ -143,7 +148,7 @@ for a = 1 : length(areas)
     aID = idList{a};
 
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
-optBinSize(a) = .05;
+    optBinSize(a) = .05;
     popActivityN = neural_matrix_ms_to_frames(sum(dataMat(:, aID), 2), optBinSize(a));
 
     [varphi, varNoiseN(a)] = myYuleWalker3(popActivityN, pOrder);
@@ -214,7 +219,7 @@ binSize = .04;
 
 % Define sliding window parameters
 windowSize = 1 * 60; % (in seconds)
-stepSize = 1; %1 * 60; % (in seconds)
+stepSize = 2; %1 * 60; % (in seconds)
 Fs = 1000; % dataR is in ms
 
 % Convert window and step size to samples
@@ -227,6 +232,7 @@ numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
 
 
 % Initialize variables
+woody = struct();
 optBinSize = nan(length(areas), 1);
 [d2,d2R, varNoise, varNoiseR] = ...
     deal(nan(numWindows, length(areas)));
@@ -237,10 +243,10 @@ trialIdx2 = ismember(dataR.block(:, 3), 3:4);
 block2First = find(trialIdx2, 1);
 block2Start = dataR.R(block2First, 1) / Fs;
 
-       corrVals = [2 4];
-       errVals = [1 3];
-       corrIdx = ismember(dataR.block(:,3), corrVals);
-       errIdx = ismember(dataR.block(:,3), errVals);
+corrVals = [2 4];
+errVals = [1 3];
+corrIdx = ismember(dataR.block(:,3), corrVals);
+errIdx = ismember(dataR.block(:,3), errVals);
 reachCorr = dataR.R(corrIdx, 1) / Fs;
 reachErr = dataR.R(errIdx, 1) / Fs;
 
@@ -251,39 +257,49 @@ for a = 1 : length(areas)
     fprintf('Area %s\n', areas{a})
     tic
     aID = idList{a};
-    
+
     % Remove crazy high multi-units
     aRmv = max(dataMatR(:,aID)) > 2;
     aID(aRmv) = [];
 
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
-optBinSize(a) = binSize;
+    % optBinSize(a) = binSize;
 
-popActivity{a} = neural_matrix_ms_to_frames(sum(dataMatR(:, aID), 2), optBinSize(a));
-for w = 1:numWindows
-    startIdx = (w - 1) * stepSamples + 1;
-    endIdx = startIdx + winSamples - 1;
+    popActivity{a} = neural_matrix_ms_to_frames(sum(dataMatR(:, aID), 2), optBinSize(a));
+    for w = 1:numWindows
+        startIdx = (w - 1) * stepSamples + 1;
+        endIdx = startIdx + winSamples - 1;
 
-    startS(w) = (startIdx + round(winSamples/2)-1) / Fs;  % center of window
-    wPopActivity = neural_matrix_ms_to_frames(sum(dataMatR(startIdx:endIdx, aID), 2), optBinSize(a));
+        startS(w) = (startIdx + round(winSamples/2)-1) / Fs;  % center of window
+        wPopActivity = neural_matrix_ms_to_frames(sum(dataMatR(startIdx:endIdx, aID), 2), optBinSize(a));
 
-    [varphi, varNoise(w,a)] = myYuleWalker3(wPopActivity, pOrder);
-    d2(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
+        [varphi, varNoise(w,a)] = myYuleWalker3(wPopActivity, pOrder);
+        d2(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
-    % popActivityR = popActivity(randperm(length(popActivity)));
-    wPopActivityR = neural_matrix_ms_to_frames(sum(shuffledData(startIdx:endIdx, aID), 2), optBinSize(a));
+        % popActivityR = popActivity(randperm(length(popActivity)));
+        wPopActivityR = neural_matrix_ms_to_frames(sum(shuffledData(startIdx:endIdx, aID), 2), optBinSize(a));
 
 
-    [varphi, varNoiseR(w,a)] = myYuleWalker3(wPopActivityR, pOrder);
-    d2R(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
+        [varphi, varNoiseR(w,a)] = myYuleWalker3(wPopActivityR, pOrder);
+        d2R(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
-end
-toc
+    end
+    toc
 end
 % [d21 d21R d22 d22R]
+woody.popActivity = popActivity;
+woody.startS = startS;
+woody.d2 = d2;
+woody.d2R = d2R;
+woody.optBinSize = optBinSize;
+
+%%
+% woody40R = woody;
+woodyOptR = woody;
+
 %%
 mins = startS/60;
-figure(55); clf; hold on;
+figure(56); clf; hold on;
 plot(mins, d2(:,1), 'ok', 'lineWidth', 2);
 plot(mins, d2(:,2), 'ob', 'lineWidth', 2);
 plot(mins, d2(:,3), 'or', 'lineWidth', 2);
@@ -337,7 +353,7 @@ imagesc(popMin, 1:length(idDSR), dataMatR(:,idDSR)')
 % Customize x-axis ticks
 % xtickPositions = linspace(1, round(size(dataMatR, 1)/Fs/60), 5);  % Choose 5 tick positions evenly
 % xticks(xtickPositions);  % Set tick positions
-% 
+%
 % % Set corresponding timestamp labels
 % xticklabels(arrayfun(@(x) sprintf('%.2f', x), startS(round(xtickPositions)/60), 'UniformOutput', false));
 
@@ -367,7 +383,7 @@ maxEig = computeMaxEigenvalue(varphi)
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;
-binSize = .05; 
+binSize = .04;
 
 % Define sliding window parameters
 windowSize = 1 * 60; % (in seconds)
@@ -397,40 +413,55 @@ for a = 1 : length(areas)
     tic
     aID = idList{a};
     optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
-optBinSize(a) = binSize;
+    optBinSize(a) = binSize;
 
-popActivity{a} = neural_matrix_ms_to_frames(sum(dataMat(:, aID), 2), optBinSize(a));
+    popActivity{a} = neural_matrix_ms_to_frames(sum(dataMat(:, aID), 2), optBinSize(a));
 
-for w = 1:numWindows
-    startIdx = (w - 1) * stepSamples + 1;
-    endIdx = startIdx + winSamples - 1;
+    for w = 1:numWindows
+        startIdx = (w - 1) * stepSamples + 1;
+        endIdx = startIdx + winSamples - 1;
 
-    startS(w) = (startIdx + round(winSamples/2)) / Fs / 60;  % center of window
-    wPopActivity = neural_matrix_ms_to_frames(sum(dataMat(startIdx:endIdx, aID), 2), optBinSize(a));
+        startS(w) = (startIdx + round(winSamples/2)) / Fs / 60;  % center of window
+        wPopActivity = neural_matrix_ms_to_frames(sum(dataMat(startIdx:endIdx, aID), 2), optBinSize(a));
 
-    [varphi, varNoise(w,a)] = myYuleWalker3(wPopActivity, pOrder);
-    d2(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
+        [varphi, varNoise(w,a)] = myYuleWalker3(wPopActivity, pOrder);
+        d2(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
-    % popActivityR = popActivity(randperm(length(popActivity)));
-    wPopActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
+        % popActivityR = popActivity(randperm(length(popActivity)));
+        wPopActivityR = neural_matrix_ms_to_frames(sum(shuffledData(startIdx:endIdx, aID), 2), optBinSize(a));
 
-    [varphi, varNoiseR(w,a)] = myYuleWalker3(wPopActivityR, pOrder);
-    d2R(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
+        [varphi, varNoiseR(w,a)] = myYuleWalker3(wPopActivityR, pOrder);
+        d2R(w,a) =getFixedPointDistance2(pOrder, critType, varphi);
 
-end
-toc
+    end
+    toc
 end
 % [d21 d21R d22 d22R]
+
+woody.popActivity = popActivity;
+woody.startS = startS;
+woody.d2 = d2;
+woody.d2R = d2R;
+woody.optBinSize = optBinSize;
+
 %%
-figure(51); clf; hold on;
-plot(startS, d2(:,1), 'ok', 'lineWidth', 2);
-plot(startS, d2(:,2), 'ob', 'lineWidth', 2);
-plot(startS, d2(:,3), 'or', 'lineWidth', 2);
-plot(startS, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
-plot(startS, d2R(:,1), '*k');
-plot(startS, d2R(:,2), '*b');
-plot(startS, d2R(:,3), '*r');
-plot(startS, d2R(:,4), '*', 'color', [0 .75 0]);
+woody40N = woody;
+% woodyOptN = woody;
+
+%%
+save([paths.dropPath, 'criticality_sliding_woody.mat'], 'woody40R', 'woodyOptR', 'woody40N', 'woodyOptN');
+
+%%
+mins = startS/60;
+figure(50); clf; hold on;
+plot(mins, d2(:,1), 'ok', 'lineWidth', 2);
+plot(mins, d2(:,2), 'ob', 'lineWidth', 2);
+plot(mins, d2(:,3), 'or', 'lineWidth', 2);
+plot(mins, d2(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
+plot(mins, d2R(:,1), '*k');
+plot(mins, d2R(:,2), '*b');
+plot(mins, d2R(:,3), '*r');
+plot(mins, d2R(:,4), '*', 'color', [0 .75 0]);
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('Distance to criticality')
@@ -460,9 +491,9 @@ title('Naturalistic')
 
 
 function shuffledData = shift_shuffle_neurons(dataMat)
-% shift_shuffle_neurons circularly shifts each neuron's activity by a random 
+% shift_shuffle_neurons circularly shifts each neuron's activity by a random
 % amount between 1 and half the duration of the data.
-% 
+%
 % dataMat: [time x neurons] matrix
 % shuffledData: matrix of the same size with shuffled neuron time courses
 
@@ -475,7 +506,7 @@ shuffledData = zeros(size(dataMat));
 for n = 1:numNeurons
     % Generate random shift between 1 and half the duration
     shiftAmount = randi([1, maxShift]);
-    
+
     % Circularly shift the neuron's time series
     shuffledData(:, n) = circshift(dataMat(:, n), shiftAmount);
 end
@@ -490,16 +521,16 @@ function maxEig = computeMaxEigenvalue(varphi)
 % OUTPUT:
 %   maxEig - maximum (absolute) eigenvalue of the companion matrix
 
-    p = length(varphi);  % AR model order
+p = length(varphi);  % AR model order
 
-    % Construct the companion matrix
-    C = zeros(p);
-    C(1, :) = varphi(:)';  % First row is the AR coefficients
-    C(2:end, 1:end-1) = eye(p-1);  % Sub-diagonal identity matrix
+% Construct the companion matrix
+C = zeros(p);
+C(1, :) = varphi(:)';  % First row is the AR coefficients
+C(2:end, 1:end-1) = eye(p-1);  % Sub-diagonal identity matrix
 
-    % Compute eigenvalues
-    eigVals = eig(C);
+% Compute eigenvalues
+eigVals = eig(C);
 
-    % Return the maximum absolute eigenvalue (spectral radius)
-    maxEig = max(abs(eigVals));
+% Return the maximum absolute eigenvalue (spectral radius)
+maxEig = max(abs(eigVals));
 end
