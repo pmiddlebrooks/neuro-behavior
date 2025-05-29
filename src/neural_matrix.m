@@ -21,8 +21,7 @@ function [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix(data, opts)
 %       .minFiringRate   - Minimum firing rate threshold (for removal if enabled)
 %       .maxFiringRate   - Maximum firing rate threshold (for removal if enabled)
 %       For method = 'useOverlap'
-%       .windowSize      - Window size for summing spikes in overlapping binning
-%       .stepSize        - Step size for shifting the sliding window
+%       .windowSize      - Window size for summing spikes in overlapping binning (using stepSize = opts.frameSize)
 %       .windowAlign     - Window alignment ('center', 'left', or 'right', default: 'center')
 %       For method = 'gaussian'
 %       .gaussWidth      - if method is gaussian, width of the kernel in ms
@@ -61,7 +60,6 @@ if strcmp(opts.method, 'useOverlap')
     warning('You are using overlapping bins, so dataMat is in firing rate units (sp/s)')
     % Define window and step size
     windowSize = opts.windowSize; % Summing window size
-    stepSize = opts.stepSize; % Step size for shifting the window
     if ~isfield(opts, 'windowAlign')
         opts.windowAlign = 'center'; % Default alignment
     end

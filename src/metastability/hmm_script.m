@@ -1,8 +1,6 @@
 %%
 opts = neuro_behavior_options;
 opts.minActTime = .16;
-opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 1*60 * 60; % seconds
 opts.minFiringRate = .05;
 opts.frameSize = .001;
 
@@ -22,6 +20,8 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 %% Naturalistic data
 getDataType = 'spikes';
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 45 * 60; % seconds
 opts.firingRateCheckTime = 5 * 60;
 opts.frameSize = .05;
 opts.windowSize = .1;
@@ -65,16 +65,17 @@ idList = {idM23, idM56, idDS, idVS};
 
 %%  Fit a gaussian HMM in PCA space (up to a certain explained variance)
 dataMatMain = dataMat;
-dataMatMain = dataMatR;
+% dataMatMain = dataMatR;
+idMain = idM23;
 
 expThresh = 70;   % percent explained variance to collect pca component scores for.
 nReps = 5;
 nFolds = 3;
 
-[coeff, score, ~, ~, explained, mu] = pca(dataMatMain(:, idM56));
+[coeff, score, ~, ~, explained, mu] = pca(dataMatMain(:, idMain));
 nDim = find(cumsum(explained) > expThresh, 1);
 
-[bestModel, bestNumStates, stateSeq, allModels, allLogL] = fit_gaussian_hmm(score(:,1:nDim), 4:30, nReps, nFolds);
+[bestModel, bestNumStates, stateSeq, allModels, allLogL] = fit_gaussian_hmm(score(:,1:nDim), 24:40, nReps, nFolds);
 
 %%
 posteriorProb = posterior(bestModel, score(:,1:nDim));
