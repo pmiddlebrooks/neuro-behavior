@@ -40,12 +40,29 @@ bands = {'alpha', [8 13]; ...
     'beta', [13 30]; ...
     'lowGamma', [30 50]; ...
     'highGamma', [50 80]};
-bands = {'low alpha', [3 6]; ...
-    'high alpha', [8 13]; ...
+bands = {'theta', [4 8]; ...
     'beta', [13 30]; ...
     'lowGamma', [30 50]; ...
     'highGamma', [50 80]};
+% bands = {'low alpha', [3 6]; ...
+%     'high alpha', [8 13]; ...
+%     'beta', [13 30]; ...
+%     'lowGamma', [30 50]; ...
+%     'highGamma', [50 80]};
 numBands = size(bands, 1);
+
+selectFrom = 'M56';
+switch selectFrom
+    case 'M23'
+        aMult = 1;
+    case 'M56'
+        aMult = 2;
+    case 'DS'
+        aMult = 3;
+    case 'VS'
+        aMult = 4;
+end
+        areaBandIdx = (1:numBands) + numBands * (aMult-1);
 
 %% Plot some lfp powers as Q/A
 % Input Parameters
@@ -91,7 +108,6 @@ title('LFP Band Power Over Time');
 numBands = size(bands, 1);
 
 freqIdx = repmat(1:numBands, 1, 4);
-% freqIdx = repmat([1 2 3 4], 1, 4);
 binnedBandPowers = [];
 binnedEnvelopes = [];
 method = 'stft';
@@ -103,12 +119,12 @@ for iArea = 1 : 4
 end
 
 %% plot results
-bandIdx = 6:10;
-plotRange = (1:400);
+bandIdx = (1:4) + 4 * 2;
+plotRange = (1:30/opts.frameSize);
 figure(1232);
 subplot(2, 1, 1);
 
-imagesc(binnedBandPowers(plotRange,plotBands)');
+imagesc(binnedBandPowers(plotRange,bandIdx)');
 colormap('jet');
 colorbar;
 xlabel('Time (s)');
@@ -116,7 +132,7 @@ ylabel('Frequency Bands');
 title('Binned Z-Scored Power');
 
 subplot(2, 1, 2);
-plot(plotRange, binnedEnvelopes(plotRange,plotBands)');
+plot(plotRange, binnedEnvelopes(plotRange,bandIdx)');
 legend(bands(:, 1));
 xlabel('Time (s)');
 ylabel('Envelope Amplitude');
@@ -154,103 +170,21 @@ fprintf('LowHigh: %.3f\tHighLow: %.3f\tAllLow: %.3f\tAllHigh: %.3f\tTotal: %.3f\
 
 
 
-%% Test LFPs around behavior transitions
-preInd = find(diff(bhvIDMat) ~= 0); % 1 frame prior to all behavior transitions
-preIndLfp = preInd ./ opts.frameSize * opts.fsLfp;
-fullTime = -1.2 : 1/opts.fsLfp : 1.2; % seconds around onset
-fullWindow = round(fullTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
-windowCenter = find(fullTime == 0);
-
-areaBandIdx = 2;
-numBands = size(bands, 1);
 
 
-fun = @sRGB_to_OKLab;
-colors = maxdistcolor(size(bands, 1), fun);
-
-for i = 1 : length(preIndLfp)
-    signal = lfpPerArea(preIndLfp(i) + fullWindow, areaBandIdx);
-
-    % get the power spectra of the 4 bands
-    [cfs, frequencies] = cwt(signal, 'amor', opts.fsLfp, ...
-        'FrequencyLimits', freqLimits);
-    powerSpectra = abs(cfs).^2;
-
-    % Z-score the power at each frequency
-    zScoredPower = zscore(abs(cfs).^2, 0, 2);
-
-    % Step 2: Allocate matrices for band power and envelopes
-    bandPowerSignals = zeros(numBands, length(signal));
-    bandEnvelopes = zeros(numBands, length(signal));
-
-    % Step 3: Compute power and envelopes for each band
-    for iBand = 1:numBands
-        % Get the frequency range for the current band
-        freqRange = bands{iBand, 2};
-
-        % Identify indices corresponding to the band frequencies
-        freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
-
-        % Average z-scored power within the band
-        bandPowerSignals(iBand, :) = mean(zScoredPower(freqIdx, :), 1);
-
-        % Compute the envelope using the Hilbert transform
-        bandEnvelopes(iBand, :) = abs(hilbert(bandPowerSignals(iBand, :)));
-    end
-    figure(1332);
-    plotTime = -1 : 1/opts.fsLfp : 1; % seconds around onset
-    plotWindow = round(plotTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
-    subplot(2, 1, 1);
-    % imagesc(fullWindow, 1:size(bandPowerSignals, 1), bandPowerSignals);
-    imagesc(plotTime(1:end-1), 1:size(bandPowerSignals, 1), zscore(bandPowerSignals(:, windowCenter + plotWindow), [], 2));
-    colormap('jet');
-    colorbar;
-    xlabel('Time (s)');
-    ylabel('Frequency Bands');
-    title('Z-Scored Power');
-
-    subplot(2, 1, 2); cla; hold on;
-    for iBand = 1 : numBands
-        % plot(fullWindow, bandEnvelopes(iBand,:), 'lineWidth', 2, 'Color', colors(iBand,:));
-        plot(plotTime(1:end-1), zscore(bandEnvelopes(iBand, windowCenter + plotWindow), [], 2), 'lineWidth', 2, 'Color', colors(iBand,:));
-    end
-    legend(bands(:, 1));
-    xlabel('Time (s)');
-    xlim([plotTime(1) plotTime(end-1)])
-    yline(0)
-    ylabel('Envelope Amplitude');
-    title('Z-scored Envelopes');
-
-    % Adjust subplot widths to align
-    h1 = subplot(2, 1, 1);
-    h2 = subplot(2, 1, 2);
-    pos1 = get(h1, 'Position');
-    pos2 = get(h2, 'Position');
-    pos2(3) = pos1(3); % Make bottom subplot same width as top
-    set(h2, 'Position', pos2);
-
-
-end
-
-
-
-
-
-
-%%
-idxFit = 1:size(binnedEnvelopes,1);
 %% HMM model for state estimation
 % Example inputs
-maxStates = 8; % Maximum number of HMM states to evaluate
+idxFit = 1:size(binnedEnvelopes,1);
+maxStates = 10; % Maximum number of HMM states to evaluate
 numFolds = 3;   % Number of folds for cross-validation
-lambda = 1;
-areaBandIdx = 11:15;
-featureMatrix = zscore(binnedEnvelopes(idxFit,[areaBandIdx]));
+lambda = 10;
+% areaBandIdx = 6:10; % when testing 5 bands
+featureMatrix = zscore(binnedEnvelopes(idxFit,areaBandIdx));
 nArea = length(areaBandIdx)/numBands;
 
 % Use previously computed binnedBandPowers
-% [bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(binnedEnvelopes(idxFit,:), maxStates, numFolds, lambda);
-[bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(featureMatrix, maxStates, numFolds);
+[bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(featureMatrix, maxStates, numFolds, lambda);
+% [bestNumStates, stateEstimates, hmmModels, likelihoods] = fit_hmm_crossval_cov_penalty(featureMatrix, maxStates, numFolds);
 
 % Access optimal HMM properties
 disp('Optimal Number of States:');
@@ -258,11 +192,12 @@ disp(bestNumStates);
 
 likelihoods
 
-% HMM model for X states
+%% HMM model for X states
 % Train the best model on the full dataset
 featureMatrix = zscore(binnedEnvelopes(idxFit,areaBandIdx));
 options = statset('MaxIter', 500);
 
+% hmm = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
 hmm = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal', 'Options', options);
 % hmm = fitgmdist(featureMatrix, 3, 'Replicates', 10, 'CovarianceType', 'diagonal');
 
@@ -287,7 +222,7 @@ for i = 1 : nState
     % meanByBand = meanPower;
     axes(ax(i)); hold on;
     xticks(1:numBands)
-    xticklabels({'low alpha', 'high alpha', 'beta', 'low gamma', 'high gamma'})
+    xticklabels({'theta', 'beta', 'low gamma', 'high gamma'})
     for j = 1:nArea
         plot(1:numBands, meanByBand(j,:), 'color', colors(i,:));
     end
@@ -303,6 +238,8 @@ sgtitle('Recreating fig 2E from Akella et al 2024 bioRxiv')
 load handel
 sound(y(1:round(2.2*Fs)),Fs)
 
+%%
+
 % Plot LFP states into neural umap
 plotStatesMap = 1;
 fun = @sRGB_to_OKLab;
@@ -311,7 +248,7 @@ colors = maxdistcolor(nState, fun);
 if plotStatesMap
     colorsForPlot = arrayfun(@(x) colors(x,:), stateEstimates, 'UniformOutput', false);
     colorsForPlot = vertcat(colorsForPlot{:}); % Convert cell array to a matrix
-    figH = figHStates;
+    figH = 12;
     plotPos = [monitorOne(1) + monitorOne(3)/2, 1, monitorOne(3)/2, monitorOne(4)];
     titleM = sprintf('LFP States- %s %s bin=%.2f min_dist=%.2f spread=%.1f nn=%d', selectFrom, fitType, opts.frameSize, min_dist, spread, n_neighbors);
     plotFrames = 1:length(bhvIDMat);
@@ -320,21 +257,23 @@ end
 
 %%
 fun = @sRGB_to_OKLab;
-colors = maxdistcolor(3, fun);
-nSample = 1000;
-x = 1:nSample;
+colors = maxdistcolor(bestNumStates, fun);
+nSec = 5* 60;
+nFrames = nSec / opts.frameSize;
+x = 1:nFrames * opts.frameSize;
 
 % Create the bar plot
-figure;
+figure(933); clf;
 hold on;
 
-for i = 1:nSample
+for i = 1:length(x)
     % Draw a segment for each state with its corresponding color
     patch([x(i)-0.5, x(i)+0.5, x(i)+0.5, x(i)-0.5], ...
         [0, 0, 1, 1], colors(stateEstimates(i),:), 'EdgeColor', 'none');
 end
-
-
+xlim([0 x(end) + opts.frameSize])
+xlabel('Seconds')
+yticks([])
 
 
 
@@ -654,6 +593,91 @@ end
 
 
 
+
+
+%% Test LFPs around behavior transitions
+preInd = find(diff(bhvIDMat) ~= 0); % 1 frame prior to all behavior transitions
+preIndLfp = preInd ./ opts.frameSize * opts.fsLfp;
+fullTime = -1.2 : 1/opts.fsLfp : 1.2; % seconds around onset
+fullWindow = round(fullTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
+windowCenter = find(fullTime == 0);
+
+areaBandIdx = 2;
+numBands = size(bands, 1);
+
+
+fun = @sRGB_to_OKLab;
+colors = maxdistcolor(size(bands, 1), fun);
+
+for i = 1 : length(preIndLfp)
+    signal = lfpPerArea(preIndLfp(i) + fullWindow, areaBandIdx);
+
+    % get the power spectra of the 4 bands
+    [cfs, frequencies] = cwt(signal, 'amor', opts.fsLfp, ...
+        'FrequencyLimits', freqLimits);
+    powerSpectra = abs(cfs).^2;
+
+    % Z-score the power at each frequency
+    zScoredPower = zscore(abs(cfs).^2, 0, 2);
+
+    % Step 2: Allocate matrices for band power and envelopes
+    bandPowerSignals = zeros(numBands, length(signal));
+    bandEnvelopes = zeros(numBands, length(signal));
+
+    % Step 3: Compute power and envelopes for each band
+    for iBand = 1:numBands
+        % Get the frequency range for the current band
+        freqRange = bands{iBand, 2};
+
+        % Identify indices corresponding to the band frequencies
+        freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
+
+        % Average z-scored power within the band
+        bandPowerSignals(iBand, :) = mean(zScoredPower(freqIdx, :), 1);
+
+        % Compute the envelope using the Hilbert transform
+        bandEnvelopes(iBand, :) = abs(hilbert(bandPowerSignals(iBand, :)));
+    end
+    figure(1332);
+    plotTime = -1 : 1/opts.fsLfp : 1; % seconds around onset
+    plotWindow = round(plotTime(1:end-1) * opts.fsLfp); % frames around onset w.r.t. zWindow (remove last frame)
+    subplot(2, 1, 1);
+    % imagesc(fullWindow, 1:size(bandPowerSignals, 1), bandPowerSignals);
+    imagesc(plotTime(1:end-1), 1:size(bandPowerSignals, 1), zscore(bandPowerSignals(:, windowCenter + plotWindow), [], 2));
+    colormap('jet');
+    colorbar;
+    xlabel('Time (s)');
+    ylabel('Frequency Bands');
+    title('Z-Scored Power');
+
+    subplot(2, 1, 2); cla; hold on;
+    for iBand = 1 : numBands
+        % plot(fullWindow, bandEnvelopes(iBand,:), 'lineWidth', 2, 'Color', colors(iBand,:));
+        plot(plotTime(1:end-1), zscore(bandEnvelopes(iBand, windowCenter + plotWindow), [], 2), 'lineWidth', 2, 'Color', colors(iBand,:));
+    end
+    legend(bands(:, 1));
+    xlabel('Time (s)');
+    xlim([plotTime(1) plotTime(end-1)])
+    yline(0)
+    ylabel('Envelope Amplitude');
+    title('Z-scored Envelopes');
+
+    % Adjust subplot widths to align
+    h1 = subplot(2, 1, 1);
+    h2 = subplot(2, 1, 2);
+    pos1 = get(h1, 'Position');
+    pos2 = get(h2, 'Position');
+    pos2(3) = pos1(3); % Make bottom subplot same width as top
+    set(h2, 'Position', pos2);
+
+
+end
+
+
+
+
+
+
 %%
 bandPowers = [];
 for iArea = 1:4
@@ -796,13 +820,17 @@ function [bestNumStates, stateEstimates, hmmModels, penalizedLikelihoods] = fit_
 % FIT_HMM_CROSSVAL_COV_PENALTY Fits HMM and determines the optimal number of states using penalized log-likelihood.
 %
 % Inputs:
-%   binnedBandPowers - Struct with binned band power data (alpha, beta, lowGamma, highGamma).
+%   featureMatrix - Time x Feature matrix of LFP band power values.
 %   maxStates - Maximum number of states to evaluate.
+%   numFolds - Number of cross-validation folds.
+%   lambda - Penalty weighting factor.
 %
 % Outputs:
 %   bestNumStates - Optimal number of states based on penalized likelihood.
 %   stateEstimates - State assignments for the best model.
 %   hmmModels - Cell array of trained HMMs for each number of states.
+%   penalizedLikelihoods - Penalized likelihood scores for each state count.
+
 featureMatrix = zscore(featureMatrix);
 numBins = size(featureMatrix, 1);
 foldSize = floor(numBins / numFolds);
@@ -810,9 +838,11 @@ foldSize = floor(numBins / numFolds);
 % Initialize storage
 testLogLikelihood = nan(maxStates, 1);
 topEigenvalue = nan(maxStates, 1);
+penalizedLikelihoods = nan(maxStates, 1);
 hmmModels = cell(maxStates, 1);
 
-for numStates = 2:maxStates
+for numStates = 3:maxStates
+    fprintf('Fitting %d states\n', numStates)
     foldLikelihoods = zeros(numFolds, 1);
     iTopEigenvalue = zeros(numFolds, 1);
     iTestLogLikelihood = zeros(numFolds, 1);
@@ -833,59 +863,55 @@ for numStates = 2:maxStates
         % Evaluate log-likelihood on test data
         iTestLogLikelihood(fold) = sum(log(pdf(hmm, testData)));
 
-        % Compute similarity as the top eigenvalue of the state definition
-        % matrix
-        % Extract state definition matrix
+        % Compute similarity as the top eigenvalue of the state definition matrix
         stateDefinitionMatrix = hmm.mu; % Size: numStates x numFeatures
-        % Compute the covariance matrix of the state definition matrix
         covMatrix = cov(stateDefinitionMatrix);
-
-        % Compute the top eigenvalue
         iTopEigenvalue(fold) = max(eig(covMatrix));
-
-
-        %     % Compute similarity penalty
-        %
-        %
-        %     % Compute penalty based on covariance similarity
-        %     covarianceMatrices = hmm.Sigma; % Covariance matrices for each state
-        %     numCovariances = size(covarianceMatrices, 3); % Number of states
-        %     similarityPenalty = 0;
-        %     for i = 1:numCovariances
-        %         for j = i+1:numCovariances
-        %             % Frobenius norm of the difference between covariance matrices
-        %             similarityPenalty = similarityPenalty + norm(covarianceMatrices(:,:,i) - covarianceMatrices(:,:,j), 'fro');
-        %         end
-        %     end
-        %     similarityPenalty = similarityPenalty / (numCovariances * (numCovariances - 1)); % Average penalty
-        %
-        %     % Penalize the log-likelihood
-        %     foldLikelihoods(fold) = testLogLikelihood - lambda * similarityPenalty;
     end
 
     % Average likelihoods and top eigenvalues
-    % penalizedLikelihoods(numStates) = mean(foldLikelihoods);
     testLogLikelihood(numStates) = mean(iTestLogLikelihood);
     topEigenvalue(numStates) = mean(iTopEigenvalue);
+
+    % Robust normalization function (same as zscore right now)
+normalizeVec = @(x) (x - mean(x)) / std(x);
+% Normalized and penalized score
+penalizedLikelihoods(numStates) = normalizeVec(testLogLikelihood(numStates)) - lambda * normalizeVec(topEigenvalue(numStates));
+
+    % penalizedLikelihoods(numStates) = testLogLikelihood(numStates) - lambda * topEigenvalue(numStates); % Subtractive penalty using lambda
 end
 
-normLogLike = normalizeMetric(testLogLikelihood);
-normTopEig = normalizeMetric(topEigenvalue);
+% Determine best number of states
+[~, bestNumStates] = max(penalizedLikelihoods);
 
-penalizedLikelihoods = normLogLike ./ normTopEig;
-[maxVal, bestNumStates] = max(penalizedLikelihoods);
+% Assign states using best model
+stateEstimates = cluster(hmmModels{bestNumStates}, featureMatrix);
 
 
-% % Find the best number of states
-% [~, bestNumStates] = max(penalizedLikelihoods);
 
-% Train the best model on the full dataset
-bestHMM = fitgmdist(featureMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal');
+% Visualization
+plotFlag = 1;
+if plotFlag
+figure;
+subplot(3,1,1);
+plot(2:maxStates, testLogLikelihood(2:end), '-o');
+title('Log-Likelihood vs. Number of States');
+xlabel('Number of States'); ylabel('Log-Likelihood');
 
-% State estimations
-stateEstimates = cluster(bestHMM, featureMatrix);
-hmmModels{bestNumStates} = bestHMM;
+subplot(3,1,2);
+plot(2:maxStates, topEigenvalue(2:end), '-o');
+title('Top Eigenvalue Penalty vs. Number of States');
+xlabel('Number of States'); ylabel('Top Eigenvalue');
+
+subplot(3,1,3);
+plot(2:maxStates, penalizedLikelihoods(2:end), '-o');
+title('Penalized Likelihood vs. Number of States');
+xlabel('Number of States'); ylabel('Penalized Likelihood');
+sgtitle(sprintf('Model Selection Summary (\lambda = %.2f)', lambda));
 end
+end
+
+
 
 
 

@@ -18,7 +18,11 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 
 
-%% Naturalistic data
+
+
+
+%%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
+% Naturalistic data
 getDataType = 'spikes';
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
@@ -63,19 +67,29 @@ idList = {idM23, idM56, idDS, idVS};
 
 
 
+
+
 %%  Fit a gaussian HMM in PCA space (up to a certain explained variance)
-dataMatMain = dataMat;
-% dataMatMain = dataMatR;
-idMain = idM23;
+% dataMatMain = dataMat;
+halfSet = round(size(dataMatR, 1) / 2);
+dataMatMain = dataMatR(1:halfSet, :);
+idMain = idM56;
 
 expThresh = 70;   % percent explained variance to collect pca component scores for.
-nReps = 5;
-nFolds = 3;
 
 [coeff, score, ~, ~, explained, mu] = pca(dataMatMain(:, idMain));
 nDim = find(cumsum(explained) > expThresh, 1);
 
-[bestModel, bestNumStates, stateSeq, allModels, allLogL] = fit_gaussian_hmm(score(:,1:nDim), 24:40, nReps, nFolds);
+opts.stateRange = 3:30;
+opts.numReps = 5;
+opts.numFolds = 3;
+opts.margLikMethod = 'importance';
+opts.numSamples = 100;
+opts.selectBy = 'margLik';
+opts.plotFlag = 1;
+
+[bestModel, bestNumStates, stateSeq, allModels, allLogL, allBIC, allMargLik] = ...
+    fit_gaussian_hmm(score(:,1:nDim), opts);
 
 %%
 posteriorProb = posterior(bestModel, score(:,1:nDim));
