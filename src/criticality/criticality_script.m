@@ -1450,6 +1450,9 @@ ylabel('Distance to criticality')
 
 
 
+%%
+load([paths.dropPath, 'criticality_sliding_classic.mat']);    
+load([paths.dropPath, 'criticality_sliding_woody.mat']);    
 
 
 
