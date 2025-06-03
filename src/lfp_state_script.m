@@ -1,9 +1,16 @@
-% This script more or less follows:
+%% This script more or less follows:
 % Akella et al 2024 bioRxiv: Deciphering neuronal variability across states reveals dynamic sensory encoding
 % https://www.biorxiv.org/content/10.1101/2024.04.03.587408v2
 
+% for plotting consistency
+monitorPositions = get(0, 'MonitorPositions');
+if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
+    monitorPositions = flipud(monitorPositions);
+end
+monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
+monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
-%% Get LFP band powers
+%% Get LFP band powers - Naturalistic
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
@@ -19,14 +26,58 @@ get_standard_data
 % lowpass the LFP at 300hz
 lfpPerArea = lowpass(lfpPerArea, 300, opts.fsLfp);
 
-% for plotting consistency
-monitorPositions = get(0, 'MonitorPositions');
-if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
-    monitorPositions = flipud(monitorPositions);
-end
-monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
-monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
+%% Mark's reaching data 
+reachPath = 'E:\Projects\neuro-behavior\data\reach_data';
+lfpFile = fullfile(reachPath, 'AB2_042823_g0_t0.imec0.lf.bin');
+metaFile = fullfile(reachPath, 'AB2_042823_g0_t0.imec0.lf.meta');
+addpath('E:\Projects\toolboxes')
+m = ReadMeta(metaFile);
+
+opts.fsLfp = round(str2double(m.imSampRate));
+nChan = str2double(m.nSavedChans);
+nSamps = str2double(m.fileSizeBytes)/2/nChan;
+
+mmf = memmapfile(lfpFile, 'Format', {'int16', [nChan nSamps], 'x'});
+% mmf = memmapfile(lfpFile, 'Format', 'int16');
+% mmf = memmapfile(lfpFile);
+lfpPerArea = double(flipud([...
+    mmf.Data.x(360,:);...
+    mmf.Data.x(280,:);...
+    mmf.Data.x(170,:);...
+    mmf.Data.x(40,:)...
+    ])');
+
+zThresh = 5; % threshold in SD units
+zLfp = zscore(lfpPerArea);
+
+for aIdx = 1 : size(zLfp)
+spikeIdx = find(abs(zLfp(:,aIdx)) > zThresh);
+
+% For each spike, interpolate a window
+winSize = 20; % samples before and after
+lfpClean = lfpPerArea;
+for i = 1:length(spikeIdx)
+    idx = spikeIdx(i);
+    s = max(1, idx - winSize);
+    e = min(length(lfpPerArea(:,aIdx)), idx + winSize);
+    lfpClean(s:e, aIdx) = interp1([s e], [lfpPerArea(s, aIdx) lfpPerArea(e, aIdx)], s:e);
+end
+% Detrend the signals (remove linear trend)
+lfpPerArea(:,aIdx) = detrend(lfpClean(:,aIdx), 'linear');
+lfpMed(:,aIdx) = medfilt1(lfpPerArea(:,aIdx), 11); % window size in samples
+% lowpass the LFP at 300hz
+lfpPerArea(:,aIdx) = lowpass(lfpMed(:,aIdx), 300, opts.fsLfp);
+lfpClean(:,aIdx) = lfpPerArea(:,aIdx);
+notchFreqs = [60 120 180];
+for f0 = notchFreqs
+    wo = f0 / (2500 / 2);
+    bw = wo / 35;
+    [b, a] = iirnotch(wo, bw);
+    lfpClean(:,aIdx) = filtfilt(b, a, lfpClean(:,aIdx));
+end
+end
+lfpPerArea = lfpClean;
 %%
 % - get one lfp from each brain area (4 lfps)
 % - Compute lfp power via wavelet
@@ -66,7 +117,8 @@ end
 
 %% Plot some lfp powers as Q/A
 % Input Parameters
-signal = lfpPerArea(1:10000,2); % Example LFP signal
+plotFrames = 100*(10000:40000);
+signal = lfpPerArea(plotFrames,2); % Example LFP signal
 
 % Compute the continuous wavelet transform
 freqLimits = [min(cellfun(@(x) x(1), bands(:, 2))), max(cellfun(@(x) x(2), bands(:, 2)))];
@@ -89,8 +141,8 @@ for i = 1:numBands
 end
 
 % Plot the heatmap of band powers
-figure;
-imagesc(time, 1:numBands, zscore(bandPowers, [], 2));
+figure(223);
+imagesc(plotFrames/opts.fsLfp, 1:numBands, zscore(bandPowers, [], 2));
 colormap('jet');
 colorbar;
 set(gca, 'YTick', 1:numBands, 'YTickLabel', bands(:, 1));
@@ -119,8 +171,8 @@ for iArea = 1 : 4
 end
 
 %% plot results
-bandIdx = (1:4) + 4 * 2;
-plotRange = (1:30/opts.frameSize);
+bandIdx = (1:4) + 4 * 1;
+plotRange = (1000:1060/opts.frameSize);
 figure(1232);
 subplot(2, 1, 1);
 
