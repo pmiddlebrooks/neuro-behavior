@@ -38,8 +38,18 @@ if opts.shiftAlignFactor ~= 0
 end
 
 % Determine total duration in frames
+if ~isempty(opts.collectStart)
+firstSecond = opts.collectStart;
+else
+    firstSecond = 0;
+end
+if ~isempty(opts.collectFor)
 lastSecond = ceil(max(data.CSV(:,1)));
-numFrames = ceil(lastSecond / opts.frameSize);
+else
+    lastSecond = opts.collectFor;
+end
+
+numFrames = ceil((lastSecond-firstSecond) / opts.frameSize);
 
 useNeurons = find(data.idchan(:,end) ~= 0 & ismember(data.idchan(:,4), [1 2])); % Keep everything that isn't corpus collosum
 idLabels = data.idchan(useNeurons, 1);
@@ -67,7 +77,7 @@ if strcmp(opts.method, 'useOverlap')
     end
 end
 if strcmp(opts.method, 'gaussian')
-    totalTimeMs = lastSecond * 1000; % Ensure time resolution in ms
+    totalTimeMs = (lastSecond-firstSecond) * 1000; % Ensure time resolution in ms
 
     % Define Gaussian kernel for convolution
     kernelRange = round(5 * opts.gaussWidth); % 5 SD range ensures near-zero tails
@@ -86,7 +96,7 @@ for i = 1:length(idLabels)
     switch opts.method
         case 'useOverlap'
             % Overlapping bin edges
-            timeEdges = 0:stepSize:lastSecond; % Define steps
+            timeEdges = firstSecond:stepSize:lastSecond; % Define steps
             dataMatTemp = zeros(length(timeEdges) - 1, 1);
 
             % Apply sliding window approach
@@ -112,7 +122,7 @@ for i = 1:length(idLabels)
             dataMat(:, i) = dataMatTemp;
         case 'standard'
             % Standard non-overlapping binning
-            timeEdges = 0:opts.frameSize:lastSecond;
+            timeEdges = firstSecond:opts.frameSize:lastSecond;
             [iSpikeCount, ~] = histcounts(iSpikeTime, timeEdges);
             dataMat(:, i) = iSpikeCount';
         case 'gaussian'
@@ -167,6 +177,7 @@ if opts.removeSome
     idLabels(rmvNeurons) = [];
     areaLabels(rmvNeurons) = [];
 end
+
 end
 
 
