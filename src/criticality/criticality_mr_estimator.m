@@ -6,9 +6,9 @@
 % 1.  Make a spike count time series from your data. Let's call the result 'popActivity'
 % For rodents, Wilting/Prieemann use 4ms bins and kmax = 2500ms
 
-% 2.  
+% 2.
 
-% 3.  
+% 3.
 
 % One simple control to compare against is if you randomize the time order
 % of points from your time series and then repeat steps 2 and 3.  This
@@ -34,7 +34,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 
 %% MR Estimator constants
-opts.frameSize = .004;
+opts.frameSize = .01;
 kMax = 10 / opts.frameSize;  % kMax in seconds
 
 
@@ -43,7 +43,8 @@ kMax = 10 / opts.frameSize;  % kMax in seconds
 %% Naturalistic data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
-opts.collectFor = 45 * 60; % seconds
+opts.collectStart = 15 * 60; % seconds
+opts.collectFor = 20 * 60; % seconds
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -53,10 +54,15 @@ idList = {idM23, idM56, idDS, idVS};
 %% Mark's reach data
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 Fs = 1000; % dataR is in ms (1000 Hz)
+%%
+opts.collectStart = 15 * 60; % seconds
+opts.collectFor = 20 * 60; % seconds
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+
 
 % Get data until 1 sec after the last reach ending.
 cutOff = round((dataR.R(end,2) + 1000) / 1000 / opts.frameSize);
+cutOff = round(35 * 60 / opts.frameSize);
 dataMatR = dataMatR(1:cutOff,:);
 
 % Ensure dataMatR is same size as dataMat
@@ -64,130 +70,10 @@ idM23R = find(strcmp(areaLabels, 'M23'));
 idM56R = find(strcmp(areaLabels, 'M56'));
 idDSR = find(strcmp(areaLabels, 'DS'));
 idVSR = find(strcmp(areaLabels, 'VS'));
+    fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23R), length(idM56R), length(idDSR), length(idVSR))
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 idList = {idM23R, idM56R, idDSR, idVSR};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-%%   ====================================     Mark Task: Block1 vs Block2       ==============================================
-
-areas = {'M23', 'M56', 'DS', 'VS'};
-idList = {idM23R, idM56R, idDSR, idVSR};
-
-isiMult = 10; % Multiple of mean ISI to determine minimum bin size
-pOrder = 10; % Order parameter for the autoregressor model
-critType = 2;
-optBinSize = nan(length(areas), 1);
-[d21, d22, d21R, d22R, varNoise1, varNoise2, varNoise1R, varNoise2R] = ...
-    deal(nan(length(areas), 1));
-
-trialIdx1 = ismember(dataR.block(:, 3), 1:2);
-trialIdx2 = ismember(dataR.block(:, 3), 3:4);
-block1Last = find(trialIdx1, 1, 'last');
-block2First = find(trialIdx2, 1);
-block1End = dataR.R(block1Last, 2);
-block2Start = dataR.R(block2First, 1);
-
-shuffledData1 = shift_shuffle_neurons(dataMatR(1:block1End,:));
-shuffledData2 = shift_shuffle_neurons(dataMatR(block2First:end,:));
-
-for a = 1 : length(areas)
-    fprintf('Area %s\n', areas{a})
-    tic
-    aID = idList{a};
-
-    optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
-    optBinSize(a) = .05;
-
-    popActivity1 = neural_matrix_ms_to_frames(sum(dataMatR(1:block1End, aID), 2), optBinSize(a));
-    popActivity2 = neural_matrix_ms_to_frames(sum(dataMatR(block2First:end, aID), 2), optBinSize(a));
-    % popActivity2 = neural_matrix_ms_to_frames(sum(dataMatR(block2First:block2First+5*60*1000, aID), 2), optBinSize(a));
-
-    [varphi, varNoise1(a)] = myYuleWalker3(popActivity1, pOrder);
-    d21(a) =getFixedPointDistance2(pOrder, critType, varphi);
-    [varphi, varNoise2(a)] = myYuleWalker3(popActivity2, pOrder);
-    d22(a) =getFixedPointDistance2(pOrder, critType, varphi);
-
-    % popActivity1R = popActivity1(randperm(length(popActivity1)));
-    % popActivity2R = popActivity2(randperm(length(popActivity2)));
-    popActivity1R = sum(shuffledData1(:, aID), 2);
-    popActivity2R = sum(shuffledData2(:, aID), 2);
-
-    [varphi, varNoise1R(a)] = myYuleWalker3(popActivity1R, pOrder);
-    d21R(a) =getFixedPointDistance2(pOrder, critType, varphi);
-    [varphi, varNoise2R(a)] = myYuleWalker3(popActivity2R, pOrder);
-    d22R(a) =getFixedPointDistance2(pOrder, critType, varphi);
-
-end
-
-[d21 d21R d22 d22R]
-
-%% =================        NATURALISTIC DATA              ================
-isiMult = 10; % Multiple of mean ISI to determine minimum bin size
-pOrder = 10; % Order parameter for the autoregressor model
-critType = 2;
-[optBinSize, d2N, d2NR, varNoiseN, varNoiseNR] = ...
-    deal(nan(length(areas), 1));
-
-shuffledData = shift_shuffle_neurons(dataMat);
-
-for a = 1 : length(areas)
-    fprintf('Area %s\n', areas{a})
-    tic
-    aID = idList{a};
-
-    optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
-    optBinSize(a) = .05;
-    popActivityN = neural_matrix_ms_to_frames(sum(dataMat(:, aID), 2), optBinSize(a));
-
-    [varphi, varNoiseN(a)] = myYuleWalker3(popActivityN, pOrder);
-    d2N(a) =getFixedPointDistance2(pOrder, critType, varphi);
-
-    % popActivityR = popActivityN(randperm(length(popActivityN)));
-    popActivityR = sum(shuffledData(:, aID), 2);
-
-    [varphi, varNoiseNR(a)] = myYuleWalker3(popActivityR, pOrder);
-    d2NR(a) =getFixedPointDistance2(pOrder, critType, varphi);
-
-end
-
-%%
-figure(45); clf
-plot(1:4, d21, 'ok', 'LineWidth', 2)
-hold on
-plot(1:4, d22, 'or', 'LineWidth', 2)
-plot(1:4, d2N, 'ob', 'LineWidth', 2)
-plot(1:4, d21R, '*k')
-plot(1:4, d22R, '*r')
-plot(1:4, d2NR, '*b')
-legend({'Block 1', 'Block 2', 'Naturalistic', 'B1 Rand', 'B2 Rand', 'Nat Rand'})
-xlim([.5 4.5])
-title('Distance to Criticality')
-xticks(1:4)
-xticklabels({'M23', 'M56', 'DS', 'VS'})
-ylabel('Distance to criticality')
-
-
-
-
 
 
 
@@ -218,15 +104,19 @@ ylabel('Distance to criticality')
 
 %%   ====================================     Mark Task: Sliding window       ==============================================
 % Load the data above (Mark's data)
+areas = {'M23','M56', 'DS', 'VS'};
+idList = {idM23R, idM56R, idDSR, idVSR};
 
 % Define sliding window parameters
-windowSize = 1 * 60; % (in seconds)
+windowSize =  45; % (in seconds)
 stepSize = 2; %1 * 60; % (in seconds)
 
 % Convert window and step size to samples (in frames)
 winSamples = round(windowSize / opts.frameSize);
 stepSamples = round(stepSize / opts.frameSize);
 numTimePoints = size(dataMatR, 1);
+
+nShuffles = 3;
 
 % Preallocate or store outputs if needed
 numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
@@ -249,8 +139,6 @@ errIdx = ismember(dataR.block(:,3), errVals);
 reachCorr = dataR.R(corrIdx, 1) / 1000 / opts.frameSize;  % Make sure this is correct
 reachErr = dataR.R(errIdx, 1) / 1000 / opts.frameSize;  % Make sure this is correct
 
-% Shuffle data for comparison
-shuffledData = shift_shuffle_neurons(dataMatR);
 
 for a = 1 : length(areas)
     fprintf('Area %s\n', areas{a})
@@ -266,16 +154,23 @@ for a = 1 : length(areas)
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
 
-        startS(w) = (startIdx + round(winSamples/2)-1);  % center of window
+        startS(w) = (startIdx + round(winSamples/2)-1) * opts.frameSize;  % center of window
         wPopActivity = popActivity{a}(startIdx:endIdx);
 
-result = branching_ratio_mr_estimation(wPopActivity, kMax);
-brMr(w, a) = result.branching_ratio;
+        result = branching_ratio_mr_estimation(wPopActivity, kMax);
+        brMr(w, a) = result.branching_ratio;
 
-        wPopActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
+        brShuff = zeros(nShuffles, 1);
+        for nShuff = 1 : nShuffles
+            % Shuffle data for comparison
+            shuffledData = shift_shuffle_neurons(dataMatR);
 
-resultR = branching_ratio_mr_estimation(wPopActivityR, kMax);
-brMrR(w, a) = resultR.branching_ratio;
+            wPopActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
+
+            resultR = branching_ratio_mr_estimation(wPopActivityR, kMax);
+            brShuff(nShuff) = resultR.branching_ratio;
+        end
+        brMrR(w, a) = mean(brShuff);
 
     end
     toc
@@ -288,11 +183,11 @@ woodyOptR = woody;
 
 %%
 mins = startS/60;
-figure(56); clf; hold on;
-plot(mins, brMr(:,1), 'ok', 'lineWidth', 2);
-plot(mins, brMr(:,2), 'ob', 'lineWidth', 2);
-plot(mins, brMr(:,3), 'or', 'lineWidth', 2);
-plot(mins, brMr(:,4), 'o', 'color', [0 .75 0], 'lineWidth', 2);
+figure(59); clf; hold on;
+plot(mins, brMr(:,1), '-ok', 'lineWidth', 2);
+plot(mins, brMr(:,2), '-ob', 'lineWidth', 2);
+plot(mins, brMr(:,3), '-or', 'lineWidth', 2);
+plot(mins, brMr(:,4), '-o', 'color', [0 .75 0], 'lineWidth', 2);
 % plot(mins, d2(:,1), '-k', 'lineWidth', 2);
 % plot(mins, d2(:,2), '-b', 'lineWidth', 2);
 % plot(mins, d2(:,3), '-r', 'lineWidth', 2);
@@ -306,12 +201,12 @@ legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('MR estimate')
 
-h1 = plot(reachCorr/60, 0, '.', 'color', [0 .5 0], 'MarkerSize', 30);
-h2 = plot(reachErr/60, -.02, '.', 'color', [.3 .3 .3], 'MarkerSize', 30);
-set(h1, 'HandleVisibility', 'off');
-set(h2, 'HandleVisibility', 'off');
+% h1 = plot(reachCorr*opts.frameSize/60, 1, '.', 'color', [0 .5 0], 'MarkerSize', 30);
+% h2 = plot(reachErr*opts.frameSize/60, 1.002, '.', 'color', [.3 .3 .3], 'MarkerSize', 30);
+% set(h1, 'HandleVisibility', 'off');
+% set(h2, 'HandleVisibility', 'off');
 title(['Reach Data ', num2str(windowSize), ' sec window, ' num2str(stepSize), ' sec steps'])
-xlim([0 45])
+xlim([0 opts.collectFor/60])
 
 %%
 figure(14); clf
@@ -470,6 +365,109 @@ title('Naturalistic')
 
 
 
+
+
+
+
+
+
+%%   ====================================     Mark Task: Block1 vs Block2       ==============================================
+
+areas = {'M23', 'M56', 'DS', 'VS'};
+idList = {idM23R, idM56R, idDSR, idVSR};
+
+isiMult = 10; % Multiple of mean ISI to determine minimum bin size
+pOrder = 10; % Order parameter for the autoregressor model
+critType = 2;
+optBinSize = nan(length(areas), 1);
+[d21, d22, d21R, d22R, varNoise1, varNoise2, varNoise1R, varNoise2R] = ...
+    deal(nan(length(areas), 1));
+
+trialIdx1 = ismember(dataR.block(:, 3), 1:2);
+trialIdx2 = ismember(dataR.block(:, 3), 3:4);
+block1Last = find(trialIdx1, 1, 'last');
+block2First = find(trialIdx2, 1);
+block1End = dataR.R(block1Last, 2);
+block2Start = dataR.R(block2First, 1);
+
+shuffledData1 = shift_shuffle_neurons(dataMatR(1:block1End,:));
+shuffledData2 = shift_shuffle_neurons(dataMatR(block2First:end,:));
+
+for a = 1 : length(areas)
+    fprintf('Area %s\n', areas{a})
+    tic
+    aID = idList{a};
+
+    optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMatR(:, aID), 2))))) / 1000;
+    optBinSize(a) = .05;
+
+    popActivity1 = neural_matrix_ms_to_frames(sum(dataMatR(1:block1End, aID), 2), optBinSize(a));
+    popActivity2 = neural_matrix_ms_to_frames(sum(dataMatR(block2First:end, aID), 2), optBinSize(a));
+    % popActivity2 = neural_matrix_ms_to_frames(sum(dataMatR(block2First:block2First+5*60*1000, aID), 2), optBinSize(a));
+
+    [varphi, varNoise1(a)] = myYuleWalker3(popActivity1, pOrder);
+    d21(a) =getFixedPointDistance2(pOrder, critType, varphi);
+    [varphi, varNoise2(a)] = myYuleWalker3(popActivity2, pOrder);
+    d22(a) =getFixedPointDistance2(pOrder, critType, varphi);
+
+    % popActivity1R = popActivity1(randperm(length(popActivity1)));
+    % popActivity2R = popActivity2(randperm(length(popActivity2)));
+    popActivity1R = sum(shuffledData1(:, aID), 2);
+    popActivity2R = sum(shuffledData2(:, aID), 2);
+
+    [varphi, varNoise1R(a)] = myYuleWalker3(popActivity1R, pOrder);
+    d21R(a) =getFixedPointDistance2(pOrder, critType, varphi);
+    [varphi, varNoise2R(a)] = myYuleWalker3(popActivity2R, pOrder);
+    d22R(a) =getFixedPointDistance2(pOrder, critType, varphi);
+
+end
+
+[d21 d21R d22 d22R]
+
+%% =================        NATURALISTIC DATA              ================
+isiMult = 10; % Multiple of mean ISI to determine minimum bin size
+pOrder = 10; % Order parameter for the autoregressor model
+critType = 2;
+[optBinSize, d2N, d2NR, varNoiseN, varNoiseNR] = ...
+    deal(nan(length(areas), 1));
+
+shuffledData = shift_shuffle_neurons(dataMat);
+
+for a = 1 : length(areas)
+    fprintf('Area %s\n', areas{a})
+    tic
+    aID = idList{a};
+
+    optBinSize(a) = isiMult * round(mean(diff(find(sum(dataMat(:, aID), 2))))) / 1000;
+    optBinSize(a) = .05;
+    popActivityN = neural_matrix_ms_to_frames(sum(dataMat(:, aID), 2), optBinSize(a));
+
+    [varphi, varNoiseN(a)] = myYuleWalker3(popActivityN, pOrder);
+    d2N(a) =getFixedPointDistance2(pOrder, critType, varphi);
+
+    % popActivityR = popActivityN(randperm(length(popActivityN)));
+    popActivityR = sum(shuffledData(:, aID), 2);
+
+    [varphi, varNoiseNR(a)] = myYuleWalker3(popActivityR, pOrder);
+    d2NR(a) =getFixedPointDistance2(pOrder, critType, varphi);
+
+end
+
+%%
+figure(45); clf
+plot(1:4, d21, 'ok', 'LineWidth', 2)
+hold on
+plot(1:4, d22, 'or', 'LineWidth', 2)
+plot(1:4, d2N, 'ob', 'LineWidth', 2)
+plot(1:4, d21R, '*k')
+plot(1:4, d22R, '*r')
+plot(1:4, d2NR, '*b')
+legend({'Block 1', 'Block 2', 'Naturalistic', 'B1 Rand', 'B2 Rand', 'Nat Rand'})
+xlim([.5 4.5])
+title('Distance to Criticality')
+xticks(1:4)
+xticklabels({'M23', 'M56', 'DS', 'VS'})
+ylabel('Distance to criticality')
 
 
 
