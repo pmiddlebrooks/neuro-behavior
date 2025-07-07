@@ -1,3 +1,13 @@
+%
+% Narrow/Wide Inhibitory/Excitatory
+% fig 3: https://journals.physiology.org/doi/full/10.1152/jn.00188.2002?rfr_dat=cr_pub++0pubmed&url_ver=Z39.88-2003&rfr_id=ori%3Arid%3Acrossref.org
+% https://cellexplorer.org/pipeline/cell-type-classification/
+% CellExplorer
+% Cell-type classification
+% A graphical user interface and standardized pipeline for visualizing and characterizing single neuron features
+% 
+% 
+
 %% Get data from get_standard_data
 
 opts = neuro_behavior_options;
