@@ -17,7 +17,6 @@
 %%
 opts = neuro_behavior_options;
 opts.minActTime = .16;
-opts.collectStart = 0 * 60 * 60; % seconds
 opts.minFiringRate = .05;
 
 paths = get_paths;
@@ -34,8 +33,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 
 %% MR Estimator constants
-opts.frameSize = .01;
-kMax = 10 / opts.frameSize;  % kMax in seconds
+opts.frameSize = .001;
 
 
 
@@ -43,8 +41,8 @@ kMax = 10 / opts.frameSize;  % kMax in seconds
 %% Naturalistic data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
-opts.collectStart = 15 * 60; % seconds
-opts.collectFor = 20 * 60; % seconds
+opts.collectStart = 5 * 60; % seconds
+opts.collectFor = 25 * 60; % seconds
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -52,25 +50,25 @@ idList = {idM23, idM56, idDS, idVS};
 
 
 %% Mark's reach data
+opts.frameSize = 0.001; % Set to 1 ms as requested
+
+% Load data as before
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 Fs = 1000; % dataR is in ms (1000 Hz)
-%%
-opts.collectStart = 15 * 60; % seconds
-opts.collectFor = 20 * 60; % seconds
+opts.collectStart = 5 * 60; % seconds
+opts.collectFor = 25 * 60; % seconds
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
+% % Get data until 1 sec after the last reach ending.
+% cutOff = round((dataR.R(end,2) + 1000) / 1000 / opts.frameSize);
+% cutOff = round(35 * 60 / opts.frameSize);
+% dataMatR = dataMatR(1:cutOff,:);
 
-% Get data until 1 sec after the last reach ending.
-cutOff = round((dataR.R(end,2) + 1000) / 1000 / opts.frameSize);
-cutOff = round(35 * 60 / opts.frameSize);
-dataMatR = dataMatR(1:cutOff,:);
-
-% Ensure dataMatR is same size as dataMat
 idM23R = find(strcmp(areaLabels, 'M23'));
 idM56R = find(strcmp(areaLabels, 'M56'));
 idDSR = find(strcmp(areaLabels, 'DS'));
 idVSR = find(strcmp(areaLabels, 'VS'));
-    fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23R), length(idM56R), length(idDSR), length(idVSR))
+fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23R), length(idM56R), length(idDSR), length(idVSR))
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 idList = {idM23R, idM56R, idDSR, idVSR};
@@ -85,48 +83,70 @@ idList = {idM23R, idM56R, idDSR, idVSR};
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-%%   ====================================     Mark Task: Sliding window       ==============================================
+%%   ====================================     Mark Reach Task: Sliding window       ==============================================
 % Load the data above (Mark's data)
 areas = {'M23','M56', 'DS', 'VS'};
 idList = {idM23R, idM56R, idDSR, idVSR};
 
+
+%% ===================== Optimal frameSize and windowSize determination =====================
+% Recommendations: frameSize should yield ~5-20 spikes/bin, windowSize should yield >=100-200 bins per window
+optimalFrameSize = zeros(1, length(areas));
+optimalWindowSize = zeros(1, length(areas));
+aDataMat = cell(1, length(areas));
+
+candidateFrameSizes = [0.004, 0.01, 0.02, 0.05, .075, 0.1]; % 4ms, 10ms, 20ms, 50ms, 100ms
+candidateWindowSizes = [30, 45, 60, 90, 120]; % in seconds
+
+minSpikesPerBin = 3;
+maxSpikesPerBin = 20;
+minBinsPerWindow = 500;
+
+for a = 1:length(areas)
+    found = false;
+    aID = idList{a};
+    bestFS = candidateFrameSizes(1);
+    bestWS = candidateWindowSizes(1);
+    bestScore = -Inf;
+    for fs = candidateFrameSizes
+        aDataMatR = neural_matrix_ms_to_frames(dataMatR(:, aID), fs);
+        meanSpikesPerBin = mean(sum(aDataMatR, 2));
+        if meanSpikesPerBin < minSpikesPerBin || meanSpikesPerBin > maxSpikesPerBin
+            continue;
+        end
+        for ws = candidateWindowSizes
+            numBins = ws / fs;
+            if numBins >= minBinsPerWindow
+                % Found the minimal window size that works for this frame size
+                optimalFrameSize(a) = fs;
+                optimalWindowSize(a) = ws;
+                % aDataMat{a} = dataMatReach; % Save the binned data
+                found = true;
+                fprintf('Area %s: optimal frameSize = %.3f s, optimal windowSize = %.1f s\n', areas{a}, fs, ws);
+                break; % Stop at the first (smallest) window size that works
+            end
+        end
+        if found
+            break; % Stop at the first frame size that works
+        end
+    end
+    if ~found
+        warning('No suitable frameSize/windowSize found for area %s', areas{a});
+    end
+end
+
+
+%%    With optimal parameters, run each area
 % Define sliding window parameters
-windowSize =  45; % (in seconds)
+debugFlag = 0;
+
 stepSize = 2; %1 * 60; % (in seconds)
 
-% Convert window and step size to samples (in frames)
-winSamples = round(windowSize / opts.frameSize);
-stepSamples = round(stepSize / opts.frameSize);
-numTimePoints = size(dataMatR, 1);
-
-nShuffles = 3;
-
-% Preallocate or store outputs if needed
-numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
-
+nShuffles = 10;
 
 % Initialize variables
-[brMr, brMrR] = ...
-    deal(nan(numWindows, length(areas)));
-startS = nan(numWindows, 1);
-popActivity = cell(4,1);
+[popActivity, brMr, brMrR, startS] = ...
+    deal(cell(1, length(areas)));
 
 trialIdx2 = ismember(dataR.block(:, 3), 3:4);
 block2First = find(trialIdx2, 1);
@@ -145,32 +165,63 @@ for a = 1 : length(areas)
     tic
     aID = idList{a};
 
-    % Remove crazy high multi-units
-    aRmv = max(dataMatR(:,aID)) > 2;
-    aID(aRmv) = [];
+    % Convert window and step size to samples (in frames)
+    stepSamples = round(stepSize / optimalFrameSize(a));
+    winSamples = round(optimalWindowSize(a) / optimalFrameSize(a));
 
-    popActivity{a} = sum(dataMatR(:, aID), 2);
+    aDataMatR = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalFrameSize(a));
+
+    numTimePoints = size(aDataMatR, 1);
+    % Preallocate or store outputs if needed
+    numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
+
+    popActivity{a} = sum(aDataMatR, 2);
+    kMax = round(10 / optimalFrameSize(a));  % kMax in seconds, specific for this area's optimal frame size
+
     for w = 1:numWindows
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
 
-        startS(w) = (startIdx + round(winSamples/2)-1) * opts.frameSize;  % center of window
+        startS{a}(w) = (startIdx + round(winSamples/2)-1) * optimalFrameSize(a);  % center of window
         wPopActivity = popActivity{a}(startIdx:endIdx);
 
+        if debugFlag
+            % Debug: Check if data is valid for MR estimation
+            if any(isnan(wPopActivity)) || any(isinf(wPopActivity))
+                fprintf('Warning: Window %d for area %s contains NaN or Inf values\n', w, areas{a});
+                continue;
+            end
+
+            if all(wPopActivity == 0)
+                fprintf('Warning: Window %d for area %s contains all zeros\n', w, areas{a});
+                continue;
+            end
+
+            if length(wPopActivity) < 100
+                fprintf('Warning: Window %d for area %s has too few samples (%d)\n', w, areas{a}, length(wPopActivity));
+                continue;
+            end
+
+            % Check data statistics
+            meanAct = mean(wPopActivity);
+            stdAct = std(wPopActivity);
+            fprintf('Window %d, Area %s: mean=%.3f, std=%.3f, length=%d\n', w, areas{a}, meanAct, stdAct, length(wPopActivity));
+        end
+
         result = branching_ratio_mr_estimation(wPopActivity, kMax);
-        brMr(w, a) = result.branching_ratio;
+        brMr{a}(w) = result.branching_ratio;
 
         brShuff = zeros(nShuffles, 1);
         for nShuff = 1 : nShuffles
             % Shuffle data for comparison
-            shuffledData = shift_shuffle_neurons(dataMatR);
+            shuffledData = shift_shuffle_neurons(aDataMatR);
 
-            wPopActivityR = sum(shuffledData(startIdx:endIdx, aID), 2);
+            wPopActivityR = sum(shuffledData(startIdx:endIdx,:), 2);
 
             resultR = branching_ratio_mr_estimation(wPopActivityR, kMax);
             brShuff(nShuff) = resultR.branching_ratio;
         end
-        brMrR(w, a) = mean(brShuff);
+        brMrR{a}(w) = mean(brShuff);
 
     end
     toc
@@ -178,24 +229,16 @@ end
 
 
 %%
-% woody40R = woody;
-woodyOptR = woody;
+figure(60); clf; hold on;
+plot(startS{1}/60, brMr{1}, '-ok', 'lineWidth', 2);
+plot(startS{2}/60, brMr{2}, '-ob', 'lineWidth', 2);
+plot(startS{3}/60, brMr{3}, '-or', 'lineWidth', 2);
+plot(startS{4}/60, brMr{4}, '-o', 'color', [0 .75 0], 'lineWidth', 2);
 
-%%
-mins = startS/60;
-figure(59); clf; hold on;
-plot(mins, brMr(:,1), '-ok', 'lineWidth', 2);
-plot(mins, brMr(:,2), '-ob', 'lineWidth', 2);
-plot(mins, brMr(:,3), '-or', 'lineWidth', 2);
-plot(mins, brMr(:,4), '-o', 'color', [0 .75 0], 'lineWidth', 2);
-% plot(mins, d2(:,1), '-k', 'lineWidth', 2);
-% plot(mins, d2(:,2), '-b', 'lineWidth', 2);
-% plot(mins, d2(:,3), '-r', 'lineWidth', 2);
-% plot(mins, d2(:,4), '-', 'color', [0 .75 0], 'lineWidth', 2);
-plot(mins, brMrR(:,1), '*k');
-plot(mins, brMrR(:,2), '*b');
-plot(mins, brMrR(:,3), '*r');
-plot(mins, brMrR(:,4), '*', 'color', [0 .75 0]);
+plot(startS{1}/60, brMrR{1}, '*k');
+plot(startS{2}/60, brMrR{2}, '*b');
+plot(startS{3}/60, brMrR{3}, '*r');
+plot(startS{4}/60, brMrR{4}, '*', 'color', [0 .75 0]);
 xline(block2Start/60, 'linewidth', 2)
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
@@ -207,47 +250,6 @@ ylabel('MR estimate')
 % set(h2, 'HandleVisibility', 'off');
 title(['Reach Data ', num2str(windowSize), ' sec window, ' num2str(stepSize), ' sec steps'])
 xlim([0 opts.collectFor/60])
-
-%%
-figure(14); clf
-areaIdx = 2;
-subplot(2,1,1)
-plot(startS/60, d2(:,areaIdx), 'or', 'lineWidth', 2);
-xlim([0 45])
-subplot(2,1,2)
-popSmooth = movmean(popActivity{areaIdx}, 21);
-popMin = (0:length(popSmooth)-1) * optBinSize(areaIdx) / 60;
-% plot(popMin, popSmooth);
-plot(popMin, popActivity{areaIdx});
-hold on;
-h1 = plot(reachCorr/60,15, '.', 'color', [0 .5 0], 'MarkerSize', 10);
-h2 = plot(reachErr/60, 16, '.', 'color', [.3 .3 .3], 'MarkerSize', 10);
-set(h1, 'HandleVisibility', 'off');
-set(h2, 'HandleVisibility', 'off');
-
-xlim([0 45])
-
-
-
-%%
-figure(12);
-popMin = (0:length(popActivity{areaIdx})-1) * optBinSize(areaIdx) / 60;
-% imagesc(startS/60, 1:length(idDSR), dataMatR(:,idDSR)')
-imagesc(popMin, 1:length(idDSR), dataMatR(:,idDSR)')
-% Customize x-axis ticks
-% xtickPositions = linspace(1, round(size(dataMatR, 1)/Fs/60), 5);  % Choose 5 tick positions evenly
-% xticks(xtickPositions);  % Set tick positions
-%
-% % Set corresponding timestamp labels
-% xticklabels(arrayfun(@(x) sprintf('%.2f', x), startS(round(xtickPositions)/60), 'UniformOutput', false));
-
-%%
-maxEig = computeMaxEigenvalue(varphi)
-
-
-
-
-
 
 
 
@@ -262,7 +264,6 @@ maxEig = computeMaxEigenvalue(varphi)
 
 
 %%   ====================================     Natrualistic: Sliding window       ==============================================
-
 
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 pOrder = 10; % Order parameter for the autoregressor model

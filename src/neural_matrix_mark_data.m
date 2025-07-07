@@ -44,9 +44,9 @@ else
     firstSecond = 0;
 end
 if ~isempty(opts.collectFor)
-lastSecond = ceil(max(data.CSV(:,1)));
+    lastSecond = firstSecond + opts.collectFor;
 else
-    lastSecond = opts.collectFor;
+    lastSecond = ceil(max(data.CSV(:,1)));
 end
 
 numFrames = ceil((lastSecond-firstSecond) / opts.frameSize);
@@ -152,7 +152,7 @@ end
 
 % Remove neurons that do not meet firing rate criteria
 if opts.removeSome
-    checkTime = 5 * 60;
+    checkTime = 5 * 60; % Check 5min for now, convert to input variable later maybe
     checkFrames = floor(checkTime / opts.frameSize);
     if ~strcmp(opts.method, 'standard')
         meanStart = mean(dataMat(1:checkFrames, :), 1);
@@ -167,9 +167,9 @@ if opts.removeSome
     % Get rid of units that had crazy bursting during the recording (most
     % likely multi-units)
     if ~strcmp(opts.method, 'standard')
-    tooCrazy = max(dataMat, [], 1) > 600;
+    tooCrazy = max(dataMat, [], 1) > 1000;
     else
-    tooCrazy = max(dataMat ./ opts.frameSize, [], 1) > 600;
+    tooCrazy = max(dataMat ./ opts.frameSize, [], 1) > 3000;
     end
     rmvNeurons = ~(keepStart & keepEnd) | tooCrazy;
     fprintf('\nkeeping %d of %d neurons\n', sum(~rmvNeurons), length(rmvNeurons));
