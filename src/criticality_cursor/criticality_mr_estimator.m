@@ -70,13 +70,6 @@ idDSR = find(strcmp(areaLabels, 'DS'));
 idVSR = find(strcmp(areaLabels, 'VS'));
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23R), length(idM56R), length(idDSR), length(idVSR))
 
-areas = {'M23', 'M56', 'DS', 'VS'};
-idList = {idM23R, idM56R, idDSR, idVSR};
-
-
-
-
-
 
 
 
@@ -205,12 +198,12 @@ figure(60); clf; hold on;
 plot(startS{1}/60, brMrRea{1}, '-ok', 'lineWidth', 2);
 plot(startS{2}/60, brMrRea{2}, '-ob', 'lineWidth', 2);
 plot(startS{3}/60, brMrRea{3}, '-or', 'lineWidth', 2);
-plot(startS{4}/60, brMrRea{4}, '-o', 'color', [0 .75 0], 'lineWidth', 2);
+% plot(startS{4}/60, brMrRea{4}, '-o', 'color', [0 .75 0], 'lineWidth', 2);
 
 plot(startS{1}/60, brMrReaR{1}, '*k');
 plot(startS{2}/60, brMrReaR{2}, '*b');
 plot(startS{3}/60, brMrReaR{3}, '*r');
-plot(startS{4}/60, brMrReaR{4}, '*', 'color', [0 .75 0]);
+% plot(startS{4}/60, brMrReaR{4}, '*', 'color', [0 .75 0]);
 xline(block2Start/60, 'linewidth', 2)
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
@@ -314,12 +307,12 @@ figure(61); clf; hold on;
 plot(startSNat{1}/60, brMrNat{1}, '-ok', 'lineWidth', 2);
 plot(startSNat{2}/60, brMrNat{2}, '-ob', 'lineWidth', 2);
 plot(startSNat{3}/60, brMrNat{3}, '-or', 'lineWidth', 2);
-plot(startSNat{4}/60, brMrNat{4}, '-o', 'color', [0 .75 0], 'lineWidth', 2);
+% plot(startSNat{4}/60, brMrNat{4}, '-o', 'color', [0 .75 0], 'lineWidth', 2);
 
 plot(startSNat{1}/60, brMrRNat{1}, '*k');
 plot(startSNat{2}/60, brMrRNat{2}, '*b');
 plot(startSNat{3}/60, brMrRNat{3}, '*r');
-plot(startSNat{4}/60, brMrRNat{4}, '*', 'color', [0 .75 0]);
+% plot(startSNat{4}/60, brMrRNat{4}, '*', 'color', [0 .75 0]);
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('MR estimate')
