@@ -38,17 +38,9 @@ opts.frameSize = .001;
 
 
 
-%% Naturalistic data
-getDataType = 'spikes';
-opts.firingRateCheckTime = 5 * 60;
-opts.collectStart = 5 * 60; % seconds
-opts.collectFor = 25 * 60; % seconds
-get_standard_data
-
-areas = {'M23', 'M56', 'DS', 'VS'};
-idList = {idM23, idM56, idDS, idVS};
 
 
+%%   ====================================     Mark Reach Task: Sliding window       ==============================================
 %% Mark's reach data
 opts.frameSize = 0.001; % Set to 1 ms as requested
 
@@ -70,14 +62,6 @@ idDSR = find(strcmp(areaLabels, 'DS'));
 idVSR = find(strcmp(areaLabels, 'VS'));
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23R), length(idM56R), length(idDSR), length(idVSR))
 
-
-
-
-
-
-
-%%   ====================================     Mark Reach Task: Sliding window       ==============================================
-% Load the data above (Mark's data)
 areas = {'M23','M56', 'DS', 'VS'};
 idList = {idM23R, idM56R, idDSR, idVSR};
 
@@ -229,7 +213,18 @@ xlim([0 opts.collectFor/60])
 
 
 %%   ====================================     Natrualistic: Sliding window       ==============================================
+%% Naturalistic data
+getDataType = 'spikes';
+opts.firingRateCheckTime = 5 * 60;
+opts.collectStart = 5 * 60; % seconds
+opts.collectFor = 25 * 60; % seconds
+get_standard_data
 
+areas = {'M23', 'M56', 'DS', 'VS'};
+idList = {idM23, idM56, idDS, idVS};
+
+
+%%
 % Use the same candidate frame/bin and window sizes as above
 [candidateBinSizes, candidateWindowSizesNat] = deal(candidateFrameSizes, candidateWindowSizes); % For clarity
 optimalBinSizeNat = zeros(1, length(areas));
@@ -263,14 +258,14 @@ brMrRNat = cell(1, length(areas));
 popActivityNat = cell(1, length(areas));
 startSNat = cell(1, length(areas));
 
-for a = 1:length(areas)
+for a = 2:3%length(areas)
     fprintf('Area %s (Naturalistic)\n', areas{a})
     tic
     aID = idList{a};
 
     % Convert window and step size to samples
     stepSamples = round(stepSize / optimalBinSizeNat(a));
-    winSamples = round(optimalWindowSize(a) / optimalBinSizeNat(a));
+    winSamples = round(optimalWindowSizeNat(a) / optimalBinSizeNat(a));
     
 
     % Bin the data for this area using optimal bin size
@@ -303,7 +298,7 @@ for a = 1:length(areas)
 end
 
 %% Plotting for Naturalistic MR estimation
-figure(61); clf; hold on;
+figure(62); clf; hold on;
 plot(startSNat{1}/60, brMrNat{1}, '-ok', 'lineWidth', 2);
 plot(startSNat{2}/60, brMrNat{2}, '-ob', 'lineWidth', 2);
 plot(startSNat{3}/60, brMrNat{3}, '-or', 'lineWidth', 2);
@@ -321,6 +316,145 @@ xlim([0 opts.collectFor/60])
 
 
 
+%% ========== Test how brMrNat changes as a function of number of neurons in DS ==========
+
+% Select DS area (a=3)
+a = 3;
+fprintf('\nTesting effect of neuron count on brMrNat for DS (a=3)\n');
+
+% Option: use fixed optimal parameters (true) or find optimal for each subpopulation (false)
+useFixedOptimalParams = true; % Set to false to find optimal parameters for each subpopulation
+
+% Get neuron IDs for DS and randomly permute
+allDSNeurons = idDS;
+numNeuronsDS = length(allDSNeurons);
+rng('shuffle'); % For randomness
+permNeurons = allDSNeurons(randperm(numNeuronsDS));
+
+% Define 5 increasing neuron counts from half to max, in equal steps
+minCount = ceil(numNeuronsDS/2);
+maxCount = numNeuronsDS;
+numSteps = 5;
+neuronCounts = round(linspace(minCount, maxCount, numSteps));
+
+% Preallocate results
+brMrNat_DS = cell(1, numSteps);
+brMrRNat_DS = cell(1, numSteps);
+startSNat_DS = cell(1, numSteps);
+usedNeuronCounts = zeros(1, numSteps);
+optimalBinSizes_DS = zeros(1, numSteps);
+optimalWindowSizes_DS = zeros(1, numSteps);
+
+% Find fixed optimal parameters if using fixed approach
+if useFixedOptimalParams
+    firstCount = neuronCounts(1);
+    firstNeurons = permNeurons(1:firstCount);
+    dataMatDS_first = dataMat(:, firstNeurons);
+    [optimalBinSize_fixed, optimalWindowSize_fixed] = find_optimal_bin_and_window(dataMatDS_first, ...
+        candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+    
+    if optimalBinSize_fixed == 0 || optimalWindowSize_fixed == 0
+        warning('No optimal bin/window size found for first iteration (%d neurons in DS). Skipping all iterations.', firstCount);
+    else
+        fprintf('Using fixed optimal bin size = %.3f s and window size = %.1f s for all iterations\n', optimalBinSize_fixed, optimalWindowSize_fixed);
+    end
+end
+
+% Single loop for all iterations
+for i = 1:numSteps
+    currCount = neuronCounts(i);
+    usedNeuronCounts(i) = currCount;
+    currNeurons = permNeurons(1:currCount);
+    dataMatDS = dataMat(:, currNeurons);
+    
+    % Determine optimal parameters for this iteration
+    if useFixedOptimalParams
+        if optimalBinSize_fixed == 0 || optimalWindowSize_fixed == 0
+            % Skip this iteration if no optimal parameters found
+            brMrNat_DS{i} = nan;
+            brMrRNat_DS{i} = nan;
+            startSNat_DS{i} = nan;
+            optimalBinSizes_DS(i) = nan;
+            optimalWindowSizes_DS(i) = nan;
+            continue;
+        end
+        optimalBinSize = optimalBinSize_fixed;
+        optimalWindowSize = optimalWindowSize_fixed;
+    else
+        % Find optimal parameters for this subpopulation
+        [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(dataMatDS, ...
+            candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+        
+        if optimalBinSize == 0 || optimalWindowSize == 0
+            warning('No optimal bin/window size found for %d neurons in DS. Skipping.', currCount);
+            brMrNat_DS{i} = nan;
+            brMrRNat_DS{i} = nan;
+            startSNat_DS{i} = nan;
+            optimalBinSizes_DS(i) = nan;
+            optimalWindowSizes_DS(i) = nan;
+            continue;
+        end
+    end
+    
+    % Store optimal parameters for this iteration
+    optimalBinSizes_DS(i) = optimalBinSize;
+    optimalWindowSizes_DS(i) = optimalWindowSize;
+    
+    % Bin the data and compute MR estimates
+    aDataMatNat = neural_matrix_ms_to_frames(dataMatDS, optimalBinSize);
+    numTimePointsNat = size(aDataMatNat, 1);
+    
+    % Calculate window parameters
+    stepSamples = round(stepSize / optimalBinSize);
+    winSamples = round(optimalWindowSize / optimalBinSize);
+    numWindowsNat = floor((numTimePointsNat - winSamples) / stepSamples) + 1;
+    
+    popActivityNat = sum(aDataMatNat, 2);
+    kMax = round(10 / optimalBinSize);
+    
+    brMrNat_DS{i} = nan(1, numWindowsNat);
+    brMrRNat_DS{i} = nan(1, numWindowsNat);
+    startSNat_DS{i} = nan(1, numWindowsNat);
+    
+    for w = 1:numWindowsNat
+        startIdx = (w - 1) * stepSamples + 1;
+        endIdx = startIdx + winSamples - 1;
+        startSNat_DS{i}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSize;  % center of window
+        wPopActivity = popActivityNat(startIdx:endIdx);
+        result = branching_ratio_mr_estimation(wPopActivity, kMax);
+        brMrNat_DS{i}(w) = result.branching_ratio;
+        brShuff = zeros(nShuffles, 1);
+        for nShuff = 1:nShuffles
+            shuffledData = shift_shuffle_neurons(aDataMatNat);
+            wPopActivityR = sum(shuffledData(startIdx:endIdx,:), 2);
+            resultR = branching_ratio_mr_estimation(wPopActivityR, kMax);
+            brShuff(nShuff) = resultR.branching_ratio;
+        end
+        brMrRNat_DS{i}(w) = mean(brShuff);
+    end
+    
+    % Print progress with appropriate message
+    if useFixedOptimalParams
+        fprintf('Done for %d neurons in DS (step %d/%d)\n', currCount, i, numSteps);
+    else
+        fprintf('Done for %d neurons in DS (step %d/%d) with optimal bin=%.3f, window=%.1f\n', currCount, i, numSteps, optimalBinSize, optimalWindowSize);
+    end
+end
+
+%% Plotting: brMrNat as a function of time for different neuron counts in DS
+figure(63); clf; hold on;
+colors = lines(numSteps);
+for i = 1:numSteps
+    if ~isnan(brMrNat_DS{i})
+        plot(startSNat_DS{i}/60, brMrNat_DS{i}, '-', 'Color', colors(i,:), 'LineWidth', 2, ...
+            'DisplayName', sprintf('%d neurons', usedNeuronCounts(i)));
+    end
+end
+xlabel('Minutes');
+ylabel('MR estimate');
+title('DS: MR estimate vs. time for increasing neuron counts');
+legend('show');
+xlim([0 opts.collectFor/60]);
 
 
 
