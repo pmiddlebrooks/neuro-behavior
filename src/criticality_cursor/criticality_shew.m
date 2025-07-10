@@ -72,6 +72,266 @@ idList = {idM23R, idM56R, idDSR, idVSR};
 
 
 
+%%   ====================================     Mark Reach Task: Sliding window (mirrored from MR estimator)   ==============================================
+% Optimal bin/window size search for reach data
+candidateFrameSizes = [0.004, 0.01, 0.02, 0.05, .075, 0.1];
+candidateWindowSizes = [30, 45, 60, 90, 120];
+minSpikesPerBin = 3;
+maxSpikesPerBin = 20;
+minBinsPerWindow = 500;
+
+optimalBinSizeRea = zeros(1, length(areas));
+optimalWindowSizeRea = zeros(1, length(areas));
+for a = 1:length(areas)
+    aID = idList{a};
+    thisDataMat = dataMatR(:, aID);
+    [optimalBinSizeRea(a), optimalWindowSizeRea(a)] = find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+    fprintf('Area %s: optimal frame/bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeRea(a), optimalWindowSizeRea(a));
+end
+
+% Sliding window d2 analysis for reach data
+stepSize = 2; % seconds
+nShuffles = 10;
+d2Rea = cell(1, length(areas));
+d2ReaR = cell(1, length(areas));
+popActivityRea = cell(1, length(areas));
+startSRea = cell(1, length(areas));
+pOrder = 10;
+critType = 2;
+
+for a = 1:length(areas)
+    aID = idList{a};
+    stepSamples = round(stepSize / optimalBinSizeRea(a));
+    winSamples = round(optimalWindowSizeRea(a) / optimalBinSizeRea(a));
+    aDataMatR = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSizeRea(a));
+    numTimePoints = size(aDataMatR, 1);
+    numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
+    popActivityRea{a} = sum(aDataMatR, 2);
+    d2Rea{a} = nan(1, numWindows);
+    d2ReaR{a} = nan(1, numWindows);
+    startSRea{a} = nan(1, numWindows);
+    for w = 1:numWindows
+        startIdx = (w - 1) * stepSamples + 1;
+        endIdx = startIdx + winSamples - 1;
+        startSRea{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSizeRea(a);
+        wPopActivity = popActivityRea{a}(startIdx:endIdx);
+        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+        d2Rea{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+        d2Shuff = zeros(nShuffles, 1);
+        for nShuff = 1:nShuffles
+            shuffledData = shift_shuffle_neurons(aDataMatR);
+            wPopActivityR = sum(shuffledData(startIdx:endIdx,:), 2);
+            [varphi, ~] = myYuleWalker3(wPopActivityR, pOrder);
+            d2Shuff(nShuff) = getFixedPointDistance2(pOrder, critType, varphi);
+        end
+        d2ReaR{a}(w) = mean(d2Shuff);
+    end
+end
+
+% Plotting for reach d2
+figure(160); clf; hold on;
+plot(startSRea{1}/60, d2Rea{1}, '-ok', 'lineWidth', 2);
+plot(startSRea{2}/60, d2Rea{2}, '-ob', 'lineWidth', 2);
+plot(startSRea{3}/60, d2Rea{3}, '-or', 'lineWidth', 2);
+% plot(startSRea{4}/60, d2Rea{4}, '-o', 'color', [0 .75 0], 'lineWidth', 2);
+plot(startSRea{1}/60, d2ReaR{1}, '*k');
+plot(startSRea{2}/60, d2ReaR{2}, '*b');
+plot(startSRea{3}/60, d2ReaR{3}, '*r');
+% plot(startSRea{4}/60, d2ReaR{4}, '*', 'color', [0 .75 0]);
+xlabel('Minutes'); ylabel('d2 estimate');
+legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest');
+title(['Reach Data ', num2str(optimalWindowSizeRea), ' sec window, ' num2str(stepSize), ' sec steps']);
+xlim([0 opts.collectFor/60]);
+
+
+
+
+
+%%   ====================================     Naturalistic: Sliding window (mirrored from MR estimator)   ==============================================
+% Optimal bin/window size search for naturalistic data
+[candidateBinSizes, candidateWindowSizesNat] = deal(candidateFrameSizes, candidateWindowSizes);
+optimalBinSizeNat = zeros(1, length(areas));
+optimalWindowSizeNat = zeros(1, length(areas));
+for a = 1:length(areas)
+    aID = idList{a};
+    thisDataMat = dataMat(:, aID);
+    [optimalBinSizeNat(a), optimalWindowSizeNat(a)] = find_optimal_bin_and_window(thisDataMat, candidateBinSizes, candidateWindowSizesNat, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+    fprintf('Area %s: optimal frame/bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeNat(a), optimalWindowSizeNat(a));
+end
+
+% Sliding window d2 analysis for naturalistic data
+stepSize = 1; % seconds
+nShuffles = 10;
+d2Nat = cell(1, length(areas));
+d2NatR = cell(1, length(areas));
+popActivityNat = cell(1, length(areas));
+startSNat = cell(1, length(areas));
+pOrder = 10;
+critType = 2;
+
+for a = 1:length(areas)
+    aID = idList{a};
+    tic
+    fprintf('Area %s (Naturalistic)\n', areas{a})
+    stepSamples = round(stepSize / optimalBinSizeNat(a));
+    winSamples = round(optimalWindowSizeNat(a) / optimalBinSizeNat(a));
+    aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSizeNat(a));
+    numTimePointsNat = size(aDataMatNat, 1);
+    numWindowsNat = floor((numTimePointsNat - winSamples) / stepSamples) + 1;
+    popActivityNat{a} = sum(aDataMatNat, 2);
+    d2Nat{a} = nan(1, numWindowsNat);
+    d2NatR{a} = nan(1, numWindowsNat);
+    startSNat{a} = nan(1, numWindowsNat);
+    for w = 1:numWindowsNat
+        startIdx = (w - 1) * stepSamples + 1;
+        endIdx = startIdx + winSamples - 1;
+        startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSizeNat(a);
+        wPopActivity = popActivityNat{a}(startIdx:endIdx);
+        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+        d2Nat{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+        d2Shuff = zeros(nShuffles, 1);
+        for nShuff = 1:nShuffles
+            shuffledData = shift_shuffle_neurons(aDataMatNat);
+            wPopActivityR = sum(shuffledData(startIdx:endIdx,:), 2);
+            [varphi, ~] = myYuleWalker3(wPopActivityR, pOrder);
+            d2Shuff(nShuff) = getFixedPointDistance2(pOrder, critType, varphi);
+        end
+        d2NatR{a}(w) = mean(d2Shuff);
+    end
+    toc
+end
+
+% Plotting for naturalistic d2
+figure(161); clf; hold on;
+plot(startSNat{1}/60, d2Nat{1}, '-ok', 'lineWidth', 2);
+plot(startSNat{2}/60, d2Nat{2}, '-ob', 'lineWidth', 2);
+plot(startSNat{3}/60, d2Nat{3}, '-or', 'lineWidth', 2);
+% plot(startSNat{4}/60, d2Nat{4}, '-o', 'color', [0 .75 0], 'lineWidth', 2);
+plot(startSNat{1}/60, d2NatR{1}, '*k');
+plot(startSNat{2}/60, d2NatR{2}, '*b');
+plot(startSNat{3}/60, d2NatR{3}, '*r');
+% plot(startSNat{4}/60, d2NatR{4}, '*', 'color', [0 .75 0]);
+xlabel('Minutes'); ylabel('d2 estimate');
+legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest');
+title(['Naturalistic Data ', num2str(optimalWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps']);
+xlim([0 opts.collectFor/60]);
+
+
+%% ========== Test how d2Nat changes as a function of number of neurons in area (mirrored from MR estimator) ==========
+% Select area (e.g., a = 2 for M56)
+a = 2;
+fprintf('\nTesting effect of neuron count on d2Nat for %s (a=%d)\n', areas{a}, a);
+useFixedOptimalParams = false; % Set to false to find optimal parameters for each subpopulation
+
+allAreaNeurons = idList{a};
+numNeurons = length(allAreaNeurons);
+rng('shuffle');
+permNeurons = allAreaNeurons(randperm(numNeurons));
+minCount = ceil(numNeurons/2);
+maxCount = numNeurons;
+numSteps = 3;
+neuronCounts = round(linspace(minCount, maxCount, numSteps));
+d2Nat_Area = cell(1, numSteps);
+d2NatR_Area = cell(1, numSteps);
+startSNat_Area = cell(1, numSteps);
+usedNeuronCounts = zeros(1, numSteps);
+optimalBinSizes_Area = zeros(1, numSteps);
+optimalWindowSizes_Area = zeros(1, numSteps);
+if useFixedOptimalParams
+    firstCount = neuronCounts(1);
+    firstNeurons = permNeurons(1:firstCount);
+    dataMatArea_first = dataMat(:, firstNeurons);
+    [optimalBinSize_fixed, optimalWindowSize_fixed] = find_optimal_bin_and_window(dataMatArea_first, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+    if optimalBinSize_fixed == 0 || optimalWindowSize_fixed == 0
+        warning('No optimal bin/window size found for first iteration (%d neurons in area). Skipping all iterations.', firstCount);
+    else
+        fprintf('Using fixed optimal bin size = %.3f s and window size = %.1f s for all iterations\n', optimalBinSize_fixed, optimalWindowSize_fixed);
+    end
+end
+for i = 1:numSteps
+    currCount = neuronCounts(i);
+    usedNeuronCounts(i) = currCount;
+    currNeurons = permNeurons(1:currCount);
+    dataMatArea = dataMat(:, currNeurons);
+    if useFixedOptimalParams
+        if optimalBinSize_fixed == 0 || optimalWindowSize_fixed == 0
+            d2Nat_Area{i} = nan;
+            d2NatR_Area{i} = nan;
+            startSNat_Area{i} = nan;
+            optimalBinSizes_Area(i) = nan;
+            optimalWindowSizes_Area(i) = nan;
+            continue;
+        end
+        optimalBinSize = optimalBinSize_fixed;
+        optimalWindowSize = optimalWindowSize_fixed;
+    else
+        [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(dataMatArea, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+        fprintf('Using optimal bin size = %.3f s and window size = %.1f s\n', optimalBinSize, optimalWindowSize);
+        if optimalBinSize == 0 || optimalWindowSize == 0
+            warning('No optimal bin/window size found for %d neurons in. Skipping.', currCount);
+            d2Nat_Area{i} = nan;
+            d2NatR_Area{i} = nan;
+            startSNat_Area{i} = nan;
+            optimalBinSizes_Area(i) = nan;
+            optimalWindowSizes_Area(i) = nan;
+            continue;
+        end
+    end
+    optimalBinSizes_Area(i) = optimalBinSize;
+    optimalWindowSizes_Area(i) = optimalWindowSize;
+    aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, currNeurons), optimalBinSize);
+    numTimePointsNat = size(aDataMatNat, 1);
+    stepSamples = round(stepSize / optimalBinSize);
+    winSamples = round(optimalWindowSize / optimalBinSize);
+    numWindowsNat = floor((numTimePointsNat - winSamples) / stepSamples) + 1;
+    popActivityNat = sum(aDataMatNat, 2);
+    d2Nat_Area{i} = nan(1, numWindowsNat);
+    d2NatR_Area{i} = nan(1, numWindowsNat);
+    startSNat_Area{i} = nan(1, numWindowsNat);
+    for w = 1:numWindowsNat
+        startIdx = (w - 1) * stepSamples + 1;
+        endIdx = startIdx + winSamples - 1;
+        startSNat_Area{i}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSize;
+        wPopActivity = popActivityNat(startIdx:endIdx);
+        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+        d2Nat_Area{i}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+        d2Shuff = zeros(nShuffles, 1);
+        for nShuff = 1:nShuffles
+            shuffledData = shift_shuffle_neurons(aDataMatNat);
+            wPopActivityR = sum(shuffledData(startIdx:endIdx,:), 2);
+            [varphi, ~] = myYuleWalker3(wPopActivityR, pOrder);
+            d2Shuff(nShuff) = getFixedPointDistance2(pOrder, critType, varphi);
+        end
+        d2NatR_Area{i}(w) = mean(d2Shuff);
+    end
+    if useFixedOptimalParams
+        fprintf('Done for %d neurons in %s (step %d/%d)\n', currCount, areas{a}, i, numSteps);
+    else
+        fprintf('Done for %d neurons in %s (step %d/%d) with optimal bin=%.3f, window=%.1f\n', currCount, areas{a}, i, numSteps, optimalBinSize, optimalWindowSize);
+    end
+end
+figure(163); clf; hold on;
+colors = lines(numSteps);
+for i = 1:numSteps
+    if ~isnan(d2Nat_Area{i})
+        plot(startSNat_Area{i}/60, d2Nat_Area{i}, '-', 'Color', colors(i,:), 'LineWidth', 2, ...
+            'DisplayName', sprintf('%d neurons', usedNeuronCounts(i)));
+    end
+end
+xlabel('Minutes'); ylabel('d2 estimate');
+title(sprintf('%s: d2 estimate vs. time for increasing neuron counts', areas{a}));
+legend('show');
+xlim([0 opts.collectFor/60]);
+
+% ========== End mirrored sections ==========
+
+
+
+
+
+
+
+
 
 
 
@@ -534,3 +794,4 @@ eigVals = eig(C);
 % Return the maximum absolute eigenvalue (spectral radius)
 maxEig = max(abs(eigVals));
 end
+
