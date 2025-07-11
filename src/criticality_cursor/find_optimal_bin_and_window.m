@@ -1,3 +1,5 @@
+function [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(dataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow)
+
 % FIND_OPTIMAL_BIN_AND_WINDOW  Find optimal bin/frame and window size for population activity analysis
 %
 %   [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(dataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow)
@@ -20,7 +22,6 @@
 %
 %   The function returns 0 for both outputs if no suitable parameters are found.
 
-function [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(dataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow)
     optimalBinSize = 0;
     optimalWindowSize = 0;
     found = false;
