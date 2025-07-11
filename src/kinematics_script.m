@@ -7,14 +7,14 @@ opts.frameSize = 1/60;
 
 opts.minFiringRate = .5;
 
-getDataType = 'kinematics';
-opts.bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-getDataType = 'kinematics';
-% kinData = load_data(opts, getDataType);
-kinData = load_data(opts, getDataType);
-% get_standard_data
 % getDataType = 'kinematics';
+% opts.bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
+% getDataType = 'kinematics';
+% kinData = load_data(opts, getDataType);
+% kinData = load_data(opts, getDataType);
 % get_standard_data
+getDataType = 'kinematics';
+get_standard_data
 
 
 %% Get list of each body part tracked
