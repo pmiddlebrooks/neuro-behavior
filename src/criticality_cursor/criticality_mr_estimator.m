@@ -70,9 +70,9 @@ idList = {idM23R, idM56R, idDSR, idVSR};
 % Recommendations: frameSize should yield ~5-20 spikes/bin, windowSize should yield >=100-200 bins per window
 candidateFrameSizes = [0.004, 0.01, 0.02, 0.05, .075, 0.1]; % 4ms, 10ms, 20ms, 50ms, 100ms
 candidateWindowSizes = [30, 45, 60, 90, 120]; % in seconds
-minSpikesPerBin = 3;
+minSpikesPerBin = 5;
 maxSpikesPerBin = 20;
-minBinsPerWindow = 500;
+minBinsPerWindow = 1000;
 
 optimalBinSize = zeros(1, length(areas));
 optimalWindowSize = zeros(1, length(areas));
@@ -179,15 +179,15 @@ end
 
 %%
 figure(60); clf; hold on;
-plot(startS{1}/60, brMrRea{1}, '-ok', 'lineWidth', 2);
-plot(startS{2}/60, brMrRea{2}, '-ob', 'lineWidth', 2);
-plot(startS{3}/60, brMrRea{3}, '-or', 'lineWidth', 2);
-% plot(startS{4}/60, brMrRea{4}, '-o', 'color', [0 .75 0], 'lineWidth', 2);
+plot(startS{1}/60, brMrRea{1}, '-k', 'lineWidth', 2);
+plot(startS{2}/60, brMrRea{2}, '-b', 'lineWidth', 2);
+plot(startS{3}/60, brMrRea{3}, '-r', 'lineWidth', 2);
+% plot(startS{4}/60, brMrRea{4}, '-', 'color', [0 .75 0], 'lineWidth', 2);
 
-plot(startS{1}/60, brMrReaR{1}, '*k');
-plot(startS{2}/60, brMrReaR{2}, '*b');
-plot(startS{3}/60, brMrReaR{3}, '*r');
-% plot(startS{4}/60, brMrReaR{4}, '*', 'color', [0 .75 0]);
+plot(startS{1}/60, brMrReaR{1}, '--k');
+plot(startS{2}/60, brMrReaR{2}, '--b');
+plot(startS{3}/60, brMrReaR{3}, '--r');
+% plot(startS{4}/60, brMrReaR{4}, '--', 'color', [0 .75 0]);
 xline(block2Start/60, 'linewidth', 2)
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
@@ -237,16 +237,8 @@ for a = 1:length(areas)
 end
 
 %%
-isiMult = 10; % Multiple of mean ISI to determine minimum bin size
-pOrder = 10; % Order parameter for the autoregressor model
-critType = 2;
-binSize = .04;
-
 % Define sliding window parameters
-windowSize = 1 * 60; % (in seconds)
-stepSize = 1; %1 * 60; %  (in seconds)
-Fs = 1/opts.frameSize; % data is in ms
-
+stepSize = 2; %1 * 60; %  (in seconds)
 
 % Preallocate or store outputs if needed
 numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
@@ -258,7 +250,7 @@ brMrRNat = cell(1, length(areas));
 popActivityNat = cell(1, length(areas));
 startSNat = cell(1, length(areas));
 
-for a = 2:3%length(areas)
+for a = 1:length(areas)
     fprintf('Area %s (Naturalistic)\n', areas{a})
     tic
     aID = idList{a};
@@ -299,19 +291,19 @@ end
 
 %% Plotting for Naturalistic MR estimation
 figure(62); clf; hold on;
-plot(startSNat{1}/60, brMrNat{1}, '-ok', 'lineWidth', 2);
-plot(startSNat{2}/60, brMrNat{2}, '-ob', 'lineWidth', 2);
-plot(startSNat{3}/60, brMrNat{3}, '-or', 'lineWidth', 2);
-% plot(startSNat{4}/60, brMrNat{4}, '-o', 'color', [0 .75 0], 'lineWidth', 2);
+plot(startSNat{1}/60, brMrNat{1}, '-k', 'lineWidth', 2);
+plot(startSNat{2}/60, brMrNat{2}, '-b', 'lineWidth', 2);
+plot(startSNat{3}/60, brMrNat{3}, '-r', 'lineWidth', 2);
+% plot(startSNat{4}/60, brMrNat{4}, '-', 'color', [0 .75 0], 'lineWidth', 2);
 
-plot(startSNat{1}/60, brMrRNat{1}, '*k');
-plot(startSNat{2}/60, brMrRNat{2}, '*b');
-plot(startSNat{3}/60, brMrRNat{3}, '*r');
-% plot(startSNat{4}/60, brMrRNat{4}, '*', 'color', [0 .75 0]);
+plot(startSNat{1}/60, brMrRNat{1}, '--k');
+plot(startSNat{2}/60, brMrRNat{2}, '--b');
+plot(startSNat{3}/60, brMrRNat{3}, '--r');
+% plot(startSNat{4}/60, brMrRNat{4}, '--', 'color', [0 .75 0]);
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('MR estimate')
-title(['Naturalistic Data ', num2str(windowSize), ' sec window, ' num2str(stepSize), ' sec steps'])
+title(['Naturalistic Data ', num2str(optimalWindowSize), ' sec window, ' num2str(stepSize), ' sec steps'])
 xlim([0 opts.collectFor/60])
 
 
@@ -615,30 +607,4 @@ eigVals = eig(C);
 
 % Return the maximum absolute eigenvalue (spectral radius)
 maxEig = max(abs(eigVals));
-end
-
-% ===================== Helper function for optimal bin/frame and window size =====================
-function [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(dataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow)
-    optimalBinSize = 0;
-    optimalWindowSize = 0;
-    found = false;
-    for fs = candidateFrameSizes
-        aDataMatR = neural_matrix_ms_to_frames(dataMat, fs);
-        meanSpikesPerBin = mean(sum(aDataMatR, 2));
-        if meanSpikesPerBin < minSpikesPerBin || meanSpikesPerBin > maxSpikesPerBin
-            continue;
-        end
-        for ws = candidateWindowSizes
-            numBins = ws / fs;
-            if numBins >= minBinsPerWindow
-                optimalBinSize = fs;
-                optimalWindowSize = ws;
-                found = true;
-                break;
-            end
-        end
-        if found
-            break;
-        end
-    end
 end
