@@ -89,6 +89,15 @@ for a = 1:length(areas)
     fprintf('Area %s: optimal frame/bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeRea(a), optimalWindowSizeRea(a));
 end
 
+% Find maximum bin size and corresponding maximum window size
+[maxBinSizeRea, maxBinIdx] = max(optimalBinSizeRea);
+% Find areas that have the maximum bin size
+areasWithMaxBin = find(optimalBinSizeRea == maxBinSizeRea);
+% Among those areas, find the maximum window size
+maxWindowSizeRea = max(optimalWindowSizeRea(areasWithMaxBin));
+
+fprintf('Using unified parameters for all areas: bin size = %.3f s, window size = %.1f s\n', maxBinSizeRea, maxWindowSizeRea);
+
 % Sliding window d2 analysis for reach data
 stepSize = 2; % seconds
 nShuffles = 10;
@@ -101,9 +110,9 @@ critType = 2;
 
 for a = 1:length(areas)
     aID = idList{a};
-    stepSamples = round(stepSize / optimalBinSizeRea(a));
-    winSamples = round(optimalWindowSizeRea(a) / optimalBinSizeRea(a));
-    aDataMatR = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSizeRea(a));
+    stepSamples = round(stepSize / maxBinSizeRea);
+    winSamples = round(maxWindowSizeRea / maxBinSizeRea);
+    aDataMatR = neural_matrix_ms_to_frames(dataMatR(:, aID), maxBinSizeRea);
     numTimePoints = size(aDataMatR, 1);
     numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
     popActivityRea{a} = sum(aDataMatR, 2);
@@ -113,7 +122,7 @@ for a = 1:length(areas)
     for w = 1:numWindows
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
-        startSRea{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSizeRea(a);
+        startSRea{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeRea;
         wPopActivity = popActivityRea{a}(startIdx:endIdx);
         [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
         d2Rea{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
@@ -140,7 +149,7 @@ plot(startSRea{3}/60, d2ReaR{3}, '*r');
 % plot(startSRea{4}/60, d2ReaR{4}, '*', 'color', [0 .75 0]);
 xlabel('Minutes'); ylabel('d2 estimate');
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest');
-title(['Reach Data ', num2str(optimalWindowSizeRea), ' sec window, ' num2str(stepSize), ' sec steps']);
+title(['Reach Data ', num2str(maxWindowSizeRea), ' sec window, ' num2str(stepSize), ' sec steps']);
 xlim([0 opts.collectFor/60]);
 
 
@@ -159,6 +168,15 @@ for a = 1:length(areas)
     fprintf('Area %s: optimal frame/bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeNat(a), optimalWindowSizeNat(a));
 end
 
+% Find maximum bin size and corresponding maximum window size
+[maxBinSizeNat, maxBinIdx] = max(optimalBinSizeNat);
+% Find areas that have the maximum bin size
+areasWithMaxBin = find(optimalBinSizeNat == maxBinSizeNat);
+% Among those areas, find the maximum window size
+maxWindowSizeNat = max(optimalWindowSizeNat(areasWithMaxBin));
+
+fprintf('Using unified parameters for all areas: bin size = %.3f s, window size = %.1f s\n', maxBinSizeNat, maxWindowSizeNat);
+
 % Sliding window d2 analysis for naturalistic data
 stepSize = 1; % seconds
 nShuffles = 10;
@@ -173,9 +191,9 @@ for a = 1:length(areas)
     aID = idList{a};
     tic
     fprintf('Area %s (Naturalistic)\n', areas{a})
-    stepSamples = round(stepSize / optimalBinSizeNat(a));
-    winSamples = round(optimalWindowSizeNat(a) / optimalBinSizeNat(a));
-    aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSizeNat(a));
+    stepSamples = round(stepSize / maxBinSizeNat);
+    winSamples = round(maxWindowSizeNat / maxBinSizeNat);
+    aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), maxBinSizeNat);
     numTimePointsNat = size(aDataMatNat, 1);
     numWindowsNat = floor((numTimePointsNat - winSamples) / stepSamples) + 1;
     popActivityNat{a} = sum(aDataMatNat, 2);
@@ -185,7 +203,7 @@ for a = 1:length(areas)
     for w = 1:numWindowsNat
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
-        startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSizeNat(a);
+        startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeNat;
         wPopActivity = popActivityNat{a}(startIdx:endIdx);
         [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
         d2Nat{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
@@ -213,7 +231,7 @@ plot(startSNat{3}/60, d2NatR{3}, '*r');
 % plot(startSNat{4}/60, d2NatR{4}, '*', 'color', [0 .75 0]);
 xlabel('Minutes'); ylabel('d2 estimate');
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest');
-title(['Naturalistic Data ', num2str(optimalWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps']);
+title(['Naturalistic Data ', num2str(maxWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps']);
 xlim([0 opts.collectFor/60]);
 
 

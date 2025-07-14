@@ -83,6 +83,15 @@ for a = 1:length(areas)
     fprintf('Area %s: optimal frame/bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
 end
 
+% Find maximum bin size and corresponding maximum window size
+[maxBinSize, maxBinIdx] = max(optimalBinSize);
+% Find areas that have the maximum bin size
+areasWithMaxBin = find(optimalBinSize == maxBinSize);
+% Among those areas, find the maximum window size
+maxWindowSize = max(optimalWindowSize(areasWithMaxBin));
+
+fprintf('Using unified parameters for all areas: bin size = %.3f s, window size = %.1f s\n', maxBinSize, maxWindowSize);
+
 %%    With optimal parameters, run each area
 % Define sliding window parameters
 debugFlag = 0;
@@ -115,23 +124,23 @@ for a = 1 : length(areas)
     aID = idList{a};
 
     % Convert window and step size to samples (in frames)
-    stepSamples = round(stepSize / optimalBinSize(a));
-    winSamples = round(optimalWindowSize(a) / optimalBinSize(a));
+    stepSamples = round(stepSize / maxBinSize);
+    winSamples = round(maxWindowSize / maxBinSize);
 
-    aDataMatR = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSize(a));
+    aDataMatR = neural_matrix_ms_to_frames(dataMatR(:, aID), maxBinSize);
 
     numTimePoints = size(aDataMatR, 1);
     % Preallocate or store outputs if needed
     numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
 
     popActivity{a} = sum(aDataMatR, 2);
-    kMax = round(10 / optimalBinSize(a));  % kMax in seconds, specific for this area's optimal frame size
+    kMax = round(10 / maxBinSize);  % kMax in seconds, specific for this area's optimal frame size
 
     for w = 1:numWindows
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
 
-        startS{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSize(a);  % center of window
+        startS{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSize;  % center of window
         wPopActivity = popActivity{a}(startIdx:endIdx);
 
         if debugFlag
@@ -197,7 +206,7 @@ ylabel('MR estimate')
 % h2 = plot(reachErr*opts.frameSize/60, 1.002, '.', 'color', [.3 .3 .3], 'MarkerSize', 30);
 % set(h1, 'HandleVisibility', 'off');
 % set(h2, 'HandleVisibility', 'off');
-title(['Reach Data ', num2str(optimalWindowSize), ' sec window, ' num2str(stepSize), ' sec steps'])
+title(['Reach Data ', num2str(maxWindowSize), ' sec window, ' num2str(stepSize), ' sec steps'])
 xlim([0 opts.collectFor/60])
 
 
@@ -236,12 +245,18 @@ for a = 1:length(areas)
     fprintf('Area %s: optimal frame/bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeNat(a), optimalWindowSizeNat(a));
 end
 
+% Find maximum bin size and corresponding maximum window size
+[maxBinSizeNat, maxBinIdx] = max(optimalBinSizeNat);
+% Find areas that have the maximum bin size
+areasWithMaxBin = find(optimalBinSizeNat == maxBinSizeNat);
+% Among those areas, find the maximum window size
+maxWindowSizeNat = max(optimalWindowSizeNat(areasWithMaxBin));
+
+fprintf('Using unified parameters for all areas: bin size = %.3f s, window size = %.1f s\n', maxBinSizeNat, maxWindowSizeNat);
+
 %%
 % Define sliding window parameters
 stepSize = 2; %1 * 60; %  (in seconds)
-
-% Preallocate or store outputs if needed
-numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
 
 % Initialize variables for MR estimation
 nShuffles = 10;
@@ -256,24 +271,24 @@ for a = 1:length(areas)
     aID = idList{a};
 
     % Convert window and step size to samples
-    stepSamples = round(stepSize / optimalBinSizeNat(a));
-    winSamples = round(optimalWindowSizeNat(a) / optimalBinSizeNat(a));
+    stepSamples = round(stepSize / maxBinSizeNat);
+    winSamples = round(maxWindowSizeNat / maxBinSizeNat);
     
 
     % Bin the data for this area using optimal bin size
-    aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSizeNat(a));
+    aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), maxBinSizeNat);
     numTimePointsNat = size(aDataMatNat, 1);
     numWindowsNat = floor((numTimePointsNat - winSamples) / stepSamples) + 1;
 
     popActivityNat{a} = sum(aDataMatNat, 2);
-    kMax = round(10 / optimalBinSizeNat(a));  % kMax in seconds, specific for this area's bin size
+    kMax = round(10 / maxBinSizeNat);  % kMax in seconds, specific for this area's bin size
     brMrNat{a} = nan(1, numWindowsNat);
     brMrRNat{a} = nan(1, numWindowsNat);
     startSNat{a} = nan(1, numWindowsNat);
     for w = 1:numWindowsNat
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
-        startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSizeNat(a);  % center of window
+        startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeNat;  % center of window
         wPopActivity = popActivityNat{a}(startIdx:endIdx);
         result = branching_ratio_mr_estimation(wPopActivity, kMax);
         brMrNat{a}(w) = result.branching_ratio;
@@ -303,7 +318,7 @@ plot(startSNat{3}/60, brMrRNat{3}, '--r');
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('MR estimate')
-title(['Naturalistic Data ', num2str(optimalWindowSize), ' sec window, ' num2str(stepSize), ' sec steps'])
+title(['Naturalistic Data ', num2str(maxWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps'])
 xlim([0 opts.collectFor/60])
 
 
