@@ -105,6 +105,8 @@ brMrRea = cell(1, length(areas));
 brMrReaR = cell(1, length(areas));
 popActivity = cell(1, length(areas));
 startS = cell(1, length(areas));
+% Initialize padded vectors
+padded_brMrRea = cell(1, length(areas));
 
 trialIdx2 = ismember(dataR.block(:, 3), 3:4);
 block2First = find(trialIdx2, 1);
@@ -135,11 +137,14 @@ for a = 1 : length(areas)
 
     popActivity{a} = sum(aDataMatR, 2);
     kMax = round(10 / maxBinSize);  % kMax in seconds, specific for this area's optimal frame size
-
+    brMrRea{a} = nan(1, numWindows);
+    brMrReaR{a} = nan(1, numWindows);
+    startS{a} = nan(1, numWindows);
+    padded_brMrRea{a} = nan(1, numTimePoints);
     for w = 1:numWindows
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
-
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
         startS{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSize;  % center of window
         wPopActivity = popActivity{a}(startIdx:endIdx);
 
@@ -180,6 +185,7 @@ for a = 1 : length(areas)
             brShuff(nShuff) = resultR.branching_ratio;
         end
         brMrReaR{a}(w) = mean(brShuff);
+        padded_brMrRea{a}(centerIdx) = brMrRea{a}(w);
 
     end
     toc
@@ -264,6 +270,8 @@ brMrNat = cell(1, length(areas));
 brMrRNat = cell(1, length(areas));
 popActivityNat = cell(1, length(areas));
 startSNat = cell(1, length(areas));
+% Initialize padded vectors
+padded_brMrNat = cell(1, length(areas));
 
 for a = 1:length(areas)
     fprintf('Area %s (Naturalistic)\n', areas{a})
@@ -285,13 +293,17 @@ for a = 1:length(areas)
     brMrNat{a} = nan(1, numWindowsNat);
     brMrRNat{a} = nan(1, numWindowsNat);
     startSNat{a} = nan(1, numWindowsNat);
+    padded_brMrNat{a} = nan(1, numTimePointsNat);
     for w = 1:numWindowsNat
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
         startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeNat;  % center of window
         wPopActivity = popActivityNat{a}(startIdx:endIdx);
         result = branching_ratio_mr_estimation(wPopActivity, kMax);
         brMrNat{a}(w) = result.branching_ratio;
+        brMrRNat{a}(w) = nan; % keep as before
+        padded_brMrNat{a}(centerIdx) = brMrNat{a}(w);
         brShuff = zeros(nShuffles, 1);
         for nShuff = 1:nShuffles
             shuffledData = shift_shuffle_neurons(aDataMatNat);
@@ -427,6 +439,7 @@ for i = 1:numSteps
     for w = 1:numWindowsNat
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
         startSNat_Area{i}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSize;  % center of window
         wPopActivity = popActivityNat(startIdx:endIdx);
         result = branching_ratio_mr_estimation(wPopActivity, kMax);
