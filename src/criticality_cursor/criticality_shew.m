@@ -105,6 +105,8 @@ d2Rea = cell(1, length(areas));
 d2ReaR = cell(1, length(areas));
 popActivityRea = cell(1, length(areas));
 startSRea = cell(1, length(areas));
+% Initialize padded vectors
+padded_d2Rea = cell(1, length(areas));
 pOrder = 10;
 critType = 2;
 
@@ -119,9 +121,11 @@ for a = 1:length(areas)
     d2Rea{a} = nan(1, numWindows);
     d2ReaR{a} = nan(1, numWindows);
     startSRea{a} = nan(1, numWindows);
+    padded_d2Rea{a} = nan(1, numTimePoints);
     for w = 1:numWindows
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
         startSRea{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeRea;
         wPopActivity = popActivityRea{a}(startIdx:endIdx);
         [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
@@ -134,6 +138,7 @@ for a = 1:length(areas)
             d2Shuff(nShuff) = getFixedPointDistance2(pOrder, critType, varphi);
         end
         d2ReaR{a}(w) = mean(d2Shuff);
+        padded_d2Rea{a}(centerIdx) = d2Rea{a}(w);
     end
 end
 
@@ -184,6 +189,8 @@ d2Nat = cell(1, length(areas));
 d2NatR = cell(1, length(areas));
 popActivityNat = cell(1, length(areas));
 startSNat = cell(1, length(areas));
+% Initialize padded vectors
+padded_d2Nat = cell(1, length(areas));
 pOrder = 10;
 critType = 2;
 
@@ -200,9 +207,11 @@ for a = 1:length(areas)
     d2Nat{a} = nan(1, numWindowsNat);
     d2NatR{a} = nan(1, numWindowsNat);
     startSNat{a} = nan(1, numWindowsNat);
+    padded_d2Nat{a} = nan(1, numTimePointsNat);
     for w = 1:numWindowsNat
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
         startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeNat;
         wPopActivity = popActivityNat{a}(startIdx:endIdx);
         [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
@@ -215,6 +224,7 @@ for a = 1:length(areas)
             d2Shuff(nShuff) = getFixedPointDistance2(pOrder, critType, varphi);
         end
         d2NatR{a}(w) = mean(d2Shuff);
+        padded_d2Nat{a}(centerIdx) = d2Nat{a}(w);
     end
     toc
 end

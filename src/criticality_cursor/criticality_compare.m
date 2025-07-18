@@ -29,7 +29,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :);
 %% Naturalistic data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
-opts.collectFor = 10 * 60; % seconds
+opts.collectFor = 30 * 60; % seconds
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -78,9 +78,14 @@ nShuffles = 5;
 pOrder = 10;
 critType = 2;
 
+% Separate parameters for dcc/kappa analysis
+dccBinSize = 0.05; % seconds - user specified
+dccStepSize = round(2.5 * 60); % seconds - user specified  
+dccWindowSize = 5 * 60; % seconds - user specified
+
 %% ==============================================     Naturalistic Data Analysis     ==============================================
 
-areasToTest = 2:3;
+areasToTest = 2:4;
 
 fprintf('\n=== Naturalistic Data Analysis ===\n');
 
@@ -124,34 +129,17 @@ for a = areasToTest %length(areas)
     numTimePoints = size(aDataMatNat, 1);
     numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
     
-    % Apply PCA if requested
-    if pcaFlag
-        [coeff, score, ~, ~, explained, mu] = pca(aDataMatNat);
-        forDim = find(cumsum(explained) > 30, 1);
-        forDim = max(3, forDim);
-        forDim = min(6, forDim);
-        if pcaFirstFlag
-            fprintf('Using PCA first %d dimensions\n', forDim);
-            nDim = 1:forDim;
-        else
-            fprintf('Using PCA last %d dimensions\n', forDim);
-            nDim = forDim+1:size(score, 2);
-        end
-        aDataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
-    end
-    
     % Initialize arrays for this area
-    mrBrNat{a} = nan(1, numWindows);
-    d2Nat{a} = nan(1, numWindows);
-    dccNat{a} = nan(1, numWindows);
-    kappaNat{a} = nan(1, numWindows);
-    startSNat{a} = nan(1, numWindows);
+    startSNat{a} = nan(1, numTimePoints);
+    mrBrNat{a} = nan(1, numTimePoints);
+    d2Nat{a} = nan(1, numTimePoints);
     
-    % Process each window
+    % Process each window for mrBr and d2
     for w = 1:numWindows
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
-        startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeNat; % the middle of the window counts as the time
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
+        startSNat{a}(centerIdx) = (startIdx + round(winSamples/2)-1) * maxBinSizeNat; % the middle of the window counts as the time
         
         % Extract window data and        
         % Calculate population activity for MR and d2
@@ -160,38 +148,74 @@ for a = areasToTest %length(areas)
         % MR branching ratio
         kMax = round(10 / maxBinSizeNat);
         result = branching_ratio_mr_estimation(wPopActivity, kMax);
-        mrBrNat{a}(w) = result.branching_ratio;
+        mrBrNat{a}(centerIdx) = result.branching_ratio;
         
         % d2 (distance to criticality from AR model)
         [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
-        d2Nat{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+        d2Val = getFixedPointDistance2(pOrder, critType, varphi);
+        d2Nat{a}(centerIdx) = d2Val;
+    end
+    
+    fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+end
+
+% Separate loop for dcc and kappa analysis
+fprintf('\n=== Naturalistic Data dcc/kappa Analysis ===\n');
+for a = areasToTest
+    fprintf('\nProcessing dcc/kappa for area %s (Naturalistic)...\n', areas{a});
+    tic;
+    
+    aID = idListNat{a};
+    
+    % Bin the data for dcc/kappa analysis
+    aDataMatNat_dcc = neural_matrix_ms_to_frames(dataMat(:, aID), dccBinSize);
+    numTimePoints_dcc = size(aDataMatNat_dcc, 1);
+    stepSamples_dcc = round(dccStepSize / dccBinSize);
+    winSamples_dcc = round(dccWindowSize / dccBinSize);
+    numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
+    
+    % Initialize arrays for dcc/kappa
+    dccNat{a} = nan(1, numTimePoints_dcc);
+    kappaNat{a} = nan(1, numTimePoints_dcc);
+    startSNat_dcc{a} = nan(1, numWindows_dcc);
+    
+    % Process each window for dcc and kappa
+    for w = 1:numWindows_dcc
+        startIdx = (w - 1) * stepSamples_dcc + 1;
+        endIdx = startIdx + winSamples_dcc - 1;
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
+        startSNat_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * dccBinSize;
+        
+        % Calculate population activity for this window
+        wPopActivity = round(sum(aDataMatNat_dcc(startIdx:endIdx, :), 2));
         
         % Avalanche analysis for dcc and kappa
         % Apply threshold if requested
-            wDataMatAv = wPopActivity;
+        wDataMatAv = wPopActivity;
         if thresholdFlag
             threshSpikes = thresholdPct * median(wPopActivity);
             wDataMatAv(wDataMatAv < threshSpikes) = 0;
         end
+        
         % Find avalanches in the window       
         zeroBins = find(sum(wDataMatAv, 2) == 0);
         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
             % Create avalanche data
-            asdfMat = rastertoasdf2(wDataMatAv', maxBinSizeNat*1000, 'CBModel', 'Spikes', 'DS');
+            asdfMat = rastertoasdf2(wDataMatAv', dccBinSize*1000, 'CBModel', 'Spikes', 'DS');
             Av = avprops(asdfMat, 'ratio', 'fingerprint');
             
             % Calculate avalanche parameters
             [tau, ~, tauC, ~, alpha, ~, paramSD, ~] = avalanche_log(Av, 0);
             
             % dcc (distance to criticality from avalanche analysis)
-            dccNat{a}(w) = distance_to_criticality(tau, alpha, paramSD);
+            dccNat{a}(centerIdx) = distance_to_criticality(tau, alpha, paramSD);
             
             % kappa (avalanche shape parameter)
-            kappaNat{a}(w) = compute_kappa(Av.size);
+            kappaNat{a}(centerIdx) = compute_kappa(Av.size);
         end
     end
     
-    fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+    fprintf('Area %s dcc/kappa completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
 %% ==============================================     Mark's Reach Data Analysis     ==============================================
@@ -237,34 +261,17 @@ for a = areasToTest %1:length(areas)
     numTimePoints = size(aDataMatRea, 1);
     numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
     
-    % Apply PCA if requested
-    if pcaFlag
-        [coeff, score, ~, ~, explained, mu] = pca(aDataMatRea);
-        forDim = find(cumsum(explained) > 30, 1);
-        forDim = max(3, forDim);
-        forDim = min(6, forDim);
-        if pcaFirstFlag
-            fprintf('Using PCA first %d dimensions\n', forDim);
-            nDim = 1:forDim;
-        else
-            fprintf('Using PCA last %d dimensions\n', forDim);
-            nDim = forDim+1:size(score, 2);
-        end
-        aDataMatRea = score(:,nDim) * coeff(:,nDim)' + mu;
-    end
-    
     % Initialize arrays for this area
-    mrBrRea{a} = nan(1, numWindows);
-    d2Rea{a} = nan(1, numWindows);
-    dccRea{a} = nan(1, numWindows);
-    kappaRea{a} = nan(1, numWindows);
-    startSRea{a} = nan(1, numWindows);
+    startSRea{a} = nan(1, numTimePoints);
+    mrBrRea{a} = nan(1, numTimePoints);
+    d2Rea{a} = nan(1, numTimePoints);
     
-    % Process each window
+    % Process each window for mrBr and d2
     for w = 1:numWindows
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
-        startSRea{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeRea;
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
+        startSRea{a}(centerIdx) = (startIdx + round(winSamples/2)-1) * maxBinSizeRea;
         
         % Extract window data and        
         % Calculate population activity for MR and d2
@@ -273,38 +280,74 @@ for a = areasToTest %1:length(areas)
         % MR branching ratio
         kMax = round(10 / maxBinSizeRea);
         result = branching_ratio_mr_estimation(wPopActivity, kMax);
-        mrBrRea{a}(w) = result.branching_ratio;
+        mrBrRea{a}(centerIdx) = result.branching_ratio;
         
         % d2 (distance to criticality from AR model)
         [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
-        d2Rea{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+        d2Val = getFixedPointDistance2(pOrder, critType, varphi);
+        d2Rea{a}(centerIdx) = d2Val;
+    end
+    
+    fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+end
+
+% Separate loop for dcc and kappa analysis (reach data)
+fprintf('\n=== Reach Data dcc/kappa Analysis ===\n');
+for a = areasToTest
+    fprintf('\nProcessing dcc/kappa for area %s (Reach)...\n', areas{a});
+    tic;
+    
+    aID = idListRea{a};
+    
+    % Bin the data for dcc/kappa analysis
+    aDataMatRea_dcc = neural_matrix_ms_to_frames(dataMatR(:, aID), dccBinSize);
+    numTimePoints_dcc = size(aDataMatRea_dcc, 1);
+    stepSamples_dcc = round(dccStepSize / dccBinSize);
+    winSamples_dcc = round(dccWindowSize / dccBinSize);
+    numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
+    
+    % Initialize arrays for dcc/kappa
+    dccRea{a} = nan(1, numTimePoints_dcc);
+    kappaRea{a} = nan(1, numTimePoints_dcc);
+    startSRea_dcc{a} = nan(1, numWindows_dcc);
+    
+    % Process each window for dcc and kappa
+    for w = 1:numWindows_dcc
+        startIdx = (w - 1) * stepSamples_dcc + 1;
+        endIdx = startIdx + winSamples_dcc - 1;
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
+        startSRea_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * dccBinSize;
+        
+        % Calculate population activity for this window
+        wPopActivity = round(sum(aDataMatRea_dcc(startIdx:endIdx, :), 2));
         
         % Avalanche analysis for dcc and kappa
         % Apply threshold if requested
-            wDataMatAv = wPopActivity;
+        wDataMatAv = wPopActivity;
         if thresholdFlag
             threshSpikes = thresholdPct * median(wPopActivity);
             wDataMatAv(wDataMatAv < threshSpikes) = 0;
         end
+        
         % Find avalanches in the window       
         zeroBins = find(sum(wDataMatAv, 2) == 0);
         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
             % Create avalanche data
-            asdfMat = rastertoasdf2(wDataMatAv', maxBinSizeRea*1000, 'CBModel', 'Spikes', 'DS');
+            asdfMat = rastertoasdf2(wDataMatAv', dccBinSize*1000, 'CBModel', 'Spikes', 'DS');
             Av = avprops(asdfMat, 'ratio', 'fingerprint');
             
             % Calculate avalanche parameters
             [tau, ~, tauC, ~, alpha, ~, paramSD, ~] = avalanche_log(Av, 0);
             
             % dcc (distance to criticality from avalanche analysis)
-            dccRea{a}(w) = distance_to_criticality(tau, alpha, paramSD);
+            dccRea{a}(centerIdx) = distance_to_criticality(tau, alpha, paramSD);
             
             % kappa (avalanche shape parameter)
-            kappaRea{a}(w) = compute_kappa(Av.size);
+            kappaRea{a}(centerIdx) = compute_kappa(Av.size);
         end
     end
     
-    fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+    fprintf('Area %s dcc/kappa completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
 %% ==============================================     Plotting Results     ==============================================
@@ -324,115 +367,178 @@ for a = 1:length(areas)
     % Use tight_subplot for 4x1 layout
     ha = tight_subplot(4, 1, [0.05 0.02], [0.1 0.05], [0.1 0.05]);
     
-    for m = 1:length(measures)
-        axes(ha(m));
-        hold on;
-        
-        % Get data for this measure
-        switch measures{m}
-            case 'mrBr'
-                dataNat = mrBrNat{a};
-                dataRea = mrBrRea{a};
-            case 'd2'
-                dataNat = d2Nat{a};
-                dataRea = d2Rea{a};
-            case 'dcc'
-                dataNat = dccNat{a};
-                dataRea = dccRea{a};
-            case 'kappa'
-                dataNat = kappaNat{a};
-                dataRea = kappaRea{a};
-        end
-        
-        % Plot naturalistic data
-        plot(startSNat{a}/60, dataNat, '-o', 'Color', measureColors{m}, 'LineWidth', 2, 'MarkerSize', 4);
-        
-        % Plot reach data
-        plot(startSRea{a}/60, dataRea, '--s', 'Color', measureColors{m}, 'LineWidth', 2, 'MarkerSize', 4);
-        
-        ylabel(measureNames{m});
-        title(sprintf('%s - %s', areas{a}, measureNames{m}));
-        legend({'Naturalistic', 'Reach'}, 'Location', 'best');
-        grid on;
-        
-        % Only add xlabel to bottom subplot
-        if m == length(measures)
-            xlabel('Minutes');
-        end
-    end
+    % Plot mrBr
+    axes(ha(1));
+    hold on;
+    validIdx = ~isnan(mrBrNat{a});
+    plot(startSNat{a}(validIdx)/60, mrBrNat{a}(validIdx), '-', 'Color', 'k', 'LineWidth', 2, 'MarkerSize', 4);
+    validIdx = ~isnan(mrBrRea{a});
+    plot(startSRea{a}(validIdx)/60, mrBrRea{a}(validIdx), '--', 'Color', 'k', 'LineWidth', 2, 'MarkerSize', 4);
+    ylabel('MR Branching Ratio');
+    title(sprintf('%s - MR Branching Ratio', areas{a}));
+    legend({'Naturalistic', 'Reach'}, 'Location', 'best');
+    grid on;
+    set(gca, 'XTickLabel', []); % Remove x-axis labels for all but bottom subplot
+    set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
+    
+    % Plot d2
+    axes(ha(2));
+    hold on;
+    validIdx = ~isnan(d2Nat{a});
+    plot(startSNat{a}(validIdx)/60, d2Nat{a}(validIdx), '-o', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
+    validIdx = ~isnan(d2Rea{a});
+    plot(startSRea{a}(validIdx)/60, d2Rea{a}(validIdx), '--s', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
+    ylabel('Distance to Criticality (d2)');
+    title(sprintf('%s - Distance to Criticality (d2)', areas{a}));
+    legend({'Naturalistic', 'Reach'}, 'Location', 'best');
+    grid on;
+    set(gca, 'XTickLabel', []); % Remove x-axis labels for all but bottom subplot
+    set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
+    
+    % Plot dcc
+    axes(ha(3));
+    hold on;
+    validIdx = ~isnan(dccNat{a});
+    plot(startSNat_dcc{a}/60, dccNat{a}, '-o', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
+    validIdx = ~isnan(dccRea{a});
+    plot(startSRea_dcc{a}/60, dccRea{a}, '--s', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
+    ylabel('Distance to Criticality (dcc)');
+    title(sprintf('%s - Distance to Criticality (dcc)', areas{a}));
+    legend({'Naturalistic', 'Reach'}, 'Location', 'best');
+    grid on;
+    set(gca, 'XTickLabel', []); % Remove x-axis labels for all but bottom subplot
+     set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
+   
+    % Plot kappa
+    axes(ha(4));
+    hold on;
+    validIdx = ~isnan(kappaNat{a});
+    plot(startSNat_dcc{a}/60, kappaNat{a}, '-o', 'Color', [0 0.75 0], 'LineWidth', 2, 'MarkerSize', 4);
+    validIdx = ~isnan(kappaRea{a});
+    plot(startSRea_dcc{a}/60, kappaRea{a}, '--s', 'Color', [0 0.75 0], 'LineWidth', 2, 'MarkerSize', 4);
+    ylabel('Kappa');
+    title(sprintf('%s - Kappa', areas{a}));
+    legend({'Naturalistic', 'Reach'}, 'Location', 'best');
+    grid on;
+    xlabel('Minutes'); % Only add xlabel to bottom subplot
+    set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
+    set(gca, 'XTickLabelMode', 'auto');  % Enable Y-axis labels
     
     sgtitle(sprintf('Criticality Measures Comparison - %s', areas{a}));
 end
 
 %% ==============================================     Correlation Analysis     ==============================================
 
-% Calculate correlations between measures for each area and dataset
-fprintf('\n=== Correlation Analysis ===\n');
+% Calculate correlations between d2 and mrBr (original sliding window timebase)
+fprintf('\n=== Correlation Analysis: d2 and mrBr ===\n');
+corrMatNat_d2mrBr = cell(1, length(areas));
+corrMatRea_d2mrBr = cell(1, length(areas));
 
-% Combine all measures for correlation analysis
-allMeasuresNat = cell(1, length(areas));
-allMeasuresRea = cell(1, length(areas));
-
-for a = 1:length(areas)
-    % Get minimum length across all measures for this area
-    lengths = [length(mrBrNat{a}), length(d2Nat{a}), length(dccNat{a}), length(kappaNat{a})];
-    minLen = min(lengths);
+for a = areasToTest
+    % Get minimum length for d2 and mrBr
+    minLenNat = min(length(d2Nat{a}), length(mrBrNat{a}));
+    minLenRea = min(length(d2Rea{a}), length(mrBrRea{a}));
     
     % Naturalistic data
-    allMeasuresNat{a} = [mrBrNat{a}(1:minLen); d2Nat{a}(1:minLen); dccNat{a}(1:minLen); kappaNat{a}(1:minLen)]';
+    Xnat = [d2Nat{a}(1:minLenNat); mrBrNat{a}(1:minLenNat)]';
+    validIdx = ~any(isnan(Xnat), 2);
+    if sum(validIdx) > 10
+        corrMatNat_d2mrBr{a} = corrcoef(Xnat(validIdx, :));
+    else
+        corrMatNat_d2mrBr{a} = nan(2, 2);
+    end
     
     % Reach data
-    lengths = [length(mrBrRea{a}), length(d2Rea{a}), length(dccRea{a}), length(kappaRea{a})];
-    minLen = min(lengths);
-    allMeasuresRea{a} = [mrBrRea{a}(1:minLen); d2Rea{a}(1:minLen); dccRea{a}(1:minLen); kappaRea{a}(1:minLen)]';
-end
-
-% Calculate correlation matrices
-corrMatNat = cell(1, length(areas));
-corrMatRea = cell(1, length(areas));
-
-for a = 1:length(areas)
-    % Remove rows with NaN values
-    validIdx = ~any(isnan(allMeasuresNat{a}), 2);
-    if sum(validIdx) > 10  % Need sufficient data points
-        corrMatNat{a} = corrcoef(allMeasuresNat{a}(validIdx, :));
-    else
-        corrMatNat{a} = nan(4, 4);
-    end
-    
-    validIdx = ~any(isnan(allMeasuresRea{a}), 2);
+    Xrea = [d2Rea{a}(1:minLenRea); mrBrRea{a}(1:minLenRea)]';
+    validIdx = ~any(isnan(Xrea), 2);
     if sum(validIdx) > 10
-        corrMatRea{a} = corrcoef(allMeasuresRea{a}(validIdx, :));
+        corrMatRea_d2mrBr{a} = corrcoef(Xrea(validIdx, :));
     else
-        corrMatRea{a} = nan(4, 4);
+        corrMatRea_d2mrBr{a} = nan(2, 2);
     end
 end
 
-% Plot correlation matrices
-figure(200); clf;
-set(gcf, 'Position', monitorTwo);
+% Calculate correlations between dcc and kappa (dcc sliding window timebase)
+fprintf('\n=== Correlation Analysis: dcc and kappa ===\n');
+corrMatNat_dccKappa = cell(1, length(areas));
+corrMatRea_dccKappa = cell(1, length(areas));
 
-for a = 1:length(areas)
-    % Naturalistic correlations
-    subplot(2, 4, a);
-    imagesc(corrMatNat{a});
-    colorbar;
-    title(sprintf('%s (Naturalistic)', areas{a}));
-    xticks(1:4); yticks(1:4);
-    xticklabels(measures); yticklabels(measures);
-    axis square;
+for a = areasToTest
+    % Get minimum length for dcc and kappa
+    minLenNat = min(length(dccNat{a}), length(kappaNat{a}));
+    minLenRea = min(length(dccRea{a}), length(kappaRea{a}));
     
-    % Reach correlations
-    subplot(2, 4, a+4);
-    imagesc(corrMatRea{a});
-    colorbar;
-    title(sprintf('%s (Reach)', areas{a}));
-    xticks(1:4); yticks(1:4);
-    xticklabels(measures); yticklabels(measures);
-    axis square;
+    % Naturalistic data
+    Xnat = [dccNat{a}(1:minLenNat); kappaNat{a}(1:minLenNat)]';
+    validIdx = ~any(isnan(Xnat), 2);
+    if sum(validIdx) > 10
+        corrMatNat_dccKappa{a} = corrcoef(Xnat(validIdx, :));
+    else
+        corrMatNat_dccKappa{a} = nan(2, 2);
+    end
+    
+    % Reach data
+    Xrea = [dccRea{a}(1:minLenRea); kappaRea{a}(1:minLenRea)]';
+    validIdx = ~any(isnan(Xrea), 2);
+    if sum(validIdx) > 10
+        corrMatRea_dccKappa{a} = corrcoef(Xrea(validIdx, :));
+    else
+        corrMatRea_dccKappa{a} = nan(2, 2);
+    end
 end
 
-sgtitle('Correlation Matrices Between Criticality Measures');
+% Set colorbar scale for all correlation matrices
+cmin = -1;
+cmax = 1;
+
+% Plot correlation matrices for each area
+figure(201); clf;
+set(gcf, 'Position', monitorTwo);
+for a = areasToTest
+    % d2/mrBr correlations
+    subplot(2, length(areasToTest), a - areasToTest(1) + 1);
+    imagesc(corrMatNat_d2mrBr{a});
+    colorbar;
+    title(sprintf('%s (Nat d2/mrBr)', areas{a}));
+    xticks(1:2); yticks(1:2);
+    xticklabels({'d2','mrBr'}); yticklabels({'d2','mrBr'});
+    axis square;
+    caxis([cmin cmax]); % Set consistent color axis
+    
+    subplot(2, length(areasToTest), length(areasToTest) + (a - areasToTest(1) + 1));
+    imagesc(corrMatRea_d2mrBr{a});
+    colorbar;
+    title(sprintf('%s (Rea d2/mrBr)', areas{a}));
+    xticks(1:2); yticks(1:2);
+    xticklabels({'d2','mrBr'}); yticklabels({'d2','mrBr'});
+    axis square;
+    caxis([cmin cmax]); % Set consistent color axis
+end
+sgtitle('Correlation Matrices: d2 and mrBr');
+
+figure(202); clf;
+set(gcf, 'Position', monitorTwo);
+for a = areasToTest
+    % dcc/kappa correlations
+    subplot(2, length(areasToTest), a - areasToTest(1) + 1);
+    imagesc(corrMatNat_dccKappa{a});
+    colorbar;
+    title(sprintf('%s (Nat dcc/kappa)', areas{a}));
+    xticks(1:2); yticks(1:2);
+    xticklabels({'dcc','kappa'}); yticklabels({'dcc','kappa'});
+    axis square;
+    caxis([cmin cmax]); % Set consistent color axis
+    
+    subplot(2, length(areasToTest), length(areasToTest) + (a - areasToTest(1) + 1));
+    imagesc(corrMatRea_dccKappa{a});
+    colorbar;
+    title(sprintf('%s (Rea dcc/kappa)', areas{a}));
+    xticks(1:2); yticks(1:2);
+    xticklabels({'dcc','kappa'}); yticklabels({'dcc','kappa'});
+    axis square;
+    caxis([cmin cmax]); % Set consistent color axis
+end
+sgtitle('Correlation Matrices: dcc and kappa');
 
 %% ==============================================     Save Results     ==============================================
 
@@ -452,7 +558,7 @@ results.naturalistic.optimalBinSize = optimalBinSizeNat;
 results.naturalistic.optimalWindowSize = optimalWindowSizeNat;
 results.naturalistic.unifiedBinSize = maxBinSizeNat;
 results.naturalistic.unifiedWindowSize = maxWindowSizeNat;
-results.naturalistic.corrMat = corrMatNat;
+results.naturalistic.corrMat = corrMatNat_d2mrBr; % Correlation matrices are d2/mrBr
 
 % Reach data results
 results.reach.mrBr = mrBrRea;
@@ -464,7 +570,7 @@ results.reach.optimalBinSize = optimalBinSizeRea;
 results.reach.optimalWindowSize = optimalWindowSizeRea;
 results.reach.unifiedBinSize = maxBinSizeRea;
 results.reach.unifiedWindowSize = maxWindowSizeRea;
-results.reach.corrMat = corrMatRea;
+results.reach.corrMat = corrMatRea_d2mrBr; % Correlation matrices are d2/mrBr
 
 % Analysis parameters
 results.params.pcaFlag = pcaFlag;
@@ -476,6 +582,9 @@ results.params.stepSize = stepSize;
 results.params.nShuffles = nShuffles;
 results.params.pOrder = pOrder;
 results.params.critType = critType;
+results.params.dccBinSize = dccBinSize;
+results.params.dccStepSize = dccStepSize;
+results.params.dccWindowSize = dccWindowSize;
 
 % Save to file
 save(fullfile(paths.dropPath, 'criticality_compare_results.mat'), 'results');
