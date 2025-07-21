@@ -29,7 +29,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :);
 %% Naturalistic data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
-opts.collectFor = 30 * 60; % seconds
+opts.collectFor = 10 * 60; % seconds
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -53,9 +53,9 @@ idListRea = {idM23R, idM56R, idDSR, idVSR};
 %% ==============================================     Analysis Parameters     ==============================================
 
 % PCA options
-pcaFlag = 0;           % Set to 1 to use PCA
+pcaFlag = 1;           % Set to 1 to use PCA
 pcaFirstFlag = 1;      % Use first nDim dimensions if 1, last nDim if 0
-nDim = 3;              % Number of PCA dimensions to use
+nDim = 4;              % Number of PCA dimensions to use
 
 % Threshold options
 thresholdFlag = 1;     % Set to 1 to use threshold method
@@ -89,12 +89,37 @@ areasToTest = 2:4;
 
 fprintf('\n=== Naturalistic Data Analysis ===\n');
 
-% Find optimal parameters for each area
-optimalBinSizeNat = zeros(1, length(areas));
-optimalWindowSizeNat = zeros(1, length(areas));
+% Step 1-2: Apply PCA to original data to determine nDim and project back to neural space
+fprintf('\n--- Step 1-2: PCA on original data ---\n');
+reconstructedDataMat = cell(1, length(areas));
 for a = areasToTest
     aID = idListNat{a};
     thisDataMat = dataMat(:, aID);
+    
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(thisDataMat);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+            fprintf('Area %s: Using PCA first %d dimensions\n', areas{a}, forDim);
+            nDim = 1:forDim;
+        else
+            fprintf('Area %s: Using PCA last %d dimensions\n', areas{a}, size(score, 2) - forDim + 1);
+            nDim = forDim+1:size(score, 2);
+        end
+        reconstructedDataMat{a} = score(:,nDim) * coeff(:,nDim)' + mu;
+    else
+        reconstructedDataMat{a} = thisDataMat;
+    end
+end
+
+% Step 3: Find optimal parameters using reconstructed data
+fprintf('\n--- Step 3: Finding optimal parameters ---\n');
+optimalBinSizeNat = zeros(1, length(areas));
+optimalWindowSizeNat = zeros(1, length(areas));
+for a = areasToTest
+    thisDataMat = reconstructedDataMat{a};
     [optimalBinSizeNat(a), optimalWindowSizeNat(a)] = ...
         find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
     fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeNat(a), optimalWindowSizeNat(a));
@@ -124,17 +149,41 @@ for a = areasToTest %length(areas)
     stepSamples = round(stepSize / maxBinSizeNat);
     winSamples = round(maxWindowSizeNat / maxBinSizeNat);
     
-    % Bin the data
+    % Step 4: Bin the original data
     aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), maxBinSizeNat);
     numTimePoints = size(aDataMatNat, 1);
     numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
+    
+    % Step 5-6: Apply PCA to binned data and project back to neural space
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(aDataMatNat);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+            nDim = 1:forDim;
+        else
+            nDim = forDim+1:size(score, 2);
+        end
+        aDataMatNat = score(:,nDim) * coeff(:,nDim)' + mu;
+    end
+    
+    % Step 7: Apply thresholding if needed
+    if thresholdFlag
+        aDataMatNat = round(sum(aDataMatNat, 2));
+        threshSpikes = thresholdPct * median(aDataMatNat);
+        aDataMatNat(aDataMatNat < threshSpikes) = 0;
+        fprintf('Area %s: Threshold = %.3f, Prop zeros = %.3f\n', areas{a}, threshSpikes, sum(aDataMatNat == 0) / length(aDataMatNat));
+    else
+        aDataMatNat = round(sum(aDataMatNat, 2));
+    end
     
     % Initialize arrays for this area
     startSNat{a} = nan(1, numTimePoints);
     mrBrNat{a} = nan(1, numTimePoints);
     d2Nat{a} = nan(1, numTimePoints);
     
-    % Process each window for mrBr and d2
+    % Step 8: Process each window for mrBr and d2
     for w = 1:numWindows
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
@@ -143,7 +192,7 @@ for a = areasToTest %length(areas)
         
         % Extract window data and        
         % Calculate population activity for MR and d2
-        wPopActivity = round(sum(aDataMatNat(startIdx:endIdx, :), 2));
+        wPopActivity = aDataMatNat(startIdx:endIdx);
         
         % MR branching ratio
         kMax = round(10 / maxBinSizeNat);
@@ -167,19 +216,42 @@ for a = areasToTest
     
     aID = idListNat{a};
     
-    % Bin the data for dcc/kappa analysis
-    aDataMatNat_dcc = neural_matrix_ms_to_frames(dataMat(:, aID), dccBinSize);
+    % Step 4: Bin the original data for dcc/kappa analysis
+    aDataMatNat_dcc = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSizeNat(a));
     numTimePoints_dcc = size(aDataMatNat_dcc, 1);
-    stepSamples_dcc = round(dccStepSize / dccBinSize);
-    winSamples_dcc = round(dccWindowSize / dccBinSize);
+    stepSamples_dcc = round(dccStepSize / optimalBinSizeNat(a));
+    winSamples_dcc = round(dccWindowSize / optimalBinSizeNat(a));
     numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
+    
+    % Step 5-6: Apply PCA to binned data and project back to neural space
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(aDataMatNat_dcc);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+            nDim = 1:forDim;
+        else
+            nDim = forDim+1:size(score, 2);
+        end
+        aDataMatNat_dcc = score(:,nDim) * coeff(:,nDim)' + mu;
+    end
+    
+    % Step 7: Apply thresholding if needed
+    if thresholdFlag
+        aDataMatNat_dcc = round(sum(aDataMatNat_dcc, 2));
+        threshSpikes = thresholdPct * median(aDataMatNat_dcc);
+        aDataMatNat_dcc(aDataMatNat_dcc < threshSpikes) = 0;
+    else
+        aDataMatNat_dcc = round(sum(aDataMatNat_dcc, 2));
+    end
     
     % Initialize arrays for dcc/kappa
     dccNat{a} = nan(1, numTimePoints_dcc);
     kappaNat{a} = nan(1, numTimePoints_dcc);
     startSNat_dcc{a} = nan(1, numWindows_dcc);
     
-    % Process each window for dcc and kappa
+    % Step 8: Process each window for dcc and kappa
     for w = 1:numWindows_dcc
         startIdx = (w - 1) * stepSamples_dcc + 1;
         endIdx = startIdx + winSamples_dcc - 1;
@@ -187,21 +259,14 @@ for a = areasToTest
         startSNat_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * dccBinSize;
         
         % Calculate population activity for this window
-        wPopActivity = round(sum(aDataMatNat_dcc(startIdx:endIdx, :), 2));
+        wPopActivity = aDataMatNat_dcc(startIdx:endIdx);
         
         % Avalanche analysis for dcc and kappa
-        % Apply threshold if requested
-        wDataMatAv = wPopActivity;
-        if thresholdFlag
-            threshSpikes = thresholdPct * median(wPopActivity);
-            wDataMatAv(wDataMatAv < threshSpikes) = 0;
-        end
-        
         % Find avalanches in the window       
-        zeroBins = find(sum(wDataMatAv, 2) == 0);
+        zeroBins = find(wPopActivity == 0);
         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
             % Create avalanche data
-            asdfMat = rastertoasdf2(wDataMatAv', dccBinSize*1000, 'CBModel', 'Spikes', 'DS');
+            asdfMat = rastertoasdf2(wPopActivity', dccBinSize*1000, 'CBModel', 'Spikes', 'DS');
             Av = avprops(asdfMat, 'ratio', 'fingerprint');
             
             % Calculate avalanche parameters
@@ -222,12 +287,37 @@ end
 
 fprintf('\n=== Mark''s Reach Data Analysis ===\n');
 
-% Find optimal parameters for each area
+% Step 1-2: Apply PCA to original data to determine nDim and project back to neural space
+fprintf('\n--- Step 1-2: PCA on original data ---\n');
+reconstructedDataMatRea = cell(1, length(areas));
+for a = areasToTest
+    aID = idListRea{a};
+    thisDataMat = dataMatR(:, aID);
+    
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(thisDataMat);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+            fprintf('Area %s: Using PCA first %d dimensions\n', areas{a}, forDim);
+            nDim = 1:forDim;
+        else
+            fprintf('Area %s: Using PCA last %d dimensions\n', areas{a}, size(score, 2) - forDim + 1);
+            nDim = forDim+1:size(score, 2);
+        end
+        reconstructedDataMatRea{a} = score(:,nDim) * coeff(:,nDim)' + mu;
+    else
+        reconstructedDataMatRea{a} = thisDataMat;
+    end
+end
+
+% Step 3: Find optimal parameters using reconstructed data
+fprintf('\n--- Step 3: Finding optimal parameters ---\n');
 optimalBinSizeRea = zeros(1, length(areas));
 optimalWindowSizeRea = zeros(1, length(areas));
 for a = areasToTest % 1:length(areas)
-    aID = idListRea{a};
-    thisDataMat = dataMatR(:, aID);
+    thisDataMat = reconstructedDataMatRea{a};
     [optimalBinSizeRea(a), optimalWindowSizeRea(a)] = find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
     fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeRea(a), optimalWindowSizeRea(a));
 end
@@ -256,17 +346,41 @@ for a = areasToTest %1:length(areas)
     stepSamples = round(stepSize / maxBinSizeRea);
     winSamples = round(maxWindowSizeRea / maxBinSizeRea);
     
-    % Bin the data
+    % Step 4: Bin the original data
     aDataMatRea = neural_matrix_ms_to_frames(dataMatR(:, aID), maxBinSizeRea);
     numTimePoints = size(aDataMatRea, 1);
     numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
+    
+    % Step 5-6: Apply PCA to binned data and project back to neural space
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(aDataMatRea);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+            nDim = 1:forDim;
+        else
+            nDim = forDim+1:size(score, 2);
+        end
+        aDataMatRea = score(:,nDim) * coeff(:,nDim)' + mu;
+    end
+    
+    % Step 7: Apply thresholding if needed
+    if thresholdFlag
+        aDataMatRea = round(sum(aDataMatRea, 2));
+        threshSpikes = thresholdPct * median(aDataMatRea);
+        aDataMatRea(aDataMatRea < threshSpikes) = 0;
+        fprintf('Area %s: Threshold = %.3f, Prop zeros = %.3f\n', areas{a}, threshSpikes, sum(aDataMatRea == 0) / length(aDataMatRea));
+    else
+        aDataMatRea = round(sum(aDataMatRea, 2));
+    end
     
     % Initialize arrays for this area
     startSRea{a} = nan(1, numTimePoints);
     mrBrRea{a} = nan(1, numTimePoints);
     d2Rea{a} = nan(1, numTimePoints);
     
-    % Process each window for mrBr and d2
+    % Step 8: Process each window for mrBr and d2
     for w = 1:numWindows
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
@@ -275,7 +389,7 @@ for a = areasToTest %1:length(areas)
         
         % Extract window data and        
         % Calculate population activity for MR and d2
-        wPopActivity = round(sum(aDataMatRea(startIdx:endIdx, :), 2));
+        wPopActivity = aDataMatRea(startIdx:endIdx);
                        
         % MR branching ratio
         kMax = round(10 / maxBinSizeRea);
@@ -299,19 +413,42 @@ for a = areasToTest
     
     aID = idListRea{a};
     
-    % Bin the data for dcc/kappa analysis
+    % Step 4: Bin the original data for dcc/kappa analysis
     aDataMatRea_dcc = neural_matrix_ms_to_frames(dataMatR(:, aID), dccBinSize);
     numTimePoints_dcc = size(aDataMatRea_dcc, 1);
     stepSamples_dcc = round(dccStepSize / dccBinSize);
     winSamples_dcc = round(dccWindowSize / dccBinSize);
     numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
     
+    % Step 5-6: Apply PCA to binned data and project back to neural space
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(aDataMatRea_dcc);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+            nDim = 1:forDim;
+        else
+            nDim = forDim+1:size(score, 2);
+        end
+        aDataMatRea_dcc = score(:,nDim) * coeff(:,nDim)' + mu;
+    end
+    
+    % Step 7: Apply thresholding if needed
+    if thresholdFlag
+        aDataMatRea_dcc = round(sum(aDataMatRea_dcc, 2));
+        threshSpikes = thresholdPct * median(aDataMatRea_dcc);
+        aDataMatRea_dcc(aDataMatRea_dcc < threshSpikes) = 0;
+    else
+        aDataMatRea_dcc = round(sum(aDataMatRea_dcc, 2));
+    end
+    
     % Initialize arrays for dcc/kappa
     dccRea{a} = nan(1, numTimePoints_dcc);
     kappaRea{a} = nan(1, numTimePoints_dcc);
     startSRea_dcc{a} = nan(1, numWindows_dcc);
     
-    % Process each window for dcc and kappa
+    % Step 8: Process each window for dcc and kappa
     for w = 1:numWindows_dcc
         startIdx = (w - 1) * stepSamples_dcc + 1;
         endIdx = startIdx + winSamples_dcc - 1;
@@ -319,21 +456,14 @@ for a = areasToTest
         startSRea_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * dccBinSize;
         
         % Calculate population activity for this window
-        wPopActivity = round(sum(aDataMatRea_dcc(startIdx:endIdx, :), 2));
+        wPopActivity = aDataMatRea_dcc(startIdx:endIdx);
         
         % Avalanche analysis for dcc and kappa
-        % Apply threshold if requested
-        wDataMatAv = wPopActivity;
-        if thresholdFlag
-            threshSpikes = thresholdPct * median(wPopActivity);
-            wDataMatAv(wDataMatAv < threshSpikes) = 0;
-        end
-        
         % Find avalanches in the window       
-        zeroBins = find(sum(wDataMatAv, 2) == 0);
+        zeroBins = find(wPopActivity == 0);
         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
             % Create avalanche data
-            asdfMat = rastertoasdf2(wDataMatAv', dccBinSize*1000, 'CBModel', 'Spikes', 'DS');
+            asdfMat = rastertoasdf2(wPopActivity', dccBinSize*1000, 'CBModel', 'Spikes', 'DS');
             Av = avprops(asdfMat, 'ratio', 'fingerprint');
             
             % Calculate avalanche parameters
@@ -360,7 +490,7 @@ measureNames = {'MR Branching Ratio', 'Distance to Criticality (d2)', 'Distance 
 measureColors = {'k', 'b', 'r', [0 0.75 0]};
 
 % Create one figure per area
-for a = 1:length(areas)
+for a = areasToTest
     figure(100 + a); clf;
     set(gcf, 'Position', monitorTwo);
     
@@ -385,9 +515,9 @@ for a = 1:length(areas)
     axes(ha(2));
     hold on;
     validIdx = ~isnan(d2Nat{a});
-    plot(startSNat{a}(validIdx)/60, d2Nat{a}(validIdx), '-o', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
+    plot(startSNat{a}(validIdx)/60, d2Nat{a}(validIdx), '-', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
     validIdx = ~isnan(d2Rea{a});
-    plot(startSRea{a}(validIdx)/60, d2Rea{a}(validIdx), '--s', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
+    plot(startSRea{a}(validIdx)/60, d2Rea{a}(validIdx), '--', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
     ylabel('Distance to Criticality (d2)');
     title(sprintf('%s - Distance to Criticality (d2)', areas{a}));
     legend({'Naturalistic', 'Reach'}, 'Location', 'best');
