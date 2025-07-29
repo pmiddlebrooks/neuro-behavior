@@ -20,7 +20,7 @@ windowSizeRea = results.reach.unifiedWindowSize;
 stepSize = results.params.stepSize;
 
 areas = results.areas;
-areasToTest = 2:4; % M56, DS, VS (as in criticality_compare.m)
+areasToTest = 2:3; % M56, DS, VS (as in criticality_compare.m)
 areaPairs = perms(areasToTest); % all ordered pairs
 areaPairs = areaPairs(areaPairs(:,1) ~= areaPairs(:,2), :); % remove self-pairs
 numPairs = size(areaPairs, 1);
@@ -100,9 +100,9 @@ end
 % Add option to plot TE as a function of lag
 plotTeFlag = true; % Set to false to disable TE vs lag plots
 
-maxLag = 8;
+maxLag = 12;
 delayRange = 1:maxLag;
-nTeBins = 8;
+nTeBins = 20;
 
 stepSamplesNat = round(stepSize / binSizeNat);
 winSamplesNat = round(windowSizeNat / binSizeNat);
