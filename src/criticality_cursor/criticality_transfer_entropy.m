@@ -207,19 +207,23 @@ if plotTeFlag
         % Naturalistic
         teMatNat = teValsNatAllLags{p};
         meanTeNat = nanmean(teMatNat, 2);
-        figure(4000 + p); clf;
+        figNat = figure(4000 + p); clf;
         plot(delayRange, meanTeNat, '-o', 'LineWidth', 2);
         xlabel('Lag (bins)'); ylabel('Mean TE');
         title(sprintf('Nat: TE_{%s→%s} vs Lag', areas{a2}, areas{a1}));
         grid on;
+        % Save Naturalistic plot
+        saveas(figNat, fullfile(paths.dropPath, sprintf('TE_Nat_%s_to_%s.png', areas{a2}, areas{a1})));
         % Reach
         teMatRea = teValsReaAllLags{p};
         meanTeRea = nanmean(teMatRea, 2);
-        figure(5000 + p); clf;
+        figRea = figure(5000 + p); clf;
         plot(delayRange, meanTeRea, '-o', 'LineWidth', 2);
         xlabel('Lag (bins)'); ylabel('Mean TE');
         title(sprintf('Reach: TE_{%s→%s} vs Lag', areas{a2}, areas{a1}));
         grid on;
+        % Save Reach plot
+        saveas(figRea, fullfile(paths.dropPath, sprintf('TE_Reach_%s_to_%s.png', areas{a2}, areas{a1})));
     end
 end
 
@@ -227,7 +231,7 @@ end
 
 %% ==============================================     Analysis Parameters     ==============================================
 
-maxLag = 6; % maximum delay to test (in bins)
+maxLag = 12; % maximum delay to test (in bins)
 delayRange = 1:maxLag;
 
 
@@ -259,6 +263,7 @@ for m = 1:length(measures)
             % Naturalistic
             teVals = bestTEVecNat{p};
             critVals = critNat{a};
+            critVals = critVals(~isnan(critVals));
             validIdx = ~isnan(teVals) & ~isnan(critVals);
             if sum(validIdx) > 10
                 [r, pval] = corr(teVals(validIdx)', critVals(validIdx)', 'Type', 'Pearson');
@@ -279,6 +284,7 @@ for m = 1:length(measures)
             % Reach
             teValsR = bestTEVecRea{p};
             critValsR = critRea{a};
+            critValsR = critValsR(~isnan(critValsR));
             validIdxR = ~isnan(teValsR) & ~isnan(critValsR);
             if sum(validIdxR) > 10
                 [rR, pvalR] = corr(teValsR(validIdxR)', critValsR(validIdxR)', 'Type', 'Pearson');
@@ -337,16 +343,16 @@ fprintf('\nNaturalistic Data:\n');
 for m = 1:length(measures)
     measure = measures{m};
     teData = bestTEVecNat; % Use the vector of max TE values
-    fprintf('%s - Mean TE: %.3f, Max TE: %.3f\n', measureNames{m}, ...
-        nanmean(teData(:)), nanmax(teData(:)));
+    % fprintf('%s - Mean TE: %.3f, Max TE: %.3f\n', measureNames{m}, ...
+    %     nanmean(teData(:)), nanmax(teData(:)));
 end
 
 fprintf('\nReach Data:\n');
 for m = 1:length(measures)
     measure = measures{m};
     teData = bestTEVecRea; % Use the vector of max TE values
-    fprintf('%s - Mean TE: %.3f, Max TE: %.3f\n', measureNames{m}, ...
-        nanmean(teData(:)), nanmax(teData(:)));
+    % fprintf('%s - Mean TE: %.3f, Max TE: %.3f\n', measureNames{m}, ...
+    %     nanmean(teData(:)), nanmax(teData(:)));
 end
 
 %% ==============================================     Save Results     ==============================================
