@@ -6,12 +6,6 @@ opts.frameSize = .001;
 
 paths = get_paths;
 
-tauRange = [1.2 2.5];
-alphaRange = [1.5 2.2];
-paramSDRange = [1.3 1.7];
-
-
-
 monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
 monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
@@ -27,21 +21,23 @@ getDataType = 'spikes';
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
 opts.firingRateCheckTime = 5 * 60;
-opts.frameSize = .05;
-opts.windowSize = .1;
-opts.method = 'useOverlap';
+opts.frameSize = .03;
+opts.frameSize = .001;
+% opts.windowSize = .1;
+% opts.method = 'useOverlap';
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 idList = {idM23, idM56, idDS, idVS};
 
+dataMatMain = dataMat;
 
 %% Mark's reach data
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 
-opts.frameSize = .05;
-opts.windowSize = .1;
-opts.method = 'useOverlap';
+opts.frameSize = .001;
+% opts.windowSize = .1;
+% opts.method = 'useOverlap';
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
 % Get data until 1 sec after the last reach ending.
@@ -57,7 +53,8 @@ idVS = find(strcmp(areaLabels, 'VS'));
 areas = {'M23', 'M56', 'DS', 'VS'};
 idList = {idM23, idM56, idDS, idVS};
 
-
+halfSet = round(size(dataMatR, 1) / 2);
+dataMatMain = dataMatR(1:halfSet, :);
 
 
 
@@ -70,9 +67,6 @@ idList = {idM23, idM56, idDS, idVS};
 
 
 %%  Fit a gaussian HMM in PCA space (up to a certain explained variance)
-% dataMatMain = dataMat;
-halfSet = round(size(dataMatR, 1) / 2);
-dataMatMain = dataMatR(1:halfSet, :);
 idMain = idM56;
 
 expThresh = 70;   % percent explained variance to collect pca component scores for.
