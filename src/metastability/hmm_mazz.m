@@ -31,7 +31,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
-natOrReach = 'Reach'; % 'Nat'
+natOrReach = 'Nat'; % 'Nat'  'Reach'
 areas = {'M23', 'M56', 'DS', 'VS'};
 
 switch natOrReach
@@ -54,7 +54,7 @@ end
 
 
 %%
-idArea = 'DS';
+idArea = 'M56';
 idList = {idM23, idM56, idDS, idVS};
 dataMatMain = dataMat(:, idList{strcmp(areas, idArea)}); % This should be your data
 
