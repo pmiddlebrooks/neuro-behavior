@@ -1,0 +1,71 @@
+%% ----------------------------
+% PLOTS
+%----------------------------
+HmmParam = res.HmmParam;
+HmmParam.VarStates = res.HmmParam.VarStates(res.BestStateInd);
+hmm_bestfit = res.hmm_bestfit;
+hmm_results = res.hmm_results;
+hmm_postfit = res.hmm_postfit;
+
+% Create distinguishable colors for states
+colors = distinguishable_colors(max(HmmParam.VarStates, 4));
+
+% Plot transition probability matrix and emission probability matrix
+figure;
+subplot(1, 2, 1);
+imagesc(hmm_bestfit.tpm);
+colorbar;
+title('Transition Probability Matrix');
+xlabel('State'); ylabel('State');
+
+subplot(1, 2, 2);
+imagesc(hmm_bestfit.epm(:, 1:end-1)); % Exclude silence column
+colorbar;
+title('Emission Probability Matrix');
+xlabel('Neuron'); ylabel('State');
+
+% Plot state sequence over time
+figure;
+if isfield(hmm_results, 'pStates') && ~isempty(hmm_results)
+    imagesc(hmm_results(1).pStates);
+    colorbar;
+    title('Posterior State Probabilities Over Time');
+    xlabel('Time'); ylabel('State');
+end
+
+
+%% Proportion of data in various states
+
+
+
+%% Plot detected state sequences
+if isfield(hmm_postfit, 'sequence') && ~isempty(hmm_postfit)
+    figure(4);
+    for i_trial = 1:length(hmm_postfit)
+        clf
+        ylim([-.5 HmmParam.VarStates + 0.5])
+
+        if ~isempty(hmm_postfit(i_trial).sequence)
+            xline(0)
+            xline((rStops(i_trial) - rStarts(i_trial))*opts.frameSize)
+            sequence = hmm_postfit(i_trial).sequence;
+            for i_seq = 1:size(sequence, 2)
+                onset = sequence(1, i_seq);
+                offset = sequence(2, i_seq);
+                state = sequence(4, i_seq);
+                rectangle('Position', [onset, state-0.4, offset-onset, 0.8], ...
+                    'FaceColor', colors(state, :), 'EdgeColor', 'none');
+            end
+        end
+        if ismember(rAcc(i_trial), 1); iLabel = "Block 1 Correct";
+        elseif ismember(rAcc(i_trial), 2); iLabel = "Block 2 Correct";
+        elseif ismember(rAcc(i_trial), -10); iLabel = "Block 1 Error Below";
+        elseif ismember(rAcc(i_trial), 10); iLabel = "Block 1 Error Above";
+        elseif ismember(rAcc(i_trial), -20); iLabel = "Block 2 Error Below";
+        elseif ismember(rAcc(i_trial), 20); iLabel = "Block 2 Error Above";
+        end
+        title(sprintf('%s Detected State Sequences: %s', hmm_results_save.metadata.brain_area, iLabel));
+        xlabel('Time (s)'); ylabel('State');
+    end
+end
+

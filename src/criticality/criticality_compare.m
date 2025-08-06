@@ -35,8 +35,10 @@ get_standard_data
 areas = {'M23', 'M56', 'DS', 'VS'};
 idListNat = {idM23, idM56, idDS, idVS};
 
+%%
 % Mark's reach data
-dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
+% dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
+dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
 % Get data until 1 sec after the last reach ending.

@@ -1,5 +1,15 @@
 %% HMM Analysis for Naturalistic Data
 % Based on demo3_HMM_Full.m, adapted for naturalistic data format
+%
+% This script performs HMM analysis on neural data and automatically saves:
+% 1. Complete HMM results in .mat format with timestamp
+% 2. Summary text file with key parameters and results
+% 3. All relevant metadata including data type (Nat/Reach), brain area, trial parameters
+% 4. Analysis parameters, trial windows, and HMM model details
+%
+% Files are saved to: paths.dropPath/hmm/
+% Naming convention: HMM_results_[DataType]_[BrainArea]_[Timestamp].mat
+%                   HMM_summary_[DataType]_[BrainArea]_[Timestamp].txt
 
 paths = get_paths;
 cd(fullfile(paths.homePath, 'toolboxes/contamineuro_2019_spiking_net/'));
@@ -17,12 +27,12 @@ monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have
 monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
 
-natOrReach = 'Reach'; % 'Nat'
-areas = {'M23', 'M56', 'DS', 'VS'};
-idArea = 'M56';
 
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
+
+natOrReach = 'Reach'; % 'Nat'
+areas = {'M23', 'M56', 'DS', 'VS'};
 
 switch natOrReach
     case 'Nat'
@@ -31,7 +41,8 @@ switch natOrReach
         get_standard_data
     case 'Reach'
         % Mark's reach data
-        dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
+        % dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
+        dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
 
         [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
@@ -41,11 +52,17 @@ switch natOrReach
         idVS = find(strcmp(areaLabels, 'VS'));
 end
 
+
+%%
+idArea = 'DS';
 idList = {idM23, idM56, idDS, idVS};
 dataMatMain = dataMat(:, idList{strcmp(areas, idArea)}); % This should be your data
 
 
-%%
+%%  Nat or Reach-specific variables
+
+switch natOrReach
+    case 'Reach'
 preTime = 4; % s before reach onset
 postTime = 3;
 
@@ -67,12 +84,20 @@ block1End = dataR.R(block1Last, 2);
 
 block2StartFrame = round(dataR.R(block2First, 1) / 1000 / opts.frameSize);
 rStarts = round(dataR.R(trialIdx,1)/opts.frameSize/1000); % in frames
+rStops = round(dataR.R(trialIdx,2)/opts.frameSize/1000); % in frames
 firstFrame = round(opts.collectStart / opts.frameSize);
 lastFrame = round((opts.collectStart + opts.collectFor) / opts.frameSize);
-rStarts(rStarts < firstFrame) = [];
-rStarts(rStarts > lastFrame) = [];
+validTrials = rStarts > firstFrame & rStops < lastFrame;
 
+rStarts = rStarts(validTrials);
+rStops = rStops(validTrials);
+rAcc = dataR.BlockWithErrors(validTrials, 4);
 
+    case 'Nat'
+            % Parameters for natural trials
+    trialDur = 30; % "trial" duration in seconds
+    
+end
 
 %%
 %----------------------------
@@ -134,9 +159,6 @@ switch natOrReach
     case 'Nat'
     % NATURAL DATA: Use fixed-duration trials
     fprintf('Using NATURAL DATA format with fixed-duration trials\n');
-    
-    % Parameters for natural trials
-    trialDur = 10; % trial duration in seconds
     
     % Calculate number of complete trials
     totalTime = size(dataMatMain, 1) * binSize; % total time in seconds
@@ -231,64 +253,211 @@ try
     fprintf('Number of states: %d\n', res.HmmParam.VarStates(res.BestStateInd));
     fprintf('Log-likelihood: %.2f\n', res.hmm_bestfit.LLtrain);
 
+    %% ----------------------------
+    % SAVE HMM RESULTS
     %----------------------------
-    % PLOTS
-    %----------------------------
-    HmmParam = res.HmmParam;
-    HmmParam.VarStates = res.HmmParam.VarStates(res.BestStateInd);
-    hmm_bestfit = res.hmm_bestfit;
-    hmm_results = res.hmm_results;
-    hmm_postfit = res.hmm_postfit;
-
-    % Create distinguishable colors for states
-    colors = distinguishable_colors(max(HmmParam.VarStates, 4));
-
-    % Plot transition probability matrix and emission probability matrix
-    figure;
-    subplot(1, 2, 1);
-    imagesc(hmm_bestfit.tpm);
-    colorbar;
-    title('Transition Probability Matrix');
-    xlabel('State'); ylabel('State');
-
-    subplot(1, 2, 2);
-    imagesc(hmm_bestfit.epm(:, 1:end-1)); % Exclude silence column
-    colorbar;
-    title('Emission Probability Matrix');
-    xlabel('Neuron'); ylabel('State');
-
-    % Plot state sequence over time
-    figure;
-    if isfield(hmm_results, 'pStates') && ~isempty(hmm_results)
-        imagesc(hmm_results(1).pStates);
-        colorbar;
-        title('Posterior State Probabilities Over Time');
-        xlabel('Time'); ylabel('State');
+    
+    % Create comprehensive results structure
+    hmm_results_save = struct();
+    
+    % Analysis metadata
+    hmm_results_save.metadata = struct();
+    hmm_results_save.metadata.data_type = natOrReach; % 'Nat' or 'Reach'
+    hmm_results_save.metadata.brain_area = idArea; % Which brain area was analyzed
+    hmm_results_save.metadata.analysis_date = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+    hmm_results_save.metadata.analysis_status = 'SUCCESS';
+    hmm_results_save.metadata.model_selection_method = MODELSEL;
+    
+    % Data parameters
+    hmm_results_save.data_params = struct();
+    hmm_results_save.data_params.num_neurons = gnunits;
+    hmm_results_save.data_params.num_trials = ntrials;
+    hmm_results_save.data_params.bin_size = binSize;
+    hmm_results_save.data_params.frame_size = opts.frameSize;
+    hmm_results_save.data_params.collect_start = opts.collectStart;
+    hmm_results_save.data_params.collect_duration = opts.collectFor;
+    hmm_results_save.data_params.min_act_time = opts.minActTime;
+    hmm_results_save.data_params.min_firing_rate = opts.minFiringRate;
+    
+    % Trial parameters
+    hmm_results_save.trial_params = struct();
+    hmm_results_save.trial_params.trial_windows = win_train; % [start, end] for each trial
+    hmm_results_save.trial_params.trial_duration = trialDur;
+    
+    % Add reach-specific parameters if applicable
+    if strcmp(natOrReach, 'Reach')
+        hmm_results_save.trial_params.pre_time = preTime;
+        hmm_results_save.trial_params.post_time = postTime;
+        hmm_results_save.trial_params.reach_starts = rStarts;
+        hmm_results_save.trial_params.reach_stops = rStops;
+        hmm_results_save.trial_params.reach_accuracy = rAcc;
+        hmm_results_save.trial_params.valid_trials = validTrials;
     end
-
-    % Plot detected state sequences
-    if isfield(hmm_postfit, 'sequence') && ~isempty(hmm_postfit)
-        figure;
-        for i_trial = 1:length(hmm_postfit)
-            if ~isempty(hmm_postfit(i_trial).sequence)
-                sequence = hmm_postfit(i_trial).sequence;
-                for i_seq = 1:size(sequence, 2)
-                    onset = sequence(1, i_seq);
-                    offset = sequence(2, i_seq);
-                    state = sequence(4, i_seq);
-                    rectangle('Position', [onset, state-0.4, offset-onset, 0.8], ...
-                        'FaceColor', colors(state, :), 'EdgeColor', 'none');
-                end
-            end
+    
+    % HMM results
+    hmm_results_save.hmm_results = res;
+    
+    % Best model parameters
+    hmm_results_save.best_model = struct();
+    hmm_results_save.best_model.num_states = res.HmmParam.VarStates(res.BestStateInd);
+    hmm_results_save.best_model.transition_matrix = res.hmm_bestfit.tpm;
+    hmm_results_save.best_model.emission_matrix = res.hmm_bestfit.epm;
+    hmm_results_save.best_model.log_likelihood = res.hmm_bestfit.LLtrain;
+    hmm_results_save.best_model.best_state_index = res.BestStateInd;
+    
+    % State sequences and posterior probabilities
+    hmm_results_save.state_sequences = res.hmm_postfit;
+    hmm_results_save.posterior_probabilities = res.hmm_results;
+    
+    % HMM parameters
+    hmm_results_save.hmm_parameters = res.HmmParam;
+    
+    % Create filename with timestamp and analysis info
+    timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+    filename = sprintf('HMM_results_%s_%s_%s.mat', natOrReach, idArea, timestamp);
+    filepath = fullfile(hmmdir, filename);
+    
+    % Save the results
+    fprintf('Saving HMM results to: %s\n', filepath);
+    save(filepath, 'hmm_results_save', '-v7.3');
+    
+    % Also save a summary text file
+    summary_filename = sprintf('HMM_summary_%s_%s_%s.txt', natOrReach, idArea, timestamp);
+    summary_filepath = fullfile(hmmdir, summary_filename);
+    
+    % Create summary file
+    fid = fopen(summary_filepath, 'w');
+    if fid ~= -1
+        fprintf(fid, 'HMM Analysis Summary\n');
+        fprintf(fid, '===================\n\n');
+        fprintf(fid, 'Analysis Date: %s\n', hmm_results_save.metadata.analysis_date);
+        fprintf(fid, 'Data Type: %s\n', hmm_results_save.metadata.data_type);
+        fprintf(fid, 'Brain Area: %s\n', hmm_results_save.metadata.brain_area);
+        fprintf(fid, 'Model Selection Method: %s\n', hmm_results_save.metadata.model_selection_method);
+        fprintf(fid, '\n');
+        fprintf(fid, 'Data Parameters:\n');
+        fprintf(fid, '  Number of neurons: %d\n', hmm_results_save.data_params.num_neurons);
+        fprintf(fid, '  Number of trials: %d\n', hmm_results_save.data_params.num_trials);
+        fprintf(fid, '  Bin size: %.6f seconds\n', hmm_results_save.data_params.bin_size);
+        fprintf(fid, '  Frame size: %.6f seconds\n', hmm_results_save.data_params.frame_size);
+        fprintf(fid, '  Collection start: %.1f seconds\n', hmm_results_save.data_params.collect_start);
+        fprintf(fid, '  Collection duration: %.1f seconds\n', hmm_results_save.data_params.collect_duration);
+        fprintf(fid, '\n');
+        fprintf(fid, 'Trial Parameters:\n');
+        fprintf(fid, '  Trial duration: %.1f seconds\n', hmm_results_save.trial_params.trial_duration);
+        if strcmp(natOrReach, 'Reach')
+            fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_results_save.trial_params.pre_time);
+            fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_results_save.trial_params.post_time);
         end
-        title('Detected State Sequences');
-        xlabel('Time (s)'); ylabel('State');
-        ylim([0.5, HmmParam.VarStates + 0.5]);
+        fprintf(fid, '\n');
+        fprintf(fid, 'HMM Results:\n');
+        fprintf(fid, '  Number of states: %d\n', hmm_results_save.best_model.num_states);
+        fprintf(fid, '  Log-likelihood: %.2f\n', hmm_results_save.best_model.log_likelihood);
+        fprintf(fid, '  Best state index: %d\n', hmm_results_save.best_model.best_state_index);
+        fprintf(fid, '\n');
+        fprintf(fid, 'Files saved:\n');
+        fprintf(fid, '  Results: %s\n', filename);
+        fprintf(fid, '  Summary: %s\n', summary_filename);
+        fclose(fid);
+        
+        fprintf('Summary saved to: %s\n', summary_filepath);
     end
+    
+    fprintf('HMM analysis and saving completed successfully!\n');
+
 
 catch ME
     fprintf('Error in HMM analysis: %s\n', ME.message);
     fprintf('You may need to implement the HMM fitting functions separately.\n');
+return
+    %----------------------------
+    % SAVE ANALYSIS ATTEMPT (EVEN IF FAILED)
+    %----------------------------
+    
+    % Create results structure for failed analysis
+    hmm_results_save = struct();
+    
+    % Analysis metadata
+    hmm_results_save.metadata = struct();
+    hmm_results_save.metadata.data_type = natOrReach; % 'Nat' or 'Reach'
+    hmm_results_save.metadata.brain_area = idArea; % Which brain area was analyzed
+    hmm_results_save.metadata.analysis_date = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+    hmm_results_save.metadata.model_selection_method = MODELSEL;
+    hmm_results_save.metadata.analysis_status = 'FAILED';
+    hmm_results_save.metadata.error_message = ME.message;
+    
+    % Data parameters
+    hmm_results_save.data_params = struct();
+    hmm_results_save.data_params.num_neurons = gnunits;
+    hmm_results_save.data_params.num_trials = ntrials;
+    hmm_results_save.data_params.bin_size = binSize;
+    hmm_results_save.data_params.frame_size = opts.frameSize;
+    hmm_results_save.data_params.collect_start = opts.collectStart;
+    hmm_results_save.data_params.collect_duration = opts.collectFor;
+    hmm_results_save.data_params.min_act_time = opts.minActTime;
+    hmm_results_save.data_params.min_firing_rate = opts.minFiringRate;
+    
+    % Trial parameters
+    hmm_results_save.trial_params = struct();
+    hmm_results_save.trial_params.trial_windows = win_train; % [start, end] for each trial
+    hmm_results_save.trial_params.trial_duration = trialDur;
+    
+    % Add reach-specific parameters if applicable
+    if strcmp(natOrReach, 'Reach')
+        hmm_results_save.trial_params.pre_time = preTime;
+        hmm_results_save.trial_params.post_time = postTime;
+        hmm_results_save.trial_params.reach_starts = rStarts;
+        hmm_results_save.trial_params.reach_stops = rStops;
+        hmm_results_save.trial_params.reach_accuracy = rAcc;
+        hmm_results_save.trial_params.valid_trials = validTrials;
+    end
+    
+    % Save the failed analysis attempt
+    timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+    filename = sprintf('HMM_results_%s_%s_%s_FAILED.mat', natOrReach, idArea, timestamp);
+    filepath = fullfile(hmmdir, filename);
+    
+    fprintf('Saving failed HMM analysis attempt to: %s\n', filepath);
+    save(filepath, 'hmm_results_save', '-v7.3');
+    
+    % Also save a summary text file for failed analysis
+    summary_filename = sprintf('HMM_summary_%s_%s_%s_FAILED.txt', natOrReach, idArea, timestamp);
+    summary_filepath = fullfile(hmmdir, summary_filename);
+    
+    % Create summary file for failed analysis
+    fid = fopen(summary_filepath, 'w');
+    if fid ~= -1
+        fprintf(fid, 'HMM Analysis Summary (FAILED)\n');
+        fprintf(fid, '=============================\n\n');
+        fprintf(fid, 'Analysis Date: %s\n', hmm_results_save.metadata.analysis_date);
+        fprintf(fid, 'Data Type: %s\n', hmm_results_save.metadata.data_type);
+        fprintf(fid, 'Brain Area: %s\n', hmm_results_save.metadata.brain_area);
+        fprintf(fid, 'Model Selection Method: %s\n', hmm_results_save.metadata.model_selection_method);
+        fprintf(fid, 'Analysis Status: %s\n', hmm_results_save.metadata.analysis_status);
+        fprintf(fid, 'Error Message: %s\n', hmm_results_save.metadata.error_message);
+        fprintf(fid, '\n');
+        fprintf(fid, 'Data Parameters:\n');
+        fprintf(fid, '  Number of neurons: %d\n', hmm_results_save.data_params.num_neurons);
+        fprintf(fid, '  Number of trials: %d\n', hmm_results_save.data_params.num_trials);
+        fprintf(fid, '  Bin size: %.6f seconds\n', hmm_results_save.data_params.bin_size);
+        fprintf(fid, '  Frame size: %.6f seconds\n', hmm_results_save.data_params.frame_size);
+        fprintf(fid, '  Collection start: %.1f seconds\n', hmm_results_save.data_params.collect_start);
+        fprintf(fid, '  Collection duration: %.1f seconds\n', hmm_results_save.data_params.collect_duration);
+        fprintf(fid, '\n');
+        fprintf(fid, 'Trial Parameters:\n');
+        fprintf(fid, '  Trial duration: %.1f seconds\n', hmm_results_save.trial_params.trial_duration);
+        if strcmp(natOrReach, 'Reach')
+            fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_results_save.trial_params.pre_time);
+            fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_results_save.trial_params.post_time);
+        end
+        fprintf(fid, '\n');
+        fprintf(fid, 'Files saved:\n');
+        fprintf(fid, '  Results: %s\n', filename);
+        fprintf(fid, '  Summary: %s\n', summary_filename);
+        fclose(fid);
+        
+        fprintf('Failed analysis summary saved to: %s\n', summary_filepath);
+    end
 
     % % Alternative: Use your existing Gaussian HMM approach
     % fprintf('Falling back to Gaussian HMM approach...\n');
@@ -322,26 +491,6 @@ catch ME
 end
 
 
-
-%% Plot detected state sequences
-if isfield(hmm_postfit, 'sequence') && ~isempty(hmm_postfit)
-    figure(4); clf
-    for i_trial = 1:length(hmm_postfit)
-        if ~isempty(hmm_postfit(i_trial).sequence)
-            sequence = hmm_postfit(i_trial).sequence;
-            for i_seq = 1:size(sequence, 2)
-                onset = sequence(1, i_seq);
-                offset = sequence(2, i_seq);
-                state = sequence(4, i_seq);
-                rectangle('Position', [onset, state-0.4, offset-onset, 0.8], ...
-                    'FaceColor', colors(state, :), 'EdgeColor', 'none');
-            end
-        end
-    end
-    title('Detected State Sequences');
-    xlabel('Time (s)'); ylabel('State');
-    ylim([0.5, HmmParam.VarStates + 0.5]);
-end
 
 
 
