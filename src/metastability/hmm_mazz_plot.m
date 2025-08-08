@@ -27,7 +27,8 @@ xlabel('Neuron'); ylabel('State');
 % Plot state sequence over time
 figure;
 if isfield(hmm_results, 'pStates') && ~isempty(hmm_results)
-    imagesc(hmm_results(1).pStates);
+    % imagesc(hmm_results(3).pStates);
+    imagesc(hmm_results(3).pStates);
     colorbar;
     title('Posterior State Probabilities Over Time');
     xlabel('Time'); ylabel('State');
@@ -40,14 +41,22 @@ end
 
 %% Plot detected state sequences
 if isfield(hmm_postfit, 'sequence') && ~isempty(hmm_postfit)
+    % figure(4); clf; hold on;
     figure(4);
+    
+    % Unified approach: Plot one trial window at a time for both Nat and Reach data
+    fprintf('Plotting state sequences - one trial window at a time (unified approach)\n');
+    
     for i_trial = 1:length(hmm_postfit)
-        clf
+         clf;
         ylim([-.5 HmmParam.VarStates + 0.5])
-
+        
         if ~isempty(hmm_postfit(i_trial).sequence)
-            xline(0)
-            xline((rStops(i_trial) - rStarts(i_trial))*opts.frameSize)
+            % Get trial window information
+            trial_start = hmm_results_save.trial_params.trial_windows(i_trial, 1);
+            trial_end = hmm_results_save.trial_params.trial_windows(i_trial, 2);
+            trial_duration = trial_end - trial_start;
+            
             sequence = hmm_postfit(i_trial).sequence;
             for i_seq = 1:size(sequence, 2)
                 onset = sequence(1, i_seq);
@@ -57,14 +66,22 @@ if isfield(hmm_postfit, 'sequence') && ~isempty(hmm_postfit)
                     'FaceColor', colors(state, :), 'EdgeColor', 'none');
             end
         end
-        if ismember(rAcc(i_trial), 1); iLabel = "Block 1 Correct";
-        elseif ismember(rAcc(i_trial), 2); iLabel = "Block 2 Correct";
-        elseif ismember(rAcc(i_trial), -10); iLabel = "Block 1 Error Below";
-        elseif ismember(rAcc(i_trial), 10); iLabel = "Block 1 Error Above";
-        elseif ismember(rAcc(i_trial), -20); iLabel = "Block 2 Error Below";
-        elseif ismember(rAcc(i_trial), 20); iLabel = "Block 2 Error Above";
+        
+        % Create title for trial
+        trial_num = i_trial;
+        total_trials = length(hmm_postfit);
+        trial_start_time = hmm_results_save.trial_params.trial_windows(i_trial, 1);
+        trial_end_time = hmm_results_save.trial_params.trial_windows(i_trial, 2);
+        
+        % Determine data type for title
+        if strcmp(hmm_results_save.metadata.data_type, 'Nat')
+            data_label = 'Natural Data';
+        else
+            data_label = 'Reach Data';
         end
-        title(sprintf('%s Detected State Sequences: %s', hmm_results_save.metadata.brain_area, iLabel));
+        
+        title(sprintf('%s %s - Trial %d/%d (%.1f-%.1f s)', ...
+            hmm_results_save.metadata.brain_area, data_label, trial_num, total_trials, trial_start_time, trial_end_time));
         xlabel('Time (s)'); ylabel('State');
     end
 end
