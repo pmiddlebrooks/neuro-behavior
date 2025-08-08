@@ -31,7 +31,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
-natOrReach = 'Nat'; % 'Nat'  'Reach'
+natOrReach = 'Reach'; % 'Nat'  'Reach'
 areas = {'M23', 'M56', 'DS', 'VS'};
 
 switch natOrReach
@@ -63,39 +63,42 @@ dataMatMain = dataMat(:, idList{strcmp(areas, idArea)}); % This should be your d
 
 switch natOrReach
     case 'Reach'
-preTime = 4; % s before reach onset
-postTime = 3;
+        % preTime = 4; % s before reach onset
+        % postTime = 3;
 
-% Find all reach starts
-block1Err = 1;
-block1Corr = 2;
-block2Err = 3;
-block2Corr = 4;
+        % Find all reach starts
+        block1Err = 1;
+        block1Corr = 2;
+        block2Err = 3;
+        block2Corr = 4;
 
-% First and second block trials
-trialIdx = ismember(dataR.block(:, 3), 1:4);
-trialIdx1 = ismember(dataR.block(:, 3), 1:2);
-trialIdx2 = ismember(dataR.block(:, 3), 3:4);
+        % First and second block trials
+        trialIdx = ismember(dataR.block(:, 3), 1:4);
+        trialIdx1 = ismember(dataR.block(:, 3), 1:2);
+        trialIdx2 = ismember(dataR.block(:, 3), 3:4);
 
-% Find when blocks begin and end
-block1Last = find(trialIdx1, 1, 'last');
-block2First = find(trialIdx2, 1);
-block1End = dataR.R(block1Last, 2);
+        % Find when blocks begin and end
+        block1Last = find(trialIdx1, 1, 'last');
+        block2First = find(trialIdx2, 1);
+        block1End = dataR.R(block1Last, 2);
 
-block2StartFrame = round(dataR.R(block2First, 1) / 1000 / opts.frameSize);
-rStarts = round(dataR.R(trialIdx,1)/opts.frameSize/1000); % in frames
-rStops = round(dataR.R(trialIdx,2)/opts.frameSize/1000); % in frames
-firstFrame = round(opts.collectStart / opts.frameSize);
-lastFrame = round((opts.collectStart + opts.collectFor) / opts.frameSize);
-validTrials = rStarts > firstFrame & rStops < lastFrame;
+        block2StartFrame = round(dataR.R(block2First, 1) / 1000 / opts.frameSize);
+        rStarts = round(dataR.R(trialIdx,1)/opts.frameSize/1000); % in frames
+        rStops = round(dataR.R(trialIdx,2)/opts.frameSize/1000); % in frames
+        firstFrame = round(opts.collectStart / opts.frameSize);
+        lastFrame = round((opts.collectStart + opts.collectFor) / opts.frameSize);
+        validTrials = rStarts > firstFrame & rStops < lastFrame;
 
-rStarts = rStarts(validTrials);
-rStops = rStops(validTrials);
-rAcc = dataR.BlockWithErrors(validTrials, 4);
+        rStarts = rStarts(validTrials);
+        rStops = rStops(validTrials);
+        rAcc = dataR.BlockWithErrors(validTrials, 4);
+        
+        % Set trial duration for reach data (same as natural data for unified approach)
+        trialDur = 20; % "trial" duration in seconds
 
     case 'Nat'
-            % Parameters for natural trials
-    trialDur = 30; % "trial" duration in seconds
+        % Parameters for natural trials
+        trialDur = 20; % "trial" duration in seconds
     
 end
 
@@ -108,95 +111,45 @@ end
 binSize = opts.frameSize; % seconds
 gnunits = size(dataMatMain, 2); % number of neurons
 
-% Determine data type and create appropriate trials
-switch natOrReach
-    case 'Reach'
-    % REACH DATA: Use reach-aligned trials
-    fprintf('Using REACH DATA format with reach-aligned trials\n');
+% Unified approach: Segment continuous data by trialDur for both Nat and Reach
+fprintf('Using UNIFIED approach: Segmenting continuous data by trialDur\n');
+
+% Calculate number of complete trials
+totalTime = size(dataMatMain, 1) * binSize; % total time in seconds
+ntrials = floor(totalTime / trialDur); % number of complete trials
+
+fprintf('Total time: %.1f seconds\n', totalTime);
+fprintf('Creating %d trials of %.1f seconds each\n', ntrials, trialDur);
+
+% Convert time bin matrix to spike times format with multiple trials
+spikes = struct('spk', cell(ntrials, gnunits));
+win_train = zeros(ntrials, 2); % trial windows [start, end] for each trial
+
+% For each trial (same approach for both Nat and Reach)
+for i_trial = 1:ntrials
+    % Calculate trial start and end bins
+    start_bin = (i_trial - 1) * trialDur / binSize + 1;
+    end_bin = i_trial * trialDur / binSize;
     
-    % Parameters for reach trials
-    trialDur = preTime + postTime; % total trial duration
-    ntrials = length(rStarts);
+    % Ensure we don't exceed data bounds
+    end_bin = min(end_bin, size(dataMatMain, 1));
     
-    fprintf('Creating %d reach-aligned trials of %.1f seconds each (%.1fs pre + %.1fs post)\n', ...
-            ntrials, trialDur, preTime, postTime);
+    % Trial window in seconds (relative to trial start)
+    win_train(i_trial, :) = [0, trialDur];
     
-    % Convert time bin matrix to spike times format with reach-aligned trials
-    spikes = struct('spk', cell(ntrials, gnunits));
-    win_train = zeros(ntrials, 2); % trial windows [start, end] for each trial
-    
-    % For each reach trial
-    for i_trial = 1:ntrials
-        % Calculate trial window around reach start
-        reach_start_bin = rStarts(i_trial);
-        start_bin = reach_start_bin - floor(preTime / binSize);
-        end_bin = reach_start_bin + floor(postTime / binSize) - 1;
+    % For each neuron in this trial
+    for i_neuron = 1:gnunits
+        % Get data for this trial
+        trial_data = dataMatMain(start_bin:end_bin, i_neuron);
         
-        % Ensure we don't exceed data bounds
-        start_bin = max(1, start_bin);
-        end_bin = min(end_bin, size(dataMatMain, 1));
+        % Find time bins where this neuron spiked (value > 0)
+        spike_bins = find(trial_data > 0);
         
-        % Trial window in seconds (relative to reach onset)
-        win_train(i_trial, :) = [-preTime, postTime];
+        % Convert bin indices to time in seconds (relative to trial start)
+        spike_times = (spike_bins - 1) * binSize; % -1 because bins are 1-indexed
         
-        % For each neuron in this trial
-        for i_neuron = 1:gnunits
-            % Get data for this trial window
-            trial_data = dataMatMain(start_bin:end_bin, i_neuron);
-            
-            % Find time bins where this neuron spiked (value > 0)
-            spike_bins = find(trial_data > 0);
-            
-            % Convert bin indices to time in seconds (relative to reach onset)
-            % Note: time 0 = reach onset, negative times = pre-reach, positive times = post-reach
-            spike_times = (spike_bins - 1) * binSize - preTime;
-            
-            % Store spike times for this neuron in this trial
-            spikes(i_trial, i_neuron).spk = spike_times;
-        end
-    end
-    
-    case 'Nat'
-    % NATURAL DATA: Use fixed-duration trials
-    fprintf('Using NATURAL DATA format with fixed-duration trials\n');
-    
-    % Calculate number of complete trials
-    totalTime = size(dataMatMain, 1) * binSize; % total time in seconds
-    ntrials = floor(totalTime / trialDur); % number of complete trials
-    
-    fprintf('Total time: %.1f seconds\n', totalTime);
-    fprintf('Creating %d trials of %.1f seconds each\n', ntrials, trialDur);
-    
-    % Convert time bin matrix to spike times format with multiple trials
-    spikes = struct('spk', cell(ntrials, gnunits));
-    win_train = zeros(ntrials, 2); % trial windows [start, end] for each trial
-    
-    % For each trial
-    for i_trial = 1:ntrials
-        % Calculate trial start and end bins
-        start_bin = (i_trial - 1) * trialDur / binSize + 1;
-        end_bin = i_trial * trialDur / binSize;
-        
-        % Ensure we don't exceed data bounds
-        end_bin = min(end_bin, size(dataMatMain, 1));
-        
-        % Trial window in seconds
-        win_train(i_trial, :) = [(i_trial - 1) * trialDur, i_trial * trialDur];
-        
-        % For each neuron in this trial
-        for i_neuron = 1:gnunits
-            % Get data for this trial
-            trial_data = dataMatMain(start_bin:end_bin, i_neuron);
-            
-            % Find time bins where this neuron spiked (value > 0)
-            spike_bins = find(trial_data > 0);
-            
-            % Convert bin indices to time in seconds (relative to trial start)
-            spike_times = (spike_bins - 1) * binSize; % -1 because bins are 1-indexed
-            
-            % Store spike times for this neuron in this trial
-            spikes(i_trial, i_neuron).spk = spike_times;
-        end
+        % Store spike times for this neuron in this trial
+        spikes(i_trial, i_neuron).spk = spike_times;
     end
 end
 
@@ -224,6 +177,10 @@ DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL, 'filesav
 % Note: This assumes you have the hmm.funHMM function available
 % If not, you'll need to implement the HMM fitting separately
 try
+    myCluster = parcluster('local');
+NumWorkers=min(myCluster.NumWorkers, 6);
+parpool('local', NumWorkers);
+
     res = hmm.funHMM(DATAIN);
 
     % OUTPUT OF HMM FIT
@@ -286,8 +243,6 @@ try
     
     % Add reach-specific parameters if applicable
     if strcmp(natOrReach, 'Reach')
-        hmm_results_save.trial_params.pre_time = preTime;
-        hmm_results_save.trial_params.post_time = postTime;
         hmm_results_save.trial_params.reach_starts = rStarts;
         hmm_results_save.trial_params.reach_stops = rStops;
         hmm_results_save.trial_params.reach_accuracy = rAcc;
@@ -345,10 +300,10 @@ try
         fprintf(fid, '\n');
         fprintf(fid, 'Trial Parameters:\n');
         fprintf(fid, '  Trial duration: %.1f seconds\n', hmm_results_save.trial_params.trial_duration);
-        if strcmp(natOrReach, 'Reach')
-            fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_results_save.trial_params.pre_time);
-            fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_results_save.trial_params.post_time);
-        end
+        % if strcmp(natOrReach, 'Reach')
+        %     fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_results_save.trial_params.pre_time);
+        %     fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_results_save.trial_params.post_time);
+        % end
         fprintf(fid, '\n');
         fprintf(fid, 'HMM Results:\n');
         fprintf(fid, '  Number of states: %d\n', hmm_results_save.best_model.num_states);
@@ -404,8 +359,6 @@ return
     
     % Add reach-specific parameters if applicable
     if strcmp(natOrReach, 'Reach')
-        hmm_results_save.trial_params.pre_time = preTime;
-        hmm_results_save.trial_params.post_time = postTime;
         hmm_results_save.trial_params.reach_starts = rStarts;
         hmm_results_save.trial_params.reach_stops = rStops;
         hmm_results_save.trial_params.reach_accuracy = rAcc;
@@ -446,10 +399,10 @@ return
         fprintf(fid, '\n');
         fprintf(fid, 'Trial Parameters:\n');
         fprintf(fid, '  Trial duration: %.1f seconds\n', hmm_results_save.trial_params.trial_duration);
-        if strcmp(natOrReach, 'Reach')
-            fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_results_save.trial_params.pre_time);
-            fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_results_save.trial_params.post_time);
-        end
+        % if strcmp(natOrReach, 'Reach')
+        %     fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_results_save.trial_params.pre_time);
+        %     fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_results_save.trial_params.post_time);
+        % end
         fprintf(fid, '\n');
         fprintf(fid, 'Files saved:\n');
         fprintf(fid, '  Results: %s\n', filename);
