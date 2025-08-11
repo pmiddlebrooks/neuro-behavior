@@ -1,8 +1,8 @@
-function [hmm_model, hmm_params, metadata] = hmm_load_saved_model(natOrReach, brainArea, varargin)
+function [hmm_model, hmm_params, metadata, continuous_results] = hmm_load_saved_model(natOrReach, brainArea, varargin)
 %HMM_LOAD_SAVED_MODEL Load saved HMM analysis results for use with new data
 %
-%   [hmm_model, hmm_params, metadata] = hmm_load_saved_model(natOrReach, brainArea)
-%   [hmm_model, hmm_params, metadata] = hmm_load_saved_model(natOrReach, brainArea, 'fileIndex', idx)
+%   [hmm_model, hmm_params, metadata, continuous_results] = hmm_load_saved_model(natOrReach, brainArea)
+%   [hmm_model, hmm_params, metadata, continuous_results] = hmm_load_saved_model(natOrReach, brainArea, 'fileIndex', idx)
 %
 %   INPUTS:
 %       natOrReach - String: 'Nat' for naturalistic data, 'Reach' for reach data
@@ -33,18 +33,21 @@ function [hmm_model, hmm_params, metadata] = hmm_load_saved_model(natOrReach, br
 %           .file_path        - Path to the loaded file
 %           .file_name        - Name of the loaded file
 %
+%       continuous_results - Structure containing continuous time series:
+%           .sequence         - Continuous state sequence over time
+%           .pStates         - Posterior state probabilities over time
+%           .totalTime       - Total time in seconds
+%
 %   EXAMPLE:
-%       % Load the most recent HMM model for M56 reach data
-%       [model, params, meta] = hmm_load_saved_model('Reach', 'M56');
+%       % Load the most recent HMM model for M56 naturalistic data
+%       [model, params, meta, cont_results] = hmm_load_saved_model('Nat', 'M56');
 %
-%       % Load the second most recent model
-%       [model, params, meta] = hmm_load_saved_model('Reach', 'M56', 'fileIndex', 2);
-%
-%       % Use the model to analyze new data
-%       % (You would implement this in your analysis script)
+%       % Access continuous results
+%       state_sequence = cont_results.sequence;
+%       state_probabilities = cont_results.pStates;
 %
 %   SEE ALSO:
-%       hmm_mazz.m, hmm_mazz_plot.m
+%       hmm_mazz.m, hmm_mazz_plot.m, hmm_vs_behavior.m
 
 % Parse optional inputs
 p = inputParser;
@@ -196,6 +199,13 @@ metadata.file_name = selectedFile;
 % Include additional metadata if available
 if isfield(hmm_results.metadata, 'error_message')
     metadata.error_message = hmm_results.metadata.error_message;
+end
+
+% Extract continuous results if available
+if isfield(hmm_results, 'continuous_results')
+    continuous_results = hmm_results.continuous_results;
+else
+    continuous_results = struct('sequence', [], 'pStates', [], 'totalTime', []);
 end
 
 %% Display summary information

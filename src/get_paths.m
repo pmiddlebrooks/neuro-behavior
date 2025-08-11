@@ -9,7 +9,7 @@ if exist('E:/Projects', 'dir')
             bhvDataPath = 'E:/Projects/neuro-behavior/data/processed_behavior/';
             nrnDataPath = 'E:/Projects/neuro-behavior/data/raw_ephys/';
             saveDataPath = 'E:/Projects/neuro-behavior/data/';
-            dropPath = 'C:/Users/yttri-lab/Dropbox/Data/';
+            dropPath = 'E:/Dropbox/Data/';
 elseif exist('Z:/middlebrooks/', 'dir')
             figurePath = 'Z:/middlebrooks/Projects/neuro-behavior/docs/';
             bhvDataPath = 'Z:/middlebrooks/Projects/neuro-behavior/data/processed_behavior/';
