@@ -24,11 +24,11 @@ colorbar;
 title('Emission Probability Matrix');
 xlabel('Neuron'); ylabel('State');
 
-% Plot state sequence over time
+% Plot example state sequence over time
 figure;
+iTrial = 3;
 if isfield(hmm_results, 'pStates') && ~isempty(hmm_results)
-    % imagesc(hmm_results(3).pStates);
-    imagesc(hmm_results(3).pStates);
+    imagesc(hmm_results(iTrial).pStates);
     colorbar;
     title('Posterior State Probabilities Over Time');
     xlabel('Time'); ylabel('State');
