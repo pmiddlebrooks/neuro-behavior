@@ -54,9 +54,10 @@ end
 
 
 %%
-idArea = 'M56';
+idAreaName = 'M56';
 idList = {idM23, idM56, idDS, idVS};
-dataMatMain = dataMat(:, idList{strcmp(areas, idArea)}); % This should be your data
+idArea = idList{strcmp(areas, idAreaName)};
+dataMatMain = dataMat(:, idArea); % This should be your data
 
 
 %%  Nat or Reach-specific variables
@@ -442,6 +443,107 @@ return
     % ylabel('State');
     % title('Posterior Probabilities of States (Gaussian HMM)');
 end
+
+
+pid = gcp;
+delete(pid)
+
+
+%% ----------------------------
+% TRANSFORM TRIAL RESULTS BACK TO CONTINUOUS TIME SERIES
+%----------------------------
+
+if ~isempty(res) && isfield(res, 'hmm_results') && isfield(res, 'hmm_postfit')
+    fprintf('Transforming trial results back to continuous time series...\n');
+    
+    % Get dimensions
+    numTrials = length(res.hmm_results);
+    numTimePerTrial = size(res.hmm_results(1).pStates, 2);
+    numStates = size(res.hmm_results(1).pStates, 1);
+    numNeurons = size(res.hmm_results(1).rates, 2);
+    totalTimeBins = numTrials * numTimePerTrial;
+    
+    % Initialize continuous arrays
+    continuous_pStates = zeros(totalTimeBins, numStates);
+    continuous_rates = zeros(totalTimeBins, numStates, numNeurons);
+    continuous_sequence = zeros(totalTimeBins, 1);
+   
+    % Concatenate results from each trial
+    for iTrial = 1:numTrials
+        % Time indices for this trial
+        timeIdx = ((iTrial-1)*numTimePerTrial + 1):(iTrial*numTimePerTrial);
+        
+        % Copy posterior state probabilities
+        continuous_pStates(:, timeIdx) = res.hmm_results(iTrial).pStates;
+        
+    end
+    
+    % Compute continuous_sequence from continuous_pStates using MinP threshold    
+    % For each time bin, find the state with highest probability
+    for iBin = 1:totalTimeBins
+        stateProbs = continuous_pStates(:, iBin);
+        [maxProb, maxState] = max(stateProbs);
+        
+        % Assign state if probability exceeds MinP threshold
+        if maxProb >= HmmParam.MinP
+            continuous_sequence(iBin) = maxState;
+        end
+        % Otherwise, keep as NaN (no confident state assignment)
+    end
+    
+    % Store continuous results in the hmm_results_save structure
+    hmm_results_save.continuous_results = struct();
+    hmm_results_save.continuous_results.pStates = continuous_pStates;
+    hmm_results_save.continuous_results.sequence = continuous_sequence;
+    hmm_results_save.continuous_results.totalTime = totalTimeBins * HmmParam.BinSize;
+    
+    fprintf('Successfully transformed results to continuous format\n');
+    fprintf('Total time bins: %d (%.1f seconds)\n', totalTimeBins, totalTimeBins*HmmParam.BinSize);
+end
+
+
+
+
+%% Plot full sequence
+figure(8); clf;
+hold on;
+
+x = (1:length(continuous_sequence)) * HmmParam.BinSize;
+numStates = size(continuous_pStates, 2);
+
+% Get colors for states
+colors = distinguishable_colors(numStates);
+
+% Plot rectangles for each state
+for state = 1:numStates
+    stateIdx = continuous_sequence == state;
+    if any(stateIdx)
+        % Find contiguous segments
+        d = diff([0; stateIdx; 0]);
+        startIdx = find(d == 1);
+        endIdx = find(d == -1) - 1;
+        
+        % Plot each segment as a rectangle
+        for i = 1:length(startIdx)
+            xStart = x(startIdx(i));
+            xEnd = x(endIdx(i));
+            patch([xStart xEnd xEnd xStart], [0 0 1 1], colors(state,:), ...
+                'FaceAlpha', 0.2, 'EdgeColor', 'none');
+        end
+    end
+end
+
+% Plot probability traces
+for state = 1:numStates
+    plot(x, continuous_pStates(:,state), 'Color', colors(state,:), 'LineWidth', 2);
+end
+
+xlabel('Time (s)');
+ylabel('State Probability');
+ylim([0 1]);
+hold off;
+
+
 
 
 
