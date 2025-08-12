@@ -7,7 +7,7 @@
 % instead of converting trial-based sequences to continuous time series
 
 % Clear workspace and close figures
-clear; clc; close all;
+
 
 %% USER CHOICE: Specify how to get HMM data
 % Set this to 'workspace' to use existing 'res' variable, or 'load' to load a saved model
@@ -40,8 +40,8 @@ elseif strcmp(dataSource, 'workspace')
     end
     
     % Check if continuous results exist in workspace
-    if exist('hmm_results_save', 'var') && isfield(hmm_results_save, 'continuous_results')
-        continuous_results = hmm_results_save.continuous_results;
+    if exist('hmm_res', 'var') && isfield(hmm_res, 'continuous_results')
+        continuous_results = hmm_res.continuous_results;
         fprintf('Using continuous results from workspace\n');
     else
         error('No continuous results found in workspace. Set dataSource = ''load'' to load a saved model.');

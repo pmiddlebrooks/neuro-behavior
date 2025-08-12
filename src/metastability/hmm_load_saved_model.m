@@ -143,11 +143,11 @@ try
     loadedData = load(filePath);
     
     % Check if the expected structure exists
-    if isfield(loadedData, 'hmm_results_save')
-        hmm_results = loadedData.hmm_results_save;
+    if isfield(loadedData, 'hmm_res')
+        hmm_results = loadedData.hmm_res;
         fprintf('Successfully loaded HMM results!\n');
     else
-        error('File does not contain expected hmm_results_save structure');
+        error('File does not contain expected hmm_res structure');
     end
     
 catch ME
