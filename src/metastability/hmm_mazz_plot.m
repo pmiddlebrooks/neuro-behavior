@@ -14,68 +14,9 @@ if strcmp(dataSource, 'load')
     brainArea = 'M56';    % 'M23', 'M56', 'DS', 'VS'
     
     % Load the saved model
-    [hmm_model, hmm_params, metadata] = hmm_load_saved_model(natOrReach, brainArea);
+    [hmm_res] = hmm_load_saved_model(natOrReach, brainArea);
     
-    % Create a res structure compatible with the plotting code
-    res = struct();
-    res.HmmParam = hmm_params.hmm_parameters;
-    res.BestStateInd = hmm_model.best_state_index;
-    res.hmm_bestfit.tpm = hmm_model.transition_matrix;
-    res.hmm_bestfit.epm = hmm_model.emission_matrix;
-    res.hmm_bestfit.LLtrain = hmm_model.log_likelihood;
-    
-    % Load the full results file to get state sequences and posterior probabilities
-    try
-        paths = get_paths;
-        hmmdir = fullfile(paths.dropPath, 'hmm');
-        
-        % Find the file that was loaded
-        files = dir(fullfile(hmmdir, '*.mat'));
-        fileNames = {files.name};
-        
-        % Find the file that matches our criteria
-        matchingFiles = {};
-        for i = 1:length(fileNames)
-            fileName = fileNames{i};
-            if contains(fileName, 'HMM_results_') && ...
-               contains(fileName, ['_' natOrReach '_']) && ...
-               contains(fileName, ['_' brainArea '_']) && ...
-               ~contains(fileName, 'FAILED')
-                matchingFiles{end+1} = fileName;
-            end
-        end
-        
-        if ~isempty(matchingFiles)
-            % Sort by date and get most recent
-            filePaths = fullfile(hmmdir, matchingFiles);
-            fileInfo = dir(filePaths{1});
-            for i = 2:length(filePaths)
-                fileInfo(i) = dir(filePaths{i});
-            end
-            [~, sortIdx] = sort([fileInfo.datenum], 'descend');
-            mostRecentFile = matchingFiles{sortIdx(1)};
-            
-            % Load the full results
-            fullResults = load(fullfile(hmmdir, mostRecentFile));
-            if isfield(fullResults, 'hmm_results_save')
-                hmm_results_save = fullResults.hmm_results_save;
-                
-                % Extract the needed fields
-                if isfield(hmm_results_save, 'hmm_results')
-                    res.hmm_results = hmm_results_save.hmm_results;
-                end
-                if isfield(hmm_results_save, 'state_sequences')
-                    res.hmm_postfit = hmm_results_save.state_sequences;
-                end
-                if isfield(hmm_results_save, 'trial_params')
-                    trial_params = hmm_results_save.trial_params;
-                end
-            end
-        end
-    catch ME
-        fprintf('Warning: Could not load full results file: %s\n', ME.message);
-        fprintf('Some plots may not work without full results.\n');
-    end
+
     
     fprintf('Loaded model: %s data from %s area\n', natOrReach, brainArea);
     
@@ -97,18 +38,18 @@ else
 end
 
 % Extract HMM parameters
-HmmParam = res.HmmParam;
+HmmParam = hmm_res.HmmParam;
 if isfield(HmmParam, 'VarStates')
     if isfield(res, 'BestStateInd')
-        HmmParam.VarStates = res.HmmParam.VarStates(res.BestStateInd);
+        HmmParam.VarStates = hmm_res.HmmParam.VarStates(hmm_res.BestStateInd);
     else
-        HmmParam.VarStates = res.HmmParam.VarStates(1); % Use first if no best index
+        HmmParam.VarStates = hmm_res.HmmParam.VarStates(1); % Use first if no best index
     end
 end
 
-hmm_bestfit = res.hmm_bestfit;
-hmm_results = res.hmm_results;
-hmm_postfit = res.hmm_postfit;
+hmm_bestfit = hmm_res.hmm_bestfit;
+hmm_results = hmm_res.hmm_results;
+hmm_postfit = hmm_res.hmm_postfit;
 
 % Create distinguishable colors for states
 colors = distinguishable_colors(max(HmmParam.VarStates, 4));

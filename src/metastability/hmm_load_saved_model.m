@@ -1,4 +1,4 @@
-function [hmm_model, hmm_params, metadata, continuous_results] = hmm_load_saved_model(natOrReach, brainArea, varargin)
+function [hmm_results] = hmm_load_saved_model(natOrReach, brainArea, varargin)
 %HMM_LOAD_SAVED_MODEL Load saved HMM analysis results for use with new data
 %
 %   [hmm_model, hmm_params, metadata, continuous_results] = hmm_load_saved_model(natOrReach, brainArea)
@@ -9,7 +9,7 @@ function [hmm_model, hmm_params, metadata, continuous_results] = hmm_load_saved_
 %       brainArea  - String: 'M23', 'M56', 'DS', 'VS'
 %       fileIndex  - (Optional) Integer: Index of file to load (1 = most recent, 2 = second most recent, etc.)
 %
-%   OUTPUTS:
+%   OUTPUTS (in hmm_results):
 %       hmm_model  - Structure containing the trained HMM model:
 %           .transition_matrix - KxK transition probability matrix
 %           .emission_matrix   - Kx(N+1) emission probability matrix (N neurons + silence)
@@ -154,72 +154,65 @@ catch ME
     error('Failed to load file %s: %s', selectedFile, ME.message);
 end
 
-%% Extract and organize the outputs
+% %% Extract and organize the outputs
+% 
+% % Check if analysis was successful
+% if isfield(hmm_results.metadata, 'analysis_status') && ...
+%    strcmp(hmm_results.metadata.analysis_status, 'FAILED')
+%     warning('This analysis failed. Results may be incomplete.');
+% end
+% 
+% % Extract HMM model
+% hmm_model = struct();
+% if isfield(hmm_results, 'best_model')
+%     hmm_model.transition_matrix = hmm_results.best_model.transition_matrix;
+%     hmm_model.emission_matrix = hmm_results.best_model.emission_matrix;
+%     hmm_model.num_states = hmm_results.best_model.num_states;
+%     hmm_model.log_likelihood = hmm_results.best_model.log_likelihood;
+%     hmm_model.best_state_index = hmm_results.best_model.best_state_index;
+% else
+%     error('No HMM model found in the loaded data');
+% end
+% 
+% % Extract HMM parameters
+% hmm_params = struct();
+% hmm_params.bin_size = hmm_results.data_params.bin_size;
+% hmm_params.frame_size = hmm_results.data_params.frame_size;
+% hmm_params.trial_duration = hmm_results.trial_params.trial_duration;
+% hmm_params.num_neurons = hmm_results.data_params.num_neurons;
+% hmm_params.model_selection_method = hmm_results.metadata.model_selection_method;
+% 
+% % Include original HMM parameters if available
+% if isfield(hmm_results, 'hmm_parameters')
+%     hmm_params.hmm_parameters = hmm_results.hmm_parameters;
+% end
+% 
+% % Extract metadata
+% metadata = struct();
+% metadata.data_type = hmm_results.metadata.data_type;
+% metadata.brain_area = hmm_results.metadata.brain_area;
+% metadata.analysis_date = hmm_results.metadata.analysis_date;
+% metadata.analysis_status = hmm_results.metadata.analysis_status;
+% metadata.file_path = filePath;
+% metadata.file_name = selectedFile;
+% 
+% % Include additional metadata if available
+% if isfield(hmm_results.metadata, 'error_message')
+%     metadata.error_message = hmm_results.metadata.error_message;
+% end
+% 
+% %% Display summary information
+% fprintf('\n=== Loaded HMM Model Summary ===\n');
+% fprintf('File: %s\n', selectedFile);
+% fprintf('Analysis Date: %s\n', metadata.analysis_date);
+% fprintf('Data Type: %s\n', metadata.data_type);
+% fprintf('Brain Area: %s\n', metadata.brain_area);
+% fprintf('Number of States: %d\n', hmm_model.num_states);
+% fprintf('Number of Neurons: %d\n', hmm_params.num_neurons);
+% fprintf('Trial Duration: %.1f seconds\n', hmm_params.trial_duration);
+% fprintf('Bin Size: %.6f seconds\n', hmm_params.bin_size);
 
-% Check if analysis was successful
-if isfield(hmm_results.metadata, 'analysis_status') && ...
-   strcmp(hmm_results.metadata.analysis_status, 'FAILED')
-    warning('This analysis failed. Results may be incomplete.');
-end
-
-% Extract HMM model
-hmm_model = struct();
-if isfield(hmm_results, 'best_model')
-    hmm_model.transition_matrix = hmm_results.best_model.transition_matrix;
-    hmm_model.emission_matrix = hmm_results.best_model.emission_matrix;
-    hmm_model.num_states = hmm_results.best_model.num_states;
-    hmm_model.log_likelihood = hmm_results.best_model.log_likelihood;
-    hmm_model.best_state_index = hmm_results.best_model.best_state_index;
-else
-    error('No HMM model found in the loaded data');
-end
-
-% Extract HMM parameters
-hmm_params = struct();
-hmm_params.bin_size = hmm_results.data_params.bin_size;
-hmm_params.frame_size = hmm_results.data_params.frame_size;
-hmm_params.trial_duration = hmm_results.trial_params.trial_duration;
-hmm_params.num_neurons = hmm_results.data_params.num_neurons;
-hmm_params.model_selection_method = hmm_results.metadata.model_selection_method;
-
-% Include original HMM parameters if available
-if isfield(hmm_results, 'hmm_parameters')
-    hmm_params.hmm_parameters = hmm_results.hmm_parameters;
-end
-
-% Extract metadata
-metadata = struct();
-metadata.data_type = hmm_results.metadata.data_type;
-metadata.brain_area = hmm_results.metadata.brain_area;
-metadata.analysis_date = hmm_results.metadata.analysis_date;
-metadata.analysis_status = hmm_results.metadata.analysis_status;
-metadata.file_path = filePath;
-metadata.file_name = selectedFile;
-
-% Include additional metadata if available
-if isfield(hmm_results.metadata, 'error_message')
-    metadata.error_message = hmm_results.metadata.error_message;
-end
-
-% Extract continuous results if available
-if isfield(hmm_results, 'continuous_results')
-    continuous_results = hmm_results.continuous_results;
-else
-    continuous_results = struct('sequence', [], 'pStates', [], 'totalTime', []);
-end
-
-%% Display summary information
-fprintf('\n=== Loaded HMM Model Summary ===\n');
-fprintf('File: %s\n', selectedFile);
-fprintf('Analysis Date: %s\n', metadata.analysis_date);
-fprintf('Data Type: %s\n', metadata.data_type);
-fprintf('Brain Area: %s\n', metadata.brain_area);
-fprintf('Number of States: %d\n', hmm_model.num_states);
-fprintf('Number of Neurons: %d\n', hmm_params.num_neurons);
-fprintf('Trial Duration: %.1f seconds\n', hmm_params.trial_duration);
-fprintf('Bin Size: %.6f seconds\n', hmm_params.bin_size);
-
-if strcmp(metadata.analysis_status, 'SUCCESS')
+if strcmp(hmm_results.metadata.analysis_status, 'SUCCESS')
     fprintf('Log-likelihood: %.2f\n', hmm_model.log_likelihood);
     fprintf('Model Status: SUCCESS\n');
 else
