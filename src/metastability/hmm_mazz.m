@@ -31,7 +31,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
-natOrReach = 'Reach'; % 'Nat'  'Reach'
+natOrReach = 'Nat'; % 'Nat'  'Reach'
 areas = {'M23', 'M56', 'DS', 'VS'};
 
 switch natOrReach
@@ -54,7 +54,7 @@ end
 
 
 %%
-idAreaName = 'M56';
+idAreaName = 'DS';
 idList = {idM23, idM56, idDS, idVS};
 idArea = idList{strcmp(areas, idAreaName)};
 dataMatMain = dataMat(:, idArea); % This should be your data
@@ -218,122 +218,6 @@ catch ME
     fprintf('Error in HMM analysis: %s\n', ME.message);
     fprintf('You may need to implement the HMM fitting functions separately.\n');
 return
-    %----------------------------
-    % SAVE ANALYSIS ATTEMPT (EVEN IF FAILED)
-    %----------------------------
-    
-    % Create results structure for failed analysis
-    hmm_results_save = struct();
-    
-    % Analysis metadata
-    hmm_results_save.metadata = struct();
-    hmm_results_save.metadata.data_type = natOrReach; % 'Nat' or 'Reach'
-    hmm_results_save.metadata.brain_area = idArea; % Which brain area was analyzed
-    hmm_results_save.metadata.analysis_date = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
-    hmm_results_save.metadata.model_selection_method = MODELSEL;
-    hmm_results_save.metadata.analysis_status = 'FAILED';
-    hmm_results_save.metadata.error_message = ME.message;
-    
-    % Data parameters
-    hmm_results_save.data_params = struct();
-    hmm_results_save.data_params.num_neurons = gnunits;
-    hmm_results_save.data_params.num_trials = ntrials;
-    hmm_results_save.data_params.bin_size = binSize;
-    hmm_results_save.data_params.frame_size = opts.frameSize;
-    hmm_results_save.data_params.collect_start = opts.collectStart;
-    hmm_results_save.data_params.collect_duration = opts.collectFor;
-    hmm_results_save.data_params.min_act_time = opts.minActTime;
-    hmm_results_save.data_params.min_firing_rate = opts.minFiringRate;
-    
-    % Trial parameters
-    hmm_results_save.trial_params = struct();
-    hmm_results_save.trial_params.trial_windows = win_train; % [start, end] for each trial
-    hmm_results_save.trial_params.trial_duration = trialDur;
-    
-    % Add reach-specific parameters if applicable
-    if strcmp(natOrReach, 'Reach')
-        hmm_results_save.trial_params.reach_starts = rStarts;
-        hmm_results_save.trial_params.reach_stops = rStops;
-        hmm_results_save.trial_params.reach_accuracy = rAcc;
-        hmm_results_save.trial_params.valid_trials = validTrials;
-    end
-    
-    % Save the failed analysis attempt
-    timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
-    filename = sprintf('HMM_results_%s_%s_%s_FAILED.mat', natOrReach, idArea, timestamp);
-    filepath = fullfile(hmmdir, filename);
-    
-    fprintf('Saving failed HMM analysis attempt to: %s\n', filepath);
-    save(filepath, 'hmm_results_save', '-v7.3');
-    
-    % Also save a summary text file for failed analysis
-    summary_filename = sprintf('HMM_summary_%s_%s_%s_FAILED.txt', natOrReach, idArea, timestamp);
-    summary_filepath = fullfile(hmmdir, summary_filename);
-    
-    % Create summary file for failed analysis
-    fid = fopen(summary_filepath, 'w');
-    if fid ~= -1
-        fprintf(fid, 'HMM Analysis Summary (FAILED)\n');
-        fprintf(fid, '=============================\n\n');
-        fprintf(fid, 'Analysis Date: %s\n', hmm_results_save.metadata.analysis_date);
-        fprintf(fid, 'Data Type: %s\n', hmm_results_save.metadata.data_type);
-        fprintf(fid, 'Brain Area: %s\n', hmm_results_save.metadata.brain_area);
-        fprintf(fid, 'Model Selection Method: %s\n', hmm_results_save.metadata.model_selection_method);
-        fprintf(fid, 'Analysis Status: %s\n', hmm_results_save.metadata.analysis_status);
-        fprintf(fid, 'Error Message: %s\n', hmm_results_save.metadata.error_message);
-        fprintf(fid, '\n');
-        fprintf(fid, 'Data Parameters:\n');
-        fprintf(fid, '  Number of neurons: %d\n', hmm_results_save.data_params.num_neurons);
-        fprintf(fid, '  Number of trials: %d\n', hmm_results_save.data_params.num_trials);
-        fprintf(fid, '  Bin size: %.6f seconds\n', hmm_results_save.data_params.bin_size);
-        fprintf(fid, '  Frame size: %.6f seconds\n', hmm_results_save.data_params.frame_size);
-        fprintf(fid, '  Collection start: %.1f seconds\n', hmm_results_save.data_params.collect_start);
-        fprintf(fid, '  Collection duration: %.1f seconds\n', hmm_results_save.data_params.collect_duration);
-        fprintf(fid, '\n');
-        fprintf(fid, 'Trial Parameters:\n');
-        fprintf(fid, '  Trial duration: %.1f seconds\n', hmm_results_save.trial_params.trial_duration);
-        % if strcmp(natOrReach, 'Reach')
-        %     fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_results_save.trial_params.pre_time);
-        %     fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_results_save.trial_params.post_time);
-        % end
-        fprintf(fid, '\n');
-        fprintf(fid, 'Files saved:\n');
-        fprintf(fid, '  Results: %s\n', filename);
-        fprintf(fid, '  Summary: %s\n', summary_filename);
-        fclose(fid);
-        
-        fprintf('Failed analysis summary saved to: %s\n', summary_filepath);
-    end
-
-    % % Alternative: Use your existing Gaussian HMM approach
-    % fprintf('Falling back to Gaussian HMM approach...\n');
-    %
-    % % Use PCA on the data
-    % [coeff, score, ~, ~, explained, mu] = pca(dataMatMain);
-    % expThresh = 70; % percent explained variance
-    % nDim = find(cumsum(explained) > expThresh, 1);
-    %
-    % % Fit Gaussian HMM
-    % opts.stateRange = 3:15;
-    % opts.numReps = 5;
-    % opts.numFolds = 3;
-    % opts.margLikMethod = 'laplace';
-    % opts.numSamples = 100;
-    % opts.selectBy = 'margLik';
-    % opts.plotFlag = 1;
-    %
-    % [bestModel, bestNumStates, stateSeq, allModels, allLogL, allBIC, allMargLik] = ...
-    %     fit_gaussian_hmm(score(:, 1:nDim), opts);
-    %
-    % % Plot results
-    % posteriorProb = posterior(bestModel, score(:, 1:nDim));
-    %
-    % figure;
-    % imagesc(posteriorProb');
-    % colorbar;
-    % xlabel('Time');
-    % ylabel('State');
-    % title('Posterior Probabilities of States (Gaussian HMM)');
 end
 
 
@@ -341,7 +225,7 @@ pid = gcp;
 delete(pid)
 
 
-%% ----------------------------
+% ----------------------------
 % TRANSFORM TRIAL RESULTS BACK TO CONTINUOUS TIME SERIES
 %----------------------------
 
@@ -366,18 +250,18 @@ if ~isempty(res) && isfield(res, 'hmm_results') && isfield(res, 'hmm_postfit')
         timeIdx = ((iTrial-1)*numTimePerTrial + 1):(iTrial*numTimePerTrial);
         
         % Copy posterior state probabilities
-        continuous_pStates(:, timeIdx) = res.hmm_results(iTrial).pStates;
+        continuous_pStates(timeIdx, :) = res.hmm_results(iTrial).pStates';
         
     end
-    
+      
     % Compute continuous_sequence from continuous_pStates using MinP threshold    
     % For each time bin, find the state with highest probability
     for iBin = 1:totalTimeBins
-        stateProbs = continuous_pStates(:, iBin);
+        stateProbs = continuous_pStates(iBin,:);
         [maxProb, maxState] = max(stateProbs);
         
         % Assign state if probability exceeds MinP threshold
-        if maxProb >= HmmParam.MinP
+        if maxProb >= res.HmmParam.MinP
             continuous_sequence(iBin) = maxState;
         end
         % Otherwise, keep as NaN (no confident state assignment)
@@ -385,7 +269,7 @@ if ~isempty(res) && isfield(res, 'hmm_results') && isfield(res, 'hmm_postfit')
     
     
     fprintf('Successfully transformed results to continuous format\n');
-    fprintf('Total time bins: %d (%.1f seconds)\n', totalTimeBins, totalTimeBins*HmmParam.BinSize);
+    fprintf('Total time bins: %d (%.1f seconds)\n', totalTimeBins, totalTimeBins * res.HmmParam.BinSize);
 end
 
 
@@ -437,75 +321,74 @@ hold off;
     %----------------------------
     
     % Create comprehensive results structure
-    hmm_results_save = struct();
+    hmm_res = struct();
     
     % Analysis metadata
-    hmm_results_save.metadata = struct();
-    hmm_results_save.metadata.data_type = natOrReach; % 'Nat' or 'Reach'
-    hmm_results_save.metadata.brain_area = idArea; % Which brain area was analyzed
-    hmm_results_save.metadata.analysis_date = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
-    hmm_results_save.metadata.analysis_status = 'SUCCESS';
-    hmm_results_save.metadata.model_selection_method = MODELSEL;
+    hmm_res.metadata = struct();
+    hmm_res.metadata.data_type = natOrReach; % 'Nat' or 'Reach'
+    hmm_res.metadata.brain_area = idArea; % Which brain area was analyzed
+    hmm_res.metadata.analysis_date = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+    hmm_res.metadata.analysis_status = 'SUCCESS';
+    hmm_res.metadata.model_selection_method = MODELSEL;
     
     % Data parameters
-    hmm_results_save.data_params = struct();
-    hmm_results_save.data_params.num_neurons = gnunits;
-    hmm_results_save.data_params.num_trials = ntrials;
-    hmm_results_save.data_params.bin_size = binSize;
-    hmm_results_save.data_params.frame_size = opts.frameSize;
-    hmm_results_save.data_params.collect_start = opts.collectStart;
-    hmm_results_save.data_params.collect_duration = opts.collectFor;
-    hmm_results_save.data_params.min_act_time = opts.minActTime;
-    hmm_results_save.data_params.min_firing_rate = opts.minFiringRate;
+    hmm_res.data_params = struct();
+    hmm_res.data_params.num_neurons = gnunits;
+    hmm_res.data_params.num_trials = ntrials;
+    hmm_res.data_params.bin_size = binSize;
+    hmm_res.data_params.frame_size = opts.frameSize;
+    hmm_res.data_params.collect_start = opts.collectStart;
+    hmm_res.data_params.collect_duration = opts.collectFor;
+    hmm_res.data_params.min_act_time = opts.minActTime;
+    hmm_res.data_params.min_firing_rate = opts.minFiringRate;
     
     % Trial parameters
-    hmm_results_save.trial_params = struct();
-    hmm_results_save.trial_params.trial_windows = win_train; % [start, end] for each trial
-    hmm_results_save.trial_params.trial_duration = trialDur;
+    hmm_res.trial_params = struct();
+    hmm_res.trial_params.trial_windows = win_train; % [start, end] for each trial
+    hmm_res.trial_params.trial_duration = trialDur;
     
     % Add reach-specific parameters if applicable
     if strcmp(natOrReach, 'Reach')
-        hmm_results_save.trial_params.reach_starts = rStarts;
-        hmm_results_save.trial_params.reach_stops = rStops;
-        hmm_results_save.trial_params.reach_accuracy = rAcc;
-        hmm_results_save.trial_params.valid_trials = validTrials;
+        hmm_res.trial_params.reach_starts = rStarts;
+        hmm_res.trial_params.reach_stops = rStops;
+        hmm_res.trial_params.reach_accuracy = rAcc;
+        hmm_res.trial_params.valid_trials = validTrials;
     end
     
     % HMM results
-    hmm_results_save.hmm_results = res;
+    hmm_res.hmm_data = res.hmm_data;
+    hmm_res.hmm_results = res.hmm_results;
+    hmm_res.hmm_postfit = res.hmm_postfit;
+    hmm_res.hmm_multispikes = res.hmm_multispikes;
+    hmm_res.HmmParam = res.HmmParam;
+    hmm_res.colors = res.colors;
+    hmm_res.LLtot = res.LLtot;
     
     % Best model parameters
-    hmm_results_save.best_model = struct();
-    hmm_results_save.best_model.num_states = res.HmmParam.VarStates(res.BestStateInd);
-    hmm_results_save.best_model.transition_matrix = res.hmm_bestfit.tpm;
-    hmm_results_save.best_model.emission_matrix = res.hmm_bestfit.epm;
-    hmm_results_save.best_model.log_likelihood = res.hmm_bestfit.LLtrain;
-    hmm_results_save.best_model.best_state_index = res.BestStateInd;
+    hmm_res.best_model = struct();
+    hmm_res.best_model.num_states = res.HmmParam.VarStates(res.BestStateInd);
+    hmm_res.best_model.transition_matrix = res.hmm_bestfit.tpm;
+    hmm_res.best_model.emission_matrix = res.hmm_bestfit.epm;
+    hmm_res.best_model.log_likelihood = res.hmm_bestfit.LLtrain;
+    hmm_res.best_model.best_state_index = res.BestStateInd;
 
-    % Store continuous results in the hmm_results_save structure
-    hmm_results_save.continuous_results = struct();
-    hmm_results_save.continuous_results.pStates = continuous_pStates;
-    hmm_results_save.continuous_results.sequence = continuous_sequence;
-    hmm_results_save.continuous_results.totalTime = totalTimeBins * HmmParam.BinSize;
-    
-    % State sequences and posterior probabilities
-    hmm_results_save.state_sequences = res.hmm_postfit;
-    hmm_results_save.posterior_probabilities = res.hmm_results;
-    
-    % HMM parameters
-    hmm_results_save.hmm_parameters = res.HmmParam;
-    
+    % Store continuous results in the hmm_res structure
+    hmm_res.continuous_results = struct();
+    hmm_res.continuous_results.pStates = continuous_pStates;
+    hmm_res.continuous_results.sequence = continuous_sequence;
+    hmm_res.continuous_results.totalTime = totalTimeBins * res.HmmParam.BinSize;
+        
     % Create filename with timestamp and analysis info
     timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
-    filename = sprintf('HMM_results_%s_%s_%s.mat', natOrReach, idArea, timestamp);
+    filename = sprintf('HMM_results_%s_%s_%s.mat', natOrReach, idAreaName, timestamp);
     filepath = fullfile(hmmdir, filename);
     
     % Save the results
     fprintf('Saving HMM results to: %s\n', filepath);
-    save(filepath, 'hmm_results_save', '-v7.3');
+    save(filepath, 'hmm_res', '-v7.3');
     
     % Also save a summary text file
-    summary_filename = sprintf('HMM_summary_%s_%s_%s.txt', natOrReach, idArea, timestamp);
+    summary_filename = sprintf('HMM_summary_%s_%s_%s.txt', natOrReach, idAreaName, timestamp);
     summary_filepath = fullfile(hmmdir, summary_filename);
     
     % Create summary file
@@ -513,30 +396,30 @@ hold off;
     if fid ~= -1
         fprintf(fid, 'HMM Analysis Summary\n');
         fprintf(fid, '===================\n\n');
-        fprintf(fid, 'Analysis Date: %s\n', hmm_results_save.metadata.analysis_date);
-        fprintf(fid, 'Data Type: %s\n', hmm_results_save.metadata.data_type);
-        fprintf(fid, 'Brain Area: %s\n', hmm_results_save.metadata.brain_area);
-        fprintf(fid, 'Model Selection Method: %s\n', hmm_results_save.metadata.model_selection_method);
+        fprintf(fid, 'Analysis Date: %s\n', hmm_res.metadata.analysis_date);
+        fprintf(fid, 'Data Type: %s\n', hmm_res.metadata.data_type);
+        fprintf(fid, 'Brain Area: %s\n', hmm_res.metadata.brain_area);
+        fprintf(fid, 'Model Selection Method: %s\n', hmm_res.metadata.model_selection_method);
         fprintf(fid, '\n');
         fprintf(fid, 'Data Parameters:\n');
-        fprintf(fid, '  Number of neurons: %d\n', hmm_results_save.data_params.num_neurons);
-        fprintf(fid, '  Number of trials: %d\n', hmm_results_save.data_params.num_trials);
-        fprintf(fid, '  Bin size: %.6f seconds\n', hmm_results_save.data_params.bin_size);
-        fprintf(fid, '  Frame size: %.6f seconds\n', hmm_results_save.data_params.frame_size);
-        fprintf(fid, '  Collection start: %.1f seconds\n', hmm_results_save.data_params.collect_start);
-        fprintf(fid, '  Collection duration: %.1f seconds\n', hmm_results_save.data_params.collect_duration);
+        fprintf(fid, '  Number of neurons: %d\n', hmm_res.data_params.num_neurons);
+        fprintf(fid, '  Number of trials: %d\n', hmm_res.data_params.num_trials);
+        fprintf(fid, '  Bin size: %.6f seconds\n', hmm_res.data_params.bin_size);
+        fprintf(fid, '  Frame size: %.6f seconds\n', hmm_res.data_params.frame_size);
+        fprintf(fid, '  Collection start: %.1f seconds\n', hmm_res.data_params.collect_start);
+        fprintf(fid, '  Collection duration: %.1f seconds\n', hmm_res.data_params.collect_duration);
         fprintf(fid, '\n');
         fprintf(fid, 'Trial Parameters:\n');
-        fprintf(fid, '  Trial duration: %.1f seconds\n', hmm_results_save.trial_params.trial_duration);
+        fprintf(fid, '  Trial duration: %.1f seconds\n', hmm_res.trial_params.trial_duration);
         % if strcmp(natOrReach, 'Reach')
-        %     fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_results_save.trial_params.pre_time);
-        %     fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_results_save.trial_params.post_time);
+        %     fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_res.trial_params.pre_time);
+        %     fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_res.trial_params.post_time);
         % end
         fprintf(fid, '\n');
         fprintf(fid, 'HMM Results:\n');
-        fprintf(fid, '  Number of states: %d\n', hmm_results_save.best_model.num_states);
-        fprintf(fid, '  Log-likelihood: %.2f\n', hmm_results_save.best_model.log_likelihood);
-        fprintf(fid, '  Best state index: %d\n', hmm_results_save.best_model.best_state_index);
+        fprintf(fid, '  Number of states: %d\n', hmm_res.best_model.num_states);
+        fprintf(fid, '  Log-likelihood: %.2f\n', hmm_res.best_model.log_likelihood);
+        fprintf(fid, '  Best state index: %d\n', hmm_res.best_model.best_state_index);
         fprintf(fid, '\n');
         fprintf(fid, 'Files saved:\n');
         fprintf(fid, '  Results: %s\n', filename);
