@@ -3,10 +3,8 @@
 % to find the best temporal alignment and measure agreement
 % ASSUMES: bhvID is already loaded in the workspace
 %
-% UPDATED: Now uses continuous results directly from hmm_results_save.continuous_results
+% UPDATED: Now uses continuous results directly from hmm_results.continuous_results
 % instead of converting trial-based sequences to continuous time series
-
-% Clear workspace and close figures
 
 
 %% USER CHOICE: Specify how to get HMM data
@@ -15,30 +13,30 @@ dataSource = 'load'; % 'workspace' or 'load'
 
 if strcmp(dataSource, 'load')
     fprintf('Loading saved HMM model...\n');
-    
+
     % Parameters for loading saved model - CHANGE THESE AS NEEDED
     natOrReach = 'Nat'; % 'Nat' for naturalistic data
     brainArea = 'M56';  % 'M23', 'M56', 'DS', 'VS'
-    
+
     % Load the saved model with continuous results
-    [hmm_model, hmm_params, metadata, continuous_results] = hmm_load_saved_model(natOrReach, brainArea);
-    
+    [hmm_res] = hmm_load_saved_model(natOrReach, brainArea);
+
     % Check if continuous results are available
-    if isempty(continuous_results.sequence)
+    if isempty(hmm_res.continuous_results.sequence)
         error('No continuous results found in the loaded data. Make sure the HMM analysis was completed successfully.');
     end
-    
+
     fprintf('Loaded model: %s data from %s area\n', natOrReach, brainArea);
-    fprintf('Continuous sequence length: %d time bins\n', length(continuous_results.sequence));
-    
+    fprintf('Continuous sequence length: %d time bins\n', length(hmm_res.continuous_results.sequence));
+
 elseif strcmp(dataSource, 'workspace')
     fprintf('Using existing HMM results from workspace.\n');
-    
+
     % Check if required variables exist
     if ~exist('res', 'var') || isempty(res)
         error('No ''res'' variable found in workspace. Set dataSource = ''load'' to load a saved model.');
     end
-    
+
     % Check if continuous results exist in workspace
     if exist('hmm_res', 'var') && isfield(hmm_res, 'continuous_results')
         continuous_results = hmm_res.continuous_results;
@@ -46,7 +44,7 @@ elseif strcmp(dataSource, 'workspace')
     else
         error('No continuous results found in workspace. Set dataSource = ''load'' to load a saved model.');
     end
-    
+
     % Get HMM parameters from workspace
     if exist('hmm_params', 'var')
         % Use existing hmm_params
@@ -55,20 +53,20 @@ elseif strcmp(dataSource, 'workspace')
         hmm_params = struct();
         hmm_params.bin_size = 0.001; % Default bin size, adjust as needed
     end
-    
+
 else
     error('Invalid dataSource. Must be ''workspace'' or ''load''');
 end
 
-%% Check for behavioral data
-% ASSUMES: bhvID is already loaded in the workspace
-fprintf('Checking for behavioral data in workspace...\n');
+%% Get behavioral data at the same sampling size as the HMM
+opts = neuro_behavior_options;
+opts.frameSize = hmm_res.HmmParam.BinSize;
+opts.collectStart =     hmm_res.data_params.collect_start;
+opts.collectFor = hmm_res.data_params.collect_duration;
+getDataType = 'spikes';
+get_standard_data
 
-if ~exist('bhvID', 'var')
-    error('bhvID not found in workspace. Please load behavioral data first.');
-end
 
-fprintf('Found bhvID in workspace (length: %d)\n', length(bhvID));
 
 %% Parameters for analysis
 maxLag = 10 / hmm_params.bin_size; % Maximum lag to test (in time bins)
@@ -87,19 +85,19 @@ fprintf('Using continuous sequence of length %d time bins\n', totalTimeBins);
 % This ensures vectors maintain the same length for analysis
 bhvID_full = bhvID;
 fprintf('Behavioral labels: %d total labels (including %d undefined = -1)\n', ...
-        length(bhvID_full), sum(bhvID == -1));
+    length(bhvID_full), sum(bhvID == -1));
 
 % Ensure behavioral data has same length as sequence
 if length(bhvID_full) ~= totalTimeBins
     fprintf('Warning: Behavioral data length (%d) differs from sequence length (%d)\n', ...
-            length(bhvID_full), totalTimeBins);
-    
+        length(bhvID_full), totalTimeBins);
+
     % Truncate to shorter length
     minLength = min(length(bhvID_full), totalTimeBins);
     continuous_sequence = continuous_sequence(1:minLength);
     bhvID_full = bhvID_full(1:minLength);
     totalTimeBins = minLength;
-    
+
     fprintf('Truncated both to length %d\n', minLength);
 end
 
@@ -107,11 +105,11 @@ end
 % continuous_sequence: 0 = undefined state, >0 = state number
 % bhvID_full: -1 = undefined behavior, >=0 = behavior ID
 fprintf('Final data lengths: Sequence = %d, Behavior = %d\n', ...
-        length(continuous_sequence), length(bhvID_full));
+    length(continuous_sequence), length(bhvID_full));
 fprintf('Sequence: %d valid states, %d undefined (0)\n', ...
-        sum(continuous_sequence > 0), sum(continuous_sequence == 0));
+    sum(continuous_sequence > 0), sum(continuous_sequence == 0));
 fprintf('Behavior: %d valid labels, %d undefined (-1)\n', ...
-        sum(bhvID_full >= 0), sum(bhvID_full == -1));
+    sum(bhvID_full >= 0), sum(bhvID_full == -1));
 
 %% 1. Find best lag using mutual information
 fprintf('\n=== Step 1: Finding best lag using mutual information ===\n');
@@ -123,7 +121,7 @@ mi_values = zeros(length(lags), 1);
 
 for i = 1:length(lags)
     lag = lags(i);
-    
+
     if lag >= 0
         % Positive lag: sequence leads behavior
         seq_start = 1;
@@ -137,19 +135,19 @@ for i = 1:length(lags)
         bhv_start = 1;
         bhv_end = length(bhvID_full) + lag;
     end
-    
+
     % Ensure valid indices
     if seq_start < 1 || seq_end > length(continuous_sequence) || ...
-       bhv_start < 1 || bhv_end > length(bhvID_full) || ...
-       seq_end < seq_start || bhv_end < bhv_start
+            bhv_start < 1 || bhv_end > length(bhvID_full) || ...
+            seq_end < seq_start || bhv_end < bhv_start
         mi_values(i) = NaN;
         continue;
     end
-    
+
     % Extract aligned segments
     seq_segment = continuous_sequence(seq_start:seq_end);
     bhv_segment = bhvID_full(bhv_start:bhv_end);
-    
+
     % Calculate mutual information
     mi_values(i) = mutual_information(seq_segment, bhv_segment);
 end
@@ -301,75 +299,75 @@ fprintf('Plots created successfully!\n');
 %% Helper Functions
 
 function mi = mutual_information(x, y)
-    % Calculate mutual information between two categorical variables
-    % x, y: vectors of categorical values (including invalid values)
-    % x: 0 = undefined state, >0 = state number
-    % y: -1 = undefined behavior, >=0 = behavior ID
-    
-    % Get unique values (including invalid ones)
-    unique_x = unique(x);
-    unique_y = unique(y);
-    
-    % Calculate joint and marginal probabilities
-    n = length(x);
-    joint_prob = zeros(length(unique_x), length(unique_y));
-    marg_prob_x = zeros(length(unique_x), 1);
-    marg_prob_y = zeros(length(unique_y), 1);
-    
-    for i = 1:length(unique_x)
-        for j = 1:length(unique_y)
-            joint_prob(i, j) = sum(x == unique_x(i) & y == unique_y(j)) / n;
-        end
-        marg_prob_x(i) = sum(x == unique_x(i)) / n;
-    end
-    
+% Calculate mutual information between two categorical variables
+% x, y: vectors of categorical values (including invalid values)
+% x: 0 = undefined state, >0 = state number
+% y: -1 = undefined behavior, >=0 = behavior ID
+
+% Get unique values (including invalid ones)
+unique_x = unique(x);
+unique_y = unique(y);
+
+% Calculate joint and marginal probabilities
+n = length(x);
+joint_prob = zeros(length(unique_x), length(unique_y));
+marg_prob_x = zeros(length(unique_x), 1);
+marg_prob_y = zeros(length(unique_y), 1);
+
+for i = 1:length(unique_x)
     for j = 1:length(unique_y)
-        marg_prob_y(j) = sum(y == unique_y(j)) / n;
+        joint_prob(i, j) = sum(x == unique_x(i) & y == unique_y(j)) / n;
     end
-    
-    % Calculate mutual information
-    mi = 0;
-    for i = 1:length(unique_x)
-        for j = 1:length(unique_y)
-            if joint_prob(i, j) > 0 && marg_prob_x(i) > 0 && marg_prob_y(j) > 0
-                mi = mi + joint_prob(i, j) * log2(joint_prob(i, j) / (marg_prob_x(i) * marg_prob_y(j)));
-            end
+    marg_prob_x(i) = sum(x == unique_x(i)) / n;
+end
+
+for j = 1:length(unique_y)
+    marg_prob_y(j) = sum(y == unique_y(j)) / n;
+end
+
+% Calculate mutual information
+mi = 0;
+for i = 1:length(unique_x)
+    for j = 1:length(unique_y)
+        if joint_prob(i, j) > 0 && marg_prob_x(i) > 0 && marg_prob_y(j) > 0
+            mi = mi + joint_prob(i, j) * log2(joint_prob(i, j) / (marg_prob_x(i) * marg_prob_y(j)));
         end
     end
 end
+end
 
 function kappa = cohens_kappa(x, y)
-    % Calculate Cohen's kappa between two categorical variables
-    % x, y: vectors of categorical values (including invalid values)
-    % x: 0 = undefined state, >0 = state number
-    % y: -1 = undefined behavior, >=0 = behavior ID
-    
-    % Get unique values (including invalid ones)
-    unique_x = unique(x);
-    unique_y = unique(y);
-    
-    % Create confusion matrix
-    n = length(x);
-    confusion_mat = zeros(length(unique_x), length(unique_y));
-    
-    for i = 1:length(unique_x)
-        for j = 1:length(unique_y)
-            confusion_mat(i, j) = sum(x == unique_x(i) & y == unique_y(j));
-        end
+% Calculate Cohen's kappa between two categorical variables
+% x, y: vectors of categorical values (including invalid values)
+% x: 0 = undefined state, >0 = state number
+% y: -1 = undefined behavior, >=0 = behavior ID
+
+% Get unique values (including invalid ones)
+unique_x = unique(x);
+unique_y = unique(y);
+
+% Create confusion matrix
+n = length(x);
+confusion_mat = zeros(length(unique_x), length(unique_y));
+
+for i = 1:length(unique_x)
+    for j = 1:length(unique_y)
+        confusion_mat(i, j) = sum(x == unique_x(i) & y == unique_y(j));
     end
-    
-    % Calculate observed agreement (diagonal)
-    observed_agreement = sum(diag(confusion_mat)) / n;
-    
-    % Calculate expected agreement
-    row_sums = sum(confusion_mat, 2);
-    col_sums = sum(confusion_mat, 1);
-    expected_agreement = sum(row_sums .* col_sums) / (n^2);
-    
-    % Calculate kappa
-    if expected_agreement == 1
-        kappa = 1; % Perfect agreement
-    else
-        kappa = (observed_agreement - expected_agreement) / (1 - expected_agreement);
-    end
-end 
+end
+
+% Calculate observed agreement (diagonal)
+observed_agreement = sum(diag(confusion_mat)) / n;
+
+% Calculate expected agreement
+row_sums = sum(confusion_mat, 2);
+col_sums = sum(confusion_mat, 1);
+expected_agreement = sum(row_sums .* col_sums) / (n^2);
+
+% Calculate kappa
+if expected_agreement == 1
+    kappa = 1; % Perfect agreement
+else
+    kappa = (observed_agreement - expected_agreement) / (1 - expected_agreement);
+end
+end
