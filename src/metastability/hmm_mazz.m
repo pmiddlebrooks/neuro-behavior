@@ -1,5 +1,6 @@
 %% HMM Analysis for Naturalistic Data
 % Based on demo3_HMM_Full.m, adapted for naturalistic data format
+% https://github.com/mazzulab/contamineuro_2019_spiking_net/tree/master
 %
 % This script performs HMM analysis on neural data and automatically saves:
 % 1. Complete HMM results in .mat format with timestamp
@@ -32,7 +33,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
 natOrReach = 'Nat'; % 'Nat'  'Reach'
-idAreaName = 'M56';
+idAreaName = 'DS';
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 
