@@ -9,9 +9,6 @@
 
 %% USER CHOICE: Specify how to get HMM data
 % Set this to 'workspace' to use existing 'res' variable, or 'load' to load a saved model
-dataSource = 'load'; % 'workspace' or 'load'
-
-if strcmp(dataSource, 'load')
     fprintf('Loading saved HMM model...\n');
 
     % Parameters for loading saved model - CHANGE THESE AS NEEDED
@@ -29,54 +26,26 @@ if strcmp(dataSource, 'load')
     fprintf('Loaded model: %s data from %s area\n', natOrReach, brainArea);
     fprintf('Continuous sequence length: %d time bins\n', length(hmm_res.continuous_results.sequence));
 
-elseif strcmp(dataSource, 'workspace')
-    fprintf('Using existing HMM results from workspace.\n');
-
-    % Check if required variables exist
-    if ~exist('res', 'var') || isempty(res)
-        error('No ''res'' variable found in workspace. Set dataSource = ''load'' to load a saved model.');
-    end
-
-    % Check if continuous results exist in workspace
-    if exist('hmm_res', 'var') && isfield(hmm_res, 'continuous_results')
-        continuous_results = hmm_res.continuous_results;
-        fprintf('Using continuous results from workspace\n');
-    else
-        error('No continuous results found in workspace. Set dataSource = ''load'' to load a saved model.');
-    end
-
-    % Get HMM parameters from workspace
-    if exist('hmm_params', 'var')
-        % Use existing hmm_params
-    else
-        % Create basic hmm_params structure
-        hmm_params = struct();
-        hmm_params.bin_size = 0.001; % Default bin size, adjust as needed
-    end
-
-else
-    error('Invalid dataSource. Must be ''workspace'' or ''load''');
-end
 
 %% Get behavioral data at the same sampling size as the HMM
 opts = neuro_behavior_options;
 opts.frameSize = hmm_res.HmmParam.BinSize;
 opts.collectStart =     hmm_res.data_params.collect_start;
 opts.collectFor = hmm_res.data_params.collect_duration;
-getDataType = 'spikes';
+getDataType = 'behavior';
 get_standard_data
 
 
 
 %% Parameters for analysis
-maxLag = 10 / hmm_params.bin_size; % Maximum lag to test (in time bins)
-fprintf('Maximum lag for analysis: %d time bins (%.1f seconds)\n', maxLag, maxLag * hmm_params.bin_size);
+maxLag = 4 / hmm_res.HmmParam.BinSize; % Maximum lag to test (in time bins)
+fprintf('Maximum lag for analysis: %d time bins (%.1f seconds)\n', maxLag, maxLag * hmm_res.HmmParam.BinSize);
 
 %% Prepare data for analysis
 fprintf('Preparing data for analysis...\n');
 
 % Use continuous sequence directly (keeping all bins including 0s)
-continuous_sequence = continuous_results.sequence;
+continuous_sequence = hmm_res.continuous_results.sequence;
 totalTimeBins = length(continuous_sequence);
 
 fprintf('Using continuous sequence of length %d time bins\n', totalTimeBins);
@@ -113,11 +82,14 @@ fprintf('Behavior: %d valid labels, %d undefined (-1)\n', ...
 
 %% 1. Find best lag using mutual information
 fprintf('\n=== Step 1: Finding best lag using mutual information ===\n');
-fprintf('Note: Invalid values (sequence=0, behavior=-1) are treated as separate categories\n');
+fprintf(['Note: Invalid values (sequence=0, behavior=-1) are excluded from mutual information calculation at each lag.\n' ...
+    'This means only time bins where both are valid are used, which may result in non-contiguous time bins being compared.\n' ...
+    'This is standard for mutual information between two variables, but be aware that temporal gaps are ignored in the MI calculation.\n']);
 
-% Calculate mutual information at different lags
+% Calculate mutual information at different lags, EXCLUDING invalid values
 lags = -maxLag:maxLag;
-mi_values = zeros(length(lags), 1);
+mi_values = nan(length(lags), 1);
+n_valid_pairs = zeros(length(lags), 1);
 
 for i = 1:length(lags)
     lag = lags(i);
@@ -141,6 +113,7 @@ for i = 1:length(lags)
             bhv_start < 1 || bhv_end > length(bhvID_full) || ...
             seq_end < seq_start || bhv_end < bhv_start
         mi_values(i) = NaN;
+        n_valid_pairs(i) = 0;
         continue;
     end
 
@@ -148,18 +121,50 @@ for i = 1:length(lags)
     seq_segment = continuous_sequence(seq_start:seq_end);
     bhv_segment = bhvID_full(bhv_start:bhv_end);
 
-    % Calculate mutual information
-    mi_values(i) = mutual_information(seq_segment, bhv_segment);
+    % Mask out invalid values (sequence==0 or behavior==-1)
+    valid_mask = (seq_segment > 0) & (bhv_segment >= 0);
+
+    n_valid_pairs(i) = sum(valid_mask);
+
+    if n_valid_pairs(i) < 2
+        % Not enough valid data to compute MI
+        mi_values(i) = NaN;
+        continue;
+    end
+
+    seq_valid = seq_segment(valid_mask);
+    bhv_valid = bhv_segment(valid_mask);
+
+    % Calculate mutual information on valid data only
+    mi_values(i) = mutual_information(seq_valid, bhv_valid);
 end
 
 % Find best lag
 [best_mi, best_lag_idx] = max(mi_values);
 best_lag = lags(best_lag_idx);
 
-fprintf('Best lag: %d time bins (MI = %.4f)\n', best_lag, best_mi);
+% Interpret the lag direction
+if best_lag > 0
+    lag_interpretation = sprintf('Neural activity (HMM sequence) LEADS behavior by %d time bins (%.3f seconds)', ...
+        best_lag, best_lag * hmm_res.HmmParam.BinSize);
+elseif best_lag < 0
+    lag_interpretation = sprintf('Behavior LEADS neural activity (HMM sequence) by %d time bins (%.3f seconds)', ...
+        abs(best_lag), abs(best_lag) * hmm_res.HmmParam.BinSize);
+else
+    lag_interpretation = 'Neural activity and behavior are synchronized (no lag)';
+end
+
+fprintf('Best lag: %d time bins (MI = %.4f, %d valid pairs)\n', best_lag, best_mi, n_valid_pairs(best_lag_idx));
+fprintf('Lag interpretation: %s\n', lag_interpretation);
+fprintf('Note: MI is computed only on time bins where both sequence and behavior are valid at each lag.\n');
+fprintf('\nLag direction explanation:\n');
+fprintf('  Positive lag (+): HMM sequence comes FIRST, behavior follows\n');
+fprintf('  Negative lag (-): Behavior comes FIRST, HMM sequence follows\n');
+fprintf('  Zero lag (0): HMM sequence and behavior are synchronized\n');
 
 %% 2. Calculate agreement metrics at best lag
 fprintf('\n=== Step 2: Calculating agreement metrics at best lag ===\n');
+fprintf('Note: Agreement metrics exclude invalid values (sequence=0, behavior=-1)\n');
 
 % Align data at best lag
 if best_lag >= 0
@@ -180,14 +185,29 @@ end
 seq_aligned = continuous_sequence(seq_start:seq_end);
 bhv_aligned = bhvID_full(bhv_start:bhv_end);
 
-% Calculate percent agreement
-agreement = sum(seq_aligned == bhv_aligned) / length(seq_aligned) * 100;
+% Mask out invalid values for agreement calculation
+valid_mask = (seq_aligned > 0) & (bhv_aligned >= 0);
+n_valid_agreement = sum(valid_mask);
 
-% Calculate Cohen's kappa
-kappa = cohens_kappa(seq_aligned, bhv_aligned);
+fprintf('Total aligned time bins: %d\n', length(seq_aligned));
+fprintf('Valid time bins for agreement: %d\n', n_valid_agreement);
 
-fprintf('Percent Agreement: %.2f%%\n', agreement);
-fprintf('Cohen''s Kappa: %.4f\n', kappa);
+if n_valid_agreement < 2
+    error('Not enough valid data pairs for agreement calculation (need at least 2, got %d)', n_valid_agreement);
+end
+
+% Extract valid data for agreement calculation
+seq_valid = seq_aligned(valid_mask);
+bhv_valid = bhv_aligned(valid_mask);
+
+% Calculate percent agreement on valid data only
+agreement = sum(seq_valid == bhv_valid) / length(seq_valid) * 100;
+
+% Calculate Cohen's kappa on valid data only
+kappa = cohens_kappa(seq_valid, bhv_valid);
+
+fprintf('Percent Agreement (valid data only): %.2f%%\n', agreement);
+fprintf('Cohen''s Kappa (valid data only): %.4f\n', kappa);
 
 %% 3. Print and plot summary results
 fprintf('\n=== Step 3: Summary Results ===\n');
@@ -206,12 +226,14 @@ else
 end
 
 fprintf('Total Time Bins: %d\n', totalTimeBins);
-fprintf('Valid Sequence Points: %d\n', length(continuous_sequence));
-fprintf('Valid Behavior Points: %d\n', length(bhvID_full));
-fprintf('Best Lag: %d time bins (%.3f seconds)\n', best_lag, best_lag * hmm_params.bin_size);
-fprintf('Mutual Information at Best Lag: %.4f\n', best_mi);
-fprintf('Percent Agreement: %.2f%%\n', agreement);
-fprintf('Cohen''s Kappa: %.4f\n', kappa);
+fprintf('Valid Sequence Points: %d\n', sum(continuous_sequence > 0));
+fprintf('Valid Behavior Points: %d\n', sum(bhvID_full >= 0));
+fprintf('Best Lag: %d time bins (%.3f seconds)\n', best_lag, best_lag * hmm_res.HmmParam.BinSize);
+fprintf('Lag Direction: %s\n', lag_interpretation);
+fprintf('Mutual Information at Best Lag: %.4f (on %d valid pairs)\n', best_mi, n_valid_pairs(best_lag_idx));
+fprintf('Agreement Calculation: %d valid time bins out of %d aligned\n', n_valid_agreement, length(seq_aligned));
+fprintf('Percent Agreement (valid data only): %.2f%%\n', agreement);
+fprintf('Cohen''s Kappa (valid data only): %.4f\n', kappa);
 
 % Interpret kappa
 if kappa < 0
@@ -269,24 +291,24 @@ xlabel('Time Bin');
 ylim([0 100]);
 grid on;
 
-% Plot 4: Confusion matrix
+% Plot 4: Confusion matrix (valid data only)
 figure(4); clf;
-% Get unique values
-unique_states = unique(seq_aligned);
-unique_behaviors = unique(bhv_aligned);
+% Get unique values from valid data only
+unique_states = unique(seq_valid);
+unique_behaviors = unique(bhv_valid);
 
-% Create confusion matrix
+% Create confusion matrix using valid data
 confusion_mat = zeros(length(unique_states), length(unique_behaviors));
 for i = 1:length(unique_states)
     for j = 1:length(unique_behaviors)
-        confusion_mat(i, j) = sum(seq_aligned == unique_states(i) & bhv_aligned == unique_behaviors(j));
+        confusion_mat(i, j) = sum(seq_valid == unique_states(i) & bhv_valid == unique_behaviors(j));
     end
 end
 
 % Plot confusion matrix
 imagesc(confusion_mat);
 colorbar;
-title('Confusion Matrix: HMM States vs Behavioral Labels');
+title('Confusion Matrix: HMM States vs Behavioral Labels (Valid Data Only)');
 xlabel('Behavior ID');
 ylabel('HMM State');
 xticks(1:length(unique_behaviors));
@@ -295,6 +317,7 @@ yticks(1:length(unique_states));
 yticklabels(arrayfun(@num2str, unique_states, 'UniformOutput', false));
 
 fprintf('Plots created successfully!\n');
+fprintf('Note: Confusion matrix shows only valid data pairs (excludes sequence=0 and behavior=-1)\n');
 
 %% Helper Functions
 
