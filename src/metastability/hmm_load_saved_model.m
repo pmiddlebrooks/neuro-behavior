@@ -213,7 +213,7 @@ end
 % fprintf('Bin Size: %.6f seconds\n', hmm_params.bin_size);
 
 if strcmp(hmm_results.metadata.analysis_status, 'SUCCESS')
-    fprintf('Log-likelihood: %.2f\n', hmm_model.log_likelihood);
+    fprintf('Log-likelihood: %.2f\n', hmm_results.best_model.log_likelihood);
     fprintf('Model Status: SUCCESS\n');
 else
     fprintf('Model Status: FAILED\n');

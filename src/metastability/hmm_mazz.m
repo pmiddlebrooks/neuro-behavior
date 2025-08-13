@@ -32,8 +32,8 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
-natOrReach = 'Nat'; % 'Nat'  'Reach'
-idAreaName = 'DS';
+natOrReach = 'Reach'; % 'Nat'  'Reach'
+idAreaName = 'M56';
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 
