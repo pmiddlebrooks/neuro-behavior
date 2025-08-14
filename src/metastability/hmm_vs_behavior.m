@@ -13,7 +13,7 @@
 
     % Parameters for loading saved model - CHANGE THESE AS NEEDED
     natOrReach = 'Nat'; % 'Nat' for naturalistic data
-    brainArea = 'M56';  % 'M23', 'M56', 'DS', 'VS'
+    brainArea = 'DS';  % 'M23', 'M56', 'DS', 'VS'
 
     % Load the saved model with continuous results
     [hmm_res] = hmm_load_saved_model(natOrReach, brainArea);
