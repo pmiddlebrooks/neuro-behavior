@@ -1,142 +1,102 @@
 %% HMM vs Behavior Analysis for Naturalistic Data
-% This script compares HMM state sequences with behavioral labels
-% to find the best temporal alignment and measure agreement
-% ASSUMES: bhvID is already loaded in the workspace
+% This script analyzes the relationship between HMM states and behavior
+% using contingency matrices, optimal assignment, and consistency metrics
 %
-% UPDATED: Now uses continuous results directly from hmm_results.continuous_results
-% instead of converting trial-based sequences to continuous time series
+% DATA FORMAT EXPECTATIONS:
+% - hmm_model.continuous_sequence: Vector where 0 = invalid (no confident state), >0 = state number
+% - bhvID: Vector where -1 = invalid (undefined behavior), >=0 = behavior category ID
+% - Both vectors should have the same length (totalTimeBins)
 
+%% Load saved HMM results
+% Choose data type and brain area
+natOrReach = 'Nat'; % 'Nat' or 'Reach'
+brainArea = 'M56'; % 'M23', 'M56', 'DS', 'VS'
 
-%% USER CHOICE: Specify how to get HMM data
-% Set this to 'workspace' to use existing 'res' variable, or 'load' to load a saved model
-    fprintf('Loading saved HMM model...\n');
+% Load the HMM model
+[hmm_results] = hmm_load_saved_model(natOrReach, brainArea);
 
-    % Parameters for loading saved model - CHANGE THESE AS NEEDED
-    natOrReach = 'Nat'; % 'Nat' for naturalistic data
-    brainArea = 'DS';  % 'M23', 'M56', 'DS', 'VS'
+fprintf('Loaded HMM model for %s data in %s area\n', hmm_results.metadata.data_type, hmm_results.metadata.brain_area);
+fprintf('Number of states: %d, Number of neurons: %d\n', hmm_results.best_model.num_states, hmm_results.data_params.num_neurons);
 
-    % Load the saved model with continuous results
-    [hmm_res] = hmm_load_saved_model(natOrReach, brainArea);
-
-    % Check if continuous results are available
-    if isempty(hmm_res.continuous_results.sequence)
-        error('No continuous results found in the loaded data. Make sure the HMM analysis was completed successfully.');
-    end
-
-    fprintf('Loaded model: %s data from %s area\n', natOrReach, brainArea);
-    fprintf('Continuous sequence length: %d time bins\n', length(hmm_res.continuous_results.sequence));
-
-
-%% Get behavioral data at the same sampling size as the HMM
+%% Load behavior data
 opts = neuro_behavior_options;
-opts.frameSize = hmm_res.HmmParam.BinSize;
-opts.collectStart =     hmm_res.data_params.collect_start;
-opts.collectFor = hmm_res.data_params.collect_duration;
+opts.frameSize = hmm_results.HmmParam.BinSize;
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 45 * 60; % seconds
 getDataType = 'behavior';
 get_standard_data
 
+% For now, create placeholder - you'll replace this with actual loading
+totalTimeBins = length(hmm_results.continuous_results.sequence);
+% ============================================================================
 
+fprintf('Behavior data loaded: %d time bins\n', length(bhvID));
+fprintf('Invalid behavior bins (bhvID = -1): %d (%.1f%%)\n', sum(bhvID == -1), sum(bhvID == -1)/totalTimeBins*100);
+fprintf('Invalid HMM bins (continuous_sequence = 0): %d (%.1f%%)\n', sum(hmm_results.continuous_results.sequence == 0), sum(hmm_results.continuous_results.sequence == 0)/totalTimeBins*100);
 
-%% Parameters for analysis
-maxLag = 4 / hmm_res.HmmParam.BinSize; % Maximum lag to test (in time bins)
-fprintf('Maximum lag for analysis: %d time bins (%.1f seconds)\n', maxLag, maxLag * hmm_res.HmmParam.BinSize);
+%% 0. Find Optimal Lag using Mutual Information
+fprintf('\n=== Step 0: Finding Optimal Lag using Mutual Information ===\n');
 
-%% Prepare data for analysis
-fprintf('Preparing data for analysis...\n');
+% Parameters for lag analysis
+maxLagSec = 2; % Maximum lag to test (in seconds)
+maxLagBin = round(maxLagSec / hmm_results.HmmParam.BinSize); % Maximum lag in time bins
 
-% Use continuous sequence directly (keeping all bins including 0s)
-continuous_sequence = hmm_res.continuous_results.sequence;
-totalTimeBins = length(continuous_sequence);
+fprintf('Testing lags from -%d to +%d time bins (%.1f to %.1f seconds)\n', ...
+    maxLagBin, maxLagBin, -maxLagBin * hmm_results.HmmParam.BinSize, maxLagBin * hmm_results.HmmParam.BinSize);
 
-fprintf('Using continuous sequence of length %d time bins\n', totalTimeBins);
-
-% Prepare behavioral labels - KEEP ALL BINS including -1 values
-% This ensures vectors maintain the same length for analysis
-bhvID_full = bhvID;
-fprintf('Behavioral labels: %d total labels (including %d undefined = -1)\n', ...
-    length(bhvID_full), sum(bhvID == -1));
-
-% Ensure behavioral data has same length as sequence
-if length(bhvID_full) ~= totalTimeBins
-    fprintf('Warning: Behavioral data length (%d) differs from sequence length (%d)\n', ...
-        length(bhvID_full), totalTimeBins);
-
-    % Truncate to shorter length
-    minLength = min(length(bhvID_full), totalTimeBins);
-    continuous_sequence = continuous_sequence(1:minLength);
-    bhvID_full = bhvID_full(1:minLength);
-    totalTimeBins = minLength;
-
-    fprintf('Truncated both to length %d\n', minLength);
-end
-
-% Use the full vectors for analysis (including invalid values)
-% continuous_sequence: 0 = undefined state, >0 = state number
-% bhvID_full: -1 = undefined behavior, >=0 = behavior ID
-fprintf('Final data lengths: Sequence = %d, Behavior = %d\n', ...
-    length(continuous_sequence), length(bhvID_full));
-fprintf('Sequence: %d valid states, %d undefined (0)\n', ...
-    sum(continuous_sequence > 0), sum(continuous_sequence == 0));
-fprintf('Behavior: %d valid labels, %d undefined (-1)\n', ...
-    sum(bhvID_full >= 0), sum(bhvID_full == -1));
-
-%% 1. Find best lag using mutual information
-fprintf('\n=== Step 1: Finding best lag using mutual information ===\n');
-fprintf(['Note: Invalid values (sequence=0, behavior=-1) are excluded from mutual information calculation at each lag.\n' ...
-    'This means only time bins where both are valid are used, which may result in non-contiguous time bins being compared.\n' ...
-    'This is standard for mutual information between two variables, but be aware that temporal gaps are ignored in the MI calculation.\n']);
-
-% Calculate mutual information at different lags, EXCLUDING invalid values
-lags = -maxLag:maxLag;
+% Initialize arrays for lag analysis
+lags = -maxLagBin:maxLagBin;
 mi_values = nan(length(lags), 1);
 n_valid_pairs = zeros(length(lags), 1);
 
+% Calculate mutual information at each lag
 for i = 1:length(lags)
     lag = lags(i);
 
     if lag >= 0
-        % Positive lag: sequence leads behavior
-        seq_start = 1;
-        seq_end = length(continuous_sequence) - lag;
+        % Positive lag: HMM leads behavior
+        hmm_start = 1;
+        hmm_end = totalTimeBins - lag;
         bhv_start = 1 + lag;
-        bhv_end = length(bhvID_full);
+        bhv_end = totalTimeBins;
     else
-        % Negative lag: behavior leads sequence
-        seq_start = 1 - lag;
-        seq_end = length(continuous_sequence);
+        % Negative lag: behavior leads HMM
+        hmm_start = 1 - lag;
+        hmm_end = totalTimeBins;
         bhv_start = 1;
-        bhv_end = length(bhvID_full) + lag;
+        bhv_end = totalTimeBins + lag;
     end
 
     % Ensure valid indices
-    if seq_start < 1 || seq_end > length(continuous_sequence) || ...
-            bhv_start < 1 || bhv_end > length(bhvID_full) || ...
-            seq_end < seq_start || bhv_end < bhv_start
+    if hmm_start < 1 || hmm_end > totalTimeBins || ...
+            bhv_start < 1 || bhv_end > totalTimeBins || ...
+            hmm_end < hmm_start || bhv_end < bhv_start
         mi_values(i) = NaN;
         n_valid_pairs(i) = 0;
         continue;
     end
 
     % Extract aligned segments
-    seq_segment = continuous_sequence(seq_start:seq_end);
-    bhv_segment = bhvID_full(bhv_start:bhv_end);
+    hmm_segment = hmm_results.continuous_results.sequence(hmm_start:hmm_end);
+    bhv_segment = bhvID(bhv_start:bhv_end);
 
-    % Mask out invalid values (sequence==0 or behavior==-1)
-    valid_mask = (seq_segment > 0) & (bhv_segment >= 0);
+    % Find valid time bins (exclude invalid values)
+    valid_mask = (hmm_segment > 0) & (bhv_segment >= 0);
 
     n_valid_pairs(i) = sum(valid_mask);
 
-    if n_valid_pairs(i) < 2
-        % Not enough valid data to compute MI
+    if n_valid_pairs(i) < 10
+        % Need sufficient valid data to compute MI
         mi_values(i) = NaN;
         continue;
     end
 
-    seq_valid = seq_segment(valid_mask);
+    % Extract valid data
+    hmm_valid = hmm_segment(valid_mask);
     bhv_valid = bhv_segment(valid_mask);
 
-    % Calculate mutual information on valid data only
-    mi_values(i) = mutual_information(seq_valid, bhv_valid);
+    % Calculate mutual information on valid data
+    mi_values(i) = mutual_information(hmm_valid, bhv_valid);
 end
 
 % Find best lag
@@ -145,117 +105,21 @@ best_lag = lags(best_lag_idx);
 
 % Interpret the lag direction
 if best_lag > 0
-    lag_interpretation = sprintf('Neural activity (HMM sequence) LEADS behavior by %d time bins (%.3f seconds)', ...
-        best_lag, best_lag * hmm_res.HmmParam.BinSize);
+    lag_interpretation = sprintf('Neural activity (HMM) LEADS behavior by %d time bins (%.3f seconds)', ...
+        best_lag, best_lag * hmm_results.HmmParam.BinSize);
 elseif best_lag < 0
-    lag_interpretation = sprintf('Behavior LEADS neural activity (HMM sequence) by %d time bins (%.3f seconds)', ...
-        abs(best_lag), abs(best_lag) * hmm_res.HmmParam.BinSize);
+    lag_interpretation = sprintf('Behavior LEADS neural activity (HMM) by %d time bins (%.3f seconds)', ...
+        abs(best_lag), abs(best_lag) * hmm_results.HmmParam.BinSize);
 else
     lag_interpretation = 'Neural activity and behavior are synchronized (no lag)';
 end
 
-fprintf('Best lag: %d time bins (MI = %.4f, %d valid pairs)\n', best_lag, best_mi, n_valid_pairs(best_lag_idx));
+fprintf('\nBest lag: %d time bins = %.3f seconds (MI = %.4f, %d valid pairs)\n', ...
+    best_lag, best_lag * hmm_results.HmmParam.BinSize, best_mi, n_valid_pairs(best_lag_idx));
 fprintf('Lag interpretation: %s\n', lag_interpretation);
-fprintf('Note: MI is computed only on time bins where both sequence and behavior are valid at each lag.\n');
-fprintf('\nLag direction explanation:\n');
-fprintf('  Positive lag (+): HMM sequence comes FIRST, behavior follows\n');
-fprintf('  Negative lag (-): Behavior comes FIRST, HMM sequence follows\n');
-fprintf('  Zero lag (0): HMM sequence and behavior are synchronized\n');
 
-%% 2. Calculate agreement metrics at best lag
-fprintf('\n=== Step 2: Calculating agreement metrics at best lag ===\n');
-fprintf('Note: Agreement metrics exclude invalid values (sequence=0, behavior=-1)\n');
-
-% Align data at best lag
-if best_lag >= 0
-    % Positive lag: sequence leads behavior
-    seq_start = 1;
-    seq_end = length(continuous_sequence) - best_lag;
-    bhv_start = 1 + best_lag;
-    bhv_end = length(bhvID_full);
-else
-    % Negative lag: behavior leads sequence
-    seq_start = 1 - best_lag;
-    seq_end = length(continuous_sequence);
-    bhv_start = 1;
-    bhv_end = length(bhvID_full) + best_lag;
-end
-
-% Extract aligned segments
-seq_aligned = continuous_sequence(seq_start:seq_end);
-bhv_aligned = bhvID_full(bhv_start:bhv_end);
-
-% Mask out invalid values for agreement calculation
-valid_mask = (seq_aligned > 0) & (bhv_aligned >= 0);
-n_valid_agreement = sum(valid_mask);
-
-fprintf('Total aligned time bins: %d\n', length(seq_aligned));
-fprintf('Valid time bins for agreement: %d\n', n_valid_agreement);
-
-if n_valid_agreement < 2
-    error('Not enough valid data pairs for agreement calculation (need at least 2, got %d)', n_valid_agreement);
-end
-
-% Extract valid data for agreement calculation
-seq_valid = seq_aligned(valid_mask);
-bhv_valid = bhv_aligned(valid_mask);
-
-% Calculate percent agreement on valid data only
-agreement = sum(seq_valid == bhv_valid) / length(seq_valid) * 100;
-
-% Calculate Cohen's kappa on valid data only
-kappa = cohens_kappa(seq_valid, bhv_valid);
-
-fprintf('Percent Agreement (valid data only): %.2f%%\n', agreement);
-fprintf('Cohen''s Kappa (valid data only): %.4f\n', kappa);
-
-%% 3. Print and plot summary results
-fprintf('\n=== Step 3: Summary Results ===\n');
-
-% Display data type and brain area if available
-if exist('natOrReach', 'var')
-    fprintf('Data Type: %s\n', natOrReach);
-else
-    fprintf('Data Type: Workspace data\n');
-end
-
-if exist('brainArea', 'var')
-    fprintf('Brain Area: %s\n', brainArea);
-else
-    fprintf('Brain Area: Workspace data\n');
-end
-
-fprintf('Total Time Bins: %d\n', totalTimeBins);
-fprintf('Valid Sequence Points: %d\n', sum(continuous_sequence > 0));
-fprintf('Valid Behavior Points: %d\n', sum(bhvID_full >= 0));
-fprintf('Best Lag: %d time bins (%.3f seconds)\n', best_lag, best_lag * hmm_res.HmmParam.BinSize);
-fprintf('Lag Direction: %s\n', lag_interpretation);
-fprintf('Mutual Information at Best Lag: %.4f (on %d valid pairs)\n', best_mi, n_valid_pairs(best_lag_idx));
-fprintf('Agreement Calculation: %d valid time bins out of %d aligned\n', n_valid_agreement, length(seq_aligned));
-fprintf('Percent Agreement (valid data only): %.2f%%\n', agreement);
-fprintf('Cohen''s Kappa (valid data only): %.4f\n', kappa);
-
-% Interpret kappa
-if kappa < 0
-    kappa_interpretation = 'Poor agreement';
-elseif kappa < 0.2
-    kappa_interpretation = 'Slight agreement';
-elseif kappa < 0.4
-    kappa_interpretation = 'Fair agreement';
-elseif kappa < 0.6
-    kappa_interpretation = 'Moderate agreement';
-elseif kappa < 0.8
-    kappa_interpretation = 'Substantial agreement';
-else
-    kappa_interpretation = 'Almost perfect agreement';
-end
-fprintf('Kappa Interpretation: %s\n', kappa_interpretation);
-
-%% Create plots
-fprintf('\n=== Creating plots ===\n');
-
-% Plot 1: Mutual information vs lag
-figure(1); clf;
+% Plot mutual information vs lag
+figure('Position', [100, 100, 800, 400]);
 plot(lags, mi_values, 'b-', 'LineWidth', 2);
 hold on;
 plot(best_lag, best_mi, 'ro', 'MarkerSize', 10, 'MarkerFaceColor', 'r');
@@ -265,69 +129,410 @@ title('Mutual Information vs Lag');
 grid on;
 legend('MI values', 'Best lag', 'Location', 'best');
 
-% Plot 2: Aligned sequences comparison
-figure(2); clf;
-subplot(2,1,1);
-plot(seq_aligned, 'b-', 'LineWidth', 1.5);
-title('HMM State Sequence (Aligned)');
-ylabel('State');
-xlabel('Time Bin');
-grid on;
+%% 1. Build Contingency Matrix (at optimal lag)
+fprintf('\n=== Building Contingency Matrix ===\n');
+fprintf('Using optimal lag: %d time bins (%.3f seconds)\n', best_lag, best_lag * hmm_results.HmmParam.BinSize);
 
-subplot(2,1,2);
-plot(bhv_aligned, 'r-', 'LineWidth', 1.5);
-title('Behavioral Labels (Aligned)');
-ylabel('Behavior ID');
-xlabel('Time Bin');
-grid on;
+% Get unique categories from both vectors
+hmm_states = unique(hmm_results.continuous_results.sequence(hmm_results.continuous_results.sequence > 0)); % Exclude invalid HMM states (0)
+bhv_categories = unique(bhvID(bhvID >= 0)); % Exclude invalid behavior (-1)
 
-% Plot 3: Agreement over time
-figure(3); clf;
-agreement_over_time = (seq_aligned == bhv_aligned) * 100;
-plot(agreement_over_time, 'g-', 'LineWidth', 1.5);
-title('Agreement Over Time (100% = Match, 0% = Mismatch)');
-ylabel('Agreement (%)');
-xlabel('Time Bin');
-ylim([0 100]);
-grid on;
+num_hmm_states = length(hmm_states);
+num_bhv_categories = length(bhv_categories);
 
-% Plot 4: Confusion matrix (valid data only)
-figure(4); clf;
-% Get unique values from valid data only
-unique_states = unique(seq_valid);
-unique_behaviors = unique(bhv_valid);
+fprintf('HMM states: %s\n', mat2str(hmm_states));
+fprintf('Behavior categories: %s\n', mat2str(bhv_categories));
 
-% Create confusion matrix using valid data
-confusion_mat = zeros(length(unique_states), length(unique_behaviors));
-for i = 1:length(unique_states)
-    for j = 1:length(unique_behaviors)
-        confusion_mat(i, j) = sum(seq_valid == unique_states(i) & bhv_valid == unique_behaviors(j));
+% Initialize contingency matrix
+contingency_matrix = zeros(num_hmm_states, num_bhv_categories);
+
+% Fill contingency matrix using optimal lag alignment
+for i = 1:totalTimeBins
+    % Get HMM state at current time
+    hmm_state = hmm_results.continuous_results.sequence(i);
+
+    % Get behavior at lagged time
+    % Compute behavior time point by adding lag (positive or negative)
+    bhv_time = i + best_lag;
+
+    % Check if both time points are valid
+    if bhv_time >= 1 && bhv_time <= totalTimeBins
+        bhv_cat = bhvID(bhv_time);
+
+        % Only count if both HMM state and behavior are valid
+        if hmm_state > 0 && bhv_cat >= 0
+            hmm_idx = find(hmm_states == hmm_state);
+            bhv_idx = find(bhv_categories == bhv_cat);
+
+            if ~isempty(hmm_idx) && ~isempty(bhv_idx)
+                contingency_matrix(hmm_idx, bhv_idx) = contingency_matrix(hmm_idx, bhv_idx) + 1;
+            end
+        end
     end
 end
 
-% Plot confusion matrix
-imagesc(confusion_mat);
-colorbar;
-title('Confusion Matrix: HMM States vs Behavioral Labels (Valid Data Only)');
-xlabel('Behavior ID');
-ylabel('HMM State');
-xticks(1:length(unique_behaviors));
-xticklabels(arrayfun(@num2str, unique_behaviors, 'UniformOutput', false));
-yticks(1:length(unique_states));
-yticklabels(arrayfun(@num2str, unique_states, 'UniformOutput', false));
+% Display contingency matrix
+fprintf('\nContingency Matrix (HMM states x Behavior categories):\n');
+fprintf('Rows: HMM states, Columns: Behavior categories\n');
+fprintf('Each cell shows count of co-occurrences\n\n');
 
-fprintf('Plots created successfully!\n');
-fprintf('Note: Confusion matrix shows only valid data pairs (excludes sequence=0 and behavior=-1)\n');
+% Create row and column labels
+row_labels = cell(num_hmm_states, 1);
+col_labels = cell(1, num_bhv_categories);
+
+for i = 1:num_hmm_states
+    row_labels{i} = sprintf('HMM_%d', hmm_states(i));
+end
+
+for j = 1:num_bhv_categories
+    col_labels{j} = sprintf('BHV_%d', bhv_categories(j));
+end
+
+% Display with labels
+fprintf('%8s', '');
+for j = 1:num_bhv_categories
+    fprintf('%8s', col_labels{j});
+end
+fprintf('\n');
+
+for i = 1:num_hmm_states
+    fprintf('%8s', row_labels{i});
+    for j = 1:num_bhv_categories
+        fprintf('%8d', contingency_matrix(i, j));
+    end
+    fprintf('\n');
+end
+
+%% 2. Cluster-to-Label Matching using Hungarian Algorithm
+fprintf('\n=== Cluster-to-Label Matching (Hungarian Algorithm) ===\n');
+
+% Convert contingency matrix to cost matrix for Hungarian algorithm
+% We want to maximize overlap, so use negative counts as costs
+cost_matrix = -contingency_matrix;
+
+% Apply Hungarian algorithm to find optimal assignment
+% Use assignmentoptimal from MATLAB's Optimization Toolbox instead of munkres
+% Try to use Hungarian algorithm from Optimization Toolbox if available
+if exist('munkres', 'file') 
+    [assignment, cost] = munkres(cost_matrix);
+else
+    % Fallback to a basic greedy assignment if neither function is available
+    [assignment, cost] = greedy_assignment(cost_matrix);
+end
+
+
+fprintf('Optimal assignment found (cost = %.2f):\n', -cost);
+fprintf('HMM State -> Behavior Category\n');
+
+% Create mapping dictionary
+hmm_to_bhv_mapping = containers.Map('KeyType', 'double', 'ValueType', 'double');
+bhv_to_hmm_mapping = containers.Map('KeyType', 'double', 'ValueType', 'double');
+
+for i = 1:length(assignment)
+    if assignment(i) > 0
+        % Only map states that exist in our arrays
+        if i <= length(hmm_states) && assignment(i) <= length(bhv_categories)
+            hmm_state = hmm_states(i);
+            bhv_category = bhv_categories(assignment(i));
+            hmm_to_bhv_mapping(hmm_state) = bhv_category;
+            bhv_to_hmm_mapping(bhv_category) = hmm_state;
+ 
+             fprintf('  HMM_%d -> BHV_%d\n', hmm_states(i), bhv_categories(assignment(i)));
+       end
+
+    end
+end
+
+%% 3. Compute Classification Metrics
+fprintf('\n=== Classification Metrics (at optimal lag) ===\n');
+
+% Create predicted behavior vector based on HMM states
+predicted_bhv = nan(size(bhvID));
+
+for i = 1:totalTimeBins
+    hmm_state = hmm_results.continuous_results.sequence(i);
+
+    if hmm_state > 0 && isKey(hmm_to_bhv_mapping, hmm_state)
+        % Get the predicted behavior for this HMM state
+        predicted_behavior = hmm_to_bhv_mapping(hmm_state);
+
+        % Apply the lag to align with actual behavior
+        % Apply lag to align prediction with behavior
+        pred_time = i + best_lag;
+
+        % Place prediction at the lagged time if it's within bounds
+        if pred_time >= 1 && pred_time <= totalTimeBins
+            predicted_bhv(pred_time) = predicted_behavior;
+        end
+    end
+end
+
+% Calculate accuracy (only for time points where we have both predictions and actual)
+valid_idx = ~isnan(predicted_bhv) & (bhvID >= 0);
+if sum(valid_idx) > 0
+    accuracy = sum(predicted_bhv(valid_idx) == bhvID(valid_idx)) / sum(valid_idx);
+    fprintf('Overall Accuracy: %.3f (%.1f%%)\n', accuracy, accuracy * 100);
+else
+    fprintf('No valid predictions to compute accuracy\n');
+end
+
+% Compute per-category metrics
+fprintf('\nPer-Category Metrics:\n');
+fprintf('%-12s %-8s %-8s %-8s %-8s\n', 'Category', 'Precision', 'Recall', 'F1', 'Support');
+
+for cat = bhv_categories'
+    % Find indices for this category
+    actual_pos = (bhvID == cat);
+    pred_pos = (predicted_bhv == cat);
+
+    % True positives, false positives, false negatives
+    tp = sum(actual_pos & pred_pos & valid_idx);
+    fp = sum(~actual_pos & pred_pos & valid_idx);
+    fn = sum(actual_pos & ~pred_pos & valid_idx);
+
+    % Calculate metrics
+    precision = tp / (tp + fp + eps);
+    recall = tp / (tp + fn + eps);
+    f1 = 2 * (precision * recall) / (precision + recall + eps);
+    support = sum(actual_pos & valid_idx);
+
+    fprintf('%-12s %-8.3f %-8.3f %-8.3f %-8d\n', ...
+        sprintf('BHV_%d', cat), precision, recall, f1, support);
+end
+
+%% 4. Consistency Rates Analysis (at optimal lag)
+fprintf('\n=== Consistency Rates Analysis (at optimal lag) ===\n');
+
+% Per-state purity (how behaviorally consistent a state is)
+fprintf('\nPer-State Purity (Behavioral Consistency):\n');
+fprintf('%-12s %-15s %-15s %-15s\n', 'HMM State', 'Primary Behavior', 'Purity (%)', 'Coverage (%)');
+
+for i = 1:num_hmm_states
+    hmm_state = hmm_states(i);
+
+    % Find all time points for this HMM state
+    state_mask = (hmm_results.continuous_results.sequence == hmm_state);
+    state_time_points = sum(state_mask);
+
+    if state_time_points > 0
+        % Get behavior distribution for this state at lagged times
+        bhv_distribution = [];
+        for j = find(state_mask)'
+            % Apply lag to get corresponding behavior time
+            bhv_time = j + best_lag;
+            bhv_time = j + best_lag;
+
+
+            % Check if behavior time is valid and within bounds
+            if bhv_time >= 1 && bhv_time <= totalTimeBins
+                bhv_cat = bhvID(bhv_time);
+                if bhv_cat >= 0  % Only include valid behavior categories
+                    bhv_distribution = [bhv_distribution; bhv_cat];
+                end
+            end
+        end
+
+        if ~isempty(bhv_distribution)
+            % Find most common behavior (primary behavior)
+            [bhv_counts, bhv_values] = histcounts(bhv_distribution, bhv_categories);
+            [max_count, max_idx] = max(bhv_counts);
+            primary_bhv = bhv_values(max_idx);
+
+            % Calculate purity (fraction of time this state maps to its primary behavior)
+            purity = max_count / length(bhv_distribution) * 100;
+
+            % Calculate coverage (fraction of total time this state represents)
+            coverage = state_time_points / totalTimeBins * 100;
+
+            fprintf('%-12s %-15s %-15.1f %-15.1f\n', ...
+                sprintf('HMM_%d', hmm_state), sprintf('BHV_%d', primary_bhv), purity, coverage);
+        end
+    end
+end
+
+% Per-behavior coverage (how many states it spreads across)
+fprintf('\nPer-Behavior Coverage (State Distribution):\n');
+fprintf('%-15s %-15s %-15s %-15s\n', 'Behavior', 'Primary HMM State', 'Coverage (%)', 'State Spread');
+
+for j = 1:num_bhv_categories
+    bhv_category = bhv_categories(j);
+
+    % Find all time points for this behavior
+    bhv_mask = (bhvID == bhv_category);
+    bhv_time_points = sum(bhv_mask);
+
+    if bhv_time_points > 0
+        % Get HMM state distribution for this behavior at lagged times
+        hmm_distribution = [];
+        for k = find(bhv_mask)'
+            % Apply lag to get corresponding HMM time
+            % No need for if/else since lag direction is always reversed
+            hmm_time = k - best_lag;  % Reverse the lag direction
+            hmm_time = k - best_lag;  % Reverse the lag direction
+
+
+            % Check if HMM time is valid and within bounds
+            if hmm_time >= 1 && hmm_time <= totalTimeBins
+                hmm_state = hmm_results.continuous_results.sequence(hmm_time);
+                if hmm_state > 0  % Only include valid HMM states
+                    hmm_distribution = [hmm_distribution; hmm_state];
+                end
+            end
+        end
+
+        if ~isempty(hmm_distribution)
+            % Find most common HMM state (primary state)
+            [hmm_counts, hmm_values] = histcounts(hmm_distribution, hmm_states);
+            [max_count, max_idx] = max(hmm_counts);
+            primary_hmm = hmm_values(max_idx);
+
+            % Calculate coverage (fraction of total time this behavior represents)
+            coverage = bhv_time_points / totalTimeBins * 100;
+
+            % Calculate state spread (how many different HMM states this behavior maps to)
+            unique_states = unique(hmm_distribution);
+            state_spread = length(unique_states);
+
+            fprintf('%-15s %-15s %-15.1f %-15d\n', ...
+                sprintf('BHV_%d', bhv_category), sprintf('HMM_%d', primary_hmm), coverage, state_spread);
+        end
+    end
+end
+
+%% 5. Visualization
+fprintf('\n=== Creating Visualizations ===\n');
+
+% Create figure with subplots
+figure('Position', [100, 100, 1200, 800]);
+
+% Subplot 1: Contingency Matrix Heatmap
+subplot(2, 3, 1);
+imagesc(contingency_matrix);
+colormap('hot');
+colorbar;
+title('Contingency Matrix Heatmap');
+xlabel('Behavior Categories');
+ylabel('HMM States');
+
+% Add text labels
+for i = 1:num_hmm_states
+    for j = 1:num_bhv_categories
+        text(j, i, num2str(contingency_matrix(i, j)), ...
+            'HorizontalAlignment', 'center', 'Color', 'white', 'FontWeight', 'bold');
+    end
+end
+
+% Set tick labels
+xticks(1:num_bhv_categories);
+xticklabels(col_labels);
+yticks(1:num_hmm_states);
+yticklabels(row_labels);
+
+% Subplot 2: HMM State Sequence
+subplot(2, 3, 2);
+plot(hmm_results.continuous_results.sequence, 'b-', 'LineWidth', 1);
+title('HMM State Sequence Over Time');
+xlabel('Time Bins');
+ylabel('HMM State');
+ylim([min(hmm_states)-0.5, max(hmm_states)+0.5]);
+
+% Subplot 3: Behavior Sequence
+subplot(2, 3, 3);
+plot(bhvID, 'r-', 'LineWidth', 1);
+title('Behavior Sequence Over Time');
+xlabel('Time Bins');
+ylabel('Behavior Category');
+ylim([min(bhv_categories)-0.5, max(bhv_categories)+0.5]);
+
+% Subplot 4: Predicted vs Actual Behavior
+subplot(2, 3, 4);
+plot(bhvID, 'r-', 'LineWidth', 2, 'DisplayName', 'Actual');
+hold on;
+plot(predicted_bhv, 'b--', 'LineWidth', 1, 'DisplayName', 'Predicted');
+title('Predicted vs Actual Behavior');
+xlabel('Time Bins');
+ylabel('Behavior Category');
+legend('Location', 'best');
+ylim([min(bhv_categories)-0.5, max(bhv_categories)+0.5]);
+
+% Subplot 5: State-Behavior Mapping
+subplot(2, 3, 5);
+mapping_matrix = zeros(num_hmm_states, num_bhv_categories);
+for i = 1:num_hmm_states
+    hmm_state = hmm_states(i);
+    if isKey(hmm_to_bhv_mapping, hmm_state)
+        bhv_category = hmm_to_bhv_mapping(hmm_state);
+        bhv_idx = find(bhv_categories == bhv_category);
+        mapping_matrix(i, bhv_idx) = 1;
+    end
+end
+
+imagesc(mapping_matrix);
+colormap('gray');
+title('Optimal State-Behavior Mapping');
+xlabel('Behavior Categories');
+ylabel('HMM States');
+
+% Set tick labels
+xticks(1:num_bhv_categories);
+xticklabels(col_labels);
+yticks(1:num_hmm_states);
+yticklabels(row_labels);
+
+% Subplot 6: Summary Statistics
+subplot(2, 3, 6);
+text(0.1, 0.9, sprintf('Total Time Bins: %d', totalTimeBins), 'FontSize', 10);
+text(0.1, 0.8, sprintf('HMM States: %d', num_hmm_states), 'FontSize', 10);
+text(0.1, 0.7, sprintf('Behaviors: %d', num_bhv_categories), 'FontSize', 10);
+if exist('accuracy', 'var')
+    text(0.1, 0.6, sprintf('Accuracy: %.1f%%', accuracy*100), 'FontSize', 10);
+end
+text(0.1, 0.5, sprintf('Mapping Cost: %.2f', -cost), 'FontSize', 10);
+axis off;
+title('Summary Statistics');
+
+% Adjust layout
+sgtitle(sprintf('HMM vs Behavior Analysis: %s %s', metadata.data_type, metadata.brain_area), 'FontSize', 14);
+
+%% 6. Save Results
+fprintf('\n=== Saving Analysis Results ===\n');
+
+% Create results structure
+analysis_results = struct();
+analysis_results.contingency_matrix = contingency_matrix;
+analysis_results.hmm_states = hmm_states;
+analysis_results.bhv_categories = bhv_categories;
+analysis_results.optimal_mapping = assignment;
+analysis_results.mapping_cost = -cost;
+analysis_results.hmm_to_bhv_mapping = hmm_to_bhv_mapping;
+analysis_results.bhv_to_hmm_mapping = bhv_to_hmm_mapping;
+analysis_results.accuracy = accuracy;
+analysis_results.predicted_behavior = predicted_bhv;
+analysis_results.analysis_date = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+
+% Add lag analysis results
+analysis_results.optimal_lag = best_lag;
+analysis_results.optimal_lag_seconds = best_lag * hmm_results.HmmParam.BinSize;
+analysis_results.best_mutual_information = best_mi;
+analysis_results.lag_interpretation = lag_interpretation;
+analysis_results.mutual_information_curve = struct('lags', lags, 'mi_values', mi_values, 'n_valid_pairs', n_valid_pairs);
+
+% Save results
+output_filename = sprintf('HMM_Behavior_Analysis_%s_%s_%s.mat', ...
+    hmm_results.metadata.data_type, hmm_results.metadata.brain_area, datestr(now, 'yyyy-mm-dd_HH-MM-SS'));
+save(output_filename, 'analysis_results', 'hmm_results');
+
+fprintf('Analysis results saved to: %s\n', output_filename);
+fprintf('\nAnalysis complete!\n');
 
 %% Helper Functions
 
 function mi = mutual_information(x, y)
 % Calculate mutual information between two categorical variables
-% x, y: vectors of categorical values (including invalid values)
-% x: 0 = undefined state, >0 = state number
-% y: -1 = undefined behavior, >=0 = behavior ID
+% x, y: vectors of categorical values
+% Returns: mutual information in bits
 
-% Get unique values (including invalid ones)
+% Get unique values
 unique_x = unique(x);
 unique_y = unique(y);
 
@@ -359,38 +564,25 @@ for i = 1:length(unique_x)
 end
 end
 
-function kappa = cohens_kappa(x, y)
-% Calculate Cohen's kappa between two categorical variables
-% x, y: vectors of categorical values (including invalid values)
-% x: 0 = undefined state, >0 = state number
-% y: -1 = undefined behavior, >=0 = behavior ID
 
-% Get unique values (including invalid ones)
-unique_x = unique(x);
-unique_y = unique(y);
 
-% Create confusion matrix
-n = length(x);
-confusion_mat = zeros(length(unique_x), length(unique_y));
 
-for i = 1:length(unique_x)
-    for j = 1:length(unique_y)
-        confusion_mat(i, j) = sum(x == unique_x(i) & y == unique_y(j));
+
+% Helper function for greedy assignment
+function [assignment, total_cost] = greedy_assignment(cost_matrix)
+    [n, m] = size(cost_matrix);
+    assignment = zeros(n, 1);
+    used = false(1, m);
+    total_cost = 0;
+    
+    for i = 1:n
+        [min_cost, best_j] = min(cost_matrix(i, ~used));
+        unused_cols = find(~used);
+        j = unused_cols(best_j);
+        assignment(i) = j;
+        used(j) = true;
+        total_cost = total_cost + min_cost;
     end
 end
 
-% Calculate observed agreement (diagonal)
-observed_agreement = sum(diag(confusion_mat)) / n;
 
-% Calculate expected agreement
-row_sums = sum(confusion_mat, 2);
-col_sums = sum(confusion_mat, 1);
-expected_agreement = sum(row_sums .* col_sums) / (n^2);
-
-% Calculate kappa
-if expected_agreement == 1
-    kappa = 1; % Perfect agreement
-else
-    kappa = (observed_agreement - expected_agreement) / (1 - expected_agreement);
-end
-end

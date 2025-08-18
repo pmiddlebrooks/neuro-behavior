@@ -109,14 +109,14 @@ end
 %----------------------------
 
 % Parameters
-binSize = opts.frameSize; % seconds
+binSizeLoaded = opts.frameSize; % seconds
 gnunits = size(dataMatMain, 2); % number of neurons
 
 % Unified approach: Segment continuous data by trialDur for both Nat and Reach
 fprintf('Using UNIFIED approach: Segmenting continuous data by trialDur\n');
 
 % Calculate number of complete trials
-totalTime = size(dataMatMain, 1) * binSize; % total time in seconds
+totalTime = size(dataMatMain, 1) * binSizeLoaded; % total time in seconds
 ntrials = floor(totalTime / trialDur); % number of complete trials
 
 fprintf('Total time: %.1f seconds\n', totalTime);
@@ -129,8 +129,8 @@ win_train = zeros(ntrials, 2); % trial windows [start, end] for each trial
 % For each trial (same approach for both Nat and Reach)
 for i_trial = 1:ntrials
     % Calculate trial start and end bins
-    start_bin = (i_trial - 1) * trialDur / binSize + 1;
-    end_bin = i_trial * trialDur / binSize;
+    start_bin = (i_trial - 1) * trialDur / binSizeLoaded + 1;
+    end_bin = i_trial * trialDur / binSizeLoaded;
 
     % Ensure we don't exceed data bounds
     end_bin = min(end_bin, size(dataMatMain, 1));
@@ -147,7 +147,7 @@ for i_trial = 1:ntrials
         spike_bins = find(trial_data > 0);
 
         % Convert bin indices to time in seconds (relative to trial start)
-        spike_times = (spike_bins - 1) * binSize; % -1 because bins are 1-indexed
+        spike_times = (spike_bins - 1) * binSizeLoaded; % -1 because bins are 1-indexed
 
         % Store spike times for this neuron in this trial
         spikes(i_trial, i_neuron).spk = spike_times;
@@ -285,7 +285,7 @@ hmm_res = struct();
 % Analysis metadata
 hmm_res.metadata = struct();
 hmm_res.metadata.data_type = natOrReach; % 'Nat' or 'Reach'
-hmm_res.metadata.brain_area = idArea; % Which brain area was analyzed
+hmm_res.metadata.brain_area = idAreaName; % Which brain area was analyzed
 hmm_res.metadata.analysis_date = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
 hmm_res.metadata.analysis_status = 'SUCCESS';
 hmm_res.metadata.model_selection_method = MODELSEL;
@@ -294,7 +294,6 @@ hmm_res.metadata.model_selection_method = MODELSEL;
 hmm_res.data_params = struct();
 hmm_res.data_params.num_neurons = gnunits;
 hmm_res.data_params.num_trials = ntrials;
-hmm_res.data_params.bin_size = binSize;
 hmm_res.data_params.frame_size = opts.frameSize;
 hmm_res.data_params.collect_start = opts.collectStart;
 hmm_res.data_params.collect_duration = opts.collectFor;
