@@ -19,12 +19,17 @@ fprintf('Loaded HMM model for %s data in %s area\n', hmm_results.metadata.data_t
 fprintf('Number of states: %d, Number of neurons: %d\n', hmm_results.best_model.num_states, hmm_results.data_params.num_neurons);
 
 %% Load behavior data
+switch natOrReach
+    case 'Nat'
 opts = neuro_behavior_options;
 opts.frameSize = hmm_results.HmmParam.BinSize;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
 getDataType = 'behavior';
 get_standard_data
+    case 'Reach'
+        bhvData = get_reach_bhv_labels(fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NIBEH.mat'));
+end
 
 % For now, create placeholder - you'll replace this with actual loading
 totalTimeBins = length(hmm_results.continuous_results.sequence);
@@ -35,6 +40,10 @@ fprintf('Invalid behavior bins (bhvID = -1): %d (%.1f%%)\n', sum(bhvID == -1), s
 fprintf('Invalid HMM bins (continuous_sequence = 0): %d (%.1f%%)\n', sum(hmm_results.continuous_results.sequence == 0), sum(hmm_results.continuous_results.sequence == 0)/totalTimeBins*100);
 
 %% 0. Find Optimal Lag using Mutual Information
+% This section finds the optimal lag (in bins and seconds) between HMM states and behavior using mutual information.
+% The best lag (in seconds) will be displayed in the plot title.
+
+% (Plotting and lag analysis code is below; the best lag will be shown in the plot title.)
 fprintf('\n=== Step 0: Finding Optimal Lag using Mutual Information ===\n');
 
 % Parameters for lag analysis
@@ -118,14 +127,16 @@ fprintf('\nBest lag: %d time bins = %.3f seconds (MI = %.4f, %d valid pairs)\n',
     best_lag, best_lag * hmm_results.HmmParam.BinSize, best_mi, n_valid_pairs(best_lag_idx));
 fprintf('Lag interpretation: %s\n', lag_interpretation);
 
-% Plot mutual information vs lag
+% Plot mutual information vs lag, include best lag in seconds in the title
 figure('Position', [100, 100, 800, 400]);
 plot(lags, mi_values, 'b-', 'LineWidth', 2);
 hold on;
 plot(best_lag, best_mi, 'ro', 'MarkerSize', 10, 'MarkerFaceColor', 'r');
 xlabel('Lag (time bins)');
 ylabel('Mutual Information');
-title('Mutual Information vs Lag');
+% Add best lag in seconds to the title
+bestLagSeconds = best_lag * hmm_results.HmmParam.BinSize;
+title(sprintf('Mutual Information vs Lag (Best lag: %d bins = %.3f s)', best_lag, bestLagSeconds));
 grid on;
 legend('MI values', 'Best lag', 'Location', 'best');
 
@@ -134,17 +145,17 @@ fprintf('\n=== Building Contingency Matrix ===\n');
 fprintf('Using optimal lag: %d time bins (%.3f seconds)\n', best_lag, best_lag * hmm_results.HmmParam.BinSize);
 
 % Get unique categories from both vectors
-hmm_states = unique(hmm_results.continuous_results.sequence(hmm_results.continuous_results.sequence > 0)); % Exclude invalid HMM states (0)
-bhv_categories = unique(bhvID(bhvID >= 0)); % Exclude invalid behavior (-1)
+hmmStates = unique(hmm_results.continuous_results.sequence(hmm_results.continuous_results.sequence > 0)); % Exclude invalid HMM states (0)
+bhvCategories = unique(bhvID(bhvID >= 0)); % Exclude invalid behavior (-1)
 
-num_hmm_states = length(hmm_states);
-num_bhv_categories = length(bhv_categories);
+nHmmStates = length(hmmStates);
+nBhvCategories = length(bhvCategories);
 
-fprintf('HMM states: %s\n', mat2str(hmm_states));
-fprintf('Behavior categories: %s\n', mat2str(bhv_categories));
+fprintf('HMM states: %s\n', mat2str(hmmStates));
+fprintf('Behavior categories: %s\n', mat2str(bhvCategories));
 
 % Initialize contingency matrix
-contingency_matrix = zeros(num_hmm_states, num_bhv_categories);
+contingency_matrix = zeros(nHmmStates, nBhvCategories);
 
 % Fill contingency matrix using optimal lag alignment
 for i = 1:totalTimeBins
@@ -161,8 +172,8 @@ for i = 1:totalTimeBins
 
         % Only count if both HMM state and behavior are valid
         if hmm_state > 0 && bhv_cat >= 0
-            hmm_idx = find(hmm_states == hmm_state);
-            bhv_idx = find(bhv_categories == bhv_cat);
+            hmm_idx = find(hmmStates == hmm_state);
+            bhv_idx = find(bhvCategories == bhv_cat);
 
             if ~isempty(hmm_idx) && ~isempty(bhv_idx)
                 contingency_matrix(hmm_idx, bhv_idx) = contingency_matrix(hmm_idx, bhv_idx) + 1;
@@ -177,27 +188,27 @@ fprintf('Rows: HMM states, Columns: Behavior categories\n');
 fprintf('Each cell shows count of co-occurrences\n\n');
 
 % Create row and column labels
-row_labels = cell(num_hmm_states, 1);
-col_labels = cell(1, num_bhv_categories);
+row_labels = cell(nHmmStates, 1);
+col_labels = cell(1, nBhvCategories);
 
-for i = 1:num_hmm_states
-    row_labels{i} = sprintf('HMM_%d', hmm_states(i));
+for i = 1:nHmmStates
+    row_labels{i} = sprintf('HMM_%d', hmmStates(i));
 end
 
-for j = 1:num_bhv_categories
-    col_labels{j} = sprintf('BHV_%d', bhv_categories(j));
+for j = 1:nBhvCategories
+    col_labels{j} = sprintf('BHV_%d', bhvCategories(j));
 end
 
 % Display with labels
 fprintf('%8s', '');
-for j = 1:num_bhv_categories
+for j = 1:nBhvCategories
     fprintf('%8s', col_labels{j});
 end
 fprintf('\n');
 
-for i = 1:num_hmm_states
+for i = 1:nHmmStates
     fprintf('%8s', row_labels{i});
-    for j = 1:num_bhv_categories
+    for j = 1:nBhvCategories
         fprintf('%8d', contingency_matrix(i, j));
     end
     fprintf('\n');
@@ -231,19 +242,27 @@ bhv_to_hmm_mapping = containers.Map('KeyType', 'double', 'ValueType', 'double');
 for i = 1:length(assignment)
     if assignment(i) > 0
         % Only map states that exist in our arrays
-        if i <= length(hmm_states) && assignment(i) <= length(bhv_categories)
-            hmm_state = hmm_states(i);
-            bhv_category = bhv_categories(assignment(i));
+        if i <= length(hmmStates) && assignment(i) <= length(bhvCategories)
+            hmm_state = hmmStates(i);
+            bhv_category = bhvCategories(assignment(i));
             hmm_to_bhv_mapping(hmm_state) = bhv_category;
             bhv_to_hmm_mapping(bhv_category) = hmm_state;
  
-             fprintf('  HMM_%d -> BHV_%d\n', hmm_states(i), bhv_categories(assignment(i)));
+             fprintf('  HMM_%d -> BHV_%d\n', hmmStates(i), bhvCategories(assignment(i)));
        end
 
     end
 end
 
 %% 3. Compute Classification Metrics
+% -----------------------------------------------------------
+% This section computes classification metrics to evaluate
+% how well the HMM state sequence predicts behavioral categories.
+% Metrics include overall accuracy and per-category precision,
+% recall, F1 score, and support (number of samples per category).
+% The predicted behavior is derived from the HMM state sequence
+% using the optimal mapping and lag determined earlier.
+% -----------------------------------------------------------
 fprintf('\n=== Classification Metrics (at optimal lag) ===\n');
 
 % Create predicted behavior vector based on HMM states
@@ -280,7 +299,7 @@ end
 fprintf('\nPer-Category Metrics:\n');
 fprintf('%-12s %-8s %-8s %-8s %-8s\n', 'Category', 'Precision', 'Recall', 'F1', 'Support');
 
-for cat = bhv_categories'
+for cat = bhvCategories'
     % Find indices for this category
     actual_pos = (bhvID == cat);
     pred_pos = (predicted_bhv == cat);
@@ -301,14 +320,17 @@ for cat = bhv_categories'
 end
 
 %% 4. Consistency Rates Analysis (at optimal lag)
+% This section computes how consistently each HMM state maps to a specific behavior category
+% ("per-state purity"), and how much of the total time each state covers ("coverage").
+% The analysis is performed using the optimal lag found earlier, aligning HMM states and behaviors.
 fprintf('\n=== Consistency Rates Analysis (at optimal lag) ===\n');
 
 % Per-state purity (how behaviorally consistent a state is)
 fprintf('\nPer-State Purity (Behavioral Consistency):\n');
 fprintf('%-12s %-15s %-15s %-15s\n', 'HMM State', 'Primary Behavior', 'Purity (%)', 'Coverage (%)');
 
-for i = 1:num_hmm_states
-    hmm_state = hmm_states(i);
+for i = 1:nHmmStates
+    hmm_state = hmmStates(i);
 
     % Find all time points for this HMM state
     state_mask = (hmm_results.continuous_results.sequence == hmm_state);
@@ -334,7 +356,7 @@ for i = 1:num_hmm_states
 
         if ~isempty(bhv_distribution)
             % Find most common behavior (primary behavior)
-            [bhv_counts, bhv_values] = histcounts(bhv_distribution, bhv_categories);
+            [bhv_counts, bhv_values] = histcounts(bhv_distribution, bhvCategories);
             [max_count, max_idx] = max(bhv_counts);
             primary_bhv = bhv_values(max_idx);
 
@@ -354,8 +376,8 @@ end
 fprintf('\nPer-Behavior Coverage (State Distribution):\n');
 fprintf('%-15s %-15s %-15s %-15s\n', 'Behavior', 'Primary HMM State', 'Coverage (%)', 'State Spread');
 
-for j = 1:num_bhv_categories
-    bhv_category = bhv_categories(j);
+for j = 1:nBhvCategories
+    bhv_category = bhvCategories(j);
 
     % Find all time points for this behavior
     bhv_mask = (bhvID == bhv_category);
@@ -382,7 +404,7 @@ for j = 1:num_bhv_categories
 
         if ~isempty(hmm_distribution)
             % Find most common HMM state (primary state)
-            [hmm_counts, hmm_values] = histcounts(hmm_distribution, hmm_states);
+            [hmm_counts, hmm_values] = histcounts(hmm_distribution, hmmStates);
             [max_count, max_idx] = max(hmm_counts);
             primary_hmm = hmm_values(max_idx);
 
@@ -415,17 +437,17 @@ xlabel('Behavior Categories');
 ylabel('HMM States');
 
 % Add text labels
-for i = 1:num_hmm_states
-    for j = 1:num_bhv_categories
+for i = 1:nHmmStates
+    for j = 1:nBhvCategories
         text(j, i, num2str(contingency_matrix(i, j)), ...
             'HorizontalAlignment', 'center', 'Color', 'white', 'FontWeight', 'bold');
     end
 end
 
 % Set tick labels
-xticks(1:num_bhv_categories);
+xticks(1:nBhvCategories);
 xticklabels(col_labels);
-yticks(1:num_hmm_states);
+yticks(1:nHmmStates);
 yticklabels(row_labels);
 
 % Subplot 2: HMM State Sequence
@@ -434,7 +456,7 @@ plot(hmm_results.continuous_results.sequence, 'b-', 'LineWidth', 1);
 title('HMM State Sequence Over Time');
 xlabel('Time Bins');
 ylabel('HMM State');
-ylim([min(hmm_states)-0.5, max(hmm_states)+0.5]);
+ylim([min(hmmStates)-0.5, max(hmmStates)+0.5]);
 
 % Subplot 3: Behavior Sequence
 subplot(2, 3, 3);
@@ -442,7 +464,7 @@ plot(bhvID, 'r-', 'LineWidth', 1);
 title('Behavior Sequence Over Time');
 xlabel('Time Bins');
 ylabel('Behavior Category');
-ylim([min(bhv_categories)-0.5, max(bhv_categories)+0.5]);
+ylim([min(bhvCategories)-0.5, max(bhvCategories)+0.5]);
 
 % Subplot 4: Predicted vs Actual Behavior
 subplot(2, 3, 4);
@@ -453,16 +475,16 @@ title('Predicted vs Actual Behavior');
 xlabel('Time Bins');
 ylabel('Behavior Category');
 legend('Location', 'best');
-ylim([min(bhv_categories)-0.5, max(bhv_categories)+0.5]);
+ylim([min(bhvCategories)-0.5, max(bhvCategories)+0.5]);
 
 % Subplot 5: State-Behavior Mapping
 subplot(2, 3, 5);
-mapping_matrix = zeros(num_hmm_states, num_bhv_categories);
-for i = 1:num_hmm_states
-    hmm_state = hmm_states(i);
+mapping_matrix = zeros(nHmmStates, nBhvCategories);
+for i = 1:nHmmStates
+    hmm_state = hmmStates(i);
     if isKey(hmm_to_bhv_mapping, hmm_state)
         bhv_category = hmm_to_bhv_mapping(hmm_state);
-        bhv_idx = find(bhv_categories == bhv_category);
+        bhv_idx = find(bhvCategories == bhv_category);
         mapping_matrix(i, bhv_idx) = 1;
     end
 end
@@ -474,16 +496,16 @@ xlabel('Behavior Categories');
 ylabel('HMM States');
 
 % Set tick labels
-xticks(1:num_bhv_categories);
+xticks(1:nBhvCategories);
 xticklabels(col_labels);
-yticks(1:num_hmm_states);
+yticks(1:nHmmStates);
 yticklabels(row_labels);
 
 % Subplot 6: Summary Statistics
 subplot(2, 3, 6);
 text(0.1, 0.9, sprintf('Total Time Bins: %d', totalTimeBins), 'FontSize', 10);
-text(0.1, 0.8, sprintf('HMM States: %d', num_hmm_states), 'FontSize', 10);
-text(0.1, 0.7, sprintf('Behaviors: %d', num_bhv_categories), 'FontSize', 10);
+text(0.1, 0.8, sprintf('HMM States: %d', nHmmStates), 'FontSize', 10);
+text(0.1, 0.7, sprintf('Behaviors: %d', nBhvCategories), 'FontSize', 10);
 if exist('accuracy', 'var')
     text(0.1, 0.6, sprintf('Accuracy: %.1f%%', accuracy*100), 'FontSize', 10);
 end
@@ -500,8 +522,8 @@ fprintf('\n=== Saving Analysis Results ===\n');
 % Create results structure
 analysis_results = struct();
 analysis_results.contingency_matrix = contingency_matrix;
-analysis_results.hmm_states = hmm_states;
-analysis_results.bhv_categories = bhv_categories;
+analysis_results.hmmStates = hmmStates;
+analysis_results.bhvCategories = bhvCategories;
 analysis_results.optimal_mapping = assignment;
 analysis_results.mapping_cost = -cost;
 analysis_results.hmm_to_bhv_mapping = hmm_to_bhv_mapping;
@@ -524,6 +546,15 @@ save(output_filename, 'analysis_results', 'hmm_results');
 
 fprintf('Analysis results saved to: %s\n', output_filename);
 fprintf('\nAnalysis complete!\n');
+
+
+
+
+
+
+
+
+
 
 %% Helper Functions
 
