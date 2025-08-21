@@ -1,4 +1,4 @@
-function bhvID = get_reach_bhv_labels(fileName);
+function bhvID = get_reach_bhv_labels(fileName)
 
 
 %%

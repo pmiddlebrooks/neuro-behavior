@@ -14,6 +14,7 @@ brainArea = 'M56'; % 'M23', 'M56', 'DS', 'VS'
 
 % Load the HMM model
 [hmm_results] = hmm_load_saved_model(natOrReach, brainArea);
+totalTimeBins = length(hmm_results.continuous_results.sequence);
 
 fprintf('Loaded HMM model for %s data in %s area\n', hmm_results.metadata.data_type, hmm_results.metadata.brain_area);
 fprintf('Number of states: %d, Number of neurons: %d\n', hmm_results.best_model.num_states, hmm_results.data_params.num_neurons);
@@ -31,8 +32,6 @@ get_standard_data
         bhvData = get_reach_bhv_labels(fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NIBEH.mat'));
 end
 
-% For now, create placeholder - you'll replace this with actual loading
-totalTimeBins = length(hmm_results.continuous_results.sequence);
 % ============================================================================
 
 fprintf('Behavior data loaded: %d time bins\n', length(bhvID));
