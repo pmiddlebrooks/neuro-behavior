@@ -29,7 +29,8 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :);
 %% Naturalistic data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
-opts.collectFor = 30 * 60; % seconds
+opts.collectStart = 0 * 60; % seconds
+opts.collectFor = 45 * 60; % seconds
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -60,7 +61,7 @@ pcaFirstFlag = 1;      % Use first nDim dimensions if 1, last nDim if 0
 nDim = 4;              % Number of PCA dimensions to use
 
 % Threshold options
-thresholdFlag = 0;     % Set to 1 to use threshold method
+thresholdFlag = 1;     % Set to 1 to use threshold method
 thresholdPct = 0.75;   % Threshold as percentage of median
 
 % Optimal bin/window size search parameters
@@ -73,7 +74,9 @@ maxSpikesPerBin = 20;
 minBinsPerWindow = 1000;
 
 % Sliding window parameters
-stepSize = 2; % seconds
+d2StepSize = 5; % seconds
+
+% For randomized comparison (for significance testing)
 nShuffles = 5;
 
 % AR model parameters for d2 calculation
@@ -88,10 +91,10 @@ dccWindowSize = 5 * 60; % seconds - user specified
 
 areasToTest = 2:4;
 
-fprintf('\n=== Naturalistic Data Analysis ===\n');
+fprintf('\n=== Naturalistic Data d2/mrbr Analysis ===\n');
 
 % Step 1-2: Apply PCA to original data to determine nDim and project back to neural space
-fprintf('\n--- Step 1-2: PCA on original data ---\n');
+fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');
 reconstructedDataMat = cell(1, length(areas));
 for a = areasToTest
     aID = idListNat{a};
@@ -147,7 +150,7 @@ for a = areasToTest %length(areas)
     tic;
     
     aID = idListNat{a};
-    stepSamples = round(stepSize / maxBinSizeNat);
+    stepSamples = round(d2StepSize / maxBinSizeNat);
     winSamples = round(maxWindowSizeNat / maxBinSizeNat);
     
     % Step 4: Bin the original data
@@ -170,14 +173,14 @@ for a = areasToTest %length(areas)
     end
     
     % Step 7: Apply thresholding if needed
-    if thresholdFlag
+    % if thresholdFlag
+    %     aDataMatNat = round(sum(aDataMatNat, 2));
+    %     threshSpikes = thresholdPct * median(aDataMatNat);
+    %     aDataMatNat(aDataMatNat < threshSpikes) = 0;
+    %     fprintf('Area %s: Threshold = %.3f, Prop zeros = %.3f\n', areas{a}, threshSpikes, sum(aDataMatNat == 0) / length(aDataMatNat));
+    % else
         aDataMatNat = round(sum(aDataMatNat, 2));
-        threshSpikes = thresholdPct * median(aDataMatNat);
-        aDataMatNat(aDataMatNat < threshSpikes) = 0;
-        fprintf('Area %s: Threshold = %.3f, Prop zeros = %.3f\n', areas{a}, threshSpikes, sum(aDataMatNat == 0) / length(aDataMatNat));
-    else
-        aDataMatNat = round(sum(aDataMatNat, 2));
-    end
+    % end
     
     % Initialize arrays for this area
     startSNat{a} = nan(1, numTimePoints);
@@ -209,88 +212,88 @@ for a = areasToTest %length(areas)
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
-% 
-% % Separate loop for dcc and kappa analysis
-% fprintf('\n=== Naturalistic Data dcc/kappa Analysis ===\n');
-% for a = areasToTest
-%     fprintf('\nProcessing dcc/kappa for area %s (Naturalistic)...\n', areas{a});
-%     tic;
-% 
-%     aID = idListNat{a};
-% 
-%     % Step 4: Bin the original data for dcc/kappa analysis
-%     aDataMatNat_dcc = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSizeNat(a));
-%     numTimePoints_dcc = size(aDataMatNat_dcc, 1);
-%     stepSamples_dcc = round(dccStepSize / optimalBinSizeNat(a));
-%     winSamples_dcc = round(dccWindowSize / optimalBinSizeNat(a));
-%     numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
-% 
-%     % Step 5-6: Apply PCA to binned data and project back to neural space
-%     if pcaFlag
-%         [coeff, score, ~, ~, explained, mu] = pca(aDataMatNat_dcc);
-%         forDim = find(cumsum(explained) > 30, 1);
-%         forDim = max(3, forDim);
-%         forDim = min(6, forDim);
-%         if pcaFirstFlag
-%             nDim = 1:forDim;
-%         else
-%             nDim = forDim+1:size(score, 2);
-%         end
-%         aDataMatNat_dcc = score(:,nDim) * coeff(:,nDim)' + mu;
-%     end
-% 
-%     % Step 7: Apply thresholding if needed
-%     if thresholdFlag
-%         aDataMatNat_dcc = round(sum(aDataMatNat_dcc, 2));
-%         threshSpikes = thresholdPct * median(aDataMatNat_dcc);
-%         aDataMatNat_dcc(aDataMatNat_dcc < threshSpikes) = 0;
-%     else
-%         aDataMatNat_dcc = round(sum(aDataMatNat_dcc, 2));
-%     end
-% 
-%     % Initialize arrays for dcc/kappa
-%     dccNat{a} = nan(1, numTimePoints_dcc);
-%     kappaNat{a} = nan(1, numTimePoints_dcc);
-%     startSNat_dcc{a} = nan(1, numWindows_dcc);
-% 
-%     % Step 8: Process each window for dcc and kappa
-%     for w = 1:numWindows_dcc
-%         startIdx = (w - 1) * stepSamples_dcc + 1;
-%         endIdx = startIdx + winSamples_dcc - 1;
-%         centerIdx = startIdx + floor((endIdx - startIdx)/2);
-%         startSNat_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * optimalBinSizeNat(a);
-% 
-%         % Calculate population activity for this window
-%         wPopActivity = aDataMatNat_dcc(startIdx:endIdx);
-% 
-%         % Avalanche analysis for dcc and kappa
-%         % Find avalanches in the window       
-%         zeroBins = find(wPopActivity == 0);
-%         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-%             % Create avalanche data
-%             asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeNat(a)*1000, 'CBModel', 'Spikes', 'DS');
-%             Av = avprops(asdfMat, 'ratio', 'fingerprint');
-% 
-%             % Calculate avalanche parameters
-%             [tau, ~, tauC, ~, alpha, ~, paramSD, ~] = avalanche_log(Av, 0);
-% 
-%             % dcc (distance to criticality from avalanche analysis)
-%             dccNat{a}(centerIdx) = distance_to_criticality(tau, alpha, paramSD);
-% 
-%             % kappa (avalanche shape parameter)
-%             kappaNat{a}(centerIdx) = compute_kappa(Av.size);
-%         end
-%     end
-% 
-%     fprintf('Area %s dcc/kappa completed in %.1f minutes\n', areas{a}, toc/60);
-% end
 
-%% ==============================================     Mark's Reach Data Analysis     ==============================================
+% Separate loop for dcc and kappa analysis
+fprintf('\n=== Naturalistic Data dcc/kappa Analysis ===\n');
+for a = areasToTest
+    fprintf('\nProcessing dcc/kappa for area %s (Naturalistic)...\n', areas{a});
+    tic;
 
-fprintf('\n=== Mark''s Reach Data Analysis ===\n');
+    aID = idListNat{a};
+
+    % Step 4: Bin the original data for dcc/kappa analysis
+    aDataMatNat_dcc = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSizeNat(a));
+    numTimePoints_dcc = size(aDataMatNat_dcc, 1);
+    stepSamples_dcc = round(dccStepSize / optimalBinSizeNat(a));
+    winSamples_dcc = round(dccWindowSize / optimalBinSizeNat(a));
+    numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
+
+    % Step 5-6: Apply PCA to binned data and project back to neural space
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(aDataMatNat_dcc);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+            nDim = 1:forDim;
+        else
+            nDim = forDim+1:size(score, 2);
+        end
+        aDataMatNat_dcc = score(:,nDim) * coeff(:,nDim)' + mu;
+    end
+
+    % Step 7: Apply thresholding if needed
+    if thresholdFlag
+        aDataMatNat_dcc = round(sum(aDataMatNat_dcc, 2));
+        threshSpikes = thresholdPct * median(aDataMatNat_dcc);
+        aDataMatNat_dcc(aDataMatNat_dcc < threshSpikes) = 0;
+    else
+        aDataMatNat_dcc = round(sum(aDataMatNat_dcc, 2));
+    end
+
+    % Initialize arrays for dcc/kappa
+    dccNat{a} = nan(1, numTimePoints_dcc);
+    kappaNat{a} = nan(1, numTimePoints_dcc);
+    startSNat_dcc{a} = nan(1, numWindows_dcc);
+
+    % Step 8: Process each window for dcc and kappa
+    for w = 1:numWindows_dcc
+        startIdx = (w - 1) * stepSamples_dcc + 1;
+        endIdx = startIdx + winSamples_dcc - 1;
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
+        startSNat_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * optimalBinSizeNat(a);
+
+        % Calculate population activity for this window
+        wPopActivity = aDataMatNat_dcc(startIdx:endIdx);
+
+        % Avalanche analysis for dcc and kappa
+        % Find avalanches in the window       
+        zeroBins = find(wPopActivity == 0);
+        if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+            % Create avalanche data
+            asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeNat(a)*1000, 'CBModel', 'Spikes', 'DS');
+            Av = avprops(asdfMat, 'ratio', 'fingerprint');
+
+            % Calculate avalanche parameters
+            [tau, ~, tauC, ~, alpha, ~, paramSD, ~] = avalanche_log(Av, 0);
+
+            % dcc (distance to criticality from avalanche analysis)
+            dccNat{a}(centerIdx) = distance_to_criticality(tau, alpha, paramSD);
+
+            % kappa (avalanche shape parameter)
+            kappaNat{a}(centerIdx) = compute_kappa(Av.size);
+        end
+    end
+
+    fprintf('Area %s dcc/kappa completed in %.1f minutes\n', areas{a}, toc/60);
+end
+
+% ==============================================     Mark's Reach Data Analysis     ==============================================
+
+fprintf('\n=== Mark''s Reach Data d2/mrbr Analysis ===\n');
 
 % Step 1-2: Apply PCA to original data to determine nDim and project back to neural space
-fprintf('\n--- Step 1-2: PCA on original data ---\n');
+fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');
 reconstructedDataMatRea = cell(1, length(areas));
 for a = areasToTest
     aID = idListRea{a};
@@ -345,7 +348,7 @@ for a = areasToTest %1:length(areas)
     tic;
     
     aID = idListRea{a};
-    stepSamples = round(stepSize / maxBinSizeRea);
+    stepSamples = round(d2StepSize / maxBinSizeRea);
     winSamples = round(maxWindowSizeRea / maxBinSizeRea);
     
     % Step 4: Bin the original data
@@ -368,14 +371,14 @@ for a = areasToTest %1:length(areas)
     end
     
     % Step 7: Apply thresholding if needed
-    if thresholdFlag
+    % if thresholdFlag
+    %     aDataMatRea = round(sum(aDataMatRea, 2));
+    %     threshSpikes = thresholdPct * median(aDataMatRea);
+    %     aDataMatRea(aDataMatRea < threshSpikes) = 0;
+    %     fprintf('Area %s: Threshold = %.3f, Prop zeros = %.3f\n', areas{a}, threshSpikes, sum(aDataMatRea == 0) / length(aDataMatRea));
+    % else
         aDataMatRea = round(sum(aDataMatRea, 2));
-        threshSpikes = thresholdPct * median(aDataMatRea);
-        aDataMatRea(aDataMatRea < threshSpikes) = 0;
-        fprintf('Area %s: Threshold = %.3f, Prop zeros = %.3f\n', areas{a}, threshSpikes, sum(aDataMatRea == 0) / length(aDataMatRea));
-    else
-        aDataMatRea = round(sum(aDataMatRea, 2));
-    end
+    % end
     
     % Initialize arrays for this area
     startSRea{a} = nan(1, numTimePoints);
@@ -407,81 +410,81 @@ for a = areasToTest %1:length(areas)
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
-% 
-% % Separate loop for dcc and kappa analysis (reach data)
-% fprintf('\n=== Reach Data dcc/kappa Analysis ===\n');
-% for a = areasToTest
-%     fprintf('\nProcessing dcc/kappa for area %s (Reach)...\n', areas{a});
-%     tic;
-% 
-%     aID = idListRea{a};
-% 
-%     % Step 4: Bin the original data for dcc/kappa analysis
-%     aDataMatRea_dcc = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSizeNat(a));
-%     numTimePoints_dcc = size(aDataMatRea_dcc, 1);
-%     stepSamples_dcc = round(dccStepSize / optimalBinSizeNat(a));
-%     winSamples_dcc = round(dccWindowSize / optimalBinSizeNat(a));
-%     numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
-% 
-%     % Step 5-6: Apply PCA to binned data and project back to neural space
-%     if pcaFlag
-%         [coeff, score, ~, ~, explained, mu] = pca(aDataMatRea_dcc);
-%         forDim = find(cumsum(explained) > 30, 1);
-%         forDim = max(3, forDim);
-%         forDim = min(6, forDim);
-%         if pcaFirstFlag
-%             nDim = 1:forDim;
-%         else
-%             nDim = forDim+1:size(score, 2);
-%         end
-%         aDataMatRea_dcc = score(:,nDim) * coeff(:,nDim)' + mu;
-%     end
-% 
-%     % Step 7: Apply thresholding if needed
-%     if thresholdFlag
-%         aDataMatRea_dcc = round(sum(aDataMatRea_dcc, 2));
-%         threshSpikes = thresholdPct * median(aDataMatRea_dcc);
-%         aDataMatRea_dcc(aDataMatRea_dcc < threshSpikes) = 0;
-%     else
-%         aDataMatRea_dcc = round(sum(aDataMatRea_dcc, 2));
-%     end
-% 
-%     % Initialize arrays for dcc/kappa
-%     dccRea{a} = nan(1, numTimePoints_dcc);
-%     kappaRea{a} = nan(1, numTimePoints_dcc);
-%     startSRea_dcc{a} = nan(1, numWindows_dcc);
-% 
-%     % Step 8: Process each window for dcc and kappa
-%     for w = 1:numWindows_dcc
-%         startIdx = (w - 1) * stepSamples_dcc + 1;
-%         endIdx = startIdx + winSamples_dcc - 1;
-%         centerIdx = startIdx + floor((endIdx - startIdx)/2);
-%         startSRea_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * optimalBinSizeNat(a);
-% 
-%         % Calculate population activity for this window
-%         wPopActivity = aDataMatRea_dcc(startIdx:endIdx);
-% 
-%         % Avalanche analysis for dcc and kappa
-%         % Find avalanches in the window       
-%         zeroBins = find(wPopActivity == 0);
-%         if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-%             % Create avalanche data
-%             asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeNat(a)*1000, 'CBModel', 'Spikes', 'DS');
-%             Av = avprops(asdfMat, 'ratio', 'fingerprint');
-% 
-%             % Calculate avalanche parameters
-%             [tau, ~, tauC, ~, alpha, ~, paramSD, ~] = avalanche_log(Av, 0);
-% 
-%             % dcc (distance to criticality from avalanche analysis)
-%             dccRea{a}(centerIdx) = distance_to_criticality(tau, alpha, paramSD);
-% 
-%             % kappa (avalanche shape parameter)
-%             kappaRea{a}(centerIdx) = compute_kappa(Av.size);
-%         end
-%     end
-% 
-%     fprintf('Area %s dcc/kappa completed in %.1f minutes\n', areas{a}, toc/60);
-% end
+
+% Separate loop for dcc and kappa analysis (reach data)
+fprintf('\n=== Reach Data dcc/kappa Analysis ===\n');
+for a = areasToTest
+    fprintf('\nProcessing dcc/kappa for area %s (Reach)...\n', areas{a});
+    tic;
+
+    aID = idListRea{a};
+
+    % Step 4: Bin the original data for dcc/kappa analysis
+    aDataMatRea_dcc = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSizeNat(a));
+    numTimePoints_dcc = size(aDataMatRea_dcc, 1);
+    stepSamples_dcc = round(dccStepSize / optimalBinSizeNat(a));
+    winSamples_dcc = round(dccWindowSize / optimalBinSizeNat(a));
+    numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
+
+    % Step 5-6: Apply PCA to binned data and project back to neural space
+    if pcaFlag
+        [coeff, score, ~, ~, explained, mu] = pca(aDataMatRea_dcc);
+        forDim = find(cumsum(explained) > 30, 1);
+        forDim = max(3, forDim);
+        forDim = min(6, forDim);
+        if pcaFirstFlag
+            nDim = 1:forDim;
+        else
+            nDim = forDim+1:size(score, 2);
+        end
+        aDataMatRea_dcc = score(:,nDim) * coeff(:,nDim)' + mu;
+    end
+
+    % Step 7: Apply thresholding if needed
+    if thresholdFlag
+        aDataMatRea_dcc = round(sum(aDataMatRea_dcc, 2));
+        threshSpikes = thresholdPct * median(aDataMatRea_dcc);
+        aDataMatRea_dcc(aDataMatRea_dcc < threshSpikes) = 0;
+    else
+        aDataMatRea_dcc = round(sum(aDataMatRea_dcc, 2));
+    end
+
+    % Initialize arrays for dcc/kappa
+    dccRea{a} = nan(1, numTimePoints_dcc);
+    kappaRea{a} = nan(1, numTimePoints_dcc);
+    startSRea_dcc{a} = nan(1, numWindows_dcc);
+
+    % Step 8: Process each window for dcc and kappa
+    for w = 1:numWindows_dcc
+        startIdx = (w - 1) * stepSamples_dcc + 1;
+        endIdx = startIdx + winSamples_dcc - 1;
+        centerIdx = startIdx + floor((endIdx - startIdx)/2);
+        startSRea_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * optimalBinSizeNat(a);
+
+        % Calculate population activity for this window
+        wPopActivity = aDataMatRea_dcc(startIdx:endIdx);
+
+        % Avalanche analysis for dcc and kappa
+        % Find avalanches in the window       
+        zeroBins = find(wPopActivity == 0);
+        if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+            % Create avalanche data
+            asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeNat(a)*1000, 'CBModel', 'Spikes', 'DS');
+            Av = avprops(asdfMat, 'ratio', 'fingerprint');
+
+            % Calculate avalanche parameters
+            [tau, ~, tauC, ~, alpha, ~, paramSD, ~] = avalanche_log(Av, 0);
+
+            % dcc (distance to criticality from avalanche analysis)
+            dccRea{a}(centerIdx) = distance_to_criticality(tau, alpha, paramSD);
+
+            % kappa (avalanche shape parameter)
+            kappaRea{a}(centerIdx) = compute_kappa(Av.size);
+        end
+    end
+
+    fprintf('Area %s dcc/kappa completed in %.1f minutes\n', areas{a}, toc/60);
+end
 
 %% ==============================================     Plotting Results     ==============================================
 
@@ -530,36 +533,36 @@ for a = areasToTest
     set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
     xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
     
-    % % Plot dcc
-    % axes(ha(3));
-    % hold on;
-    % validIdx = ~isnan(dccNat{a});
-    % plot(startSNat_dcc{a}/60, dccNat{a}(validIdx), '-o', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
-    % validIdx = ~isnan(dccRea{a});
-    % plot(startSRea_dcc{a}/60, dccRea{a}(validIdx), '--s', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
-    % ylabel('Distance to Criticality (dcc)', 'FontSize', 14);
-    % title(sprintf('%s - Distance to Criticality (dcc)', areas{a}), 'FontSize', 14);
-    % legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
-    % grid on;
-    % set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
-    % set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
-    % xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
-    % 
-    % % Plot kappa
-    % axes(ha(4));
-    % hold on;
-    % validIdx = ~isnan(kappaNat{a});
-    % plot(startSNat_dcc{a}/60, kappaNat{a}(validIdx), '-o', 'Color', [0 0.75 0], 'LineWidth', 2, 'MarkerSize', 4);
-    % validIdx = ~isnan(kappaRea{a});
-    % plot(startSRea_dcc{a}/60, kappaRea{a}(validIdx), '--s', 'Color', [0 0.75 0], 'LineWidth', 2, 'MarkerSize', 4);
-    % ylabel('Kappa', 'FontSize', 14);
-    % title(sprintf('%s - Kappa', areas{a}), 'FontSize', 14);
-    % legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
-    % grid on;
-    % xlabel('Minutes', 'FontSize', 14); % Only add xlabel to bottom subplot
-    % set(gca, 'YTickLabelMode', 'auto', 'FontSize', 14);  % Enable Y-axis labels
-    % set(gca, 'XTickLabelMode', 'auto');  % Enable Y-axis labels
-    % xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
+    % Plot dcc
+    axes(ha(3));
+    hold on;
+    validIdx = ~isnan(dccNat{a});
+    plot(startSNat_dcc{a}/60, dccNat{a}(validIdx), '-o', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
+    validIdx = ~isnan(dccRea{a});
+    plot(startSRea_dcc{a}/60, dccRea{a}(validIdx), '--s', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
+    ylabel('Distance to Criticality (dcc)', 'FontSize', 14);
+    title(sprintf('%s - Distance to Criticality (dcc)', areas{a}), 'FontSize', 14);
+    legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
+    grid on;
+    set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
+    set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
+    xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
+
+    % Plot kappa
+    axes(ha(4));
+    hold on;
+    validIdx = ~isnan(kappaNat{a});
+    plot(startSNat_dcc{a}/60, kappaNat{a}(validIdx), '-o', 'Color', [0 0.75 0], 'LineWidth', 2, 'MarkerSize', 4);
+    validIdx = ~isnan(kappaRea{a});
+    plot(startSRea_dcc{a}/60, kappaRea{a}(validIdx), '--s', 'Color', [0 0.75 0], 'LineWidth', 2, 'MarkerSize', 4);
+    ylabel('Kappa', 'FontSize', 14);
+    title(sprintf('%s - Kappa', areas{a}), 'FontSize', 14);
+    legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
+    grid on;
+    xlabel('Minutes', 'FontSize', 14); % Only add xlabel to bottom subplot
+    set(gca, 'YTickLabelMode', 'auto', 'FontSize', 14);  % Enable Y-axis labels
+    set(gca, 'XTickLabelMode', 'auto');  % Enable Y-axis labels
+    xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
     
     sgtitle(sprintf('Criticality Measures Comparison - %s', areas{a}), 'FontSize', 14);
             print('-dpng', fullfile(paths.dropPath, sprintf('d2_mrbr_%s', areas{a})));
@@ -717,7 +720,7 @@ results.params.pcaFirstFlag = pcaFirstFlag;
 results.params.nDim = nDim;
 results.params.thresholdFlag = thresholdFlag;
 results.params.thresholdPct = thresholdPct;
-results.params.stepSize = stepSize;
+results.params.stepSize = d2StepSize;
 results.params.nShuffles = nShuffles;
 results.params.pOrder = pOrder;
 results.params.critType = critType;
