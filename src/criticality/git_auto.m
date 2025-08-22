@@ -13,7 +13,6 @@ if ~ismember(lower(operation), {'push', 'pull'})
     return;
 end
 
-
 % Double confirmation
 fprintf('\nYou selected: %s\n', upper(operation));
 fprintf('Type "YES" to confirm, or anything else to cancel: ');
@@ -67,4 +66,4 @@ cd(pathsToUpdate{1});
 cd src/;
 
 fprintf('Git %s operation completed for all repositories.\n', operation);
-end 
+end

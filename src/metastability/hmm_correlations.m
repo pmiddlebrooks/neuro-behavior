@@ -57,10 +57,10 @@ try
     if ~exist(criticalityFile, 'file')
         error('Criticality results file not found: %s\nPlease run criticality_compare.m first to generate the required data.', criticalityFile);
     end
-    
+
     load(criticalityFile, 'results');
     fprintf('Loaded criticality results from: %s\n', criticalityFile);
-    
+
     % Extract optimal parameters based on data type
     if strcmp(natOrReach, 'Nat')
         stepSize = results.params.stepSize;
@@ -75,7 +75,7 @@ try
         fprintf('  Step size: %.1f s\n', stepSize);
         fprintf('  Window size: %.1f s\n', windowSize);
     end
-    
+
 catch e
     fprintf('Error loading criticality results: %s\n', e.message);
     fprintf('Using default parameters: stepSize = 2.0s, windowSize = 5.0s\n');
@@ -91,37 +91,37 @@ try
     % Load HMM results for the specified data type and brain area
     [hmm_results] = hmm_load_saved_model(natOrReach, brainArea);
     fprintf('Loaded HMM model for %s data in %s area\n', natOrReach, brainArea);
-    
+
     % Extract HMM parameters
-    hmmBinSize = hmm_results.HmmParam.binSize;
+    hmmBinSize = hmm_results.HmmParam.BinSize;
     numStates = hmm_results.best_model.num_states;
-    
+
     % Extract continuous results
     hmmSequence = hmm_results.continuous_results.sequence;
     hmmProbabilities = hmm_results.continuous_results.pStates;
     totalHmmBins = length(hmmSequence);
-    
+
     fprintf('HMM parameters:\n');
     fprintf('  Number of states: %d\n', numStates);
     fprintf('  Bin size: %.6f s\n', hmmBinSize);
     fprintf('  Total time bins: %d\n', totalHmmBins);
     fprintf('  Total time: %.1f s\n', totalHmmBins * hmmBinSize);
-    
+
     % Update areas to test based on loaded data
     areas = {brainArea};
     areasToTest = 1;
-    
+
     % Update behavior data frame size to match HMM bin size for consistency
     opts.frameSize = hmmBinSize;
     bhvBinSize = opts.frameSize;
-    
+
     % Reload behavior data with updated frame size to match HMM binning
     fprintf('Loading behavior data with HMM-matched frame size: %.6f s\n', opts.frameSize);
-opts.frameSize = hmm_results.HmmParam.BinSize;
-getDataType = 'behavior';
-get_standard_data
+    opts.frameSize = hmm_results.HmmParam.BinSize;
+    getDataType = 'behavior';
+    get_standard_data
 
-    
+
 catch e
     fprintf('Error loading HMM results: %s\n', e.message);
     fprintf('Please ensure HMM analysis has been completed for %s data in %s area.\n', natOrReach, brainArea);
@@ -153,6 +153,13 @@ fprintf('Calculating behavior switches and proportion (global metrics)...\n');
 propBhvList = [0 1 2 13 14 15];  % Example: grooming behaviors
 fprintf('Calculating proportion of behaviors: %s\n', mat2str(propBhvList));
 
+% Note: Different bin sizes for different data types:
+% - HMM data: hmmBinSize (from HMM results)
+% - Behavior data: bhvBinSize (matches HMM bin size for consistency)
+% - Kinematics data: kinBinSize = 0.1 seconds (fixed)
+fprintf('Data bin sizes: HMM=%.6fs, Behavior=%.6fs, Kinematics=%.1fs\n', ...
+    hmmBinSize, bhvBinSize, kinBinSize);
+
 % Calculate time points for sliding windows
 windowSizeBins = round(windowSize / hmmBinSize);
 stepSizeBins = round(stepSize / hmmBinSize);
@@ -161,6 +168,9 @@ numWindows = floor((totalHmmBins - windowSizeBins) / stepSizeBins) + 1;
 % Initialize behavior metric arrays
 behaviorSwitches = nan(numWindows, 1);
 behaviorProportion = nan(numWindows, 1);
+behaviorDwellTimesMean = nan(numWindows, 1);
+behaviorDwellTimesStd = nan(numWindows, 1);
+behaviorOccupancyEntropy = nan(numWindows, 1);
 kinPCAStd = nan(numWindows, 1);
 windowCenterTimes = nan(numWindows, 1);
 
@@ -169,51 +179,121 @@ for i = 1:numWindows
     % Calculate window boundaries in HMM bins
     startBin = (i-1) * stepSizeBins + 1;
     endBin = startBin + windowSizeBins - 1;
-    
+
     % Ensure we don't exceed data bounds
     if endBin > totalHmmBins
         break;
     end
-    
+
     % Calculate center time of this window
     centerBin = (startBin + endBin) / 2;
     windowCenterTimes(i) = centerBin * hmmBinSize;
-    
+
     % Convert HMM bin indices to behavior/kinematics frame indices
     % Behavior and kinematics are in 0.1 second bins
     startTime = (startBin - 1) * hmmBinSize;
     endTime = endBin * hmmBinSize;
-    
+
     startFrame = max(1, round(startTime / bhvBinSize));
     endFrame = min(length(bhvID), round(endTime / bhvBinSize));
-    
-    % Get behavior labels for this window
+
+        % Get behavior labels for this window
     windowBhvID = bhvID(startFrame:endFrame);
     
-    % Calculate behavior switches
-    if length(windowBhvID) > 1
+    % Filter out invalid behavior IDs (-1 values)
+    validBhvID = windowBhvID(windowBhvID ~= -1);
+    
+    % Calculate behavior switches and dwell times
+    % Note: For dwell time calculations, we only include behaviors that are completely
+    % contained within the window (start and end within the window boundaries)
+    if length(validBhvID) > 1
         % Find where behavior changes (switches)
-        behaviorChanges = diff(windowBhvID) ~= 0;
+        behaviorChanges = diff(validBhvID) ~= 0;
         numSwitches = sum(behaviorChanges);
         behaviorSwitches(i) = numSwitches;
+
+        % Calculate behavior dwell times (only for complete behaviors within window)
+        if numSwitches > 0
+            % Find indices where behaviors change
+            changeIndices = find(behaviorChanges);
+
+            % Calculate dwell times for behaviors that start and end within the window
+            % Exclude first behavior (may start before window) and last behavior (may continue after window)
+            if length(changeIndices) >= 2
+                % Get dwell times for behaviors that are completely within the window
+                dwellTimes = diff(changeIndices) * bhvBinSize; % Convert to seconds
+                behaviorDwellTimesMean(i) = mean(dwellTimes);
+                behaviorDwellTimesStd(i) = std(dwellTimes);
+            else
+                % Only one behavior change - can't calculate complete dwell times
+                behaviorDwellTimesMean(i) = nan;
+                behaviorDwellTimesStd(i) = nan;
+            end
+        else
+            % No behavior changes - single behavior throughout window
+            % Check if this behavior starts and ends within the window
+            if startFrame > 1 && endFrame < length(bhvID)
+                % Check if behavior changes at window boundaries
+                if bhvID(startFrame-1) ~= windowBhvID(1) && bhvID(endFrame+1) ~= windowBhvID(end)
+                    % Behavior is complete within window
+                    behaviorDwellTimesMean(i) = length(windowBhvID) * bhvBinSize;
+                    behaviorDwellTimesStd(i) = 0; % Single behavior, no variation
+                else
+                    % Behavior extends beyond window boundaries
+                    behaviorDwellTimesMean(i) = nan;
+                    behaviorDwellTimesStd(i) = nan;
+                end
+            else
+                % Window is at data boundaries - can't determine if behavior is complete
+                behaviorDwellTimesMean(i) = nan;
+                behaviorDwellTimesStd(i) = nan;
+            end
+        end
+
+        % Calculate behavior occupancy entropy (for all valid behaviors in window)
+        if length(unique(validBhvID)) > 1
+            % Count occurrences of each behavior
+            behaviorCounts = histcounts(validBhvID, min(validBhvID):max(validBhvID));
+            behaviorProportions = behaviorCounts / length(validBhvID);
+            behaviorProportions = behaviorProportions(behaviorProportions > 0); % Remove zero probabilities
+            if ~isempty(behaviorProportions)
+                behaviorOccupancyEntropy(i) = -sum(behaviorProportions .* log2(behaviorProportions));
+            end
+        else
+            % Single behavior throughout window
+            behaviorOccupancyEntropy(i) = 0;
+        end
     else
+        % Single frame - can't calculate dwell times
         behaviorSwitches(i) = 0;
+        behaviorDwellTimesMean(i) = nan;
+        behaviorDwellTimesStd(i) = nan;
+        behaviorOccupancyEntropy(i) = 0;
     end
-    
-    % Calculate proportion of specified behaviors
-    if length(windowBhvID) > 0
-        % Count how many frames have behaviors in the specified list
-        specifiedBehaviors = ismember(windowBhvID, propBhvList);
-        proportion = sum(specifiedBehaviors) / length(windowBhvID);
+
+    % Calculate proportion of specified behaviors (only for valid behaviors)
+    if length(validBhvID) > 0
+        % For proportion calculation, we'll use all valid behaviors in the window
+        % but note that this may include incomplete behaviors at boundaries
+        specifiedBehaviors = ismember(validBhvID, propBhvList);
+        proportion = sum(specifiedBehaviors) / length(validBhvID);
         behaviorProportion(i) = proportion;
     else
         behaviorProportion(i) = 0;
     end
-    
+
     % Calculate standard deviation of kinPCA within the window
-    if length(windowBhvID) > 0
-        % Get kinPCA data for the same window
-        windowKinPCA = kinPCA(startFrame:endFrame);
+    if length(validBhvID) > 0
+        % Convert HMM window boundaries to kinematics frame indices
+        % Kinematics are in 0.1 second bins, different from behavior/HMM binning
+        startTime = (startBin - 1) * hmmBinSize;
+        endTime = endBin * hmmBinSize;
+        
+        kinStartFrame = max(1, round(startTime / kinBinSize));
+        kinEndFrame = min(length(kinPCA), round(endTime / kinBinSize));
+        
+        % Get kinPCA data for the same time window
+        windowKinPCA = kinPCA(kinStartFrame:kinEndFrame);
         kinPCAStd(i) = std(windowKinPCA);
     else
         kinPCAStd(i) = nan;
@@ -224,6 +304,9 @@ end
 numWindows = i - 1;
 behaviorSwitches = behaviorSwitches(1:numWindows);
 behaviorProportion = behaviorProportion(1:numWindows);
+behaviorDwellTimesMean = behaviorDwellTimesMean(1:numWindows);
+behaviorDwellTimesStd = behaviorDwellTimesStd(1:numWindows);
+behaviorOccupancyEntropy = behaviorOccupancyEntropy(1:numWindows);
 kinPCAStd = kinPCAStd(1:numWindows);
 windowCenterTimes = windowCenterTimes(1:numWindows);
 
@@ -232,6 +315,9 @@ fprintf('Behavior metrics calculated for %d time windows\n', numWindows);
 % Add behavior metrics to metrics structure (same for all areas)
 metrics.behaviorSwitches = behaviorSwitches;
 metrics.behaviorProportion = behaviorProportion;
+metrics.behaviorDwellTimesMean = behaviorDwellTimesMean;
+metrics.behaviorDwellTimesStd = behaviorDwellTimesStd;
+metrics.behaviorOccupancyEntropy = behaviorOccupancyEntropy;
 metrics.kinPCAStd = kinPCAStd;
 metrics.timePoints = windowCenterTimes;
 
@@ -253,84 +339,193 @@ for i = 1:numWindows
     % Calculate window boundaries in HMM bins
     startBin = (i-1) * stepSizeBins + 1;
     endBin = startBin + windowSizeBins - 1;
-    
+
     % Ensure we don't exceed data bounds
     if endBin > totalHmmBins
         break;
     end
-    
+
     % Get HMM data for this window
     windowSequence = hmmSequence(startBin:endBin);
     windowProbabilities = hmmProbabilities(startBin:endBin, :);
-    
+
     % Remove invalid states (0 values)
     validStates = windowSequence(windowSequence > 0);
     validProbs = windowProbabilities(windowSequence > 0, :);
-    
+
     if ~isempty(validStates)
-        % 1. State occupancy entropy
-        stateCounts = histcounts(validStates, 1:(numStates+1));
-        stateProportions = stateCounts / length(validStates);
-        stateProportions = stateProportions(stateProportions > 0); % Remove zero probabilities
-        if ~isempty(stateProportions)
-            stateOccupancyEntropy(i) = -sum(stateProportions .* log2(stateProportions));
+        % 1. State occupancy entropy (only for complete states within window)
+        % Check if states at window boundaries are complete
+        if startBin > 1 && endBin < totalHmmBins
+            % Check if state changes at window boundaries
+            if hmmSequence(startBin-1) ~= windowSequence(1) && hmmSequence(endBin+1) ~= windowSequence(end)
+                % States are complete within window - calculate entropy for all states
+                stateCounts = histcounts(validStates, 1:(numStates+1));
+                stateProportions = stateCounts / length(validStates);
+                stateProportions = stateProportions(stateProportions > 0); % Remove zero probabilities
+                if ~isempty(stateProportions)
+                    stateOccupancyEntropy(i) = -sum(stateProportions .* log2(stateProportions));
+                end
+            else
+                % States extend beyond window boundaries - find complete states within window
+                % Find where states change within the window
+                stateChanges = diff(windowSequence) ~= 0;
+                if any(stateChanges)
+                    changeIndices = find(stateChanges);
+                    
+                    % Get states that are completely within the window
+                    % Start from the first state change, end at the last state change
+                    if length(changeIndices) >= 2
+                        startCompleteIdx = changeIndices(1);
+                        endCompleteIdx = changeIndices(end);
+                        
+                        % Extract complete states (excluding first and last incomplete states)
+                        completeStates = windowSequence(startCompleteIdx:endCompleteIdx);
+                        
+                        % Calculate entropy for complete states only
+                        stateCounts = histcounts(completeStates, 1:(numStates+1));
+                        stateProportions = stateCounts / length(completeStates);
+                        stateProportions = stateProportions(stateProportions > 0); % Remove zero probabilities
+                        if ~isempty(stateProportions)
+                            stateOccupancyEntropy(i) = -sum(stateProportions .* log2(stateProportions));
+                        end
+                    else
+                        % Only one state change - can't calculate entropy for complete states
+                        stateOccupancyEntropy(i) = nan;
+                    end
+                else
+                    % Single state throughout window - can't determine if complete
+                    stateOccupancyEntropy(i) = nan;
+                end
+            end
+        else
+            % Window is at data boundaries - can't determine if states are complete
+            stateOccupancyEntropy(i) = nan;
         end
-        
-        % 2. State dwell times mean and std
+
+        % 2. State dwell times mean and std (only for complete states within window)
         if length(validStates) > 1
             % Find state transitions
             stateChanges = diff(validStates) ~= 0;
             if any(stateChanges)
-                % Calculate dwell times
+                % Calculate dwell times for states that start and end within the window
                 changeIndices = find(stateChanges);
-                dwellTimes = [changeIndices(1); diff(changeIndices); length(validStates) - changeIndices(end)];
-                dwellTimes = dwellTimes * hmmBinSize; % Convert to seconds
-                
-                stateDwellTimesMean(i) = mean(dwellTimes);
-                stateDwellTimesStd(i) = std(dwellTimes);
+
+                % Exclude first state (may start before window) and last state (may continue after window)
+                if length(changeIndices) >= 2
+                    % Get dwell times for states that are completely within the window
+                    dwellTimes = diff(changeIndices) * hmmBinSize; % Convert to seconds
+                    stateDwellTimesMean(i) = mean(dwellTimes);
+                    stateDwellTimesStd(i) = std(dwellTimes);
+                else
+                    % Only one state change - can't calculate complete dwell times
+                    stateDwellTimesMean(i) = nan;
+                    stateDwellTimesStd(i) = nan;
+                end
             else
-                % Single state throughout window
-                stateDwellTimesMean(i) = length(validStates) * hmmBinSize;
-                stateDwellTimesStd(i) = 0;
+                % Single state throughout window - check if complete
+                if startBin > 1 && endBin < totalHmmBins
+                    if hmmSequence(startBin-1) ~= windowSequence(1) && hmmSequence(endBin+1) ~= windowSequence(end)
+                        % State is complete within window
+                        stateDwellTimesMean(i) = length(validStates) * hmmBinSize;
+                        stateDwellTimesStd(i) = 0;
+                    else
+                        % State extends beyond window boundaries
+                        stateDwellTimesMean(i) = nan;
+                        stateDwellTimesStd(i) = nan;
+                    end
+                else
+                    % Window is at data boundaries - can't determine if state is complete
+                    stateDwellTimesMean(i) = nan;
+                    stateDwellTimesStd(i) = nan;
+                end
             end
         else
-            % Single state
-            stateDwellTimesMean(i) = hmmBinSize;
-            stateDwellTimesStd(i) = 0;
+            % Single state - check if complete
+            if startBin > 1 && endBin < totalHmmBins
+                if hmmSequence(startBin-1) ~= windowSequence(1) && hmmSequence(endBin+1) ~= windowSequence(end)
+                    % State is complete within window
+                    stateDwellTimesMean(i) = hmmBinSize;
+                    stateDwellTimesStd(i) = 0;
+                else
+                    % State extends beyond window boundaries
+                    stateDwellTimesMean(i) = nan;
+                    stateDwellTimesStd(i) = nan;
+                end
+            else
+                % Window is at data boundaries - can't determine if state is complete
+                stateDwellTimesMean(i) = nan;
+                stateDwellTimesStd(i) = nan;
+            end
         end
-        
-        % 3. Number of unique states
-        numUniqueStates(i) = length(unique(validStates));
+
+         % 3. Number of unique states (only for complete states within window)
+        if startBin > 1 && endBin < totalHmmBins
+            % Check if states at window boundaries are complete
+            if hmmSequence(startBin-1) ~= windowSequence(1) && hmmSequence(endBin+1) ~= windowSequence(end)
+                % States are complete within window
+                numUniqueStates(i) = length(unique(validStates));
+            else
+                % States extend beyond window boundaries - find complete states within window
+                % Find where states change within the window
+                stateChanges = diff(windowSequence) ~= 0;
+                if any(stateChanges)
+                    changeIndices = find(stateChanges);
+                    
+                    % Get states that are completely within the window
+                    % Start from the first state change, end at the last state change
+                    if length(changeIndices) >= 2
+                        startCompleteIdx = changeIndices(1);
+                        endCompleteIdx = changeIndices(end);
+                        
+                        % Extract complete states (excluding first and last incomplete states)
+                        completeStates = windowSequence(startCompleteIdx:endCompleteIdx);
+                        
+                        % Count unique states for complete states only
+                        numUniqueStates(i) = length(unique(completeStates));
+                    else
+                        % Only one state change - can't calculate unique states for complete states
+                        numUniqueStates(i) = nan;
+                    end
+                else
+                    % Single state throughout window - can't determine if complete
+                    numUniqueStates(i) = nan;
+                end
+            end
+        else
+            % Window is at data boundaries - can't determine if states are complete
+            numUniqueStates(i) = nan;
+        end
         
         % 4. Mean maximum probability per bin
         if ~isempty(validProbs)
             maxProbs = max(validProbs, [], 2);
             meanMaxProbability(i) = mean(maxProbs);
         end
-        
+
         % 5. Variance of state probabilities
         if ~isempty(validProbs)
             stateProbabilityVariance(i) = var(validProbs(:));
         end
-        
+
         % 6. KL divergence between consecutive probability distributions
         if size(validProbs, 1) > 1
             klDivs = zeros(size(validProbs, 1) - 1, 1);
             for j = 1:(size(validProbs, 1) - 1)
                 p = validProbs(j, :);
                 q = validProbs(j + 1, :);
-                
+
                 % Ensure probabilities sum to 1 and handle zeros
                 p = p / sum(p);
                 q = q / sum(q);
-                
+
                 % Add small epsilon to avoid log(0)
                 epsilon = 1e-10;
                 p = p + epsilon;
                 q = q + epsilon;
                 p = p / sum(p);
                 q = q / sum(q);
-                
+
                 % Calculate KL divergence
                 klDivs(j) = sum(p .* log2(p ./ q));
             end
@@ -359,6 +554,9 @@ validTimePoints = cell(1, length(areas));
 for a = areasToTest
     validBhvSwitchIdx = ~isnan(behaviorSwitches);
     validBhvPropIdx = ~isnan(behaviorProportion);
+    validBhvDwellMeanIdx = ~isnan(behaviorDwellTimesMean);
+    validBhvDwellStdIdx = ~isnan(behaviorDwellTimesStd);
+    validBhvEntropyIdx = ~isnan(behaviorOccupancyEntropy);
     validKinIdx = ~isnan(kinPCAStd);
     validEntropyIdx = ~isnan(stateOccupancyEntropy);
     validDwellMeanIdx = ~isnan(stateDwellTimesMean);
@@ -367,11 +565,11 @@ for a = areasToTest
     validMaxProbIdx = ~isnan(meanMaxProbability);
     validProbVarIdx = ~isnan(stateProbabilityVariance);
     validKLIdx = ~isnan(klDivergenceMean);
-    
-    validTimePoints{a} = validBhvSwitchIdx & validBhvPropIdx & validKinIdx & ...
-                         validEntropyIdx & validDwellMeanIdx & validDwellStdIdx & ...
-                         validUniqueIdx & validMaxProbIdx & validProbVarIdx & validKLIdx;
-    
+
+    validTimePoints{a} = validBhvSwitchIdx & validBhvPropIdx & validBhvDwellMeanIdx & validBhvDwellStdIdx & validBhvEntropyIdx & validKinIdx & ...
+        validEntropyIdx & validDwellMeanIdx & validDwellStdIdx & ...
+        validUniqueIdx & validMaxProbIdx & validProbVarIdx & validKLIdx;
+
     fprintf('Area %s: %d valid time points\n', areas{a}, sum(validTimePoints{a}));
 end
 
@@ -385,8 +583,9 @@ corrIdx = 1;
 
 % Define metric names for correlation matrix
 metricNames = {'stateOccupancyEntropy', 'stateDwellTimesMean', 'stateDwellTimesStd', ...
-               'numUniqueStates', 'meanMaxProbability', 'stateProbabilityVariance', ...
-               'klDivergenceMean', 'behaviorSwitches', 'behaviorProportion', 'kinPCAStd'};
+    'numUniqueStates', 'meanMaxProbability', 'stateProbabilityVariance', ...
+    'klDivergenceMean', 'behaviorSwitches', 'behaviorProportion', 'behaviorDwellTimesMean', ...
+    'behaviorDwellTimesStd', 'behaviorOccupancyEntropy', 'kinPCAStd'};
 
 % Initialize area results structure
 areaResults = struct();
@@ -394,10 +593,10 @@ areaResults = struct();
 % Calculate correlation matrix for each area
 for a = areasToTest
     fprintf('\n--- Area: %s ---\n', areas{a});
-    
+
     % Get valid data points
     validIdx = validTimePoints{a};
-    
+
     if sum(validIdx) >= minValidPoints
         % Extract all metrics for this area
         entropyData = stateOccupancyEntropy(validIdx)';
@@ -409,15 +608,20 @@ for a = areasToTest
         klData = klDivergenceMean(validIdx)';
         switchData = behaviorSwitches(validIdx)';
         propData = behaviorProportion(validIdx)';
+        bhvDwellMeanData = behaviorDwellTimesMean(validIdx)';
+        bhvDwellStdData = behaviorDwellTimesStd(validIdx)';
+        bhvEntropyData = behaviorOccupancyEntropy(validIdx)';
         kinData = kinPCAStd(validIdx)';
-        
+
         % Create data matrix for correlation analysis
-        dataMatrix = [entropyData, dwellMeanData, dwellStdData, uniqueData, ...
-                     maxProbData, probVarData, klData, switchData, propData, kinData];
-        
+        % Ensure dataMatrix is (observations x variables)
+        dataMatrix = [entropyData(:), dwellMeanData(:), dwellStdData(:), uniqueData(:), ...
+            maxProbData(:), probVarData(:), klData(:), switchData(:), propData(:), bhvDwellMeanData(:), ...
+            bhvDwellStdData(:), bhvEntropyData(:), kinData(:)];
+
         % Calculate correlation matrix
         [R, P] = corrcoef(dataMatrix, 'rows', 'complete');
-        
+
         % Display correlation matrix
         fprintf('Correlation Matrix:\n');
         fprintf('%-25s', 'Metric');
@@ -425,7 +629,7 @@ for a = areasToTest
             fprintf('%-20s', metricNames{i});
         end
         fprintf('\n');
-        
+
         for i = 1:length(metricNames)
             fprintf('%-25s', metricNames{i});
             for j = 1:length(metricNames)
@@ -437,7 +641,7 @@ for a = areasToTest
             end
             fprintf('\n');
         end
-        
+
         % Display p-values
         fprintf('\nP-values:\n');
         fprintf('%-25s', 'Metric');
@@ -445,7 +649,7 @@ for a = areasToTest
             fprintf('%-20s', metricNames{i});
         end
         fprintf('\n');
-        
+
         for i = 1:length(metricNames)
             fprintf('%-25s', metricNames{i});
             for j = 1:length(metricNames)
@@ -457,35 +661,46 @@ for a = areasToTest
             end
             fprintf('\n');
         end
-        
-        % Store significant correlations in results structure
+
+        % Store significant correlations in results structure (only behavior vs HMM metrics)
+        % This reduces the number of correlations from 78 (13x13) to 35 (5x7) and focuses on
+        % the most relevant comparisons between behavioral and neural dynamics
+        behaviorMetrics = {'behaviorSwitches', 'behaviorProportion', 'behaviorDwellTimesMean', 'behaviorDwellTimesStd', 'behaviorOccupancyEntropy'};
+        hmmMetrics = {'stateOccupancyEntropy', 'stateDwellTimesMean', 'stateDwellTimesStd', 'numUniqueStates', 'meanMaxProbability', 'stateProbabilityVariance', 'klDivergenceMean'};
+
         for i = 1:length(metricNames)
-            for j = (i+1):length(metricNames)  % Only upper triangle to avoid duplicates
-                if P(i,j) < significanceLevel
-                    corrResults(corrIdx).area = areas{a};
-                    corrResults(corrIdx).metric1 = metricNames{i};
-                    corrResults(corrIdx).metric2 = metricNames{j};
-                    corrResults(corrIdx).correlation = R(i,j);
-                    corrResults(corrIdx).p_value = P(i,j);
-                    corrResults(corrIdx).n_valid_points = sum(validIdx);
-                    corrResults(corrIdx).significant = true;
-                    corrIdx = corrIdx + 1;
-                    
-                    fprintf('\nSignificant correlation: %s vs %s: r = %.3f, p = %.3f\n', ...
-                        metricNames{i}, metricNames{j}, R(i,j), P(i,j));
+            for j = 1:length(metricNames)
+                % Only compare behavior metrics to HMM metrics
+                isBehaviorMetric = ismember(metricNames{i}, behaviorMetrics);
+                isHmmMetric = ismember(metricNames{j}, hmmMetrics);
+
+                if (isBehaviorMetric && isHmmMetric) || (isHmmMetric && isBehaviorMetric)
+                    if P(i,j) < significanceLevel
+                        corrResults(corrIdx).area = areas{a};
+                        corrResults(corrIdx).metric1 = metricNames{i};
+                        corrResults(corrIdx).metric2 = metricNames{j};
+                        corrResults(corrIdx).correlation = R(i,j);
+                        corrResults(corrIdx).p_value = P(i,j);
+                        corrResults(corrIdx).n_valid_points = sum(validIdx);
+                        corrResults(corrIdx).significant = true;
+                        corrIdx = corrIdx + 1;
+
+                        fprintf('\nSignificant correlation: %s vs %s: r = %.3f, p = %.3f\n', ...
+                            metricNames{i}, metricNames{j}, R(i,j), P(i,j));
+                    end
                 end
             end
         end
-        
+
         fprintf('Total valid points: %d\n', sum(validIdx));
-        
+
     else
         fprintf('Insufficient data points (%d < %d)\n', sum(validIdx), minValidPoints);
         % Initialize empty matrices for this area
         R = nan(length(metricNames), length(metricNames));
         P = nan(length(metricNames), length(metricNames));
     end
-    
+
     % Store matrices for this area
     areaResults(a).correlationMatrix = R;
     areaResults(a).pValueMatrix = P;
@@ -524,7 +739,7 @@ if ~isempty(corrVals)
     ylabel('Correlation Coefficient');
     title(sprintf('HMM Correlation Analysis (%s)', upper(correlationMethod)));
     grid on;
-    
+
     % Add significance markers
     hold on;
     for i = 1:length(significant)
@@ -532,7 +747,7 @@ if ~isempty(corrVals)
             plot(i, corrVals(i) + 0.05, '*', 'Color', 'black', 'MarkerSize', 60);
         end
     end
-    
+
     % Add correlation values as text
     for i = 1:length(corrVals)
         if ~isnan(corrVals(i))
@@ -560,19 +775,19 @@ corrLims = [min(allCorrs) max(allCorrs)];
 for i = 1:length(areasToTest)
     a = areasToTest(i);
     axes(ha(i));
-    
+
     % Get correlation and p-value matrices
     R = areaResults(a).correlationMatrix;
     P = areaResults(a).pValueMatrix;
     metrics = areaResults(a).metrics;
-    
+
     % Plot correlation heatmap
     imagesc(R);
     colorbar;
     caxis(corrLims);
     customColorMap = bluewhitered_custom([-.8 .8]);
     colormap(customColorMap);
-    
+
     % Add significance markers
     [row, col] = find(P < 0.05);
     hold on;
@@ -580,7 +795,7 @@ for i = 1:length(areasToTest)
         text(col(k), row(k), '*', 'HorizontalAlignment', 'center', ...
             'Color', 'white', 'FontSize', 14);
     end
-    
+
     % Labels and title
     set(gca, 'XTick', 1:length(metrics), 'YTick', 1:length(metrics));
     set(gca, 'XTickLabel', metrics, 'YTickLabel', metrics);
@@ -592,15 +807,15 @@ end
 for i = 1:length(areasToTest)
     a = areasToTest(i);
     axes(ha(i + length(areasToTest)));
-    
+
     % Get p-value matrix and create binary significance map
     P = areaResults(a).pValueMatrix;
     sigMap = double(P >= 0.05);  % White for significant (p < 0.05), black otherwise
-    
+
     % Plot p-value heatmap
     imagesc(sigMap);
     colormap(gca, [0 0 0; 1 1 1]);  % Black and white colormap
-    
+
     % Labels
     set(gca, 'XTick', 1:length(metrics), 'YTick', 1:length(metrics));
     set(gca, 'XTickLabel', metrics, 'YTickLabel', metrics);
@@ -608,54 +823,45 @@ for i = 1:length(areasToTest)
     title(sprintf('%s - P-values', areas{a}));
 end
 
+    figure(402); clf;
 % Plot scatter plots for each area
 for a = areasToTest
     % Create new figure for each area
-    figure(400 + a); clf;
     set(gcf, 'Position', monitorTwo);
-    
+
     % Get metrics for this area
     metrics = areaResults(a).metrics;
     R = areaResults(a).correlationMatrix;
-    
-    % Calculate number of subplots needed
-    nMetrics = length(metrics);
-    nComparisons = nMetrics * (nMetrics-1) / 2;
-    nRows = ceil(sqrt(nComparisons));
-    nCols = ceil(nComparisons/nRows);
-    
-    % Plot scatter for each metric pair
-    subplotIdx = 1;
-    for i = 1:length(metrics)
-        for j = (i+1):length(metrics)
-            subplot(nRows, nCols, subplotIdx);
+
+    % Define behavior and HMM metrics
+    behaviorMetrics = {'behaviorSwitches', 'behaviorProportion', 'behaviorDwellTimesMean', 'behaviorDwellTimesStd', 'behaviorOccupancyEntropy'};
+    hmmMetrics = {'stateOccupancyEntropy', 'stateDwellTimesMean', 'stateDwellTimesStd', 'numUniqueStates', 'meanMaxProbability', 'stateProbabilityVariance', 'klDivergenceMean'};
+
+    nBehaviorMetrics = length(behaviorMetrics);
+    nHmmMetrics = length(hmmMetrics);
+
+    % Plot grid: rows = HMM metrics, columns = behavior metrics
+    for hmmIdx = 1:nHmmMetrics
+        for behIdx = 1:nBehaviorMetrics
+            subplot(nHmmMetrics, nBehaviorMetrics, (hmmIdx-1)*nBehaviorMetrics + behIdx);
             validIdx = validTimePoints{a};
-            
-            % Get data for the two metrics being compared
-            switch metrics{i}
-                case 'stateOccupancyEntropy'
-                    metric1Data = stateOccupancyEntropy(validIdx);
-                case 'stateDwellTimesMean'
-                    metric1Data = stateDwellTimesMean(validIdx);
-                case 'stateDwellTimesStd'
-                    metric1Data = stateDwellTimesStd(validIdx);
-                case 'numUniqueStates'
-                    metric1Data = numUniqueStates(validIdx);
-                case 'meanMaxProbability'
-                    metric1Data = meanMaxProbability(validIdx);
-                case 'stateProbabilityVariance'
-                    metric1Data = stateProbabilityVariance(validIdx);
-                case 'klDivergenceMean'
-                    metric1Data = klDivergenceMean(validIdx);
+
+            % Get data for the behavior metric (x-axis)
+            switch behaviorMetrics{behIdx}
                 case 'behaviorSwitches'
                     metric1Data = behaviorSwitches(validIdx);
                 case 'behaviorProportion'
                     metric1Data = behaviorProportion(validIdx);
-                case 'kinPCAStd'
-                    metric1Data = kinPCAStd(validIdx);
+                case 'behaviorDwellTimesMean'
+                    metric1Data = behaviorDwellTimesMean(validIdx);
+                case 'behaviorDwellTimesStd'
+                    metric1Data = behaviorDwellTimesStd(validIdx);
+                case 'behaviorOccupancyEntropy'
+                    metric1Data = behaviorOccupancyEntropy(validIdx);
             end
-            
-            switch metrics{j}
+
+            % Get data for the HMM metric (y-axis)
+            switch hmmMetrics{hmmIdx}
                 case 'stateOccupancyEntropy'
                     metric2Data = stateOccupancyEntropy(validIdx);
                 case 'stateDwellTimesMean'
@@ -670,24 +876,35 @@ for a = areasToTest
                     metric2Data = stateProbabilityVariance(validIdx);
                 case 'klDivergenceMean'
                     metric2Data = klDivergenceMean(validIdx);
-                case 'behaviorSwitches'
-                    metric2Data = behaviorSwitches(validIdx);
-                case 'behaviorProportion'
-                    metric2Data = behaviorProportion(validIdx);
-                case 'kinPCAStd'
-                    metric2Data = kinPCAStd(validIdx);
             end
-            
+
             scatter(metric1Data, metric2Data, 20, 'filled', 'MarkerFaceAlpha', .6);
-            xlabel(metrics{i});
-            ylabel(metrics{j});
-            title(sprintf('%s vs %s\nr=%.3f', metrics{i}, metrics{j}, R(i,j)));
+            % Only label leftmost and bottom plots to avoid clutter
+            if behIdx == 1
+                ylabel(hmmMetrics{hmmIdx}, 'Interpreter', 'none');
+            else
+                set(gca, 'YTickLabel', []);
+            end
+            if hmmIdx == nHmmMetrics
+                xlabel(behaviorMetrics{behIdx}, 'Interpreter', 'none');
+            else
+                set(gca, 'XTickLabel', []);
+            end
+
+            % Find correlation value for this specific pair
+            metric1Idx = find(strcmp(metricNames, behaviorMetrics{behIdx}));
+            metric2Idx = find(strcmp(metricNames, hmmMetrics{hmmIdx}));
+            if ~isempty(metric1Idx) && ~isempty(metric2Idx)
+                corrValue = R(metric1Idx, metric2Idx);
+                title(sprintf('r=%.3f', corrValue), 'FontSize', 9);
+            else
+                title('', 'FontSize', 9);
+            end
             grid on;
-            subplotIdx = subplotIdx + 1;
         end
     end
-    
-    sgtitle(sprintf('HMM Correlation Scatter Plots - %s', areas{a}));
+
+    sgtitle(sprintf('Behavior vs HMM Metric Correlations - %s', areas{a}));
 end
 
 %% ==============================================     Save Results     ==============================================
@@ -707,6 +924,11 @@ correlationResults.parameters.windowSize = windowSize;
 correlationResults.parameters.stepSize = stepSize;
 correlationResults.parameters.natOrReach = natOrReach;
 correlationResults.parameters.brainArea = brainArea;
+correlationResults.parameters.bhvBinSize = bhvBinSize;
+correlationResults.parameters.kinBinSize = kinBinSize;
+correlationResults.parameters.behaviorMetrics = {'behaviorSwitches', 'behaviorProportion', 'behaviorDwellTimesMean', 'behaviorDwellTimesStd', 'behaviorOccupancyEntropy'};
+correlationResults.parameters.hmmMetrics = {'stateOccupancyEntropy', 'stateDwellTimesMean', 'stateDwellTimesStd', 'numUniqueStates', 'meanMaxProbability', 'stateProbabilityVariance', 'klDivergenceMean'};
+correlationResults.parameters.kinematicsMetrics = {'kinPCAStd'};
 
 % Save to file
 save(fullfile(paths.dropPath, sprintf('hmm_correlations_%s_%s_%s.mat', correlationMethod, natOrReach, brainArea)), 'correlationResults');
