@@ -50,6 +50,21 @@ Criticality analysis examines whether neural systems operate at a critical point
   - `isiMult`: ISI multiplier for bin size (default: 10)
   - `critType`: Criticality type parameter (default: 2)
 
+### 'Sequence for sliding window correlating criticality with neural/behavior'
+- criticality_compare.m:
+  - Run and save criticality metrics in a sliding window
+  - Set a window size and step size for all future comparison analyses.
+  - These parameters will be used for other anlyses
+- criticality_decoding_accuracy.m:
+  - Correlates decoding accuracy with d2 metric
+  - Save results to be used for other analyses
+- ../metastability/hmm_mazz.m
+  - Fits an hmm to spiking data a la Mazzuato metastability
+  - Uses its own bin sizes, but uses same window and step size.
+- criticality_hmm_behavior_sliding_window.m:
+  - Does all the correlations between criticality X hmm X behavior metrics
+
+
 ## Utility Functions
 
 ### Core Criticality Metrics
