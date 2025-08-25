@@ -426,7 +426,7 @@ for i = 1:length(areasToTest)
     title(sprintf('%s - P-values', areas{a}));
 end
 
-% exportgraphics(gcf, fullfile(paths.dropPath, sprintf('correlation_summary_%s.png', correlationMethod)), 'Resolution', 300);
+exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/correlation_summary_%s.png', correlationMethod)), 'Resolution', 300);
 
 % Plot scatter plots for each area
 for a = areasToTest
@@ -490,7 +490,7 @@ for a = areasToTest
     sgtitle(sprintf('Correlation Scatter Plots - %s', areas{a}));
 end
 
-% exportgraphics(gcf, fullfile(paths.dropPath, sprintf('correlation_scatter_%s.png', correlationMethod)), 'Resolution', 300);
+exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/correlation_scatter_%s.png', correlationMethod)), 'Resolution', 300);
 
 %% ==============================================     Save Results     ==============================================
 

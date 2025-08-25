@@ -67,8 +67,8 @@ thresholdPct = 0.75;   % Threshold as percentage of median
 % Optimal bin/window size search parameters
 % candidateFrameSizes = [0.004, 0.01, 0.02, 0.05, .075, 0.1];
 % candidateFrameSizes = [0.01, 0.02, .03 .04 0.05, .075, 0.1];
-candidateFrameSizes = [.03 .04 0.05, .075, 0.1];
-candidateWindowSizes = [30, 45, 60, 90, 120];
+candidateFrameSizes = [.03 .04 0.05, .075, 0.1]; % seconds
+candidateWindowSizes = [30, 45, 60, 90, 120]; % seconds
 minSpikesPerBin = 5;
 maxSpikesPerBin = 20;
 minBinsPerWindow = 1000;
@@ -503,23 +503,8 @@ for a = areasToTest
     % Use tight_subplot for 4x1 layout
     ha = tight_subplot(4, 1, [0.05 0.02], [0.1 0.05], [0.1 0.05]);
     
-    % Plot mrBr
-    axes(ha(1));
-    hold on;
-    validIdx = ~isnan(mrBrNat{a});
-    plot(startSNat{a}(validIdx)/60, mrBrNat{a}(validIdx), '-', 'Color', 'k', 'LineWidth', 2, 'MarkerSize', 4);
-    validIdx = ~isnan(mrBrRea{a});
-    plot(startSRea{a}(validIdx)/60, mrBrRea{a}(validIdx), '--', 'Color', 'k', 'LineWidth', 2, 'MarkerSize', 4);
-    ylabel('MR Branching Ratio', 'FontSize', 14);
-    title(sprintf('%s - MR Branching Ratio', areas{a}), 'FontSize', 14);
-    legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
-    grid on;
-    set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
-    set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
-    xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
-    
     % Plot d2
-    axes(ha(2));
+    axes(ha(1));
     hold on;
     validIdx = ~isnan(d2Nat{a});
     plot(startSNat{a}(validIdx)/60, d2Nat{a}(validIdx), '-', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
@@ -527,6 +512,21 @@ for a = areasToTest
     plot(startSRea{a}(validIdx)/60, d2Rea{a}(validIdx), '--', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
     ylabel('Distance to Criticality (d2)', 'FontSize', 14);
     title(sprintf('%s - Distance to Criticality (d2)', areas{a}), 'FontSize', 14);
+    legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
+    grid on;
+    set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
+    set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
+    xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
+    
+    % Plot mrBr
+    axes(ha(2));
+    hold on;
+    validIdx = ~isnan(mrBrNat{a});
+    plot(startSNat{a}(validIdx)/60, mrBrNat{a}(validIdx), '-', 'Color', 'k', 'LineWidth', 2, 'MarkerSize', 4);
+    validIdx = ~isnan(mrBrRea{a});
+    plot(startSRea{a}(validIdx)/60, mrBrRea{a}(validIdx), '--', 'Color', 'k', 'LineWidth', 2, 'MarkerSize', 4);
+    ylabel('MR Branching Ratio', 'FontSize', 14);
+    title(sprintf('%s - MR Branching Ratio', areas{a}), 'FontSize', 14);
     legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
     grid on;
     set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
@@ -565,7 +565,11 @@ for a = areasToTest
     xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
     
     sgtitle(sprintf('Criticality Measures Comparison - %s', areas{a}), 'FontSize', 14);
-            print('-dpng', fullfile(paths.dropPath, sprintf('d2_mrbr_%s', areas{a})));
+    
+    % Save PNG using exportgraphics
+    filename = fullfile(paths.dropPath, sprintf('criticality/criticality_comparison_%s.png', areas{a}));
+    exportgraphics(gcf, filename, 'Resolution', 300);
+    fprintf('Saved area plot to: %s\n', filename);
 
 end
 
@@ -658,6 +662,11 @@ for a = areasToTest
 end
 sgtitle('Correlation Matrices: d2 and mrBr');
 
+% Save PNG using exportgraphics
+filename = fullfile(paths.dropPath, 'criticality/correlation_matrices_d2_mrbr.png');
+exportgraphics(gcf, filename, 'Resolution', 300);
+fprintf('Saved d2/mrBr correlation plot to: %s\n', filename);
+
 figure(202); clf;
 set(gcf, 'Position', monitorTwo);
 for a = areasToTest
@@ -681,6 +690,11 @@ for a = areasToTest
     caxis([cmin cmax]); % Set consistent color axis
 end
 sgtitle('Correlation Matrices: dcc and kappa');
+
+% Save PNG using exportgraphics
+filename = fullfile(paths.dropPath, 'criticality/correlation_matrices_dcc_kappa.png');
+exportgraphics(gcf, filename, 'Resolution', 300);
+fprintf('Saved dcc/kappa correlation plot to: %s\n', filename);
 
 %% ==============================================     Save Results     ==============================================
 

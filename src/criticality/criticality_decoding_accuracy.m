@@ -5,11 +5,39 @@
 % Options for PCA or UMAP dimensionality reduction
 % Tests correlation between d2 and decoding accuracy
 
+%% ==============================================     Load Existing Criticality Data     ==============================================
+
+fprintf('\n=== Loading Existing Criticality Data ===\n');
+
+% Load existing criticality results
+try
+    load(fullfile(paths.dropPath, 'criticality_compare_results.mat'), 'results');
+    fprintf('Loaded existing criticality results\n');
+    
+    % Extract d2 data and parameters
+    d2Nat = results.naturalistic.d2;
+    startSNat = results.naturalistic.startS;
+    criticalityBinSize = results.naturalistic.unifiedBinSize;
+    criticalityWindowSize = results.naturalistic.unifiedWindowSize;
+    stepSize = results.params.stepSize;
+    
+    fprintf('Criticality parameters: bin size = %.3f s, window size = %.1f s, step size = %.1f s\n', ...
+        criticalityBinSize, criticalityWindowSize, stepSize);
+    
+catch
+    fprintf('Error: Could not load criticality_compare_results.mat\n');
+    fprintf('Please run criticality_compare.m first to generate the required data.\n');
+    return;
+end
+
+% collectStart = results.naturalistic.collectStart;
+% collectFor = results.naturalistic.collectFor;
+
 %%
 opts = neuro_behavior_options;
 opts.minActTime = .16;
-opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 30 * 60; % seconds
+opts.collectStart = collectStart; % 0 * 60 * 60; % seconds
+opts.collectFor = collectFor; % 45 * 60; % seconds
 opts.minFiringRate = .05;
 
 paths = get_paths;
@@ -40,19 +68,15 @@ opts.frameSize = svmBinSize;
 transOrWithin = 'all';   % 'trans', 'within', or 'all'
 shiftSec = 0;            % Time shift between neural and behavior data
 
-areasToTest = 2:3;
+
 %% ==============================================     Data Loading     ==============================================
 
 %% Naturalistic data
-% Load behavior data
-getDataType = 'behavior';
-get_standard_data
-[dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
-
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
-opts.collectFor = 30 * 60; % seconds
 get_standard_data
+
+[dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 idListNat = {idM23, idM56, idDS, idVS};
@@ -64,41 +88,20 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
     'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...
     'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
 
+% Initialize all area-wise cells
+[decodingAccuracyNat, svmModels, predictedLabels, realLabels, corrMatNat_d2Decoding]...
+    = deal(cell(1, length(areas)));
 
-%% ==============================================     Load Existing Criticality Data     ==============================================
 
-fprintf('\n=== Loading Existing Criticality Data ===\n');
+%% Choose which areas to fit (can fill in blank arrays in decodingAccuracyNat
+areasToTest = 4;
 
-% Load existing criticality results
-try
-    load(fullfile(paths.dropPath, 'criticality_compare_results.mat'), 'results');
-    fprintf('Loaded existing criticality results\n');
-    
-    % Extract d2 data and parameters
-    d2Nat = results.naturalistic.d2;
-    startSNat = results.naturalistic.startS;
-    criticalityBinSize = results.naturalistic.unifiedBinSize;
-    criticalityWindowSize = results.naturalistic.unifiedWindowSize;
-    stepSize = results.params.stepSize;
-    
-    fprintf('Criticality parameters: bin size = %.3f s, window size = %.1f s, step size = %.1f s\n', ...
-        criticalityBinSize, criticalityWindowSize, stepSize);
-    
-catch
-    fprintf('Error: Could not load criticality_compare_results.mat\n');
-    fprintf('Please run criticality_compare.m first to generate the required data.\n');
-    return;
-end
 
 %% ==============================================     Train SVM Models     ==============================================
 
 fprintf('\n=== Training SVM Models on All Data ===\n');
 
 % Train SVM models and predict behavior labels for all data
-svmModels = cell(1, length(areas));
-predictedLabels = cell(1, length(areas));
-realLabels = cell(1, length(areas));
-
 for a = areasToTest
     fprintf('Training SVM model for area %s...\n', areas{a});
     
@@ -128,8 +131,9 @@ for a = areasToTest
     
     % Only proceed if we have enough data points
     if length(unique(svmID)) > 1 && length(svmID) > 10
-        % Prepare data for dimensionality reduction
-        if strcmp(dimReductionMethod, 'pca')
+fprintf('Using first %d %s components...\n', nDim, dimReductionMethod);        
+% Prepare data for dimensionality reduction
+        if strcmp(dimReductionMethod, 'pca')    
             % PCA dimensionality reduction
             [coeff, score, ~, ~, explained] = pca(zscore(aDataMatSVM));
             projData = score(:, 1:nDim);
@@ -181,8 +185,6 @@ end
 
 fprintf('\n=== Calculating Decoding Accuracy for Each Criticality Window ===\n');
 
-% Initialize decoding accuracy arrays
-decodingAccuracyNat = cell(1, length(areas));
 
 for a = areasToTest
     fprintf('\nProcessing area %s...\n', areas{a});
@@ -237,7 +239,6 @@ end
 
 % Calculate correlations between d2 and decoding accuracy
 fprintf('\n=== Correlation Analysis: d2 and Decoding Accuracy ===\n');
-corrMatNat_d2Decoding = cell(1, length(areas));
 corrResults = struct();
 
 for a = areasToTest
@@ -306,7 +307,7 @@ for a = areasToTest
     ylim([0 1]);
     
     sgtitle(sprintf('Criticality and Decoding Accuracy - %s', areas{a}), 'FontSize', 14);
-exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality_decoding_%s_%s_%s.png', areas{a}, dimReductionMethod, transOrWithin)), 'Resolution', 300);
+exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/criticality_decoding_%s_%s_%s.png', areas{a}, dimReductionMethod, transOrWithin)), 'Resolution', 300);
 end
 
 % Plot correlation matrices
@@ -344,7 +345,7 @@ for i = 1:length(pVals)
         plot(i, corrVals(i) + 0.05, '*', 'Color', 'black', 'MarkerSize', 60);
     end
 end
-exportgraphics(gcf, fullfile(paths.dropPath, sprintf('correlation_summary_%s_%s.png', dimReductionMethod, transOrWithin)), 'Resolution', 300);
+exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/correlation_summary_%s_%s.png', dimReductionMethod, transOrWithin)), 'Resolution', 300);
 
 
 %% ==============================================     Save Results     ==============================================
