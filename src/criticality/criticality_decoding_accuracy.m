@@ -30,8 +30,8 @@ catch
     return;
 end
 
-% collectStart = results.naturalistic.collectStart;
-% collectFor = results.naturalistic.collectFor;
+collectStart = results.naturalistic.collectStart;
+collectFor = results.naturalistic.collectFor;
 
 %%
 opts = neuro_behavior_options;
@@ -111,23 +111,28 @@ for a = areasToTest
     aDataMatSVM = dataMat(:, aID);
     
     % Prepare behavior labels for SVM training
-    if strcmp(transOrWithin, 'trans')
-        % Find transitions
-        preInd = find(diff(bhvID) ~= 0);
-        svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
-        svmInd = preInd + 1;
-    elseif strcmp(transOrWithin, 'within')
-        % Find within-behavior periods
-        transIndLog = zeros(length(bhvID), 1);
-        preInd = find(diff(bhvID) ~= 0);
-        transIndLog(preInd) = 1;
-        svmInd = find(~transIndLog);
-        svmID = bhvID(svmInd);
+    if strcmp(transOrWithin, 'trans')  % Need to update code if using trans or within, to ensure the right indices are being analyzed for accuracy calculations
+    %     % Find transitions
+    %     preInd = find(diff(bhvID) ~= 0);
+    %     svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
+    %     svmInd = preInd + 1;
+    % elseif strcmp(transOrWithin, 'within')
+    %     % Find within-behavior periods
+    %     transIndLog = zeros(length(bhvID), 1);
+    %     preInd = find(diff(bhvID) ~= 0);
+    %     transIndLog(preInd) = 1;
+    %     svmInd = find(~transIndLog);
+    %     svmID = bhvID(svmInd);
     elseif strcmp(transOrWithin, 'all')
         % Use all behavior labels
         svmInd = 1:length(bhvID);
         svmID = bhvID;
     end
+    
+    % Remove indices where bhvID = -1 (invalid behavior labels)
+    validBhvIdx = svmID ~= -1;
+    svmID = svmID(validBhvIdx);
+    svmInd = svmInd(validBhvIdx);
     
     % Only proceed if we have enough data points
     if length(unique(svmID)) > 1 && length(svmID) > 10
@@ -163,8 +168,9 @@ fprintf('Using first %d %s components...\n', nDim, dimReductionMethod);
             allPredictedLabels = predict(svmModels{a}, allProjData);
             
             % Store predictions and real labels
+            % Note: allPredictedLabels corresponds to all time points in bhvID
             predictedLabels{a} = allPredictedLabels;
-            realLabels{a} = svmID;
+            realLabels{a} = bhvID;  % Use original bhvID for alignment
             
             fprintf('Predicted behavior labels for area %s\n', areas{a});
         catch e
@@ -195,16 +201,12 @@ for a = areasToTest
         continue;
     end
     
-    % Get valid d2 time points
-    validD2Idx = ~isnan(d2Nat{a});
-    validD2Times = startSNat{a}(validD2Idx);
-    
-    % Initialize decoding accuracy array
+    % Initialize decoding accuracy array (same size as d2 data)
     decodingAccuracyNat{a} = nan(size(d2Nat{a}));
     
     % Process each criticality window
-    for i = 1:length(validD2Times)
-        centerTime = validD2Times(i);
+    for i = 1:length(startSNat{a})
+        centerTime = startSNat{a}(i);
         
         % Calculate window boundaries (same as used for criticality)
         windowStartTime = centerTime - criticalityWindowSize/2;
@@ -242,25 +244,26 @@ fprintf('\n=== Correlation Analysis: d2 and Decoding Accuracy ===\n');
 corrResults = struct();
 
 for a = areasToTest
-    % Get minimum length for d2 and decoding accuracy
-    minLenNat = min(length(d2Nat{a}), length(decodingAccuracyNat{a}));
+    % Naturalistic data - use pairwise correlation to handle NaN values automatically
+    Xnat = [d2Nat{a}(:), decodingAccuracyNat{a}(:)];
+    corrMatNat_d2Decoding{a} = corr(Xnat, 'Rows', 'pairwise');
     
-    % Naturalistic data
-    Xnat = [d2Nat{a}(1:minLenNat); decodingAccuracyNat{a}(1:minLenNat)]';
-    validIdx = ~any(isnan(Xnat), 2);
-    
-    if sum(validIdx) > 10
-        corrMatNat_d2Decoding{a} = corrcoef(Xnat(validIdx, :));
+    % Extract correlation coefficient and calculate p-value
+    if ~isnan(corrMatNat_d2Decoding{a}(1, 2))
         corrResults(a).area = areas{a};
         corrResults(a).correlation = corrMatNat_d2Decoding{a}(1, 2);
-        [rho, pval] = corr(Xnat(validIdx, 1), Xnat(validIdx, 2), 'type', 'Pearson');
+        
+        % Calculate p-value using the same pairwise approach
+        [rho, pval] = corr(Xnat(:, 1), Xnat(:, 2), 'Rows', 'pairwise', 'type', 'Pearson');
         corrResults(a).p_value = pval;
-        corrResults(a).n_valid_points = sum(validIdx);
+        
+        % Count valid (non-NaN) pairs
+        validPairs = sum(~isnan(Xnat(:, 1)) & ~isnan(Xnat(:, 2)));
+        corrResults(a).n_valid_points = validPairs;
         
         fprintf('Area %s: Correlation = %.3f, p = %.3f, n = %d\n', ...
             areas{a}, corrResults(a).correlation, corrResults(a).p_value, corrResults(a).n_valid_points);
     else
-        corrMatNat_d2Decoding{a} = nan(2, 2);
         corrResults(a).area = areas{a};
         corrResults(a).correlation = nan;
         corrResults(a).p_value = nan;
@@ -283,8 +286,7 @@ for a = areasToTest
     % Plot d2
     axes(ha(1));
     hold on;
-    validIdx = ~isnan(d2Nat{a});
-    plot(startSNat{a}(validIdx)/60, d2Nat{a}(validIdx), '-', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
+    plot(startSNat{a}/60, d2Nat{a}, '-', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
     ylabel('Distance to Criticality (d2)', 'FontSize', 14);
     title(sprintf('%s - Distance to Criticality (d2)', areas{a}), 'FontSize', 14);
     grid on;
@@ -295,8 +297,7 @@ for a = areasToTest
     % Plot decoding accuracy
     axes(ha(2));
     hold on;
-    validIdx = ~isnan(decodingAccuracyNat{a});
-    plot(startSNat{a}(validIdx)/60, decodingAccuracyNat{a}(validIdx), '-', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
+    plot(startSNat{a}/60, decodingAccuracyNat{a}, '-', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
     ylabel('Decoding Accuracy', 'FontSize', 14);
     title(sprintf('%s - Decoding Accuracy (%s, %s)', areas{a}, upper(dimReductionMethod), transOrWithin), 'FontSize', 14);
     grid on;

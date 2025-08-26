@@ -17,6 +17,7 @@ paths = get_paths;
 traces = load(fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NIBEH.mat'));
 dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
 
+%%
 
 reachStart = dataR.R(:,1);
 reachStop = dataR.R(:,2);
@@ -44,7 +45,8 @@ reachAmp = dataR.R(:,3); % Amplitude of each reach (distance from 0)
 reachClass = dataR.block(:,4);
 
 % Continuous traces normalized to max
-jsTrace = traces.JSNIpos ./ max(traces.JSNIpos); % Continuous absolute value of amplitude trace of joystick jsTrace = sqrt(x^2 + y^2)
+jsTrace = zscore(traces.JSNIpos); % Continuous absolute value of amplitude trace of joystick jsTrace = sqrt(x^2 + y^2)
+% jsTrace = traces.JSNIpos ./ max(traces.JSNIpos); % Continuous absolute value of amplitude trace of joystick jsTrace = sqrt(x^2 + y^2)
 errTrace = traces.ERtrace ./ max(traces.ERtrace); % Continuous voltage trace of error light (for error trials)
 solTrace = traces.SOLtrace ./ max(traces.SOLtrace); % Continous voltage trace of solenoid (for correct rewarded trials)
 
