@@ -231,20 +231,20 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
                                 % expVarThresh = 25;
                                 % dimExplained = find(cumsum(explained) > expVarThresh, 1);
                                 % disp(['PCA: Exp Var = ', num2str(expVar(k)), ' nComponents = ', num2str(pcaDim(k))])
-                                % [projSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(k)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                                % [latentSelect, ~, ~, ~] = run_umap(score(:, 1:pcaDim(k)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                 %     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
 
-                                [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                                [latentSelect, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                     'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
 
                                 % minFrames = 2;
                                 %                     [stackedActivity, stackedLabels] = datamat_stacked_means(dataMat, bhvID, minFrames);
                                 %                     [~, umap, ~, ~] = run_umap(zscore(stackedActivity(:, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                 %                         'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
-                                %                     projSelect = umap.transform(zscore(dataMat(:, idSelect)));
+                                %                     latentSelect = umap.transform(zscore(dataMat(:, idSelect)));
                             case 'tsne'
                                 fprintf('\n%s %s exagg=%d perplx=%d \n\n', selectFrom, fitType, exaggeration(x), perplexity(y));
-                                projSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration(x), 'Perplexity', perplexity(y), 'NumDimensions',iDim);
+                                latentSelect = tsne(zscore(dataMat(:, idSelect)),'Exaggeration', exaggeration(x), 'Perplexity', perplexity(y), 'NumDimensions',iDim);
                         end
                     end
 
@@ -256,7 +256,7 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
                     shiftFrame = 0;
                     if shiftSec > 0
                         shiftFrame = ceil(shiftSec / opts.frameSize);
-                        projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvID
+                        latentSelect = latentSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvID
                     end
                     bhvID = double(bhvID(1+shiftFrame:end)); % Shift bhvID to account for frame shift
 
@@ -402,16 +402,16 @@ accuracyPermuted = zeros(length(forDim), nPermutations);
                                         umapFrameSize = opts.frameSize;
 
                                         % rng(1);
-                                        % [projSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
-                                        [projSelect, ~, ~, ~] = run_umap(zscore(dataMat(svmInd, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
+                                        % [latentSelect, ~, ~, ~] = run_umap(dataMat(:, idSelect), 'n_components', iDim, 'randomize', false);
+                                        [latentSelect, ~, ~, ~] = run_umap(zscore(dataMat(svmInd, idSelect)), 'n_components', iDim, 'randomize', false, 'verbose', 'none', ...
                                             'min_dist', min_dist(x), 'spread', spread(y), 'n_neighbors', n_neighbors(z));
                                     case 'tsne'
-                                        projSelect = tsne(zscore(dataMat(svmInd, idSelect)),'Exaggeration',90, 'NumDimensions',iDim);
+                                        latentSelect = tsne(zscore(dataMat(svmInd, idSelect)),'Exaggeration',90, 'NumDimensions',iDim);
 
                                 end
                                 % whittled down the matrix to transition-only frames, so now fit all the
                                 % data:
-                                svmInd = 1:size(projSelect, 1);
+                                svmInd = 1:size(latentSelect, 1);
                                 pause(4); close
                             end
 
@@ -544,7 +544,7 @@ for i = 1:length(kernelFunctions)
     t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
 
     % Train the SVM model using cross-validation
-    svmModel = fitcecoc(projSelect(svmInd,1:nDim), svmID, 'Learners', t, 'KFold', 5);
+    svmModel = fitcecoc(latentSelect(svmInd,1:nDim), svmID, 'Learners', t, 'KFold', 5);
     % svmModel = fitcecoc(dataMat(svmInd,:), svmID, 'Learners', t, 'KFold', 5);
 
     % Compute cross-validation accuracy
@@ -582,7 +582,7 @@ kernelFunctions = {'polynomial'};
 % kernelFunctions = {'rbf'};
 
 % Choose which data to model
-svmProj = projSelect(svmInd, 1:nDim);
+svmProj = latentSelect(svmInd, 1:nDim);
 % svmProj = dataMat(svmInd, idSelect);
 
 % Train model
@@ -618,7 +618,7 @@ sound(y(1:3*Fs),Fs)
                     % UMAP dimension version
                     fprintf('\n\n%s %s %s %d Dim\n\n', selectFrom, lowDModel, transWithinLabel, iDim)  % UMAP Dimensions
                     % Choose which data to model
-                    svmProj = projSelect(svmInd, :);
+                    svmProj = latentSelect(svmInd, :);
                     trainData = svmProj(training(cv), :);  % UMAP Dimensions
                     testData = svmProj(test(cv), :); % UMAP Dimensions
 
@@ -731,9 +731,9 @@ fprintf('Mean Permuted = %.4f\n', mean(accuracyPermuted(k, :)));
                     % titleD = ['Predicted UMAP ', selectFrom,' ', num2str(nUmapDim), 'D ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
                     % title(titleD)
                     % if nUmapDim > 2
-                    %     scatter3(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), projSelect(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+                    %     scatter3(latentSelect(svmInd, dimPlot(1)), latentSelect(svmInd, dimPlot(2)), latentSelect(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
                     % elseif nUmapDim == 2
-                    %     scatter(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), 60, projSelect, 'LineWidth', 2)
+                    %     scatter(latentSelect(svmInd, dimPlot(1)), latentSelect(svmInd, dimPlot(2)), 60, latentSelect, 'LineWidth', 2)
                     % end
                     % grid on;
                     % xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
@@ -749,8 +749,8 @@ fprintf('Mean Permuted = %.4f\n', mean(accuracyPermuted(k, :)));
                     % t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
                     %
                     % % Choose which data to model
-                    % % svmProj = projSelect(svmInd, 1:3);
-                    % % svmProj = projSelect(svmInd, :);
+                    % % svmProj = latentSelect(svmInd, 1:3);
+                    % % svmProj = latentSelect(svmInd, :);
                     % svmProj = dataMat(svmInd, idSelect);
                     %
                     % % Train the SVM model
@@ -844,7 +844,7 @@ fprintf('Mean Permuted = %.4f\n', mean(accuracyPermuted(k, :)));
                         for iFrame = 1 : length(frames)
                             % Get relevant frame to test (w.r.t. transition frame)
                             iSvmInd = svmIndTest + frames(iFrame);
-                            testData = projSelect(iSvmInd, 1:iDim); % UMAP Dimensions
+                            testData = latentSelect(iSvmInd, 1:iDim); % UMAP Dimensions
 
                             % Calculate and display the overall accuracy (make sure it matches the
                             % original fits to ensure we're modeling the same way)
@@ -902,7 +902,7 @@ fprintf('Mean Permuted = %.4f\n', mean(accuracyPermuted(k, :)));
                     % svmIndTest(deleteInd) = [];
                     %
                     %
-                    % testData = projSelect(svmIndTest, 1:iDim); % UMAP Dimensions
+                    % testData = latentSelect(svmIndTest, 1:iDim); % UMAP Dimensions
                     %
                     % predictedLabels = predict(svmModel, testData);
                     %
@@ -1173,7 +1173,7 @@ figure(231)
 nDimUse = dimPlot; % use the first nDimUse dimensions for HDBSCAN
 
 % Classify using HDBSCAN
-clusterer = HDBSCAN(projSelect(transitionsInd, nDimUse));
+clusterer = HDBSCAN(latentSelect(transitionsInd, nDimUse));
 clusterer.minpts = 2; %tends to govern cluster number  %was 3? with all neurons
 clusterer.minclustsize = 10; %governs accuracy  %was 4? with all neurons
 
@@ -1260,7 +1260,7 @@ for i = 1 : nGroup
         plot(x, y, 'color', colors(i,:), 'lineWidth', 4);  % Plot the circle with a blue line
 
         % Calculate the Euclidean distance between the point and the center of the circle
-        iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2);
+        iDistance = sqrt((latentSelect(:, 1) - center{i}(1)).^2 + (latentSelect(:, 2) - center{i}(2)).^2);
     elseif length(center{1}) == 3
         [x, y, z] = sphere(50);
         x = x * radius{i} + center{i}(1);  % Scale and translate the sphere
@@ -1270,14 +1270,14 @@ for i = 1 : nGroup
         surf(x, y, z, 'FaceColor', colors(i,:), 'FaceAlpha', 0.2, 'EdgeColor', 'none');  % Translucent sphere
 
         % Calculate the Euclidean distance between the point and the center of the circle
-        iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2 + (projSelect(:, 3) - center{i}(3)).^2);
+        iDistance = sqrt((latentSelect(:, 1) - center{i}(1)).^2 + (latentSelect(:, 2) - center{i}(2)).^2 + (latentSelect(:, 3) - center{i}(3)).^2);
     end
 
     % Determine if the point is inside the circle (including on the boundary)
     isInside = iDistance <= radius{i};
 
     % Choose only behavior of interest
-    bhvInd = zeros(length(projSelect), 1);
+    bhvInd = zeros(length(latentSelect), 1);
     bhvInd(transitionsInd) = 1;
 
 
@@ -1627,11 +1627,11 @@ selectFrom = 'M56';
 selectFrom = 'DS';
 switch selectFrom
     case 'M56'
-        projSelect = projectionsM56;
+        latentSelect = projectionsM56;
         projProject = projectionsDS;
         idSelect = idM56;
     case 'DS'
-        projSelect = projectionsDS;
+        latentSelect = projectionsDS;
         projProject = projectionsM56;
         idSelect = idDS;
 end
@@ -1657,7 +1657,7 @@ for i = 1:length(kernelFunctions)
     t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
 
     % Train the SVM model using cross-validation
-    svmModel = fitcecoc(projSelect(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5);
+    svmModel = fitcecoc(latentSelect(svmInd,:), bhvID(svmInd), 'Learners', t, 'KFold', 5);
 
     % Compute cross-validation accuracy
     cvAccuracy = 1 - kfoldLoss(svmModel, 'LossFun', 'ClassifError');
@@ -1684,7 +1684,7 @@ fprintf('Best Cross-Validation Accuracy: %.2f%%\n', bestCVAccuracy * 100);
 nDimUse = dimPlot; % use the first nDimUse dimensions for HDBSCAN
 
 % Classify using HDBSCAN
-clusterer = HDBSCAN(projSelect(allInd, 1:8));
+clusterer = HDBSCAN(latentSelect(allInd, 1:8));
 clusterer.minpts = 2; %tends to govern cluster number  %was 3? with all neurons
 clusterer.minclustsize = 100; %governs accuracy  %was 4? with all neurons
 clusterer.minClustNum = 2; % force at least this many clusters
@@ -1767,7 +1767,7 @@ for i = 1 : nGroup
         plot(x, y, 'color', colors(i,:), 'lineWidth', 4);  % Plot the circle with a blue line
 
         % Calculate the Euclidean distance between the point and the center of the circle
-        iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2);
+        iDistance = sqrt((latentSelect(:, 1) - center{i}(1)).^2 + (latentSelect(:, 2) - center{i}(2)).^2);
     elseif length(center{1}) == 3
         [x, y, z] = sphere(50);
         x = x * radius{i} + center{i}(1);  % Scale and translate the sphere
@@ -1777,14 +1777,14 @@ for i = 1 : nGroup
         surf(x, y, z, 'FaceColor', colors(i,:), 'FaceAlpha', 0.5, 'EdgeColor', 'none');  % Translucent sphere
 
         % Calculate the Euclidean distance between the point and the center of the circle
-        iDistance = sqrt((projSelect(:, 1) - center{i}(1)).^2 + (projSelect(:, 2) - center{i}(2)).^2 + (projSelect(:, 3) - center{i}(3)).^2);
+        iDistance = sqrt((latentSelect(:, 1) - center{i}(1)).^2 + (latentSelect(:, 2) - center{i}(2)).^2 + (latentSelect(:, 3) - center{i}(3)).^2);
     end
 
     % Determine if the point is inside the circle (including on the boundary)
     isInside = iDistance <= radius{i};
 
     % Choose only behavior of interest
-    bhvInd = zeros(length(projSelect), 1);
+    bhvInd = zeros(length(latentSelect), 1);
     bhvInd(allInd) = 1;
 
     clusterFrame{i} = find(isInside & bhvInd);

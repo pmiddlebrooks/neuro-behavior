@@ -66,7 +66,7 @@ idArea = idList{strcmp(areas, idAreaName)};
 dataMatMain = dataMat(:, idArea); % This should be your data
 
 
-%%
+%%  PSID
 
 y = zscore(dataMatMain);
 z = kinPCA;
@@ -80,7 +80,22 @@ idSys = PSID(y, z, nx, n1, i);
 % Predict behavior using the learned model
 [zPred, yPred, xPred] = PSIDPredict(idSys, y);  % xPred: first nDim columns are the behavior-related latents. The rest are neural non-behavior.
 
+latentPSID = xPred(:, 1:nDim);
+
 figure(5); clf; hold on;
 scatter(z, zPred)
 hL=plot([-6 6],[-6 6], 'k');
+
+%%  ICG
+
+dataICG = neural_matrix_ms_to_frames(dataMat(:, idArea), .1);
+[activityICG,outPairID] =  ICG(dataICG');
+
+% Take the first nDim groups of most correlated neurons (like 4 dimensions)
+latentICG = activityICG(1:nDim, :)';
+% latentICG = nan(size(dataICG, 1), nDim);
+
+
+
+
 

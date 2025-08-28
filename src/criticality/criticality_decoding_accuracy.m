@@ -55,8 +55,8 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :);
 %% ==============================================     Analysis Parameters     ==============================================
 
 % Dimensionality reduction options
-dimReductionMethod = 'pca';  % 'pca' or 'umap' (UMAP requires MATLAB toolbox)
-nDim = 6;                    % Number of dimensions to use
+dimReductionMethod = 'umap';  % 'pca' or 'umap' (UMAP requires MATLAB toolbox)
+nDim = 4;                    % Number of dimensions to use
 
 % SVM parameters
 kernelFunction = 'polynomial';
@@ -94,7 +94,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 
 %% Choose which areas to fit (can fill in blank arrays in decodingAccuracyNat
-areasToTest = 4;
+areasToTest = 2:4;
 
 
 %% ==============================================     Train SVM Models     ==============================================
@@ -145,7 +145,7 @@ fprintf('Using first %d %s components...\n', nDim, dimReductionMethod);
         elseif strcmp(dimReductionMethod, 'umap')
             % UMAP dimensionality reduction
             try
-                [reduction, umap, clusterIdentifiers, extras] = run_umap(aDataMatSVM, 'n_components', nDim);
+                [reduction, umap, clusterIdentifiers, extras] = run_umap(aDataMatSVM, 'n_components', nDim, 'verbose', 'none');
                 projData = reduction;
             catch
                 warning('UMAP not available, falling back to PCA');
