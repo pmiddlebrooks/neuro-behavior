@@ -42,13 +42,15 @@ hmmModels = cell(maxStates, 1);
 
 fprintf('Starting HMM fitting with %d folds...\n', numFolds);
 
-for numStates = 2:maxStates
+stateRange = 2:maxStates;
+for numStates = stateRange
     fprintf('Testing %d states...\n', numStates);
-    
+    tic
+
     foldLikelihoods = zeros(numFolds, 1);
     iTopEigenvalue = zeros(numFolds, 1);
     iTestLogLikelihood = zeros(numFolds, 1);
-    
+
     for fold = 1:numFolds
         % Split data into training and test sets
         testIdx = (1:foldSize) + (fold-1)*foldSize;
@@ -57,29 +59,62 @@ for numStates = 2:maxStates
         trainData = hmmMatrix(trainIdx, :);
         testData = hmmMatrix(testIdx, :);
 
-        % Train HMM on training data
-        options = statset('MaxIter', 500);
+        % Validate data quality
+        if any(isnan(trainData(:))) || any(isinf(trainData(:)))
+            warning('Training data contains NaN or Inf values. Skipping fold %d.', fold);
+            iTestLogLikelihood(fold) = NaN;
+            iTopEigenvalue(fold) = NaN;
+            continue;
+        end
 
-        hmm = fitgmdist(trainData, numStates, 'Replicates', 10, 'CovarianceType', 'full', 'Options', options);
-        hmmModels{numStates} = hmm;
+        % Check if training data has sufficient variance
+        if any(var(trainData) < 1e-10)
+            warning('Training data has very low variance. Skipping fold %d.', fold);
+            iTestLogLikelihood(fold) = NaN;
+            iTopEigenvalue(fold) = NaN;
+            continue;
+        end
 
-        % Evaluate log-likelihood on test data
-        iTestLogLikelihood(fold) = sum(log(pdf(hmm, testData)));
+        % Train HMM on training data with better regularization
+        options = statset('MaxIter', 500, 'TolFun', 1e-6, 'TolX', 1e-6);
+        
+        try
+            hmm = fitgmdist(trainData, numStates, 'Replicates', 10, ...
+                'CovarianceType', 'diagonal', ...  % More stable than 'full'
+                'SharedCovariance', false, ...
+                'RegularizationValue', 0.01, ...   % Add regularization
+                'Options', options);
+            hmmModels{numStates} = hmm;
 
-        % Compute similarity as the top eigenvalue of the state definition
-        % matrix
-        % Extract state definition matrix
-        stateDefinitionMatrix = hmm.mu; % Size: numStates x numFeatures
-        % Compute the covariance matrix of the state definition matrix
-        covMatrix = cov(stateDefinitionMatrix);
+            % Evaluate log-likelihood on test data with numerical stability
+            logProbs = log(pdf(hmm, testData));
+            % Replace -Inf with a large negative number
+            logProbs(isinf(logProbs)) = -1e6;
+            iTestLogLikelihood(fold) = sum(logProbs);
 
-        % Compute the top eigenvalue
-        iTopEigenvalue(fold) = max(eig(covMatrix));
+            % Compute similarity as the top eigenvalue of the state definition matrix
+            stateDefinitionMatrix = hmm.mu; % Size: numStates x numFeatures
+            % Compute the covariance matrix of the state definition matrix
+            covMatrix = cov(stateDefinitionMatrix);
+
+            % Compute the top eigenvalue
+            iTopEigenvalue(fold) = max(eig(covMatrix));
+            
+        catch ME
+            warning('HMM fitting failed for fold %d: %s', fold, ME.message);
+            iTestLogLikelihood(fold) = NaN;
+            iTopEigenvalue(fold) = NaN;
+        end
+
     end
 
     % Average likelihoods and top eigenvalues
     testLogLikelihood(numStates) = mean(iTestLogLikelihood);
     topEigenvalue(numStates) = mean(iTopEigenvalue);
+    % End timing and display
+    elapsedTime = toc;
+    fprintf('Completed in %.2f minutes\nLogLike:\n', elapsedTime/60);
+disp(testLogLikelihood(numStates))
 end
 
 % Calculate penalized likelihoods
@@ -89,11 +124,17 @@ normTopEig = normalizeMetric(topEigenvalue);
 penalizedLikelihoods = normLogLike ./ normTopEig;
 
 % Find the best number of states
-[maxVal, bestNumStates] = max(penalizedLikelihoods);
+[maxVal, bestIdx] = max(penalizedLikelihoods);
+bestNumStates = stateRange(bestIdx);
 
 % Train the best model on the full dataset
 fprintf('Training best model with %d states on full dataset...\n', bestNumStates);
-bestHMM = fitgmdist(hmmMatrix, bestNumStates, 'Replicates', 10, 'CovarianceType', 'diagonal');
+options = statset('MaxIter', 500, 'TolFun', 1e-6, 'TolX', 1e-6);
+bestHMM = fitgmdist(hmmMatrix, bestNumStates, 'Replicates', 10, ...
+    'CovarianceType', 'diagonal', ...
+    'SharedCovariance', false, ...
+    'RegularizationValue', 0.01, ...
+    'Options', options);
 
 % Get initial state estimates and probabilities
 initialStateEstimates = cluster(bestHMM, hmmMatrix);
@@ -104,9 +145,6 @@ stateEstimates = filterStatesByDuration(initialStateEstimates, minStateDuration,
 
 hmmModels{bestNumStates} = bestHMM;
 
-% End timing and display
-elapsedTime = toc;
-fprintf('HMM fitting completed in %.2f minutes\n', elapsedTime/60);
 
 % Optional plotting of summary statistics
 if plotFlag
@@ -178,13 +216,13 @@ for state = uniqueStates'
     if state == 0
         continue; % Skip already filtered states
     end
-    
+
     stateIndices = find(stateEstimates == state);
-    
+
     % Find continuous segments
     segmentStarts = [stateIndices(1); stateIndices(find(diff(stateIndices) > 1) + 1)];
     segmentEnds = [stateIndices(find(diff(stateIndices) > 1)); stateIndices(end)];
-    
+
     % Filter short segments
     for seg = 1:length(segmentStarts)
         segmentLength = segmentEnds(seg) - segmentStarts(seg) + 1;

@@ -98,34 +98,34 @@ selectFrom = 'M56';
 % selectFrom = 'All';
 switch selectFrom
     case 'M56'
-        % projSelect = projectionsM56;
+        % latentSelect = projectionsM56;
         % projProject = projectionsDS;
         idSelect = idM56;
         figHFull = 260;
         figHModel = 270;
         figHFullModel = 280;
     case 'DS'
-        % projSelect = projectionsDS;
+        % latentSelect = projectionsDS;
         % projProject = projectionsM56;
         idSelect = idDS;
         figHFull = 261;
         figHModel = 271;
         figHFullModel = 281;
     case 'Both'
-        % projSelect = [projectionsM56; projectionsDS];
+        % latentSelect = [projectionsM56; projectionsDS];
         idSelect = [idM56, idDS];
         figHFull = 262;
         figHModel = 272;
         figHFullModel = 282;
     case 'VS'
-        % projSelect = projectionsVS;
+        % latentSelect = projectionsVS;
         % projProject = projectionsDS;
         idSelect = idVS;
         figHFull = 263;
         figHModel = 273;
         figHFullModel = 283;
     case 'All'
-        % projSelect = projectionsAll;
+        % latentSelect = projectionsAll;
         % projProject = projectionsDS;
         idSelect = cell2mat(idAll);
         figHFull = 264;
@@ -190,10 +190,10 @@ for k = 1:length(forDim)
 
     if usePCAFromMeans
         warning('You are using PCA projections from mean neural activity within each bout')
-        projSelect = dataMat(:,idSelect) * coeff;
-        projSelect = projSelect(:,1:iDim);
+        latentSelect = dataMat(:,idSelect) * coeff;
+        latentSelect = latentSelect(:,1:iDim);
     else
-        projSelect = score(:, 1:iDim);
+        latentSelect = score(:, 1:iDim);
     end
 
 
@@ -204,7 +204,7 @@ for k = 1:length(forDim)
     bhvID = double(bhvID(1+shiftFrame:end)); % Shift bhvIDMat to account for time shift
 
 
-    projSelect = projSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
+    latentSelect = latentSelect(1:end-shiftFrame, :); % Remove shiftFrame frames from projections to accoun for time shift in bhvIDMat
 
 
 
@@ -458,7 +458,7 @@ for i = 1:length(kernelFunctions)
     t = templateSVM('Standardize', true, 'KernelFunction', kernelFunctions{i});
 
     % Train the SVM model using cross-validation
-    svmModel = fitcecoc(projSelect(svmInd,1:nDim), svmID, 'Learners', t, 'KFold', 5);
+    svmModel = fitcecoc(latentSelect(svmInd,1:nDim), svmID, 'Learners', t, 'KFold', 5);
     % svmModel = fitcecoc(dataMat(svmInd,:), svmID, 'Learners', t, 'KFold', 5);
 
     % Compute cross-validation accuracy
@@ -496,7 +496,7 @@ kernelFunctions = {'polynomial'};
 % kernelFunctions = {'rbf'};
 
 % Choose which data to model
-svmProj = projSelect(svmInd, 1:nDim);
+svmProj = latentSelect(svmInd, 1:nDim);
 % svmProj = dataMat(svmInd, idSelect);
 
 % Train model
@@ -533,7 +533,7 @@ sound(y(1:3*Fs),Fs)
     % pca dimension version
     fprintf('\n\n%s %s DIMENSIONS %d Explained %.2f\n\n', selectFrom, transWithinLabel, iDim, sum(explained(1:iDim)))  % pca Dimensions
     % Choose which data to model
-    svmProj = projSelect(svmInd, :);
+    svmProj = latentSelect(svmInd, :);
     trainData = svmProj(training(cv), :);  % pca Dimensions
     testData = svmProj(test(cv), :); % pca Dimensions
 
@@ -645,9 +645,9 @@ slack_code_done
     % titleD = ['Predicted pca ', selectFrom,' ', num2str(niDim), 'D ', transWithinLabel, ' bin = ', num2str(opts.frameSize), ' shift = ', num2str(shiftSec)];
     % title(titleD)
     % if niDim > 2
-    %     scatter3(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), projSelect(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
+    %     scatter3(latentSelect(svmInd, dimPlot(1)), latentSelect(svmInd, dimPlot(2)), latentSelect(svmInd, dimPlot(3)), 60, colorsForPlot, 'LineWidth', 2)
     % elseif niDim == 2
-    %     scatter(projSelect(svmInd, dimPlot(1)), projSelect(svmInd, dimPlot(2)), 60, projSelect, 'LineWidth', 2)
+    %     scatter(latentSelect(svmInd, dimPlot(1)), latentSelect(svmInd, dimPlot(2)), 60, latentSelect, 'LineWidth', 2)
     % end
     % grid on;
     % xlabel(['D', num2str(dimPlot(1))]); ylabel(['D', num2str(dimPlot(2))]); zlabel(['D', num2str(dimPlot(3))])
@@ -663,8 +663,8 @@ slack_code_done
     % t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
     %
     % % Choose which data to model
-    % % svmProj = projSelect(svmInd, 1:3);
-    % % svmProj = projSelect(svmInd, :);
+    % % svmProj = latentSelect(svmInd, 1:3);
+    % % svmProj = latentSelect(svmInd, :);
     % svmProj = dataMat(svmInd, idSelect);
     %
     % % Train the SVM model
@@ -774,7 +774,7 @@ grid on;
         for iFrame = 1 : length(frames)
             % Get relevant frame to test (w.r.t. transition frame)
             iSvmInd = svmIndTest + frames(iFrame);
-            testData = projSelect(iSvmInd, 1:iDim); % pca Dimensions
+            testData = latentSelect(iSvmInd, 1:iDim); % pca Dimensions
 
             % Calculate and display the overall accuracy (make sure it matches the
             % original fits to ensure we're modeling the same way)
@@ -832,7 +832,7 @@ grid on;
     % svmIndTest(deleteInd) = [];
     %
     %
-    % testData = projSelect(svmIndTest, 1:iDim); % pca Dimensions
+    % testData = latentSelect(svmIndTest, 1:iDim); % pca Dimensions
     %
     % predictedLabels = predict(svmModel, testData);
     %

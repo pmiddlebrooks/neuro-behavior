@@ -18,7 +18,7 @@ traces = load(fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NIBEH
 dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
 
 binSizeData = .001; % Data is in ms
-frameSize = .050; % For hmm
+binSizeHmm = .01; % For hmm
 %%
 % NIDATA rows
 % 1 - cortical opto
@@ -92,13 +92,13 @@ scatter(errTimes, -.05, 'MarkerFaceColor', 'r');
 scatter(solTimes, -.075*ones(length(solTimes)), 'MarkerFaceColor',[0 .6 0]);
 
 %%
+testingFlag = 0;
 
 hmmMatrix = [jsAmp', errTrace', solTrace', filtLick'];
-binSizeHmm = frameSize; % Bin size for HMM in seconds
-
-% Downsample hmmMatrix from binSizeData (1 ms) to binSizeHmm (5 ms)
+    
+% Downsample hmmMatrix from binSizeData (1 ms) to binSizeHmm (20 ms)
 % Calculate downsampling factor
-downsampleFactor = round(binSizeData / (binSizeHmm * 1000)); % Convert binSizeHmm to ms
+downsampleFactor = round(binSizeHmm / binSizeData); 
 if downsampleFactor > 1
     % Downsample by taking mean of each bin
     numBins = floor(size(hmmMatrix, 1) / downsampleFactor);
@@ -110,6 +110,12 @@ if downsampleFactor > 1
         hmmMatrixDownsampled(i, :) = mean(hmmMatrix(startIdx:endIdx, :), 1);
     end
     hmmMatrix = hmmMatrixDownsampled;
+end
+
+if testingFlag
+% test the code with 1/4 of the data for speed
+hmmMatrix = hmmMatrix(1:round(size(hmmMatrix, 1)/4),:);
+disp('Testing with much less data line 116')
 end
 
 optsHmm.minState = .02; % Minimum state duration in seconds
