@@ -9,21 +9,20 @@ opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
 opts.frameSize = .1;
 
-% Get neural data
-getDataType = 'spikes';
-get_standard_data
-
 % Get kinematics data for PSID
 kinBinSize = .1;
 getDataType = 'kinematics';
 get_standard_data
-
 startFrame = 1 + opts.collectStart / kinBinSize;
 endFrame = startFrame - 1 + (opts.collectFor / kinBinSize);
 kinData = kinData(startFrame:endFrame,:);
 
-% Get behavior labels
+% Get neural data
+getDataType = 'spikes';
+get_standard_data
+% Curate behavior labels
 [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
+
 
 % Get colors for behaviors
 colors = colors_for_behaviors(codes);
@@ -128,7 +127,7 @@ spread = 1.3;
 n_neighbors = 10;
 
 [latents.umap, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, ...
-    'randomize', false, 'verbose', 'none', 'min_dist', min_dist, ...
+    'randomize', true, 'verbose', 'none', 'min_dist', min_dist, ...
     'spread', spread, 'n_neighbors', n_neighbors);
 
 %% PSID
@@ -147,15 +146,15 @@ idSys = PSID(y, z, nx, n1, i);
 
 % Predict behavior using the learned model
 [zPred, yPred, xPred] = PSIDPredict(idSys, y);
-latents.psid = xPred(:, 1:nDim);
+latents.psid = xPred(1:nDim, :)';
 
 %% ICG
 fprintf('Running ICG...\n');
-dataICG = neural_matrix_ms_to_frames(dataMat(:, idSelect), .1);
+dataICG = dataMat(:, idSelect);
 [activityICG, outPairID] = ICG(dataICG');
 
 % Take the first nDim groups of most correlated neurons
-latents.icg = activityICG(1:nDim, :)';
+latents.icg = activityICG{4}(1:nDim, :)';
 
 fprintf('All methods completed.\n');
 
@@ -181,6 +180,7 @@ end
 
 % Find behavior transitions
 preInd = find(diff(bhvID) ~= 0);
+transEnd = unique([preInd; preInd+1; preInd-1]);
 
 % Prepare behavior labels based on analysis type
 switch transOrWithin
@@ -189,15 +189,11 @@ switch transOrWithin
         svmID = bhvID;
         transWithinLabel = 'all';
     case 'trans'
-        svmID = bhvID(preInd + 1);
-        svmInd = preInd;
+        svmID = bhvID(transEnd + 1);
+        svmInd = transEnd;
         transWithinLabel = 'transitions';
     case 'within'
-        transIndLog = zeros(length(bhvID), 1);
-        transIndLog(preInd) = 1;
-        vec = find(transIndLog);
-        transIndLog(vec-1) = 1;
-        svmInd = find(~transIndLog);
+        svmInd = setdiff(1:length(bhvID), transEnd);
         svmID = bhvID(svmInd);
         transWithinLabel = 'within-behavior';
     case 'transVsWithin'

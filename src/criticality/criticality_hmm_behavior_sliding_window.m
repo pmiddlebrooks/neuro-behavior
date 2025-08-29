@@ -315,12 +315,17 @@ metrics.timePoints = startSNat{areasToTest(1)};
 
 fprintf('\n=== Calculating HMM Metrics ===\n');
 
-% Calculate time points for HMM sliding windows
+% Use criticality-defined sliding window and step size, but respect HMM bin size
+% Convert criticality window times to HMM bin indices
 windowSizeBins = round(criticalityWindowSize / hmmBinSize);
 stepSizeBins = round(stepSize / hmmBinSize);
-numWindows = floor((totalHmmBins - windowSizeBins) / stepSizeBins) + 1;
 
-% Initialize HMM metric arrays
+% Use the same time points as criticality analysis for consistency
+validD2Idx = ~isnan(d2Nat{areasToTest(1)});
+validD2Times = startSNat{areasToTest(1)}(validD2Idx);
+numWindows = length(validD2Times);
+
+% Initialize HMM metric arrays (same size as criticality arrays)
 stateOccupancyEntropy = nan(numWindows, 1);
 stateDwellTimesMean = nan(numWindows, 1);
 stateDwellTimesStd = nan(numWindows, 1);
@@ -330,20 +335,25 @@ stateProbabilityVariance = nan(numWindows, 1);
 klDivergenceMean = nan(numWindows, 1);
 hmmWindowCenterTimes = nan(numWindows, 1);
 
-% Process each HMM sliding window
+% Process each criticality-defined window
 for i = 1:numWindows
-    % Calculate window boundaries in HMM bins
-    startBin = (i-1) * stepSizeBins + 1;
-    endBin = startBin + windowSizeBins - 1;
-
+    centerTime = validD2Times(i);
+    
+    % Calculate window boundaries (same as used for criticality)
+    windowStartTime = centerTime - criticalityWindowSize/2;
+    windowEndTime = centerTime + criticalityWindowSize/2;
+    
+    % Convert to HMM bin indices
+    startBin = max(1, round(windowStartTime / hmmBinSize));
+    endBin = min(totalHmmBins, round(windowEndTime / hmmBinSize));
+    
     % Ensure we don't exceed data bounds
-    if endBin > totalHmmBins
-        break;
+    if endBin > totalHmmBins || startBin < 1
+        continue;
     end
 
-    % Calculate center time of this window
-    centerBin = (startBin + endBin) / 2;
-    hmmWindowCenterTimes(i) = centerBin * hmmBinSize;
+    % Calculate center time of this window (use criticality time for consistency)
+    hmmWindowCenterTimes(i) = centerTime;
 
     % Get HMM data for this window
     windowSequence = hmmSequence(startBin:endBin);
@@ -534,18 +544,9 @@ for i = 1:numWindows
     end
 end
 
-% Trim arrays to actual number of windows processed
-numWindows = i - 1;
-stateOccupancyEntropy = stateOccupancyEntropy(1:numWindows);
-stateDwellTimesMean = stateDwellTimesMean(1:numWindows);
-stateDwellTimesStd = stateDwellTimesStd(1:numWindows);
-numUniqueStates = numUniqueStates(1:numWindows);
-meanMaxProbability = meanMaxProbability(1:numWindows);
-stateProbabilityVariance = stateProbabilityVariance(1:numWindows);
-klDivergenceMean = klDivergenceMean(1:numWindows);
-hmmWindowCenterTimes = hmmWindowCenterTimes(1:numWindows);
-
-fprintf('HMM metrics calculated for %d time windows\n', numWindows);
+% Arrays are already properly sized for criticality windows
+% No need to trim since we're using the same time points
+fprintf('HMM metrics calculated for %d criticality-defined time windows\n', numWindows);
 
 % Add HMM metrics to metrics structure
 metrics.stateOccupancyEntropy = stateOccupancyEntropy;
@@ -594,9 +595,7 @@ for a = areasToTest
         validBhvPropIdx & validBhvDwellMeanIdx & validBhvDwellStdIdx & validBhvEntropyIdx & validKin1Idx & validKin2Idx;
     
     validTimePoints{a}.hmmVsBehavior = validHmmEntropyIdx & validHmmDwellMeanIdx & validHmmDwellStdIdx & ...
-        validHmmUniqueIdx & validHmmMaxProbIdx & validHmmProbVarIdx & validHmmKLIdx & ...
-        validBhvSwitchIdx & validBhvPropIdx & validBhvDwellMeanIdx & validBhvDwellStdIdx & ...
-        validBhvEntropyIdx & validKin1Idx & validKin2Idx;
+        validHmmUniqueIdx & validHmmMaxProbIdx & validHmmProbVarIdx & validHmmKLIdx;
     
     % For criticality vs HMM, we need to find overlapping time windows
     % This is more complex and will be handled in the correlation analysis
@@ -748,9 +747,9 @@ for a = areasToTest
         kin2Data = kinPCA2Std(validIdx)';
 
         % Create data matrix for correlation analysis
-        dataMatrix = [entropyData, dwellMeanData, dwellStdData, uniqueData, ...
-            maxProbData, probVarData, klData, switchData, propData, bhvDwellMeanData, ...
-            bhvDwellStdData, bhvEntropyData, kin1Data, kin2Data];
+        dataMatrix = [entropyData(:), dwellMeanData(:), dwellStdData(:), uniqueData(:), ...
+            maxProbData(:), probVarData(:), klData(:), switchData(:), propData(:), bhvDwellMeanData(:), ...
+            bhvDwellStdData(:), bhvEntropyData(:), kin1Data(:), kin2Data(:)];
 
         % Calculate correlation matrix
         [R, P] = corrcoef(dataMatrix, 'rows', 'complete');
@@ -947,14 +946,14 @@ fprintf('\n=== Creating Visualizations ===\n');
 %% 1. Criticality vs Behavior Scatter Plots
 figure(400); clf;
 set(gcf, 'Position', monitorOne);
-sgtitle('Criticality vs Behavior Metric Correlations', 'FontSize', 16);
+sgtitle(sprintf('Criticality vs Behavior Metric Correlations: %s %s', natOrReach, brainArea), 'FontSize', 16);
 
 % Calculate subplot layout: rows = criticality metrics, columns = behavior metrics
 nCriticalityMetrics = length(criticalityMetricNames);
 nBehaviorMetrics = length(behaviorMetricNames);
 
 % Use tight_subplot for clean layout
-ha = tight_subplot(nCriticalityMetrics, nBehaviorMetrics, [0.1 0.1], [0.1 0.1], [0.1 0.1]);
+ha = tight_subplot(nCriticalityMetrics, nBehaviorMetrics, [0.02 0.02], [0.05 0.05], [0.05 0.05]);
 
 % Plot scatter for each criticality vs behavior metric pair
 for i = 1:nCriticalityMetrics
@@ -1032,13 +1031,13 @@ end
 %% 2. HMM vs Behavior Scatter Plots
 figure(401); clf;
 set(gcf, 'Position', monitorTwo);
-sgtitle('HMM vs Behavior Metric Correlations', 'FontSize', 16);
+sgtitle(sprintf('HMM vs Behavior Metric Correlations: %s %s', natOrReach, brainArea), 'FontSize', 16);
 
 % Calculate subplot layout: rows = HMM metrics, columns = behavior metrics
 nHmmMetrics = length(hmmMetricNames);
 
 % Use tight_subplot for clean layout
-ha = tight_subplot(nHmmMetrics, nBehaviorMetrics, [0.1 0.1], [0.1 0.1], [0.1 0.1]);
+ha = tight_subplot(nHmmMetrics, nBehaviorMetrics, [0.02 0.02], [0.05 0.05], [0.05 0.05]);
 
 % Plot scatter for each HMM vs behavior metric pair
 for i = 1:nHmmMetrics
@@ -1126,10 +1125,10 @@ end
 %% 3. Criticality vs HMM Scatter Plots
 figure(402); clf;
 set(gcf, 'Position', monitorTwo);
-sgtitle('Criticality vs HMM Metric Correlations', 'FontSize', 16);
+sgtitle(sprintf('Criticality vs HMM Metric Correlations %s %s', natOrReach, brainArea), 'FontSize', 16);
 
 % Use tight_subplot for clean layout
-ha = tight_subplot(nCriticalityMetrics, nHmmMetrics, [0.1 0.1], [0.1 0.1], [0.1 0.1]);
+ha = tight_subplot(nCriticalityMetrics, nHmmMetrics, [0.02 0.02], [0.05 0.1], [0.05 0.05]);
 
 % Plot scatter for each criticality vs HMM metric pair
 for i = 1:nCriticalityMetrics
