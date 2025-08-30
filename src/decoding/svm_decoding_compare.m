@@ -83,7 +83,7 @@ end
 
 % Analysis type
 transOrWithin = 'all';  % 'all', 'trans', 'within', 'transVsWithin'
-% transOrWithin = 'trans';
+transOrWithin = 'trans';
 % transOrWithin = 'within';
 
 % Permutation testing
@@ -446,4 +446,85 @@ if plotResults
     fprintf('\nBest performing method: %s (accuracy: %.3f)\n', upper(methods{bestIdx}), bestAcc);
 end
 
+%% =============================================================================
+% --------    SAVE RESULTS
+% =============================================================================
+
+fprintf('Saving results...\n');
+
+% Create filename with relevant parameters
+filename = sprintf('svm_decoding_compare_%s_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
+    selectFrom, transOrWithin, nDim, opts.frameSize, nShuffles);
+
+% Create full path
+savePath = fullfile(paths.dropPath, 'decoding');
+if ~exist(savePath, 'dir')
+    mkdir(savePath);
+end
+
+fullFilePath = fullfile(savePath, filename);
+
+% Prepare data structure for saving
+results = struct();
+results.brainArea = selectFrom;
+results.analysisType = transOrWithin;
+results.parameters = struct();
+results.parameters.nDim = nDim;
+results.parameters.frameSize = opts.frameSize;
+results.parameters.nShuffles = nShuffles;
+results.parameters.kernelFunction = kernelFunction;
+results.parameters.collectStart = opts.collectStart;
+results.parameters.collectFor = opts.collectFor;
+results.parameters.minActTime = opts.minActTime;
+
+% Save results
+results.accuracy = accuracy;
+results.accuracyPermuted = accuracyPermuted;
+results.methods = methods;
+results.bhv2ModelCodes = bhv2ModelCodes;
+results.bhv2ModelNames = bhv2ModelNames;
+results.latents = latents;
+results.svmInd = svmInd;
+results.svmID = svmID;
+
+% Save the data
+save(fullFilePath, 'results', '-v7.3');
+
+fprintf('Results saved to: %s\n', fullFilePath);
+
+% Also save a summary text file
+summaryFilename = strrep(filename, '.mat', '_summary.txt');
+summaryPath = fullfile(savePath, summaryFilename);
+
+fid = fopen(summaryPath, 'w');
+fprintf(fid, 'SVM Decoding Comparison Results\n');
+fprintf(fid, '================================\n\n');
+fprintf(fid, 'Brain Area: %s\n', selectFrom);
+fprintf(fid, 'Analysis Type: %s\n', transWithinLabel);
+fprintf(fid, 'Number of Dimensions: %d\n', nDim);
+fprintf(fid, 'Frame Size: %.2f seconds\n', opts.frameSize);
+fprintf(fid, 'Number of Permutations: %d\n', nShuffles);
+fprintf(fid, 'Kernel Function: %s\n', kernelFunction);
+fprintf(fid, 'Data Collection Duration: %.0f seconds\n', opts.collectFor);
+fprintf(fid, 'Minimum Activity Time: %.2f seconds\n', opts.minActTime);
+fprintf(fid, 'Number of Behaviors Modeled: %d\n', length(bhv2ModelCodes));
+fprintf(fid, 'Behaviors: %s\n', strjoin(bhv2ModelNames, ', '));
+fprintf(fid, '\n');
+
+fprintf(fid, 'Results Summary:\n');
+fprintf(fid, 'Method\t\tReal Accuracy\tPermuted (mean ± std)\tDifference\n');
+fprintf(fid, '-----\t\t-------------\t----------------------\t----------\n');
+for m = 1:nMethods
+    diff = accuracy(m) - mean(accuracyPermuted(m, :));
+    fprintf(fid, '%s\t\t%.4f\t\t%.4f ± %.4f\t\t%.4f\n', ...
+        upper(methods{m}), accuracy(m), mean(accuracyPermuted(m, :)), ...
+        std(accuracyPermuted(m, :)), diff);
+end
+
+fprintf(fid, '\nBest performing method: %s (accuracy: %.4f)\n', ...
+    upper(methods{bestIdx}), bestAcc);
+
+fclose(fid);
+
+fprintf('Summary saved to: %s\n', summaryPath);
 fprintf('\nAnalysis complete!\n');
