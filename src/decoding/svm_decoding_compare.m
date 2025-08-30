@@ -90,7 +90,7 @@ transOrWithin = 'trans';
 nShuffles = 3;  % Number of permutation tests
 
 % Plotting options
-plotFullMap = 1;
+plotFullMap = 0;
 plotModelData = 1;
 plotResults = 1;
 
@@ -112,7 +112,7 @@ fprintf('Running PCA...\n');
 latents.pca = score(:, 1:nDim);
 fprintf('PCA explained variance: %.2f%%\n', sum(explained(1:nDim)));
 
-%% UMAP
+% UMAP
 fprintf('Running UMAP...\n');
 % Change to UMAP directory
 if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
@@ -130,7 +130,7 @@ n_neighbors = 10;
     'randomize', true, 'verbose', 'none', 'min_dist', min_dist, ...
     'spread', spread, 'n_neighbors', n_neighbors);
 
-%% PSID
+% PSID
 fprintf('Running PSID...\n');
 % Return to original directory
 cd('E:/Projects/neuro-behavior/src/decoding');
@@ -148,7 +148,7 @@ idSys = PSID(y, z, nx, n1, i);
 [zPred, yPred, xPred] = PSIDPredict(idSys, y);
 latents.psid = xPred(1:nDim, :)';
 
-%% ICG
+% ICG
 fprintf('Running ICG...\n');
 dataICG = dataMat(:, idSelect);
 [activityICG, outPairID] = ICG(dataICG');
@@ -158,7 +158,7 @@ latents.icg = activityICG{4}(1:nDim, :)';
 
 fprintf('All methods completed.\n');
 
-%% =============================================================================
+% =============================================================================
 % --------    PREPARE BEHAVIOR LABELS
 % =============================================================================
 
@@ -222,7 +222,7 @@ end
 
 fprintf('Modeling %s behaviors: %s\n', transWithinLabel, strjoin(bhv2ModelNames, ', '));
 
-%% =============================================================================
+% =============================================================================
 % --------    PLOT FULL DATA FOR EACH METHOD
 % =============================================================================
 
@@ -267,7 +267,7 @@ if plotFullMap
     end
 end
 
-%% =============================================================================
+% =============================================================================
 % --------    PLOT MODELING DATA FOR EACH METHOD
 % =============================================================================
 
@@ -310,7 +310,7 @@ if plotModelData
     end
 end
 
-%% =============================================================================
+% =============================================================================
 % --------    RUN SVM DECODING FOR EACH METHOD
 % =============================================================================
 
@@ -378,7 +378,7 @@ for m = 1:nMethods
     fprintf('Mean permuted accuracy: %.4f\n', mean(accuracyPermuted(m, :)));
 end
 
-%% =============================================================================
+% =============================================================================
 % --------    PLOT RESULTS COMPARISON
 % =============================================================================
 
@@ -446,7 +446,7 @@ if plotResults
     fprintf('\nBest performing method: %s (accuracy: %.3f)\n', upper(methods{bestIdx}), bestAcc);
 end
 
-%% =============================================================================
+% =============================================================================
 % --------    SAVE RESULTS
 % =============================================================================
 
