@@ -43,47 +43,14 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % =============================================================================
 
 % Dimensionality for all methods
-nDim = 4;
-forDim = nDim;
+nDim = 6;
 
-% Select which data to run analyses on
-selectFrom = 'M56';
-% selectFrom = 'DS';
-% selectFrom = 'Both';
-% selectFrom = 'VS';
-% selectFrom = 'All';
-
-switch selectFrom
-    case 'M56'
-        idSelect = idM56;
-        figHFull = 260;
-        figHModel = 270;
-        figHFullModel = 280;
-    case 'DS'
-        idSelect = idDS;
-        figHFull = 261;
-        figHModel = 271;
-        figHFullModel = 281;
-    case 'Both'
-        idSelect = [idM56, idDS];
-        figHFull = 262;
-        figHModel = 272;
-        figHFullModel = 282;
-    case 'VS'
-        idSelect = idVS;
-        figHFull = 263;
-        figHModel = 273;
-        figHFullModel = 283;
-    case 'All'
-        idSelect = cell2mat(idAll);
-        figHFull = 264;
-        figHModel = 274;
-        figHFullModel = 284;
-end
+% Define brain areas to test
+areas = {'M23', 'M56', 'DS', 'VS'};
+areasToTest = 2:4;  % Test M56, DS, VS
 
 % Analysis type
-transOrWithin = 'all';  % 'all', 'trans', 'within', 'transVsWithin'
-transOrWithin = 'trans';
+transOrWithin = 'within';  % 'all', 'trans', 'within', 'transVsWithin'
 % transOrWithin = 'within';
 
 % Permutation testing
@@ -97,353 +64,486 @@ plotResults = 1;
 % Figure properties
 allFontSize = 12;
 
+% Initialize storage for all areas
+allResults = struct();
+allResults.areas = areas;
+allResults.areasToTest = areasToTest;
+allResults.parameters = struct();
+allResults.parameters.nDim = nDim;
+allResults.parameters.frameSize = opts.frameSize;
+allResults.parameters.nShuffles = nShuffles;
+allResults.parameters.kernelFunction = 'polynomial';
+allResults.parameters.collectStart = opts.collectStart;
+allResults.parameters.collectFor = opts.collectFor;
+allResults.parameters.minActTime = opts.minActTime;
+allResults.parameters.transOrWithin = transOrWithin;
+
+% Initialize results storage for each area
+allResults.latents = cell(1, length(areas));a
+allResults.accuracy = cell(1, length(areas));
+allResults.accuracyPermuted = cell(1, length(areas));
+allResults.methods = cell(1, length(areas));
+allResults.bhv2ModelCodes = cell(1, length(areas));
+allResults.bhv2ModelNames = cell(1, length(areas));
+allResults.svmInd = cell(1, length(areas));
+allResults.svmID = cell(1, length(areas));
+allResults.idSelect = cell(1, length(areas));
+allResults.bhvMapping = cell(1, length(areas));
+
 %% =============================================================================
-% --------    GENERATE LATENTS FOR EACH METHOD
+% --------    LOOP THROUGH BRAIN AREAS
 % =============================================================================
 
-fprintf('Generating latents for each method...\n');
+fprintf('\n=== Processing Multiple Brain Areas ===\n');
 
-% Initialize storage for latents
-latents = struct();
+for areaIdx = areasToTest
+    areaName = areas{areaIdx};
+    fprintf('\n=======================   --- Processing Area: %s ---  ==================\n', areaName);
 
-%% PCA
-fprintf('Running PCA...\n');
-[coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
-latents.pca = score(:, 1:nDim);
-fprintf('PCA explained variance: %.2f%%\n', sum(explained(1:nDim)));
-
-% UMAP
-fprintf('Running UMAP...\n');
-% Change to UMAP directory
-if exist('/Users/paulmiddlebrooks/Projects/', 'dir')
-    cd '/Users/paulmiddlebrooks/Projects/toolboxes/umapFileExchange (4.4)/umap/'
-else
-    cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
-end
-
-% UMAP parameters
-min_dist = 0.02;
-spread = 1.3;
-n_neighbors = 10;
-
-[latents.umap, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, ...
-    'randomize', true, 'verbose', 'none', 'min_dist', min_dist, ...
-    'spread', spread, 'n_neighbors', n_neighbors);
-
-% PSID
-fprintf('Running PSID...\n');
-% Return to original directory
-cd('E:/Projects/neuro-behavior/src/decoding');
-
-% Prepare data for PSID
-y = zscore(dataMat(:, idSelect));
-z = zscore(kinData);
-nx = nDim * 2;
-n1 = nDim;
-i = 10;
-
-idSys = PSID(y, z, nx, n1, i);
-
-% Predict behavior using the learned model
-[zPred, yPred, xPred] = PSIDPredict(idSys, y);
-latents.psid = xPred(1:nDim, :)';
-
-% ICG
-fprintf('Running ICG...\n');
-dataICG = dataMat(:, idSelect);
-[activityICG, outPairID] = ICG(dataICG');
-
-% Take the first nDim groups of most correlated neurons
-latents.icg = activityICG{4}(1:nDim, :)';
-
-fprintf('All methods completed.\n');
-
-% =============================================================================
-% --------    PREPARE BEHAVIOR LABELS
-% =============================================================================
-
-% Shift behavior labels if needed
-shiftSec = 0;
-shiftFrame = 0;
-if shiftSec > 0
-    shiftFrame = ceil(shiftSec / opts.frameSize);
-    bhvID = double(bhvID(1+shiftFrame:end));
-end
-
-% Adjust latents for shift
-if shiftFrame > 0
-    fieldNames = fieldnames(latents);
-    for i = 1:length(fieldNames)
-        latents.(fieldNames{i}) = latents.(fieldNames{i})(1:end-shiftFrame, :);
+    % Select data for this area
+    switch areaName
+        case 'M23'
+            idSelect = idM23;
+        case 'M56'
+            idSelect = idM56;
+        case 'DS'
+            idSelect = idDS;
+        case 'VS'
+            idSelect = idVS;
+        otherwise
+            fprintf('Unknown area: %s, skipping\n', areaName);
+            continue;
     end
+
+    % Store the selected IDs
+    allResults.idSelect{areaIdx} = idSelect;
+
+    fprintf('Selected %d neurons for area %s\n', length(idSelect), areaName);
+
+    %% =============================================================================
+    % --------    GENERATE LATENTS FOR EACH METHOD
+    % =============================================================================
+
+    fprintf('Generating latents for each method...\n');
+
+    % Initialize storage for latents
+    latents = struct();
+
+    %% PCA
+    fprintf('Running PCA...\n');
+    [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+    latents.pca = score(:, 1:nDim);
+    fprintf('PCA explained variance: %.2f%%\n', sum(explained(1:nDim)));
+
+    %% UMAP
+    fprintf('Running UMAP...\n');
+    % Change to UMAP directory
+    cd(fullfile(paths.homePath, '/toolboxes/umapFileExchange (4.4)/umap/'))
+
+    % UMAP parameters
+    min_dist = 0.02;
+    spread = 1.3;
+    n_neighbors = 10;
+
+    [latents.umap, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, ...
+        'randomize', true, 'verbose', 'none', 'min_dist', min_dist, ...
+        'spread', spread, 'n_neighbors', n_neighbors);
+
+    %% PSID with Kinematics (psidKin)
+    fprintf('Running PSID with kinematics...\n');
+    % Return to original directory
+    cd(fullfile(paths.homePath, 'neuro-behavior/src/decoding'));
+
+    % Prepare data for PSID with kinematics
+    y = zscore(dataMat(:, idSelect));
+    z = zscore(kinData);
+    nx = nDim * 2;
+    n1 = nDim;
+    i = 10;
+
+    idSys = PSID(y, z, nx, n1, i);
+
+    % Predict behavior using the learned model
+    [zPred, yPred, xPred] = PSIDPredict(idSys, y);
+    latents.psidKin = xPred(:, 1:nDim);
+
+    %% PSID with Behavior Labels (psidBhv)
+    fprintf('Running PSID with behavior labels...\n');
+    
+    % Create one-hot encoded behavior labels
+    uniqueBhv = unique(bhvID);
+    uniqueBhv = uniqueBhv(uniqueBhv >= 0);  % Remove invalid labels (-1)
+    nBehaviors = length(uniqueBhv);
+    
+    % Create one-hot encoding
+    bhvOneHot = zeros(length(bhvID), nBehaviors);
+    for b = 1:nBehaviors
+        bhvOneHot(:, b) = (bhvID == uniqueBhv(b));
+    end
+    
+    % Store behavior mapping for reference
+    bhvMapping = struct();
+    bhvMapping.uniqueBhv = uniqueBhv;
+    bhvMapping.nBehaviors = nBehaviors;
+    bhvMapping.behaviorNames = behaviors(uniqueBhv + 2);  % +2 because behaviors array starts at index 1
+    
+    % Prepare data for PSID with behavior labels
+    y = zscore(dataMat(:, idSelect));
+    z = zscore(bhvOneHot);  % Use one-hot encoded behavior labels
+    nx = nDim * 2;
+    n1 = nDim;
+    i = 10;
+
+    idSys = PSID(y, z, nx, n1, i);
+
+    % Predict behavior using the learned model
+    [zPred, yPred, xPred] = PSIDPredict(idSys, y);
+    latents.psidBhv = xPred(:, 1:nDim);
+    
+    % Store behavior mapping in results
+    allResults.bhvMapping{areaIdx} = bhvMapping;
+    
+    fprintf('PSID methods completed for area %s.\n', areaName);
+
+    %% ICG
+    fprintf('Running ICG...\n');
+    dataICG = dataMat(:, idSelect);
+    [activityICG, outPairID] = ICG(dataICG');
+
+    % Take the first nDim groups of most correlated neurons
+    % latents.icg = activityICG{4}(1:nDim, :)';
+    % Take the first nDim groups of most correlated neurons
+    warning('Chaned ICG population')
+    latents.icg = zscore(activityICG{3}(1:9, :)');
+
+    fprintf('All methods completed for area %s.\n', areaName);
+
+    %% =============================================================================
+    % --------    PREPARE BEHAVIOR LABELS
+    % =============================================================================
+
+    % Shift behavior labels if needed
+    shiftSec = 0;
+    shiftFrame = 0;
+    if shiftSec > 0
+        shiftFrame = ceil(shiftSec / opts.frameSize);
+        bhvID = double(bhvID(1+shiftFrame:end));
+    end
+
+    % Adjust latents for shift
+    if shiftFrame > 0
+        fieldNames = fieldnames(latents);
+        for i = 1:length(fieldNames)
+            latents.(fieldNames{i}) = latents.(fieldNames{i})(1:end-shiftFrame, :);
+        end
+    end
+
+    % Find behavior transitions
+    preIdx = find(diff(bhvID) ~= 0);
+
+    % Prepare behavior labels based on analysis type
+    switch transOrWithin
+        case 'all'
+            svmInd = 1:length(bhvID);
+            svmID = bhvID;
+            transWithinLabel = 'all';
+        case 'trans'
+            svmID = bhvID(preIdx + 1);
+            svmInd = preIdx;
+            transWithinLabel = 'transitions';
+        case 'within'
+            svmInd = setdiff(1:length(bhvID), preIdx);
+            svmID = bhvID(svmInd);
+            transWithinLabel = 'within-behavior';
+       end
+
+    % Remove invalid behavior labels
+    deleteInd = svmID == -1;
+    svmID(deleteInd) = [];
+    svmInd(deleteInd) = [];
+
+    % Get behavior codes and names for modeling
+    if strcmp(transOrWithin, 'transVsWithin')
+        bhv2ModelCodes = [9 12];
+        bhv2ModelNames = {'transitions', 'within'};
+    else
+        bhv2ModelCodes = unique(svmID);
+        bhv2ModelNames = behaviors(bhv2ModelCodes+2);
+        bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
+    end
+
+    fprintf('Modeling %s behaviors: %s\n', transWithinLabel, strjoin(bhv2ModelNames, ', '));
+
+    %% =============================================================================
+    % --------    RUN SVM DECODING FOR EACH METHOD
+    % =============================================================================
+
+    fprintf('Running SVM decoding for each method...\n');
+
+    % Initialize storage for results
+    methods = fieldnames(latents);
+    nMethods = length(methods);
+    accuracy = zeros(nMethods, 1);
+    accuracyPermuted = zeros(nMethods, nShuffles);
+
+    % SVM parameters
+    kernelFunction = 'polynomial';
+
+    % Cross-validation setup
+    cv = cvpartition(svmID, 'HoldOut', 0.2);
+
+    for m = 1:nMethods
+        methodName = methods{m};
+        fprintf('\n--- %s ---\n', upper(methodName));
+
+        % Get latent data for this method
+        latentData = latents.(methodName);
+
+        % Prepare data for SVM
+        svmProj = latentData(svmInd, :);
+        trainData = svmProj(training(cv), :);
+        testData = svmProj(test(cv), :);
+        trainLabels = svmID(training(cv));
+        testLabels = svmID(test(cv));
+
+        % Train SVM model
+        tic;
+        t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
+        svmModel = fitcecoc(trainData, trainLabels, 'Learners', t);
+
+        % Test model
+        predictedLabels = predict(svmModel, testData);
+        accuracy(m) = sum(predictedLabels == testLabels) / length(testLabels);
+
+        fprintf('Real data accuracy: %.4f\n', accuracy(m));
+        fprintf('Model training time: %.2f seconds\n', toc);
+
+        % Permutation tests
+        fprintf('Running %d permutation tests...\n', nShuffles);
+        tic;
+
+        for s = 1:nShuffles
+            % Circular shuffle of training labels
+            rng('shuffle');
+            randShift = randi([1, length(trainLabels)]);
+            shuffledLabels = circshift(trainLabels, randShift);
+
+            % Train model on shuffled data
+            svmModelPermuted = fitcecoc(trainData, shuffledLabels, 'Learners', t);
+
+            % Test on real data
+            predictedLabelsPermuted = predict(svmModelPermuted, testData);
+            accuracyPermuted(m, s) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
+
+            fprintf('  Permutation %d: %.4f\n', s, accuracyPermuted(m, s));
+        end
+
+        fprintf('Permutation testing time: %.2f seconds\n', toc);
+        fprintf('Mean permuted accuracy: %.4f\n', mean(accuracyPermuted(m, :)));
+    end
+
+    % Store results for this area
+    allResults.latents{areaIdx} = latents;
+    allResults.accuracy{areaIdx} = accuracy;
+    allResults.accuracyPermuted{areaIdx} = accuracyPermuted;
+    allResults.methods{areaIdx} = methods;
+    allResults.bhv2ModelCodes{areaIdx} = bhv2ModelCodes;
+    allResults.bhv2ModelNames{areaIdx} = bhv2ModelNames;
+    allResults.svmInd{areaIdx} = svmInd;
+    allResults.svmID{areaIdx} = svmID;
+
+    fprintf('\nArea %s completed.\n', areaName);
 end
 
-% Find behavior transitions
-preInd = find(diff(bhvID) ~= 0);
-transEnd = unique([preInd; preInd+1; preInd-1]);
-
-% Prepare behavior labels based on analysis type
-switch transOrWithin
-    case 'all'
-        svmInd = 1:length(bhvID);
-        svmID = bhvID;
-        transWithinLabel = 'all';
-    case 'trans'
-        svmID = bhvID(transEnd + 1);
-        svmInd = transEnd;
-        transWithinLabel = 'transitions';
-    case 'within'
-        svmInd = setdiff(1:length(bhvID), transEnd);
-        svmID = bhvID(svmInd);
-        transWithinLabel = 'within-behavior';
-    case 'transVsWithin'
-        svmID = bhvID;
-        svmID(diff(bhvID) ~= 0) = 9;
-        svmID(diff(bhvID) == 0) = 12;
-        svmID(end) = [];
-        svmInd = 1:length(svmID);
-        transWithinLabel = 'trans-vs-within';
-end
-
-% Remove invalid behavior labels
-deleteInd = svmID == -1;
-svmID(deleteInd) = [];
-svmInd(deleteInd) = [];
-
-% Get behavior codes and names for modeling
-if strcmp(transOrWithin, 'transVsWithin')
-    bhv2ModelCodes = [9 12];
-    bhv2ModelNames = {'transitions', 'within'};
-else
-    bhv2ModelCodes = unique(svmID);
-    bhv2ModelNames = behaviors(bhv2ModelCodes+2);
-    bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
-end
-
-fprintf('Modeling %s behaviors: %s\n', transWithinLabel, strjoin(bhv2ModelNames, ', '));
+load handel
+sound(y,Fs)
 
 % =============================================================================
 % --------    PLOT FULL DATA FOR EACH METHOD
 % =============================================================================
+for areaIdx = areasToTest
+    areaName = areas{areaIdx};
 
-if plotFullMap
-    fprintf('Plotting full data for each method...\n');
-    
-    fieldNames = fieldnames(latents);
-    for i = 1:length(fieldNames)
-        methodName = fieldNames{i};
-        latentData = latents.(methodName);
-        
-        % Plot full time of all behaviors
-        colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + 2, 'UniformOutput', false);
-        colorsForPlot = vertcat(colorsForPlot{:});
-        
-        figure(figHFull + i);
-        clf; hold on;
-        
-        if nDim > 2
-            scatter3(latentData(:, 1), latentData(:, 2), latentData(:, 3), 20, colorsForPlot, 'filled', 'MarkerFaceAlpha', 0.6);
-        else
-            scatter(latentData(:, 1), latentData(:, 2), 20, colorsForPlot, 'filled', 'MarkerFaceAlpha', 0.6);
-        end
-        
-        title(sprintf('%s %s %dD - All Behaviors (bin=%.2f)', selectFrom, upper(methodName), nDim, opts.frameSize));
-        xlabel('D1'); ylabel('D2');
-        if nDim > 2
-            zlabel('D3');
-        end
-        grid on;
-        
-        % Add legend for behaviors
-        uniqueBhv = unique(bhvID);
-        uniqueBhv = uniqueBhv(uniqueBhv >= 0);
-        for j = 1:length(uniqueBhv)
-            bhvIdx = uniqueBhv(j);
-            if bhvIdx < length(behaviors)
-                scatter(NaN, NaN, 20, colors(bhvIdx+2,:), 'filled', 'DisplayName', behaviors{bhvIdx+2});
+    figHFull = 270;
+    if plotFullMap
+        fprintf('Plotting full data for each method...\n');
+
+        fieldNames = fieldnames(allResults.latents{areaIdx});
+        for i = 1:length(fieldNames)
+            methodName = fieldNames{i};
+            latentData = allResults.latents{areaIdx}.(methodName);
+
+            % Plot full time of all behaviors
+            colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + 2, 'UniformOutput', false);
+            colorsForPlot = vertcat(colorsForPlot{:});
+
+            figure(figHFull + i);
+            clf; hold on;
+
+            if nDim > 2
+                scatter3(latentData(:, 1), latentData(:, 2), latentData(:, 3), 20, colorsForPlot, 'filled', 'MarkerFaceAlpha', 0.6);
+            else
+                scatter(latentData(:, 1), latentData(:, 2), 20, colorsForPlot, 'filled', 'MarkerFaceAlpha', 0.6);
             end
-        end
-        legend('Location', 'best');
-    end
-end
 
-% =============================================================================
-% --------    PLOT MODELING DATA FOR EACH METHOD
-% =============================================================================
-
-if plotModelData
-    fprintf('Plotting modeling data for each method...\n');
-    
-    fieldNames = fieldnames(latents);
-    for i = 1:length(fieldNames)
-        methodName = fieldNames{i};
-        latentData = latents.(methodName);
-        
-        % Get colors for modeled behaviors
-        colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 2, 'UniformOutput', false);
-        colorsForPlot = vertcat(colorsForPlot{:});
-        
-        figure(figHModel + i);
-        clf; hold on;
-        
-        if nDim > 2
-            scatter3(latentData(svmInd, 1), latentData(svmInd, 2), latentData(svmInd, 3), 40, colorsForPlot, 'filled');
-        else
-            scatter(latentData(svmInd, 1), latentData(svmInd, 2), 40, colorsForPlot, 'filled');
-        end
-        
-        title(sprintf('%s %s %dD - %s (bin=%.2f)', selectFrom, upper(methodName), nDim, transWithinLabel, opts.frameSize));
-        xlabel('D1'); ylabel('D2');
-        if nDim > 2
-            zlabel('D3');
-        end
-        grid on;
-        
-        % Add legend for modeled behaviors
-        for j = 1:length(bhv2ModelCodes)
-            bhvIdx = bhv2ModelCodes(j);
-            if bhvIdx < length(behaviors)
-                scatter(NaN, NaN, 40, colors(bhvIdx+2,:), 'filled', 'DisplayName', behaviors{bhvIdx+2});
+            title(sprintf('%s %s %dD - All Behaviors (bin=%.2f)', areaName, upper(methodName), nDim, opts.frameSize));
+            xlabel('D1'); ylabel('D2');
+            if nDim > 2
+                zlabel('D3');
             end
+            grid on;
+
+            % Add legend for behaviors
+            uniqueBhv = unique(bhvID);
+            uniqueBhv = uniqueBhv(uniqueBhv >= 0);
+            for j = 1:length(uniqueBhv)
+                bhvIdx = uniqueBhv(j);
+                if bhvIdx < length(behaviors)
+                    scatter(NaN, NaN, 20, colors(bhvIdx+2,:), 'filled', 'DisplayName', behaviors{bhvIdx+2});
+                end
+            end
+            legend('Location', 'best');
         end
-        legend('Location', 'best');
+    end
+
+    % =============================================================================
+    % --------    PLOT MODELING DATA FOR EACH METHOD
+    % =============================================================================
+    figHModel = 280;
+    if plotModelData
+        fprintf('Plotting modeling data for each method...\n');
+
+        fieldNames = fieldnames(latents);
+        for i = 1:length(fieldNames)
+            methodName = fieldNames{i};
+            latentData = latents.(methodName);
+
+            % Get colors for modeled behaviors
+            colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 2, 'UniformOutput', false);
+            colorsForPlot = vertcat(colorsForPlot{:});
+
+            figure(figHModel + i);
+            clf; hold on;
+
+            if nDim > 2
+                scatter3(latentData(svmInd, 1), latentData(svmInd, 2), latentData(svmInd, 3), 40, colorsForPlot, 'filled');
+            else
+                scatter(latentData(svmInd, 1), latentData(svmInd, 2), 40, colorsForPlot, 'filled');
+            end
+
+            title(sprintf('%s %s %dD - %s (bin=%.2f)', areaName, upper(methodName), nDim, transWithinLabel, opts.frameSize));
+            xlabel('D1'); ylabel('D2');
+            if nDim > 2
+                zlabel('D3');
+            end
+            grid on;
+
+            % Add legend for modeled behaviors
+            for j = 1:length(bhv2ModelCodes)
+                bhvIdx = bhv2ModelCodes(j);
+                if bhvIdx < length(behaviors)
+                    scatter(NaN, NaN, 40, colors(bhvIdx+2,:), 'filled', 'DisplayName', behaviors{bhvIdx+2});
+                end
+            end
+            legend('Location', 'best');
+        end
     end
 end
-
 % =============================================================================
-% --------    RUN SVM DECODING FOR EACH METHOD
-% =============================================================================
-
-fprintf('Running SVM decoding for each method...\n');
-
-% Initialize storage for results
-methods = fieldnames(latents);
-nMethods = length(methods);
-accuracy = zeros(nMethods, 1);
-accuracyPermuted = zeros(nMethods, nShuffles);
-
-% SVM parameters
-kernelFunction = 'polynomial';
-
-% Cross-validation setup
-cv = cvpartition(svmID, 'HoldOut', 0.2);
-
-for m = 1:nMethods
-    methodName = methods{m};
-    fprintf('\n--- %s ---\n', upper(methodName));
-    
-    % Get latent data for this method
-    latentData = latents.(methodName);
-    
-    % Prepare data for SVM
-    svmProj = latentData(svmInd, :);
-    trainData = svmProj(training(cv), :);
-    testData = svmProj(test(cv), :);
-    trainLabels = svmID(training(cv));
-    testLabels = svmID(test(cv));
-    
-    % Train SVM model
-    tic;
-    t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
-    svmModel = fitcecoc(trainData, trainLabels, 'Learners', t);
-    
-    % Test model
-    predictedLabels = predict(svmModel, testData);
-    accuracy(m) = sum(predictedLabels == testLabels) / length(testLabels);
-    
-    fprintf('Real data accuracy: %.4f\n', accuracy(m));
-    fprintf('Model training time: %.2f seconds\n', toc);
-    
-    % Permutation tests
-    fprintf('Running %d permutation tests...\n', nShuffles);
-    tic;
-    
-    for s = 1:nShuffles
-        % Circular shuffle of training labels
-        rng('shuffle');
-        randShift = randi([1, length(trainLabels)]);
-        shuffledLabels = circshift(trainLabels, randShift);
-        
-        % Train model on shuffled data
-        svmModelPermuted = fitcecoc(trainData, shuffledLabels, 'Learners', t);
-        
-        % Test on real data
-        predictedLabelsPermuted = predict(svmModelPermuted, testData);
-        accuracyPermuted(m, s) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
-        
-        fprintf('  Permutation %d: %.4f\n', s, accuracyPermuted(m, s));
-    end
-    
-    fprintf('Permutation testing time: %.2f seconds\n', toc);
-    fprintf('Mean permuted accuracy: %.4f\n', mean(accuracyPermuted(m, :)));
-end
-
-% =============================================================================
-% --------    PLOT RESULTS COMPARISON
+% --------    PLOT RESULTS COMPARISON FOR ALL AREAS
 % =============================================================================
 
 if plotResults
-    fprintf('Plotting results comparison...\n');
-    
-    % Create comparison figure
+    fprintf('Plotting results comparison for all areas...\n');
+
+    % Create comparison figure for all areas
     fig = figure(100);
-    set(fig, 'Position', [monitorOne(1), monitorOne(2), monitorOne(3)/2, monitorOne(4)/2]);
-    clf; hold on;
-    
-    % Bar plot of accuracies
-    x = 1:nMethods;
-    barWidth = 0.35;
-    
-    % Real data bars
-    b1 = bar(x - barWidth/2, accuracy, barWidth, 'FaceColor', 'blue', 'DisplayName', 'Real Data');
-    
-    % Permuted data bars
-    b2 = bar(x + barWidth/2, mean(accuracyPermuted, 2), barWidth, 'FaceColor', 'red', 'DisplayName', 'Permuted (mean)');
-    
-    % Add error bars for permuted data
-    errorbar(x + barWidth/2, mean(accuracyPermuted, 2), std(accuracyPermuted, [], 2), 'k.', 'LineWidth', 1.5, 'DisplayName', 'Permuted (std)');
-    
-    % Customize plot
-    set(gca, 'XTick', x, 'XTickLabel', upper(methods));
-    ylabel('Accuracy');
-    title(sprintf('SVM Decoding Accuracy Comparison - %s (%s)', selectFrom, transWithinLabel));
-    legend('Location', 'best');
-    grid on;
-    ylim([0, 1]);
-    
-    % Add significance indicators
-    for m = 1:nMethods
-        % Simple significance test: if real accuracy > 95th percentile of permuted
-        permSorted = sort(accuracyPermuted(m, :));
-        threshold95 = permSorted(ceil(0.95 * nShuffles));
-        
-        if accuracy(m) > threshold95
-            text(m, accuracy(m) + 0.02, '*', 'HorizontalAlignment', 'center', 'FontSize', 16, 'FontWeight', 'bold');
+    set(fig, 'Position', [monitorOne(1), monitorOne(2), monitorOne(3), monitorOne(4)]);
+    clf;
+
+    nAreas = length(areasToTest);
+    nMethods = length(allResults.methods{areasToTest(1)});
+
+    % Create subplots for each area
+    for a = 1:nAreas
+        areaIdx = areasToTest(a);
+        areaName = areas{areaIdx};
+
+        subplot(1, nAreas, a);
+        hold on;
+
+        % Get data for this area
+        accuracy = allResults.accuracy{areaIdx};
+        accuracyPermuted = allResults.accuracyPermuted{areaIdx};
+        methods = allResults.methods{areaIdx};
+
+        % Bar plot of accuracies
+        x = 1:nMethods;
+        barWidth = 0.35;
+
+        % Real data bars
+        b1 = bar(x - barWidth/2, accuracy, barWidth, 'FaceColor', 'blue', 'DisplayName', 'Real Data');
+
+        % Permuted data bars
+        b2 = bar(x + barWidth/2, mean(accuracyPermuted, 2), barWidth, 'FaceColor', 'red', 'DisplayName', 'Permuted (mean)');
+
+        % Add error bars for permuted data
+        errorbar(x + barWidth/2, mean(accuracyPermuted, 2), std(accuracyPermuted, [], 2), 'k.', 'LineWidth', 1.5, 'DisplayName', 'Permuted (std)');
+
+        % Customize plot
+        set(gca, 'XTick', x, 'XTickLabel', upper(methods));
+        ylabel('Accuracy');
+        title(sprintf('%s (%s)', areaName, transWithinLabel));
+        legend('Location', 'best');
+        grid on;
+        ylim([0, 1]);
+
+        % Add significance indicators
+        for m = 1:nMethods
+            % Simple significance test: if real accuracy > 95th percentile of permuted
+            permSorted = sort(accuracyPermuted(m, :));
+            threshold95 = permSorted(ceil(0.95 * nShuffles));
+
+            if accuracy(m) > threshold95
+                text(m, accuracy(m) + 0.02, '*', 'HorizontalAlignment', 'center', 'FontSize', 16, 'FontWeight', 'bold');
+            end
+        end
+
+        % Add accuracy values as text
+        for m = 1:nMethods
+            text(m - barWidth/2, accuracy(m) + 0.01, sprintf('%.3f', accuracy(m)), ...
+                'HorizontalAlignment', 'center', 'FontSize', 10);
+            text(m + barWidth/2, mean(accuracyPermuted(m, :)) + 0.01, sprintf('%.3f', mean(accuracyPermuted(m, :))), ...
+                'HorizontalAlignment', 'center', 'FontSize', 10);
         end
     end
-    
-    % Add accuracy values as text
-    for m = 1:nMethods
-        text(m - barWidth/2, accuracy(m) + 0.01, sprintf('%.3f', accuracy(m)), ...
-            'HorizontalAlignment', 'center', 'FontSize', 10);
-        text(m + barWidth/2, mean(accuracyPermuted(m, :)) + 0.01, sprintf('%.3f', mean(accuracyPermuted(m, :))), ...
-            'HorizontalAlignment', 'center', 'FontSize', 10);
+
+    sgtitle('SVM Decoding Accuracy Comparison - All Areas', 'FontSize', 16);
+
+    % Summary statistics for all areas
+    fprintf('\n=== SUMMARY FOR ALL AREAS ===\n');
+    fprintf('Area\t\tMethod\t\tReal\t\tPermuted (mean ± std)\t\tDifference\n');
+    fprintf('----\t\t-----\t\t----\t\t----------------------\t\t----------\n');
+
+    for a = 1:nAreas
+        areaIdx = areasToTest(a);
+        areaName = areas{areaIdx};
+        accuracy = allResults.accuracy{areaIdx};
+        accuracyPermuted = allResults.accuracyPermuted{areaIdx};
+        methods = allResults.methods{areaIdx};
+
+        for m = 1:length(methods)
+            diffAcc = accuracy(m) - mean(accuracyPermuted(m, :));
+            fprintf('%s\t\t%s\t\t%.3f\t\t%.3f ± %.3f\t\t%.3f\n', ...
+                areaName, upper(methods{m}), accuracy(m), mean(accuracyPermuted(m, :)), ...
+                std(accuracyPermuted(m, :)), diffAcc);
+        end
+
+        % Find best method for this area
+        [bestAcc, bestIdx] = max(accuracy);
+        fprintf('Best method for %s: %s (accuracy: %.3f)\n', areaName, upper(methods{bestIdx}), bestAcc);
+        fprintf('\n');
     end
-    
-    % Summary statistics
-    fprintf('\n=== SUMMARY ===\n');
-    fprintf('Method\t\tReal\t\tPermuted (mean ± std)\t\tDifference\n');
-    fprintf('-----\t\t----\t\t----------------------\t\t----------\n');
-    for m = 1:nMethods
-        diff = accuracy(m) - mean(accuracyPermuted(m, :));
-        fprintf('%s\t\t%.3f\t\t%.3f ± %.3f\t\t%.3f\n', ...
-            upper(methods{m}), accuracy(m), mean(accuracyPermuted(m, :)), ...
-            std(accuracyPermuted(m, :)), diff);
-    end
-    
-    % Find best method
-    [bestAcc, bestIdx] = max(accuracy);
-    fprintf('\nBest performing method: %s (accuracy: %.3f)\n', upper(methods{bestIdx}), bestAcc);
 end
 
 % =============================================================================
@@ -452,9 +552,9 @@ end
 
 fprintf('Saving results...\n');
 
-% Create filename with relevant parameters
-filename = sprintf('svm_decoding_compare_%s_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
-    selectFrom, transOrWithin, nDim, opts.frameSize, nShuffles);
+% Create filename without brain area name
+filename = sprintf('svm_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
+    transOrWithin, nDim, opts.frameSize, nShuffles);
 
 % Create full path
 savePath = fullfile(paths.dropPath, 'decoding');
@@ -464,67 +564,53 @@ end
 
 fullFilePath = fullfile(savePath, filename);
 
-% Prepare data structure for saving
-results = struct();
-results.brainArea = selectFrom;
-results.analysisType = transOrWithin;
-results.parameters = struct();
-results.parameters.nDim = nDim;
-results.parameters.frameSize = opts.frameSize;
-results.parameters.nShuffles = nShuffles;
-results.parameters.kernelFunction = kernelFunction;
-results.parameters.collectStart = opts.collectStart;
-results.parameters.collectFor = opts.collectFor;
-results.parameters.minActTime = opts.minActTime;
+% Save the multi-area results
+save(fullFilePath, 'allResults', '-v7.3');
 
-% Save results
-results.accuracy = accuracy;
-results.accuracyPermuted = accuracyPermuted;
-results.methods = methods;
-results.bhv2ModelCodes = bhv2ModelCodes;
-results.bhv2ModelNames = bhv2ModelNames;
-results.latents = latents;
-results.svmInd = svmInd;
-results.svmID = svmID;
-
-% Save the data
-save(fullFilePath, 'results', '-v7.3');
-
-fprintf('Results saved to: %s\n', fullFilePath);
+fprintf('Multi-area results saved to: %s\n', fullFilePath);
 
 % Also save a summary text file
 summaryFilename = strrep(filename, '.mat', '_summary.txt');
 summaryPath = fullfile(savePath, summaryFilename);
 
 fid = fopen(summaryPath, 'w');
-fprintf(fid, 'SVM Decoding Comparison Results\n');
-fprintf(fid, '================================\n\n');
-fprintf(fid, 'Brain Area: %s\n', selectFrom);
-fprintf(fid, 'Analysis Type: %s\n', transWithinLabel);
+fprintf(fid, 'SVM Decoding Comparison Results - Multi-Area\n');
+fprintf(fid, '============================================\n\n');
+fprintf(fid, 'Areas Tested: %s\n', strjoin(areas(areasToTest), ', '));
+fprintf(fid, 'Analysis Type: %s\n', transOrWithin);
 fprintf(fid, 'Number of Dimensions: %d\n', nDim);
 fprintf(fid, 'Frame Size: %.2f seconds\n', opts.frameSize);
 fprintf(fid, 'Number of Permutations: %d\n', nShuffles);
-fprintf(fid, 'Kernel Function: %s\n', kernelFunction);
+fprintf(fid, 'Kernel Function: %s\n', 'polynomial');
 fprintf(fid, 'Data Collection Duration: %.0f seconds\n', opts.collectFor);
 fprintf(fid, 'Minimum Activity Time: %.2f seconds\n', opts.minActTime);
-fprintf(fid, 'Number of Behaviors Modeled: %d\n', length(bhv2ModelCodes));
-fprintf(fid, 'Behaviors: %s\n', strjoin(bhv2ModelNames, ', '));
 fprintf(fid, '\n');
 
-fprintf(fid, 'Results Summary:\n');
-fprintf(fid, 'Method\t\tReal Accuracy\tPermuted (mean ± std)\tDifference\n');
-fprintf(fid, '-----\t\t-------------\t----------------------\t----------\n');
-for m = 1:nMethods
-    diff = accuracy(m) - mean(accuracyPermuted(m, :));
-    fprintf(fid, '%s\t\t%.4f\t\t%.4f ± %.4f\t\t%.4f\n', ...
-        upper(methods{m}), accuracy(m), mean(accuracyPermuted(m, :)), ...
-        std(accuracyPermuted(m, :)), diff);
-end
+fprintf(fid, 'Results Summary for All Areas:\n');
+fprintf(fid, 'Area\t\tMethod\t\tReal Accuracy\tPermuted (mean ± std)\tDifference\n');
+fprintf(fid, '----\t\t-----\t\t-------------\t----------------------\t----------\n');
 
-fprintf(fid, '\nBest performing method: %s (accuracy: %.4f)\n', ...
-    upper(methods{bestIdx}), bestAcc);
+for a = 1:length(areasToTest)
+    areaIdx = areasToTest(a);
+    areaName = areas{areaIdx};
+    accuracy = allResults.accuracy{areaIdx};
+    accuracyPermuted = allResults.accuracyPermuted{areaIdx};
+    methods = allResults.methods{areaIdx};
+
+    for m = 1:length(methods)
+        diffAcc = accuracy(m) - mean(accuracyPermuted(m, :));
+        fprintf(fid, '%s\t\t%s\t\t%.4f\t\t%.4f ± %.4f\t\t%.4f\n', ...
+            areaName, upper(methods{m}), accuracy(m), mean(accuracyPermuted(m, :)), ...
+            std(accuracyPermuted(m, :)), diffAcc);
+    end
+
+    % Find best method for this area
+    [bestAcc, bestIdx] = max(accuracy);
+    fprintf(fid, 'Best method for %s: %s (accuracy: %.4f)\n', areaName, upper(methods{bestIdx}), bestAcc);
+    fprintf(fid, '\n');
+end
 
 fclose(fid);
 
 fprintf('Summary saved to: %s\n', summaryPath);
-fprintf('\nAnalysis complete!\n');
+fprintf('\nMulti-area analysis complete!\n');
