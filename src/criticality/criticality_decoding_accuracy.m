@@ -33,205 +33,222 @@ end
 collectStart = results.naturalistic.collectStart;
 collectFor = results.naturalistic.collectFor;
 
-%%
-opts = neuro_behavior_options;
-opts.minActTime = .16;
-opts.collectStart = collectStart; % 0 * 60 * 60; % seconds
-opts.collectFor = collectFor; % 45 * 60; % seconds
-opts.minFiringRate = .05;
 
+%% Which brain areas to test (and hence which decoding results files to load)
+% Define brain areas
+areas = {'M23', 'M56', 'DS', 'VS'};
+
+% Choose which areas to test
+areasToTest = 2:4;
+
+
+
+%% ==============================================     Load Existing Decoding Results     ==============================================
+
+% Load the saved results from the multi-area file
+transOrWithin = 'all';
+binSize = .1;
+
+fprintf('\n=== Loading Existing Multi-Area Decoding Results ===\n');
+
+% Load existing multi-area SVM decoding comparison results
+svmResultsPath = fullfile(paths.dropPath, 'decoding');
+svmFiles = dir(fullfile(svmResultsPath, 'svm_decoding_compare_multi_area_*.mat'));
+
+if isempty(svmFiles)
+    fprintf('Error: No multi-area SVM decoding comparison files found in %s\n', svmResultsPath);
+    fprintf('Please run svm_decoding_compare.m first to generate the required data.\n');
+    return;
+end
+
+% Load the most recent multi-area file
+[~, idx] = max([svmFiles.datenum]);
+svmResultsFile = fullfile(svmResultsPath, svmFiles(idx).name);
+load(svmResultsFile, 'allResults');
+fprintf('Loaded multi-area SVM decoding results from: %s\n', svmFiles(idx).name);
+
+% Extract results for the areas we want to test
+svmLatents = cell(1, length(areas));
+svmMethods = cell(1, length(areas));
+svmBinSize = cell(1, length(areas));
+svmSvmInd = cell(1, length(areas));
+svmSvmID = cell(1, length(areas));
+svmAccuracy = cell(1, length(areas));
+
+% Extract data for each area to test
+for a = areasToTest
+    areaName = areas{a};
+    fprintf('\nExtracting results for area %s...\n', areaName);
+    
+    % Check if this area exists in the loaded results
+    if ~isempty(allResults.latents{a})
+        svmLatents{a} = allResults.latents{a};
+        svmMethods{a} = allResults.methods{a};
+        svmBinSize{a} = allResults.parameters.frameSize;
+        svmSvmInd{a} = allResults.svmInd{a};
+        svmSvmID{a} = allResults.svmID{a};
+        svmAccuracy{a} = allResults.accuracy{a};
+        
+        fprintf('Area %s - SVM parameters: bin size = %.3f s, methods = %s\n', ...
+            areaName, svmBinSize{a}, strjoin(svmMethods{a}, ', '));
+        fprintf('Area %s - SVM accuracies: %s\n', ...
+            areaName, strjoin(arrayfun(@(x) sprintf('%.3f', x), svmAccuracy{a}, 'UniformOutput', false), ', '));
+    else
+        fprintf('Warning: No data available for area %s in the multi-area file\n', areaName);
+    end
+end
+
+% Check if we successfully loaded data for all areas
+loadedAreas = areasToTest(~cellfun(@isempty, svmLatents(areasToTest)));
+if isempty(loadedAreas)
+    fprintf('Error: No SVM decoding results loaded for any areas. Please check file availability.\n');
+    return;
+end
+
+fprintf('\nSuccessfully loaded results for areas: %s\n', strjoin(areas(loadedAreas), ', '));
+
+% Calculate window size to match criticality analysis for each area
+% The criticality analysis uses stepSize to move through the data
+% We need to calculate how many SVM bins fit in the criticality window
+svmWindowSize = cell(1, length(areas));
+svmStepSize = cell(1, length(areas));
+
+for a = loadedAreas
+    svmWindowSize{a} = criticalityWindowSize / svmBinSize{a};  % Number of SVM bins per criticality window
+    svmStepSize{a} = stepSize / svmBinSize{a};  % Number of SVM bins to step
+    fprintf('Area %s - Criticality window size: %.1f s = %.1f SVM bins\n', ...
+        areas{a}, criticalityWindowSize, svmWindowSize{a});
+    fprintf('Area %s - Criticality step size: %.1f s = %.1f SVM bins\n', ...
+        areas{a}, stepSize, svmStepSize{a});
+end
+
+%% ==============================================     Setup and Variables     ==============================================
+
+% Get paths and setup
 paths = get_paths;
 
-% Criticality parameter ranges for reference
-tauRange = [1.2 2.5];
-alphaRange = [1.5 2.2];
-paramSDRange = [1.3 1.7];
-
-% Monitor setup
+% Monitor setup for plotting
 monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :);
 monitorTwo = monitorPositions(size(monitorPositions, 1), :);
 
-%% ==============================================     Analysis Parameters     ==============================================
 
-% Dimensionality reduction options
-dimReductionMethod = 'umap';  % 'pca' or 'umap' (UMAP requires MATLAB toolbox)
-nDim = 4;                    % Number of dimensions to use
-
-% SVM parameters
-kernelFunction = 'polynomial';
-nPermutations = 1;
-svmBinSize = 0.1;        % Bin size for SVM analysis (can differ from criticality bin size)
-opts.frameSize = svmBinSize;
-
-% Behavior analysis parameters
-transOrWithin = 'all';   % 'trans', 'within', or 'all'
-shiftSec = 0;            % Time shift between neural and behavior data
-
-
-%% ==============================================     Data Loading     ==============================================
-
-%% Naturalistic data
-getDataType = 'spikes';
-opts.firingRateCheckTime = 5 * 60;
-get_standard_data
-
-[dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
-
-areas = {'M23', 'M56', 'DS', 'VS'};
-idListNat = {idM23, idM56, idDS, idVS};
-
-% Behavior labels and colors
-colors = colors_for_behaviors(codes);
-bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
-    'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
-    'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...
-    'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
-
-% Initialize all area-wise cells
-[decodingAccuracyNat, svmModels, predictedLabels, realLabels, corrMatNat_d2Decoding]...
-    = deal(cell(1, length(areas)));
-
-
-%% Choose which areas to fit (can fill in blank arrays in decodingAccuracyNat
-areasToTest = 2:4;
-
-
-%% ==============================================     Train SVM Models     ==============================================
-
-fprintf('\n=== Training SVM Models on All Data ===\n');
-
-% Train SVM models and predict behavior labels for all data
-for a = areasToTest
-    fprintf('Training SVM model for area %s...\n', areas{a});
-    
-    aID = idListNat{a};
-    
-    % Bin data for SVM analysis
-    aDataMatSVM = dataMat(:, aID);
-    
-    % Prepare behavior labels for SVM training
-    if strcmp(transOrWithin, 'trans')  % Need to update code if using trans or within, to ensure the right indices are being analyzed for accuracy calculations
-    %     % Find transitions
-    %     preInd = find(diff(bhvID) ~= 0);
-    %     svmID = bhvID(preInd + 1);  % behavior ID being transitioned into
-    %     svmInd = preInd + 1;
-    % elseif strcmp(transOrWithin, 'within')
-    %     % Find within-behavior periods
-    %     transIndLog = zeros(length(bhvID), 1);
-    %     preInd = find(diff(bhvID) ~= 0);
-    %     transIndLog(preInd) = 1;
-    %     svmInd = find(~transIndLog);
-    %     svmID = bhvID(svmInd);
-    elseif strcmp(transOrWithin, 'all')
-        % Use all behavior labels
-        svmInd = 1:length(bhvID);
-        svmID = bhvID;
-    end
-    
-    % Remove indices where bhvID = -1 (invalid behavior labels)
-    validBhvIdx = svmID ~= -1;
-    svmID = svmID(validBhvIdx);
-    svmInd = svmInd(validBhvIdx);
-    
-    % Only proceed if we have enough data points
-    if length(unique(svmID)) > 1 && length(svmID) > 10
-fprintf('Using first %d %s components...\n', nDim, dimReductionMethod);        
-% Prepare data for dimensionality reduction
-        if strcmp(dimReductionMethod, 'pca')    
-            % PCA dimensionality reduction
-            [coeff, score, ~, ~, explained] = pca(zscore(aDataMatSVM));
-            projData = score(:, 1:nDim);
-        elseif strcmp(dimReductionMethod, 'umap')
-            % UMAP dimensionality reduction
-            try
-                [reduction, umap, clusterIdentifiers, extras] = run_umap(aDataMatSVM, 'n_components', nDim, 'verbose', 'none');
-                projData = reduction;
-            catch
-                warning('UMAP not available, falling back to PCA');
-                [coeff, score, ~, ~, explained] = pca(zscore(aDataMatSVM));
-                projData = score(:, 1:nDim);
-            end
-        end
-        
-        % Get corresponding projection data
-        svmProj = projData(svmInd, :);
-        
-        % Train SVM model on all data
-        try
-            t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
-            svmModels{a} = fitcecoc(svmProj, svmID, 'Learners', t);
-            fprintf('SVM model trained for area %s\n', areas{a});
-            
-            % Predict behavior labels for all data
-            allProjData = projData;  % Use all projected data
-            allPredictedLabels = predict(svmModels{a}, allProjData);
-            
-            % Store predictions and real labels
-            % Note: allPredictedLabels corresponds to all time points in bhvID
-            predictedLabels{a} = allPredictedLabels;
-            realLabels{a} = bhvID;  % Use original bhvID for alignment
-            
-            fprintf('Predicted behavior labels for area %s\n', areas{a});
-        catch e
-            fprintf('SVM training failed for area %s: %s\n', areas{a}, e.message);
-            svmModels{a} = [];
-            predictedLabels{a} = [];
-            realLabels{a} = [];
-        end
-    else
-        fprintf('Insufficient data for SVM training in area %s\n', areas{a});
-        svmModels{a} = [];
-        predictedLabels{a} = [];
-        realLabels{a} = [];
-    end
-end
 
 %% ==============================================     Calculate Decoding Accuracy for Each Window     ==============================================
 
 fprintf('\n=== Calculating Decoding Accuracy for Each Criticality Window ===\n');
 
+% Initialize storage for decoding accuracy results
+decodingAccuracyNat = cell(1, length(areas));
+corrMatNat_d2Decoding = cell(1, length(areas));
 
-for a = areasToTest
+% For each brain area
+for a = loadedAreas
     fprintf('\nProcessing area %s...\n', areas{a});
     
-    if isempty(svmModels{a}) || isempty(predictedLabels{a})
-        fprintf('No SVM model or predictions available for area %s, skipping\n', areas{a});
-        decodingAccuracyNat{a} = nan(size(d2Nat{a}));
+    % Check if we have data for this area
+    if isempty(svmLatents{a})
+        fprintf('No SVM data available for area %s, skipping\n', areas{a});
         continue;
     end
     
-    % Initialize decoding accuracy array (same size as d2 data)
-    decodingAccuracyNat{a} = nan(size(d2Nat{a}));
+    % Get valid d2 time points
+    validD2Idx = ~isnan(d2Nat{a});
+    validD2Times = startSNat{a}(validD2Idx);
+    
+    % Initialize decoding accuracy array for each method
+    decodingAccuracyNat{a} = struct();
+    for m = 1:length(svmMethods{a})
+        methodName = svmMethods{a}{m};
+        decodingAccuracyNat{a}.(methodName) = nan(size(d2Nat{a}));
+    end
     
     % Process each criticality window
-    for i = 1:length(startSNat{a})
-        centerTime = startSNat{a}(i);
+    for i = 1:length(validD2Times)
+        centerTime = validD2Times(i);
         
         % Calculate window boundaries (same as used for criticality)
         windowStartTime = centerTime - criticalityWindowSize/2;
         windowEndTime = centerTime + criticalityWindowSize/2;
         
-        % Convert to frame indices for the predicted labels
-        % Note: predictedLabels{a} corresponds to the same time points as bhvID
-        startFrame = max(1, round(windowStartTime / svmBinSize));
-        endFrame = min(length(predictedLabels{a}), round(windowEndTime / svmBinSize));
+        % Convert to frame indices for the SVM data
+        startFrame = max(1, round(windowStartTime / svmBinSize{a}));
+        endFrame = min(length(svmSvmInd{a}), round(windowEndTime / svmBinSize{a}));
         
-        % Get predicted and real labels for this window
-        windowPredictedLabels = predictedLabels{a}(startFrame:endFrame);
-        windowRealLabels = realLabels{a}(startFrame:endFrame);
+        % Get the indices within this window that correspond to SVM analysis
+        windowSvmIndices = svmSvmInd{a}(startFrame:endFrame);
         
-        % Filter out indices with real label values of -1
-        validIndices = windowRealLabels ~= -1;
-        windowPredictedLabels = windowPredictedLabels(validIndices);
-        windowRealLabels = windowRealLabels(validIndices);
-        
-        % Calculate accuracy for this window
-        if length(windowPredictedLabels) > 5
-            accuracy = sum(windowPredictedLabels == windowRealLabels) / length(windowPredictedLabels);
-            decodingAccuracyNat{a}(i) = accuracy;
-        else
-            decodingAccuracyNat{a}(i) = nan;
+        % For each method, calculate decoding accuracy
+        for m = 1:length(svmMethods{a})
+            methodName = svmMethods{a}{m};
+            
+            % Get latent data for this method
+            latentData = svmLatents{a}.(methodName);
+            
+            % Get the latent data points corresponding to this window
+            if ~isempty(windowSvmIndices) && max(windowSvmIndices) <= size(latentData, 1)
+                windowLatentData = latentData(windowSvmIndices, :);
+                
+                % Get the corresponding behavior labels
+                windowBehaviorLabels = svmSvmID{a}(startFrame:endFrame);
+                
+                % Filter out invalid behavior labels (-1)
+                validIndices = windowBehaviorLabels ~= -1;
+                windowLatentData = windowLatentData(validIndices, :);
+                windowBehaviorLabels = windowBehaviorLabels(validIndices);
+                
+                % Calculate decoding accuracy for this window
+                if length(windowBehaviorLabels) > 5
+                    try
+                        % For each method, we need to retrain a model on the window data
+                        % since we don't have access to the original trained models
+                        
+                        % Prepare data for this window
+                        windowLatentDataClean = windowLatentData(validIndices, :);
+                        windowBehaviorLabelsClean = windowBehaviorLabels(validIndices);
+                        
+                        % Use cross-validation to estimate accuracy
+                        if length(unique(windowBehaviorLabelsClean)) > 1
+                            % Use 5-fold cross-validation
+                            cv = cvpartition(windowBehaviorLabelsClean, 'KFold', min(5, length(unique(windowBehaviorLabelsClean))));
+                            cvAccuracy = zeros(cv.NumTestSets, 1);
+                            
+                            for fold = 1:cv.NumTestSets
+                                trainIdx = training(cv, fold);
+                                testIdx = test(cv, fold);
+                                
+                                trainData = windowLatentDataClean(trainIdx, :);
+                                trainLabels = windowBehaviorLabelsClean(trainIdx);
+                                testData = windowLatentDataClean(testIdx, :);
+                                testLabels = windowBehaviorLabelsClean(testIdx);
+                                
+                                % Train SVM model
+                                t = templateSVM('Standardize', true, 'KernelFunction', 'polynomial');
+                                svmModel = fitcecoc(trainData, trainLabels, 'Learners', t);
+                                
+                                % Predict and calculate accuracy
+                                predictedLabels = predict(svmModel, testData);
+                                cvAccuracy(fold) = sum(predictedLabels == testLabels) / length(testLabels);
+                            end
+                            
+                            % Use mean cross-validation accuracy
+                            accuracy = mean(cvAccuracy);
+                        else
+                            % If only one behavior class, accuracy is undefined
+                            accuracy = nan;
+                        end
+                        
+                        decodingAccuracyNat{a}.(methodName)(i) = accuracy;
+                    catch e
+                        fprintf('Error calculating accuracy for method %s, window %d: %s\n', methodName, i, e.message);
+                        decodingAccuracyNat{a}.(methodName)(i) = nan;
+                    end
+                else
+                    decodingAccuracyNat{a}.(methodName)(i) = nan;
+                end
+            else
+                decodingAccuracyNat{a}.(methodName)(i) = nan;
+            end
         end
     end
     fprintf('Area %s completed\n', areas{a});
@@ -239,44 +256,73 @@ end
 
 %% ==============================================     Correlation Analysis     ==============================================
 
-% Calculate correlations between d2 and decoding accuracy
+% Calculate correlations between d2 and decoding accuracy for each method
 fprintf('\n=== Correlation Analysis: d2 and Decoding Accuracy ===\n');
 corrResults = struct();
 
-for a = areasToTest
-    % Naturalistic data - use pairwise correlation to handle NaN values automatically
-    Xnat = [d2Nat{a}(:), decodingAccuracyNat{a}(:)];
-    corrMatNat_d2Decoding{a} = corr(Xnat, 'Rows', 'pairwise');
+for a = loadedAreas
+    fprintf('\nProcessing correlations for area %s...\n', areas{a});
     
-    % Extract correlation coefficient and calculate p-value
-    if ~isnan(corrMatNat_d2Decoding{a}(1, 2))
-        corrResults(a).area = areas{a};
-        corrResults(a).correlation = corrMatNat_d2Decoding{a}(1, 2);
+    % Check if we have data for this area
+    if isempty(svmLatents{a})
+        fprintf('No SVM data available for area %s, skipping correlations\n', areas{a});
+        continue;
+    end
+    
+    % Get minimum length for d2
+    minLenNat = length(d2Nat{a});
+    
+    % Initialize correlation results for this area
+    corrResults(a).area = areas{a};
+    corrResults(a).methods = svmMethods{a};
+    corrResults(a).correlations = nan(1, length(svmMethods{a}));
+    corrResults(a).p_values = nan(1, length(svmMethods{a}));
+    corrResults(a).n_valid_points = nan(1, length(svmMethods{a}));
+    
+    % Calculate correlations for each method
+    for m = 1:length(svmMethods{a})
+        methodName = svmMethods{a}{m};
         
-        % Calculate p-value using the same pairwise approach
-        [rho, pval] = corr(Xnat(:, 1), Xnat(:, 2), 'Rows', 'pairwise', 'type', 'Pearson');
-        corrResults(a).p_value = pval;
+        % Get decoding accuracy for this method
+        decodingAcc = decodingAccuracyNat{a}.(methodName);
         
-        % Count valid (non-NaN) pairs
-        validPairs = sum(~isnan(Xnat(:, 1)) & ~isnan(Xnat(:, 2)));
-        corrResults(a).n_valid_points = validPairs;
+        % Ensure same length
+        minLen = min(minLenNat, length(decodingAcc));
         
-        fprintf('Area %s: Correlation = %.3f, p = %.3f, n = %d\n', ...
-            areas{a}, corrResults(a).correlation, corrResults(a).p_value, corrResults(a).n_valid_points);
-    else
-        corrResults(a).area = areas{a};
-        corrResults(a).correlation = nan;
-        corrResults(a).p_value = nan;
-        corrResults(a).n_valid_points = 0;
+        % Naturalistic data
+        Xnat = [d2Nat{a}(1:minLen); decodingAcc(1:minLen)]';
+        validIdx = ~any(isnan(Xnat), 2);
         
-        fprintf('Area %s: Insufficient data points\n', areas{a});
+        if sum(validIdx) > 10
+            corrMatNat_d2Decoding{a}.(methodName) = corrcoef(Xnat(validIdx, :));
+            corrResults(a).correlations(m) = corrMatNat_d2Decoding{a}.(methodName)(1, 2);
+            [rho, pval] = corr(Xnat(validIdx, 1), Xnat(validIdx, 2), 'type', 'Pearson');
+            corrResults(a).p_values(m) = pval;
+            corrResults(a).n_valid_points(m) = sum(validIdx);
+            
+            fprintf('  %s: Correlation = %.3f, p = %.3f, n = %d\n', ...
+                methodName, corrResults(a).correlations(m), corrResults(a).p_values(m), corrResults(a).n_valid_points(m));
+        else
+            corrMatNat_d2Decoding{a}.(methodName) = nan(2, 2);
+            corrResults(a).correlations(m) = nan;
+            corrResults(a).p_values(m) = nan;
+            corrResults(a).n_valid_points(m) = 0;
+            
+            fprintf('  %s: Insufficient data points\n', methodName);
+        end
     end
 end
 
 %% ==============================================     Plotting Results     ==============================================
 
-% Create comparison plots for each area
-for a = areasToTest
+% Create comparison plots for each area and method
+for a = loadedAreas
+    % Check if we have data for this area
+    if isempty(svmLatents{a})
+        fprintf('No SVM data available for area %s, skipping plots\n', areas{a});
+        continue;
+    end
+    
     figure(200 + a); clf;
     set(gcf, 'Position', monitorTwo);
     
@@ -286,67 +332,123 @@ for a = areasToTest
     % Plot d2
     axes(ha(1));
     hold on;
-    plot(startSNat{a}/60, d2Nat{a}, '-', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
+    validIdx = ~isnan(d2Nat{a});
+    plot(startSNat{a}(validIdx)/60, d2Nat{a}(validIdx), '-', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
     ylabel('Distance to Criticality (d2)', 'FontSize', 14);
     title(sprintf('%s - Distance to Criticality (d2)', areas{a}), 'FontSize', 14);
     grid on;
     set(gca, 'XTickLabel', [], 'FontSize', 14);
     set(gca, 'YTickLabelMode', 'auto');
-    xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
+    xlim([collectStart/60 (collectStart+collectFor)/60]);
     
-    % Plot decoding accuracy
+    % Plot decoding accuracy for all methods
     axes(ha(2));
     hold on;
-    plot(startSNat{a}/60, decodingAccuracyNat{a}, '-', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
+    
+    % Define colors for different methods
+    methodColors = {'r', 'g', 'b', 'm', 'c', 'y'};
+    
+    for m = 1:length(svmMethods{a})
+        methodName = svmMethods{a}{m};
+        decodingAcc = decodingAccuracyNat{a}.(methodName);
+        validIdx = ~isnan(decodingAcc);
+        
+        if sum(validIdx) > 0
+            plot(startSNat{a}(validIdx)/60, decodingAcc(validIdx), '-', ...
+                'Color', methodColors{mod(m-1, length(methodColors))+1}, ...
+                'LineWidth', 2, 'MarkerSize', 4, 'DisplayName', upper(methodName));
+        end
+    end
+    
     ylabel('Decoding Accuracy', 'FontSize', 14);
-    title(sprintf('%s - Decoding Accuracy (%s, %s)', areas{a}, upper(dimReductionMethod), transOrWithin), 'FontSize', 14);
+    title(sprintf('%s - Decoding Accuracy (All Methods)', areas{a}), 'FontSize', 14);
     grid on;
     xlabel('Minutes', 'FontSize', 14);
     set(gca, 'YTickLabelMode', 'auto', 'FontSize', 14);
     set(gca, 'XTickLabelMode', 'auto');
-    xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
+    xlim([collectStart/60 (collectStart+collectFor)/60]);
     ylim([0 1]);
+    legend('Location', 'best');
     
     sgtitle(sprintf('Criticality and Decoding Accuracy - %s', areas{a}), 'FontSize', 14);
-exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/criticality_decoding_%s_%s_%s.png', areas{a}, dimReductionMethod, transOrWithin)), 'Resolution', 300);
+    exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/criticality_decoding_%s_all_methods.png', areas{a})), 'Resolution', 300);
 end
 
-% Plot correlation matrices
+% Plot correlation matrices for each area and method
 figure(300); clf;
 set(gcf, 'Position', monitorTwo);
-for a = areasToTest
-    subplot(1, length(areas), a);
-    imagesc(corrMatNat_d2Decoding{a});
-    colorbar;
-    title(sprintf('%s (d2/Decoding)', areas{a}));
-    xticks(1:2); yticks(1:2);
-    xticklabels({'d2','Decoding'}); yticklabels({'d2','Decoding'});
-    axis square;
-    caxis([-1 1]);
+
+nAreas = length(loadedAreas);
+maxMethods = max(cellfun(@length, svmMethods(loadedAreas)));
+
+for a = 1:nAreas
+    areaIdx = loadedAreas(a);
+    if isempty(svmLatents{areaIdx})
+        continue;
+    end
+    
+    for m = 1:length(svmMethods{areaIdx})
+        methodName = svmMethods{areaIdx}{m};
+        subplot(nAreas, maxMethods, (a-1)*maxMethods + m);
+        
+        if isfield(corrMatNat_d2Decoding{areaIdx}, methodName)
+            imagesc(corrMatNat_d2Decoding{areaIdx}.(methodName));
+            colorbar;
+            title(sprintf('%s - %s', areas{areaIdx}, upper(methodName)));
+            xticks(1:2); yticks(1:2);
+            xticklabels({'d2','Decoding'}); yticklabels({'d2','Decoding'});
+            axis square;
+            caxis([-1 1]);
+        else
+            text(0.5, 0.5, 'No Data', 'HorizontalAlignment', 'center');
+            title(sprintf('%s - %s', areas{areaIdx}, upper(methodName)));
+            axis off;
+        end
+    end
 end
 sgtitle('Correlation Matrices: d2 and Decoding Accuracy');
 
-% Plot correlation summary
+% Plot correlation summary for all methods
 figure(301); clf;
 set(gcf, 'Position', monitorOne);
-corrVals = [corrResults.correlation];
-pVals = [corrResults.p_value];
-areasPlot = {corrResults.area};
 
-bar(corrVals);
-set(gca, 'XTickLabel', areasPlot);
+% Prepare data for grouped bar plot
+% Find the maximum number of methods across all areas
+maxMethods = max(cellfun(@length, svmMethods(loadedAreas)));
+corrData = nan(nAreas, maxMethods);
+pData = nan(nAreas, maxMethods);
+
+for a = 1:nAreas
+    areaIdx = loadedAreas(a);
+    if ~isempty(svmLatents{areaIdx})
+        nMethodsArea = length(svmMethods{areaIdx});
+        corrData(a, 1:nMethodsArea) = corrResults(areaIdx).correlations;
+        pData(a, 1:nMethodsArea) = corrResults(areaIdx).p_values;
+    end
+end
+
+% Create grouped bar plot
+bar(corrData);
+set(gca, 'XTickLabel', areas(loadedAreas));
 ylabel('Correlation Coefficient');
 title('Correlation between d2 and Decoding Accuracy');
+legend(upper(svmMethods{loadedAreas(1)}), 'Location', 'best');
 grid on;
 
 % Add significance markers
 hold on;
-for i = 1:length(pVals)
-    if pVals(i) < 0.05
-        plot(i, corrVals(i) + 0.05, '*', 'Color', 'black', 'MarkerSize', 60);
+for a = 1:nAreas
+    areaIdx = loadedAreas(a);
+    if ~isempty(svmLatents{areaIdx})
+        for m = 1:length(svmMethods{areaIdx})
+            if pData(a, m) < 0.05
+                plot(a, corrData(a, m) + 0.05, '*', 'Color', 'black', 'MarkerSize', 60);
+            end
+        end
     end
 end
-exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/correlation_summary_%s_%s.png', dimReductionMethod, transOrWithin)), 'Resolution', 300);
+
+exportgraphics(gcf, fullfile(paths.dropPath, 'criticality/correlation_summary_all_methods.png'), 'Resolution', 300);
 
 
 %% ==============================================     Save Results     ==============================================
@@ -354,12 +456,10 @@ exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/correlation_su
 % Save all results
 results = struct();
 results.areas = areas;
-results.dimReductionMethod = dimReductionMethod;
-results.nDim = nDim;
-results.svmModels = svmModels;
+results.loadedAreas = loadedAreas;
+results.svmMethods = svmMethods;
 results.svmBinSize = svmBinSize;
-results.predictedLabels = predictedLabels;
-results.realLabels = realLabels;
+results.svmAccuracy = svmAccuracy;
 
 % Naturalistic data results
 results.naturalistic.d2 = d2Nat;
@@ -371,13 +471,53 @@ results.naturalistic.corrMat = corrMatNat_d2Decoding;
 results.naturalistic.corrResults = corrResults;
 
 % Analysis parameters
-results.params.kernelFunction = kernelFunction;
-results.params.transOrWithin = transOrWithin;
-results.params.shiftSec = shiftSec;
-results.params.svmBinSize = svmBinSize;
 results.params.stepSize = stepSize;
+results.params.svmBinSize = svmBinSize;
+results.params.svmWindowSize = svmWindowSize;
+results.params.svmStepSize = svmStepSize;
 
 % Save to file
-save(fullfile(paths.dropPath, sprintf('criticality_decoding_results_%s_%s.mat', dimReductionMethod, transOrWithin)), 'results');
+save(fullfile(paths.dropPath, 'criticality_decoding_results_all_methods.mat'), 'results');
 
-fprintf('\nAnalysis complete! Results saved to criticality_decoding_results_%s_%s.mat\n', dimReductionMethod, transOrWithin); 
+fprintf('\nAnalysis complete! Results saved to criticality_decoding_results_all_methods.mat\n');
+
+%% ==============================================     Summary Statistics     ==============================================
+
+fprintf('\n=== SUMMARY STATISTICS ===\n');
+fprintf('Correlation between d2 and decoding accuracy:\n');
+fprintf('Area\t\tMethod\t\tCorrelation\tp-value\t\tn\n');
+fprintf('----\t\t------\t\t----------\t-------\t\t-\n');
+
+for a = 1:length(loadedAreas)
+    areaIdx = loadedAreas(a);
+    if isempty(svmLatents{areaIdx})
+        fprintf('%s\t\tNo data available\n', areas{areaIdx});
+        continue;
+    end
+    
+    for m = 1:length(svmMethods{areaIdx})
+        methodName = svmMethods{areaIdx}{m};
+        corrVal = corrResults(areaIdx).correlations(m);
+        pVal = corrResults(areaIdx).p_values(m);
+        nVal = corrResults(areaIdx).n_valid_points(m);
+        
+        if ~isnan(corrVal)
+            significance = '';
+            if pVal < 0.001
+                significance = '***';
+            elseif pVal < 0.01
+                significance = '**';
+            elseif pVal < 0.05
+                significance = '*';
+            end
+            
+            fprintf('%s\t\t%s\t\t%.3f%s\t\t%.3f\t\t%d\n', ...
+                areas{areaIdx}, upper(methodName), corrVal, significance, pVal, nVal);
+        else
+            fprintf('%s\t\t%s\t\tN/A\t\tN/A\t\t%d\n', ...
+                areas{areaIdx}, upper(methodName), nVal);
+        end
+    end
+end
+
+fprintf('\nAnalysis complete!\n'); 
