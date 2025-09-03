@@ -10,12 +10,21 @@ opts.collectFor = 45 * 60; % seconds
 opts.frameSize = .1;
 
 % Get kinematics data for PSID
-kinBinSize = .1;
 getDataType = 'kinematics';
 get_standard_data
+
+% Downsample kinematics if needed
+originalBinSize = .1;  % Original bin size
+kinBinSize = opts.frameSize;  % Target bin size for downsampling - keep consistent with neural data
+if kinBinSize ~= origninalBinSize
+    kinData = downsample_kinematics(kinData, originalBinSize, kinBinSize);
+end
 startFrame = 1 + opts.collectStart / kinBinSize;
 endFrame = startFrame - 1 + (opts.collectFor / kinBinSize);
 kinData = kinData(startFrame:endFrame,:);
+
+
+
 
 % Get neural data
 getDataType = 'spikes';
@@ -50,11 +59,11 @@ areas = {'M23', 'M56', 'DS', 'VS'};
 areasToTest = 2:4;  % Test M56, DS, VS
 
 % Analysis type
-transOrWithin = 'within';  % 'all', 'trans', 'within', 'transVsWithin'
+transOrWithin = 'all';  % 'all', 'trans',transPost 'within', 'transVsWithin'
 % transOrWithin = 'within';
 
 % Permutation testing
-nShuffles = 3;  % Number of permutation tests
+nShuffles = 2;  % Number of permutation tests
 
 % Plotting options
 plotFullMap = 0;
@@ -79,7 +88,7 @@ allResults.parameters.minActTime = opts.minActTime;
 allResults.parameters.transOrWithin = transOrWithin;
 
 % Initialize results storage for each area
-allResults.latents = cell(1, length(areas));a
+allResults.latents = cell(1, length(areas));
 allResults.accuracy = cell(1, length(areas));
 allResults.accuracyPermuted = cell(1, length(areas));
 allResults.methods = cell(1, length(areas));
@@ -89,6 +98,9 @@ allResults.svmInd = cell(1, length(areas));
 allResults.svmID = cell(1, length(areas));
 allResults.idSelect = cell(1, length(areas));
 allResults.bhvMapping = cell(1, length(areas));
+allResults.svmModels = cell(1, length(areas));
+allResults.allPredictions = cell(1, length(areas));
+allResults.allPredictionIndices = cell(1, length(areas));
 
 %% =============================================================================
 % --------    LOOP THROUGH BRAIN AREAS
@@ -169,24 +181,24 @@ for areaIdx = areasToTest
 
     %% PSID with Behavior Labels (psidBhv)
     fprintf('Running PSID with behavior labels...\n');
-    
+
     % Create one-hot encoded behavior labels
     uniqueBhv = unique(bhvID);
     uniqueBhv = uniqueBhv(uniqueBhv >= 0);  % Remove invalid labels (-1)
     nBehaviors = length(uniqueBhv);
-    
+
     % Create one-hot encoding
     bhvOneHot = zeros(length(bhvID), nBehaviors);
     for b = 1:nBehaviors
         bhvOneHot(:, b) = (bhvID == uniqueBhv(b));
     end
-    
+
     % Store behavior mapping for reference
     bhvMapping = struct();
     bhvMapping.uniqueBhv = uniqueBhv;
     bhvMapping.nBehaviors = nBehaviors;
     bhvMapping.behaviorNames = behaviors(uniqueBhv + 2);  % +2 because behaviors array starts at index 1
-    
+
     % Prepare data for PSID with behavior labels
     y = zscore(dataMat(:, idSelect));
     z = zscore(bhvOneHot);  % Use one-hot encoded behavior labels
@@ -199,10 +211,10 @@ for areaIdx = areasToTest
     % Predict behavior using the learned model
     [zPred, yPred, xPred] = PSIDPredict(idSys, y);
     latents.psidBhv = xPred(:, 1:nDim);
-    
+
     % Store behavior mapping in results
     allResults.bhvMapping{areaIdx} = bhvMapping;
-    
+
     fprintf('PSID methods completed for area %s.\n', areaName);
 
     %% ICG
@@ -213,7 +225,7 @@ for areaIdx = areasToTest
     % Take the first nDim groups of most correlated neurons
     % latents.icg = activityICG{4}(1:nDim, :)';
     % Take the first nDim groups of most correlated neurons
-    warning('Chaned ICG population')
+    warning('Changed ICG population')
     latents.icg = zscore(activityICG{3}(1:9, :)');
 
     fprintf('All methods completed for area %s.\n', areaName);
@@ -250,12 +262,15 @@ for areaIdx = areasToTest
         case 'trans'
             svmID = bhvID(preIdx + 1);
             svmInd = preIdx;
+        case 'transPost'
+            svmID = bhvID(preIdx + 1);
+            svmInd = preIdx + 1;
             transWithinLabel = 'transitions';
         case 'within'
             svmInd = setdiff(1:length(bhvID), preIdx);
             svmID = bhvID(svmInd);
             transWithinLabel = 'within-behavior';
-       end
+    end
 
     % Remove invalid behavior labels
     deleteInd = svmID == -1;
@@ -263,14 +278,9 @@ for areaIdx = areasToTest
     svmInd(deleteInd) = [];
 
     % Get behavior codes and names for modeling
-    if strcmp(transOrWithin, 'transVsWithin')
-        bhv2ModelCodes = [9 12];
-        bhv2ModelNames = {'transitions', 'within'};
-    else
-        bhv2ModelCodes = unique(svmID);
-        bhv2ModelNames = behaviors(bhv2ModelCodes+2);
-        bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
-    end
+    bhv2ModelCodes = unique(svmID);
+    bhv2ModelNames = behaviors(bhv2ModelCodes+2);
+    bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
 
     fprintf('Modeling %s behaviors: %s\n', transWithinLabel, strjoin(bhv2ModelNames, ', '));
 
@@ -285,6 +295,11 @@ for areaIdx = areasToTest
     nMethods = length(methods);
     accuracy = zeros(nMethods, 1);
     accuracyPermuted = zeros(nMethods, nShuffles);
+    
+    % Initialize storage for models and predictions
+    svmModels = cell(1, nMethods);
+    allPredictions = cell(1, nMethods);
+    allPredictionIndices = cell(1, nMethods);
 
     % SVM parameters
     kernelFunction = 'polynomial';
@@ -306,13 +321,21 @@ for areaIdx = areasToTest
         trainLabels = svmID(training(cv));
         testLabels = svmID(test(cv));
 
-        % Train SVM model
+        % Train SVM model on all relevant data (not just training set)
         tic;
         t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
-        svmModel = fitcecoc(trainData, trainLabels, 'Learners', t);
+        svmModelFull = fitcecoc(svmProj, svmID, 'Learners', t);
+        
+        % Store the full model
+        svmModels{m} = svmModelFull;
 
-        % Test model
-        predictedLabels = predict(svmModel, testData);
+        % Generate predictions for all relevant indices
+        allPredictions{m} = predict(svmModelFull, svmProj);
+        allPredictionIndices{m} = svmInd;  % Store the indices that were predicted
+        
+        % For cross-validation accuracy calculation, use the holdout approach
+        svmModelCV = fitcecoc(trainData, trainLabels, 'Learners', t);
+        predictedLabels = predict(svmModelCV, testData);
         accuracy(m) = sum(predictedLabels == testLabels) / length(testLabels);
 
         fprintf('Real data accuracy: %.4f\n', accuracy(m));
@@ -351,6 +374,9 @@ for areaIdx = areasToTest
     allResults.bhv2ModelNames{areaIdx} = bhv2ModelNames;
     allResults.svmInd{areaIdx} = svmInd;
     allResults.svmID{areaIdx} = svmID;
+    allResults.svmModels{areaIdx} = svmModels;
+    allResults.allPredictions{areaIdx} = allPredictions;
+    allResults.allPredictionIndices{areaIdx} = allPredictionIndices;
 
     fprintf('\nArea %s completed.\n', areaName);
 end
@@ -614,3 +640,113 @@ fclose(fid);
 
 fprintf('Summary saved to: %s\n', summaryPath);
 fprintf('\nMulti-area analysis complete!\n');
+
+%% =============================================================================
+% --------    HELPER FUNCTIONS
+% =============================================================================
+
+function downsampledData = downsample_kinematics(data, originalBinSize, targetBinSize)
+% Downsamples kinematics data using boxcar averaging
+% Inputs:
+%   data: original kinematics data (time x features)
+%   originalBinSize: original time bin size in seconds
+%   targetBinSize: target time bin size in seconds
+
+if targetBinSize <= originalBinSize
+    % No downsampling needed
+    downsampledData = data;
+    return;
+end
+
+% Calculate downsampling factor
+downsampleFactor = targetBinSize / originalBinSize;
+
+% Ensure downsampleFactor is reasonable (not too large)
+if downsampleFactor > 10
+    warning('Downsampling factor is very large (%.1f). Consider using a smaller target bin size.', downsampleFactor);
+end
+
+% Calculate number of original bins per target bin
+binsPerTarget = round(downsampleFactor);
+
+% Calculate new number of time points
+nOriginalBins = size(data, 1);
+nTargetBins = floor(nOriginalBins / binsPerTarget);
+
+% Initialize output
+downsampledData = zeros(nTargetBins, size(data, 2));
+
+% Apply boxcar averaging
+for i = 1:nTargetBins
+    startIdx = (i-1) * binsPerTarget + 1;
+    endIdx = min(i * binsPerTarget, nOriginalBins);
+
+    % Average the bins within this window
+    downsampledData(i, :) = mean(data(startIdx:endIdx, :), 1);
+end
+
+fprintf('Downsampled kinematics from %.3fs to %.3fs bins (%d -> %d time points)\n', ...
+    originalBinSize, targetBinSize, nOriginalBins, nTargetBins);
+end
+
+function downsampledData = downsample_kinematics_weighted(data, originalBinSize, targetBinSize)
+% Downsamples kinematics data using weighted averaging (center-weighted)
+% This gives more weight to the center of each time window
+
+if targetBinSize <= originalBinSize
+    downsampledData = data;
+    return;
+end
+
+downsampleFactor = targetBinSize / originalBinSize;
+binsPerTarget = round(downsampleFactor);
+
+nOriginalBins = size(data, 1);
+nTargetBins = floor(nOriginalBins / binsPerTarget);
+
+downsampledData = zeros(nTargetBins, size(data, 2));
+
+% Create weights (center-weighted)
+weights = ones(1, binsPerTarget);
+centerIdx = ceil(binsPerTarget/2);
+weights(centerIdx) = 2;  % Give double weight to center
+
+for i = 1:nTargetBins
+    startIdx = (i-1) * binsPerTarget + 1;
+    endIdx = min(i * binsPerTarget, nOriginalBins);
+
+    % Weighted average
+    windowData = data(startIdx:endIdx, :);
+    windowWeights = weights(1:size(windowData, 1));
+    downsampledData(i, :) = sum(windowData .* windowWeights', 1) / sum(windowWeights);
+end
+end
+
+function downsampledData = downsample_kinematics_decimate(data, originalBinSize, targetBinSize)
+% Downsamples kinematics data using decimation with anti-aliasing filter
+% This is more sophisticated than simple averaging
+
+if targetBinSize <= originalBinSize
+    downsampledData = data;
+    return;
+end
+
+downsampleFactor = targetBinSize / originalBinSize;
+
+% Apply anti-aliasing filter first
+% Use a low-pass filter to prevent aliasing
+cutoffFreq = 1 / (2 * targetBinSize);  % Nyquist frequency for target rate
+sampleRate = 1 / originalBinSize;
+
+% Design low-pass filter
+[b, a] = butter(4, cutoffFreq / (sampleRate/2), 'low');
+
+% Apply filter to each feature
+filteredData = zeros(size(data));
+for feat = 1:size(data, 2)
+    filteredData(:, feat) = filtfilt(b, a, data(:, feat));
+end
+
+% Decimate
+downsampledData = downsample(filteredData, round(downsampleFactor));
+end
