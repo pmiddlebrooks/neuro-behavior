@@ -74,6 +74,9 @@ svmBinSize = cell(1, length(areas));
 svmSvmInd = cell(1, length(areas));
 svmSvmID = cell(1, length(areas));
 svmAccuracy = cell(1, length(areas));
+svmModels = cell(1, length(areas));
+allPredictions = cell(1, length(areas));
+allPredictionIndices = cell(1, length(areas));
 
 % Extract data for each area to test
 for a = areasToTest
@@ -88,6 +91,9 @@ for a = areasToTest
         svmSvmInd{a} = allResults.svmInd{a};
         svmSvmID{a} = allResults.svmID{a};
         svmAccuracy{a} = allResults.accuracy{a};
+        svmModels{a} = allResults.svmModels{a};
+        allPredictions{a} = allResults.allPredictions{a};
+        allPredictionIndices{a} = allResults.allPredictionIndices{a};
         
         fprintf('Area %s - SVM parameters: bin size = %.3f s, methods = %s\n', ...
             areaName, svmBinSize{a}, strjoin(svmMethods{a}, ', '));
@@ -182,69 +188,36 @@ for a = loadedAreas
         for m = 1:length(svmMethods{a})
             methodName = svmMethods{a}{m};
             
-            % Get latent data for this method
-            latentData = svmLatents{a}.(methodName);
+            % Get the pre-computed predictions for this method
+            methodPredictions = allPredictions{a}{m};
+            methodPredictionIndices = allPredictionIndices{a}{m};
             
-            % Get the latent data points corresponding to this window
-            if ~isempty(windowSvmIndices) && max(windowSvmIndices) <= size(latentData, 1)
-                windowLatentData = latentData(windowSvmIndices, :);
+            % Find which predictions fall within this window
+            windowPredictionMask = ismember(methodPredictionIndices, windowSvmIndices);
+            windowPredictions = methodPredictions(windowPredictionMask);
+            
+            % Get the corresponding behavior labels for this window
+            windowBehaviorLabels = svmSvmID{a}(startFrame:endFrame);
+            
+            % Filter out invalid behavior labels (-1)
+            validIndices = windowBehaviorLabels ~= -1;
+            windowBehaviorLabels = windowBehaviorLabels(validIndices);
+            windowPredictions = windowPredictions(validIndices);
+            
+            % Calculate accuracy for this window
+            if length(windowPredictions) > 5 && length(windowBehaviorLabels) > 5
+                % Ensure we have the same number of predictions and labels
+                nPredictions = length(windowPredictions);
+                nLabels = length(windowBehaviorLabels);
                 
-                % Get the corresponding behavior labels
-                windowBehaviorLabels = svmSvmID{a}(startFrame:endFrame);
-                
-                % Filter out invalid behavior labels (-1)
-                validIndices = windowBehaviorLabels ~= -1;
-                windowLatentData = windowLatentData(validIndices, :);
-                windowBehaviorLabels = windowBehaviorLabels(validIndices);
-                
-                % Calculate decoding accuracy for this window
-                if length(windowBehaviorLabels) > 5
-                    try
-                        % For each method, we need to retrain a model on the window data
-                        % since we don't have access to the original trained models
-                        
-                        % Prepare data for this window
-                        windowLatentDataClean = windowLatentData(validIndices, :);
-                        windowBehaviorLabelsClean = windowBehaviorLabels(validIndices);
-                        
-                        % Use cross-validation to estimate accuracy
-                        if length(unique(windowBehaviorLabelsClean)) > 1
-                            % Use 5-fold cross-validation
-                            cv = cvpartition(windowBehaviorLabelsClean, 'KFold', min(5, length(unique(windowBehaviorLabelsClean))));
-                            cvAccuracy = zeros(cv.NumTestSets, 1);
-                            
-                            for fold = 1:cv.NumTestSets
-                                trainIdx = training(cv, fold);
-                                testIdx = test(cv, fold);
-                                
-                                trainData = windowLatentDataClean(trainIdx, :);
-                                trainLabels = windowBehaviorLabelsClean(trainIdx);
-                                testData = windowLatentDataClean(testIdx, :);
-                                testLabels = windowBehaviorLabelsClean(testIdx);
-                                
-                                % Train SVM model
-                                t = templateSVM('Standardize', true, 'KernelFunction', 'polynomial');
-                                svmModel = fitcecoc(trainData, trainLabels, 'Learners', t);
-                                
-                                % Predict and calculate accuracy
-                                predictedLabels = predict(svmModel, testData);
-                                cvAccuracy(fold) = sum(predictedLabels == testLabels) / length(testLabels);
-                            end
-                            
-                            % Use mean cross-validation accuracy
-                            accuracy = mean(cvAccuracy);
-                        else
-                            % If only one behavior class, accuracy is undefined
-                            accuracy = nan;
-                        end
-                        
-                        decodingAccuracyNat{a}.(methodName)(i) = accuracy;
-                    catch e
-                        fprintf('Error calculating accuracy for method %s, window %d: %s\n', methodName, i, e.message);
-                        decodingAccuracyNat{a}.(methodName)(i) = nan;
-                    end
+                if nPredictions == nLabels
+                    accuracy = sum(windowPredictions == windowBehaviorLabels) / nPredictions;
+                    decodingAccuracyNat{a}.(methodName)(i) = accuracy;
                 else
-                    decodingAccuracyNat{a}.(methodName)(i) = nan;
+                    % If there's a mismatch, use the minimum length
+                    minLength = min(nPredictions, nLabels);
+                    accuracy = sum(windowPredictions(1:minLength) == windowBehaviorLabels(1:minLength)) / minLength;
+                    decodingAccuracyNat{a}.(methodName)(i) = accuracy;
                 end
             else
                 decodingAccuracyNat{a}.(methodName)(i) = nan;
