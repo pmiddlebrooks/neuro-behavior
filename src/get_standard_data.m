@@ -121,11 +121,31 @@ end
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if strcmp(getDataType, 'all') || strcmp(getDataType, 'kinematics')
     bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-    kinFileName = 'AdenKinematicsAligned.csv';
+    % kinFileName = 'AdenKinematicsAligned.csv';
+kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000_kinematics.npy';
 
-    % Define the path to your CSV file
-csvFilePath = [bhvDataPath, kinFileName];
-kinData = readmatrix(csvFilePath);
+    opts.dataPath = bhvDataPath;
+    opts.fileName = kinFileName;
+
+    kinData = load_data(opts, 'kinematics');
+
+    % Downsample kinData (at original fsBhv) to new bin size (opts.frameSize), taking mean within each window
+    % Only downsample if frameSize is larger than the original bin size
+    if opts.frameSize > 1/opts.fsBhv
+        % Calculate number of original bins per new bin
+        binsPerFrame = round(opts.frameSize * opts.fsBhv);
+        numFrames = floor(size(kinData,1) / binsPerFrame);
+        % Preallocate downsampled data
+        kinDataDown = zeros(numFrames, size(kinData,2));
+        for i = 1:numFrames
+            idxStart = (i-1)*binsPerFrame + 1;
+            idxEnd = i*binsPerFrame;
+            kinDataDown(i,:) = mean(kinData(idxStart:idxEnd,:), 1, 'omitnan');
+        end
+        kinData = kinDataDown;
+    end
+
+
 
 % kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000_kinematics.npy';
 % csvFilePath = [bhvDataPath, kinFileName];

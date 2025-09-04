@@ -45,10 +45,10 @@ switch dataType
 
 
     case 'kinematics'
-        kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000_kinematics.npy';
+        % kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000_kinematics.npy';
         % kinFileName = 'AdenKinematicsAligned.csv';
         % Define the path to your CSV file
-        csvFilePath = [opts.bhvDataPath, kinFileName];
+        csvFilePath = [opts.dataPath, opts.fileName];
         % kinData = readmatrix(csvFilePath);
         kinData = readNPY(csvFilePath)';
 

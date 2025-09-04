@@ -22,20 +22,54 @@ fprintf('Number of states: %d, Number of neurons: %d\n', hmm_results.best_model.
 %% Load behavior data
 switch natOrReach
     case 'Nat'
-opts = neuro_behavior_options;
-opts.frameSize = hmm_results.HmmParam.BinSize;
-opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 45 * 60; % seconds
-getDataType = 'behavior';
-get_standard_data
+        opts = neuro_behavior_options;
+        opts.frameSize = hmm_results.HmmParam.BinSize;
+        opts.collectStart = 0 * 60 * 60; % seconds
+        opts.collectFor = 45 * 60; % seconds
+        getDataType = 'behavior';
+        get_standard_data
+        [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
+        bhvProbs = []; % Not available for naturalistic data
     case 'Reach'
-        bhvData = get_reach_bhv_labels(fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NIBEH.mat'));
+        % Load saved HMM results from get_reach_bhv_labels.m
+        fprintf('Loading reach behavior data from saved HMM results...\n');
+        
+        % Look for the most recent reach HMM results file
+        hmmdir = fullfile(paths.dropPath, 'hmm');
+        reachFiles = dir(fullfile(hmmdir, 'HMM_results_Reach_*.mat'));
+        
+        if isempty(reachFiles)
+            error('No reach HMM results found in %s. Please run get_reach_bhv_labels.m first.', hmmdir);
+        end
+        
+        % Get the most recent file
+        [~, idx] = max([reachFiles.datenum]);
+        latestReachFile = reachFiles(idx).name;
+        reachFilePath = fullfile(hmmdir, latestReachFile);
+        
+        fprintf('Loading reach HMM results from: %s\n', latestReachFile);
+        load(reachFilePath, 'hmm_results');
+        
+        % Extract behavior labels from HMM state estimates
+        bhvID = hmm_results.best_model.state_estimates;
+        
+        % Extract behavior probabilities for potential future use
+        bhvProbs = hmm_results.best_model.state_probabilities;
+        
+        fprintf('Reach behavior data loaded:\n');
+        fprintf('  Number of time bins: %d\n', length(bhvID));
+        fprintf('  Number of states: %d\n', hmm_results.best_model.num_states);
+        fprintf('  State probability matrix size: %s\n', mat2str(size(bhvProbs)));
 end
 
 % ============================================================================
 
 fprintf('Behavior data loaded: %d time bins\n', length(bhvID));
-fprintf('Invalid behavior bins (bhvID = -1): %d (%.1f%%)\n', sum(bhvID == -1), sum(bhvID == -1)/totalTimeBins*100);
+if strcmp(natOrReach, 'Reach')
+    fprintf('Invalid behavior bins (bhvID = 0): %d (%.1f%%)\n', sum(bhvID == 0), sum(bhvID == 0)/totalTimeBins*100);
+else
+    fprintf('Invalid behavior bins (bhvID = -1): %d (%.1f%%)\n', sum(bhvID == -1), sum(bhvID == -1)/totalTimeBins*100);
+end
 fprintf('Invalid HMM bins (continuous_sequence = 0): %d (%.1f%%)\n', sum(hmm_results.continuous_results.sequence == 0), sum(hmm_results.continuous_results.sequence == 0)/totalTimeBins*100);
 
 %% 0. Find Optimal Lag using Mutual Information
@@ -46,7 +80,7 @@ fprintf('Invalid HMM bins (continuous_sequence = 0): %d (%.1f%%)\n', sum(hmm_res
 fprintf('\n=== Step 0: Finding Optimal Lag using Mutual Information ===\n');
 
 % Parameters for lag analysis
-maxLagSec = 2; % Maximum lag to test (in seconds)
+maxLagSec = 1.5; % Maximum lag to test (in seconds)
 maxLagBin = round(maxLagSec / hmm_results.HmmParam.BinSize); % Maximum lag in time bins
 
 fprintf('Testing lags from -%d to +%d time bins (%.1f to %.1f seconds)\n', ...
@@ -89,7 +123,11 @@ for i = 1:length(lags)
     bhv_segment = bhvID(bhv_start:bhv_end);
 
     % Find valid time bins (exclude invalid values)
-    valid_mask = (hmm_segment > 0) & (bhv_segment >= 0);
+    if strcmp(natOrReach, 'Reach')
+        valid_mask = (hmm_segment > 0) & (bhv_segment > 0); % For reach data, 0 = invalid
+    else
+        valid_mask = (hmm_segment > 0) & (bhv_segment >= 0); % For naturalistic data, -1 = invalid
+    end
 
     n_valid_pairs(i) = sum(valid_mask);
 
@@ -145,7 +183,11 @@ fprintf('Using optimal lag: %d time bins (%.3f seconds)\n', best_lag, best_lag *
 
 % Get unique categories from both vectors
 hmmStates = unique(hmm_results.continuous_results.sequence(hmm_results.continuous_results.sequence > 0)); % Exclude invalid HMM states (0)
-bhvCategories = unique(bhvID(bhvID >= 0)); % Exclude invalid behavior (-1)
+if strcmp(natOrReach, 'Reach')
+    bhvCategories = unique(bhvID(bhvID > 0)); % Exclude invalid behavior (0) for reach data
+else
+    bhvCategories = unique(bhvID(bhvID >= 0)); % Exclude invalid behavior (-1) for naturalistic data
+end
 
 nHmmStates = length(hmmStates);
 nBhvCategories = length(bhvCategories);
@@ -170,12 +212,23 @@ for i = 1:totalTimeBins
         bhv_cat = bhvID(bhv_time);
 
         % Only count if both HMM state and behavior are valid
-        if hmm_state > 0 && bhv_cat >= 0
-            hmm_idx = find(hmmStates == hmm_state);
-            bhv_idx = find(bhvCategories == bhv_cat);
+        if strcmp(natOrReach, 'Reach')
+            if hmm_state > 0 && bhv_cat > 0 % For reach data, 0 = invalid
+                hmm_idx = find(hmmStates == hmm_state);
+                bhv_idx = find(bhvCategories == bhv_cat);
 
-            if ~isempty(hmm_idx) && ~isempty(bhv_idx)
-                contingency_matrix(hmm_idx, bhv_idx) = contingency_matrix(hmm_idx, bhv_idx) + 1;
+                if ~isempty(hmm_idx) && ~isempty(bhv_idx)
+                    contingency_matrix(hmm_idx, bhv_idx) = contingency_matrix(hmm_idx, bhv_idx) + 1;
+                end
+            end
+        else
+            if hmm_state > 0 && bhv_cat >= 0 % For naturalistic data, -1 = invalid
+                hmm_idx = find(hmmStates == hmm_state);
+                bhv_idx = find(bhvCategories == bhv_cat);
+
+                if ~isempty(hmm_idx) && ~isempty(bhv_idx)
+                    contingency_matrix(hmm_idx, bhv_idx) = contingency_matrix(hmm_idx, bhv_idx) + 1;
+                end
             end
         end
     end
@@ -286,7 +339,11 @@ for i = 1:totalTimeBins
 end
 
 % Calculate accuracy (only for time points where we have both predictions and actual)
-valid_idx = ~isnan(predicted_bhv) & (bhvID >= 0);
+if strcmp(natOrReach, 'Reach')
+    valid_idx = ~isnan(predicted_bhv) & (bhvID > 0); % For reach data, 0 = invalid
+else
+    valid_idx = ~isnan(predicted_bhv) & (bhvID >= 0); % For naturalistic data, -1 = invalid
+end
 if sum(valid_idx) > 0
     accuracy = sum(predicted_bhv(valid_idx) == bhvID(valid_idx)) / sum(valid_idx);
     fprintf('Overall Accuracy: %.3f (%.1f%%)\n', accuracy, accuracy * 100);
@@ -347,8 +404,14 @@ for i = 1:nHmmStates
             % Check if behavior time is valid and within bounds
             if bhv_time >= 1 && bhv_time <= totalTimeBins
                 bhv_cat = bhvID(bhv_time);
-                if bhv_cat >= 0  % Only include valid behavior categories
-                    bhv_distribution = [bhv_distribution; bhv_cat];
+                if strcmp(natOrReach, 'Reach')
+                    if bhv_cat > 0  % Only include valid behavior categories for reach data
+                        bhv_distribution = [bhv_distribution; bhv_cat];
+                    end
+                else
+                    if bhv_cat >= 0  % Only include valid behavior categories for naturalistic data
+                        bhv_distribution = [bhv_distribution; bhv_cat];
+                    end
                 end
             end
         end
@@ -530,6 +593,12 @@ analysis_results.bhv_to_hmm_mapping = bhv_to_hmm_mapping;
 analysis_results.accuracy = accuracy;
 analysis_results.predicted_behavior = predicted_bhv;
 analysis_results.analysis_date = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+
+% Add behavior probabilities if available (for reach data)
+if exist('bhvProbs', 'var') && ~isempty(bhvProbs)
+    analysis_results.behavior_probabilities = bhvProbs;
+    fprintf('Behavior probabilities added to analysis results\n');
+end
 
 % Add lag analysis results
 analysis_results.optimal_lag = best_lag;
