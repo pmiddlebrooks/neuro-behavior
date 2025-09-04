@@ -7,17 +7,17 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
-opts.frameSize = .1;
+opts.frameSize = .15;
 
 % Get kinematics data for PSID
 getDataType = 'kinematics';
 get_standard_data
 
-% Downsample kinematics if needed
+%% Downsample kinematics if needed
 originalBinSize = .1;  % Original bin size
 kinBinSize = opts.frameSize;  % Target bin size for downsampling - keep consistent with neural data
-if kinBinSize ~= origninalBinSize
-    kinData = downsample_kinematics(kinData, originalBinSize, kinBinSize);
+if kinBinSize ~= originalBinSize
+    kinData = downsample_kinematics_weighted(kinData, originalBinSize, kinBinSize);
 end
 startFrame = 1 + opts.collectStart / kinBinSize;
 endFrame = startFrame - 1 + (opts.collectFor / kinBinSize);
@@ -59,7 +59,7 @@ areas = {'M23', 'M56', 'DS', 'VS'};
 areasToTest = 2:4;  % Test M56, DS, VS
 
 % Analysis type
-transOrWithin = 'all';  % 'all', 'trans',transPost 'within', 'transVsWithin'
+transOrWithin = 'within';  % 'all', 'trans',transPost 'within', 'transVsWithin'
 % transOrWithin = 'within';
 
 % Permutation testing
@@ -124,7 +124,6 @@ for areaIdx = areasToTest
             idSelect = idVS;
         otherwise
             fprintf('Unknown area: %s, skipping\n', areaName);
-            continue;
     end
 
     % Store the selected IDs
@@ -153,7 +152,7 @@ for areaIdx = areasToTest
     cd(fullfile(paths.homePath, '/toolboxes/umapFileExchange (4.4)/umap/'))
 
     % UMAP parameters
-    min_dist = 0.02;
+    min_dist = 0.1;
     spread = 1.3;
     n_neighbors = 10;
 
@@ -690,36 +689,100 @@ fprintf('Downsampled kinematics from %.3fs to %.3fs bins (%d -> %d time points)\
 end
 
 function downsampledData = downsample_kinematics_weighted(data, originalBinSize, targetBinSize)
-% Downsamples kinematics data using weighted averaging (center-weighted)
-% This gives more weight to the center of each time window
+% DOWNSAMPLE_KINEMATICS_WEIGHTED Downsamples kinematics data using proper weighted averaging
+% This function handles fractional downsampling factors by giving full weight to 
+% original bins that are fully overlapped and partial weight to bins that are 
+% partially overlapped by the target bins.
+%
+% Inputs:
+%   data - Input data matrix (time x features)
+%   originalBinSize - Original bin size in seconds
+%   targetBinSize - Target bin size in seconds
+%
+% Outputs:
+%   downsampledData - Downsampled data matrix
 
 if targetBinSize <= originalBinSize
+    % No downsampling needed
     downsampledData = data;
     return;
 end
 
+% Calculate downsampling factor
 downsampleFactor = targetBinSize / originalBinSize;
-binsPerTarget = round(downsampleFactor);
 
+% Ensure downsampleFactor is reasonable (not too large)
+if downsampleFactor > 10
+    warning('Downsampling factor is very large (%.1f). Consider using a smaller target bin size.', downsampleFactor);
+end
+
+% Calculate number of original bins per target bin (can be fractional)
+binsPerTarget = downsampleFactor;
+
+% Calculate new number of time points
 nOriginalBins = size(data, 1);
 nTargetBins = floor(nOriginalBins / binsPerTarget);
 
+% Initialize output
 downsampledData = zeros(nTargetBins, size(data, 2));
 
-% Create weights (center-weighted)
-weights = ones(1, binsPerTarget);
-centerIdx = ceil(binsPerTarget/2);
-weights(centerIdx) = 2;  % Give double weight to center
-
+% Apply weighted averaging with proper overlap handling
 for i = 1:nTargetBins
-    startIdx = (i-1) * binsPerTarget + 1;
-    endIdx = min(i * binsPerTarget, nOriginalBins);
-
-    % Weighted average
-    windowData = data(startIdx:endIdx, :);
-    windowWeights = weights(1:size(windowData, 1));
-    downsampledData(i, :) = sum(windowData .* windowWeights', 1) / sum(windowWeights);
+    % Calculate the start and end times for this target bin
+    targetStartTime = (i-1) * targetBinSize;
+    targetEndTime = i * targetBinSize;
+    
+    % Find original bins that overlap with this target bin
+    originalStartBin = floor(targetStartTime / originalBinSize) + 1;
+    originalEndBin = ceil(targetEndTime / originalBinSize);
+    
+    % Ensure we don't exceed data bounds
+    originalStartBin = max(1, originalStartBin);
+    originalEndBin = min(nOriginalBins, originalEndBin);
+    
+    if originalStartBin > originalEndBin
+        % No overlap - use nearest neighbor
+        downsampledData(i, :) = data(min(originalStartBin, nOriginalBins), :);
+        continue;
+    end
+    
+    % Calculate weights for each original bin based on overlap
+    weights = zeros(originalEndBin - originalStartBin + 1, 1);
+    weightedSum = zeros(1, size(data, 2));
+    totalWeight = 0;
+    
+    for j = 1:length(weights)
+        originalBinIdx = originalStartBin + j - 1;
+        
+        % Calculate the time range of this original bin
+        originalBinStartTime = (originalBinIdx - 1) * originalBinSize;
+        originalBinEndTime = originalBinIdx * originalBinSize;
+        
+        % Calculate overlap with target bin
+        overlapStart = max(targetStartTime, originalBinStartTime);
+        overlapEnd = min(targetEndTime, originalBinEndTime);
+        overlapDuration = max(0, overlapEnd - overlapStart);
+        
+        % Weight is proportional to overlap duration
+        weight = overlapDuration / originalBinSize;
+        weights(j) = weight;
+        
+        % Add weighted contribution
+        weightedSum = weightedSum + weight * data(originalBinIdx, :);
+        totalWeight = totalWeight + weight;
+    end
+    
+    % Normalize by total weight
+    if totalWeight > 0
+        downsampledData(i, :) = weightedSum / totalWeight;
+    else
+        % Fallback to simple averaging if no valid weights
+        downsampledData(i, :) = mean(data(originalStartBin:originalEndBin, :), 1);
+    end
 end
+
+fprintf('Downsampled kinematics from %.3fs to %.3fs bins (%d -> %d time points)\n', ...
+    originalBinSize, targetBinSize, nOriginalBins, nTargetBins);
 end
 
 function downsampledData = downsample_kinematics_decimate(data, originalBinSize, targetBinSize)
