@@ -69,6 +69,7 @@ nShuffles = 2;  % Number of permutation tests
 plotFullMap = 0;
 plotModelData = 1;
 plotResults = 1;
+savePlotFlag = 1;  % Save plots as PNG files
 
 % Figure properties
 allFontSize = 12;
@@ -428,6 +429,15 @@ for areaIdx = areasToTest
                 end
             end
             legend('Location', 'best');
+            
+            % Save plot if flag is set
+            if savePlotFlag
+                plotFilename = sprintf('full_data_%s_%s_%dD_bin%.2f.png', ...
+                    areaName, methodName, nDim, opts.frameSize);
+                plotPath = fullfile(savePath, plotFilename);
+                exportgraphics(figure(figHFull + i), plotPath, 'Resolution', 300);
+                fprintf('Saved plot: %s\n', plotFilename);
+            end
         end
     end
 
@@ -438,22 +448,22 @@ for areaIdx = areasToTest
     if plotModelData
         fprintf('Plotting modeling data for each method...\n');
 
-        fieldNames = fieldnames(latents);
+        fieldNames = fieldnames(allResults.latents{areaIdx});
         for i = 1:length(fieldNames)
             methodName = fieldNames{i};
-            latentData = latents.(methodName);
+            latentData = allResults.latents{areaIdx}.(methodName);
 
             % Get colors for modeled behaviors
-            colorsForPlot = arrayfun(@(x) colors(x,:), svmID + 2, 'UniformOutput', false);
+            colorsForPlot = arrayfun(@(x) colors(x,:), allResults.svmID{areaIdx} + 2, 'UniformOutput', false);
             colorsForPlot = vertcat(colorsForPlot{:});
 
             figure(figHModel + i);
             clf; hold on;
 
             if nDim > 2
-                scatter3(latentData(svmInd, 1), latentData(svmInd, 2), latentData(svmInd, 3), 40, colorsForPlot, 'filled');
+                scatter3(latentData(allResults.svmInd{areaIdx}, 1), latentData(allResults.svmInd{areaIdx}, 2), latentData(allResults.svmInd{areaIdx}, 3), 40, colorsForPlot, 'filled');
             else
-                scatter(latentData(svmInd, 1), latentData(svmInd, 2), 40, colorsForPlot, 'filled');
+                scatter(latentData(allResults.svmInd{areaIdx}, 1), latentData(allResults.svmInd{areaIdx}, 2), 40, colorsForPlot, 'filled');
             end
 
             title(sprintf('%s %s %dD - %s (bin=%.2f)', areaName, upper(methodName), nDim, transWithinLabel, opts.frameSize));
@@ -464,16 +474,26 @@ for areaIdx = areasToTest
             grid on;
 
             % Add legend for modeled behaviors
-            for j = 1:length(bhv2ModelCodes)
-                bhvIdx = bhv2ModelCodes(j);
+            for j = 1:length(allResults.bhv2ModelCodes{areaIdx})
+                bhvIdx = allResults.bhv2ModelCodes{areaIdx}(j);
                 if bhvIdx < length(behaviors)
                     scatter(NaN, NaN, 40, colors(bhvIdx+2,:), 'filled', 'DisplayName', behaviors{bhvIdx+2});
                 end
             end
             legend('Location', 'best');
+            
+            % Save plot if flag is set
+            if savePlotFlag
+                plotFilename = sprintf('modeling_data_%s_%s_%s_%dD_bin%.2f.png', ...
+                    areaName, methodName, transOrWithin, nDim, opts.frameSize);
+                plotPath = fullfile(savePath, plotFilename);
+                exportgraphics(figure(figHModel + i), plotPath, 'Resolution', 300);
+                fprintf('Saved plot: %s\n', plotFilename);
+            end
         end
     end
 end
+
 % =============================================================================
 % --------    PLOT RESULTS COMPARISON FOR ALL AREAS
 % =============================================================================
@@ -544,6 +564,15 @@ if plotResults
     end
 
     sgtitle('SVM Decoding Accuracy Comparison - All Areas', 'FontSize', 16);
+    
+    % Save comparison plot if flag is set
+    if savePlotFlag
+        plotFilename = sprintf('results_comparison_all_areas_%s_%dD_bin%.2f_nShuffles%d.png', ...
+            transOrWithin, nDim, opts.frameSize, nShuffles);
+        plotPath = fullfile(savePath, plotFilename);
+        exportgraphics(fig, plotPath, 'Resolution', 300);
+        fprintf('Saved comparison plot: %s\n', plotFilename);
+    end
 
     % Summary statistics for all areas
     fprintf('\n=== SUMMARY FOR ALL AREAS ===\n');
