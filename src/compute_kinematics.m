@@ -26,6 +26,13 @@ end
 % Extract features
 [features, scaled_features] = get_features(currdf, fps);
 
+% load known kinematics to ensure they're the same
+bhvDataPath = 'E:/Projects/neuro-behavior/data/processed_behavior/animal_ag25290/';
+kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000_kinematics.npy';
+csvFilePath = [bhvDataPath, kinFileName];
+kinData = readNPY(csvFilePath)';
+
+return
 % Save features if save directory is provided
 if nargin >= 2 && ~isempty(save_dir)
     % Create save directory if it doesn't exist
@@ -70,18 +77,33 @@ if isrow(a)
     a = a';
 end
 
-% Initialize output
-moving_avg = zeros(size(a));
-
-% Handle edge cases
+% VECTORIZED VERSION - Much faster than nested loops
+% Use conv for moving average (much faster than loops)
 half_window = floor(n/2);
-
-% Apply moving average
-for i = 1:length(a)
-    start_idx = max(1, i - half_window);
-    end_idx = min(length(a), i + half_window);
-    moving_avg(i) = mean(a(start_idx:end_idx));
+if n > 1
+    % Create boxcar kernel
+    kernel = ones(n, 1) / n;
+    
+    % Apply convolution with proper padding
+    padded_a = [a(1)*ones(half_window,1); a; a(end)*ones(half_window,1)];
+    moving_avg = conv(padded_a, kernel, 'valid');
+else
+    moving_avg = a;
 end
+
+% ORIGINAL LOOP-BASED VERSION (commented out for reference)
+% % Initialize output
+% moving_avg = zeros(size(a));
+% 
+% % Handle edge cases
+% half_window = floor(n/2);
+% 
+% % Apply moving average
+% for i = 1:length(a)
+%     start_idx = max(1, i - half_window);
+%     end_idx = min(length(a), i + half_window);
+%     moving_avg(i) = mean(a(start_idx:end_idx));
+% end
 
 end
 
@@ -95,8 +117,36 @@ function [currdf_filt, perc_rect] = adp_filt(data_path)
 %   currdf_filt - Filtered position data
 %   perc_rect - Percentage of frames below likelihood threshold
 
-% Read CSV data
-data = readtable(data_path);
+% Read CSV data - DeepLabCut format has headers starting at "Coords" row
+fprintf('Reading DeepLabCut CSV file: %s\n', data_path);
+
+% Read the raw CSV file to find the header row
+fid = fopen(data_path, 'r');
+if fid == -1
+    error('Could not open file: %s', data_path);
+end
+
+% Find the row that starts with "Coords"
+header_row = 0;
+line_num = 0;
+while ~feof(fid)
+    line = fgetl(fid);
+    line_num = line_num + 1;
+    if startsWith(line, 'coords')
+        header_row = line_num;
+        break;
+    end
+end
+fclose(fid);
+
+if header_row == 0
+    error('Could not find "Coords" header row in DeepLabCut CSV file');
+end
+
+fprintf('Found header row at line %d\n', header_row);
+
+% Read the CSV file starting from the header row
+data = readtable(data_path, 'HeaderLines', header_row - 1);
 currdf = table2array(data);
 
 % Find column indices for likelihood, x, and y
@@ -105,14 +155,31 @@ lIndex = [];
 xIndex = [];
 yIndex = [];
 
+fprintf('Searching for coordinate columns in %d headers...\n', length(headers));
+
 for i = 1:length(headers)
-    if contains(headers{i}, 'likelihood')
+    header_lower = lower(headers{i});
+    if contains(header_lower, 'likelihood')
         lIndex = [lIndex, i];
-    elseif contains(headers{i}, 'x')
+        fprintf('Found likelihood column %d: %s\n', i, headers{i});
+    elseif contains(header_lower, 'x') && ~contains(header_lower, 'likelihood')
         xIndex = [xIndex, i];
-    elseif contains(headers{i}, 'y')
+        fprintf('Found x column %d: %s\n', i, headers{i});
+    elseif contains(header_lower, 'y') && ~contains(header_lower, 'likelihood')
         yIndex = [yIndex, i];
+        fprintf('Found y column %d: %s\n', i, headers{i});
     end
+end
+
+fprintf('Found %d likelihood, %d x, and %d y columns\n', length(lIndex), length(xIndex), length(yIndex));
+
+% Validate that we found the expected columns
+if isempty(xIndex) || isempty(yIndex) || isempty(lIndex)
+    error('Could not find required coordinate columns (x, y, likelihood) in DeepLabCut CSV file');
+end
+
+if length(xIndex) ~= length(yIndex) || length(xIndex) ~= length(lIndex)
+    error('Mismatch in number of x (%d), y (%d), and likelihood (%d) columns', length(xIndex), length(yIndex), length(lIndex));
 end
 
 % Extract data
@@ -120,14 +187,22 @@ datax = currdf(:, xIndex);
 datay = currdf(:, yIndex);
 data_lh = currdf(:, lIndex);
 
+fprintf('Data matrix size: %s\n', mat2str(size(currdf)));
+fprintf('Extracted data sizes - X: %s, Y: %s, Likelihood: %s\n', mat2str(size(datax)), mat2str(size(datay)), mat2str(size(data_lh)));
+
 % Initialize output
 currdf_filt = zeros(size(datax, 1), length(xIndex) * 2);
 perc_rect = zeros(1, length(xIndex));
 
-% Process each tracked point
-fprintf('Processing %d tracked points...\n', length(xIndex));
+% VECTORIZED VERSION - Much faster processing
+fprintf('Processing %d tracked points (vectorized)...\n', length(xIndex));
+
+% Pre-allocate arrays for thresholds and percentages
+thresholds = zeros(length(xIndex), 1);
+perc_rect = zeros(length(xIndex), 1);
+
+% Calculate thresholds for all points at once
 for x = 1:length(xIndex)
-    % Calculate likelihood threshold using histogram
     lh_data = data_lh(:, x);
     [counts, edges] = histcounts(lh_data, 50);
     
@@ -137,30 +212,78 @@ for x = 1:length(xIndex)
     
     if ~isempty(rise_indices)
         if rise_indices(1) > 1
-            llh = edges(rise_indices(1));
+            thresholds(x) = edges(rise_indices(1));
         else
-            llh = edges(rise_indices(2));
+            thresholds(x) = edges(rise_indices(2));
         end
     else
-        llh = median(lh_data); % Fallback threshold
+        thresholds(x) = median(lh_data); % Fallback threshold
     end
     
     % Calculate percentage below threshold
-    perc_rect(x) = sum(lh_data < llh) / length(lh_data);
-    
-    % Apply adaptive filtering
-    currdf_filt(1, (2*x-1):(2*x)) = [datax(1, x), datay(1, x)];
-    
-    for i = 2:size(data_lh, 1)
-        if lh_data(i) < llh
-            % Use previous frame's position
-            currdf_filt(i, (2*x-1):(2*x)) = currdf_filt(i-1, (2*x-1):(2*x));
-        else
-            % Use current frame's position
-            currdf_filt(i, (2*x-1):(2*x)) = [datax(i, x), datay(i, x)];
-        end
-    end
+    perc_rect(x) = sum(lh_data < thresholds(x)) / length(lh_data);
 end
+
+% VECTORIZED ADAPTIVE FILTERING - Much faster than nested loops
+% Initialize with first frame data
+currdf_filt(1, :) = [datax(1, :), datay(1, :)];
+
+% Create logical masks for low likelihood frames
+low_likelihood_mask = data_lh < thresholds';
+
+% Apply vectorized filtering
+for i = 2:size(data_lh, 1)
+    % Find which points have low likelihood at current frame
+    lowLhPoints = find(low_likelihood_mask(i, :)); % Indices of low likelihood points
+    
+    % For low likelihood points, use previous frame's position
+    currdf_filt(i, :) = currdf_filt(i-1, :);
+    
+    % For high likelihood points, use current frame's position
+    % X coordinates
+    currdf_filt(i, lowLhPoints) = datax(i, lowLhPoints);
+    % Y coordinates (offset by number of points)
+    currdf_filt(i, lowLhPoints + length(xIndex)) = datay(i, lowLhPoints);
+end
+
+% ORIGINAL LOOP-BASED VERSION (commented out for reference)
+% % Process each tracked point
+% fprintf('Processing %d tracked points...\n', length(xIndex));
+% for x = 1:length(xIndex)
+%     % Calculate likelihood threshold using histogram
+%     lh_data = data_lh(:, x);
+%     [counts, edges] = histcounts(lh_data, 50);
+%     
+%     % Find first significant rise in histogram
+%     diff_counts = diff(counts);
+%     rise_indices = find(diff_counts >= 0);
+%     
+%     if ~isempty(rise_indices)
+%         if rise_indices(1) > 1
+%             llh = edges(rise_indices(1));
+%         else
+%             llh = edges(rise_indices(2));
+%         end
+%     else
+%         llh = median(lh_data); % Fallback threshold
+%     end
+%     
+%     % Calculate percentage below threshold
+%     perc_rect(x) = sum(lh_data < llh) / length(lh_data);
+%     
+%     % Apply adaptive filtering
+%     currdf_filt(1, (2*x-1):(2*x)) = [datax(1, x), datay(1, x)];
+%     
+%     for i = 2:size(data_lh, 1)
+%         if lh_data(i) < llh
+%             % Use previous frame's position
+%             currdf_filt(i, (2*x-1):(2*x)) = currdf_filt(i-1, (2*x-1):(2*x));
+%         else
+%             % Use current frame's position
+%             currdf_filt(i, (2*x-1):(2*x)) = [datax(i, x), datay(i, x)];
+%         end
+%     end
+% end
 
 end
 
@@ -181,87 +304,181 @@ window = round(0.05 / (1/fps) * 2 - 1);
 data_n_len = size(data, 1);
 num_points = size(data, 2) / 2;
 
-% Initialize feature arrays
-dxy_list = [];
-disp_list = [];
+% VECTORIZED VERSION - Much faster computation
+fprintf('Computing displacement and distance features (vectorized)...\n');
 
-fprintf('Computing displacement and distance features...\n');
+% Pre-allocate arrays for better performance
+disp_list = zeros(data_n_len-1, num_points);
+dxy_list = zeros(data_n_len, num_points * (num_points - 1) / 2 * 2);
 
-% Calculate displacement between consecutive frames
-for r = 1:data_n_len-1
-    disp = [];
-    for c = 1:2:size(data, 2)
-        disp = [disp, norm(data(r+1, c:c+1) - data(r, c:c+1))];
-    end
-    disp_list = [disp_list; disp];
+% VECTORIZED DISPLACEMENT CALCULATION
+% Calculate displacement between consecutive frames using vectorized operations
+for c = 1:num_points
+    col_idx = (c-1)*2 + 1;
+    % Calculate displacement for this point across all frames
+    disp_vec = sqrt(sum((data(2:end, col_idx:col_idx+1) - data(1:end-1, col_idx:col_idx+1)).^2, 2));
+    disp_list(:, c) = disp_vec;
 end
 
-% Calculate distances between all point pairs
-for r = 1:data_n_len
-    dxy = [];
-    for i = 1:2:size(data, 2)
-        for j = (i+2):2:size(data, 2)
-            dxy = [dxy, data(r, i:i+1) - data(r, j:j+1)];
-        end
+% VECTORIZED DISTANCE CALCULATION
+% Calculate distances between all point pairs using vectorized operations
+pair_idx = 1;
+for i = 1:num_points
+    for j = (i+1):num_points
+        col_i = (i-1)*2 + 1;
+        col_j = (j-1)*2 + 1;
+        
+        % Calculate vector differences for all frames at once
+        diff_vec = data(:, col_i:col_i+1) - data(:, col_j:col_j+1);
+        dxy_list(:, (pair_idx-1)*2+1:pair_idx*2) = diff_vec;
+        pair_idx = pair_idx + 1;
     end
-    dxy_list = [dxy_list; dxy];
 end
 
-% Interpolate displacement to match frame times
+% ORIGINAL LOOP-BASED VERSION (commented out for reference)
+% % Initialize feature arrays
+% dxy_list = [];
+% disp_list = [];
+% 
+% fprintf('Computing displacement and distance features...\n');
+% 
+% % Calculate displacement between consecutive frames
+% for r = 1:data_n_len-1
+%     disp = [];
+%     for c = 1:2:size(data, 2)
+%         disp = [disp, norm(data(r+1, c:c+1) - data(r, c:c+1))];
+%     end
+%     disp_list = [disp_list; disp];
+% end
+% 
+% % Calculate distances between all point pairs
+% for r = 1:data_n_len
+%     dxy = [];
+%     for i = 1:2:size(data, 2)
+%         for j = (i+2):2:size(data, 2)
+%             dxy = [dxy, data(r, i:i+1) - data(r, j:j+1)];
+%         end
+%     end
+%     dxy_list = [dxy_list; dxy];
+% end
+
+% VECTORIZED INTERPOLATION AND SMOOTHING
 interp_times = 1:data_n_len;
 computed_times = 1.5:(data_n_len-0.5);
 
-disp_r = zeros(data_n_len, size(disp_list, 2));
-for i = 1:size(disp_list, 2)
-    disp_r(:, i) = interp1(computed_times, disp_list(:, i), interp_times, 'linear', 'extrap');
-end
+% Vectorized interpolation for all displacement columns at once
+disp_r = interp1(computed_times, disp_list, interp_times, 'linear', 'extrap');
 
 fprintf('Displacement shape: %s, Distance shape: %s\n', mat2str(size(disp_r)), mat2str(size(dxy_list)));
 
-% Apply smoothing and compute additional features
-disp_boxcar = [];
-dxy_eu = zeros(data_n_len, size(dxy_list, 2));
-ang = zeros(data_n_len, size(dxy_list, 2));
-dxy_boxcar = [];
-ang_boxcar = [];
+% Pre-allocate arrays for better performance
+num_pairs = size(dxy_list, 2) / 2;
+dxy_eu = zeros(data_n_len, num_pairs);
+ang = zeros(data_n_len, num_pairs);
 
-fprintf('Computing smoothed features...\n');
+fprintf('Computing smoothed features (vectorized)...\n');
 
-% Smooth displacement features
-for l = 1:size(disp_r, 2)
-    disp_boxcar = [disp_boxcar, boxcar_center(disp_r(:, l), window)];
-end
-
-% Compute Euclidean distances and angles
-for k = 1:size(dxy_list, 2)
+% VECTORIZED EUCLIDEAN DISTANCE AND ANGLE CALCULATION
+for k = 1:num_pairs
     % Extract x,y components for this pair
     pair_data = dxy_list(:, (2*k-1):(2*k));
     
-    % Compute Euclidean distances
-    for kk = 1:data_n_len
-        dxy_eu(kk, k) = norm(pair_data(kk, :));
-        
-        % Compute angles between consecutive frames
-        if kk < data_n_len
-            v1 = pair_data(kk, :);
-            v2 = pair_data(kk+1, :);
-            
-            % Compute angle using cross product
-            if norm(v1) > 0 && norm(v2) > 0
-                cos_angle = dot(v1, v2) / (norm(v1) * norm(v2));
-                cos_angle = max(-1, min(1, cos_angle)); % Clamp to [-1, 1]
-                angle_rad = acos(cos_angle);
-                ang(kk, k) = angle_rad * 180 / pi;
-            else
-                ang(kk, k) = 0;
-            end
-        end
-    end
+    % Vectorized Euclidean distance calculation
+    dxy_eu(:, k) = sqrt(sum(pair_data.^2, 2));
     
-    % Apply smoothing
-    dxy_boxcar = [dxy_boxcar, boxcar_center(dxy_eu(:, k), window)];
-    ang_boxcar = [ang_boxcar, boxcar_center(ang(:, k), window)];
+    % Vectorized angle calculation between consecutive frames
+    if data_n_len > 1
+        v1 = pair_data(1:end-1, :);
+        v2 = pair_data(2:end, :);
+        
+        % Compute norms for all frames at once
+        norm_v1 = sqrt(sum(v1.^2, 2));
+        norm_v2 = sqrt(sum(v2.^2, 2));
+        
+        % Avoid division by zero
+        valid_frames = (norm_v1 > 0) & (norm_v2 > 0);
+        
+        % Compute cosine of angles for valid frames
+        cos_angles = zeros(size(v1, 1), 1);
+        cos_angles(valid_frames) = sum(v1(valid_frames, :) .* v2(valid_frames, :), 2) ./ ...
+                                   (norm_v1(valid_frames) .* norm_v2(valid_frames));
+        
+        % Clamp to [-1, 1] and convert to degrees
+        cos_angles = max(-1, min(1, cos_angles));
+        ang(1:end-1, k) = acos(cos_angles) * 180 / pi;
+    end
 end
+
+% VECTORIZED SMOOTHING - Apply boxcar smoothing to all columns at once
+disp_boxcar = zeros(data_n_len, size(disp_r, 2));
+dxy_boxcar = zeros(data_n_len, num_pairs);
+ang_boxcar = zeros(data_n_len, num_pairs);
+
+for i = 1:size(disp_r, 2)
+    disp_boxcar(:, i) = boxcar_center(disp_r(:, i), window);
+end
+
+for i = 1:num_pairs
+    dxy_boxcar(:, i) = boxcar_center(dxy_eu(:, i), window);
+    ang_boxcar(:, i) = boxcar_center(ang(:, i), window);
+end
+
+% ORIGINAL LOOP-BASED VERSION (commented out for reference)
+% % Interpolate displacement to match frame times
+% interp_times = 1:data_n_len;
+% computed_times = 1.5:(data_n_len-0.5);
+% 
+% disp_r = zeros(data_n_len, size(disp_list, 2));
+% for i = 1:size(disp_list, 2)
+%     disp_r(:, i) = interp1(computed_times, disp_list(:, i), interp_times, 'linear', 'extrap');
+% end
+% 
+% fprintf('Displacement shape: %s, Distance shape: %s\n', mat2str(size(disp_r)), mat2str(size(dxy_list)));
+% 
+% % Apply smoothing and compute additional features
+% disp_boxcar = [];
+% dxy_eu = zeros(data_n_len, size(dxy_list, 2));
+% ang = zeros(data_n_len, size(dxy_list, 2));
+% dxy_boxcar = [];
+% ang_boxcar = [];
+% 
+% fprintf('Computing smoothed features...\n');
+% 
+% % Smooth displacement features
+% for l = 1:size(disp_r, 2)
+%     disp_boxcar = [disp_boxcar, boxcar_center(disp_r(:, l), window)];
+% end
+% 
+% % Compute Euclidean distances and angles
+% for k = 1:size(dxy_list, 2)
+%     % Extract x,y components for this pair
+%     pair_data = dxy_list(:, (2*k-1):(2*k));
+%     
+%     % Compute Euclidean distances
+%     for kk = 1:data_n_len
+%         dxy_eu(kk, k) = norm(pair_data(kk, :));
+%         
+%         % Compute angles between consecutive frames
+%         if kk < data_n_len
+%             v1 = pair_data(kk, :);
+%             v2 = pair_data(kk+1, :);
+%             
+%             % Compute angle using cross product
+%             if norm(v1) > 0 && norm(v2) > 0
+%                 cos_angle = dot(v1, v2) / (norm(v1) * norm(v2));
+%                 cos_angle = max(-1, min(1, cos_angle)); % Clamp to [-1, 1]
+%                 angle_rad = acos(cos_angle);
+%                 ang(kk, k) = angle_rad * 180 / pi;
+%             else
+%                 ang(kk, k) = 0;
+%             end
+%         end
+%     end
+%     
+%     % Apply smoothing
+%     dxy_boxcar = [dxy_boxcar, boxcar_center(dxy_eu(:, k), window)];
+%     ang_boxcar = [ang_boxcar, boxcar_center(ang(:, k), window)];
+% end
 
 % Organize features
 disp_feat = disp_boxcar;
@@ -272,37 +489,10 @@ fprintf('Feature shapes - Displacement: %s, Distance: %s, Angle: %s\n', ...
     mat2str(size(disp_feat)), mat2str(size(dxy_feat)), mat2str(size(ang_feat)));
 
 % Combine all features
-features = [dxy_feat; ang_feat; disp_feat'];
+features = [dxy_feat, ang_feat, disp_feat];
 
 % Z-score normalization
-scaled_features = zscore(features, 0, 2); % Normalize along rows
+scaled_features = zscore(features, 0, 1); % Normalize across time (rows)
 
 end
 
-function main()
-% MAIN Example usage of compute_kinematics function
-%
-% This function demonstrates how to use compute_kinematics with example paths
-
-% Example paths (modify these for your data)
-in_paths = {
-    'path/to/your/dlc_data1.csv',
-    'path/to/your/dlc_data2.csv'
-};
-
-save_dirs = {
-    'path/to/output1',
-    'path/to/output2'
-};
-
-% Process each file
-for i = 1:length(in_paths)
-    fprintf('Processing file %d of %d: %s\n', i, length(in_paths), in_paths{i});
-    
-    [features, scaled_features] = compute_kinematics(in_paths{i}, save_dirs{i}, 60);
-    
-    fprintf('Features shape: %s, Scaled features shape: %s\n', ...
-        mat2str(size(features)), mat2str(size(scaled_features)));
-end
-
-end
