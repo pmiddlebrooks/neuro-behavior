@@ -13,6 +13,18 @@ opts.frameSize = .15;
 getDataType = 'kinematics';
 get_standard_data
 
+%% Downsample kinematics if needed
+originalBinSize = .1;  % Original bin size
+kinBinSize = opts.frameSize;  % Target bin size for downsampling - keep consistent with neural data
+if kinBinSize ~= originalBinSize
+    kinData = downsample_kinematics_weighted(kinData, originalBinSize, kinBinSize);
+end
+startFrame = 1 + opts.collectStart / kinBinSize;
+endFrame = startFrame - 1 + (opts.collectFor / kinBinSize);
+kinData = kinData(startFrame:endFrame,:);
+
+
+
 
 % Get neural data
 getDataType = 'spikes';
@@ -628,4 +640,176 @@ fclose(fid);
 fprintf('Summary saved to: %s\n', summaryPath);
 fprintf('\nMulti-area analysis complete!\n');
 
+%% =============================================================================
+% --------    HELPER FUNCTIONS
+% =============================================================================
 
+function downsampledData = downsample_kinematics(data, originalBinSize, targetBinSize)
+% Downsamples kinematics data using boxcar averaging
+% Inputs:
+%   data: original kinematics data (time x features)
+%   originalBinSize: original time bin size in seconds
+%   targetBinSize: target time bin size in seconds
+
+if targetBinSize <= originalBinSize
+    % No downsampling needed
+    downsampledData = data;
+    return;
+end
+
+% Calculate downsampling factor
+downsampleFactor = targetBinSize / originalBinSize;
+
+% Ensure downsampleFactor is reasonable (not too large)
+if downsampleFactor > 10
+    warning('Downsampling factor is very large (%.1f). Consider using a smaller target bin size.', downsampleFactor);
+end
+
+% Calculate number of original bins per target bin
+binsPerTarget = round(downsampleFactor);
+
+% Calculate new number of time points
+nOriginalBins = size(data, 1);
+nTargetBins = floor(nOriginalBins / binsPerTarget);
+
+% Initialize output
+downsampledData = zeros(nTargetBins, size(data, 2));
+
+% Apply boxcar averaging
+for i = 1:nTargetBins
+    startIdx = (i-1) * binsPerTarget + 1;
+    endIdx = min(i * binsPerTarget, nOriginalBins);
+
+    % Average the bins within this window
+    downsampledData(i, :) = mean(data(startIdx:endIdx, :), 1);
+end
+
+fprintf('Downsampled kinematics from %.3fs to %.3fs bins (%d -> %d time points)\n', ...
+    originalBinSize, targetBinSize, nOriginalBins, nTargetBins);
+end
+
+function downsampledData = downsample_kinematics_weighted(data, originalBinSize, targetBinSize)
+% DOWNSAMPLE_KINEMATICS_WEIGHTED Downsamples kinematics data using proper weighted averaging
+% This function handles fractional downsampling factors by giving full weight to 
+% original bins that are fully overlapped and partial weight to bins that are 
+% partially overlapped by the target bins.
+%
+% Inputs:
+%   data - Input data matrix (time x features)
+%   originalBinSize - Original bin size in seconds
+%   targetBinSize - Target bin size in seconds
+%
+% Outputs:
+%   downsampledData - Downsampled data matrix
+
+if targetBinSize <= originalBinSize
+    % No downsampling needed
+    downsampledData = data;
+    return;
+end
+
+% Calculate downsampling factor
+downsampleFactor = targetBinSize / originalBinSize;
+
+% Ensure downsampleFactor is reasonable (not too large)
+if downsampleFactor > 10
+    warning('Downsampling factor is very large (%.1f). Consider using a smaller target bin size.', downsampleFactor);
+end
+
+% Calculate number of original bins per target bin (can be fractional)
+binsPerTarget = downsampleFactor;
+
+% Calculate new number of time points
+nOriginalBins = size(data, 1);
+nTargetBins = floor(nOriginalBins / binsPerTarget);
+
+% Initialize output
+downsampledData = zeros(nTargetBins, size(data, 2));
+
+% Apply weighted averaging with proper overlap handling
+for i = 1:nTargetBins
+    % Calculate the start and end times for this target bin
+    targetStartTime = (i-1) * targetBinSize;
+    targetEndTime = i * targetBinSize;
+    
+    % Find original bins that overlap with this target bin
+    originalStartBin = floor(targetStartTime / originalBinSize) + 1;
+    originalEndBin = ceil(targetEndTime / originalBinSize);
+    
+    % Ensure we don't exceed data bounds
+    originalStartBin = max(1, originalStartBin);
+    originalEndBin = min(nOriginalBins, originalEndBin);
+    
+    if originalStartBin > originalEndBin
+        % No overlap - use nearest neighbor
+        downsampledData(i, :) = data(min(originalStartBin, nOriginalBins), :);
+        continue;
+    end
+    
+    % Calculate weights for each original bin based on overlap
+    weights = zeros(originalEndBin - originalStartBin + 1, 1);
+    weightedSum = zeros(1, size(data, 2));
+    totalWeight = 0;
+    
+    for j = 1:length(weights)
+        originalBinIdx = originalStartBin + j - 1;
+        
+        % Calculate the time range of this original bin
+        originalBinStartTime = (originalBinIdx - 1) * originalBinSize;
+        originalBinEndTime = originalBinIdx * originalBinSize;
+        
+        % Calculate overlap with target bin
+        overlapStart = max(targetStartTime, originalBinStartTime);
+        overlapEnd = min(targetEndTime, originalBinEndTime);
+        overlapDuration = max(0, overlapEnd - overlapStart);
+        
+        % Weight is proportional to overlap duration
+        weight = overlapDuration / originalBinSize;
+        weights(j) = weight;
+        
+        % Add weighted contribution
+        weightedSum = weightedSum + weight * data(originalBinIdx, :);
+        totalWeight = totalWeight + weight;
+    end
+    
+    % Normalize by total weight
+    if totalWeight > 0
+        downsampledData(i, :) = weightedSum / totalWeight;
+    else
+        % Fallback to simple averaging if no valid weights
+        downsampledData(i, :) = mean(data(originalStartBin:originalEndBin, :), 1);
+    end
+end
+
+fprintf('Downsampled kinematics from %.3fs to %.3fs bins (%d -> %d time points)\n', ...
+    originalBinSize, targetBinSize, nOriginalBins, nTargetBins);
+end
+
+function downsampledData = downsample_kinematics_decimate(data, originalBinSize, targetBinSize)
+% Downsamples kinematics data using decimation with anti-aliasing filter
+% This is more sophisticated than simple averaging
+
+if targetBinSize <= originalBinSize
+    downsampledData = data;
+    return;
+end
+
+downsampleFactor = targetBinSize / originalBinSize;
+
+% Apply anti-aliasing filter first
+% Use a low-pass filter to prevent aliasing
+cutoffFreq = 1 / (2 * targetBinSize);  % Nyquist frequency for target rate
+sampleRate = 1 / originalBinSize;
+
+% Design low-pass filter
+[b, a] = butter(4, cutoffFreq / (sampleRate/2), 'low');
+
+% Apply filter to each feature
+filteredData = zeros(size(data));
+for feat = 1:size(data, 2)
+    filteredData(:, feat) = filtfilt(b, a, data(:, feat));
+end
+
+% Decimate
+downsampledData = downsample(filteredData, round(downsampleFactor));
+end
