@@ -143,17 +143,37 @@ def get_features(data, fps=60):
     return features, scaled_features
 
 def save_video_features(path, save_dir):
-    data = pd.read_csv(path)
+    print("=== PYTHON SAVE_VIDEO_FEATURES DEBUG ===")
+    print(f"Input path: {path}")
+    print(f"Input save_dir: {save_dir}")
     
-    currdf, perc_rect = adp_filt(data)
+    # Check if input is a file path or data matrix
+    if isinstance(path, str):
+        # Input is a file path - load the data
+        print("Step 1: Reading CSV data...")
+        data = pd.read_csv(path)
+        print(f"CSV data shape: {data.shape}")
+        
+        print("Step 2: Running adp_filt...")
+        currdf, perc_rect = adp_filt(data)
+        print(f"adp_filt output shape: {currdf.shape}")
+        print(f"perc_rect: {perc_rect}")
+    else:
+        # Input is data matrix - use it directly
+        print("Step 1: Using provided data matrix directly")
+        print(f"Data shape: {path.shape}")
+        currdf = path
+        perc_rect = []  # Not available when using pre-processed data
     
+    print("Step 3: Running get_features...")
     features, scaled_features = get_features(currdf, 60)
+    print(f"get_features output shapes - features: {features.shape}, scaled_features: {scaled_features.shape}")
     
-    file_name = os.path.basename(path).split(".")[0] + "_kinematics"
-    
-    output_path = os.path.join(save_dir, file_name)
-    
-    np.save(output_path, features)
+    if isinstance(path, str):
+        file_name = os.path.basename(path).split(".")[0] + "_kinematics"
+        output_path = os.path.join(save_dir, file_name)
+        np.save(output_path, features)
+        print(f"Features saved to: {output_path}")
     
     return features, scaled_features
     
