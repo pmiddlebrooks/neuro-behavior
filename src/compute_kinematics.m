@@ -75,24 +75,6 @@ function moving_avg = boxcar_center(a, n)
 % Outputs:
 %   moving_avg - Smoothed data
 
-% % Convert to column vector if needed
-% if isrow(a)
-%     a = a';
-% end
-% 
-% % VECTORIZED VERSION - Much faster than nested loops
-% % Use conv for moving average (much faster than loops)
-% half_window = floor(n/2);
-% if n > 1
-%     % Create boxcar kernel
-%     kernel = ones(n, 1) / n;
-% 
-%     % Apply convolution with proper padding
-%     padded_a = [a(1)*ones(half_window,1); a; a(end)*ones(half_window,1)];
-%     moving_avg = conv(padded_a, kernel, 'valid');
-% else
-%     moving_avg = a;
-% end
 
 % ORIGINAL LOOP-BASED VERSION (commented out for reference)
 % % Initialize output
@@ -197,57 +179,6 @@ fprintf('Extracted data sizes - X: %s, Y: %s, Likelihood: %s\n', mat2str(size(da
 currdf_filt = zeros(size(datax, 1), length(xIndex) * 2);
 perc_rect = zeros(1, length(xIndex));
 
-% % VECTORIZED VERSION - Much faster processing
-% fprintf('Processing %d tracked points (vectorized)...\n', length(xIndex));
-% 
-% % Pre-allocate arrays for thresholds and percentages
-% thresholds = zeros(length(xIndex), 1);
-% perc_rect = zeros(length(xIndex), 1);
-% 
-% % Calculate thresholds for all points at once
-% for x = 1:length(xIndex)
-%     lh_data = data_lh(:, x);
-%     [counts, edges] = histcounts(lh_data, 50);
-% 
-%     % Find first significant rise in histogram
-%     diff_counts = diff(counts);
-%     rise_indices = find(diff_counts >= 0);
-% 
-%     if ~isempty(rise_indices)
-%         if rise_indices(1) > 1
-%             thresholds(x) = edges(rise_indices(1));
-%         else
-%             thresholds(x) = edges(rise_indices(2));
-%         end
-%     else
-%         thresholds(x) = median(lh_data); % Fallback threshold
-%     end
-% 
-%     % Calculate percentage below threshold
-%     perc_rect(x) = sum(lh_data < thresholds(x)) / length(lh_data);
-% end
-% 
-% % VECTORIZED ADAPTIVE FILTERING - Much faster than nested loops
-% % Initialize with first frame data
-% currdf_filt(1, :) = [datax(1, :), datay(1, :)];
-% 
-% % Create logical masks for low likelihood frames
-% low_likelihood_mask = data_lh < thresholds';
-% 
-% % Apply vectorized filtering
-% for i = 2:size(data_lh, 1)
-%     % Find which points have low likelihood at current frame
-%     lowLhPoints = find(low_likelihood_mask(i, :)); % Indices of low likelihood points
-% 
-%     % For low likelihood points, use previous frame's position
-%     currdf_filt(i, :) = currdf_filt(i-1, :);
-% 
-%     % For high likelihood points, use current frame's position
-%     % X coordinates
-%     currdf_filt(i, lowLhPoints) = datax(i, lowLhPoints);
-%     % Y coordinates (offset by number of points)
-%     currdf_filt(i, lowLhPoints + length(xIndex)) = datay(i, lowLhPoints);
-% end
 
 % ORIGINAL LOOP-BASED VERSION (commented out for reference)
 % Process each tracked point
@@ -255,17 +186,22 @@ fprintf('Processing %d tracked points...\n', length(xIndex));
 for x = 1:length(xIndex)
     % Calculate likelihood threshold using histogram
     lh_data = data_lh(:, x);
-    [counts, edges] = histcounts(lh_data, 50);
-
-    % Find first significant rise in histogram
+    % Use default binning like numpy (10 bins) and skip first sample for histogram only
+    [counts, edges] = histcounts(lh_data(2:end));
+    
+    % Find first significant rise in histogram (same logic as Python)
     diff_counts = diff(counts);
     rise_indices = find(diff_counts >= 0);
-
+    
+    % Robustly select threshold edge, avoid index error if rise_indices has only one element
     if ~isempty(rise_indices)
         if rise_indices(1) > 1
             llh = edges(rise_indices(1));
-        else
+        elseif numel(rise_indices) > 1
             llh = edges(rise_indices(2));
+        else
+            % Only one rise index and it's 1 or less, fallback to median
+            llh = median(lh_data);
         end
     else
         llh = median(lh_data); % Fallback threshold
@@ -307,36 +243,6 @@ window = round(0.05 / (1/fps) * 2 - 1);
 data_n_len = size(data, 1);
 num_points = size(data, 2) / 2;
 
-% VECTORIZED VERSION - Much faster computation
-% fprintf('Computing displacement and distance features (vectorized)...\n');
-% 
-% % Pre-allocate arrays for better performance
-% disp_list = zeros(data_n_len-1, num_points);
-% dxy_list = zeros(data_n_len, num_points * (num_points - 1) / 2 * 2);
-% 
-% % VECTORIZED DISPLACEMENT CALCULATION
-% % Calculate displacement between consecutive frames using vectorized operations
-% for c = 1:num_points
-%     col_idx = (c-1)*2 + 1;
-%     % Calculate displacement for this point across all frames
-%     disp_vec = sqrt(sum((data(2:end, col_idx:col_idx+1) - data(1:end-1, col_idx:col_idx+1)).^2, 2));
-%     disp_list(:, c) = disp_vec;
-% end
-% 
-% % VECTORIZED DISTANCE CALCULATION
-% % Calculate distances between all point pairs using vectorized operations
-% pair_idx = 1;
-% for i = 1:num_points
-%     for j = (i+1):num_points
-%         col_i = (i-1)*2 + 1;
-%         col_j = (j-1)*2 + 1;
-% 
-%         % Calculate vector differences for all frames at once
-%         diff_vec = data(:, col_i:col_i+1) - data(:, col_j:col_j+1);
-%         dxy_list(:, (pair_idx-1)*2+1:pair_idx*2) = diff_vec;
-%         pair_idx = pair_idx + 1;
-%     end
-% end
 
 % ORIGINAL LOOP-BASED VERSION (commented out for reference)
 % Initialize feature arrays
@@ -345,8 +251,8 @@ disp_list = [];
 
 fprintf('Computing displacement and distance features...\n');
 
-% Calculate displacement between consecutive frames
-for r = 1:data_n_len-1
+% Calculate displacement between consecutive frames (match Python exactly)
+for r = 1:data_n_len-1  % Match Python: calculate displacement for r = 0 to data_n_len-2 (1-based: 1 to data_n_len-1)
     disp = [];
     for c = 1:2:size(data, 2)
         disp = [disp, norm(data(r+1, c:c+1) - data(r, c:c+1))];
@@ -365,76 +271,18 @@ for r = 1:data_n_len
     dxy_list = [dxy_list; dxy];
 end
 
-% % VECTORIZED INTERPOLATION AND SMOOTHING
-% interp_times = 1:data_n_len;
-% computed_times = 1.5:(data_n_len-0.5);
-% 
-% % Vectorized interpolation for all displacement columns at once
-% disp_r = interp1(computed_times, disp_list, interp_times, 'linear', 'extrap');
-% 
-% fprintf('Displacement shape: %s, Distance shape: %s\n', mat2str(size(disp_r)), mat2str(size(dxy_list)));
-% 
-% % Pre-allocate arrays for better performance
-% num_pairs = size(dxy_list, 2) / 2;
-% dxy_eu = zeros(data_n_len, num_pairs);
-% ang = zeros(data_n_len, num_pairs);
-% 
-% fprintf('Computing smoothed features (vectorized)...\n');
-% 
-% % VECTORIZED EUCLIDEAN DISTANCE AND ANGLE CALCULATION
-% for k = 1:num_pairs
-%     % Extract x,y components for this pair
-%     pair_data = dxy_list(:, (2*k-1):(2*k));
-% 
-%     % Vectorized Euclidean distance calculation
-%     dxy_eu(:, k) = sqrt(sum(pair_data.^2, 2));
-% 
-%     % Vectorized angle calculation between consecutive frames
-%     if data_n_len > 1
-%         v1 = pair_data(1:end-1, :);
-%         v2 = pair_data(2:end, :);
-% 
-%         % Compute norms for all frames at once
-%         norm_v1 = sqrt(sum(v1.^2, 2));
-%         norm_v2 = sqrt(sum(v2.^2, 2));
-% 
-%         % Avoid division by zero
-%         valid_frames = (norm_v1 > 0) & (norm_v2 > 0);
-% 
-%         % Compute cosine of angles for valid frames
-%         cos_angles = zeros(size(v1, 1), 1);
-%         cos_angles(valid_frames) = sum(v1(valid_frames, :) .* v2(valid_frames, :), 2) ./ ...
-%             (norm_v1(valid_frames) .* norm_v2(valid_frames));
-% 
-%         % Clamp to [-1, 1] and convert to degrees
-%         cos_angles = max(-1, min(1, cos_angles));
-%         ang(1:end-1, k) = acos(cos_angles) * 180 / pi;
-%     end
-% end
-% 
-% % VECTORIZED SMOOTHING - Apply boxcar smoothing to all columns at once
-% disp_boxcar = zeros(data_n_len, size(disp_r, 2));
-% dxy_boxcar = zeros(data_n_len, num_pairs);
-% ang_boxcar = zeros(data_n_len, num_pairs);
-% 
-% for i = 1:size(disp_r, 2)
-%     disp_boxcar(:, i) = boxcar_center(disp_r(:, i), window);
-% end
-% 
-% for i = 1:num_pairs
-%     dxy_boxcar(:, i) = boxcar_center(dxy_eu(:, i), window);
-%     ang_boxcar(:, i) = boxcar_center(ang(:, i), window);
-% end
 
 % ORIGINAL LOOP-BASED VERSION (commented out for reference)
-% Interpolate displacement to match frame times
-interp_times = 1:data_n_len;
-computed_times = 1.5:(data_n_len-0.5);
+% Interpolate displacement to match frame times (match Python indexing)
+interp_times = 0:(data_n_len-1);  % 0-based like Python np.arange(data_n_len)
+computed_times = (0:(data_n_len-2)) + 0.5;  % Python: interp_times[:-1] + 0.5 = [0.5, 1.5, ..., data_n_len-2.5]
 
-disp_r = zeros(data_n_len, size(disp_list, 2));
+% Match Python's column-wise interpolation and transpose
+disp_r_interp = zeros(size(disp_list, 2), data_n_len);  % (num_points, data_n_len) like Python
 for i = 1:size(disp_list, 2)
-    disp_r(:, i) = interp1(computed_times, disp_list(:, i), interp_times, 'linear', 'extrap');
+    disp_r_interp(i, :) = interp1(computed_times, disp_list(:, i), interp_times, 'linear', 'extrap');
 end
+disp_r = disp_r_interp';  % Transpose to (data_n_len, num_points) for MATLAB consistency
 
 fprintf('Displacement shape: %s, Distance shape: %s\n', mat2str(size(disp_r)), mat2str(size(dxy_list)));
 
@@ -453,29 +301,32 @@ for l = 1:size(disp_r, 2)
 end
 
 % Compute Euclidean distances and angles
-for k = 1:size(dxy_list, 2)
+% Each pair is represented by two columns in dxy_list: (x, y)
+numPairs = size(dxy_list, 2) / 2;
+for k = 1:numPairs
     % Extract x,y components for this pair
-    pair_data = dxy_list(:, (2*k-1):(2*k));
+    pairData = dxy_list(:, (2*k-1):(2*k));
 
-    % Compute Euclidean distances
-    for kk = 1:data_n_len
-        dxy_eu(kk, k) = norm(pair_data(kk, :));
+    % Compute Euclidean distances for all frames (vectorized)
+    dxy_eu(:, k) = sqrt(sum(pairData.^2, 2));
 
-        % Compute angles between consecutive frames
-        if kk < data_n_len
-            v1 = pair_data(kk, :);
-            v2 = pair_data(kk+1, :);
-
-            % Compute angle using cross product
-            if norm(v1) > 0 && norm(v2) > 0
-                cos_angle = dot(v1, v2) / (norm(v1) * norm(v2));
-                cos_angle = max(-1, min(1, cos_angle)); % Clamp to [-1, 1]
-                angle_rad = acos(cos_angle);
-                ang(kk, k) = angle_rad * 180 / pi;
-            else
-                ang(kk, k) = 0;
-            end
-        end
+    % Compute angles between consecutive frames (match Python signed definition)
+    if size(pairData,1) > 1
+        v1 = pairData(1:end-1, :);
+        v2 = pairData(2:end, :);
+        % Promote to 3D by adding zero z to match Python cross
+        a3 = [v1, zeros(size(v1,1),1)];
+        b3 = [v2, zeros(size(v2,1),1)];
+        c3 = cross(b3, a3, 2); % np.cross(b_3d, a_3d)
+        % atan2(||cross||, dot)
+        dotProd = sum(v1 .* v2, 2);
+        angSigned = atan2(vecnorm(c3,2,2), dotProd) * 180 / pi;
+        % Apply sign from z of cross like Python
+        signz = sign(c3(:,3));
+        ang(1:end-1, k) = angSigned .* signz;
+        ang(end, k) = 0;
+    else
+        ang(:, k) = 0;
     end
 
     % Apply smoothing
@@ -488,20 +339,24 @@ end
 % where dxy_feat, ang_feat are (features x time) and disp_feat.T transposes disp_feat
 
 % Assign to match Python variable names for clarity
-disp_feat = disp_boxcar;  % (time x features)
-dxy_feat = dxy_boxcar;    % (time x features) 
-ang_feat = ang_boxcar;    % (time x features)
+% disp_feat = disp_boxcar;  % (time x features)
+% dxy_feat = dxy_boxcar;    % (time x features) 
+% ang_feat = ang_boxcar;    % (time x features)
+
+% Transpose to (features x time) to match Python
+disp_feat = disp_boxcar';
+dxy_feat = dxy_boxcar';
+ang_feat = ang_boxcar';
 
 % Stack features vertically to match Python's np.vstack
-features = [dxy_feat; ang_feat; disp_feat]; % Stack as (features x time)
+features = [dxy_feat; ang_feat; disp_feat]; % (features x time)
 
 fprintf('Feature shapes - Displacement: %s, Distance: %s, Angle: %s\n', ...
     mat2str(size(disp_feat)), mat2str(size(dxy_feat)), mat2str(size(ang_feat)));
-fprintf('Final features shape: %s (should match Python)\n', mat2str(size(features)));
+fprintf('Final features shape: %s (should match Python: features x time)\n', mat2str(size(features)));
 
-% Z-score normalization
-scaled_features = zscore(features, 0, 1); % Normalize across time (rows)
+% Z-score normalization to match Python StandardScaler on features.T
+% scaled_features = zscore(features, 0, 1); % Normalize across time (rows)
+scaled_features = zscore(features, 0, 2); % Normalize each feature (row) across time (columns)
 
 end
-
-% None of the features in @compute_kinematics.m match the output in @ComputeKinematics.py. Analyzed the files to see if you can spot any discrpencies. They were both produces using the same input, so it's something in the code.

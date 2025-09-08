@@ -2,8 +2,22 @@
 % Criticality Decoding Accuracy Script
 % Combines criticality measurements (d2) with decoding accuracy analysis
 % Uses sliding window analysis on naturalistic data
-% Options for PCA or UMAP dimensionality reduction
-% Tests correlation between d2 and decoding accuracy
+% Tests correlation between d2 and decoding accuracy for multiple methods
+% 
+% This script loads SVM decoding results from svm_decoding_compare.m based on
+% user-specified parameters (frame size, nDim, transOrWithin) and calculates
+% correlations between criticality (d2) and decoding accuracy for all methods:
+% - PCA
+% - UMAP  
+% - PSID with kinematics (psidKin)
+% - PSID with behavior labels (psidBhv)
+% - ICG
+%
+% User Parameters (modify at top of script):
+% - frameSize: Frame size in seconds (must match svm_decoding_compare.m)
+% - nDim: Number of dimensions (must match svm_decoding_compare.m)  
+% - transOrWithin: Analysis type ('all', 'trans', 'transPost', 'within')
+% - areasToTest: Brain areas to analyze
 
 %% ==============================================     Load Existing Criticality Data     ==============================================
 
@@ -34,20 +48,29 @@ collectStart = results.naturalistic.collectStart;
 collectFor = results.naturalistic.collectFor;
 
 
-%% Which brain areas to test (and hence which decoding results files to load)
+%% ==============================================     USER PARAMETERS     ==============================================
+
+% User-specified parameters for SVM decoding results
+frameSize = 0.15;  % Frame size in seconds (must match svm_decoding_compare.m)
+nDim = 6;          % Number of dimensions (must match svm_decoding_compare.m)
+transOrWithin = 'all';  % Analysis type: 'all', 'trans', 'transPost', 'within'
+
 % Define brain areas
 areas = {'M23', 'M56', 'DS', 'VS'};
 
 % Choose which areas to test
 areasToTest = 2:4;
 
+fprintf('\n=== USER PARAMETERS ===\n');
+fprintf('Frame size: %.3f seconds\n', frameSize);
+fprintf('Number of dimensions: %d\n', nDim);
+fprintf('Analysis type: %s\n', transOrWithin);
+fprintf('Areas to test: %s\n', strjoin(areas(areasToTest), ', '));
+fprintf('Expected methods: PCA, UMAP, PSIDKin, PSIDBhv, PSIDKin_remaining, PSIDBhv_remaining, ICG\n');
+
 
 
 %% ==============================================     Load Existing Decoding Results     ==============================================
-
-% Load the saved results from the multi-area file
-transOrWithin = 'all';
-binSize = .1;
 
 fprintf('\n=== Loading Existing Multi-Area Decoding Results ===\n');
 
@@ -61,11 +84,35 @@ if isempty(svmFiles)
     return;
 end
 
-% Load the most recent multi-area file
-[~, idx] = max([svmFiles.datenum]);
-svmResultsFile = fullfile(svmResultsPath, svmFiles(idx).name);
+% Find the file that matches our parameters
+matchingFile = '';
+for i = 1:length(svmFiles)
+    filename = svmFiles(i).name;
+    % Extract parameters from filename: svm_decoding_compare_multi_area_{transOrWithin}_nDim{nDim}_bin{frameSize}_nShuffles{nShuffles}.mat
+    pattern = sprintf('svm_decoding_compare_multi_area_%s_nDim%d_bin%.2f_', transOrWithin, nDim, frameSize);
+    if contains(filename, pattern)
+        matchingFile = filename;
+        break;
+    end
+end
+
+if isempty(matchingFile)
+    fprintf('Error: No matching SVM decoding file found for parameters:\n');
+    fprintf('  transOrWithin: %s\n', transOrWithin);
+    fprintf('  nDim: %d\n', nDim);
+    fprintf('  frameSize: %.2f\n', frameSize);
+    fprintf('\nAvailable files:\n');
+    for i = 1:length(svmFiles)
+        fprintf('  %s\n', svmFiles(i).name);
+    end
+    fprintf('\nPlease run svm_decoding_compare.m with the correct parameters first.\n');
+    return;
+end
+
+% Load the matching file
+svmResultsFile = fullfile(svmResultsPath, matchingFile);
 load(svmResultsFile, 'allResults');
-fprintf('Loaded multi-area SVM decoding results from: %s\n', svmFiles(idx).name);
+fprintf('Loaded multi-area SVM decoding results from: %s\n', matchingFile);
 
 % Extract results for the areas we want to test
 svmLatents = cell(1, length(areas));
@@ -120,8 +167,8 @@ svmWindowSize = cell(1, length(areas));
 svmStepSize = cell(1, length(areas));
 
 for a = loadedAreas
-    svmWindowSize{a} = criticalityWindowSize / svmBinSize{a};  % Number of SVM bins per criticality window
-    svmStepSize{a} = stepSize / svmBinSize{a};  % Number of SVM bins to step
+    svmWindowSize{a} = criticalityWindowSize / frameSize;  % Number of SVM bins per criticality window
+    svmStepSize{a} = stepSize / frameSize;  % Number of SVM bins to step
     fprintf('Area %s - Criticality window size: %.1f s = %.1f SVM bins\n', ...
         areas{a}, criticalityWindowSize, svmWindowSize{a});
     fprintf('Area %s - Criticality step size: %.1f s = %.1f SVM bins\n', ...
@@ -178,8 +225,8 @@ for a = loadedAreas
         windowEndTime = centerTime + criticalityWindowSize/2;
         
         % Convert to frame indices for the SVM data
-        startFrame = max(1, round(windowStartTime / svmBinSize{a}));
-        endFrame = min(length(svmSvmInd{a}), round(windowEndTime / svmBinSize{a}));
+        startFrame = max(1, round(windowStartTime / frameSize));
+        endFrame = min(length(svmSvmInd{a}), round(windowEndTime / frameSize));
         
         % Get the indices within this window that correspond to SVM analysis
         windowSvmIndices = svmSvmInd{a}(startFrame:endFrame);
@@ -319,7 +366,7 @@ for a = loadedAreas
     hold on;
     
     % Define colors for different methods
-    methodColors = {'r', 'g', 'b', 'm', 'c', 'y'};
+    methodColors = {'r', 'g', 'b', 'm', 'c', 'y', 'k', '--r', '--g', '--b'};
     
     for m = 1:length(svmMethods{a})
         methodName = svmMethods{a}{m};
@@ -343,8 +390,8 @@ for a = loadedAreas
     ylim([0 1]);
     legend('Location', 'best');
     
-    sgtitle(sprintf('Criticality and Decoding Accuracy - %s', areas{a}), 'FontSize', 14);
-    exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/criticality_decoding_%s_all_methods.png', areas{a})), 'Resolution', 300);
+    sgtitle(sprintf('Criticality and Decoding Accuracy - %s (nDim=%d, bin=%.2f)', areas{a}, nDim, frameSize), 'FontSize', 14);
+    exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/criticality_decoding_%s_%s_nDim%d_bin%.2f.png', areas{a}, transOrWithin, nDim, frameSize)), 'Resolution', 300);
 end
 
 % Plot correlation matrices for each area and method
@@ -379,7 +426,7 @@ for a = 1:nAreas
         end
     end
 end
-sgtitle('Correlation Matrices: d2 and Decoding Accuracy');
+sgtitle(sprintf('Correlation Matrices: d2 and Decoding Accuracy (nDim=%d, bin=%.2f)', nDim, frameSize));
 
 % Plot correlation summary for all methods
 figure(301); clf;
@@ -404,7 +451,7 @@ end
 bar(corrData);
 set(gca, 'XTickLabel', areas(loadedAreas));
 ylabel('Correlation Coefficient');
-title('Correlation between d2 and Decoding Accuracy');
+title(sprintf('Correlation between d2 and Decoding Accuracy (nDim=%d, bin=%.2f)', nDim, frameSize));
 legend(upper(svmMethods{loadedAreas(1)}), 'Location', 'best');
 grid on;
 
@@ -421,7 +468,7 @@ for a = 1:nAreas
     end
 end
 
-exportgraphics(gcf, fullfile(paths.dropPath, 'criticality/correlation_summary_all_methods.png'), 'Resolution', 300);
+exportgraphics(gcf, fullfile(paths.dropPath, sprintf('criticality/correlation_summary_%s_nDim%d_bin%.2f.png', transOrWithin, nDim, frameSize)), 'Resolution', 300);
 
 
 %% ==============================================     Save Results     ==============================================
@@ -431,7 +478,9 @@ results = struct();
 results.areas = areas;
 results.loadedAreas = loadedAreas;
 results.svmMethods = svmMethods;
-results.svmBinSize = svmBinSize;
+results.frameSize = frameSize;
+results.nDim = nDim;
+results.transOrWithin = transOrWithin;
 results.svmAccuracy = svmAccuracy;
 
 % Naturalistic data results
@@ -445,14 +494,18 @@ results.naturalistic.corrResults = corrResults;
 
 % Analysis parameters
 results.params.stepSize = stepSize;
-results.params.svmBinSize = svmBinSize;
+results.params.frameSize = frameSize;
+results.params.nDim = nDim;
+results.params.transOrWithin = transOrWithin;
 results.params.svmWindowSize = svmWindowSize;
 results.params.svmStepSize = svmStepSize;
 
 % Save to file
-save(fullfile(paths.dropPath, 'criticality_decoding_results_all_methods.mat'), 'results');
+filename = sprintf('criticality_decoding_results_%s_nDim%d_bin%.2f.mat', ...
+    transOrWithin, nDim, frameSize);
+save(fullfile(paths.dropPath, filename), 'results');
 
-fprintf('\nAnalysis complete! Results saved to criticality_decoding_results_all_methods.mat\n');
+fprintf('\nAnalysis complete! Results saved to %s\n', filename);
 
 %% ==============================================     Summary Statistics     ==============================================
 
