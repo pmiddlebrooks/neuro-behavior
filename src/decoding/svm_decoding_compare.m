@@ -3,25 +3,28 @@
 % This script compares SVM decoding performance across PCA, UMAP, PSID, and ICG
 % dimensionality reduction methods using the same neural data and behavior labels
 
+
+%% Specify main parameters
+
+% Dimensionality for all methods
+nDim = 6;
+
+% Analysis type
+transOrWithin = 'within';  % 'all', 'trans',transPost 'within', 'transVsWithin'
+
+% Frame/bin size
+frameSize = .15;
+
+%%
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
-opts.frameSize = .15;
+opts.frameSize = frameSize;
 
 % Get kinematics data for PSID
 getDataType = 'kinematics';
 get_standard_data
-
-%% Downsample kinematics if needed
-originalBinSize = .1;  % Original bin size
-kinBinSize = opts.frameSize;  % Target bin size for downsampling - keep consistent with neural data
-if kinBinSize ~= originalBinSize
-    kinData = downsample_kinematics_weighted(kinData, originalBinSize, kinBinSize);
-end
-startFrame = 1 + opts.collectStart / kinBinSize;
-endFrame = startFrame - 1 + (opts.collectFor / kinBinSize);
-kinData = kinData(startFrame:endFrame,:);
 
 
 
@@ -51,16 +54,15 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 % --------    ANALYSIS PARAMETERS
 % =============================================================================
 
-% Dimensionality for all methods
-nDim = 6;
-
 % Define brain areas to test
 areas = {'M23', 'M56', 'DS', 'VS'};
 areasToTest = 2:4;  % Test M56, DS, VS
 
-% Analysis type
-transOrWithin = 'within';  % 'all', 'trans',transPost 'within', 'transVsWithin'
-% transOrWithin = 'within';
+
+% Analysis control flags
+runAllMethods = false;  % Set to true to run all methods (time intensive)
+runAdditionalPSID = true;  % Set to true to run psidKin and psidBhv remaining dimensions
+loadExistingResults = true;  % Set to true to load and append to existing results
 
 % Permutation testing
 nShuffles = 2;  % Number of permutation tests
@@ -104,6 +106,38 @@ allResults.allPredictions = cell(1, length(areas));
 allResults.allPredictionIndices = cell(1, length(areas));
 
 %% =============================================================================
+% --------    LOAD EXISTING RESULTS (IF REQUESTED)
+% =============================================================================
+
+% Check if we should load existing results
+if loadExistingResults
+    fprintf('\n=== Checking for Existing SVM Decoding Results ===\n');
+
+    % Look for existing results file
+    existingFilename = sprintf('svm_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
+        transOrWithin, nDim, opts.frameSize, nShuffles);
+    existingPath = fullfile(paths.dropPath, 'decoding', existingFilename);
+
+    if exist(existingPath, 'file')
+        fprintf('Loading existing SVM decoding results from: %s\n', existingFilename);
+        load(existingPath, 'allResults');
+
+        % Display what methods are already analyzed
+        fprintf('Existing methods analyzed:\n');
+        for a = areasToTest
+            if ~isempty(allResults.methods{a})
+                fprintf('  Area %s: %s\n', areas{a}, strjoin(allResults.methods{a}, ', '));
+            end
+        end
+
+        fprintf('Analysis flags: runAllMethods=%s, runAdditionalPSID=%s\n', ...
+            string(runAllMethods), string(runAdditionalPSID));
+    else
+        fprintf('No existing SVM decoding results found. Will create new analysis.\n');
+    end
+end
+
+%% =============================================================================
 % --------    LOOP THROUGH BRAIN AREAS
 % =============================================================================
 
@@ -136,97 +170,152 @@ for areaIdx = areasToTest
     % --------    GENERATE LATENTS FOR EACH METHOD
     % =============================================================================
 
-    fprintf('Generating latents for each method...\n');
-
-    % Initialize storage for latents
-    latents = struct();
-
-    %% PCA
-    fprintf('Running PCA...\n');
-    [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
-    latents.pca = score(:, 1:nDim);
-    fprintf('PCA explained variance: %.2f%%\n', sum(explained(1:nDim)));
-
-    %% UMAP
-    fprintf('Running UMAP...\n');
-    % Change to UMAP directory
-    cd(fullfile(paths.homePath, '/toolboxes/umapFileExchange (4.4)/umap/'))
-
-    % UMAP parameters
-    min_dist = 0.1;
-    spread = 1.3;
-    n_neighbors = 10;
-
-    [latents.umap, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, ...
-        'randomize', true, 'verbose', 'none', 'min_dist', min_dist, ...
-        'spread', spread, 'n_neighbors', n_neighbors);
-
-    %% PSID with Kinematics (psidKin)
-    fprintf('Running PSID with kinematics...\n');
-    % Return to original directory
-    cd(fullfile(paths.homePath, 'neuro-behavior/src/decoding'));
-
-    % Prepare data for PSID with kinematics
-    y = zscore(dataMat(:, idSelect));
-    z = zscore(kinData);
-    nx = nDim * 2;
-    n1 = nDim;
-    i = 10;
-
-    idSys = PSID(y, z, nx, n1, i);
-
-    % Predict behavior using the learned model
-    [zPred, yPred, xPred] = PSIDPredict(idSys, y);
-    latents.psidKin = xPred(:, 1:nDim);
-
-    %% PSID with Behavior Labels (psidBhv)
-    fprintf('Running PSID with behavior labels...\n');
-
-    % Create one-hot encoded behavior labels
-    uniqueBhv = unique(bhvID);
-    uniqueBhv = uniqueBhv(uniqueBhv >= 0);  % Remove invalid labels (-1)
-    nBehaviors = length(uniqueBhv);
-
-    % Create one-hot encoding
-    bhvOneHot = zeros(length(bhvID), nBehaviors);
-    for b = 1:nBehaviors
-        bhvOneHot(:, b) = (bhvID == uniqueBhv(b));
+    % Determine which methods to run
+    methodsToRun = {};
+    if runAllMethods
+        methodsToRun = {'pca', 'umap', 'psidKin', 'psidBhv', 'icg'};
+        fprintf('Running all methods: %s\n', strjoin(methodsToRun, ', '));
+    elseif runAdditionalPSID
+        methodsToRun = {'psidKin_remaining', 'psidBhv_remaining'};
+        fprintf('Running additional PSID methods: %s\n', strjoin(methodsToRun, ', '));
+    else
+        fprintf('No methods specified to run. Set runAllMethods=true or runAdditionalPSID=true\n');
+        continue;
     end
 
-    % Store behavior mapping for reference
-    bhvMapping = struct();
-    bhvMapping.uniqueBhv = uniqueBhv;
-    bhvMapping.nBehaviors = nBehaviors;
-    bhvMapping.behaviorNames = behaviors(uniqueBhv + 2);  % +2 because behaviors array starts at index 1
+    fprintf('Generating latents for specified methods...\n');
 
-    % Prepare data for PSID with behavior labels
-    y = zscore(dataMat(:, idSelect));
-    z = zscore(bhvOneHot);  % Use one-hot encoded behavior labels
-    nx = nDim * 2;
-    n1 = nDim;
-    i = 10;
+    % Initialize storage for latents
+    if isempty(allResults.latents{areaIdx})
+        latents = struct();
+    else
+        latents = allResults.latents{areaIdx};
+    end
 
-    idSys = PSID(y, z, nx, n1, i);
+    %% PCA
+    if ismember('pca', methodsToRun)
+        fprintf('Running PCA...\n');
+        [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
+        latents.pca = score(:, 1:nDim);
+        fprintf('PCA explained variance: %.2f%%\n', sum(explained(1:nDim)));
+    end
 
-    % Predict behavior using the learned model
-    [zPred, yPred, xPred] = PSIDPredict(idSys, y);
-    latents.psidBhv = xPred(:, 1:nDim);
+    %% UMAP
+    if ismember('umap', methodsToRun)
+        fprintf('Running UMAP...\n');
+        % Change to UMAP directory
+        cd(fullfile(paths.homePath, '/toolboxes/umapFileExchange (4.4)/umap/'))
 
-    % Store behavior mapping in results
-    allResults.bhvMapping{areaIdx} = bhvMapping;
+        % UMAP parameters
+        min_dist = 0.1;
+        spread = 1.3;
+        n_neighbors = 10;
 
-    fprintf('PSID methods completed for area %s.\n', areaName);
+        [latents.umap, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, ...
+            'randomize', true, 'verbose', 'none', 'min_dist', min_dist, ...
+            'spread', spread, 'n_neighbors', n_neighbors);
+    end
+
+    %% PSID with Kinematics (psidKin)
+    if ismember('psidKin', methodsToRun) || ismember('psidKin_remaining', methodsToRun)
+        fprintf('Running PSID with kinematics...\n');
+        % Return to original directory
+        cd(fullfile(paths.homePath, 'neuro-behavior/src/decoding'));
+
+        % Prepare data for PSID with kinematics
+        y = zscore(dataMat(:, idSelect));
+        z = zscore(kinData);
+        nx = nDim * 2;
+        n1 = nDim;
+        i = 10;
+
+        idSys = PSID(y, z, nx, n1, i);
+
+        % Predict behavior using the learned model
+        [zPred, yPred, xPred] = PSIDPredict(idSys, y);
+
+        if ismember('psidKin', methodsToRun)
+            latents.psidKin = xPred(:, 1:nDim);
+        end
+        if ismember('psidKin_remaining', methodsToRun)
+            % Use remaining dimensions (beyond nDim)
+            remainingDims = (nDim+1):size(xPred, 2);
+            if ~isempty(remainingDims)
+                latents.psidKin_remaining = xPred(:, remainingDims);
+                fprintf('PSID Kin remaining dimensions: %d\n', length(remainingDims));
+            else
+                fprintf('Warning: No remaining dimensions available for PSID Kin\n');
+                latents.psidKin_remaining = [];
+            end
+        end
+    end
+
+
+    %% PSID with Behavior Labels (psidBhv)
+    if ismember('psidBhv', methodsToRun) || ismember('psidBhv_remaining', methodsToRun)
+        fprintf('Running PSID with behavior labels...\n');
+
+        % Create one-hot encoded behavior labels
+        uniqueBhv = unique(bhvID);
+        uniqueBhv = uniqueBhv(uniqueBhv >= 0);  % Remove invalid labels (-1)
+        nBehaviors = length(uniqueBhv);
+
+        % Create one-hot encoding
+        bhvOneHot = zeros(length(bhvID), nBehaviors);
+        for b = 1:nBehaviors
+            bhvOneHot(:, b) = (bhvID == uniqueBhv(b));
+        end
+
+        % Store behavior mapping for reference
+        bhvMapping = struct();
+        bhvMapping.uniqueBhv = uniqueBhv;
+        bhvMapping.nBehaviors = nBehaviors;
+        bhvMapping.behaviorNames = behaviors(uniqueBhv + 2);  % +2 because behaviors array starts at index 1
+
+        % Prepare data for PSID with behavior labels
+        y = zscore(dataMat(:, idSelect));
+        z = zscore(bhvOneHot);  % Use one-hot encoded behavior labels
+        nx = nDim * 2;
+        n1 = nDim;
+        i = 10;
+
+        idSys = PSID(y, z, nx, n1, i);
+
+        % Predict behavior using the learned model
+        [zPred, yPred, xPred] = PSIDPredict(idSys, y);
+
+        if ismember('psidBhv', methodsToRun)
+            latents.psidBhv = xPred(:, 1:nDim);
+
+            % Store behavior mapping in results
+            allResults.bhvMapping{areaIdx} = bhvMapping;
+        end
+        if ismember('psidBhv_remaining', methodsToRun)
+            % Use remaining dimensions (beyond nDim)
+            remainingDims = (nDim+1):size(xPred, 2);
+            if ~isempty(remainingDims)
+                latents.psidBhv_remaining = xPred(:, remainingDims);
+                fprintf('PSID Bhv remaining dimensions: %d\n', length(remainingDims));
+            else
+                fprintf('Warning: No remaining dimensions available for PSID Bhv\n');
+                latents.psidBhv_remaining = [];
+            end
+        end
+    end
+
 
     %% ICG
-    fprintf('Running ICG...\n');
-    dataICG = dataMat(:, idSelect);
-    [activityICG, outPairID] = ICG(dataICG');
+    if ismember('icg', methodsToRun)
+        fprintf('Running ICG...\n');
+        dataICG = dataMat(:, idSelect);
+        [activityICG, outPairID] = ICG(dataICG');
 
-    % Take the first nDim groups of most correlated neurons
-    % latents.icg = activityICG{4}(1:nDim, :)';
-    % Take the first nDim groups of most correlated neurons
-    warning('Changed ICG population')
-    latents.icg = zscore(activityICG{3}(1:9, :)');
+        % Take the first nDim groups of most correlated neurons
+        % latents.icg = activityICG{4}(1:nDim, :)';
+        % Take the first nDim groups of most correlated neurons
+        warning('Changed ICG population')
+        latents.icg = zscore(activityICG{3}(1:9, :)');
+    end
 
     fprintf('All methods completed for area %s.\n', areaName);
 
@@ -288,18 +377,37 @@ for areaIdx = areasToTest
     % --------    RUN SVM DECODING FOR EACH METHOD
     % =============================================================================
 
-    fprintf('Running SVM decoding for each method...\n');
+    fprintf('Running SVM decoding for specified methods...\n');
 
-    % Initialize storage for results
+    % Get methods that were actually run
     methods = fieldnames(latents);
     nMethods = length(methods);
-    accuracy = zeros(nMethods, 1);
-    accuracyPermuted = zeros(nMethods, nShuffles);
-    
-    % Initialize storage for models and predictions
-    svmModels = cell(1, nMethods);
-    allPredictions = cell(1, nMethods);
-    allPredictionIndices = cell(1, nMethods);
+
+    % Initialize or load existing results
+    if isempty(allResults.accuracy{areaIdx})
+        accuracy = zeros(nMethods, 1);
+        accuracyPermuted = zeros(nMethods, nShuffles);
+        svmModels = cell(1, nMethods);
+        allPredictions = cell(1, nMethods);
+        allPredictionIndices = cell(1, nMethods);
+        existingMethods = {};
+    else
+        % Load existing results
+        accuracy = allResults.accuracy{areaIdx};
+        accuracyPermuted = allResults.accuracyPermuted{areaIdx};
+        svmModels = allResults.svmModels{areaIdx};
+        allPredictions = allResults.allPredictions{areaIdx};
+        allPredictionIndices = allResults.allPredictionIndices{areaIdx};
+        existingMethods = allResults.methods{areaIdx};
+
+        % Extend arrays for new methods
+        nExistingMethods = length(existingMethods);
+        accuracy = [accuracy; zeros(nMethods, 1)];
+        accuracyPermuted = [accuracyPermuted; zeros(nMethods, nShuffles)];
+        svmModels = [svmModels, cell(1, nMethods)];
+        allPredictions = [allPredictions, cell(1, nMethods)];
+        allPredictionIndices = [allPredictionIndices, cell(1, nMethods)];
+    end
 
     % SVM parameters
     kernelFunction = 'polynomial';
@@ -309,10 +417,23 @@ for areaIdx = areasToTest
 
     for m = 1:nMethods
         methodName = methods{m};
+
+        % Skip if method already exists
+        if ismember(methodName, existingMethods)
+            fprintf('\n--- %s (already analyzed) ---\n', upper(methodName));
+            continue;
+        end
+
         fprintf('\n--- %s ---\n', upper(methodName));
 
         % Get latent data for this method
         latentData = latents.(methodName);
+
+        % Check if latent data is valid
+        if isempty(latentData)
+            fprintf('Warning: No latent data for method %s\n', methodName);
+            continue;
+        end
 
         % Prepare data for SVM
         svmProj = latentData(svmInd, :);
@@ -325,14 +446,14 @@ for areaIdx = areasToTest
         tic;
         t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
         svmModelFull = fitcecoc(svmProj, svmID, 'Learners', t);
-        
+
         % Store the full model
         svmModels{m} = svmModelFull;
 
         % Generate predictions for all relevant indices
         allPredictions{m} = predict(svmModelFull, svmProj);
         allPredictionIndices{m} = svmInd;  % Store the indices that were predicted
-        
+
         % For cross-validation accuracy calculation, use the holdout approach
         svmModelCV = fitcecoc(trainData, trainLabels, 'Learners', t);
         predictedLabels = predict(svmModelCV, testData);
@@ -367,9 +488,18 @@ for areaIdx = areasToTest
 
     % Store results for this area
     allResults.latents{areaIdx} = latents;
+
+    % Update methods list to include new methods
+    if isempty(allResults.methods{areaIdx})
+        allResults.methods{areaIdx} = methods;
+    else
+        % Append new methods to existing list
+        allMethods = [allResults.methods{areaIdx}, methods];
+        allResults.methods{areaIdx} = allMethods;
+    end
+
     allResults.accuracy{areaIdx} = accuracy;
     allResults.accuracyPermuted{areaIdx} = accuracyPermuted;
-    allResults.methods{areaIdx} = methods;
     allResults.bhv2ModelCodes{areaIdx} = bhv2ModelCodes;
     allResults.bhv2ModelNames{areaIdx} = bhv2ModelNames;
     allResults.svmInd{areaIdx} = svmInd;
@@ -429,7 +559,7 @@ for areaIdx = areasToTest
                 end
             end
             legend('Location', 'best');
-            
+
             % Save plot if flag is set
             if savePlotFlag
                 plotFilename = sprintf('full_data_%s_%s_%dD_bin%.2f.png', ...
@@ -481,7 +611,7 @@ for areaIdx = areasToTest
                 end
             end
             legend('Location', 'best');
-            
+
             % Save plot if flag is set
             if savePlotFlag
                 plotFilename = sprintf('modeling_data_%s_%s_%s_%dD_bin%.2f.png', ...
@@ -564,7 +694,7 @@ if plotResults
     end
 
     sgtitle('SVM Decoding Accuracy Comparison - All Areas', 'FontSize', 16);
-    
+
     % Save comparison plot if flag is set
     if savePlotFlag
         plotFilename = sprintf('results_comparison_all_areas_%s_%dD_bin%.2f_nShuffles%d.png', ...
@@ -719,8 +849,8 @@ end
 
 function downsampledData = downsample_kinematics_weighted(data, originalBinSize, targetBinSize)
 % DOWNSAMPLE_KINEMATICS_WEIGHTED Downsamples kinematics data using proper weighted averaging
-% This function handles fractional downsampling factors by giving full weight to 
-% original bins that are fully overlapped and partial weight to bins that are 
+% This function handles fractional downsampling factors by giving full weight to
+% original bins that are fully overlapped and partial weight to bins that are
 % partially overlapped by the target bins.
 %
 % Inputs:
@@ -760,47 +890,47 @@ for i = 1:nTargetBins
     % Calculate the start and end times for this target bin
     targetStartTime = (i-1) * targetBinSize;
     targetEndTime = i * targetBinSize;
-    
+
     % Find original bins that overlap with this target bin
     originalStartBin = floor(targetStartTime / originalBinSize) + 1;
     originalEndBin = ceil(targetEndTime / originalBinSize);
-    
+
     % Ensure we don't exceed data bounds
     originalStartBin = max(1, originalStartBin);
     originalEndBin = min(nOriginalBins, originalEndBin);
-    
+
     if originalStartBin > originalEndBin
         % No overlap - use nearest neighbor
         downsampledData(i, :) = data(min(originalStartBin, nOriginalBins), :);
         continue;
     end
-    
+
     % Calculate weights for each original bin based on overlap
     weights = zeros(originalEndBin - originalStartBin + 1, 1);
     weightedSum = zeros(1, size(data, 2));
     totalWeight = 0;
-    
+
     for j = 1:length(weights)
         originalBinIdx = originalStartBin + j - 1;
-        
+
         % Calculate the time range of this original bin
         originalBinStartTime = (originalBinIdx - 1) * originalBinSize;
         originalBinEndTime = originalBinIdx * originalBinSize;
-        
+
         % Calculate overlap with target bin
         overlapStart = max(targetStartTime, originalBinStartTime);
         overlapEnd = min(targetEndTime, originalBinEndTime);
         overlapDuration = max(0, overlapEnd - overlapStart);
-        
+
         % Weight is proportional to overlap duration
         weight = overlapDuration / originalBinSize;
         weights(j) = weight;
-        
+
         % Add weighted contribution
         weightedSum = weightedSum + weight * data(originalBinIdx, :);
         totalWeight = totalWeight + weight;
     end
-    
+
     % Normalize by total weight
     if totalWeight > 0
         downsampledData(i, :) = weightedSum / totalWeight;
