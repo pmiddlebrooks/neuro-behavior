@@ -10,10 +10,16 @@
 nDim = 6;
 
 % Analysis type
-transOrWithin = 'within';  % 'all', 'trans',transPost 'within', 'transVsWithin'
+transOrWithin = 'within';  % 'all', 'trans',transPost 'within'
 
 % Frame/bin size
 frameSize = .15;
+
+% Create full path
+savePath = fullfile(paths.dropPath, 'decoding');
+if ~exist(savePath, 'dir')
+    mkdir(savePath);
+end
 
 %%
 opts = neuro_behavior_options;
@@ -60,9 +66,9 @@ areasToTest = 2:4;  % Test M56, DS, VS
 
 
 % Analysis control flags
-runAllMethods = false;  % Set to true to run all methods (time intensive)
+runAllMethods = true;  % Set to true to run all methods (time intensive)
 runAdditionalPSID = true;  % Set to true to run psidKin and psidBhv remaining dimensions
-loadExistingResults = true;  % Set to true to load and append to existing results
+loadExistingResults = false;  % Set to true to load and append to existing results
 
 % Permutation testing
 nShuffles = 2;  % Number of permutation tests
@@ -173,10 +179,10 @@ for areaIdx = areasToTest
     % Determine which methods to run
     methodsToRun = {};
     if runAllMethods
-        methodsToRun = {'pca', 'umap', 'psidKin', 'psidBhv', 'icg'};
+        methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv', 'psidBhv', 'psidBhv_nonBhv', 'icg'};
         fprintf('Running all methods: %s\n', strjoin(methodsToRun, ', '));
     elseif runAdditionalPSID
-        methodsToRun = {'psidKin_remaining', 'psidBhv_remaining'};
+        methodsToRun = {'psidKin_nonBhv', 'psidBhv_nonBhv'};
         fprintf('Running additional PSID methods: %s\n', strjoin(methodsToRun, ', '));
     else
         fprintf('No methods specified to run. Set runAllMethods=true or runAdditionalPSID=true\n');
@@ -217,7 +223,7 @@ for areaIdx = areasToTest
     end
 
     %% PSID with Kinematics (psidKin)
-    if ismember('psidKin', methodsToRun) || ismember('psidKin_remaining', methodsToRun)
+    if ismember('psidKin', methodsToRun) || ismember('psidKin_nonBhv', methodsToRun)
         fprintf('Running PSID with kinematics...\n');
         % Return to original directory
         cd(fullfile(paths.homePath, 'neuro-behavior/src/decoding'));
@@ -237,22 +243,22 @@ for areaIdx = areasToTest
         if ismember('psidKin', methodsToRun)
             latents.psidKin = xPred(:, 1:nDim);
         end
-        if ismember('psidKin_remaining', methodsToRun)
+        if ismember('psidKin_nonBhv', methodsToRun)
             % Use remaining dimensions (beyond nDim)
             remainingDims = (nDim+1):size(xPred, 2);
             if ~isempty(remainingDims)
-                latents.psidKin_remaining = xPred(:, remainingDims);
+                latents.psidKin_nonBhv = xPred(:, remainingDims);
                 fprintf('PSID Kin remaining dimensions: %d\n', length(remainingDims));
             else
                 fprintf('Warning: No remaining dimensions available for PSID Kin\n');
-                latents.psidKin_remaining = [];
+                latents.psidKin_nonBhv = [];
             end
         end
     end
 
 
     %% PSID with Behavior Labels (psidBhv)
-    if ismember('psidBhv', methodsToRun) || ismember('psidBhv_remaining', methodsToRun)
+    if ismember('psidBhv', methodsToRun) || ismember('psidBhv_nonBhv', methodsToRun)
         fprintf('Running PSID with behavior labels...\n');
 
         % Create one-hot encoded behavior labels
@@ -290,15 +296,15 @@ for areaIdx = areasToTest
             % Store behavior mapping in results
             allResults.bhvMapping{areaIdx} = bhvMapping;
         end
-        if ismember('psidBhv_remaining', methodsToRun)
+        if ismember('psidBhv_nonBhv', methodsToRun)
             % Use remaining dimensions (beyond nDim)
             remainingDims = (nDim+1):size(xPred, 2);
             if ~isempty(remainingDims)
-                latents.psidBhv_remaining = xPred(:, remainingDims);
+                latents.psidBhv_nonBhv = xPred(:, remainingDims);
                 fprintf('PSID Bhv remaining dimensions: %d\n', length(remainingDims));
             else
                 fprintf('Warning: No remaining dimensions available for PSID Bhv\n');
-                latents.psidBhv_remaining = [];
+                latents.psidBhv_nonBhv = [];
             end
         end
     end
@@ -310,11 +316,14 @@ for areaIdx = areasToTest
         dataICG = dataMat(:, idSelect);
         [activityICG, outPairID] = ICG(dataICG');
 
+        if nDim == 4
         % Take the first nDim groups of most correlated neurons
         % latents.icg = activityICG{4}(1:nDim, :)';
+        elseif nDim == 6
         % Take the first nDim groups of most correlated neurons
         warning('Changed ICG population')
         latents.icg = zscore(activityICG{3}(1:9, :)');
+        end
     end
 
     fprintf('All methods completed for area %s.\n', areaName);
@@ -351,10 +360,11 @@ for areaIdx = areasToTest
         case 'trans'
             svmID = bhvID(preIdx + 1);
             svmInd = preIdx;
+            transWithinLabel = 'transitions: Pre';
         case 'transPost'
             svmID = bhvID(preIdx + 1);
             svmInd = preIdx + 1;
-            transWithinLabel = 'transitions';
+            transWithinLabel = 'transitions: Post';
         case 'within'
             svmInd = setdiff(1:length(bhvID), preIdx);
             svmID = bhvID(svmInd);
@@ -493,9 +503,8 @@ for areaIdx = areasToTest
     if isempty(allResults.methods{areaIdx})
         allResults.methods{areaIdx} = methods;
     else
-        % Append new methods to existing list
-        allMethods = [allResults.methods{areaIdx}, methods];
-        allResults.methods{areaIdx} = allMethods;
+        % Append new methods to existing list (concatenate cell arrays)
+        allResults.methods{areaIdx} = [allResults.methods{areaIdx}; methods];
     end
 
     allResults.accuracy{areaIdx} = accuracy;
@@ -511,8 +520,8 @@ for areaIdx = areasToTest
     fprintf('\nArea %s completed.\n', areaName);
 end
 
-load handel
-sound(y,Fs)
+% load handel
+% sound(y,Fs)
 
 % =============================================================================
 % --------    PLOT FULL DATA FOR EACH METHOD
@@ -637,6 +646,7 @@ if plotResults
     clf;
 
     nAreas = length(areasToTest);
+    % Get the actual number of methods with data (not all available methods)
     nMethods = length(allResults.methods{areasToTest(1)});
 
     % Create subplots for each area
@@ -650,14 +660,13 @@ if plotResults
         % Get data for this area
         accuracy = allResults.accuracy{areaIdx};
         accuracyPermuted = allResults.accuracyPermuted{areaIdx};
-        methods = allResults.methods{areaIdx};
 
         % Bar plot of accuracies
         x = 1:nMethods;
         barWidth = 0.35;
 
         % Real data bars
-        b1 = bar(x - barWidth/2, accuracy, barWidth, 'FaceColor', 'blue', 'DisplayName', 'Real Data');
+        b1 = bar(x, accuracy(:), barWidth, 'FaceColor', 'blue', 'DisplayName', 'Real Data');
 
         % Permuted data bars
         b2 = bar(x + barWidth/2, mean(accuracyPermuted, 2), barWidth, 'FaceColor', 'red', 'DisplayName', 'Permuted (mean)');
@@ -666,6 +675,7 @@ if plotResults
         errorbar(x + barWidth/2, mean(accuracyPermuted, 2), std(accuracyPermuted, [], 2), 'k.', 'LineWidth', 1.5, 'DisplayName', 'Permuted (std)');
 
         % Customize plot
+        methods = allResults.methods{areaIdx};
         set(gca, 'XTick', x, 'XTickLabel', upper(methods));
         ylabel('Accuracy');
         title(sprintf('%s (%s)', areaName, transWithinLabel));
@@ -740,11 +750,6 @@ fprintf('Saving results...\n');
 filename = sprintf('svm_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
     transOrWithin, nDim, opts.frameSize, nShuffles);
 
-% Create full path
-savePath = fullfile(paths.dropPath, 'decoding');
-if ~exist(savePath, 'dir')
-    mkdir(savePath);
-end
 
 fullFilePath = fullfile(savePath, filename);
 
