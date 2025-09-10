@@ -1,4 +1,4 @@
-%% HMM Analysis for Naturalistic Data
+%% HMM Analysis for Naturalistic and Reach Data
 % Based on demo3_HMM_Full.m, adapted for naturalistic data format
 % https://github.com/mazzulab/contamineuro_2019_spiking_net/tree/master
 %
