@@ -10,7 +10,7 @@
 nDim = 6;
 
 % Analysis type
-transOrWithin = 'within';  % 'trans',transPost 'within', 'all'
+transOrWithin = 'all';  % 'trans',transPost 'within', 'all'
 
 % Frame/bin size
 frameSize = .1;
