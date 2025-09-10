@@ -7,10 +7,10 @@
 %% Specify main parameters
 
 % Dimensionality for all methods
-nDim = 6;
+nDim = 4;
 
 % Analysis type
-transOrWithin = 'all';  % 'trans',transPost 'within', 'all'
+transOrWithin = 'trans';  % 'trans',transPost 'within', 'all'
 
 % Frame/bin size
 frameSize = .1;
@@ -57,7 +57,7 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
     'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
 
 %% =============================================================================
-% --------    ANALYSIS PARAMETERS
+% --------    ANALYSIS PARAMETERS & INITIALIZATIONS
 % =============================================================================
 
 % Define brain areas to test
@@ -66,9 +66,9 @@ areasToTest = 2:4;  % Test M56, DS, VS
 
 
 % Analysis control flags
-runAllMethods = false;  % Set to true to run all methods (time intensive)
-runAdditionalPSID = true;  % Set to true to run psidKin and psidBhv remaining dimensions
-loadExistingResults = true;  % Set to true to load and append to existing results
+runAllMethods = true;  % Set to true to run all methods (time intensive)
+runAdditionalPSID = false;  % Set to true to run psidKin and psidBhv remaining dimensions
+loadExistingResults = false;  % Set to true to load and append to existing results
 
 % Permutation testing
 nShuffles = 2;  % Number of permutation tests
@@ -331,8 +331,8 @@ for areaIdx = areasToTest
 
         if nDim == 4
         % Take the first nDim groups of most correlated neurons
-        % latents.icg = activityICG{4}(1:nDim, :)';
-        elseif nDim == 6
+        latents.icg = activityICG{4}(1:nDim, :)';
+        elseif nDim >= 6
         % Take the first nDim groups of most correlated neurons
         warning('Changed ICG population')
         latents.icg = zscore(activityICG{3}(1:9, :)');
@@ -579,6 +579,12 @@ for areaIdx = areasToTest
             colorsForPlot = vertcat(colorsForPlot{:});
 
             figure(figHFull + i);
+            % Set figure position using monitor dimensions (3/4 height, 1/2 width)
+            figWidth = monitorOne(3) * 0.5;  % Half width
+            figHeight = monitorOne(4) * 0.75; % Three-quarters height
+            figX = monitorOne(1) + (monitorOne(3) - figWidth) / 2;  % Center horizontally
+            figY = monitorOne(2) + (monitorOne(4) - figHeight) / 2; % Center vertically
+            set(figHFull + i, 'Position', [figX, figY, figWidth, figHeight]);
             clf; hold on;
 
             if nDim > 2
@@ -635,6 +641,12 @@ for areaIdx = areasToTest
             colorsForPlot = vertcat(colorsForPlot{:});
 
             figure(figHModel + i);
+            % Set figure position using monitor dimensions (3/4 height, 1/2 width)
+            figWidth = monitorOne(3) * 0.5;  % Half width
+            figHeight = monitorOne(4) * 0.75; % Three-quarters height
+            figX = monitorOne(1) + (monitorOne(3) - figWidth) / 2;  % Center horizontally
+            figY = monitorOne(2) + (monitorOne(4) - figHeight) / 2; % Center vertically
+            set(figHModel + i, 'Position', [figX, figY, figWidth, figHeight]);
             clf; hold on;
 
             if nDim > 2
