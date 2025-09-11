@@ -7,13 +7,22 @@
 %% Specify main parameters
 
 % Dimensionality for all methods
-nDim = 4;
+nDim = 8;
 
 % Analysis type
-transOrWithin = 'trans';  % 'trans',transPost 'within', 'all'
+transOrWithin = 'within';  % 'trans',transPost 'within', 'all'
 
 % Frame/bin size
 frameSize = .1;
+
+% Parallel processing setup
+nWorkers = 3;  % Number of parallel workers to use
+fprintf('Setting up parallel pool with %d workers...\n', nWorkers);
+if isempty(gcp('nocreate'))
+    parpool('local', nWorkers);
+else
+    fprintf('Parallel pool already exists with %d workers\n', gcp('nocreate').NumWorkers);
+end
 
 % Create full path
 savePath = fullfile(paths.dropPath, 'decoding');
@@ -462,10 +471,16 @@ for areaIdx = areasToTest
             startIdx = length(allResults.methods{areaIdx}) + 1;  % After existing methods
         end
         
-        for m = 1:nMethods
+        % Process methods in parallel (each method is independent)
+        % Pre-allocate temporary storage for parfor results
+        tempAccuracy = zeros(nMethods, 1);
+        tempAccuracyPermuted = cell(nMethods, 1);  % Use cell array for variable-length results
+        tempSvmModels = cell(nMethods, 1);
+        tempAllPredictions = cell(nMethods, 1);
+        tempAllPredictionIndices = cell(nMethods, 1);
+        
+        parfor m = 1:nMethods
             methodName = methods{m};
-            % Calculate the correct index in the full arrays
-            fullIdx = startIdx + m - 1;
             
             fprintf('\n--- %s ---\n', upper(methodName));
 
@@ -490,24 +505,27 @@ for areaIdx = areasToTest
             t = templateSVM('Standardize', true, 'KernelFunction', kernelFunction);
             svmModelFull = fitcecoc(svmProj, svmID, 'Learners', t);
             
-            % Store the full model at the correct index
-            svmModels{fullIdx} = svmModelFull;
+            % Store the full model in temporary variable
+            tempSvmModels{m} = svmModelFull;
 
             % Generate predictions for all relevant indices
-            allPredictions{fullIdx} = predict(svmModelFull, svmProj);
-            allPredictionIndices{fullIdx} = svmInd;  % Store the indices that were predicted
+            tempAllPredictions{m} = predict(svmModelFull, svmProj);
+            tempAllPredictionIndices{m} = svmInd;  % Store the indices that were predicted
             
             % For cross-validation accuracy calculation, use the holdout approach
             svmModelCV = fitcecoc(trainData, trainLabels, 'Learners', t);
             predictedLabels = predict(svmModelCV, testData);
-            accuracy(fullIdx) = sum(predictedLabels == testLabels) / length(testLabels);
+            tempAccuracy(m) = sum(predictedLabels == testLabels) / length(testLabels);
 
-            fprintf('Real data accuracy: %.4f\n', accuracy(fullIdx));
+            fprintf('Real data accuracy: %.4f\n', tempAccuracy(m));
             fprintf('Model training time: %.2f seconds\n', toc);
 
-            % Permutation tests
+            % Permutation tests - collect results in a temporary array
             fprintf('Running %d permutation tests...\n', nShuffles);
             tic;
+            
+            % Pre-allocate permutation results for this method
+            methodAccuracyPermuted = zeros(nShuffles, 1);
 
             for s = 1:nShuffles
                 % Circular shuffle of training labels
@@ -520,13 +538,26 @@ for areaIdx = areasToTest
 
                 % Test on real data
                 predictedLabelsPermuted = predict(svmModelPermuted, testData);
-                accuracyPermuted(fullIdx, s) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
+                methodAccuracyPermuted(s) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
 
-                fprintf('  Permutation %d: %.4f\n', s, accuracyPermuted(fullIdx, s));
+                fprintf('  Permutation %d: %.4f\n', s, methodAccuracyPermuted(s));
             end
+            
+            % Store permutation results for this method
+            tempAccuracyPermuted{m} = methodAccuracyPermuted;
 
             fprintf('Permutation testing time: %.2f seconds\n', toc);
-            fprintf('Mean permuted accuracy: %.4f\n', mean(accuracyPermuted(fullIdx, :)));
+            fprintf('Mean permuted accuracy: %.4f\n', mean(methodAccuracyPermuted));
+        end
+        
+        % Assign temporary results to final arrays
+        for m = 1:nMethods
+            fullIdx = startIdx + m - 1;
+            accuracy(fullIdx) = tempAccuracy(m);
+            accuracyPermuted(fullIdx, :) = tempAccuracyPermuted{m}';  % Convert cell to row vector
+            svmModels{fullIdx} = tempSvmModels{m};
+            allPredictions{fullIdx} = tempAllPredictions{m};
+            allPredictionIndices{fullIdx} = tempAllPredictionIndices{m};
         end
     else
         fprintf('No new methods to process for area %s\n', areaName);
@@ -759,8 +790,8 @@ if plotResults
 
     % Save comparison plot if flag is set
     if savePlotFlag
-        plotFilename = sprintf('results_comparison_all_areas_%s_%dD_bin%.2f_nShuffles%d.png', ...
-            transOrWithin, nDim, opts.frameSize, nShuffles);
+        plotFilename = sprintf('svm_%s_results_comparison_all_areas_%s_%dD_bin%.2f_nShuffles%d.png', ...
+            kernelFunction, transOrWithin, nDim, opts.frameSize, nShuffles);
         plotPath = fullfile(savePath, plotFilename);
         exportgraphics(fig, plotPath, 'Resolution', 300);
         fprintf('Saved comparison plot: %s\n', plotFilename);
@@ -799,8 +830,8 @@ end
 fprintf('Saving results...\n');
 
 % Create filename without brain area name
-filename = sprintf('svm_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
-    transOrWithin, nDim, opts.frameSize, nShuffles);
+filename = sprintf('svm_%s_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
+    kernelFunction, transOrWithin, nDim, opts.frameSize, nShuffles);
 
 
 fullFilePath = fullfile(savePath, filename);
@@ -855,6 +886,11 @@ fclose(fid);
 
 fprintf('Summary saved to: %s\n', summaryPath);
 fprintf('\nMulti-area analysis complete!\n');
+
+% Clean up parallel pool
+fprintf('Closing parallel pool...\n');
+delete(gcp('nocreate'));
+fprintf('Parallel pool closed.\n');
 
 %% =============================================================================
 % --------    HELPER FUNCTIONS
