@@ -7,16 +7,16 @@
 %% Specify main parameters
 
 % Dimensionality for all methods
-nDim = 8;
+nDim = 4;
 
 % Analysis type
 transOrWithin = 'within';  % 'trans',transPost 'within', 'all'
 
 % Frame/bin size
-frameSize = .1;
+frameSize = .15;
 
 % Parallel processing setup
-nWorkers = 3;  % Number of parallel workers to use
+nWorkers = 4;  % Number of parallel workers to use
 fprintf('Setting up parallel pool with %d workers...\n', nWorkers);
 if isempty(gcp('nocreate'))
     parpool('local', nWorkers);
@@ -159,6 +159,7 @@ end
 %% =============================================================================
 % --------    LOOP THROUGH BRAIN AREAS
 % =============================================================================
+ttime = tic;
 
 fprintf('\n=== Processing Multiple Brain Areas ===\n');
 
@@ -586,6 +587,9 @@ for areaIdx = areasToTest
 
     fprintf('\nArea %s completed.\n', areaName);
 end
+
+            fprintf('\n\nTotal analysis time: %.2f hours\n', toc(ttime)/60/60);
+
 
 % load handel
 % sound(y,Fs)
