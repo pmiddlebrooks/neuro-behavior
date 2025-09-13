@@ -10,10 +10,13 @@
 nDim = 4;
 
 % Analysis type
-transOrWithin = 'within';  % 'trans',transPost 'within', 'all'
+transOrWithin = 'all';  % 'trans',transPost 'within', 'all'
 
 % Frame/bin size
 frameSize = .15;
+
+    % SVM parameters
+    kernelFunction = 'polynomial'; % 'linear'
 
 % Parallel processing setup
 nWorkers = 4;  % Number of parallel workers to use
@@ -457,8 +460,6 @@ for areaIdx = areasToTest
         end
     end
 
-    % SVM parameters
-    kernelFunction = 'polynomial';
 
     % Cross-validation setup
     cv = cvpartition(svmID, 'HoldOut', 0.2);
