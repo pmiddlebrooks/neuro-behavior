@@ -19,7 +19,7 @@ frameSize = .1;
     kernelFunction = 'polynomial'; % 'linear'
 
 % Parallel processing setup
-nWorkers = 2;  % Number of parallel workers to use
+nWorkers = 4;  % Number of parallel workers to use
 fprintf('Setting up parallel pool with %d workers...\n', nWorkers);
 if isempty(gcp('nocreate'))
     parpool('local', nWorkers);
