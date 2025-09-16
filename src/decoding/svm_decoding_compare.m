@@ -128,35 +128,6 @@ for dimIdx = 1:length(dimToTest)
 % --------    LOAD EXISTING RESULTS (IF REQUESTED)
 % =============================================================================
 
-% Check if we should load existing results
-if loadExistingResults
-    fprintf('\n=== Checking for Existing SVM Decoding Results ===\n');
-
-    % Look for existing results file
-    existingFilename = sprintf('svm_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
-        transOrWithin, nDim, opts.frameSize, nShuffles);
-    existingPath = fullfile(paths.dropPath, 'decoding', existingFilename);
-
-    if exist(existingPath, 'file')
-        fprintf('Loading existing SVM decoding results from: %s\n', existingFilename);
-        load(existingPath, 'allResults');
-
-        % Display what methods are already analyzed
-        fprintf('Existing methods analyzed:\n');
-        for a = areasToTest
-            if ~isempty(allResults.methods{a})
-                fprintf('  Area %s: %s\n', areas{a}, strjoin(allResults.methods{a}, ', '));
-            end
-        end
-
-        fprintf('Analysis flags: runAllMethods=%s, runAdditionalPSID=%s\n', ...
-            string(runAllMethods), string(runAdditionalPSID));
-    else
-        fprintf('No existing SVM decoding results found. Will create new analysis.\n');
-    end
-end
-
-
         % Load existing results for this combination
         filename = sprintf('svm_%s_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
             kernelFunction, transOrWithin, nDim, opts.frameSize, nShuffles);
@@ -202,7 +173,6 @@ end
         allResults.parameters.transOrWithin = transOrWithin;
         allResults.parameters.kernelFunction = kernelFunction;
 
-        fprintf('\n=== Processing M23 Area ===\n');
 
         for areaIdx = areasToTest
             areaName = areas{areaIdx};
