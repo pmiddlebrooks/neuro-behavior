@@ -2,16 +2,21 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This script compares SVM decoding performance across PCA, UMAP, PSID, and ICG
 % dimensionality reduction methods using the same neural data and behavior labels
+%
+% MODIFICATION: Added functionality to append ICG method for M56, DS, VS areas
+% in the trans condition across dimensions 4, 6, and 8. Set appendICGForTrans=true
+% and areasToTest=2:4 to enable this functionality.
 
 
 %% Specify main parameters
 
 % Dimensionality for all methods
 dimToTest = [4 6 8];
-% nDim = 4;
+dimToTest = 8;
 
 % Analysis type
 transWithinToTest = {'trans','transPost' 'within', 'all'};
+transWithinToTest = {'trans'};
 % transOrWithin = 'trans';  % 'trans','transPost' 'within', 'all'
 
 % Frame/bin size
@@ -21,7 +26,7 @@ frameSize = .1;
 kernelFunction = 'polynomial'; % 'linear' polynomial
 
 % Parallel processing setup
-nWorkers = 3;  % Number of parallel workers to use
+nWorkers = 4;  % Number of parallel workers to use
 
 fprintf('Setting up parallel pool with %d workers...\n', nWorkers);
 if isempty(gcp('nocreate'))
@@ -77,13 +82,14 @@ bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
 
 % Define brain areas to test
 areas = {'M23', 'M56', 'DS', 'VS'};
-areasToTest = 1;  % Test only M23
+areasToTest = 2:4;  % Test M56, DS, VS (append ICG to existing results)
 
 
 % Analysis control flags
-runAllMethods = true;  % Set to true to run all methods (time intensive)
+runAllMethods = false;  % Set to true to run all methods (time intensive)
 runAdditionalPSID = false;  % Set to true to run psidKin and psidBhv remaining dimensions
 loadExistingResults = false;  % Set to true to load and append to existing results
+appendICGForTrans = true;  % Set to true to append ICG method for trans condition
 
 % Permutation testing
 nShuffles = 2;  % Number of permutation tests
@@ -118,6 +124,14 @@ for dimIdx = 1:length(dimToTest)
     % Loop through all trans/within conditions
     for transIdx = 1:length(transWithinToTest)
         transOrWithin = transWithinToTest{transIdx};
+        
+        % Skip non-trans conditions when appending ICG
+        if appendICGForTrans && ~runAllMethods && ~strcmp(transOrWithin, 'trans')
+            fprintf('\n=======================   CONDITION: %s   =======================\n', upper(transOrWithin));
+            fprintf('Skipping %s condition (only processing trans for ICG append)\n', transOrWithin);
+            continue;
+        end
+        
         fprintf('\n=======================   CONDITION: %s   =======================\n', upper(transOrWithin));
 
 
@@ -218,8 +232,12 @@ for dimIdx = 1:length(dimToTest)
             elseif runAdditionalPSID
                 methodsToRun = {'psidKin_nonBhv', 'psidBhv_nonBhv'};
                 fprintf('Running additional PSID methods: %s\n', strjoin(methodsToRun, ', '));
+            elseif appendICGForTrans && strcmp(transOrWithin, 'trans')
+                % Special case: append ICG method for trans condition
+                methodsToRun = {'icg'};
+                fprintf('Appending ICG method for trans condition\n');
             else
-                fprintf('No methods specified to run. Set runAllMethods=true or runAdditionalPSID=true\n');
+                fprintf('No methods specified to run. Set runAllMethods=true, runAdditionalPSID=true, or appendICGForTrans=true\n');
                 continue;
             end
 
@@ -442,6 +460,21 @@ for dimIdx = 1:length(dimToTest)
                     end
                 end
                 methods = newMethods;
+            elseif appendICGForTrans && strcmp(transOrWithin, 'trans') && ~isempty(allResults.methods{areaIdx})
+                % Special case: append ICG method for trans condition
+                existingMethods = allResults.methods{areaIdx};
+                % Filter to only include ICG if it's not already there
+                newMethods = {};
+                for i = 1:length(methods)
+                    if strcmp(methods{i}, 'icg') && ~ismember('icg', existingMethods)
+                        newMethods{end+1} = methods{i};
+                    end
+                end
+                methods = newMethods;
+                if isempty(methods)
+                    fprintf('ICG method already exists for area %s. Skipping.\n', areaName);
+                    continue;
+                end
             end
 
             nMethods = length(methods);
