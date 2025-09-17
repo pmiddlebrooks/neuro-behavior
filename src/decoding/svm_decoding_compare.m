@@ -110,7 +110,7 @@ fprintf('\n=== Processing All Combinations ===\n');
 fprintf('Dimensions to test: %s\n', mat2str(dimToTest));
 fprintf('Trans/Within conditions to test: %s\n', strjoin(transWithinToTest, ', '));
 fprintf('Areas to test: %s\n', strjoin(areas(areasToTest), ', '));
-% Loop through all dimensions
+% Loop through all dimensions 
 for dimIdx = 1:length(dimToTest)
     nDim = dimToTest(dimIdx);
     fprintf('\n\n=======================   DIMENSION: %dD   =======================\n', nDim);
