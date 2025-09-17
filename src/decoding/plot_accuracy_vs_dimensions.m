@@ -140,7 +140,7 @@ for condIdx = 1:length(transWithinToTest)
                     end
                     
                     % Store accuracies
-                    areaData.accuracies = [areaData.accuracies; accuracy'];
+                    areaData.accuracies = [areaData.accuracies; accuracy(:)];
                     areaData.accuraciesPermuted = [areaData.accuraciesPermuted; accuracyPermuted];
                     areaData.dimensions = [areaData.dimensions; repmat(nDim, length(accuracy), 1)];
                     
@@ -233,7 +233,7 @@ for condIdx = 1:length(transWithinToTest)
                         acc = areaData.accuracies(dimMask, methodIdx);
                         accPerm = areaData.accuraciesPermuted(dimMask, methodIdx, :);
                         
-                        if ~isnan(acc) && acc > 0
+                        if ~isnan(acc) & acc > 0
                             methodAccuracies = [methodAccuracies; acc];
                             methodAccuraciesPermuted = [methodAccuraciesPermuted; accPerm];
                             methodDims = [methodDims; nDim];
@@ -249,7 +249,10 @@ for condIdx = 1:length(transWithinToTest)
                 color = methodColors(colorIdx, :);
                 
                 % Plot real data
-                plot(methodDims, methodAccuracies, 'o-', 'Color', color, ...
+                % plot(methodDims, methodAccuracies, 'o-', 'Color', color, ...
+                %     'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', color, ...
+                %     'DisplayName', upper(methodName));
+                plot(areaData.dimensions, methodAccuracies, 'o-', 'Color', color, ...
                     'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', color, ...
                     'DisplayName', upper(methodName));
                 
