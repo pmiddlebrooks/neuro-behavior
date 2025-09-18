@@ -12,10 +12,10 @@ dimToTest = [4 6 8];
 transWithinToTest = {'trans', 'transPost', 'within', 'all'};
 
 % SVM kernel function used
-kernelFunction = 'polynomial';
+kernelFunction = 'polynomial'; % linear polynomial
 
 % Frame/bin size (should match svm_decoding_compare.m)
-frameSize = 0.1;
+frameSize = 0.15;
 
 % Number of shuffles (should match svm_decoding_compare.m)
 nShuffles = 2;
@@ -23,6 +23,7 @@ nShuffles = 2;
 % Plotting options
 savePlotFlag = 1;  % Save plots as PNG files
 plotPermutedData = 1;  % Include permuted data in plots
+plotTheme = 'dark';  % 'light' or 'dark' theme
 
 % Get paths
 get_paths
@@ -119,6 +120,7 @@ for condIdx = 1:length(transWithinToTest)
         areaData.accuracies = [];
         areaData.accuraciesPermuted = [];
         areaData.dimensions = [];
+        areaData.methodIndices = [];
         
         % Extract data for each dimension
         for dimIdx = 1:length(dimToTest)
@@ -139,10 +141,12 @@ for condIdx = 1:length(transWithinToTest)
                         areaData.methods = methods;
                     end
                     
-                    % Store accuracies
+                    % Store accuracies and aligned indices
+                    nMethodsDim = length(accuracy);
                     areaData.accuracies = [areaData.accuracies; accuracy(:)];
                     areaData.accuraciesPermuted = [areaData.accuraciesPermuted; accuracyPermuted];
-                    areaData.dimensions = [areaData.dimensions; repmat(nDim, length(accuracy), 1)];
+                    areaData.dimensions = [areaData.dimensions; repmat(nDim, nMethodsDim, 1)];
+                    areaData.methodIndices = [areaData.methodIndices; (1:nMethodsDim)'];
                     
                     fprintf('    %dD: %d methods, accuracies: %s\n', nDim, length(accuracy), ...
                         sprintf('%.3f ', accuracy));
@@ -165,16 +169,36 @@ end
 %% Create comparison plots
 fprintf('\n=== Creating Comparison Plots ===\n');
 
-% Colors for different methods (you may want to customize these)
-methodColors = [
-    0.0, 0.4470, 0.7410;  % Blue
-    0.8500, 0.3250, 0.0980;  % Red
-    0.9290, 0.6940, 0.1250;  % Yellow
-    0.4940, 0.1840, 0.5560;  % Purple
-    0.4660, 0.6740, 0.1880;  % Green
-    0.3010, 0.7450, 0.9330;  % Cyan
-    0.6350, 0.0780, 0.1840;  % Dark Red
-];
+% Theme-specific color schemes
+if strcmp(plotTheme, 'dark')
+    % Dark theme colors (bright colors for visibility on dark background)
+    methodColors = [
+        0.0, 0.5, 1.0;      % Bright Blue
+        1.0, 0.3, 0.0;       % Bright Red
+        1.0, 0.8, 0.0;       % Bright Yellow
+        0.8, 0.0, 0.8;       % Bright Magenta
+        0.0, 1.0, 0.0;       % Bright Green
+        0.0, 0.9, 1.0;       % Bright Cyan
+        1.0, 0.5, 0.0;       % Bright Orange
+    ];
+    backgroundColor = [0.1, 0.1, 0.1];  % Dark gray background
+    textColor = [1.0, 1.0, 1.0];        % White text
+    gridColor = [0.5, 0.5, 0.5];       % Light gray grid
+else
+    % Light theme colors (original MATLAB colors)
+    methodColors = [
+        0.0, 0.4470, 0.7410;  % Blue
+        0.8500, 0.3250, 0.0980;  % Red
+        0.9290, 0.6940, 0.1250;  % Yellow
+        0.4940, 0.1840, 0.5560;  % Purple
+        0.4660, 0.6740, 0.1880;  % Green
+        0.3010, 0.7450, 0.9330;  % Cyan
+        0.6350, 0.0780, 0.1840;  % Dark Red
+    ];
+    backgroundColor = [1.0, 1.0, 1.0];  % White background
+    textColor = [0.0, 0.0, 0.0];       % Black text
+    gridColor = [0.8, 0.8, 0.8];       % Light gray grid
+end
 
 % For each condition
 for condIdx = 1:length(transWithinToTest)
@@ -187,6 +211,7 @@ for condIdx = 1:length(transWithinToTest)
     % Create figure for this condition
     fig = figure(200 + condIdx);
     set(fig, 'Position', [monitorOne(1), monitorOne(2), monitorOne(3), monitorOne(4)]);
+    set(fig, 'Color', backgroundColor);
     clf;
     
     % Create subplots for each area
@@ -200,10 +225,13 @@ for condIdx = 1:length(transWithinToTest)
         
         % Check if we have data for this area
         if isempty(areaData.methods) || isempty(areaData.accuracies)
-            % No data - show empty plot
+            % No data - show empty plot with theme
             text(0.5, 0.5, 'No Data', 'HorizontalAlignment', 'center', ...
-                'VerticalAlignment', 'middle', 'FontSize', 14, 'Color', 'red');
-            title(sprintf('%s - No Data', areaName), 'Interpreter', 'none');
+                'VerticalAlignment', 'middle', 'FontSize', 14, 'Color', textColor);
+            title(sprintf('%s - No Data', areaName), 'Interpreter', 'none', 'Color', textColor);
+            set(gca, 'Color', backgroundColor);
+            set(gca, 'XColor', textColor);
+            set(gca, 'YColor', textColor);
             xlim([0, 1]);
             ylim([0, 1]);
             continue;
@@ -225,19 +253,15 @@ for condIdx = 1:length(transWithinToTest)
             for dimIdx = 1:length(dimToTest)
                 nDim = dimToTest(dimIdx);
                 
-                % Find rows for this dimension
-                dimMask = areaData.dimensions == nDim;
-                if any(dimMask)
-                    % Get accuracy for this method at this dimension
-                    if methodIdx <= size(areaData.accuracies, 2)
-                        acc = areaData.accuracies(dimMask, methodIdx);
-                        accPerm = areaData.accuraciesPermuted(dimMask, methodIdx, :);
-                        
-                        if ~isnan(acc) & acc > 0
-                            methodAccuracies = [methodAccuracies; acc];
-                            methodAccuraciesPermuted = [methodAccuraciesPermuted; accPerm];
-                            methodDims = [methodDims; nDim];
-                        end
+                % Find row for this dimension and this method
+                rowMask = (areaData.dimensions == nDim) & (areaData.methodIndices == methodIdx);
+                if any(rowMask)
+                    acc = areaData.accuracies(rowMask);
+                    accPerm = areaData.accuraciesPermuted(rowMask, :);
+                    if ~isnan(acc) && acc > 0
+                        methodAccuracies = [methodAccuracies; acc];
+                        methodAccuraciesPermuted = [methodAccuraciesPermuted; accPerm];
+                        methodDims = [methodDims; nDim];
                     end
                 end
             end
@@ -249,35 +273,37 @@ for condIdx = 1:length(transWithinToTest)
                 color = methodColors(colorIdx, :);
                 
                 % Plot real data
-                % plot(methodDims, methodAccuracies, 'o-', 'Color', color, ...
-                %     'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', color, ...
-                %     'DisplayName', upper(methodName));
-                plot(areaData.dimensions, methodAccuracies, 'o-', 'Color', color, ...
+                plot(methodDims, methodAccuracies, 'o-', 'Color', color, ...
                     'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', color, ...
                     'DisplayName', upper(methodName));
                 
                 % Plot permuted data if requested
                 if plotPermutedData && ~isempty(methodAccuraciesPermuted)
-                    meanPermuted = mean(methodAccuraciesPermuted, 3);
-                    stdPermuted = std(methodAccuraciesPermuted, [], 3);
+                    meanPermuted = mean(methodAccuraciesPermuted, 2);
+                    stdPermuted = std(methodAccuraciesPermuted, [], 2);
                     
-                    % Plot mean permuted as dashed line
+                    % Plot mean permuted as dashed line (hidden from legend)
                     plot(methodDims, meanPermuted, '--', 'Color', color, ...
-                        'LineWidth', 1, 'DisplayName', [upper(methodName) ' (permuted)']);
+                        'LineWidth', 1, 'HandleVisibility', 'off');
                     
                     % Add error bars for permuted data
                     errorbar(methodDims, meanPermuted, stdPermuted, 'Color', color, ...
-                        'LineStyle', 'none', 'LineWidth', 1);
+                        'LineStyle', 'none', 'LineWidth', 1, 'HandleVisibility', 'off');
                 end
             end
         end
         
-        % Customize subplot
-        xlabel('Number of Dimensions');
-        ylabel('Accuracy');
-        title(sprintf('%s (%s)', areaName, condition), 'Interpreter', 'none');
-        legend('Location', 'best', 'Interpreter', 'none');
+        % Customize subplot with theme
+        xlabel('Number of Dimensions', 'Color', textColor);
+        ylabel('Accuracy', 'Color', textColor);
+        title(sprintf('%s (%s)', areaName, condition), 'Interpreter', 'none', 'Color', textColor);
+        legend('Location', 'best', 'Interpreter', 'none', 'TextColor', textColor, 'Color', backgroundColor);
         grid on;
+        set(gca, 'Color', backgroundColor);
+        set(gca, 'XColor', textColor);
+        set(gca, 'YColor', textColor);
+        set(gca, 'GridColor', gridColor);
+        set(gca, 'MinorGridColor', gridColor);
         xlim([min(dimToTest) - 0.5, max(dimToTest) + 0.5]);
         ylim([0, 1]);
         
@@ -285,9 +311,9 @@ for condIdx = 1:length(transWithinToTest)
         set(gca, 'XTick', dimToTest);
     end
     
-    % Add overall title
+    % Add overall title with theme
     sgtitle(sprintf('SVM Decoding Accuracy vs Dimensions - %s Condition', upper(condition)), ...
-        'FontSize', 16);
+        'FontSize', 16, 'Color', textColor);
     
     % Save plot if requested
     if savePlotFlag
