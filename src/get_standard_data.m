@@ -254,10 +254,15 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'spikes')
 
     % Find the neuron clusters (ids) in each brain region
 
+    useMulti = 1;
+    if ~useMulti
     allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
+    else
     allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | (strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua'));
+warning('on','all');
 warning('Warning in get_standard_data: you are loading muas with the good spiking units.')
-
+    end
+    
     goodM23 = allGood & strcmp(data.ci.area, 'M23');
     goodM56= allGood & strcmp(data.ci.area, 'M56');
     goodCC = allGood & strcmp(data.ci.area, 'CC');
