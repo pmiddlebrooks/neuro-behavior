@@ -14,10 +14,11 @@
 
 paths = get_paths;
 cd(fullfile(paths.homePath, 'toolboxes/contamineuro_2019_spiking_net/'));
-%%
+%
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.minFiringRate = .05;
+opts.minFiringRate = .1;
 opts.frameSize = .001;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
@@ -32,10 +33,10 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
-natOrReach = 'Nat'; % 'Nat'  'Reach'
+natOrReach = 'Reach'; % 'Nat'  'Reach'
 
 areas = {'M23', 'M56', 'DS', 'VS'};
-areasToTest = 1:4; % Indices of areas to test
+areasToTest = 3:4; % Indices of areas to test
 
 switch natOrReach
     case 'Nat'
@@ -53,6 +54,7 @@ switch natOrReach
         idM56 = find(strcmp(areaLabels, 'M56'));
         idDS = find(strcmp(areaLabels, 'DS'));
         idVS = find(strcmp(areaLabels, 'VS'));
+    fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 end
 
 idList = {idM23, idM56, idDS, idVS};
@@ -66,7 +68,7 @@ for areaIdx = areasToTest
     fprintf('\n=== Processing Brain Area: %s (Index %d) ===\n', idAreaName, areaIdx);
 
 
-    %%  Nat or Reach-specific variables
+    %  Nat or Reach-specific variables
 
     switch natOrReach
         case 'Reach'
@@ -108,7 +110,7 @@ for areaIdx = areasToTest
             trialDur = 20; % "trial" duration in seconds
     end
 
-    %%
+    %
     %----------------------------
     % CONVERT DATA TO SPIKE TIMES FORMAT WITH MULTIPLE TRIALS
     %----------------------------
@@ -159,7 +161,7 @@ for areaIdx = areasToTest
         end
     end
 
-    %%
+    %
     %----------------------------
     % HMM ANALYSIS
     %----------------------------
@@ -366,7 +368,7 @@ for areaIdx = areasToTest
         fprintf(fid, 'Data Parameters:\n');
         fprintf(fid, '  Number of neurons: %d\n', hmm_res.data_params.num_neurons);
         fprintf(fid, '  Number of trials: %d\n', hmm_res.data_params.num_trials);
-        fprintf(fid, '  Frame size: %.6f seconds\n', hmm_res.data_params.frame_size);
+        fprintf(fid, '  Frame size: %.6f seconds\n', opts.frameSize);
         fprintf(fid, '  Collection start: %.1f seconds\n', hmm_res.data_params.collect_start);
         fprintf(fid, '  Collection duration: %.1f seconds\n', hmm_res.data_params.collect_duration);
         fprintf(fid, '\n');
