@@ -402,7 +402,10 @@ for areaIdx = areasToTest
     numStates = size(continuous_pStates, 2);
 
     % Get colors for states
-    colors = distinguishable_colors(numStates);
+  func = @sRGB_to_OKLab;
+  cOpts.exc = [0,0,0;1,1,1];
+  colors = maxdistcolor(numStates,func, cOpts);
+    colors = distinguishable_colors(numStates, {'w','k'}, func);
 
     % Plot rectangles for each state
     for state = 1:numStates
@@ -448,16 +451,16 @@ fprintf('\n=== All brain area analyses completed ===\n');
 
 
 
-% Helper function for distinguishable colors (if not available)
-function colors = distinguishable_colors(n)
-% Simple color generation if distinguishable_colors is not available
-if n <= 7
-    colors = lines(n);
-else
-    colors = hsv(n);
-end
-end
-
+% % Helper function for distinguishable colors (if not available)
+% function colors = distinguishable_colors(n)
+% % Simple color generation if distinguishable_colors is not available
+% if n <= 7
+%     colors = lines(n);
+% else
+%     colors = hsv(n);
+% end
+% end
+% 
 
 
 
