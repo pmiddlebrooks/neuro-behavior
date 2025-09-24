@@ -56,13 +56,14 @@ colors = distinguishable_colors(max(HmmParam.VarStates, 4));
 
 % Plot transition probability matrix and emission probability matrix
 figure;
-subplot(1, 2, 1);
+[ha, ~] = tight_subplot(1, 2, 0.05, [0.08 0.06], [0.06 0.03]);
+axes(ha(1));
 imagesc(hmm_bestfit.tpm);
 colorbar;
 title('Transition Probability Matrix');
 xlabel('State'); ylabel('State');
 
-subplot(1, 2, 2);
+axes(ha(2));
 imagesc(hmm_bestfit.epm(:, 1:end-1)); % Exclude silence column
 colorbar;
 title('Emission Probability Matrix');
@@ -128,3 +129,116 @@ hold off;
 fprintf('Basic HMM plots completed!\n');
 fprintf('You can add more analysis and plotting code below.\n');
 
+
+%% ============================
+% PIE CHARTS: State proportions per brain area (including Unassigned)
+%=============================
+% Uses saved models per area. natOrReach is reused from above.
+    natOrReach = 'Nat'; % 'Nat' or 'Reach'
+
+try
+    areas = {'M23','M56','DS','VS'};        % Areas to include
+    areasToPlot = 1:numel(areas);            % Indices to include (edit if needed)
+
+    pieData = {};
+    pieColors = {};
+    pieAreaNames = {};
+
+    for ai = areasToPlot
+        thisArea = areas{ai};
+
+        % Load saved model for this area
+        hmm_res_area = hmm_load_saved_model(natOrReach, thisArea);
+        if isempty(hmm_res_area) || ~isfield(hmm_res_area, 'continuous_results')
+            fprintf('Warning: No continuous results for area %s, skipping.\n', thisArea);
+            continue
+        end
+
+        seq = hmm_res_area.continuous_results.sequence; % 0 = unassigned
+        if isempty(seq)
+            fprintf('Warning: Empty sequence for area %s, skipping.\n', thisArea);
+            continue
+        end
+
+        % Determine number of states
+        numStatesLocal = 0;
+        if isfield(hmm_res_area, 'HmmParam') && isfield(hmm_res_area.HmmParam, 'VarStates') && ...
+                isfield(hmm_res_area, 'BestStateInd')
+            numStatesLocal = hmm_res_area.HmmParam.VarStates(hmm_res_area.BestStateInd);
+        else
+            assignedStates = seq(seq > 0);
+            if ~isempty(assignedStates)
+                numStatesLocal = max(assignedStates);
+            end
+        end
+
+        % Count bins per state and unassigned
+        unassignedCount = sum(seq == 0);
+        stateCounts = zeros(1, max(1, numStatesLocal));
+        for s = 1:numel(stateCounts)
+            stateCounts(s) = sum(seq == s);
+        end
+        counts = [stateCounts, unassignedCount];
+        if sum(counts) == 0
+            fprintf('Warning: Zero counts for area %s, skipping.\n', thisArea);
+            continue
+        end
+
+        pieData{end+1} = counts / sum(counts);
+        pieAreaNames{end+1} = thisArea;
+
+        % Colors: per-state plus gray for unassigned
+        % baseCols = maxdistcolor(max(1, numStatesLocal));
+  func = @sRGB_to_OKLab;
+  cOpts.exc = [0,0,0;1,1,1];
+  baseCols = maxdistcolor(max(1, numStatesLocal),func, cOpts);
+        pieColors{end+1} = [baseCols; 0.6 0.6 0.6];
+    end
+
+    if ~isempty(pieData)
+        figure(99); clf;
+        nAreas = numel(pieData);
+        nCols = min(4, nAreas);
+        nRows = ceil(nAreas / nCols);
+        [haPie, ~] = tight_subplot(nRows, nCols, 0.02, [0.06 0.1], [0.05 0.03]);
+        for a = 1:nAreas
+            axes(haPie(a));
+            ph = pie(pieData{a});
+            % Apply colors to patches (pie returns patches and text handles)
+            patches = findobj(ph, 'Type', 'Patch');
+            cols = pieColors{a};
+            for k = 1:min(numel(patches), size(cols,1))
+                set(patches(end-k+1), 'FaceColor', cols(k,:)); % reverse order
+            end
+            title(sprintf('%s: State proportions', pieAreaNames{a}), 'Interpreter', 'none');
+            axis equal off
+
+            % Legend labels
+            numStatesLocal = size(cols,1) - 1;
+            labels = arrayfun(@(s) sprintf('State %d', s), 1:numStatesLocal, 'UniformOutput', false);
+            labels{end+1} = 'Unassigned';
+            legend(labels, 'Location', 'southoutside', 'Box', 'off');
+            sgtitle(sprintf('HMM State Proportions_%s', natOrReach), 'interpreter', 'none')
+        end
+
+        % Save pie chart figure to the same folder used in hmm_mazz.m
+        paths = get_paths;
+        hmmdir = fullfile(paths.dropPath, 'metastability');
+        if ~exist(hmmdir, 'dir')
+            mkdir(hmmdir);
+        end
+        piePng = fullfile(hmmdir, sprintf('HMM_state_proportions_%s.png', natOrReach));
+        pieFig = fullfile(hmmdir, sprintf('HMM_state_proportions_%s.fig', natOrReach));
+        try
+            exportgraphics(gcf, piePng, 'Resolution', 200);
+        catch
+            saveas(gcf, piePng);
+        end
+        saveas(gcf, pieFig);
+        fprintf('Saved pie chart figure to: %s\n', piePng);
+    else
+        fprintf('No pie chart data generated. Check that saved models exist for requested areas.\n');
+    end
+catch ME
+    fprintf('Pie chart generation failed: %s\n', ME.message);
+end

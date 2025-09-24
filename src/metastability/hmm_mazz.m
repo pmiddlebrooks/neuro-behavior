@@ -405,7 +405,7 @@ for areaIdx = areasToTest
   func = @sRGB_to_OKLab;
   cOpts.exc = [0,0,0;1,1,1];
   colors = maxdistcolor(numStates,func, cOpts);
-    colors = distinguishable_colors(numStates, {'w','k'}, func);
+    % colors = distinguishable_colors(numStates, {'w','k'}, func);
 
     % Plot rectangles for each state
     for state = 1:numStates
