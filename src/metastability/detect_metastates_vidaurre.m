@@ -52,20 +52,64 @@ end
 A = (P + P') / 2;
 A(logical(eye(N))) = 0;
 
+% Try different community detection methods in order of preference
+communities = [];
+
+% Method 1: Try GenLouvain (if available and working)
 if exist('genlouvain','file') == 2
-    % construct Newman-Girvan modularity matrix B (undirected)
-    k = sum(A,2);
-    m = sum(k) / 2;
-    if m == 0
-        error('Graph has zero total weight.');
+    try
+        % construct Newman-Girvan modularity matrix B (undirected)
+        k = sum(A,2);
+        m = sum(k) / 2;
+        if m == 0
+            error('Graph has zero total weight.');
+        end
+        B = A - (k * k') / (2*m);
+        % genlouvain returns community labels for modularity matrix B
+        communities = genlouvain(sparse(B));
+        if verbose
+            fprintf('Using GenLouvain for community detection.\n');
+        end
+    catch ME
+        if verbose
+            fprintf('GenLouvain failed (%s), trying alternative methods...\n', ME.message);
+        end
+        communities = [];
     end
-    B = A - (k * k') / (2*m);
-    % genlouvain returns community labels for modularity matrix B
-    communities = genlouvain(sparse(B));
-else
-    error(['No community detection function found. ', ...
-        'Install Brain Connectivity Toolbox (community_louvain) ', ...
-        'or GenLouvain (genlouvain) and retry.']);
+end
+
+% Method 2: Try Brain Connectivity Toolbox community_louvain
+if isempty(communities) && exist('community_louvain','file') == 2
+    try
+        % community_louvain works directly on adjacency matrix
+        communities = community_louvain(A);
+        if verbose
+            fprintf('Using Brain Connectivity Toolbox community_louvain.\n');
+        end
+    catch ME
+        if verbose
+            fprintf('community_louvain failed (%s), trying fallback...\n', ME.message);
+        end
+        communities = [];
+    end
+end
+
+% Method 3: Fallback - simple connected components (if all else fails)
+if isempty(communities)
+    if verbose
+        fprintf('Using fallback: connected components method.\n');
+    end
+    % Create binary adjacency matrix (threshold at mean)
+    A_binary = A > mean(A(:));
+    % Find connected components
+    [~, communities] = graphconncomp(sparse(A_binary), 'Directed', false);
+    communities = communities(:);
+end
+
+% Final check
+if isempty(communities)
+    error(['All community detection methods failed. ', ...
+        'Please check your installation of GenLouvain or Brain Connectivity Toolbox.']);
 end
 
 % ensure column vector

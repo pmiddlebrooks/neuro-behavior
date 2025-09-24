@@ -79,7 +79,7 @@ end
 %% Load paths and setup
 try
     paths = get_paths;
-    hmmdir = fullfile(paths.dropPath, 'hmm');
+    hmmdir = fullfile(paths.dropPath, 'metastability');
 catch
     error('Could not load paths. Make sure get_paths() function is available.');
 end
@@ -106,7 +106,7 @@ for i = 1:length(fileNames)
     % Check if file matches our pattern
     if contains(fileName, 'HMM_results_') && ...
        contains(fileName, ['_' natOrReach '_']) && ...
-       contains(fileName, ['_' brainArea '_']) && ...
+       contains(fileName, ['_' brainArea]) && ...
        ~contains(fileName, 'FAILED') % Exclude failed analyses
         
         matchingFiles{end+1} = fileName;
