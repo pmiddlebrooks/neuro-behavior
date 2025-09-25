@@ -15,7 +15,7 @@
 % - Treats 0 in sequence as Unassigned (excluded from metastate mapping)
 
 % ------------ User-configurable section ------------
-natOrReach = 'Nat'; % 'Nat' or 'Reach'
+natOrReach = 'Reach'; % 'Nat' or 'Reach'
 areas = {'M23','M56','DS','VS'}; % adjust if needed
 areasToPlot = 1:numel(areas);    % subset indices if desired, e.g., [1 3 4]
 verbose = false;                 % verbose output from community detection
@@ -152,7 +152,7 @@ cmap = lines(max(3, maxNumMeta+1)); % +1 for Unassigned category
 
 % Figure 1: Fractional occupancy (top row) and transition statistics (bottom row)
 figure(501); clf;
-[ha, ~] = tight_subplot(2, numel(validAreas), 0.06, [0.08 0.08], [0.06 0.02]);
+[ha, ~] = tight_subplot(2, numel(validAreas), [0.12 0.04], [0.06 0.1], [0.06 0.02]);
 
 colIdx = 0;
 for ai = validAreas
@@ -168,6 +168,8 @@ for ai = validAreas
     for ii = 1:(numMeta+1)
         ax1.Children(1).CData(ii,:) = cmap(ii,:);
     end
+    % Set Unassigned bar color to gray for consistency across areas
+    ax1.Children(1).CData(numMeta+1,:) = [0.6 0.6 0.6];
     set(ax1, 'XTick', 1:(numMeta+1), 'XTickLabel', [arrayfun(@(x) sprintf('M%d', x), 1:numMeta, 'UniformOutput', false), {'Unassigned'}], 'XTickLabelRotation', 45);
     ylim([0 1]);
     ylabel('Frac. occupancy');
@@ -191,27 +193,197 @@ for ai = validAreas
     overallData = [overallWithin, overallBetween]; % 1x2 [switching, stability] for overall
     perMetaData = [perMetaWithin; 1-perMetaWithin]'; % numMeta x 2 [stability, switching] for each metastate
     
-    % Plot: First bar = overall, then one bar per metastate
-    barData = [overallData; perMetaData]; % (1+numMeta) x 2
+    % Plot: First bar = overall (lighter colors), then one bar per metastate
+    barData = [perMetaData; overallData]; % (1+numMeta) x 2, columns: [Within, Between]
     b = bar(barData, 'stacked');
-    b(1).FaceColor = [0.8 0.3 0.3]; % switching (red)
-    b(2).FaceColor = [0.2 0.6 0.8]; % stability (blue)
+    
+    % Define base colors
+    withinColor  = [0.2 0.6 0.8];
+    betweenColor = [0.8 0.3 0.3];
+    % Lighter variants for overall bar
+    withinLight  = withinColor  + (1 - withinColor)  * 0.5; % blend toward white
+    betweenLight = betweenColor + (1 - betweenColor) * 0.5;
+    
+    % Use per-bar colors (flat) so we can set overall row lighter
+    nbars = size(barData,1);
+    b(1).FaceColor = 'flat'; % Within
+    b(2).FaceColor = 'flat'; % Between
+    b(1).CData = repmat(withinColor,  nbars, 1);
+    b(2).CData = repmat(betweenColor, nbars, 1);
+    % Overall row index = 1 (first bar)
+    b(1).CData(end,:) = withinLight;
+    b(2).CData(end,:) = betweenLight;
     
     % Set x-axis labels
-    xLabels = {'Overall', arrayfun(@(x) sprintf('M%d', x), 1:length(perMetaWithin), 'UniformOutput', false)};
+    xLabels = [arrayfun(@(x) sprintf('M%d', x), 1:length(perMetaWithin), 'UniformOutput', false), {'Overall'}];
     set(ax2, 'XTick', 1:size(barData,1), 'XTickLabel', xLabels, 'XTickLabelRotation', 45);
     ylim([0 1]);
     ylabel('Frac. transitions');
-    title(sprintf('%s: Switching & Stability', areaName));
+    title(sprintf('%s: Within & Between', areaName));
     if colIdx == numel(validAreas)
-        legend({'Switching', 'Stability'}, 'Location', 'eastoutside');
+        legend({'Within', 'Between'}, 'Location', 'northeast', 'Box', 'off');
     end
 end
 
-sgtitle(sprintf('Metastate occupancy and switching/stability (%s)', natOrReach));
+sgtitle(sprintf('Metastate occupancy and switching within/between (%s)', natOrReach));
 
 % ------------ Save figure ------------
 outName = fullfile(hmmdir, sprintf('Metastate_Summary_%s.png', natOrReach));
 saveas(gcf, outName);
+
+
+
+
+%% ============================
+% PIE CHARTS: State proportions per brain area grouped by metastates
+%==============================
+% - Maps states to metastates using communities from detect_metastates_vidaurre
+% - Uses different shades/tones per state within each metastate
+% - Uses gray for Unassigned (sequence==0)
+
+try
+    pieData = {};
+    pieColors = {};
+    pieLabels = {};
+    pieAreaNames = {};
+
+    for ai = validAreas
+        areaName = areas{ai};
+        resFile = fullfile(hmmdir, sprintf('HMM_results_%s_%s.mat', natOrReach, areaName));
+        if ~exist(resFile,'file')
+            continue
+        end
+        S = load(resFile, 'hmm_res');
+        if ~isfield(S,'hmm_res') || ~isfield(S.hmm_res,'best_model') || ~isfield(S.hmm_res.best_model,'transition_matrix')
+            continue
+        end
+        if ~isfield(S.hmm_res,'continuous_results') || ~isfield(S.hmm_res.continuous_results,'sequence')
+            continue
+        end
+
+        P = S.hmm_res.best_model.transition_matrix;
+        seq = S.hmm_res.continuous_results.sequence(:);
+        K = size(P,1);
+
+        % Metastate labels per state
+        communities = detect_metastates_vidaurre(P, false);
+        M = max(communities);
+
+        % Counts per state and unassigned
+        stateCounts = zeros(K,1);
+        for s = 1:K
+            stateCounts(s) = sum(seq == s);
+        end
+        unassignedCount = sum(seq == 0);
+
+        % Group states by metastate and create ordered data
+        baseCols = lines(max(M,3));
+        orderedCounts = [];
+        orderedColors = [];
+        orderedLabels = {};
+        
+        % Add states grouped by metastate
+        for m = 1:M
+            statesInM = find(communities == m);
+            nInM = numel(statesInM);
+            if nInM == 0
+                continue
+            end
+            
+            % Sort states within metastate for consistent ordering
+            statesInM = sort(statesInM);
+            base = baseCols(m,:);
+            
+            % Shades: lighter to base
+            shadeFrac = linspace(0.65, 1.00, nInM)';
+            for ii = 1:nInM
+                s = statesInM(ii);
+                shade = base .* shadeFrac(ii) + (1 - shadeFrac(ii)) * 0.9; % blend toward light gray
+                orderedCounts = [orderedCounts; stateCounts(s)];
+                orderedColors = [orderedColors; min(max(shade,0),1)];
+                orderedLabels{end+1} = sprintf('M%d-S%d', m, s);
+            end
+        end
+        
+        % Add unassigned at the end
+        if unassignedCount > 0
+            orderedCounts = [orderedCounts; unassignedCount];
+            orderedColors = [orderedColors; 0.6 0.6 0.6];
+            orderedLabels{end+1} = 'Unassigned';
+        end
+
+        if sum(orderedCounts) == 0
+            continue
+        end
+
+        pieData{end+1} = orderedCounts(:)' / sum(orderedCounts);
+        pieColors{end+1} = orderedColors;
+        pieLabels{end+1} = orderedLabels;
+        pieAreaNames{end+1} = areaName;
+    end
+
+    if ~isempty(pieData)
+        figure(502); clf;
+        nAreas = numel(pieData);
+        nCols = min(4, nAreas);
+        nRows = ceil(nAreas / nCols);
+        
+        % Find maximum number of slices across all areas
+        maxSlices = 0;
+        for a = 1:nAreas
+            maxSlices = max(maxSlices, length(pieData{a}));
+        end
+        
+        % Pad all pie data to have the same number of slices (add zeros)
+        for a = 1:nAreas
+            currentData = pieData{a};
+            currentColors = pieColors{a};
+            currentLabels = pieLabels{a};
+            
+            if length(currentData) < maxSlices
+                % Add zero-proportion slices with white color and empty labels
+                paddingData = zeros(1, maxSlices - length(currentData));
+                paddingColors = ones(maxSlices - length(currentData), 3); % white
+                paddingLabels = cell(1, maxSlices - length(currentData));
+                paddingLabels(:) = {''};
+                
+                pieData{a} = [currentData, paddingData];
+                pieColors{a} = [currentColors; paddingColors];
+                pieLabels{a} = [currentLabels, paddingLabels];
+            end
+        end
+        
+        [haPie, ~] = tight_subplot(nRows, nCols, 0.02, [0.06 0.1], [0.05 0.03]);
+        for a = 1:nAreas
+            axes(haPie(a));
+            ph = pie(pieData{a});
+            patches = findobj(ph, 'Type', 'Patch');
+            cols = pieColors{a};
+            
+            % Apply colors in the correct order (pie slices go counterclockwise)
+            for k = 1:min(numel(patches), size(cols,1))
+                set(patches(k), 'FaceColor', cols(k,:));
+            end
+            
+            title(sprintf('%s: States by metastate', pieAreaNames{a}), 'Interpreter', 'none');
+            axis equal off
+
+            % Only show legend for actual pie slices (not zero-proportion slices)
+            actualLabels = pieLabels{a};
+            actualLabels = actualLabels(1:length(ph)/2); % pie returns 2 handles per slice (patch + text)
+            legend(actualLabels, 'Location', 'southoutside', 'Box', 'off');
+        end
+        sgtitle(sprintf('State proportions grouped by metastates (%s)', natOrReach), 'Interpreter', 'none');
+
+        outNamePie = fullfile(hmmdir, sprintf('Metastate_State_Proportions_%s.png', natOrReach));
+        try
+            exportgraphics(gcf, outNamePie, 'Resolution', 200);
+        catch
+            saveas(gcf, outNamePie);
+        end
+    end
+catch ME
+    fprintf('Metastate pie chart generation failed: %s\n', ME.message);
+end
 
 
