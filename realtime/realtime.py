@@ -204,6 +204,11 @@ def main():
 
     video_out, log = initialize_logging(DEFAULT_OUTPUT, camera, args.behavior, args.duration)
 
+    # Send start signal to Arduino
+    print("Sending start signal to Arduino...")
+    serial.write(b'1')  # Send any byte to start the task
+    time.sleep(0.1)  # Give Arduino time to process
+
     print("Press and hold \"q\" at anytime to end program")
     detect_and_communicate(model, camera, cropper, serial, log, video_out, args.duration, args.behavior)
     end_connections(serial, video_out, camera, log)

@@ -58,8 +58,20 @@ void turnOffLED() { digitalWrite(LED_PORT, LOW); ledOn = false; writeLEDOff(); }
 void openSolenoid() { digitalWrite(SOLENOID_PORT, HIGH); givingReward = true; rewardStartTime = millis(); writeRewardOn(); }
 void closeSolenoid() { digitalWrite(SOLENOID_PORT, LOW); givingReward = false; writeRewardOff(); lastPulseEndTime = millis(); }
 
-void startITI() { inITI = true; itiStartTime = millis(); trialReady = false; writeState("ITI_START"); }
-void endITIAndArmTrial() { inITI = false; trialReady = true; turnOnLED(); ledOnTime = millis(); writeState("TRIAL_ARMED"); }
+void startITI() { 
+  inITI = true; 
+  itiStartTime = millis(); 
+  trialReady = false; 
+  turnOffLED(); // Ensure LED is off during ITI
+  writeState("ITI_START"); 
+}
+void endITIAndArmTrial() { 
+  inITI = false; 
+  trialReady = true; 
+  turnOnLED(); 
+  ledOnTime = millis(); 
+  writeState("TRIAL_ARMED"); 
+}
 
 void setup() {
   pinMode(SOLENOID_PORT, OUTPUT);
@@ -77,19 +89,18 @@ void setup() {
   dataFile = SD.open("log.txt", FILE_WRITE);
 
   // Wait for Python to send start signal
-  // writeState("WAITING_FOR_START");
-  // while (Serial.available() == 0) {
-  //   delay(10);
-  // }
-  // // Clear any buffered data
-  // while (Serial.available() > 0) {
-  //   Serial.read();
-  // }
-  writeState("AUTO_START");
+  writeState("WAITING_FOR_START");
+  while (Serial.available() == 0) {
+    delay(10);
+  }
+  // Clear any buffered data
+  while (Serial.available() > 0) {
+    Serial.read();
+  }
+  writeState("START_SIGNAL_RECEIVED");
   
-  // Begin first trial: LED on and initial click
+  // Begin first trial: LED on only (no initial click)
   endITIAndArmTrial();
-  openSolenoid();
 }
 
 void loop() {
@@ -101,10 +112,9 @@ void loop() {
 
     // Beam broken (mouse enters port)
     if (beamState) {
-      // If beam broken during ITI, reset ITI
+      // If beam broken during ITI, mark that we need to restart ITI when beam is unbroken
       if (inITI) {
-        itiStartTime = millis();
-        writeState("ITI_RESET_BEAM");
+        writeState("BEAM_BROKEN_DURING_ITI");
       }
       // If beam broken during trial (LED on), trigger burst
       else if (trialReady) {
@@ -121,14 +131,22 @@ void loop() {
       if (!givingReward && !inBurst && !inITI && !trialReady) {
         startITI();
       }
+      // If beam leaves during burst, wait for burst to complete before starting ITI
+      else if (inBurst && !givingReward) {
+        writeState("BEAM_LEAVE_DURING_BURST");
+      }
+      // If beam was broken during ITI and now unbroken, restart ITI
+      else if (inITI) {
+        itiStartTime = millis();
+        writeState("ITI_RESTART_AFTER_BEAM_UNBROKEN");
+      }
     }
   }
 
   // Manage ITI
   if (inITI) {
     if (millis() - itiStartTime >= INTERTRIAL_INTERVAL) {
-      endITIAndArmTrial();
-      openSolenoid(); // initial click at trial arm
+      endITIAndArmTrial(); // LED on only, no initial click
     }
   }
 
@@ -138,6 +156,7 @@ void loop() {
       // window expired, turn off LED and start a new ITI
       turnOffLED();
       trialReady = false;
+      writeState("REWARD_WINDOW_EXPIRED");
       startITI();
     }
   }
@@ -160,6 +179,7 @@ void loop() {
     } else {
       // Burst complete
       inBurst = false;
+      writeState("BURST_COMPLETE");
       // If beam is now not broken, begin ITI; otherwise wait until it leaves then ITI will start via beam transition branch
       if (!beamState) {
         startITI();
