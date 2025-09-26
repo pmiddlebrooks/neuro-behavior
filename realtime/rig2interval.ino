@@ -77,15 +77,15 @@ void setup() {
   dataFile = SD.open("log.txt", FILE_WRITE);
 
   // Wait for Python to send start signal
-  writeState("WAITING_FOR_START");
-  while (Serial.available() == 0) {
-    delay(10);
-  }
-  // Clear any buffered data
-  while (Serial.available() > 0) {
-    Serial.read();
-  }
-  writeState("START_RECEIVED");
+  // writeState("WAITING_FOR_START");
+  // while (Serial.available() == 0) {
+  //   delay(10);
+  // }
+  // // Clear any buffered data
+  // while (Serial.available() > 0) {
+  //   Serial.read();
+  // }
+  writeState("AUTO_START");
   
   // Begin first trial: LED on and initial click
   endITIAndArmTrial();
