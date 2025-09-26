@@ -67,7 +67,7 @@ thresholdPct = 0.75;   % Threshold as percentage of median
 % Optimal bin/window size search parameters
 % candidateFrameSizes = [0.004, 0.01, 0.02, 0.05, .075, 0.1];
 % candidateFrameSizes = [0.01, 0.02, .03 .04 0.05, .075, 0.1];
-candidateFrameSizes = [.03 .04 0.05, .075, 0.1]; % seconds
+candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15]; % seconds
 candidateWindowSizes = [30, 45, 60, 90, 120]; % seconds
 minSpikesPerBin = 5;
 maxSpikesPerBin = 20;
@@ -80,6 +80,7 @@ nShuffles = 5;
 % AR model parameters for d2 calculation
 pOrder = 10;
 critType = 2;
+d2StepSize = .02; 
 
 % Separate parameters for dcc/kappa analysis
 dccStepSize = round(3 * 60); % seconds - user specified  
@@ -87,7 +88,7 @@ dccWindowSize = 6 * 60; % seconds - user specified
 
 %% ==============================================     Naturalistic Data Analysis     ==============================================
 
-areasToTest = 2:4;
+areasToTest = 1:4;
 
 fprintf('\n=== Naturalistic Data d2/mrbr Analysis ===\n');
 
@@ -127,14 +128,16 @@ for a = areasToTest
     fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeNat(a), optimalWindowSizeNat(a));
 end
 
-% Find maximum bin size and corresponding maximum window size
-[maxBinSizeNat, maxBinIdx] = max(optimalBinSizeNat);
-% Find areas that have the maximum bin size
-areasWithMaxBin = optimalBinSizeNat == maxBinSizeNat;
-% Among those areas, find the maximum window size
-maxWindowSizeNat = max(optimalWindowSizeNat(areasWithMaxBin));
+% Use optimal bin sizes for each area (no longer unified)
+% Set d2StepSize to optimal bin size for each area
+d2StepSizeNat = optimalBinSizeNat;
+d2WindowSizeNat = optimalWindowSizeNat;
 
-fprintf('Using unified parameters for all areas: bin size = %.3f s, window size = %.1f s\n', maxBinSizeNat, maxWindowSizeNat);
+fprintf('Using area-specific optimal parameters:\n');
+for a = areasToTest
+    fprintf('  Area %s: bin size = %.3f s, window size = %.1f s, d2StepSize = %.3f s\n', ...
+        areas{a}, optimalBinSizeNat(a), optimalWindowSizeNat(a), d2StepSizeNat(a));
+end
 
 % Initialize results for naturalistic data
 mrBrNat = cell(1, length(areas));
@@ -148,11 +151,11 @@ for a = areasToTest %length(areas)
     tic;
     
     aID = idListNat{a};
-    stepSamples = round(d2StepSize / maxBinSizeNat);
-    winSamples = round(maxWindowSizeNat / maxBinSizeNat);
+    stepSamples = round(d2StepSizeNat(a) / optimalBinSizeNat(a));
+    winSamples = round(d2WindowSizeNat(a) / optimalBinSizeNat(a));
     
-    % Step 4: Bin the original data
-    aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), maxBinSizeNat);
+    % Step 4: Bin the original data using area-specific optimal bin size
+    aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSizeNat(a));
     numTimePoints = size(aDataMatNat, 1);
     numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
     
@@ -190,14 +193,14 @@ for a = areasToTest %length(areas)
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
         centerIdx = startIdx + floor((endIdx - startIdx)/2);
-        startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeNat; % center time of window
+        startSNat{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSizeNat(a); % center time of window
         
         % Extract window data and        
         % Calculate population activity for MR and d2
         wPopActivity = aDataMatNat(startIdx:endIdx);
         
         % MR branching ratio
-        kMax = round(10 / maxBinSizeNat);
+        kMax = round(10 / optimalBinSizeNat(a));
         result = branching_ratio_mr_estimation(wPopActivity, kMax);
         mrBrNat{a}(w) = result.branching_ratio;
         
@@ -329,14 +332,16 @@ for a = areasToTest % 1:length(areas)
     fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeRea(a), optimalWindowSizeRea(a));
 end
 
-% Find maximum bin size and corresponding maximum window size
-[maxBinSizeRea, maxBinIdx] = max(optimalBinSizeRea);
-% Find areas that have the maximum bin size
-areasWithMaxBin = optimalBinSizeRea == maxBinSizeRea;
-% Among those areas, find the maximum window size
-maxWindowSizeRea = max(optimalWindowSizeRea(areasWithMaxBin));
+% Use optimal bin sizes for each area (no longer unified)
+% Set d2StepSize to optimal bin size for each area
+d2StepSizeRea = optimalBinSizeRea;
+d2WindowSizeRea = optimalWindowSizeRea;
 
-fprintf('Using unified parameters for all areas: bin size = %.3f s, window size = %.1f s\n', maxBinSizeRea, maxWindowSizeRea);
+fprintf('Using area-specific optimal parameters for reach data:\n');
+for a = areasToTest
+    fprintf('  Area %s: bin size = %.3f s, window size = %.1f s, d2StepSize = %.3f s\n', ...
+        areas{a}, optimalBinSizeRea(a), optimalWindowSizeRea(a), d2StepSizeRea(a));
+end
 
 % Initialize results for reach data
 mrBrRea = cell(1, length(areas));
@@ -350,11 +355,11 @@ for a = areasToTest %1:length(areas)
     tic;
     
     aID = idListRea{a};
-    stepSamples = round(d2StepSize / maxBinSizeRea);
-    winSamples = round(maxWindowSizeRea / maxBinSizeRea);
+    stepSamples = round(d2StepSizeRea(a) / optimalBinSizeRea(a));
+    winSamples = round(d2WindowSizeRea(a) / optimalBinSizeRea(a));
     
-    % Step 4: Bin the original data
-    aDataMatRea = neural_matrix_ms_to_frames(dataMatR(:, aID), maxBinSizeRea);
+    % Step 4: Bin the original data using area-specific optimal bin size
+    aDataMatRea = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSizeRea(a));
     numTimePoints = size(aDataMatRea, 1);
     numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
     
@@ -392,14 +397,14 @@ for a = areasToTest %1:length(areas)
         startIdx = (w - 1) * stepSamples + 1;
         endIdx = startIdx + winSamples - 1;
         centerIdx = startIdx + floor((endIdx - startIdx)/2);
-        startSRea{a}(w) = (startIdx + round(winSamples/2)-1) * maxBinSizeRea;
+        startSRea{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSizeRea(a);
         
         % Extract window data and        
         % Calculate population activity for MR and d2
         wPopActivity = aDataMatRea(startIdx:endIdx);
                        
         % MR branching ratio
-        kMax = round(10 / maxBinSizeRea);
+        kMax = round(10 / optimalBinSizeRea(a));
         result = branching_ratio_mr_estimation(wPopActivity, kMax);
         mrBrRea{a}(w) = result.branching_ratio;
         
@@ -492,7 +497,7 @@ for a = areasToTest
     fprintf('Area %s dcc/kappa completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
-%% ==============================================     Plotting Results     ==============================================
+% ==============================================     Plotting Results     ==============================================
 
 % Create comparison plots for each area with all measures
 measures = {'mrBr', 'd2', 'dcc', 'kappa', 'decades'};
@@ -584,7 +589,7 @@ for a = areasToTest
 
 end
 
-%% ==============================================     Correlation Analysis     ==============================================
+% ==============================================     Correlation Analysis     ==============================================
 
 % Calculate correlations between d2 and mrBr (original sliding window timebase)
 fprintf('\n=== Correlation Analysis: d2 and mrBr ===\n');
@@ -679,7 +684,7 @@ filename = fullfile(paths.dropPath, 'criticality/correlation_matrices_dcc_kappa_
 exportgraphics(gcf, filename, 'Resolution', 300);
 fprintf('Saved dcc/kappa/decades correlation plot to: %s\n', filename);
 
-%% ==============================================     Save Results     ==============================================
+% ==============================================     Save Results     ==============================================
 
 % Save all results
 results = struct();
@@ -688,6 +693,9 @@ results.measures = measures;
 results.measureNames = measureNames;
 results.naturalistic.collectStart = opts.collectStart;
 results.naturalistic.collectFor = opts.collectFor;
+
+d2StepSizeNat = optimalBinSizeNat;
+d2WindowSizeNat = optimalWindowSizeNat;
 
 % Naturalistic data results
 results.naturalistic.mrBr = mrBrNat;
@@ -698,8 +706,8 @@ results.naturalistic.decades = decadesNat;
 results.naturalistic.startS = startSNat;
 results.naturalistic.optimalBinSize = optimalBinSizeNat;
 results.naturalistic.optimalWindowSize = optimalWindowSizeNat;
-results.naturalistic.unifiedBinSize = maxBinSizeNat;
-results.naturalistic.unifiedWindowSize = maxWindowSizeNat;
+results.naturalistic.d2StepSize = d2StepSizeNat;
+results.naturalistic.d2WindowSize = d2WindowSizeNat;
 results.naturalistic.corrMat = corrMatNat_d2mrBr; % Correlation matrices are d2/mrBr
 results.naturalistic.corrMatDccKappaDecades = corrMatNat_dccKappaDecades; % Correlation matrices are dcc/kappa/decades
 
@@ -712,8 +720,8 @@ results.reach.decades = decadesRea;
 results.reach.startS = startSRea;
 results.reach.optimalBinSize = optimalBinSizeRea;
 results.reach.optimalWindowSize = optimalWindowSizeRea;
-results.reach.unifiedBinSize = maxBinSizeRea;
-results.reach.unifiedWindowSize = maxWindowSizeRea;
+results.reach.d2StepSize = d2StepSizeRea;
+results.reach.d2WindowSize = d2WindowSizeRea;
 results.reach.corrMat = corrMatRea_d2mrBr; % Correlation matrices are d2/mrBr
 results.reach.corrMatDccKappaDecades = corrMatRea_dccKappaDecades; % Correlation matrices are dcc/kappa/decades
 
@@ -731,7 +739,7 @@ results.params.dccStepSize = dccStepSize;
 results.params.dccWindowSize = dccWindowSize;
 
 % Save to file
-save(fullfile(paths.dropPath, 'criticality_compare_results.mat'), 'results');
+save(fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat'), 'results');
 
 fprintf('\nAnalysis complete! Results saved to criticality_compare_results.mat\n'); 
 
