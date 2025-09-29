@@ -17,17 +17,17 @@ paths = get_paths;
 % Load criticality analysis results
 fprintf('Loading criticality analysis results...\n');
 % results = load(fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat'));
-results = load(fullfile(paths.dropPath, 'criticality_compare_results.mat'));
+results = load(fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat'));
 results = results.results;
 
 % Extract areas and parameters
 areas = results.areas;
-areasToTest = 2:4;
+areasToTest = 1:4;
 optimalBinSizeRea = results.reach.optimalBinSize;
 d2Rea = results.reach.d2;
 startSRea = results.reach.startS;
 
-% Load reach behavioral data
+%% Load reach behavioral data
 fprintf('Loading reach behavioral data...\n');
 dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
 
@@ -85,6 +85,7 @@ for a = areasToTest
     % Get d2 values and time points for this area
     d2Values = d2Rea{a};
     timePoints = startSRea{a};
+    timePoints = startSRea{a} - results.reach.optimalWindowSize(a)/2; % Adjust the times so the leading edge of the analyzed window aligns with reach onset
 
     % Initialize arrays for this area
     numReaches = length(reachStartFrame{a});
@@ -141,7 +142,9 @@ for a = areasToTest
     % Plot individual reach windows (light lines)
     for r = 1:size(d2Windows{a}, 1)
         if ~all(isnan(d2Windows{a}(r, :)))
-            plot(timeAxisPeriReach{a}, d2Windows{a}(r, :), 'Color', [colors{a} 0.1], 'LineWidth', 0.5);
+            % Plot individual reach windows with lower opacity (alpha = 0.05)
+            plot(timeAxisPeriReach{a}, d2Windows{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
+            % Note: This sets alpha for all areas, not just the last one
         end
     end
 
