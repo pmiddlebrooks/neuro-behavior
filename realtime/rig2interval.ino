@@ -88,16 +88,8 @@ void setup() {
   }
   dataFile = SD.open("log.txt", FILE_WRITE);
 
-  // Wait for Python to send start signal
-  writeState("WAITING_FOR_START");
-  while (Serial.available() == 0) {
-    delay(10);
-  }
-  // Clear any buffered data
-  while (Serial.available() > 0) {
-    Serial.read();
-  }
-  writeState("START_SIGNAL_RECEIVED");
+  // Auto-start without waiting for Python
+  writeState("AUTO_START");
   
   // Begin first trial: LED on only (no initial click)
   endITIAndArmTrial();
@@ -112,9 +104,10 @@ void loop() {
 
     // Beam broken (mouse enters port)
     if (beamState) {
-      // If beam broken during ITI, mark that we need to restart ITI when beam is unbroken
+      // If beam broken during ITI, reset ITI timer immediately
       if (inITI) {
-        writeState("BEAM_BROKEN_DURING_ITI");
+        itiStartTime = millis();
+        writeState("ITI_RESET_BEAM");
       }
       // If beam broken during trial (LED on), trigger burst
       else if (trialReady) {
@@ -123,6 +116,8 @@ void loop() {
         inBurst = true;
         pulsesGivenInBurst = 0;
         writeState("BURST_START");
+        // Immediately deliver the first pulse upon beam break
+        openSolenoid();
       }
     }
     // Beam unbroken (mouse leaves port)
@@ -135,11 +130,7 @@ void loop() {
       else if (inBurst && !givingReward) {
         writeState("BEAM_LEAVE_DURING_BURST");
       }
-      // If beam was broken during ITI and now unbroken, restart ITI
-      else if (inITI) {
-        itiStartTime = millis();
-        writeState("ITI_RESTART_AFTER_BEAM_UNBROKEN");
-      }
+      // Removed ITI reset on unbroken; resets now happen on each break during ITI
     }
   }
 

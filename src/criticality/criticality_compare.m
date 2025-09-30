@@ -29,10 +29,19 @@ makePlots = false;            % create comparison plots
 runCorrelation = false;       % compute correlation matrices
 
 % Load existing results if requested
-resultsPath = fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat');
+slidingWindowSize = 6;% For d2, use a small window to try to optimize temporal resolution
+
+resultsBasePath = fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat');
+resultsPathWin = fullfile(paths.dropPath, sprintf('criticality/criticality_compare_results_win%gs.mat', slidingWindowSize));
 results = struct();
-if loadExistingResults && exist(resultsPath, 'file')
-    loaded = load(resultsPath);
+if loadExistingResults
+    if exist(resultsPathWin, 'file')
+        loaded = load(resultsPathWin);
+    elseif exist(resultsBasePath, 'file')
+        loaded = load(resultsBasePath);
+    else
+        loaded = struct();
+    end
     if isfield(loaded, 'results')
         results = loaded.results;
     end
@@ -93,7 +102,8 @@ thresholdPct = 0.75;   % Threshold as percentage of median
 % candidateFrameSizes = [0.01, 0.02, .03 .04 0.05, .075, 0.1];
 candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15]; % seconds
 candidateWindowSizes = [30, 45, 60, 90, 120]; % seconds
-minimalBinSize = repmat(3, 4, 1); % For d2, use a small window to try to optimize temporal resolution
+% slidingWindowSize = 3;% For d2, use a small window to try to optimize temporal resolution
+windowSizes = repmat(slidingWindowSize, 1, 4); % For d2, use a small window to try to optimize temporal resolution
 minSpikesPerBin = 3;
 maxSpikesPerBin = 30;
 minBinsPerWindow = 1000;
@@ -159,7 +169,7 @@ if updateD2MrBr
     % Prepare per-area step/window sizes for d2
     d2StepSizeNat = optimalBinSizeNat;
     d2WindowSizeNat = optimalWindowSizeNat;
-    d2WindowSizeNat = minimalBinSize;
+    d2WindowSizeNat = windowSizes;
 
     fprintf('Using area-specific optimal parameters:\n');
     for a = areasToTest
@@ -374,7 +384,7 @@ if updateD2MrBr
     % Set d2StepSize to optimal bin size for each area
     d2StepSizeRea = optimalBinSizeRea;
     d2WindowSizeRea = optimalWindowSizeRea;
-    d2WindowSizeRea = minimalBinSize;
+    d2WindowSizeRea = windowSizes;
 
     fprintf('Using area-specific optimal parameters for reach data:\n');
     for a = areasToTest
@@ -632,7 +642,7 @@ if makePlots
         sgtitle(sprintf('Criticality Measures Comparison - %s', areas{a}), 'FontSize', 14);
 
         % Save PNG using exportgraphics
-        filename = fullfile(paths.dropPath, sprintf('criticality/criticality_comparison_%s.png', areas{a}));
+        filename = fullfile(paths.dropPath, sprintf('criticality/criticality_comparison_%s_win%gs.png', areas{a}, slidingWindowSize));
         exportgraphics(gcf, filename, 'Resolution', 300);
         fprintf('Saved area plot to: %s\n', filename);
 
@@ -702,7 +712,7 @@ if runCorrelation
     sgtitle('Correlation Matrices: d2 and mrBr');
 
     % Save PNG using exportgraphics
-    filename = fullfile(paths.dropPath, 'criticality/correlation_matrices_d2_mrbr.png');
+    filename = fullfile(paths.dropPath, sprintf('criticality/correlation_matrices_d2_mrbr_win%gs.png', slidingWindowSize));
     exportgraphics(gcf, filename, 'Resolution', 300);
     fprintf('Saved d2/mrBr correlation plot to: %s\n', filename);
 
@@ -731,7 +741,7 @@ if runCorrelation
     sgtitle('Correlation Matrices: dcc, kappa, and decades');
 
     % Save PNG using exportgraphics
-    filename = fullfile(paths.dropPath, 'criticality/correlation_matrices_dcc_kappa_decades.png');
+    filename = fullfile(paths.dropPath, sprintf('criticality/correlation_matrices_dcc_kappa_decades_win%gs.png', slidingWindowSize));
     exportgraphics(gcf, filename, 'Resolution', 300);
     fprintf('Saved dcc/kappa/decades correlation plot to: %s\n', filename);
 end % runCorrelation
@@ -832,10 +842,10 @@ results.params.critType = critType;
 results.params.dccStepSize = dccStepSize;
 results.params.dccWindowSize = dccWindowSize;
 
-% Save to file
-save(resultsPath, 'results');
+% Save to file (window-size specific)
+save(resultsPathWin, 'results');
 
-fprintf('\nAnalysis complete! Results saved to criticality_compare_results.mat\n');
+fprintf('\nAnalysis complete! Results saved to %s\n', resultsPathWin); 
 
 
 

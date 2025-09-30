@@ -97,20 +97,8 @@ void setup() {
 
   dataFile = SD.open("log.txt", FILE_WRITE);
   
-  // Wait for Python to send start signal
-  sprintf(buffer, "%d S WAITING_FOR_START", millis());
-  dataFile.println(buffer);
-  dataFile.flush();
-  
-  while (Serial.available() == 0) {
-    delay(10);
-  }
-  // Clear any buffered data
-  while (Serial.available() > 0) {
-    Serial.read();
-  }
-  
-  sprintf(buffer, "%d S START_SIGNAL_RECEIVED", millis());
+  // Auto-start without waiting for Python
+  sprintf(buffer, "%d S AUTO_START", millis());
   dataFile.println(buffer);
   dataFile.flush();
 }

@@ -124,10 +124,8 @@ def main():
     log.write("Session start\n")
     log.flush()
     
-    # Send start signal to Arduino
-    print("Sending start signal to Arduino...")
-    ser.write(b'1')  # Send any byte to start the task
-    time.sleep(0.1)  # Give Arduino time to process
+    # Arduino auto-starts; no start signal needed
+    time.sleep(0.1)
 
     try:
         while True:
