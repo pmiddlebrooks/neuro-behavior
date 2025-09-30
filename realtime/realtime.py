@@ -206,8 +206,26 @@ def main():
 
     # Send start signal to Arduino
     print("Sending start signal to Arduino...")
-    serial.write(b'1')  # Send any byte to start the task
-    time.sleep(0.1)  # Give Arduino time to process
+    try:
+      # Allow time for Arduino auto-reset on serial open
+      time.sleep(2.0)
+      # Toggle DTR to ensure a clean reset on some boards
+      try:
+        serial.setDTR(False)
+        time.sleep(0.1)
+        serial.setDTR(True)
+      except Exception:
+        pass
+      # Clear any buffered input
+      if hasattr(serial, "reset_input_buffer"):
+        serial.reset_input_buffer()
+      # Send start byte a few times to be safe
+      for _ in range(3):
+        serial.write(b'1')
+        serial.flush()
+        time.sleep(0.1)
+    except Exception as e:
+      print(f"Warning: failed to send start signal reliably: {e}")
 
     print("Press and hold \"q\" at anytime to end program")
     detect_and_communicate(model, camera, cropper, serial, log, video_out, args.duration, args.behavior)

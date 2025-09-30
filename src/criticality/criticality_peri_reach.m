@@ -54,8 +54,10 @@ reachAmp = dataR.R(:,3); % Amplitude of each reach (distance from 0)
 %     -  2   - block 2 Rew
 %     - 20 - block 2 error above
 
-reachClass = dataR.block(:,4);
-
+reachClass = dataR.BlockWithErrors(:,4);
+corrIdx = ismember(reachClass, [1 2]);
+reachStartCorr = reachStart(corrIdx);
+reachStartErr = reachStart(~corrIdx);
 % % Convert reach start times to frame units for each area
 % reachStartFrame = cell(1, length(areas));
 % for a = areasToTest
@@ -66,15 +68,17 @@ reachClass = dataR.block(:,4);
 %% ==============================================     Peri-Reach Analysis     ==============================================
 
 % Define window parameters
-windowDurationSec = 3; % 3-second window around each reach
+windowDurationSec = 120; % 3-second window around each reach
 windowDurationFrames = cell(1, length(areas));
 for a = areasToTest
     windowDurationFrames{a} = round(windowDurationSec / optimalBinSizeRea(a));
 end
 
-% Initialize storage for peri-reach d2 values
-d2Windows = cell(1, length(areas));
-meanD2PeriReach = cell(1, length(areas));
+% Initialize storage for peri-reach d2 values (separate correct vs error)
+d2WindowsCorr = cell(1, length(areas));
+d2WindowsErr = cell(1, length(areas));
+meanD2PeriReachCorr = cell(1, length(areas));
+meanD2PeriReachErr = cell(1, length(areas));
 timeAxisPeriReach = cell(1, length(areas));
 
 fprintf('\n=== Peri-Reach d2 Criticality Analysis ===\n');
@@ -88,68 +92,113 @@ for a = areasToTest
     timePoints = startSRea{a} - results.reach.optimalWindowSize(a)/2; % Adjust the times so the leading edge of the analyzed window aligns with reach onset
 
     % Initialize arrays for this area
-    numReaches = length(reachStartFrame{a});
+    numReachesCorr = length(reachStartCorr);
+    numReachesErr = length(reachStartErr);
     halfWindow = floor(windowDurationFrames{a} / 2);
 
     % Create time axis for peri-reach window (centered on reach onset)
     timeAxisPeriReach{a} = (-halfWindow:halfWindow) * optimalBinSizeRea(a);
 
     % Initialize storage for all reach windows
-    d2Windows{a} = nan(numReaches, windowDurationFrames{a} + 1);
+    d2WindowsCorr{a} = nan(numReachesCorr, windowDurationFrames{a} + 1);
+    d2WindowsErr{a} = nan(numReachesErr, windowDurationFrames{a} + 1);
 
-    % Extract d2 values around each reach
-    validReaches = 0;
-    for r = 1:numReaches
-        % Find the index in timePoints (startSRea{a}) closest to this reach start time
-        reachTime = reachStart(r)/1000; % reachStart is in ms
+    % Extract d2 values around each correct reach
+    validCorr = 0;
+    for r = 1:numReachesCorr
+        reachTime = reachStartCorr(r)/1000; % adjust if needed based on units
         [~, closestIdx] = min(abs(timePoints - reachTime));
-
-        % Define window bounds (centered on closestIdx)
         winStart = closestIdx - halfWindow;
         winEnd = closestIdx + halfWindow;
-
-        % Check if window is within bounds of d2Values
         if winStart >= 1 && winEnd <= length(d2Values)
-            d2Windows{a}(r, :) = d2Values(winStart:winEnd);
-            validReaches = validReaches + 1;
+            d2WindowsCorr{a}(r, :) = d2Values(winStart:winEnd);
+            validCorr = validCorr + 1;
         else
-            % If window is out of bounds, leave as NaN
-            d2Windows{a}(r, :) = nan(1, windowDurationFrames{a} + 1);
+            d2WindowsCorr{a}(r, :) = nan(1, windowDurationFrames{a} + 1);
+        end
+    end
+
+    % Extract d2 values around each error reach
+    validErr = 0;
+    for r = 1:numReachesErr
+        reachTime = reachStartErr(r)/1000; % adjust if needed based on units
+        [~, closestIdx] = min(abs(timePoints - reachTime));
+        winStart = closestIdx - halfWindow;
+        winEnd = closestIdx + halfWindow;
+        if winStart >= 1 && winEnd <= length(d2Values)
+            d2WindowsErr{a}(r, :) = d2Values(winStart:winEnd);
+            validErr = validErr + 1;
+        else
+            d2WindowsErr{a}(r, :) = nan(1, windowDurationFrames{a} + 1);
         end
     end
 
     % Calculate mean d2 values across all valid reaches
-    meanD2PeriReach{a} = nanmean(d2Windows{a}, 1);
+    meanD2PeriReachCorr{a} = nanmean(d2WindowsCorr{a}, 1);
+    meanD2PeriReachErr{a} = nanmean(d2WindowsErr{a}, 1);
 
-    fprintf('Area %s: %d valid reaches out of %d total reaches\n', areas{a}, validReaches, numReaches);
+    fprintf('Area %s: %d correct, %d error valid reaches\n', areas{a}, validCorr, validErr);
 end
 
 %% ==============================================     Plotting Results     ==============================================
 
+% Toggle plotting error reaches (single traces and mean)
+plotErrors = true;
+
 % Create peri-reach plots for each area
-figure(300); clf;
+figure(302); clf;
 set(gcf, 'Position', [100, 100, 1200, 800]);
 
 % Use tight_subplot for layout
-ha = tight_subplot(2, 2, [0.1 0.05], [0.1 0.05], [0.1 0.05]);
+ha = tight_subplot(2, 2, [0.1 0.05], [0.08 0.1], [0.1 0.05]);
 
 colors = {'k', 'b', 'r', [0 0.75 0]};
+
+
+% Compute global y-limits across areas (use mean traces; include errors if enabled)
+allMeanVals = [];
+for a = areasToTest
+    if ~isempty(meanD2PeriReachCorr{a})
+        allMeanVals = [allMeanVals; meanD2PeriReachCorr{a}(:)]; %#ok<AGROW>
+    end
+    if plotErrors && ~isempty(meanD2PeriReachErr{a})
+        allMeanVals = [allMeanVals; meanD2PeriReachErr{a}(:)]; %#ok<AGROW>
+    end
+end
+globalYMin = nanmin(allMeanVals);
+globalYMax = nanmax(allMeanVals);
+if isempty(globalYMin) || isempty(globalYMax) || isnan(globalYMin) || isnan(globalYMax)
+    globalYMin = 0; globalYMax = 1;
+end
+% Add small padding
+pad = 0.05 * (globalYMax - globalYMin + eps);
+yLimCommon = [globalYMin - pad, globalYMax + pad];
 
 for a = areasToTest
     axes(ha(a));
     hold on;
 
-    % Plot individual reach windows (light lines)
-    for r = 1:size(d2Windows{a}, 1)
-        if ~all(isnan(d2Windows{a}(r, :)))
-            % Plot individual reach windows with lower opacity (alpha = 0.05)
-            plot(timeAxisPeriReach{a}, d2Windows{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
-            % Note: This sets alpha for all areas, not just the last one
+    % Plot individual reach windows (all single traces in light gray)
+    for r = 1:size(d2WindowsCorr{a}, 1)
+        if ~all(isnan(d2WindowsCorr{a}(r, :)))
+            plot(timeAxisPeriReach{a}, d2WindowsCorr{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
+        end
+    end
+    if plotErrors
+        for r = 1:size(d2WindowsErr{a}, 1)
+            if ~all(isnan(d2WindowsErr{a}(r, :)))
+                plot(timeAxisPeriReach{a}, d2WindowsErr{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
+            end
         end
     end
 
-    % Plot mean d2 values (thick line)
-    plot(timeAxisPeriReach{a}, meanD2PeriReach{a}, 'Color', colors{a}, 'LineWidth', 3);
+    % Plot mean d2 values: correct (solid area color), errors (dashed area color)
+    hMeanCorr = plot(timeAxisPeriReach{a}, meanD2PeriReachCorr{a}, 'Color', colors{a}, 'LineWidth', 3, 'LineStyle', '-');
+    if plotErrors
+        hMeanErr = plot(timeAxisPeriReach{a}, meanD2PeriReachErr{a}, 'Color', colors{a}, 'LineWidth', 3, 'LineStyle', '--');
+    else
+        hMeanErr = []; %#ok<NASGU>
+    end
 
     % Add vertical line at reach onset
     plot([0 0], ylim, 'k--', 'LineWidth', 2);
@@ -160,11 +209,30 @@ for a = areasToTest
     title(sprintf('%s - Peri-Reach d2 Criticality', areas{a}), 'FontSize', 14);
     grid on;
 
-    % Set consistent x-axis limits
-    xlim([-1.5 1.5]);
+    % Set x-axis ticks and limits in seconds
+    xMin = min(timeAxisPeriReach{a});
+    xMax = max(timeAxisPeriReach{a});
+    xlim([xMin xMax]);
+    xTicks = ceil(xMin):floor(xMax);
+    if isempty(xTicks)
+        % Fallback to 5 ticks across range
+        xTicks = linspace(xMin, xMax, 5);
+    end
+    xticks(xTicks);
+    xticklabels(string(xTicks));
 
-    % Add legend for mean
-    legend('Mean d2', 'Location', 'best', 'FontSize', 10);
+    % Set consistent y-axis limits and ticks across all subplots
+    ylim(yLimCommon);
+    yTicks = linspace(yLimCommon(1), yLimCommon(2), 5);
+    yticks(yTicks);
+    yticklabels(string(round(yTicks, 3)));
+
+    % Add legend for mean traces
+    if plotErrors
+        legend([hMeanCorr hMeanErr], {'Mean d2 (Correct)', 'Mean d2 (Error)'}, 'Location', 'best', 'FontSize', 10);
+    else
+        legend(hMeanCorr, 'Mean d2 (Correct)', 'Location', 'best', 'FontSize', 10);
+    end
 end
 
 sgtitle('Peri-Reach d2 Criticality Analysis', 'FontSize', 16);
