@@ -40,6 +40,9 @@ kinPCA = score(:, 1);
 
 
 %% ==============================================     Analysis Parameters     ==============================================
+slidingWindowSize = 3;
+resultsPathWin = fullfile(paths.dropPath, sprintf('criticality/criticality_compare_results_win%gs.mat', slidingWindowSize));
+
 
 % Correlation analysis parameters
 correlationMethod = 'pearson';  % 'pearson', 'spearman', or 'kendall'
@@ -55,18 +58,8 @@ fprintf('\n=== Loading Criticality Decoding Results ===\n');
 
 % Load results from criticality_decoding_accuracy.m
 try
-    % Try to load the most recent results file
-    resultFiles = dir(fullfile(paths.dropPath, 'criticality_decoding_results_*.mat'));
-    if isempty(resultFiles)
-        error('No criticality decoding results found');
-    end
-
-    % Get the most recent file
-    [~, idx] = max([resultFiles.datenum]);
-    latestFile = resultFiles(idx).name;
-
-    load(fullfile(paths.dropPath, latestFile), 'results');
-    fprintf('Loaded results from: %s\n', latestFile);
+    load(resultsPathWin, 'results');
+    fprintf('Loaded results from: %s\n', resultsPathWin);
 
     % Extract key data
     areas = results.areas;
