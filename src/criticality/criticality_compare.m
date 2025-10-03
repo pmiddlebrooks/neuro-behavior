@@ -29,7 +29,7 @@ makePlots = false;            % create comparison plots
 runCorrelation = false;       % compute correlation matrices
 
 % Load existing results if requested
-slidingWindowSize = 6;% For d2, use a small window to try to optimize temporal resolution
+slidingWindowSize = 3;% For d2, use a small window to try to optimize temporal resolution
 
 resultsBasePath = fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat');
 resultsPathWin = fullfile(paths.dropPath, sprintf('criticality/criticality_compare_results_win%gs.mat', slidingWindowSize));
@@ -69,7 +69,7 @@ get_standard_data
 areas = {'M23', 'M56', 'DS', 'VS'};
 idListNat = {idM23, idM56, idDS, idVS};
 
-%%
+%
 % Mark's reach data
 % dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
@@ -121,7 +121,7 @@ d2StepSize = .02;
 dccStepSize = round(3 * 60); % seconds - user specified
 dccWindowSize = 6 * 60; % seconds - user specified
 
-%% ==============================================     Naturalistic Data Analysis     ==============================================
+ %% ==============================================     Naturalistic Data Analysis     ==============================================
 
 areasToTest = 1:4;
 
@@ -480,14 +480,14 @@ if updateDccKappa
         aID = idListRea{a};
 
         % Step 4: Bin the original data for dcc/kappa analysis
-        % Ensure optimalBinSizeNat available when only dcc/kappa is updated
-        if ~exist('optimalBinSizeNat', 'var') && isfield(results, 'naturalistic') && isfield(results.naturalistic, 'optimalBinSize')
-            optimalBinSizeNat = results.naturalistic.optimalBinSize;
+        % Ensure optimalBinSizeRea available when only dcc/kappa is updated
+        if ~exist('optimalBinSizeRea', 'var') && isfield(results, 'naturalistic') && isfield(results.naturalistic, 'optimalBinSize')
+            optimalBinSizeRea = results.naturalistic.optimalBinSize;
         end
-        aDataMatRea_dcc = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSizeNat(a));
+        aDataMatRea_dcc = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSizeRea(a));
         numTimePoints_dcc = size(aDataMatRea_dcc, 1);
-        stepSamples_dcc = round(dccStepSize / optimalBinSizeNat(a));
-        winSamples_dcc = round(dccWindowSize / optimalBinSizeNat(a));
+        stepSamples_dcc = round(dccStepSize / optimalBinSizeRea(a));
+        winSamples_dcc = round(dccWindowSize / optimalBinSizeRea(a));
         numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
 
         % Step 5-6: Apply PCA to binned data and project back to neural space
@@ -524,7 +524,7 @@ if updateDccKappa
             startIdx = (w - 1) * stepSamples_dcc + 1;
             endIdx = startIdx + winSamples_dcc - 1;
             centerIdx = startIdx + floor((endIdx - startIdx)/2);
-            startSRea_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * optimalBinSizeNat(a);
+            startSRea_dcc{a}(w) = (startIdx + round(winSamples_dcc/2)-1) * optimalBinSizeRea(a);
 
             % Calculate population activity for this window
             wPopActivity = aDataMatRea_dcc(startIdx:endIdx);
@@ -534,7 +534,7 @@ if updateDccKappa
             zeroBins = find(wPopActivity == 0);
             if length(zeroBins) > 1 && any(diff(zeroBins)>1)
                 % Create avalanche data
-                asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeNat(a)*1000, 'CBModel', 'Spikes', 'DS');
+                asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeRea(a)*1000, 'CBModel', 'Spikes', 'DS');
                 Av = avprops(asdfMat, 'ratio', 'fingerprint');
 
                 % Calculate avalanche parameters
@@ -767,6 +767,12 @@ results.naturalistic.collectFor = opts.collectFor;
 if exist('optimalBinSizeNat', 'var')
     results.naturalistic.optimalBinSize = optimalBinSizeNat;
 end
+if exist('d2StepSizeNat', 'var')
+    results.reach.d2StepSize = d2StepSizeNat;
+end
+if exist('d2WindowSizeNat', 'var')
+    results.naturalistic.d2WindowSize = d2WindowSizeNat;
+end
 if exist('optimalWindowSizeNat', 'var')
     results.naturalistic.optimalWindowSize = optimalWindowSizeNat;
 end
@@ -792,6 +798,12 @@ end
 % Reach data results (conditional updates)
 if exist('optimalBinSizeRea', 'var')
     results.reach.optimalBinSize = optimalBinSizeRea;
+end
+if exist('d2StepSizeRea', 'var')
+    results.reach.d2StepSize = d2StepSizeRea;
+end
+if exist('d2WindowSizeRea', 'var')
+    results.naturalistic.d2WindowSize = d2WindowSizeRea;
 end
 if exist('optimalWindowSizeRea', 'var')
     results.reach.optimalWindowSize = optimalWindowSizeRea;
@@ -835,7 +847,6 @@ results.params.pcaFirstFlag = pcaFirstFlag;
 results.params.nDim = nDim;
 results.params.thresholdFlag = thresholdFlag;
 results.params.thresholdPct = thresholdPct;
-results.params.stepSize = d2StepSize;
 results.params.nShuffles = nShuffles;
 results.params.pOrder = pOrder;
 results.params.critType = critType;

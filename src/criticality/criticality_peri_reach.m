@@ -11,21 +11,26 @@
 %   d2Windows - d2 criticality values in 3-second windows around each reach
 %   meanD2PeriReach - mean d2 values across all reaches for each area
 
+%% Load existing results if requested
+slidingWindowSize = 6;% For d2, use a small window to try to optimize temporal resolution
+
+
 %%
 paths = get_paths;
+resultsPathWin = fullfile(paths.dropPath, sprintf('criticality/criticality_compare_results_win%gs.mat', slidingWindowSize));
 
 % Load criticality analysis results
 fprintf('Loading criticality analysis results...\n');
 % results = load(fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat'));
-results = load(fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat'));
+results = load(resultsPathWin);
 results = results.results;
 
 % Extract areas and parameters
 areas = results.areas;
 areasToTest = 1:4;
-optimalBinSizeRea = results.reach.optimalBinSize;
+optimalBinSize = results.reach.optimalBinSize;
 d2Rea = results.reach.d2;
-startSRea = results.reach.startS;
+startS = results.reach.startS;
 
 %% Load reach behavioral data
 fprintf('Loading reach behavioral data...\n');
@@ -62,16 +67,16 @@ reachStartErr = reachStart(~corrIdx);
 % reachStartFrame = cell(1, length(areas));
 % for a = areasToTest
 %     % Round reach to nearest frame in criticality analysis bin sizes
-%     reachStartFrame{a} = round(reachStart ./ optimalBinSizeRea(a));
+%     reachStartFrame{a} = round(reachStart ./ optimalBinSize(a));
 % end
 
 %% ==============================================     Peri-Reach Analysis     ==============================================
 
 % Define window parameters
-windowDurationSec = 120; % 3-second window around each reach
+windowDurationSec = 55; % 3-second window around each reach
 windowDurationFrames = cell(1, length(areas));
 for a = areasToTest
-    windowDurationFrames{a} = round(windowDurationSec / optimalBinSizeRea(a));
+    windowDurationFrames{a} = round(windowDurationSec / optimalBinSize(a));
 end
 
 % Initialize storage for peri-reach d2 values (separate correct vs error)
@@ -88,8 +93,8 @@ for a = areasToTest
 
     % Get d2 values and time points for this area
     d2Values = d2Rea{a};
-    timePoints = startSRea{a};
-    timePoints = startSRea{a} - results.reach.optimalWindowSize(a)/2; % Adjust the times so the leading edge of the analyzed window aligns with reach onset
+    timePoints = startS{a};
+    % timePoints = startS{a} - results.reach.d2WindowSize(a)/2; % Adjust the times so the leading edge of the analyzed window aligns with reach onset
 
     % Initialize arrays for this area
     numReachesCorr = length(reachStartCorr);
@@ -97,7 +102,7 @@ for a = areasToTest
     halfWindow = floor(windowDurationFrames{a} / 2);
 
     % Create time axis for peri-reach window (centered on reach onset)
-    timeAxisPeriReach{a} = (-halfWindow:halfWindow) * optimalBinSizeRea(a);
+    timeAxisPeriReach{a} = (-halfWindow:halfWindow) * optimalBinSize(a);
 
     % Initialize storage for all reach windows
     d2WindowsCorr{a} = nan(numReachesCorr, windowDurationFrames{a} + 1);
@@ -250,8 +255,8 @@ for a = areasToTest
     fprintf('  Total reaches: %d\n', length(reachStartFrame{a}));
     fprintf('  Valid reaches: %d\n', sum(~all(isnan(d2Windows{a}), 2)));
     fprintf('  Mean d2 at reach onset: %.4f\n', meanD2PeriReach{a}(halfWindow + 1));
-    fprintf('  Mean d2 pre-reach (-1s): %.4f\n', meanD2PeriReach{a}(halfWindow - round(1/optimalBinSizeRea(a)) + 1));
-    fprintf('  Mean d2 post-reach (+1s): %.4f\n', meanD2PeriReach{a}(halfWindow + round(1/optimalBinSizeRea(a)) + 1));
+    fprintf('  Mean d2 pre-reach (-1s): %.4f\n', meanD2PeriReach{a}(halfWindow - round(1/optimalBinSize(a)) + 1));
+    fprintf('  Mean d2 post-reach (+1s): %.4f\n', meanD2PeriReach{a}(halfWindow + round(1/optimalBinSize(a)) + 1));
 end
 
 fprintf('\nPeri-reach analysis complete!\n');
