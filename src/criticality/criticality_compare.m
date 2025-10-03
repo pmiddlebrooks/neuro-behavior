@@ -29,7 +29,7 @@ makePlots = false;            % create comparison plots
 runCorrelation = false;       % compute correlation matrices
 
 % Load existing results if requested
-slidingWindowSize = 3;% For d2, use a small window to try to optimize temporal resolution
+slidingWindowSize = 3;        % For d2, use a small window to try to optimize temporal resolution
 
 resultsBasePath = fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat');
 resultsPathWin = fullfile(paths.dropPath, sprintf('criticality/criticality_compare_results_win%gs.mat', slidingWindowSize));

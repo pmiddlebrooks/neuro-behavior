@@ -12,7 +12,7 @@
 %   meanD2PeriReach - mean d2 values across all reaches for each area
 
 %% Load existing results if requested
-slidingWindowSize = 6;% For d2, use a small window to try to optimize temporal resolution
+slidingWindowSize = 1;% For d2, use a small window to try to optimize temporal resolution
 
 
 %%
@@ -27,7 +27,7 @@ results = results.results;
 
 % Extract areas and parameters
 areas = results.areas;
-areasToTest = 1:4;
+areasToTest = 2:4;
 optimalBinSize = results.reach.optimalBinSize;
 d2Rea = results.reach.d2;
 startS = results.reach.startS;
@@ -73,7 +73,7 @@ reachStartErr = reachStart(~corrIdx);
 %% ==============================================     Peri-Reach Analysis     ==============================================
 
 % Define window parameters
-windowDurationSec = 55; % 3-second window around each reach
+windowDurationSec = 40; % 3-second window around each reach
 windowDurationFrames = cell(1, length(areas));
 for a = areasToTest
     windowDurationFrames{a} = round(windowDurationSec / optimalBinSize(a));
@@ -183,20 +183,37 @@ for a = areasToTest
     axes(ha(a));
     hold on;
 
-    % Plot individual reach windows (all single traces in light gray)
-    for r = 1:size(d2WindowsCorr{a}, 1)
-        if ~all(isnan(d2WindowsCorr{a}(r, :)))
-            plot(timeAxisPeriReach{a}, d2WindowsCorr{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
-        end
-    end
-    if plotErrors
-        for r = 1:size(d2WindowsErr{a}, 1)
-            if ~all(isnan(d2WindowsErr{a}(r, :)))
-                plot(timeAxisPeriReach{a}, d2WindowsErr{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
-            end
-        end
-    end
+    % % Plot individual reach windows (all single traces in light gray)
+    % for r = 1:size(d2WindowsCorr{a}, 1)
+    %     if ~all(isnan(d2WindowsCorr{a}(r, :)))
+    %         plot(timeAxisPeriReach{a}, d2WindowsCorr{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
+    %     end
+    % end
+    % if plotErrors
+    %     for r = 1:size(d2WindowsErr{a}, 1)
+    %         if ~all(isnan(d2WindowsErr{a}(r, :)))
+    %             plot(timeAxisPeriReach{a}, d2WindowsErr{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
+    %         end
+    %     end
+    % end
 
+    % Calculate SEM for mean traces
+    semCorr = nanstd(d2WindowsCorr{a}, 0, 1) / sqrt(sum(~all(isnan(d2WindowsCorr{a}), 2)));
+    if plotErrors
+        semErr = nanstd(d2WindowsErr{a}, 0, 1) / sqrt(sum(~all(isnan(d2WindowsErr{a}), 2)));
+    end
+    
+    % Plot SEM ribbons first (behind the mean lines)
+    fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
+         [meanD2PeriReachCorr{a} + semCorr, fliplr(meanD2PeriReachCorr{a} - semCorr)], ...
+         colors{a}, 'FaceAlpha', 0.4, 'EdgeColor', 'none');
+    
+    if plotErrors
+        fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
+             [meanD2PeriReachErr{a} + semErr, fliplr(meanD2PeriReachErr{a} - semErr)], ...
+             colors{a}, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+    end
+    
     % Plot mean d2 values: correct (solid area color), errors (dashed area color)
     hMeanCorr = plot(timeAxisPeriReach{a}, meanD2PeriReachCorr{a}, 'Color', colors{a}, 'LineWidth', 3, 'LineStyle', '-');
     if plotErrors
@@ -211,7 +228,7 @@ for a = areasToTest
     % Formatting
     xlabel('Time relative to reach onset (s)', 'FontSize', 12);
     ylabel('d2 Criticality', 'FontSize', 12);
-    title(sprintf('%s - Peri-Reach d2 Criticality', areas{a}), 'FontSize', 14);
+    title(sprintf('%s - Peri-Reach d2 Criticality (Window: %gs)', areas{a}, slidingWindowSize), 'FontSize', 14);
     grid on;
 
     % Set x-axis ticks and limits in seconds
@@ -240,10 +257,10 @@ for a = areasToTest
     end
 end
 
-sgtitle('Peri-Reach d2 Criticality Analysis', 'FontSize', 16);
+sgtitle(sprintf('Peri-Reach d2 Criticality Analysis (Sliding Window: %gs)', slidingWindowSize), 'FontSize', 16);
 
 % Save plot
-filename = fullfile(paths.dropPath, 'criticality/peri_reach_d2_criticality.png');
+filename = fullfile(paths.dropPath, sprintf('criticality/peri_reach_d2_criticality_win%gs.png', slidingWindowSize));
 exportgraphics(gcf, filename, 'Resolution', 300);
 fprintf('Saved peri-reach plot to: %s\n', filename);
 
