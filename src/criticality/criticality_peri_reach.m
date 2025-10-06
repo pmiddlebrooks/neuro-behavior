@@ -145,13 +145,13 @@ for a = areasToTest
     fprintf('Area %s: %d correct, %d error valid reaches\n', areas{a}, validCorr, validErr);
 end
 
-%% ==============================================     Plotting Results     ==============================================
+ %% ==============================================     Plotting Results     ==============================================
 
 % Toggle plotting error reaches (single traces and mean)
 plotErrors = true;
 
 % Create peri-reach plots for each area
-figure(302); clf;
+figure(300 + slidingWindowSize); clf;
 set(gcf, 'Position', [100, 100, 1200, 800]);
 
 % Use tight_subplot for layout
