@@ -20,11 +20,21 @@ makePlots = true;            % create comparison plots
 runCorrelation = true;       % compute correlation matrices
 
 % Sliding window size
-slidingWindowSize = 30;        % For d2, use a small window to try to optimize temporal resolution
-slidingWindowSize = 60;        % For d2, use a small window to try to optimize temporal resolution
+slidingWindowSize = 3;        % For d2, use a small window to try to optimize temporal resolution
+% slidingWindowSize = 60;        % For d2, use a small window to try to optimize temporal resolution
+
+% Determine save directory based on loaded data file name
+% reachDataFile = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
+
+[~, dataBaseName, ~] = fileparts(reachDataFile);
+saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
+if ~exist(saveDir, 'dir')
+    mkdir(saveDir);
+end
 
 % Load existing results if requested
-resultsPathD2MrBr = fullfile(paths.dropPath, sprintf('criticality/criticality_compare_ar_win%d.mat', slidingWindowSize));
+resultsPathD2MrBr = fullfile(saveDir, sprintf('criticality_compare_ar_win%d.mat', slidingWindowSize));
 results = struct();
 if loadExistingResults
     if exist(resultsPathD2MrBr, 'file')
@@ -52,7 +62,7 @@ idListNat = {idM23, idM56, idDS, idVS};
 %
 % Mark's reach data
 % dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
-dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
+dataR = load(reachDataFile);
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
 % Get data until 1 sec after the last reach ending.
@@ -443,7 +453,7 @@ results.params.nShuffles = nShuffles;
 results.params.pOrder = pOrder;
 results.params.critType = critType;
 
-% Save to file
+% Save to file (in data-specific folder)
 save(resultsPathD2MrBr, 'results');
 
 fprintf('\nD2/MrBr analysis complete! Results saved to %s\n', resultsPathD2MrBr);

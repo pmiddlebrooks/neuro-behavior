@@ -29,8 +29,16 @@ runCorrelation = false;       % compute correlation matrices
 slidingWindowSize = 2 * 60; % seconds - user specified
 avStepSize = 20; %round(.5 * 60); % seconds - user specified
 
+% Determine save directory based on loaded data file name
+reachDataFile = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+[~, dataBaseName, ~] = fileparts(reachDataFile);
+saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
+if ~exist(saveDir, 'dir')
+    mkdir(saveDir);
+end
+
 % Load existing results if requested
-resultsPathAvalanche = fullfile(paths.dropPath, sprintf('criticality/criticality_compare_av_win%d_step%d.mat', slidingWindowSize, avStepSize));
+resultsPathAvalanche = fullfile(saveDir, sprintf('criticality_compare_av_win%d_step%d.mat', slidingWindowSize, avStepSize));
 results = struct();
 if loadExistingResults
     if exist(resultsPathAvalanche, 'file')
@@ -58,7 +66,7 @@ idListNat = {idM23, idM56, idDS, idVS};
 %
 % Mark's reach data
 % dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
-dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
+dataR = load(reachDataFile);
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
 % Get data until 1 sec after the last reach ending.
@@ -423,7 +431,7 @@ results.params.nShuffles = nShuffles;
 results.params.dccStepSize = avStepSize;
 results.params.slidingWindowSize = slidingWindowSize;
 
-% Save to file
+% Save to file (in data-specific folder)
 save(resultsPathAvalanche, 'results');
 
 fprintf('\nAvalanche analysis complete! Results saved to %s\n', resultsPathAvalanche);
