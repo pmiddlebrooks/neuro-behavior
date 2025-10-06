@@ -22,7 +22,7 @@ get_standard_data
 
 binSizeBhv = opts.frameSize;
 %% Load existing results if requested
-slidingWindowSize = 3;% For d2, use a small window to try to optimize temporal resolution
+slidingWindowSize = 1;% For d2, use a small window to try to optimize temporal resolution
 
 %%
 paths = get_paths;
@@ -35,7 +35,7 @@ results = results.results;
 
 % Extract areas and parameters
 areas = results.areas;
-areasToTest = 1:4;
+areasToTest = 2:4;
 optimalBinSize = results.naturalistic.optimalBinSize;
 d2Nat = results.naturalistic.d2;
 startS = results.naturalistic.startS;
@@ -198,7 +198,7 @@ end
 plotIndividualTraces = false;
 
 % Create peri-behavior plots for each area
-figure(400); clf;
+figure(400 + slidingWindowSize); clf;
 set(gcf, 'Position', [100, 100, 1400, 1000]);
 
 % Use tight_subplot for layout
