@@ -10,6 +10,12 @@
 %   makePlots           - generate plots if true
 %   runCorrelation      - compute correlation matrices if true
 
+
+%%
+% Sliding window and step size
+slidingWindowSize = 2 * 60; % seconds - user specified
+avStepSize = 20; %round(.5 * 60); % seconds - user specified
+
 %%
 opts = neuro_behavior_options;
 opts.minActTime = .16;
@@ -25,9 +31,6 @@ updateDccKappa = true;        % run dcc/kappa analyses
 makePlots = true;             % create comparison plots
 runCorrelation = false;       % compute correlation matrices
 
-% Sliding window and step size
-slidingWindowSize = 2 * 60; % seconds - user specified
-avStepSize = 20; %round(.5 * 60); % seconds - user specified
 
 % Determine save directory based on loaded data file name
 reachDataFile = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
