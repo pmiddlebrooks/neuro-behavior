@@ -1,5 +1,6 @@
-#include <SPI.h>
-#include <SD.h>
+// Include the SPI and SD libraries for SD card communication and file handling
+#include <SPI.h>   // Serial Peripheral Interface library for communication with SD card
+#include <SD.h>    // SD card library for reading/writing files
 
 // Pins
 const int SOLENOID_PORT = 13;

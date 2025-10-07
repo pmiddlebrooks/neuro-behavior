@@ -12,16 +12,26 @@
 %   meanD2PeriReach - mean d2 values across all reaches for each area
 
 %% Load existing results if requested
-slidingWindowSize = 30;% For d2, use a small window to try to optimize temporal resolution
+slidingWindowSize = 3;% For d2, use a small window to try to optimize temporal resolution
 
+% User-specified reach data file (should match the one used in criticality_reach_ar.m)
+reachDataFile = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
 
 %%
 paths = get_paths;
-resultsPathWin = fullfile(paths.dropPath, sprintf('criticality/criticality_compare_ar_win%g.mat', slidingWindowSize));
+
+% Determine save directory based on loaded data file name (same as criticality_reach_ar.m)
+[~, dataBaseName, ~] = fileparts(reachDataFile);
+saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
+resultsPathWin = fullfile(saveDir, sprintf('criticality_reach_ar_win%d.mat', slidingWindowSize));
 
 % Load criticality analysis results
-fprintf('Loading criticality analysis results...\n');
-% results = load(fullfile(paths.dropPath, 'criticality/criticality_compare_results.mat'));
+fprintf('Loading criticality analysis results from: %s\n', resultsPathWin);
+if ~exist(resultsPathWin, 'file')
+    error('Results file not found: %s\nMake sure criticality_reach_ar.m has been run for this dataset and window size.', resultsPathWin);
+end
 results = load(resultsPathWin);
 results = results.results;
 
@@ -34,8 +44,8 @@ mrBrRea = results.reach.mrBr;
 startS = results.reach.startS;
 
 %% Load reach behavioral data
-fprintf('Loading reach behavioral data...\n');
-dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
+fprintf('Loading reach behavioral data from: %s\n', reachDataFile);
+dataR = load(reachDataFile);
 
 reachStart = dataR.R(:,1); % In seconds
 reachStop = dataR.R(:,2);
@@ -60,7 +70,14 @@ reachAmp = dataR.R(:,3); % Amplitude of each reach (distance from 0)
  %     -  2   - block 2 Rew
  %     - 20 - block 2 error above
 
-reachClass = dataR.BlockWithErrors(:,4);
+% Use BlockWithErrors(:,4) if it exists, otherwise use Block(:,5)
+if isfield(dataR, 'BlockWithErrors') && size(dataR.BlockWithErrors,2) >= 4
+    reachClass = dataR.BlockWithErrors(:,4);
+elseif isfield(dataR, 'Block') && size(dataR.Block,2) >= 5
+    reachClass = dataR.Block(:,5);
+else
+    error('Neither BlockWithErrors(:,4) nor Block(:,5) found in dataR.');
+end
 reachStartCorr1 = reachStart(ismember(reachClass, 1));
 reachStartCorr2 = reachStart(ismember(reachClass, 2));
 reachStartErr1 = reachStart(ismember(reachClass, [-10 10]));
@@ -414,8 +431,8 @@ end
 
 sgtitle(sprintf('Peri-Reach d2 (top) and mrBr (bottom) (Sliding Window: %gs)', slidingWindowSize), 'FontSize', 16);
 
-% Save combined figure
-filename = fullfile(paths.dropPath, sprintf('criticality/peri_reach_d2_mrbr_win%gs.png', slidingWindowSize));
+% Save combined figure (in same data-specific folder)
+filename = fullfile(saveDir, sprintf('peri_reach_d2_mrbr_win%gs.png', slidingWindowSize));
 exportgraphics(gcf, filename, 'Resolution', 300);
 fprintf('Saved peri-reach d2+mrBr plot to: %s\n', filename);
 
