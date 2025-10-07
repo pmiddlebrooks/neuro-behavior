@@ -9,6 +9,11 @@
 %   runCorrelation     - compute correlation matrices if true
 
 %%
+% Sliding window and step size
+slidingWindowSize = 2 * 60; % seconds - user specified
+avStepSize = 20; %round(.5 * 60); % seconds - user specified
+
+%%
 paths = get_paths;
 
 % =============================    Update/Run Flags    =============================
@@ -24,9 +29,6 @@ areasToTest = 1:4;
 opts.collectStart = 0 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
 
-% Sliding window and step size
-slidingWindowSize = 2 * 60; % seconds - user specified
-avStepSize = 20; %round(.5 * 60); % seconds - user specified
 
 %% Load existing results if requested
 resultsPathAvalanche = fullfile(paths.dropPath, sprintf('criticality/criticality_compare_av_win%d_step%d.mat', slidingWindowSize, avStepSize));
