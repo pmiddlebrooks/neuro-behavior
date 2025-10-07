@@ -54,6 +54,7 @@ getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 0 * 60; % seconds
 opts.collectFor = 45 * 60; % seconds
+opts.minFiringRate = .05;
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
