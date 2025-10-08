@@ -17,7 +17,7 @@ slidingWindowSize = 3;% For d2, use a small window to try to optimize temporal r
 % User-specified reach data file (should match the one used in criticality_reach_ar.m)
 reachDataFile = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
 % reachDataFile = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
 
 %%
 paths = get_paths;
@@ -73,15 +73,21 @@ reachAmp = dataR.R(:,3); % Amplitude of each reach (distance from 0)
 % Use BlockWithErrors(:,4) if it exists, otherwise use Block(:,5)
 if isfield(dataR, 'BlockWithErrors') && size(dataR.BlockWithErrors,2) >= 4
     reachClass = dataR.BlockWithErrors(:,4);
+    reachClass = dataR.BlockWithErrors(:,3);
 elseif isfield(dataR, 'Block') && size(dataR.Block,2) >= 5
     reachClass = dataR.Block(:,5);
+    reachClass = dataR.Block(:,3);
 else
     error('Neither BlockWithErrors(:,4) nor Block(:,5) found in dataR.');
 end
-reachStartCorr1 = reachStart(ismember(reachClass, 1));
-reachStartCorr2 = reachStart(ismember(reachClass, 2));
-reachStartErr1 = reachStart(ismember(reachClass, [-10 10]));
-reachStartErr2 = reachStart(ismember(reachClass, [-20 20]));
+% reachStartCorr1 = reachStart(ismember(reachClass, 1));
+% reachStartCorr2 = reachStart(ismember(reachClass, 2));
+% reachStartErr1 = reachStart(ismember(reachClass, [-10 10]));
+% reachStartErr2 = reachStart(ismember(reachClass, [-20 20]));
+reachStartCorr1 = reachStart(ismember(reachClass, 2));
+reachStartCorr2 = reachStart(ismember(reachClass, 4));
+reachStartErr1 = reachStart(ismember(reachClass, [1]));
+reachStartErr2 = reachStart(ismember(reachClass, [3]));
 % % Convert reach start times to frame units for each area
 % reachStartFrame = cell(1, length(areas));
 % for a = areasToTest
@@ -92,10 +98,10 @@ reachStartErr2 = reachStart(ismember(reachClass, [-20 20]));
 %% ==============================================     Peri-Reach Analysis     ==============================================
 
 % Define window parameters
-windowDurationSec = 60; % 3-second window around each reach
+windowDurationSec = 40; % 3-second window around each reach
 windowDurationFrames = cell(1, length(areas));
 for a = areasToTest
-    windowDurationFrames{a} = round(windowDurationSec / optimalBinSize(a));
+    windowDurationFrames{a} = ceil(windowDurationSec / optimalBinSize(a));
 end
 
 % Initialize storage for peri-reach d2/mrBr values (separate correct/error by block)
@@ -255,11 +261,19 @@ colors = {'k', [0 0 .6], [.6 0 0], [0 0.6 0]};
 % Compute global y-limits across areas (use mean traces; include errors if enabled)
 allMeanVals = [];
 for a = areasToTest
-    if ~isempty(meanD2PeriReachCorr{a})
-        allMeanVals = [allMeanVals; meanD2PeriReachCorr{a}(:)]; %#ok<AGROW>
+    % Block 1 (correct and error)
+    if ~isempty(meanD2PeriReachCorr1{a})
+        allMeanVals = [allMeanVals; meanD2PeriReachCorr1{a}(:)]; %#ok<AGROW>
     end
-    if plotErrors && ~isempty(meanD2PeriReachErr{a})
-        allMeanVals = [allMeanVals; meanD2PeriReachErr{a}(:)]; %#ok<AGROW>
+    if plotErrors && ~isempty(meanD2PeriReachErr1{a})
+        allMeanVals = [allMeanVals; meanD2PeriReachErr1{a}(:)]; %#ok<AGROW>
+    end
+    % Block 2 (correct and error)
+    if ~isempty(meanD2PeriReachCorr2{a})
+        allMeanVals = [allMeanVals; meanD2PeriReachCorr2{a}(:)]; %#ok<AGROW>
+    end
+    if plotErrors && ~isempty(meanD2PeriReachErr2{a})
+        allMeanVals = [allMeanVals; meanD2PeriReachErr2{a}(:)]; %#ok<AGROW>
     end
 end
 globalYMin = nanmin(allMeanVals);
@@ -414,7 +428,7 @@ for idx = 1:length(areasToTest)
     xTicks = ceil(xMin):floor(xMax);
     if isempty(xTicks), xTicks = linspace(xMin, xMax, 5); end
     xticks(xTicks); xticklabels(string(xTicks));
-    ylim('auto');
+    ylim([0 1.05]);
     % Reference line at mrBr = 1
     yline(1, 'k:', 'LineWidth', 1.5);
     

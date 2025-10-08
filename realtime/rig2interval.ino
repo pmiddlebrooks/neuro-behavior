@@ -1,6 +1,5 @@
-// Include the SPI and SD libraries for SD card communication and file handling
-#include <SPI.h>   // Serial Peripheral Interface library for communication with SD card
-#include <SD.h>    // SD card library for reading/writing files
+#include <SPI.h>
+#include <SD.h>
 
 // Pins
 const int SOLENOID_PORT = 13;
@@ -9,10 +8,10 @@ const int LED_PORT = 10;         // reward cue LED
 
 // Timing (ms)
 const int SOLENOID_ON_TIME = 50;       // duration solenoid stays open
-const int SOLENOID_OFF_TIME = 500;     // spacing between clicks in a burst
+const int SOLENOID_OFF_TIME = 300;     // spacing between clicks in a burst
 const int SOLENOID_REPEATS = 2;        // additional clicks after first
-const unsigned long INTERTRIAL_INTERVAL = 3 * 1000; // time to wait between trials
-const unsigned long REWARD_WINDOW = 5 * 1000;       // LED on window to wait for port entry
+const unsigned long INTERTRIAL_INTERVAL = 8 * 1000; // time to wait between trials
+const unsigned long REWARD_WINDOW = 3 * 1000;       // LED on window to wait for port entry
 
 // SD card
 const int chipSelect = 53;
@@ -105,10 +104,9 @@ void loop() {
 
     // Beam broken (mouse enters port)
     if (beamState) {
-      // If beam broken during ITI, reset ITI timer immediately
+      // If beam broken during ITI, mark that we need to restart ITI when beam is unbroken
       if (inITI) {
-        itiStartTime = millis();
-        writeState("ITI_RESET_BEAM");
+        writeState("BEAM_BROKEN_DURING_ITI");
       }
       // If beam broken during trial (LED on), trigger burst
       else if (trialReady) {
@@ -131,7 +129,11 @@ void loop() {
       else if (inBurst && !givingReward) {
         writeState("BEAM_LEAVE_DURING_BURST");
       }
-      // Removed ITI reset on unbroken; resets now happen on each break during ITI
+      // If beam was broken during ITI and now unbroken, restart ITI
+      else if (inITI) {
+        itiStartTime = millis();
+        writeState("ITI_RESTART_AFTER_BEAM_UNBROKEN");
+      }
     }
   }
 

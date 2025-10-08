@@ -86,7 +86,7 @@ end
 windowDurationSec = 40; % seconds around each behavior onset
 windowDurationFrames = cell(1, length(areas));
 for a = areasToTest
-    windowDurationFrames{a} = round(windowDurationSec / optimalBinSize(a));
+    windowDurationFrames{a} = ceil(windowDurationSec / optimalBinSize(a));
 end
 
 % Initialize storage for peri-behavior d2 values (separate by behavior set)

@@ -18,29 +18,45 @@ reachDataFiles = cell(1, numel(matFiles));
 for i = 1:numel(matFiles)
     reachDataFiles{i} = fullfile(reachDir, matFiles(i).name);
 end
-reachDataFiles = cell(1);
-reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+% reachDataFiles = cell(1);
+% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
 for fileIdx = 1:numel(reachDataFiles)
-    try
-        run_reach_analysis_for_file(reachDataFiles{fileIdx}, slidingWindowSize, makePlots, paths);
-    catch ME
-        fprintf('Skipping %s due to error: %s\n', reachDataFiles{fileIdx}, ME.message);
-    end
+    % try
+    run_reach_analysis_for_file(reachDataFiles{fileIdx}, slidingWindowSize, makePlots, paths);
+    % catch ME
+    % fprintf('Skipping %s due to error: %s\n', reachDataFiles{fileIdx}, ME.message);
+    % end
 end
 
 return
 
+
+
+
+
+
+
+
+
+
+
+
 function run_reach_analysis_for_file(reachDataFile, slidingWindowSize, makePlots, paths)
+
+minSpikesPerBin = 3;
+maxSpikesPerBin = 50;
+minBinsPerWindow = 1000;
 
 [~, dataBaseName, ~] = fileparts(reachDataFile);
 saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
 if ~exist(saveDir, 'dir'); mkdir(saveDir); end
 
 resultsPath = fullfile(saveDir, sprintf('criticality_reach_ar_win%d.mat', slidingWindowSize));
-if exist(resultsPath, 'file')
-    fprintf('Results already exist for %s, skipping.\n', dataBaseName);
-    return
-end
+% if exist(resultsPath, 'file')
+%     fprintf('Results already exist for %s, skipping.\n', dataBaseName);
+%     return
+% end
 
 dataR = load(reachDataFile);
 
@@ -48,8 +64,9 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = round((dataR.R(1,1) - 10) / 1000);
-opts.collectFor = round((dataR.R(end,1) + 10 - opts.collectStart) / 1000);
-opts.minFiringRate = .05;
+opts.collectStart = 0;
+opts.collectFor = round(dataR.R(end,1) + 5000) / 1000;
+opts.minFiringRate = .1;
 opts.maxFiringRate = 70;
 
 [dataMatR, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
@@ -61,12 +78,17 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 idListRea = {idM23R, idM56R, idDSR, idVSR};
 areasToTest = 1:4;
 
-pcaFlag = 0; pcaFirstFlag = 1; nDim = 4;
-thresholdFlag = 1; thresholdPct = 0.75;
+pcaFlag = 0;
+pcaFirstFlag = 1;
+nDim = 4;
+thresholdFlag = 1;
+thresholdPct = 0.75;
 candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15 .2];
 candidateWindowSizes = [30, 45, 60, 90, 120];
 windowSizes = repmat(slidingWindowSize, 1, 4);
-pOrder = 10; critType = 2; d2StepSize = .02;
+pOrder = 10;
+critType = 2;
+d2StepSize = .02;
 
 reconstructedDataMatRea = cell(1, length(areas));
 for a = areasToTest
@@ -84,14 +106,17 @@ optimalBinSizeRea = zeros(1, length(areas));
 optimalWindowSizeRea = zeros(1, length(areas));
 for a = areasToTest
     thisDataMat = reconstructedDataMatRea{a};
-    [optimalBinSizeRea(a), optimalWindowSizeRea(a)] = find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, 3, 50, 1000);
+    [optimalBinSizeRea(a), optimalWindowSizeRea(a)] = ...
+        find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+    fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSizeRea(a), optimalWindowSizeRea(a));
 end
 
-d2StepSizeRea = optimalBinSizeRea; d2WindowSizeRea = windowSizes;
+d2StepSizeRea = optimalBinSizeRea;
+d2WindowSizeRea = windowSizes;
 validMask = isfinite(optimalBinSizeRea) & (optimalBinSizeRea > 0);
 areasToTest = areasToTest(validMask);
 
-mrBrRea = cell(1, length(areas)); d2Rea = cell(1, length(areas)); startSRea = cell(1, length(areas));
+[mrBrRea, d2Rea, startSRea] = deal(cell(1, length(areas)));
 for a = areasToTest
     fprintf('\nProcessing area %s (Reach)...\n', areas{a}); tic;
     aID = idListRea{a};
@@ -111,8 +136,10 @@ for a = areasToTest
         startIdx = (w - 1) * stepSamples + 1; endIdx = startIdx + winSamples - 1;
         startSRea{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSizeRea(a);
         wPopActivity = aDataMatRea(startIdx:endIdx);
-        result = branching_ratio_mr_estimation(wPopActivity);
-        mrBrRea{a}(w) = result.branching_ratio;
+        if length(wPopActivity) >= 50  % data length needs to be long enough to estimate mrBR (see maxSlopes in branching_ration_mr_estimation.m)
+            result = branching_ratio_mr_estimation(wPopActivity);
+            mrBrRea{a}(w) = result.branching_ratio;
+        end
         [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
         d2Rea{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
     end
