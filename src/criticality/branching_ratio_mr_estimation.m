@@ -26,7 +26,9 @@ function result = branching_ratio_mr_estimation(data, maxSlopes)
     end
     
     if length(data) < maxSlopes + 10
-        error('Input data too short for maxSlopes = %d (need at least %d samples)', maxSlopes, maxSlopes + 10);
+        warning('Input data too short for maxSlopes = %d (need at least %d samples)', maxSlopes, maxSlopes + 10);
+    result.branching_ratio = [];
+    return
     end
     
     % Compute regression slopes r_k
