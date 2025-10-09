@@ -15,9 +15,15 @@
 slidingWindowSize = 4;% For d2, use a small window to try to optimize temporal resolution
 
 % User-specified reach data file (should match the one used in criticality_reach_ar.m)
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_11-May-2023 17_31_00_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
 reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
 % reachDataFile = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
 
 areasToTest = 1:4;
 
@@ -27,13 +33,16 @@ plotErrors = true;
 plotD2 = true;     % plot d2 panels
 plotMrBr = false;   % plot mrBr panels (only if d2 exists for area)
 
-%%
+%
 paths = get_paths;
 
 % Determine save directory based on loaded data file name (same as criticality_reach_ar.m)
 [~, dataBaseName, ~] = fileparts(reachDataFile);
 saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
 resultsPathWin = fullfile(saveDir, sprintf('criticality_reach_ar_win%d.mat', slidingWindowSize));
+
+% Extract first 10 characters of filename for titles and file names
+filePrefix = dataBaseName(1:min(10, length(dataBaseName)));
 
 % Load criticality analysis results
 fprintf('Loading criticality analysis results from: %s\n', resultsPathWin);
@@ -50,7 +59,7 @@ d2Rea = results.reach.d2;
 mrBrRea = results.reach.mrBr;
 startS = results.reach.startS;
 
-%% Load reach behavioral data
+% Load reach behavioral data
 fprintf('Loading reach behavioral data from: %s\n', reachDataFile);
 dataR = load(reachDataFile);
 
@@ -78,15 +87,15 @@ reachAmp = dataR.R(:,3); % Amplitude of each reach (distance from 0)
  %     - 20 - block 2 error above
 
 % Use BlockWithErrors(:,4) if it exists, otherwise use Block(:,5)
-if isfield(dataR, 'BlockWithErrors') && size(dataR.BlockWithErrors,2) >= 4
-    reachClass = dataR.BlockWithErrors(:,4);
-    reachClass = dataR.BlockWithErrors(:,3);
-elseif isfield(dataR, 'Block') && size(dataR.Block,2) >= 5
+% if isfield(dataR, 'BlockWithErrors') && size(dataR.BlockWithErrors,2) >= 4
+%     reachClass = dataR.BlockWithErrors(:,4);
+%     reachClass = dataR.BlockWithErrors(:,3);
+% elseif isfield(dataR, 'Block') && size(dataR.Block,2) >= 5
     reachClass = dataR.Block(:,5);
     reachClass = dataR.Block(:,3);
-else
-    error('Neither BlockWithErrors(:,4) nor Block(:,5) found in dataR.');
-end
+% else
+%     error('Neither BlockWithErrors(:,4) nor Block(:,5) found in dataR.');
+% end
 % reachStartCorr1 = reachStart(ismember(reachClass, 1));
 % reachStartCorr2 = reachStart(ismember(reachClass, 2));
 % reachStartErr1 = reachStart(ismember(reachClass, [-10 10]));
@@ -102,7 +111,7 @@ reachStartErr2 = reachStart(ismember(reachClass, [3]));
 %     reachStartFrame{a} = round(reachStart ./ optimalBinSize(a));
 % end
 
-%% ==============================================     Peri-Reach Analysis     ==============================================
+% ==============================================     Peri-Reach Analysis     ==============================================
 
 % Define window parameters
 windowDurationSec = 40; % 3-second window around each reach
@@ -414,7 +423,7 @@ for idx = 1:length(areasToTest)
     % Formatting (applies for both data-present and blank cases)
     xlabel('Time relative to reach onset (s)', 'FontSize', 12);
     ylabel('d2 Criticality', 'FontSize', 12);
-    title(sprintf('%s - Peri-Reach d2 Criticality (Window: %gs)', areas{a}, slidingWindowSize), 'FontSize', 14);
+    title(sprintf('%s - %s - Peri-Reach d2 Criticality (Window: %gs)', filePrefix, areas{a}, slidingWindowSize), 'FontSize', 14);
     grid on;
     xlim([xMin xMax]);
     xTicks = ceil(xMin):floor(xMax);
@@ -500,7 +509,7 @@ for idx = 1:length(areasToTest)
     % Formatting (applies for both data-present and blank cases)
     xlabel('Time relative to reach onset (s)', 'FontSize', 12);
     ylabel('MR Branching Ratio', 'FontSize', 12);
-    title(sprintf('%s - Peri-Reach mrBr (Window: %gs)', areas{a}, slidingWindowSize), 'FontSize', 14);
+    title(sprintf('%s - %s - Peri-Reach mrBr (Window: %gs)', filePrefix, areas{a}, slidingWindowSize), 'FontSize', 14);
     grid on;
     xlim([xMin xMax]);
     xTicks = ceil(xMin):floor(xMax); if isempty(xTicks), xTicks = linspace(xMin, xMax, 5); end
@@ -518,10 +527,10 @@ for idx = 1:length(areasToTest)
     end
 end
 
-sgtitle(sprintf('Peri-Reach d2 (top) and mrBr (bottom) (Sliding Window: %gs)', slidingWindowSize), 'FontSize', 16);
+sgtitle(sprintf('%s - Peri-Reach d2 (top) and mrBr (bottom) (Sliding Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
 
 % Save combined figure (in same data-specific folder)
-filename = fullfile(saveDir, sprintf('peri_reach_d2_mrbr_win%gs.png', slidingWindowSize));
+filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_mrbr_win%gs.png', filePrefix, slidingWindowSize));
 exportgraphics(gcf, filename, 'Resolution', 300);
 fprintf('Saved peri-reach d2+mrBr plot to: %s\n', filename);
 
