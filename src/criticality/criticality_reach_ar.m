@@ -4,12 +4,13 @@
 
 paths = get_paths;
 
+
+% Sliding window size (seconds)
+slidingWindowSize = 4;
+
 % Flags
 loadExistingResults = false;
 makePlots = true;
-
-% Sliding window size (seconds)
-slidingWindowSize = 3;
 
 % Discover all reach data files and process each
 reachDir = fullfile(paths.dropPath, 'reach_data');
@@ -44,9 +45,18 @@ return
 
 function run_reach_analysis_for_file(reachDataFile, slidingWindowSize, makePlots, paths)
 
+% Flags
+analyzeD2 = true;      % compute d2
+analyzeMrBr = false;    % compute mrBr
+
+minSegmentLength = 50;
+
 minSpikesPerBin = 3;
 maxSpikesPerBin = 50;
 minBinsPerWindow = 1000;
+
+areasToTest = 1:4;
+
 
 [~, dataBaseName, ~] = fileparts(reachDataFile);
 saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
@@ -76,7 +86,6 @@ idM56R = find(strcmp(areaLabels, 'M56'));
 idDSR = find(strcmp(areaLabels, 'DS'));
 idVSR = find(strcmp(areaLabels, 'VS'));
 idListRea = {idM23R, idM56R, idDSR, idVSR};
-areasToTest = 1:4;
 
 pcaFlag = 0;
 pcaFirstFlag = 1;
@@ -122,6 +131,13 @@ for a = areasToTest
     aID = idListRea{a};
     stepSamples = round(d2StepSizeRea(a) / optimalBinSizeRea(a));
     winSamples = round(d2WindowSizeRea(a) / optimalBinSizeRea(a));
+
+    % Skip this area if there aren't enough samples
+    if winSamples < minSegmentLength
+        fprintf('\nSkipping: Not enough data in %s (Reach)...\n', areas{a});
+        continue
+    end
+
     aDataMatRea = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSizeRea(a));
     numTimePoints = size(aDataMatRea, 1);
     numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
@@ -136,12 +152,18 @@ for a = areasToTest
         startIdx = (w - 1) * stepSamples + 1; endIdx = startIdx + winSamples - 1;
         startSRea{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSizeRea(a);
         wPopActivity = aDataMatRea(startIdx:endIdx);
-        if length(wPopActivity) >= 50  % data length needs to be long enough to estimate mrBR (see maxSlopes in branching_ration_mr_estimation.m)
+        if analyzeMrBr
             result = branching_ratio_mr_estimation(wPopActivity);
             mrBrRea{a}(w) = result.branching_ratio;
+        else
+            mrBrRea{a}(w) = nan;
         end
-        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
-        d2Rea{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+        if analyzeD2
+            [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+            d2Rea{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+        else
+            d2Rea{a}(w) = nan;
+        end
     end
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
 end
@@ -152,13 +174,38 @@ results.reach.d2StepSize = d2StepSizeRea; results.reach.d2WindowSize = d2WindowS
 save(resultsPath, 'results'); fprintf('Saved reach-only d2/mrBr to %s\n', resultsPath);
 
 if makePlots
-    figure(900); clf; set(gcf, 'Position', [100 100 1400 400]);
+    % Detect monitors and size figure to full screen (prefer second monitor if present)
+    monitorPositions = get(0, 'MonitorPositions');
+    monitorOne = monitorPositions(1, :);
+    monitorTwo = monitorPositions(size(monitorPositions, 1), :);
+    if size(monitorPositions, 1) >= 2
+        targetPos = monitorTwo;
+    else
+        targetPos = monitorOne;
+    end
+    figure(900); clf;
+    set(gcf, 'Units', 'pixels');
+    set(gcf, 'Position', targetPos);
+    % drawnow; % let graphics settle before adding axes
     numRows = length(areasToTest);
     ha = tight_subplot(numRows, 1, [0.08 0.04], [0.15 0.1], [0.08 0.04]);
     for idx = 1:length(areasToTest)
-        a = areasToTest(idx); axes(ha(idx)); hold on;
-        yyaxis left; plot(startSRea{a}, d2Rea{a}, '-', 'Color', [0 0 1], 'LineWidth', 2); ylabel('d2', 'Color', [0 0 1]); ylim('auto');
-        yyaxis right; plot(startSRea{a}, mrBrRea{a}, '-', 'Color', [0 0 0], 'LineWidth', 2); yline(1, 'k:', 'LineWidth', 1.5); ylabel('mrBr', 'Color', [0 0 0]); ylim('auto');
+        a = areasToTest(idx); 
+        axes(ha(idx)); hold on;
+        if analyzeD2
+            yyaxis left; 
+            plot(startSRea{a}, d2Rea{a}, '-', 'Color', [0 0 1], 'LineWidth', 2); 
+            ylabel('d2', 'Color', [0 0 1]); ylim('auto');
+        end
+        if analyzeMrBr
+            yyaxis right; 
+            plot(startSRea{a}, mrBrRea{a}, '-', 'Color', [0 0 0], 'LineWidth', 2); 
+            yline(1, 'k:', 'LineWidth', 1.5); 
+            ylabel('mrBr', 'Color', [0 0 0]); ylim('auto');
+        end
+        if ~isempty(startSRea{a})
+        xlim([startSRea{a}(1) startSRea{a}(end)])
+        end
         title(sprintf('%s - d2 (blue) & mrBr (black)', areas{a})); xlabel('Time (s)'); grid on; set(gca, 'XTickLabelMode', 'auto'); set(gca, 'YTickLabelMode', 'auto');
     end
     sgtitle(sprintf('Reach-only d2 (blue, left) and mrBr (black, right) - win=%gs', slidingWindowSize));

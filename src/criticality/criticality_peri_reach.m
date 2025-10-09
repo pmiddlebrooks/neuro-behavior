@@ -12,12 +12,20 @@
 %   meanD2PeriReach - mean d2 values across all reaches for each area
 
 %% Load existing results if requested
-slidingWindowSize = 3;% For d2, use a small window to try to optimize temporal resolution
+slidingWindowSize = 4;% For d2, use a small window to try to optimize temporal resolution
 
 % User-specified reach data file (should match the one used in criticality_reach_ar.m)
-reachDataFile = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
 % reachDataFile = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
+
+areasToTest = 1:4;
+
+% Toggle plotting error reaches (single traces and mean)
+plotErrors = true;
+% Plotting toggles
+plotD2 = true;     % plot d2 panels
+plotMrBr = false;   % plot mrBr panels (only if d2 exists for area)
 
 %%
 paths = get_paths;
@@ -37,7 +45,6 @@ results = results.results;
 
 % Extract areas and parameters
 areas = results.areas;
-areasToTest = 2:4;
 optimalBinSize = results.reach.optimalBinSize;
 d2Rea = results.reach.d2;
 mrBrRea = results.reach.mrBr;
@@ -123,14 +130,29 @@ meanMrBrPeriReachErr1 = cell(1, length(areas));
 meanMrBrPeriReachErr2 = cell(1, length(areas));
 timeAxisPeriReach = cell(1, length(areas));
 
+% Flags indicating availability of data to analyze/plot per area
+hasD2Area = false(1, length(areas));
+hasMrBrArea = false(1, length(areas));
+
 fprintf('\n=== Peri-Reach d2 Criticality Analysis ===\n');
 
 for a = areasToTest
     fprintf('\nProcessing area %s...\n', areas{a});
 
-    % Get d2 values and time points for this area
+    % Get d2/mrBr values and time points for this area
     d2Values = d2Rea{a};
+    mrValues = mrBrRea{a};
     timePoints = startS{a};
+
+    % Availability flags for this area (plotting will be based only on d2)
+    hasD2Area(a) = ~isempty(d2Values) && any(~isnan(d2Values));
+    hasMrBrArea(a) = ~isempty(mrValues) && any(~isnan(mrValues));
+
+    % If no d2 for this area, skip analyses entirely for this area
+    if ~hasD2Area(a)
+        fprintf('Skipping area %s due to missing d2 data.\n', areas{a});
+        continue
+    end
     % timePoints = startS{a} - results.reach.d2WindowSize(a)/2; % Adjust the times so the leading edge of the analyzed window aligns with reach onset
 
     % Initialize arrays for this area
@@ -160,10 +182,12 @@ for a = areasToTest
         [~, closestIdx] = min(abs(timePoints - reachTime));
         winStart = closestIdx - halfWindow;
         winEnd = closestIdx + halfWindow;
-        if winStart >= 1 && winEnd <= length(d2Values)
-            d2WindowsCorr1{a}(r, :) = d2Values(winStart:winEnd);
-            if ~isempty(mrBrRea{a})
-                mrBrWindowsCorr1{a}(r, :) = mrBrRea{a}(winStart:winEnd);
+        if winStart >= 1 && winEnd <= length(timePoints)
+            if hasD2Area(a)
+                d2WindowsCorr1{a}(r, :) = d2Values(winStart:winEnd);
+            end
+            if hasMrBrArea(a)
+                mrBrWindowsCorr1{a}(r, :) = mrValues(winStart:winEnd);
             end
             validCorr1 = validCorr1 + 1;
         else
@@ -179,10 +203,12 @@ for a = areasToTest
         [~, closestIdx] = min(abs(timePoints - reachTime));
         winStart = closestIdx - halfWindow;
         winEnd = closestIdx + halfWindow;
-        if winStart >= 1 && winEnd <= length(d2Values)
-            d2WindowsCorr2{a}(r, :) = d2Values(winStart:winEnd);
-            if ~isempty(mrBrRea{a})
-                mrBrWindowsCorr2{a}(r, :) = mrBrRea{a}(winStart:winEnd);
+        if winStart >= 1 && winEnd <= length(timePoints)
+            if hasD2Area(a)
+                d2WindowsCorr2{a}(r, :) = d2Values(winStart:winEnd);
+            end
+            if hasMrBrArea(a)
+                mrBrWindowsCorr2{a}(r, :) = mrValues(winStart:winEnd);
             end
             validCorr2 = validCorr2 + 1;
         else
@@ -198,10 +224,12 @@ for a = areasToTest
         [~, closestIdx] = min(abs(timePoints - reachTime));
         winStart = closestIdx - halfWindow;
         winEnd = closestIdx + halfWindow;
-        if winStart >= 1 && winEnd <= length(d2Values)
-            d2WindowsErr1{a}(r, :) = d2Values(winStart:winEnd);
-            if ~isempty(mrBrRea{a})
-                mrBrWindowsErr1{a}(r, :) = mrBrRea{a}(winStart:winEnd);
+        if winStart >= 1 && winEnd <= length(timePoints)
+            if hasD2Area(a)
+                d2WindowsErr1{a}(r, :) = d2Values(winStart:winEnd);
+            end
+            if hasMrBrArea(a)
+                mrBrWindowsErr1{a}(r, :) = mrValues(winStart:winEnd);
             end
             validErr1 = validErr1 + 1;
         else
@@ -217,10 +245,12 @@ for a = areasToTest
         [~, closestIdx] = min(abs(timePoints - reachTime));
         winStart = closestIdx - halfWindow;
         winEnd = closestIdx + halfWindow;
-        if winStart >= 1 && winEnd <= length(d2Values)
-            d2WindowsErr2{a}(r, :) = d2Values(winStart:winEnd);
-            if ~isempty(mrBrRea{a})
-                mrBrWindowsErr2{a}(r, :) = mrBrRea{a}(winStart:winEnd);
+        if winStart >= 1 && winEnd <= length(timePoints)
+            if hasD2Area(a)
+                d2WindowsErr2{a}(r, :) = d2Values(winStart:winEnd);
+            end
+            if hasMrBrArea(a)
+                mrBrWindowsErr2{a}(r, :) = mrValues(winStart:winEnd);
             end
             validErr2 = validErr2 + 1;
         else
@@ -229,27 +259,37 @@ for a = areasToTest
         end
     end
 
-    % Calculate mean d2/mrBr values across all valid reaches
+    % Calculate mean d2/mrBr values across all valid reaches (conditional)
+    % d2 means (exists by guard above)
     meanD2PeriReachCorr1{a} = nanmean(d2WindowsCorr1{a}, 1);
     meanD2PeriReachCorr2{a} = nanmean(d2WindowsCorr2{a}, 1);
     meanD2PeriReachErr1{a} = nanmean(d2WindowsErr1{a}, 1);
     meanD2PeriReachErr2{a} = nanmean(d2WindowsErr2{a}, 1);
-    meanMrBrPeriReachCorr1{a} = nanmean(mrBrWindowsCorr1{a}, 1);
-    meanMrBrPeriReachCorr2{a} = nanmean(mrBrWindowsCorr2{a}, 1);
-    meanMrBrPeriReachErr1{a} = nanmean(mrBrWindowsErr1{a}, 1);
-    meanMrBrPeriReachErr2{a} = nanmean(mrBrWindowsErr2{a}, 1);
+
+    % mrBr means (computed only if available; plotted only if d2 exists)
+    if hasMrBrArea(a)
+        meanMrBrPeriReachCorr1{a} = nanmean(mrBrWindowsCorr1{a}, 1);
+        meanMrBrPeriReachCorr2{a} = nanmean(mrBrWindowsCorr2{a}, 1);
+        meanMrBrPeriReachErr1{a} = nanmean(mrBrWindowsErr1{a}, 1);
+        meanMrBrPeriReachErr2{a} = nanmean(mrBrWindowsErr2{a}, 1);
+    end
 
     fprintf('Area %s: Corr B1=%d, Corr B2=%d, Err B1=%d, Err B2=%d valid reaches\n', areas{a}, validCorr1, validCorr2, validErr1, validErr2);
 end
 
 % ==============================================     Plotting Results     ==============================================
 
-% Toggle plotting error reaches (single traces and mean)
-plotErrors = true;
 
 % Create peri-reach plots for each area: 2 (metrics) x numAreas
 figure(300 + slidingWindowSize); clf;
-set(gcf, 'Position', [100, 100, 1400, 700]);
+% Prefer plotting on second screen if available
+monitorPositions = get(0, 'MonitorPositions');
+monitorTwo = monitorPositions(size(monitorPositions, 1), :);
+if size(monitorPositions, 1) >= 2
+    set(gcf, 'Position', monitorTwo);
+else
+    set(gcf, 'Position', monitorPositions(1, :));
+end
 
 % Use tight_subplot for layout with dynamic columns
 numCols = length(areasToTest);
@@ -285,161 +325,196 @@ end
 pad = 0.05 * (globalYMax - globalYMin + eps);
 yLimCommon = [globalYMin - pad, globalYMax + pad];
 
+% Compute global mrBr y-limits across areas (use mean traces; include errors if enabled)
+allMrBrMeanVals = [];
+for a = areasToTest
+    if ~isempty(meanMrBrPeriReachCorr1{a})
+        allMrBrMeanVals = [allMrBrMeanVals; meanMrBrPeriReachCorr1{a}(:)];
+    end
+    if ~isempty(meanMrBrPeriReachCorr2{a})
+        allMrBrMeanVals = [allMrBrMeanVals; meanMrBrPeriReachCorr2{a}(:)];
+    end
+    if plotErrors
+        if ~isempty(meanMrBrPeriReachErr1{a})
+            allMrBrMeanVals = [allMrBrMeanVals; meanMrBrPeriReachErr1{a}(:)];
+        end
+        if ~isempty(meanMrBrPeriReachErr2{a})
+            allMrBrMeanVals = [allMrBrMeanVals; meanMrBrPeriReachErr2{a}(:)];
+        end
+    end
+end
+mrBrYMin = nanmin(allMrBrMeanVals);
+if isempty(mrBrYMin) || isnan(mrBrYMin)
+    mrBrYMin = 0; % fallback
+end
+mrBrYMin = mrBrYMin - 0.05; % minimum minus 0.05
+mrBrYMax = 1.05;            % maximum is 1 plus 0.05
+
 for idx = 1:length(areasToTest)
     a = areasToTest(idx);
     % Top row: d2
     axes(ha(idx));
     hold on;
 
-    % % Plot individual reach windows (all single traces in light gray)
-    % for r = 1:size(d2WindowsCorr{a}, 1)
-    %     if ~all(isnan(d2WindowsCorr{a}(r, :)))
-    %         plot(timeAxisPeriReach{a}, d2WindowsCorr{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
-    %     end
-    % end
-    % if plotErrors
-    %     for r = 1:size(d2WindowsErr{a}, 1)
-    %         if ~all(isnan(d2WindowsErr{a}(r, :)))
-    %             plot(timeAxisPeriReach{a}, d2WindowsErr{a}(r, :), 'Color', [.7 .7 .7], 'LineWidth', 0.5);
-    %         end
-    %     end
-    % end
+    % Determine if d2 data exist for this area (any mean trace non-NaN)
+    hasD2 = (~isempty(meanD2PeriReachCorr1{a}) && any(~isnan(meanD2PeriReachCorr1{a}))) || ...
+            (~isempty(meanD2PeriReachCorr2{a}) && any(~isnan(meanD2PeriReachCorr2{a}))) || ...
+            (plotErrors && ~isempty(meanD2PeriReachErr1{a}) && any(~isnan(meanD2PeriReachErr1{a}))) || ...
+            (plotErrors && ~isempty(meanD2PeriReachErr2{a}) && any(~isnan(meanD2PeriReachErr2{a})));
 
-    % Calculate SEM for mean traces (by block)
-    semCorr1 = nanstd(d2WindowsCorr1{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(d2WindowsCorr1{a}), 2))));
-    semCorr2 = nanstd(d2WindowsCorr2{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(d2WindowsCorr2{a}), 2))));
-    if plotErrors
-        semErr1 = nanstd(d2WindowsErr1{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(d2WindowsErr1{a}), 2))));
-        semErr2 = nanstd(d2WindowsErr2{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(d2WindowsErr2{a}), 2))));
+    % Compute x-limits safely
+    if ~isempty(timeAxisPeriReach{a})
+        xMin = min(timeAxisPeriReach{a});
+        xMax = max(timeAxisPeriReach{a});
+    else
+        xMin = -1; xMax = 1; % fallback
     end
-    
-    % Plot SEM ribbons first (behind the mean lines)
-    baseColor = colorSpecToRGB(colors{a});
-    colCorr1 = baseColor;                                % block 1
-    colCorr2 = min(1, baseColor + 0.4);                  % lighten for block 2
-    fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-         [meanD2PeriReachCorr1{a} + semCorr1, fliplr(meanD2PeriReachCorr1{a} - semCorr1)], ...
-         colCorr1, 'FaceAlpha', 0.35, 'EdgeColor', 'none');
-    fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-         [meanD2PeriReachCorr2{a} + semCorr2, fliplr(meanD2PeriReachCorr2{a} - semCorr2)], ...
-         colCorr2, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
-    
-    if plotErrors
+
+    if plotD2 && hasD2 && hasD2Area(a)
+        % Calculate SEM for mean traces (by block)
+        semCorr1 = nanstd(d2WindowsCorr1{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(d2WindowsCorr1{a}), 2))));
+        semCorr2 = nanstd(d2WindowsCorr2{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(d2WindowsCorr2{a}), 2))));
+        if plotErrors
+            semErr1 = nanstd(d2WindowsErr1{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(d2WindowsErr1{a}), 2))));
+            semErr2 = nanstd(d2WindowsErr2{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(d2WindowsErr2{a}), 2))));
+        end
+
+        % Plot SEM ribbons first (behind the mean lines)
+        baseColor = colorSpecToRGB(colors{a});
+        colCorr1 = baseColor;                                % block 1
+        colCorr2 = min(1, baseColor + 0.4);                  % lighten for block 2
         fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-             [meanD2PeriReachErr1{a} + semErr1, fliplr(meanD2PeriReachErr1{a} - semErr1)], ...
-             colCorr1, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+             [meanD2PeriReachCorr1{a} + semCorr1, fliplr(meanD2PeriReachCorr1{a} - semCorr1)], ...
+             colCorr1, 'FaceAlpha', 0.35, 'EdgeColor', 'none');
         fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-             [meanD2PeriReachErr2{a} + semErr2, fliplr(meanD2PeriReachErr2{a} - semErr2)], ...
-             colCorr2, 'FaceAlpha', 0.1, 'EdgeColor', 'none');
-    end
-    
-    % Plot mean d2 values per block: B1 solid, B2 dash-dot; errors dashed variants
-    hCorr1 = plot(timeAxisPeriReach{a}, meanD2PeriReachCorr1{a}, 'Color', colCorr1, 'LineWidth', 3, 'LineStyle', '-');
-    hCorr2 = plot(timeAxisPeriReach{a}, meanD2PeriReachCorr2{a}, 'Color', colCorr2, 'LineWidth', 3, 'LineStyle', '-');
-    if plotErrors
-        hErr1 = plot(timeAxisPeriReach{a}, meanD2PeriReachErr1{a}, 'Color', colCorr1, 'LineWidth', 2, 'LineStyle', '--');
-        hErr2 = plot(timeAxisPeriReach{a}, meanD2PeriReachErr2{a}, 'Color', colCorr2, 'LineWidth', 2, 'LineStyle', '--');
+             [meanD2PeriReachCorr2{a} + semCorr2, fliplr(meanD2PeriReachCorr2{a} - semCorr2)], ...
+             colCorr2, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+
+        if plotErrors
+            fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
+                 [meanD2PeriReachErr1{a} + semErr1, fliplr(meanD2PeriReachErr1{a} - semErr1)], ...
+                 colCorr1, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+            fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
+                 [meanD2PeriReachErr2{a} + semErr2, fliplr(meanD2PeriReachErr2{a} - semErr2)], ...
+                 colCorr2, 'FaceAlpha', 0.1, 'EdgeColor', 'none');
+        end
+
+        % Plot mean d2 values per block
+        hCorr1 = plot(timeAxisPeriReach{a}, meanD2PeriReachCorr1{a}, 'Color', colCorr1, 'LineWidth', 3, 'LineStyle', '-');
+        hCorr2 = plot(timeAxisPeriReach{a}, meanD2PeriReachCorr2{a}, 'Color', colCorr2, 'LineWidth', 3, 'LineStyle', '-');
+        if plotErrors
+            hErr1 = plot(timeAxisPeriReach{a}, meanD2PeriReachErr1{a}, 'Color', colCorr1, 'LineWidth', 2, 'LineStyle', '--');
+            hErr2 = plot(timeAxisPeriReach{a}, meanD2PeriReachErr2{a}, 'Color', colCorr2, 'LineWidth', 2, 'LineStyle', '--');
+        end
+
+        % Add vertical line at reach onset
+        plot([0 0], ylim, 'k--', 'LineWidth', 2);
     end
 
-    % Add vertical line at reach onset
-    plot([0 0], ylim, 'k--', 'LineWidth', 2);
-
-    % Formatting
+    % Formatting (applies for both data-present and blank cases)
     xlabel('Time relative to reach onset (s)', 'FontSize', 12);
     ylabel('d2 Criticality', 'FontSize', 12);
     title(sprintf('%s - Peri-Reach d2 Criticality (Window: %gs)', areas{a}, slidingWindowSize), 'FontSize', 14);
     grid on;
-
-    % Set x-axis ticks and limits in seconds
-    xMin = min(timeAxisPeriReach{a});
-    xMax = max(timeAxisPeriReach{a});
     xlim([xMin xMax]);
     xTicks = ceil(xMin):floor(xMax);
     if isempty(xTicks)
-        % Fallback to 5 ticks across range
         xTicks = linspace(xMin, xMax, 5);
     end
     xticks(xTicks);
     xticklabels(string(xTicks));
-
-    % Set consistent y-axis limits and ticks across all subplots
     ylim(yLimCommon);
     yTicks = linspace(yLimCommon(1), yLimCommon(2), 5);
     yticks(yTicks);
     yticklabels(string(round(yTicks, 3)));
 
-    % Add legend for mean traces
-    % Legend entries per block
-    legs = [hCorr1 hCorr2];
-    leg = {'d2 Correct B1', 'd2 Correct B2'};
-    if plotErrors
-        legs = [legs hErr1 hErr2];
-        leg = [leg {'d2 Error B1', 'd2 Error B2'}];
+    % Legend only if data were plotted
+    if plotD2 && hasD2 && hasD2Area(a)
+        legs = [hCorr1 hCorr2];
+        leg = {'d2 Correct B1', 'd2 Correct B2'};
+        if plotErrors
+            legs = [legs hErr1 hErr2];
+            leg = [leg {'d2 Error B1', 'd2 Error B2'}];
+        end
+        legend(legs, leg, 'Location', 'best', 'FontSize', 9);
     end
-    legend(legs, leg, 'Location', 'best', 'FontSize', 9);
 
     % Bottom row: mrBr
     axes(ha(numCols + idx));
     hold on;
 
-    % Compute SEM for mrBr (by block)
-    baseColor = colorSpecToRGB(colors{a});
-    colCorr1 = baseColor;
-    colCorr2 = min(1, baseColor + 0.3);
-    semMrCorr1 = nanstd(mrBrWindowsCorr1{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindowsCorr1{a}), 2))));
-    semMrCorr2 = nanstd(mrBrWindowsCorr2{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindowsCorr2{a}), 2))));
-    if plotErrors
-        semMrErr1 = nanstd(mrBrWindowsErr1{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindowsErr1{a}), 2))));
-        semMrErr2 = nanstd(mrBrWindowsErr2{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindowsErr2{a}), 2))));
+    % Determine if mrBr data exist for this area (any mean trace non-NaN)
+    hasMr = (~isempty(meanMrBrPeriReachCorr1{a}) && any(~isnan(meanMrBrPeriReachCorr1{a}))) || ...
+            (~isempty(meanMrBrPeriReachCorr2{a}) && any(~isnan(meanMrBrPeriReachCorr2{a}))) || ...
+            (plotErrors && ~isempty(meanMrBrPeriReachErr1{a}) && any(~isnan(meanMrBrPeriReachErr1{a}))) || ...
+            (plotErrors && ~isempty(meanMrBrPeriReachErr2{a}) && any(~isnan(meanMrBrPeriReachErr2{a})));
+
+    % Compute x-limits safely
+    if ~isempty(timeAxisPeriReach{a})
+        xMin = min(timeAxisPeriReach{a}); xMax = max(timeAxisPeriReach{a});
+    else
+        xMin = -1; xMax = 1;
     end
 
-    % SEM ribbons
-    fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-         [meanMrBrPeriReachCorr1{a} + semMrCorr1, fliplr(meanMrBrPeriReachCorr1{a} - semMrCorr1)], ...
-         colCorr1, 'FaceAlpha', 0.5, 'EdgeColor', 'none');
-    fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-         [meanMrBrPeriReachCorr2{a} + semMrCorr2, fliplr(meanMrBrPeriReachCorr2{a} - semMrCorr2)], ...
-         colCorr2, 'FaceAlpha', 0.4, 'EdgeColor', 'none');
-    if plotErrors
+    if plotMrBr && hasD2Area(a) && hasMr
+        % Compute SEM for mrBr (by block)
+        baseColor = colorSpecToRGB(colors{a});
+        colCorr1 = baseColor;
+        colCorr2 = min(1, baseColor + 0.3);
+        semMrCorr1 = nanstd(mrBrWindowsCorr1{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindowsCorr1{a}), 2))));
+        semMrCorr2 = nanstd(mrBrWindowsCorr2{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindowsCorr2{a}), 2))));
+        if plotErrors
+            semMrErr1 = nanstd(mrBrWindowsErr1{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindowsErr1{a}), 2))));
+            semMrErr2 = nanstd(mrBrWindowsErr2{a}, 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindowsErr2{a}), 2))));
+        end
+
+        % SEM ribbons
         fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-             [meanMrBrPeriReachErr1{a} + semMrErr1, fliplr(meanMrBrPeriReachErr1{a} - semMrErr1)], ...
-             colCorr1, 'FaceAlpha', 0.3, 'EdgeColor', 'none');
+             [meanMrBrPeriReachCorr1{a} + semMrCorr1, fliplr(meanMrBrPeriReachCorr1{a} - semMrCorr1)], ...
+             colCorr1, 'FaceAlpha', 0.5, 'EdgeColor', 'none');
         fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-             [meanMrBrPeriReachErr2{a} + semMrErr2, fliplr(meanMrBrPeriReachErr2{a} - semMrErr2)], ...
-             colCorr2, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+             [meanMrBrPeriReachCorr2{a} + semMrCorr2, fliplr(meanMrBrPeriReachCorr2{a} - semMrCorr2)], ...
+             colCorr2, 'FaceAlpha', 0.4, 'EdgeColor', 'none');
+        if plotErrors
+            fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
+                 [meanMrBrPeriReachErr1{a} + semMrErr1, fliplr(meanMrBrPeriReachErr1{a} - semMrErr1)], ...
+                 colCorr1, 'FaceAlpha', 0.3, 'EdgeColor', 'none');
+            fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
+                 [meanMrBrPeriReachErr2{a} + semMrErr2, fliplr(meanMrBrPeriReachErr2{a} - semMrErr2)], ...
+                 colCorr2, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+        end
+
+        % Mean lines
+        hMrCorr1 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachCorr1{a}, 'Color', colCorr1, 'LineWidth', 3, 'LineStyle', '-');
+        hMrCorr2 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachCorr2{a}, 'Color', colCorr2, 'LineWidth', 3, 'LineStyle', '-.');
+        if plotErrors
+            hMrErr1 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachErr1{a}, 'Color', colCorr1, 'LineWidth', 2.5, 'LineStyle', '--');
+            hMrErr2 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachErr2{a}, 'Color', colCorr2, 'LineWidth', 2.5, 'LineStyle', '--');
+        end
+
+        % Reference and onset lines
+        yline(1, 'k:', 'LineWidth', 1.5);
+        plot([0 0], ylim, 'k--', 'LineWidth', 2);
     end
 
-    % Mean lines
-    hMrCorr1 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachCorr1{a}, 'Color', colCorr1, 'LineWidth', 3, 'LineStyle', '-');
-    hMrCorr2 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachCorr2{a}, 'Color', colCorr2, 'LineWidth', 3, 'LineStyle', '-.');
-    if plotErrors
-        hMrErr1 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachErr1{a}, 'Color', colCorr1, 'LineWidth', 2.5, 'LineStyle', '--');
-        hMrErr2 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachErr2{a}, 'Color', colCorr2, 'LineWidth', 2.5, 'LineStyle', '--');
-    end
-
-    % Formatting
-    plot([0 0], ylim, 'k--', 'LineWidth', 2);
+    % Formatting (applies for both data-present and blank cases)
     xlabel('Time relative to reach onset (s)', 'FontSize', 12);
     ylabel('MR Branching Ratio', 'FontSize', 12);
     title(sprintf('%s - Peri-Reach mrBr (Window: %gs)', areas{a}, slidingWindowSize), 'FontSize', 14);
     grid on;
-    xMin = min(timeAxisPeriReach{a}); xMax = max(timeAxisPeriReach{a});
     xlim([xMin xMax]);
-    xTicks = ceil(xMin):floor(xMax);
-    if isempty(xTicks), xTicks = linspace(xMin, xMax, 5); end
+    xTicks = ceil(xMin):floor(xMax); if isempty(xTicks), xTicks = linspace(xMin, xMax, 5); end
     xticks(xTicks); xticklabels(string(xTicks));
-    ylim([0 1.05]);
-    % Reference line at mrBr = 1
-    yline(1, 'k:', 'LineWidth', 1.5);
-    
-    % Ensure y-tick labels are visible
+    ylim([mrBrYMin mrBrYMax]);
     set(gca, 'YTickLabelMode', 'auto');
 
-    % Legend for mrBr
-    if plotErrors
-        legend([hMrCorr1 hMrCorr2 hMrErr1 hMrErr2], {'mrBr Correct B1','mrBr Correct B2','mrBr Error B1','mrBr Error B2'}, 'Location', 'best', 'FontSize', 9);
-    else
-        legend([hMrCorr1 hMrCorr2], {'mrBr Correct B1','mrBr Correct B2'}, 'Location', 'best', 'FontSize', 9);
+    % Legend only if data were plotted
+    if plotMrBr && hasD2Area(a) && hasMr
+        if plotErrors
+            legend([hMrCorr1 hMrCorr2 hMrErr1 hMrErr2], {'mrBr Correct B1','mrBr Correct B2','mrBr Error B1','mrBr Error B2'}, 'Location', 'best', 'FontSize', 9);
+        else
+            legend([hMrCorr1 hMrCorr2], {'mrBr Correct B1','mrBr Correct B2'}, 'Location', 'best', 'FontSize', 9);
+        end
     end
 end
 
