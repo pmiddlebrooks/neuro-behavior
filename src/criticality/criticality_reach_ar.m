@@ -73,7 +73,6 @@ dataR = load(reachDataFile);
 opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.firingRateCheckTime = 5 * 60;
-opts.collectStart = round((dataR.R(1,1) - 10) / 1000);
 opts.collectStart = 0;
 opts.collectFor = round(dataR.R(end,1) + 5000) / 1000;
 opts.minFiringRate = .1;
@@ -168,8 +167,13 @@ for a = areasToTest
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
-results = struct(); results.areas = areas; results.reach.mrBr = mrBrRea; results.reach.d2 = d2Rea; results.reach.startS = startSRea;
-results.reach.optimalBinSize = optimalBinSizeRea; results.reach.optimalWindowSize = optimalWindowSizeRea;
+results = struct(); 
+results.areas = areas; 
+results.reach.mrBr = mrBrRea; 
+results.reach.d2 = d2Rea; 
+results.reach.startS = startSRea;
+results.reach.optimalBinSize = optimalBinSizeRea; 
+results.reach.optimalWindowSize = optimalWindowSizeRea;
 results.reach.d2StepSize = d2StepSizeRea; results.reach.d2WindowSize = d2WindowSizeRea;
 save(resultsPath, 'results'); fprintf('Saved reach-only d2/mrBr to %s\n', resultsPath);
 

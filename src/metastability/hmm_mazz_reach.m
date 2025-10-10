@@ -1,20 +1,20 @@
-%% HMM Analysis for Naturalistic and Reach Data
-% Based on demo3_HMM_Full.m, adapted for naturalistic data format
+%% HMM Analysis for Reach Data Only
+% Based on hmm_mazz.m, adapted specifically for reach data
 % https://github.com/mazzulab/contamineuro_2019_spiking_net/tree/master
 %
-% This script performs HMM analysis on neural data and automatically saves:
-% 1. Complete HMM results in .mat format with timestamp
+% This script performs HMM analysis on reach neural data and automatically saves:
+% 1. Complete HMM results in .mat format with session-specific naming
 % 2. Summary text file with key parameters and results
-% 3. All relevant metadata including data type (Nat/Reach), brain area, trial parameters
+% 3. All relevant metadata including brain area, trial parameters
 % 4. Analysis parameters, trial windows, and HMM model details
 %
-% Files are saved to: paths.dropPath/hmm/
-% Naming convention: HMM_results_[DataType]_[BrainArea]_[Timestamp].mat
-%                   HMM_summary_[DataType]_[BrainArea]_[Timestamp].txt
+% Files are saved to: paths.dropPath/reach_data/[sessionName]/
+% Naming convention: HMM_results_[BrainArea]_bin[BinSize]_minDur[MinDur].mat
+%                   HMM_summary_[BrainArea]_bin[BinSize]_minDur[MinDur].txt
 
 paths = get_paths;
 cd(fullfile(paths.homePath, 'toolboxes/contamineuro_2019_spiking_net/'));
-%
+
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.minFiringRate = .05;
@@ -26,41 +26,106 @@ monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
 monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
+%% Discover all reach data files and process each
+reachDir = fullfile(paths.dropPath, 'reach_data');
+matFiles = dir(fullfile(reachDir, '*.mat'));
+reachDataFiles = cell(1, numel(matFiles));
+for i = 1:numel(matFiles)
+    reachDataFiles{i} = fullfile(reachDir, matFiles(i).name);
+end
 
-
-
-%%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
-
-natOrReach = 'Reach'; % 'Nat'  'Reach'
+reachDataFiles = cell(1);
+reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 areasToTest = 1:4; % Indices of areas to test
 
-switch natOrReach
-    case 'Nat'
-        % Naturalistic data
-        getDataType = 'spikes';
-opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 45 * 60; % seconds
-        get_standard_data
-    case 'Reach'
-        % Mark's reach data
-        % dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
-        dataR = load(fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat'));
-
-        opts.collectStart = 0;
-opts.collectFor = round(dataR.R(end,1) + 5000) / 1000;
-
-        [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
-
-        idM23 = find(strcmp(areaLabels, 'M23'));
-        idM56 = find(strcmp(areaLabels, 'M56'));
-        idDS = find(strcmp(areaLabels, 'DS'));
-        idVS = find(strcmp(areaLabels, 'VS'));
-    fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
+% Process each reach data file
+for fileIdx = 1:numel(reachDataFiles)
+    reachDataFile = reachDataFiles{fileIdx};
+    fprintf('\n=== Processing Reach Data File: %s ===\n', reachDataFile);
+    
+    % try
+        run_hmm_analysis_for_reach_file(reachDataFile, areas, areasToTest, opts, paths);
+    % catch ME
+    %     fprintf('Error processing %s: %s\n', reachDataFile, ME.message);
+    %     continue;
+    % end
 end
 
+fprintf('\n=== All reach data files processed ===\n');
+
+function run_hmm_analysis_for_reach_file(reachDataFile, areas, areasToTest, opts, paths)
+
+% Load reach data
+dataR = load(reachDataFile);
+
+% Extract session name from filename
+[~, sessionName, ~] = fileparts(reachDataFile);
+
+% Create session-specific save directory
+saveDir = fullfile(paths.dropPath, 'reach_data', sessionName);
+if ~exist(saveDir, 'dir')
+    mkdir(saveDir);
+end
+
+% Set collection parameters based on reach data
+opts.collectStart = 0;
+opts.collectFor = round(dataR.R(end,1) + 5000) / 1000;
+
+% Convert reach data to neural matrix format
+[dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+
+% Find brain area indices
+idM23 = find(strcmp(areaLabels, 'M23'));
+idM56 = find(strcmp(areaLabels, 'M56'));
+idDS = find(strcmp(areaLabels, 'DS'));
+idVS = find(strcmp(areaLabels, 'VS'));
+fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
+
 idList = {idM23, idM56, idDS, idVS};
+
+% % Find all reach starts
+% block1Err = 1;
+% block1Corr = 2;
+% block2Err = 3;
+% block2Corr = 4;
+% 
+% % First and second block trials
+% trialIdx = ismember(dataR.Block(:, 3), 1:4);
+% trialIdx1 = ismember(dataR.Block(:, 3), 1:2);
+% trialIdx2 = ismember(dataR.Block(:, 3), 3:4);
+% 
+% % Find when blocks begin and end
+% block1Last = find(trialIdx1, 1, 'last');
+% block2First = find(trialIdx2, 1);
+% block1End = dataR.R(block1Last, 2);
+% 
+% block2StartFrame = round(dataR.R(block2First, 1) / 1000 / opts.frameSize);
+% rStarts = round(dataR.R(trialIdx,1)/opts.frameSize/1000); % in frames
+% rStops = round(dataR.R(trialIdx,2)/opts.frameSize/1000); % in frames
+% firstFrame = round(opts.collectStart / opts.frameSize);
+% lastFrame = round((opts.collectStart + opts.collectFor) / opts.frameSize);
+% validTrials = rStarts > firstFrame & rStops < lastFrame;
+% 
+% rStarts = rStarts(validTrials);
+% rStops = rStops(validTrials);
+% rAcc = dataR.BlockWithErrors(validTrials, 4);
+
+% Set trial duration for reach data
+trialDur = 20; % "trial" duration in seconds
+
+%% Initialize results structure for all areas
+results = struct();
+results.areas = areas;
+results.hmm_results = cell(1, length(areas));
+results.binSize = zeros(1, length(areas));
+results.minDur = zeros(1, length(areas));
+results.numStates = zeros(1, length(areas));
+results.logLikelihood = zeros(1, length(areas));
+results.numNeurons = zeros(1, length(areas));
+results.numTrials = zeros(1, length(areas));
+results.analysisStatus = cell(1, length(areas));
 
 %% Loop through each brain area specified in areasToTest
 for areaIdx = areasToTest
@@ -70,50 +135,6 @@ for areaIdx = areasToTest
     
     fprintf('\n=== Processing Brain Area: %s (Index %d) ===\n', idAreaName, areaIdx);
 
-
-    %  Nat or Reach-specific variables
-
-    switch natOrReach
-        case 'Reach'
-            % preTime = 4; % s before reach onset
-            % postTime = 3;
-
-            % Find all reach starts
-            block1Err = 1;
-            block1Corr = 2;
-            block2Err = 3;
-            block2Corr = 4;
-
-            % First and second block trials
-            trialIdx = ismember(dataR.block(:, 3), 1:4);
-            trialIdx1 = ismember(dataR.block(:, 3), 1:2);
-            trialIdx2 = ismember(dataR.block(:, 3), 3:4);
-
-            % Find when blocks begin and end
-            block1Last = find(trialIdx1, 1, 'last');
-            block2First = find(trialIdx2, 1);
-            block1End = dataR.R(block1Last, 2);
-
-            block2StartFrame = round(dataR.R(block2First, 1) / 1000 / opts.frameSize);
-            rStarts = round(dataR.R(trialIdx,1)/opts.frameSize/1000); % in frames
-            rStops = round(dataR.R(trialIdx,2)/opts.frameSize/1000); % in frames
-            firstFrame = round(opts.collectStart / opts.frameSize);
-            lastFrame = round((opts.collectStart + opts.collectFor) / opts.frameSize);
-            validTrials = rStarts > firstFrame & rStops < lastFrame;
-
-            rStarts = rStarts(validTrials);
-            rStops = rStops(validTrials);
-            rAcc = dataR.BlockWithErrors(validTrials, 4);
-
-            % Set trial duration for reach data (same as natural data for unified approach)
-            trialDur = 20; % "trial" duration in seconds
-
-        case 'Nat'
-            % Parameters for natural trials
-            trialDur = 20; % "trial" duration in seconds
-    end
-
-    %
     %----------------------------
     % CONVERT DATA TO SPIKE TIMES FORMAT WITH MULTIPLE TRIALS
     %----------------------------
@@ -122,7 +143,7 @@ for areaIdx = areasToTest
     binSizeLoaded = opts.frameSize; % seconds
     gnunits = size(dataMatMain, 2); % number of neurons
 
-    % Unified approach: Segment continuous data by trialDur for both Nat and Reach
+    % Unified approach: Segment continuous data by trialDur for reach data
     fprintf('Using UNIFIED approach: Segmenting continuous data by trialDur\n');
 
     % Calculate number of complete trials
@@ -136,7 +157,7 @@ for areaIdx = areasToTest
     spikes = struct('spk', cell(ntrials, gnunits));
     win_train = zeros(ntrials, 2); % trial windows [start, end] for each trial
 
-    % For each trial (same approach for both Nat and Reach)
+    % For each trial
     for i_trial = 1:ntrials
         % Calculate trial start and end bins
         start_bin = (i_trial - 1) * trialDur / binSizeLoaded + 1;
@@ -164,28 +185,19 @@ for areaIdx = areasToTest
         end
     end
 
-    %
     %----------------------------
     % HMM ANALYSIS
     %----------------------------
-    fprintf('\n\nRunning HMM on %s for area %s\n\n', natOrReach, idAreaName)
+    fprintf('\n\nRunning HMM on Reach data for area %s\n\n', idAreaName)
     disp('In fun_HMM_modelSel.m, select hhmParam values!!!')
 
     % Model selection method
     MODELSEL = 'XVAL'; % 'BIC'; % 'AIC';
 
-    % Setup directories
-    hmmdir = fullfile(paths.dropPath, 'metastability');
-    if ~exist(hmmdir, 'dir')
-        mkdir(hmmdir);
-    end
-
     % Prepare data structure for HMM analysis
     DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL);
 
     % Run HMM analysis
-    % Note: This assumes you have the hmm.funHMM function available
-    % If not, you'll need to implement the HMM fitting separately
     try
         myCluster = parcluster('local');
         NumWorkers=min(myCluster.NumWorkers, 6);
@@ -222,19 +234,27 @@ for areaIdx = areasToTest
 
         fprintf('HMM completed successfully: Need to save it!\n');
 
-
     catch ME
         fprintf('Error in HMM analysis: %s\n', ME.message);
         fprintf('You may need to implement the HMM fitting functions separately.\n');
         pid = gcp;
         delete(pid)
+        
+        % Store error status
+        results.hmm_results{areaIdx} = [];
+        results.binSize(areaIdx) = NaN;
+        results.minDur(areaIdx) = NaN;
+        results.numStates(areaIdx) = NaN;
+        results.logLikelihood(areaIdx) = NaN;
+        results.numNeurons(areaIdx) = gnunits;
+        results.numTrials(areaIdx) = ntrials;
+        results.analysisStatus{areaIdx} = sprintf('ERROR: %s', ME.message);
+        
         continue % Skip to next area if HMM fails
     end
 
-
     pid = gcp;
     delete(pid)
-
 
     % ----------------------------
     % TRANSFORM TRIAL RESULTS BACK TO CONTINUOUS TIME SERIES
@@ -262,7 +282,6 @@ for areaIdx = areasToTest
 
             % Copy posterior state probabilities
             continuous_pStates(timeIdx, :) = res.hmm_results(iTrial).pStates';
-
         end
 
         % Compute continuous_sequence from continuous_pStates using MinP threshold
@@ -278,24 +297,22 @@ for areaIdx = areasToTest
             % Otherwise, keep as NaN (no confident state assignment)
         end
 
-
         fprintf('Successfully transformed results to continuous format\n');
         fprintf('Total time bins: %d (%.1f seconds)\n', totalTimeBins, totalTimeBins * res.HmmParam.BinSize);
     end
 
-
-
     % ----------------------------
-    % SAVE HMM RESULTS
+    % STORE RESULTS FOR THIS AREA
     %----------------------------
 
-    % Create comprehensive results structure
+    % Create comprehensive results structure for this area
     hmm_res = struct();
 
     % Analysis metadata
     hmm_res.metadata = struct();
-    hmm_res.metadata.data_type = natOrReach; % 'Nat' or 'Reach'
+    hmm_res.metadata.data_type = 'Reach';
     hmm_res.metadata.brain_area = idAreaName; % Which brain area was analyzed
+    hmm_res.metadata.session_name = sessionName;
     hmm_res.metadata.analysis_date = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
     hmm_res.metadata.analysis_status = 'SUCCESS';
     hmm_res.metadata.model_selection_method = MODELSEL;
@@ -312,16 +329,12 @@ for areaIdx = areasToTest
 
     % Trial parameters
     hmm_res.trial_params = struct();
-    hmm_res.trial_params.trial_windows = win_train; % [start, end] for each trial
-    hmm_res.trial_params.trial_duration = trialDur;
-
-    % Add reach-specific parameters if applicable
-    if strcmp(natOrReach, 'Reach')
-        hmm_res.trial_params.reach_starts = rStarts;
-        hmm_res.trial_params.reach_stops = rStops;
-        hmm_res.trial_params.reach_accuracy = rAcc;
-        hmm_res.trial_params.valid_trials = validTrials;
-    end
+    % hmm_res.trial_params.trial_windows = win_train; % [start, end] for each trial
+    % hmm_res.trial_params.trial_duration = trialDur;
+    % hmm_res.trial_params.reach_starts = rStarts;
+    % hmm_res.trial_params.reach_stops = rStops;
+    % hmm_res.trial_params.reach_accuracy = rAcc;
+    % hmm_res.trial_params.valid_trials = validTrials;
 
     % HMM results
     hmm_res.hmm_data = res.hmm_data;
@@ -346,124 +359,68 @@ for areaIdx = areasToTest
     hmm_res.continuous_results.sequence = continuous_sequence;
     hmm_res.continuous_results.totalTime = totalTimeBins * res.HmmParam.BinSize;
 
-    % Create filename without timestamp
-    filename = sprintf('HMM_results_%s_%s.mat', natOrReach, idAreaName);
-    filepath = fullfile(hmmdir, filename);
-
-    % Save the results
-    fprintf('Saving HMM results to: %s\n', filepath);
-    save(filepath, 'hmm_res', '-v7.3');
-
-    % Also save a summary text file
-    summary_filename = sprintf('HMM_summary_%s_%s.txt', natOrReach, idAreaName);
-    summary_filepath = fullfile(hmmdir, summary_filename);
-
-    % Create summary file
-    fid = fopen(summary_filepath, 'w');
-    if fid ~= -1
-        fprintf(fid, 'HMM Analysis Summary\n');
-        fprintf(fid, '===================\n\n');
-        fprintf(fid, 'Analysis Date: %s\n', hmm_res.metadata.analysis_date);
-        fprintf(fid, 'Data Type: %s\n', hmm_res.metadata.data_type);
-        fprintf(fid, 'Brain Area: %s\n', hmm_res.metadata.brain_area);
-        fprintf(fid, 'Model Selection Method: %s\n', hmm_res.metadata.model_selection_method);
-        fprintf(fid, '\n');
-        fprintf(fid, 'Data Parameters:\n');
-        fprintf(fid, '  Number of neurons: %d\n', hmm_res.data_params.num_neurons);
-        fprintf(fid, '  Number of trials: %d\n', hmm_res.data_params.num_trials);
-        fprintf(fid, '  Frame size: %.6f seconds\n', opts.frameSize);
-        fprintf(fid, '  Collection start: %.1f seconds\n', hmm_res.data_params.collect_start);
-        fprintf(fid, '  Collection duration: %.1f seconds\n', hmm_res.data_params.collect_duration);
-        fprintf(fid, '\n');
-        fprintf(fid, 'Trial Parameters:\n');
-        fprintf(fid, '  Trial duration: %.1f seconds\n', hmm_res.trial_params.trial_duration);
-        % if strcmp(natOrReach, 'Reach')
-        %     fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_res.trial_params.pre_time);
-        %     fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_res.trial_params.post_time);
-        % end
-        fprintf(fid, '\n');
-        fprintf(fid, 'HMM Results:\n');
-        fprintf(fid, '  Number of states: %d\n', hmm_res.best_model.num_states);
-        fprintf(fid, '  Log-likelihood: %.2f\n', hmm_res.best_model.log_likelihood);
-        fprintf(fid, '  Best state index: %d\n', hmm_res.best_model.best_state_index);
-        fprintf(fid, '\n');
-        fprintf(fid, 'Files saved:\n');
-        fprintf(fid, '  Results: %s\n', filename);
-        fprintf(fid, '  Summary: %s\n', summary_filename);
-        fclose(fid);
-
-        fprintf('Summary saved to: %s\n', summary_filepath);
-    end
-
-    fprintf('HMM analysis saved successfully!\n');
-
-    %% Plot full sequence
-    figure(8); clf;
-    hold on;
-
-    x = (1:length(continuous_sequence)) * res.HmmParam.BinSize;
-    numStates = size(continuous_pStates, 2);
-
-    % Get colors for states
-  func = @sRGB_to_OKLab;
-  cOpts.exc = [0,0,0;1,1,1];
-  colors = maxdistcolor(numStates,func, cOpts);
-    % colors = distinguishable_colors(numStates, {'w','k'}, func);
-
-    % Plot rectangles for each state
-    for state = 1:numStates
-        stateIdx = continuous_sequence == state;
-        if any(stateIdx)
-            % Find contiguous segments
-            d = diff([0; stateIdx; 0]);
-            startIdx = find(d == 1);
-            endIdx = find(d == -1) - 1;
-
-            % Plot each segment as a rectangle
-            for i = 1:length(startIdx)
-                xStart = x(startIdx(i));
-                xEnd = x(endIdx(i));
-                patch([xStart xEnd xEnd xStart], [0 0 1 1], colors(state,:), ...
-                    'FaceAlpha', 0.2, 'EdgeColor', 'none');
-            end
-        end
-    end
-
-    % Plot probability traces
-    for state = 1:numStates
-        plot(x, continuous_pStates(:,state), 'Color', colors(state,:), 'LineWidth', 2);
-    end
-
-    xlabel('Time (s)');
-    ylabel('State Probability');
-    ylim([0 1]);
-    hold off;
+    % Store results in the main results structure
+    results.hmm_results{areaIdx} = hmm_res;
+    results.binSize(areaIdx) = res.HmmParam.BinSize;
+    results.minDur(areaIdx) = res.HmmParam.MinDur;
+    results.numStates(areaIdx) = res.HmmParam.VarStates(res.BestStateInd);
+    results.logLikelihood(areaIdx) = res.hmm_bestfit.LLtrain;
+    results.numNeurons(areaIdx) = gnunits;
+    results.numTrials(areaIdx) = ntrials;
+    results.analysisStatus{areaIdx} = 'SUCCESS';
 
     fprintf('Completed analysis for brain area: %s\n', idAreaName);
     
 end % End of loop through brain areas
 
-fprintf('\n=== All brain area analyses completed ===\n');
+%% Save all results in a single file
+% Create filename with session name
+filename = sprintf('HMM_results_%s.mat', sessionName);
+filepath = fullfile(saveDir, filename);
 
+% Save the results
+fprintf('Saving all HMM results to: %s\n', filepath);
+save(filepath, 'results', '-v7.3');
 
+% Also save a summary text file
+summary_filename = sprintf('HMM_summary_%s.txt', sessionName);
+summary_filepath = fullfile(saveDir, summary_filename);
 
+% Create summary file
+fid = fopen(summary_filepath, 'w');
+if fid ~= -1
+    fprintf(fid, 'HMM Analysis Summary\n');
+    fprintf(fid, '===================\n\n');
+    fprintf(fid, 'Analysis Date: %s\n', datestr(now, 'yyyy-mm-dd_HH-MM-SS'));
+    fprintf(fid, 'Data Type: Reach\n');
+    fprintf(fid, 'Session Name: %s\n', sessionName);
+    fprintf(fid, 'Model Selection Method: %s\n', MODELSEL);
+    fprintf(fid, '\n');
+    fprintf(fid, 'Brain Area Results:\n');
+    for areaIdx = areasToTest
+        idAreaName = areas{areaIdx};
+        fprintf(fid, '  %s:\n', idAreaName);
+        if strcmp(results.analysisStatus{areaIdx}, 'SUCCESS')
+            fprintf(fid, '    Status: SUCCESS\n');
+            fprintf(fid, '    Number of neurons: %d\n', results.numNeurons(areaIdx));
+            fprintf(fid, '    Number of trials: %d\n', results.numTrials(areaIdx));
+            fprintf(fid, '    Number of states: %d\n', results.numStates(areaIdx));
+            fprintf(fid, '    Log-likelihood: %.2f\n', results.logLikelihood(areaIdx));
+            fprintf(fid, '    Bin size: %.6f seconds\n', results.binSize(areaIdx));
+            fprintf(fid, '    Min duration: %.6f seconds\n', results.minDur(areaIdx));
+        else
+            fprintf(fid, '    Status: %s\n', results.analysisStatus{areaIdx});
+        end
+        fprintf(fid, '\n');
+    end
+    fprintf(fid, 'Files saved:\n');
+    fprintf(fid, '  Results: %s\n', filename);
+    fprintf(fid, '  Summary: %s\n', summary_filename);
+    fclose(fid);
 
+    fprintf('Summary saved to: %s\n', summary_filepath);
+end
 
+fprintf('\n=== All brain area analyses completed for session: %s ===\n', sessionName);
 
-
-
-
-
-% % Helper function for distinguishable colors (if not available)
-% function colors = distinguishable_colors(n)
-% % Simple color generation if distinguishable_colors is not available
-% if n <= 7
-%     colors = lines(n);
-% else
-%     colors = hsv(n);
-% end
-% end
-% 
-
-
-
+end
