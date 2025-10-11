@@ -26,6 +26,17 @@ monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
 monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
+
+HmmParam=struct();
+HmmParam.AdjustT=0.; % interval to skip at trial start to avoid canonical choise of 1st state in matlab
+% HmmParam.BinSize=0.002;%0.005; % time step of Markov chain
+HmmParam.BinSize=0.01;%0.005; % time step of Markov chain
+HmmParam.MinDur=0.05;   % .05 min duration of an admissible state (s) in HMM DECODING
+HmmParam.MinP=0.8;      % pstate>MinP for an admissible state in HMM ADMISSIBLE STATES
+HmmParam.NumSteps=10;%    %10 number of fits at fixed parameters to avoid non-convexity
+HmmParam.NumRuns=50;%     % 50% % number of times we iterate hmmtrain over all trials
+
+opts.HmmParam = HmmParam;
 %% Discover all reach data files and process each
 reachDir = fullfile(paths.dropPath, 'reach_data');
 matFiles = dir(fullfile(reachDir, '*.mat'));
@@ -35,7 +46,7 @@ for i = 1:numel(matFiles)
 end
 
 reachDataFiles = cell(1);
-reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 areasToTest = 1:4; % Indices of areas to test
@@ -195,7 +206,7 @@ for areaIdx = areasToTest
     MODELSEL = 'XVAL'; % 'BIC'; % 'AIC';
 
     % Prepare data structure for HMM analysis
-    DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL);
+    DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL, 'HmmParam', opts.HmmParam);
 
     % Run HMM analysis
     try
@@ -373,9 +384,12 @@ for areaIdx = areasToTest
     
 end % End of loop through brain areas
 
-%% Save all results in a single file
+
+
+
+% Save all results in a single file
 % Create filename with session name
-filename = sprintf('HMM_results_%s.mat', sessionName);
+filename = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f.mat', results.binSize(1), results.minDur(1));
 filepath = fullfile(saveDir, filename);
 
 % Save the results
