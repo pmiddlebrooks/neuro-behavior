@@ -13,18 +13,21 @@
 
 %% Load existing results if requested
 paths = get_paths;
+binSize = .005;
+minDur = .05;
 
 % User-specified reach data file (should match the one used in hmm_mazz_reach.m)
 % User-specified reach data file (should match the one used in criticality_reach_ar.m)
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_11-May-2023 17_31_00_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_11-May-2023 17_31_00_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/reach_test.mat');
 
 areasToTest = 1:4;
 
@@ -32,14 +35,16 @@ areasToTest = 1:4;
 plotErrors = true;
 
 % Define window parameters
-windowDurationSec = 40; % 40-second window around each reach
+windowDurationSec = 16; % 40-second window around each reach
 
 % Extract session name from filename
 [~, sessionName, ~] = fileparts(reachDataFile);
 
 % Determine save directory based on loaded data file name (same as hmm_mazz_reach.m)
-saveDir = fullfile(paths.dropPath, 'reach_data', sessionName);
-resultsPath = fullfile(saveDir, sprintf('HMM_results_%s.mat', sessionName));
+[~, dataBaseName, ~] = fileparts(reachDataFile);
+saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
+filename = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f.mat', binSize, minDur);
+resultsPath = fullfile(saveDir, filename);
 
 % Extract first 10 characters of filename for titles and file names
 filePrefix = sessionName(1:min(10, length(sessionName)));
@@ -83,6 +88,12 @@ stateWindowsCorr2 = cell(1, length(areas));
 stateWindowsErr1 = cell(1, length(areas));
 stateWindowsErr2 = cell(1, length(areas));
 
+% Initialize storage for peri-reach metastate sequences (separate correct/error by block)
+metastateWindowsCorr1 = cell(1, length(areas));
+metastateWindowsCorr2 = cell(1, length(areas));
+metastateWindowsErr1 = cell(1, length(areas));
+metastateWindowsErr2 = cell(1, length(areas));
+
 % Flags indicating availability of data to analyze/plot per area
 hasHmmArea = false(1, length(areas));
 
@@ -107,6 +118,15 @@ for a = areasToTest
     binSize = hmmRes.HmmParam.BinSize;
     totalTimeBins = length(continuousSequence);
     
+    % Get continuous metastate sequence if available
+    if isfield(hmmRes, 'metastate_results') && ~isempty(hmmRes.metastate_results.continuous_metastates)
+        continuousMetastates = hmmRes.metastate_results.continuous_metastates;
+        hasMetastates = true;
+    else
+        continuousMetastates = [];
+        hasMetastates = false;
+    end
+    
     % Calculate window duration in bins
     windowDurationBins = ceil(windowDurationSec / binSize);
     halfWindow = floor(windowDurationBins / 2);
@@ -123,6 +143,14 @@ for a = areasToTest
     stateWindowsErr1{a} = nan(numReachesErr1, windowDurationBins + 1);
     stateWindowsErr2{a} = nan(numReachesErr2, windowDurationBins + 1);
     
+    % Initialize storage for metastate windows (by block)
+    if hasMetastates
+        metastateWindowsCorr1{a} = nan(numReachesCorr1, windowDurationBins + 1);
+        metastateWindowsCorr2{a} = nan(numReachesCorr2, windowDurationBins + 1);
+        metastateWindowsErr1{a} = nan(numReachesErr1, windowDurationBins + 1);
+        metastateWindowsErr2{a} = nan(numReachesErr2, windowDurationBins + 1);
+    end
+    
     % Extract around each correct reach (Block 1)
     validCorr1 = 0;
     for r = 1:numReachesCorr1
@@ -134,9 +162,15 @@ for a = areasToTest
         
         if winStart >= 1 && winEnd <= totalTimeBins
             stateWindowsCorr1{a}(r, :) = continuousSequence(winStart:winEnd);
+            if hasMetastates
+                metastateWindowsCorr1{a}(r, :) = continuousMetastates(winStart:winEnd);
+            end
             validCorr1 = validCorr1 + 1;
         else
             stateWindowsCorr1{a}(r, :) = nan(1, windowDurationBins + 1);
+            if hasMetastates
+                metastateWindowsCorr1{a}(r, :) = nan(1, windowDurationBins + 1);
+            end
         end
     end
     
@@ -151,9 +185,15 @@ for a = areasToTest
         
         if winStart >= 1 && winEnd <= totalTimeBins
             stateWindowsCorr2{a}(r, :) = continuousSequence(winStart:winEnd);
+            if hasMetastates
+                metastateWindowsCorr2{a}(r, :) = continuousMetastates(winStart:winEnd);
+            end
             validCorr2 = validCorr2 + 1;
         else
             stateWindowsCorr2{a}(r, :) = nan(1, windowDurationBins + 1);
+            if hasMetastates
+                metastateWindowsCorr2{a}(r, :) = nan(1, windowDurationBins + 1);
+            end
         end
     end
     
@@ -168,9 +208,15 @@ for a = areasToTest
         
         if winStart >= 1 && winEnd <= totalTimeBins
             stateWindowsErr1{a}(r, :) = continuousSequence(winStart:winEnd);
+            if hasMetastates
+                metastateWindowsErr1{a}(r, :) = continuousMetastates(winStart:winEnd);
+            end
             validErr1 = validErr1 + 1;
         else
             stateWindowsErr1{a}(r, :) = nan(1, windowDurationBins + 1);
+            if hasMetastates
+                metastateWindowsErr1{a}(r, :) = nan(1, windowDurationBins + 1);
+            end
         end
     end
     
@@ -185,9 +231,15 @@ for a = areasToTest
         
         if winStart >= 1 && winEnd <= totalTimeBins
             stateWindowsErr2{a}(r, :) = continuousSequence(winStart:winEnd);
+            if hasMetastates
+                metastateWindowsErr2{a}(r, :) = continuousMetastates(winStart:winEnd);
+            end
             validErr2 = validErr2 + 1;
         else
             stateWindowsErr2{a}(r, :) = nan(1, windowDurationBins + 1);
+            if hasMetastates
+                metastateWindowsErr2{a}(r, :) = nan(1, windowDurationBins + 1);
+            end
         end
     end
     
@@ -208,9 +260,10 @@ else
 end
 
 % Determine number of conditions to plot
-numConditions = 2; % Correct Block 1, Correct Block 2
+% Order: Block 1 Correct, Block 1 Error, Block 2 Correct, Block 2 Error
+numConditions = 2; % Block 1 Correct, Block 1 Error
 if plotErrors
-    numConditions = numConditions + 2; % Add Error Block 1, Error Block 2
+    numConditions = numConditions + 2; % Add Block 2 Correct, Block 2 Error
 end
 
 % Use tight_subplot for layout: conditions (rows) x areas (columns)
@@ -234,25 +287,26 @@ for condIdx = 1:numConditions
         hold on;
         
         % Determine which condition to plot
+        % Order: Block 1 Correct, Block 1 Error, Block 2 Correct, Block 2 Error
         if condIdx == 1
-            % Correct Block 1
+            % Block 1 Correct
             stateData = stateWindowsCorr1{a};
-            condName = 'Correct Block 1';
+            condName = 'Block 1 Correct';
             colorIdx = 1;
-        elseif condIdx == 2
-            % Correct Block 2
-            stateData = stateWindowsCorr2{a};
-            condName = 'Correct Block 2';
-            colorIdx = 2;
-        elseif condIdx == 3 && plotErrors
-            % Error Block 1
+        elseif condIdx == 2 && plotErrors
+            % Block 1 Error
             stateData = stateWindowsErr1{a};
-            condName = 'Error Block 1';
+            condName = 'Block 1 Error';
+            colorIdx = 2;
+        elseif (condIdx == 2 && ~plotErrors) || (condIdx == 3 && plotErrors)
+            % Block 2 Correct
+            stateData = stateWindowsCorr2{a};
+            condName = 'Block 2 Correct';
             colorIdx = 3;
         elseif condIdx == 4 && plotErrors
-            % Error Block 2
+            % Block 2 Error
             stateData = stateWindowsErr2{a};
-            condName = 'Error Block 2';
+            condName = 'Block 2 Error';
             colorIdx = 4;
         else
             continue; % Skip if not plotting errors
@@ -267,7 +321,7 @@ for condIdx = 1:numConditions
             continue;
         end
         
-        % Remove rows that are all NaN
+        % Remove rows that are all NaN and ensure trials are in order
         validRows = ~all(isnan(stateData), 2);
         if ~any(validRows)
             xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
@@ -276,14 +330,18 @@ for condIdx = 1:numConditions
             continue;
         end
         
+        % Keep trials in original order (top to bottom)
         stateDataValid = stateData(validRows, :);
         
         % Create imagesc plot
         imagesc(timeAxisPeriReach, 1:size(stateDataValid, 1), stateDataValid);
         
-        % Set colormap to distinguish states
+        % Set colormap to distinguish states with state 0 as white
         if numStates(a) > 0
+            % Create custom colormap with white for state 0
             cmap = lines(numStates(a));
+            % Ensure state 0 (undefined) is white
+            cmap(1, :) = [1 1 1]; % White for state 0
             colormap(cmap);
         else
             colormap('lines');
@@ -333,6 +391,159 @@ sgtitle(sprintf('%s - Peri-Reach HMM State Sequences (Window: %gs)', filePrefix,
 filename = fullfile(saveDir, sprintf('%s_peri_reach_hmm_states_win%gs.png', filePrefix, windowDurationSec));
 exportgraphics(gcf, filename, 'Resolution', 300);
 fprintf('Saved peri-reach HMM state plot to: %s\n', filename);
+
+% ==============================================     Metastate Plotting     ==============================================
+
+% Check if any area has metastate data
+hasAnyMetastates = false;
+for a = areasToTest
+    if hasHmmArea(a) && ~isempty(results.hmm_results{a}) && isfield(results.hmm_results{a}, 'metastate_results') && ~isempty(results.hmm_results{a}.metastate_results.continuous_metastates)
+        hasAnyMetastates = true;
+        break;
+    end
+end
+
+if hasAnyMetastates
+    fprintf('\n=== Creating Peri-Reach Metastate Plot ===\n');
+    
+    % Create peri-reach metastate plots for each area: conditions x areas
+    figure(401); clf;
+    % Prefer plotting on second screen if available
+    monitorPositions = get(0, 'MonitorPositions');
+    monitorTwo = monitorPositions(size(monitorPositions, 1), :);
+    if size(monitorPositions, 1) >= 2
+        set(gcf, 'Position', monitorTwo);
+    else
+        set(gcf, 'Position', monitorPositions(1, :));
+    end
+
+    % Use tight_subplot for layout: conditions (rows) x areas (columns)
+    numCols = length(areasToTest);
+    ha = tight_subplot(numConditions, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
+
+    % Plot each condition (row) and area (column)
+    plotIdx = 0;
+    for condIdx = 1:numConditions
+        for areaIdx = 1:length(areasToTest)
+            a = areasToTest(areaIdx);
+            plotIdx = plotIdx + 1;
+            
+            axes(ha(plotIdx));
+            hold on;
+            
+            % Determine which condition to plot
+            % Order: Block 1 Correct, Block 1 Error, Block 2 Correct, Block 2 Error
+            if condIdx == 1
+                % Block 1 Correct
+                metastateData = metastateWindowsCorr1{a};
+                condName = 'Block 1 Correct';
+                colorIdx = 1;
+            elseif condIdx == 2 && plotErrors
+                % Block 1 Error
+                metastateData = metastateWindowsErr1{a};
+                condName = 'Block 1 Error';
+                colorIdx = 2;
+            elseif (condIdx == 2 && ~plotErrors) || (condIdx == 3 && plotErrors)
+                % Block 2 Correct
+                metastateData = metastateWindowsCorr2{a};
+                condName = 'Block 2 Correct';
+                colorIdx = 3;
+            elseif condIdx == 4 && plotErrors
+                % Block 2 Error
+                metastateData = metastateWindowsErr2{a};
+                condName = 'Block 2 Error';
+                colorIdx = 4;
+            else
+                continue; % Skip if not plotting errors
+            end
+            
+            % Check if we have metastate data for this area and condition
+            if ~hasHmmArea(a) || isempty(metastateData) || all(isnan(metastateData(:)))
+                % No data - show blank plot
+                xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
+                ylim([0.5, 1.5]);
+                title(sprintf('%s - %s\n(No Metastate Data)', areas{a}, condName), 'FontSize', 10);
+                continue;
+            end
+            
+            % Remove rows that are all NaN and ensure trials are in order
+            validRows = ~all(isnan(metastateData), 2);
+            if ~any(validRows)
+                xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
+                ylim([0.5, 1.5]);
+                title(sprintf('%s - %s\n(No Valid Reaches)', areas{a}, condName), 'FontSize', 10);
+                continue;
+            end
+            
+            % Keep trials in original order (top to bottom)
+            metastateDataValid = metastateData(validRows, :);
+            
+            % Create imagesc plot
+            imagesc(timeAxisPeriReach, 1:size(metastateDataValid, 1), metastateDataValid);
+            
+            % Set colormap to distinguish metastates with metastate 0 as white
+            if ~isempty(results.hmm_results{a}) && isfield(results.hmm_results{a}, 'metastate_results') && ~isempty(results.hmm_results{a}.metastate_results.communities)
+                numMetastates = results.hmm_results{a}.metastate_results.num_metastates;
+                if numMetastates > 0
+                    % Create custom colormap with white for metastate 0
+                    cmap = lines(numMetastates + 1); % +1 for metastate 0
+                    % Ensure metastate 0 (undefined) is white
+                    cmap(1, :) = [1 1 1]; % White for metastate 0
+                    colormap(cmap);
+                else
+                    colormap('lines');
+                end
+            else
+                colormap('lines');
+            end
+            
+            % Add colorbar
+            c = colorbar;
+            c.Label.String = 'Metastate';
+            c.Label.FontSize = 8;
+            
+            % Add vertical line at reach onset
+            plot([0 0], ylim, 'k--', 'LineWidth', 2);
+            
+            % Formatting
+            xlabel('Time relative to reach onset (s)', 'FontSize', 8);
+            ylabel('Reach Trial', 'FontSize', 8);
+            title(sprintf('%s - %s\n(%d trials)', areas{a}, condName, sum(validRows)), 'FontSize', 10);
+            
+            % Set axis limits
+            xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
+            ylim([0.5, size(metastateDataValid, 1) + 0.5]);
+            
+            % Set tick labels
+            xTicks = ceil(timeAxisPeriReach(1)):floor(timeAxisPeriReach(end));
+            if isempty(xTicks)
+                xTicks = linspace(timeAxisPeriReach(1), timeAxisPeriReach(end), 5);
+            end
+            xticks(xTicks);
+            xticklabels(string(xTicks));
+            
+            % Set y-axis ticks to show trial numbers
+            if size(metastateDataValid, 1) <= 10
+                yticks(1:size(metastateDataValid, 1));
+            else
+                yticks(1:5:size(metastateDataValid, 1));
+            end
+            
+            grid on;
+            set(gca, 'GridAlpha', 0.3);
+        end
+    end
+
+    % Add overall title
+    sgtitle(sprintf('%s - Peri-Reach Metastate Sequences (Window: %gs)', filePrefix, windowDurationSec), 'FontSize', 16);
+
+    % Save combined metastate figure (in same data-specific folder)
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_metastates_win%gs.png', filePrefix, windowDurationSec));
+    exportgraphics(gcf, filename, 'Resolution', 300);
+    fprintf('Saved peri-reach metastate plot to: %s\n', filename);
+else
+    fprintf('\nNo metastate data available for plotting\n');
+end
 
 %% ==============================================     Summary Statistics     ==============================================
 

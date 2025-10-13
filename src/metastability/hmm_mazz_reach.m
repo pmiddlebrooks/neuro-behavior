@@ -30,14 +30,20 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 HmmParam=struct();
 HmmParam.AdjustT=0.; % interval to skip at trial start to avoid canonical choise of 1st state in matlab
 % HmmParam.BinSize=0.002;%0.005; % time step of Markov chain
-HmmParam.BinSize=0.01;%0.005; % time step of Markov chain
+HmmParam.BinSize=0.002;%0.005; % time step of Markov chain
 HmmParam.MinDur=0.05;   % .05 min duration of an admissible state (s) in HMM DECODING
 HmmParam.MinP=0.8;      % pstate>MinP for an admissible state in HMM ADMISSIBLE STATES
 HmmParam.NumSteps=10;%    %10 number of fits at fixed parameters to avoid non-convexity
 HmmParam.NumRuns=50;%     % 50% % number of times we iterate hmmtrain over all trials
 
 opts.HmmParam = HmmParam;
+
+
+
+
 %% Discover all reach data files and process each
+
+
 reachDir = fullfile(paths.dropPath, 'reach_data');
 matFiles = dir(fullfile(reachDir, '*.mat'));
 reachDataFiles = cell(1, numel(matFiles));
@@ -45,20 +51,23 @@ for i = 1:numel(matFiles)
     reachDataFiles{i} = fullfile(reachDir, matFiles(i).name);
 end
 
-% reachDataFiles = cell(1);
-% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
-% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/AB2_11-May-2023 17_31_00_NeuroBeh.mat');
-% reachDataFiles{2} = fullfile(paths.dropPath, 'reach_data/AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
-% reachDataFiles{3} = fullfile(paths.dropPath, 'reach_data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
-% reachDataFiles{4} = fullfile(paths.dropPath, 'reach_data/AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
-% reachDataFiles{5} = fullfile(paths.dropPath, 'reach_data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
-% reachDataFiles{6} = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
-% reachDataFiles{7} = fullfile(paths.dropPath, 'reach_data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
-% reachDataFiles{8} = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFiles = cell(1);
+% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_task/data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFiles{1} = fullfile(paths.dropPath, 'reach_task/data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
+% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_task/data/AB2_11-May-2023 17_31_00_NeuroBeh.mat');
+% reachDataFiles{2} = fullfile(paths.dropPath, 'reach_task/data/AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
+% reachDataFiles{3} = fullfile(paths.dropPath, 'reach_task/data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
+% reachDataFiles{4} = fullfile(paths.dropPath, 'reach_task/data/AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
+% reachDataFiles{5} = fullfile(paths.dropPath, 'reach_task/data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
+% reachDataFiles{6} = fullfile(paths.dropPath, 'reach_task/data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
+% reachDataFiles{7} = fullfile(paths.dropPath, 'reach_task/data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
+% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_task/data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+
+reachDataFiles{1} = fullfile(paths.dropPath, 'reach_task/data/reach_test.mat');
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 areasToTest = 1:4; % Indices of areas to test
+
 
 % Process each reach data file
 for fileIdx = 1:numel(reachDataFiles)
@@ -72,10 +81,13 @@ for fileIdx = 1:numel(reachDataFiles)
     %     continue;
     % end
 end
-
 fprintf('\n=== All reach data files processed ===\n');
 
 function run_hmm_analysis_for_reach_file(reachDataFile, areas, areasToTest, opts, paths)
+
+% Set "trial duration" for reach data (required for the hmm fitting in
+% toolbox
+trialDur = 30; % "trial" duration in seconds
 
 % Load reach data
 dataR = load(reachDataFile);
@@ -88,6 +100,11 @@ saveDir = fullfile(paths.dropPath, 'reach_data', sessionName);
 if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
+% Save all results in a single file
+% Create filename with session name
+filename = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f.mat', opts.HmmParam.BinSize, opts.HmmParam.MinDur);
+filepath = fullfile(saveDir, filename);
+
 
 % Set collection parameters based on reach data
 opts.collectStart = 0;
@@ -132,8 +149,6 @@ idList = {idM23, idM56, idDS, idVS};
 % rStops = rStops(validTrials);
 % rAcc = dataR.BlockWithErrors(validTrials, 4);
 
-% Set trial duration for reach data
-trialDur = 20; % "trial" duration in seconds
 
 %% Initialize results structure for all areas
 results = struct();
@@ -149,6 +164,7 @@ results.analysisStatus = cell(1, length(areas));
 
 %% Loop through each brain area specified in areasToTest
 for areaIdx = areasToTest
+    tic
     idAreaName = areas{areaIdx};
     idArea = idList{areaIdx};
     dataMatMain = dataMat(:, idArea); % This should be your data
@@ -163,31 +179,85 @@ for areaIdx = areasToTest
     binSizeLoaded = opts.frameSize; % seconds
     gnunits = size(dataMatMain, 2); % number of neurons
 
-    % Unified approach: Segment continuous data by trialDur for reach data
-    fprintf('Using UNIFIED approach: Segmenting continuous data by trialDur\n');
+    % Reach-based trial segmentation: Each trial begins 3 seconds before reach start,
+    % ends frame before 3 seconds of following reach
+    fprintf('Using REACH-BASED approach: Segmenting data around reach events\n');
 
-    % Calculate number of complete trials
-    totalTime = size(dataMatMain, 1) * binSizeLoaded; % total time in seconds
-    ntrials = floor(totalTime / trialDur); % number of complete trials
+    % Extract reach start times (in milliseconds)
+    reachStartTimes_ms = dataR.R(:,1); % reach start times in milliseconds
+    reachEndTimes_ms = dataR.R(:,2);   % reach end times in milliseconds
+    
+    % Convert to seconds and sort
+    reachStartTimes_s = reachStartTimes_ms / 1000; % convert to seconds
+    reachEndTimes_s = reachEndTimes_ms / 1000;     % convert to seconds
+    
+    % Sort reach times to ensure proper ordering
+    [reachStartTimes_s, sortIdx] = sort(reachStartTimes_s);
+    reachEndTimes_s = reachEndTimes_s(sortIdx);
+    
+    % Define trial parameters
+    preReachTime = 3.0; % seconds before reach start
+    postReachTime = 3.0; % seconds after reach end (before next reach)
+    
+    % Calculate trial windows based on reach events
+    trialWindows = [];
+    trialStartTimes = [];
+    trialEndTimes = [];
+    
+    % Process each reach to define trial windows
+    for i_reach = 1:length(reachStartTimes_s)
+        % Trial starts 3 seconds before this reach
+        trialStart = reachStartTimes_s(i_reach) - preReachTime;
+        
+        % Trial ends frame before 3 seconds of next reach (or 5 seconds after last reach)
+        if i_reach < length(reachStartTimes_s)
+            % End frame before 3 seconds of next reach
+            trialEnd = reachStartTimes_s(i_reach + 1) - postReachTime;
+        else
+            % For last reach, end 5 seconds after the reach
+            trialEnd = reachStartTimes_s(i_reach) + 5.0;
+        end
+        
+        % Only include trials with positive duration
+        if trialEnd > trialStart
+            trialWindows = [trialWindows; trialStart, trialEnd];
+            trialStartTimes = [trialStartTimes; trialStart];
+            trialEndTimes = [trialEndTimes; trialEnd];
+        end
+    end
+    
+    ntrials = size(trialWindows, 1);
+    fprintf('Total time: %.1f seconds\n', opts.collectFor);
+    fprintf('Found %d reaches, created %d trials\n', length(reachStartTimes_s), ntrials);
+    fprintf('Trial duration range: %.1f - %.1f seconds\n', min(trialEndTimes - trialStartTimes), max(trialEndTimes - trialStartTimes));
 
-    fprintf('Total time: %.1f seconds\n', totalTime);
-    fprintf('Creating %d trials of %.1f seconds each\n', ntrials, trialDur);
-
-    % Convert time bin matrix to spike times format with multiple trials
+    % Convert time bin matrix to spike times format with variable-length trials
     spikes = struct('spk', cell(ntrials, gnunits));
     win_train = zeros(ntrials, 2); % trial windows [start, end] for each trial
 
     % For each trial
     for i_trial = 1:ntrials
-        % Calculate trial start and end bins
-        start_bin = (i_trial - 1) * trialDur / binSizeLoaded + 1;
-        end_bin = i_trial * trialDur / binSizeLoaded;
-
+        % Get trial start and end times
+        trialStart_s = trialStartTimes(i_trial);
+        trialEnd_s = trialEndTimes(i_trial);
+        trialDuration_s = trialEnd_s - trialStart_s;
+        
+        % Convert to bin indices (1-indexed)
+        start_bin = round(trialStart_s / binSizeLoaded) + 1;
+        end_bin = round(trialEnd_s / binSizeLoaded);
+        
         % Ensure we don't exceed data bounds
+        start_bin = max(1, start_bin);
         end_bin = min(end_bin, size(dataMatMain, 1));
+        
+        % Skip trials with invalid bounds
+        if start_bin >= end_bin
+            fprintf('Warning: Skipping trial %d due to invalid bounds\n', i_trial);
+            continue;
+        end
 
         % Trial window in seconds (relative to trial start)
-        win_train(i_trial, :) = [0, trialDur];
+        win_train(i_trial, :) = [0, trialDuration_s];
 
         % For each neuron in this trial
         for i_neuron = 1:gnunits
@@ -218,9 +288,9 @@ for areaIdx = areasToTest
     DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL, 'HmmParam', opts.HmmParam);
 
     % Run HMM analysis
-    try
+    % try
         myCluster = parcluster('local');
-        NumWorkers=min(myCluster.NumWorkers, 6);
+        NumWorkers=min(myCluster.NumWorkers, 5);
         parpool('local', NumWorkers);
 
         res = hmm.funHMM(DATAIN);
@@ -249,29 +319,29 @@ for areaIdx = areasToTest
         %      HmmParam.NumRuns: maximum number of iterations each EM runs for
 
         fprintf('HMM analysis completed successfully!\n');
-        fprintf('Number of states: %d\n', res.HmmParam.VarStates(res.BestStateInd));
+        fprintf('\t\t\tNumber of states for %s: %d\n', idAreaName, res.HmmParam.VarStates(res.BestStateInd));
         fprintf('Log-likelihood: %.2f\n', res.hmm_bestfit.LLtrain);
 
         fprintf('HMM completed successfully: Need to save it!\n');
 
-    catch ME
-        fprintf('Error in HMM analysis: %s\n', ME.message);
-        fprintf('You may need to implement the HMM fitting functions separately.\n');
-        pid = gcp;
-        delete(pid)
-        
-        % Store error status
-        results.hmm_results{areaIdx} = [];
-        results.binSize(areaIdx) = NaN;
-        results.minDur(areaIdx) = NaN;
-        results.numStates(areaIdx) = NaN;
-        results.logLikelihood(areaIdx) = NaN;
-        results.numNeurons(areaIdx) = gnunits;
-        results.numTrials(areaIdx) = ntrials;
-        results.analysisStatus{areaIdx} = sprintf('ERROR: %s', ME.message);
-        
-        continue % Skip to next area if HMM fails
-    end
+    % catch ME
+    %     fprintf('Error in HMM analysis: %s\n', ME.message);
+    %     fprintf('You may need to implement the HMM fitting functions separately.\n');
+    %     pid = gcp;
+    %     delete(pid)
+    % 
+    %     % Store error status
+    %     results.hmm_results{areaIdx} = [];
+    %     results.binSize(areaIdx) = NaN;
+    %     results.minDur(areaIdx) = NaN;
+    %     results.numStates(areaIdx) = NaN;
+    %     results.logLikelihood(areaIdx) = NaN;
+    %     results.numNeurons(areaIdx) = gnunits;
+    %     results.numTrials(areaIdx) = ntrials;
+    %     results.analysisStatus{areaIdx} = sprintf('ERROR: %s', ME.message);
+    % 
+    %     continue % Skip to next area if HMM fails
+    % end
 
     pid = gcp;
     delete(pid)
@@ -285,10 +355,16 @@ for areaIdx = areasToTest
 
         % Get dimensions
         numTrials = length(res.hmm_results);
-        numTimePerTrial = size(res.hmm_results(1).pStates, 2);
         numStates = size(res.hmm_results(1).pStates, 1);
         numNeurons = size(res.hmm_results(1).rates, 2);
-        totalTimeBins = numTrials * numTimePerTrial;
+        
+        % Calculate total time bins for variable-length trials
+        totalTimeBins = 0;
+        trialTimeBins = zeros(numTrials, 1);
+        for iTrial = 1:numTrials
+            trialTimeBins(iTrial) = size(res.hmm_results(iTrial).pStates, 2);
+            totalTimeBins = totalTimeBins + trialTimeBins(iTrial);
+        end
 
         % Initialize continuous arrays
         continuous_pStates = zeros(totalTimeBins, numStates);
@@ -296,12 +372,19 @@ for areaIdx = areasToTest
         continuous_sequence = zeros(totalTimeBins, 1);
 
         % Concatenate results from each trial
+        currentBin = 1;
         for iTrial = 1:numTrials
-            % Time indices for this trial
-            timeIdx = ((iTrial-1)*numTimePerTrial + 1):(iTrial*numTimePerTrial);
+            % Get number of time bins for this specific trial
+            numTimePerTrial = trialTimeBins(iTrial);
+            
+            % Time indices for this trial based on current position
+            timeIdx = currentBin:(currentBin + numTimePerTrial - 1);
 
             % Copy posterior state probabilities
             continuous_pStates(timeIdx, :) = res.hmm_results(iTrial).pStates';
+            
+            % Update current bin position for next trial
+            currentBin = currentBin + numTimePerTrial;
         end
 
         % Compute continuous_sequence from continuous_pStates using MinP threshold
@@ -319,6 +402,65 @@ for areaIdx = areasToTest
 
         fprintf('Successfully transformed results to continuous format\n');
         fprintf('Total time bins: %d (%.1f seconds)\n', totalTimeBins, totalTimeBins * res.HmmParam.BinSize);
+    end
+
+    % ----------------------------
+    % METASTATE DETECTION
+    %----------------------------
+    
+    if ~isempty(res) && isfield(res, 'hmm_bestfit') && isfield(res.hmm_bestfit, 'tpm')
+        fprintf('Detecting metastates from transition probability matrix...\n');
+        
+        % Get transition probability matrix
+        tpm = res.hmm_bestfit.tpm;
+        numStates = size(tpm, 1);
+        
+        fprintf('Transition probability matrix size: %dx%d\n', numStates, numStates);
+        
+        % Detect metastate communities using Vidaurre method
+        try
+            communities = detect_metastates_vidaurre(tpm, true); % verbose output
+            
+            % Create continuous metastates sequence
+            continuous_metastates = zeros(size(continuous_sequence));
+            
+            % Map each state to its metastate
+            for iBin = 1:length(continuous_sequence)
+                state = continuous_sequence(iBin);
+                if ~isnan(state) && state > 0 && state <= numStates
+                    continuous_metastates(iBin) = communities(state);
+                else
+                    continuous_metastates(iBin) = 0; % Keep undefined states as 0
+                end
+            end
+            
+            % Get unique metastates and their composition
+            uniqueMetastates = unique(communities);
+            numMetastates = length(uniqueMetastates);
+            
+            fprintf('\t\t\tNumber of metastates: %d (from %d states)\n', numMetastates, numStates);
+            for m = 1:numMetastates
+                metastateLabel = uniqueMetastates(m);
+                statesInMetastate = find(communities == metastateLabel);
+                fprintf('  Metastate %d: states [%s]\n', metastateLabel, num2str(statesInMetastate));
+            end
+            
+            fprintf('Successfully created continuous metastates sequence\n');
+            
+        catch ME
+            fprintf('Error in metastate detection: %s\n', ME.message);
+            fprintf('Skipping metastate analysis for area %s\n', idAreaName);
+            
+            % Set empty metastate results
+            communities = [];
+            continuous_metastates = [];
+            numMetastates = 0;
+        end
+    else
+        fprintf('No transition probability matrix available for metastate detection\n');
+        communities = [];
+        continuous_metastates = [];
+        numMetastates = 0;
     end
 
     % ----------------------------
@@ -349,12 +491,14 @@ for areaIdx = areasToTest
 
     % Trial parameters
     hmm_res.trial_params = struct();
-    % hmm_res.trial_params.trial_windows = win_train; % [start, end] for each trial
-    % hmm_res.trial_params.trial_duration = trialDur;
-    % hmm_res.trial_params.reach_starts = rStarts;
-    % hmm_res.trial_params.reach_stops = rStops;
-    % hmm_res.trial_params.reach_accuracy = rAcc;
-    % hmm_res.trial_params.valid_trials = validTrials;
+    hmm_res.trial_params.trial_windows = win_train; % [start, end] for each trial
+    hmm_res.trial_params.trial_start_times = trialStartTimes; % absolute start times
+    hmm_res.trial_params.trial_end_times = trialEndTimes; % absolute end times
+    hmm_res.trial_params.reach_start_times = reachStartTimes_s; % reach start times in seconds
+    hmm_res.trial_params.reach_end_times = reachEndTimes_s; % reach end times in seconds
+    hmm_res.trial_params.pre_reach_time = preReachTime; % seconds before reach
+    hmm_res.trial_params.post_reach_time = postReachTime; % seconds after reach
+    hmm_res.trial_params.trial_duration_range = [min(trialEndTimes - trialStartTimes), max(trialEndTimes - trialStartTimes)];
 
     % HMM results
     hmm_res.hmm_data = res.hmm_data;
@@ -378,6 +522,17 @@ for areaIdx = areasToTest
     hmm_res.continuous_results.pStates = continuous_pStates;
     hmm_res.continuous_results.sequence = continuous_sequence;
     hmm_res.continuous_results.totalTime = totalTimeBins * res.HmmParam.BinSize;
+    
+    % Store metastate results
+    hmm_res.metastate_results = struct();
+    hmm_res.metastate_results.communities = communities;
+    hmm_res.metastate_results.continuous_metastates = continuous_metastates;
+    hmm_res.metastate_results.num_metastates = numMetastates;
+    if exist('tpm', 'var')
+        hmm_res.metastate_results.transition_matrix = tpm;
+    else
+        hmm_res.metastate_results.transition_matrix = [];
+    end
 
     % Store results in the main results structure
     results.hmm_results{areaIdx} = hmm_res;
@@ -389,17 +544,13 @@ for areaIdx = areasToTest
     results.numTrials(areaIdx) = ntrials;
     results.analysisStatus{areaIdx} = 'SUCCESS';
 
-    fprintf('Completed analysis for brain area: %s\n', idAreaName);
+    fprintf('Completed analysis for brain area: %s\t%.1f\n', idAreaName, toc/60);
     
 end % End of loop through brain areas
 
 
 
 
-% Save all results in a single file
-% Create filename with session name
-filename = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f.mat', results.binSize(1), results.minDur(1));
-filepath = fullfile(saveDir, filename);
 
 % Save the results
 fprintf('Saving all HMM results to: %s\n', filepath);
