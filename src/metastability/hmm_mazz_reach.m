@@ -197,7 +197,7 @@ for areaIdx = areasToTest
     
     % Define trial parameters
     preReachTime = 3.0; % seconds before reach start
-    postReachTime = 3.0; % seconds after reach end (before next reach)
+    preReachTime = 0.0; % seconds before reach start
     
     % Calculate trial windows based on reach events
     trialWindows = [];
@@ -212,7 +212,7 @@ for areaIdx = areasToTest
         % Trial ends frame before 3 seconds of next reach (or 5 seconds after last reach)
         if i_reach < length(reachStartTimes_s)
             % End frame before 3 seconds of next reach
-            trialEnd = reachStartTimes_s(i_reach + 1) - postReachTime;
+            trialEnd = reachStartTimes_s(i_reach + 1) - preReachTime;
         else
             % For last reach, end 5 seconds after the reach
             trialEnd = reachStartTimes_s(i_reach) + 5.0;
@@ -497,7 +497,6 @@ for areaIdx = areasToTest
     hmm_res.trial_params.reach_start_times = reachStartTimes_s; % reach start times in seconds
     hmm_res.trial_params.reach_end_times = reachEndTimes_s; % reach end times in seconds
     hmm_res.trial_params.pre_reach_time = preReachTime; % seconds before reach
-    hmm_res.trial_params.post_reach_time = postReachTime; % seconds after reach
     hmm_res.trial_params.trial_duration_range = [min(trialEndTimes - trialStartTimes), max(trialEndTimes - trialStartTimes)];
 
     % HMM results
