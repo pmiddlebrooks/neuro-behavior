@@ -9,7 +9,7 @@ cd(fullfile(paths.homePath, 'toolboxes/contamineuro_2019_spiking_net/'));
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.minFiringRate = .05;
-opts.minFiringRate = .1;
+opts.minFiringRate = .2;
 opts.frameSize = .001;
 opts.firingRateCheckTime = 5 * 60;
 
@@ -25,6 +25,7 @@ HmmParam.MinDur = 0.05;
 HmmParam.MinP = 0.8;
 HmmParam.NumSteps = 10;
 HmmParam.NumRuns = 50;
+HmmParam.singleSeqXval.K = 5; % Cross-validation
 opts.HmmParam = HmmParam;
 
 % Which data to analyze
@@ -136,26 +137,43 @@ for areaIdx = areasToTest
     fprintf('Total time: %.1f seconds\n', totalTime);
     fprintf('Creating %d behavior-based trials (min dur %.1f s)\n', ntrials, minTrialDur);
 
-    spikes = struct('spk', cell(ntrials, gnunits));
-    win_train = zeros(ntrials, 2);
+    % spikes = struct('spk', cell(ntrials, gnunits));
+    % win_train = zeros(ntrials, 2);
+    % 
+    % for i_trial = 1:ntrials
+    %     trialStart_s = trialStartTimesValid(i_trial);
+    %     trialEnd_s = trialEndTimesValid(i_trial);
+    %     start_bin = max(1, round(trialStart_s / binSizeLoaded) + 1);
+    %     end_bin = min(size(dataMatMain, 1), round(trialEnd_s / binSizeLoaded));
+    %     trialDuration_s = trialEnd_s - trialStart_s;
+    %     if end_bin <= start_bin
+    %         continue;
+    %     end
+    %     win_train(i_trial, :) = [0, trialDuration_s];
+    %     for i_neuron = 1:gnunits
+    %         trial_data = dataMatMain(start_bin:end_bin, i_neuron);
+    %         spike_bins = find(trial_data > 0);
+    %         spike_times = (spike_bins - 1) * binSizeLoaded;
+    %         spikes(i_trial, i_neuron).spk = spike_times;
+    %     end
+    % end
 
-    for i_trial = 1:ntrials
-        trialStart_s = trialStartTimesValid(i_trial);
-        trialEnd_s = trialEndTimesValid(i_trial);
+    spikes = struct('spk', cell(1, gnunits));
+        trialStart_s = 0;
+        trialEnd_s = size(dataMatMain, 1) * opts.frameSize;
         start_bin = max(1, round(trialStart_s / binSizeLoaded) + 1);
         end_bin = min(size(dataMatMain, 1), round(trialEnd_s / binSizeLoaded));
         trialDuration_s = trialEnd_s - trialStart_s;
         if end_bin <= start_bin
             continue;
         end
-        win_train(i_trial, :) = [0, trialDuration_s];
+        win_train = [0, trialDuration_s];
         for i_neuron = 1:gnunits
             trial_data = dataMatMain(start_bin:end_bin, i_neuron);
             spike_bins = find(trial_data > 0);
             spike_times = (spike_bins - 1) * binSizeLoaded;
-            spikes(i_trial, i_neuron).spk = spike_times;
+            spikes(1, i_neuron).spk = spike_times;
         end
-    end
 
     % HMM analysis
     fprintf('\n\nRunning HMM on Nat data for area %s\n\n', idAreaName)
@@ -164,7 +182,7 @@ for areaIdx = areasToTest
     MODELSEL = 'XVAL';
     DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL, 'HmmParam', opts.HmmParam);
 
-    try
+     % try
         myCluster = parcluster('local');
         NumWorkers = min(myCluster.NumWorkers, 6);
         parpool('local', NumWorkers);
@@ -174,19 +192,19 @@ for areaIdx = areasToTest
         fprintf('HMM analysis completed successfully!\n');
         fprintf('\t\t\tNumber of states for %s: %d\n', idAreaName, res.HmmParam.VarStates(res.BestStateInd));
         fprintf('Log-likelihood: %.2f\n', res.hmm_bestfit.LLtrain);
-    catch ME
-        fprintf('Error in HMM analysis: %s\n', ME.message);
-        pid = gcp; delete(pid)
-        results.hmm_results{areaIdx} = [];
-        results.binSize(areaIdx) = NaN;
-        results.minDur(areaIdx) = NaN;
-        results.numStates(areaIdx) = NaN;
-        results.logLikelihood(areaIdx) = NaN;
-        results.numNeurons(areaIdx) = gnunits;
-        results.numTrials(areaIdx) = ntrials;
-        results.analysisStatus{areaIdx} = sprintf('ERROR: %s', ME.message);
-        continue
-    end
+    % catch ME
+    %     fprintf('Error in HMM analysis: %s\n', ME.message);
+    %     pid = gcp; delete(pid)
+    %     results.hmm_results{areaIdx} = [];
+    %     results.binSize(areaIdx) = NaN;
+    %     results.minDur(areaIdx) = NaN;
+    %     results.numStates(areaIdx) = NaN;
+    %     results.logLikelihood(areaIdx) = NaN;
+    %     results.numNeurons(areaIdx) = gnunits;
+    %     results.numTrials(areaIdx) = ntrials;
+    %     results.analysisStatus{areaIdx} = sprintf('ERROR: %s', ME.message);
+    %     continue
+    % end
 
     pid = gcp; delete(pid)
 
