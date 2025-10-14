@@ -46,13 +46,13 @@ numStates = results.numStates;
 hmmResults = results.hmm_results;
 
 % Load naturalistic behavioral data
-fprintf('Loading naturalistic behavioral data...\n');
-getDataType = 'spikes';
-[dataSpikes, dataBhv, dataKin] = get_standard_data(getDataType);
+% fprintf('Loading naturalistic behavioral data...\n');
+% getDataType = 'spikes';
+% [dataSpikes, dataBhv, dataKin] = get_standard_data(getDataType);
 
 % Extract trial parameters from results
-trialStartTimes = results.trial_start_times;
-trialEndTimes = results.trial_end_times;
+trialStartTimes = results.hmm_results{1}.trial_params.trial_start_times;
+trialEndTimes = results.hmm_results{1}.trial_params.trial_end_times;
 
 % ==============================================     Peri-Trial Analysis     ==============================================
 

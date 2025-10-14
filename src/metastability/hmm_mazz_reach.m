@@ -96,7 +96,7 @@ dataR = load(reachDataFile);
 [~, sessionName, ~] = fileparts(reachDataFile);
 
 % Create session-specific save directory
-saveDir = fullfile(paths.dropPath, 'reach_data', sessionName);
+saveDir = fullfile(paths.dropPath, 'reach_task', sessionName);
 if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end

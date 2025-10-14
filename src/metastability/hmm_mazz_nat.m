@@ -48,25 +48,20 @@ idM23 = find(strcmp(areaLabels, 'M23'));
 idM56 = find(strcmp(areaLabels, 'M56'));
 idDS = find(strcmp(areaLabels, 'DS'));
 idVS = find(strcmp(areaLabels, 'VS'));
-fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
 idList = {idM23, idM56, idDS, idVS};
 
-% Event-based trial segmentation using behavioral starts from dataBhv
+%% Event-based trial segmentation using behavioral starts from dataBhv
 % Define behavior and segmentation parameters
 bhvStartID = 15;          % behavior ID that marks trial starts
 minBhvDur = 0.5;        % seconds (minimum behavior duration)
 preBhvTime = -.2;       % seconds before behavior start to include (can be negative for after behavior start)
 minTrialDur = 5.0;      % seconds (minimum separation/length between trial starts)
 
-% Build list of candidate trial starts from dataBhv (seconds)
-if ~exist('dataBhv', 'var') || ~isfield(dataBhv, 'ID') || ~isfield(dataBhv, 'Dur') || ~isfield(dataBhv, 'Time')
-    error('dataBhv with fields ID, Dur, Time is required from get_standard_data');
-end
 
 % Identify behavior onsets matching bhvStartID with sufficient duration
 isStart = (dataBhv.ID == bhvStartID) & (dataBhv.Dur >= minBhvDur);
-candidateStarts = dataBhv.Time(isStart); % seconds
+candidateStarts = dataBhv.StartTime(isStart); % seconds
 
 % Enforce minimum spacing between trials (seconds)
 candidateStarts = sort(candidateStarts(:));
@@ -195,34 +190,122 @@ for areaIdx = areasToTest
 
     pid = gcp; delete(pid)
 
-    % Transform to continuous time
+    % ----------------------------
+    % TRANSFORM TRIAL RESULTS BACK TO CONTINUOUS TIME SERIES
+    %----------------------------
+%
     if ~isempty(res) && isfield(res, 'hmm_results') && isfield(res, 'hmm_postfit')
         fprintf('Transforming trial results back to continuous time series...\n');
+
+        % Get dimensions
         numTrials = length(res.hmm_results);
-        numTimePerTrial = size(res.hmm_results(1).pStates, 2);
         numStates = size(res.hmm_results(1).pStates, 1);
         numNeurons = size(res.hmm_results(1).rates, 2);
-        totalTimeBins = numTrials * numTimePerTrial;
+        
+        % Calculate total time bins for variable-length trials
+        totalTimeBins = 0;
+        trialTimeBins = zeros(numTrials, 1);
+        for iTrial = 1:numTrials
+            trialTimeBins(iTrial) = size(res.hmm_results(iTrial).pStates, 2);
+            totalTimeBins = totalTimeBins + trialTimeBins(iTrial);
+        end
 
+        % Initialize continuous arrays
         continuous_pStates = zeros(totalTimeBins, numStates);
         continuous_rates = zeros(totalTimeBins, numStates, numNeurons);
         continuous_sequence = zeros(totalTimeBins, 1);
 
+        % Concatenate results from each trial
+        currentBin = 1;
         for iTrial = 1:numTrials
-            timeIdx = ((iTrial-1)*numTimePerTrial + 1):(iTrial*numTimePerTrial);
+            % Get number of time bins for this specific trial
+            numTimePerTrial = trialTimeBins(iTrial);
+            
+            % Time indices for this trial based on current position
+            timeIdx = currentBin:(currentBin + numTimePerTrial - 1);
+
+            % Copy posterior state probabilities
             continuous_pStates(timeIdx, :) = res.hmm_results(iTrial).pStates';
+            
+            % Update current bin position for next trial
+            currentBin = currentBin + numTimePerTrial;
         end
 
+        % Compute continuous_sequence from continuous_pStates using MinP threshold
+        % For each time bin, find the state with highest probability
         for iBin = 1:totalTimeBins
             stateProbs = continuous_pStates(iBin,:);
             [maxProb, maxState] = max(stateProbs);
+
+            % Assign state if probability exceeds MinP threshold
             if maxProb >= res.HmmParam.MinP
                 continuous_sequence(iBin) = maxState;
             end
+            % Otherwise, keep as NaN (no confident state assignment)
         end
+
 
         fprintf('Successfully transformed results to continuous format\n');
         fprintf('Total time bins: %d (%.1f seconds)\n', totalTimeBins, totalTimeBins * res.HmmParam.BinSize);
+    end
+
+    % ----------------------------
+    % METASTATE DETECTION
+    %----------------------------
+    
+    if ~isempty(res) && isfield(res, 'hmm_bestfit') && isfield(res.hmm_bestfit, 'tpm')
+        fprintf('Detecting metastates from transition probability matrix...\n');
+        
+        % Get transition probability matrix
+        tpm = res.hmm_bestfit.tpm;
+        numStates = size(tpm, 1);
+        
+        fprintf('Transition probability matrix size: %dx%d\n', numStates, numStates);
+        
+        % Detect metastate communities using Vidaurre method
+        try
+            communities = detect_metastates_vidaurre(tpm, true); % verbose output
+            
+            % Create continuous metastates sequence
+            continuous_metastates = zeros(size(continuous_sequence));
+            
+            % Map each state to its metastate
+            for iBin = 1:length(continuous_sequence)
+                state = continuous_sequence(iBin);
+                if ~isnan(state) && state > 0 && state <= numStates
+                    continuous_metastates(iBin) = communities(state);
+                else
+                    continuous_metastates(iBin) = 0; % Keep undefined states as 0
+                end
+            end
+            
+            % Get unique metastates and their composition
+            uniqueMetastates = unique(communities);
+            numMetastates = length(uniqueMetastates);
+            
+            fprintf('\t\t\tNumber of metastates: %d (from %d states)\n', numMetastates, numStates);
+            for m = 1:numMetastates
+                metastateLabel = uniqueMetastates(m);
+                statesInMetastate = find(communities == metastateLabel);
+                fprintf('  Metastate %d: states [%s]\n', metastateLabel, num2str(statesInMetastate));
+            end
+            
+            fprintf('Successfully created continuous metastates sequence\n');
+            
+        catch ME
+            fprintf('Error in metastate detection: %s\n', ME.message);
+            fprintf('Skipping metastate analysis for area %s\n', idAreaName);
+            
+            % Set empty metastate results
+            communities = [];
+            continuous_metastates = [];
+            numMetastates = 0;
+        end
+    else
+        fprintf('No transition probability matrix available for metastate detection\n');
+        communities = [];
+        continuous_metastates = [];
+        numMetastates = 0;
     end
 
     % Package per-area results
@@ -271,6 +354,17 @@ for areaIdx = areasToTest
     hmm_res.continuous_results.pStates = continuous_pStates;
     hmm_res.continuous_results.sequence = continuous_sequence;
     hmm_res.continuous_results.totalTime = totalTimeBins * res.HmmParam.BinSize;
+    
+    % Store metastate results
+    hmm_res.metastate_results = struct();
+    hmm_res.metastate_results.communities = communities;
+    hmm_res.metastate_results.continuous_metastates = continuous_metastates;
+    hmm_res.metastate_results.num_metastates = numMetastates;
+    if exist('tpm', 'var')
+        hmm_res.metastate_results.transition_matrix = tpm;
+    else
+        hmm_res.metastate_results.transition_matrix = [];
+    end
 
     % Store in results
     results.hmm_results{areaIdx} = hmm_res;
