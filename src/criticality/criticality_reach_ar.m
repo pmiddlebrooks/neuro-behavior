@@ -13,15 +13,15 @@ loadExistingResults = false;
 makePlots = true;
 
 % Discover all reach data files and process each
-reachDir = fullfile(paths.dropPath, 'reach_data');
+reachDir = fullfile(paths.dropPath, 'reach_task/data');
 matFiles = dir(fullfile(reachDir, '*.mat'));
 reachDataFiles = cell(1, numel(matFiles));
 for i = 1:numel(matFiles)
     reachDataFiles{i} = fullfile(reachDir, matFiles(i).name);
 end
 % reachDataFiles = cell(1);
-% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
-% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
+% reachDataFiles{1} = fullfile(paths.dropPath, 'reach_task/data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+reachDataFiles{1} = fullfile(paths.dropPath, 'reach_task/data/makeSpikes.mat');
 for fileIdx = 1:numel(reachDataFiles)
     % try
     run_reach_analysis_for_file(reachDataFiles{fileIdx}, slidingWindowSize, makePlots, paths);
@@ -59,7 +59,7 @@ areasToTest = 1:4;
 
 
 [~, dataBaseName, ~] = fileparts(reachDataFile);
-saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
+saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
 if ~exist(saveDir, 'dir'); mkdir(saveDir); end
 
 resultsPath = fullfile(saveDir, sprintf('criticality_reach_ar_win%d.mat', slidingWindowSize));

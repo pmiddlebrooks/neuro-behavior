@@ -1,3 +1,18 @@
+% If you run this code, it will generate poisson spike times for 100
+% neurons for 200 trials. Reaches occur every 10 seconds @ 8, 18, 28s...
+% Columns of CC are spike time and neuron ID. Could you run your d2 code on
+% it?   
+% 
+% All neurons ramp up/down their activity to 4x their baseline. The
+% baseline is normally distributed around 4hz, so 0.1% will fire less than
+% 1hz, but 93% will fire above 2.5hz.
+% 
+% After some thinking with Keith H, I just want to check what independently
+% modulated neurons would do for your d2 metric, e.g. in this case there is
+% no network phenomenon - just 100 neurons that are individually and
+% independently tuned to the same thing (they could come from 100 different
+% brains). 
+
 duration = 2000; % Duration of simulation in seconds
 dt = 0.001; % Time step in seconds
 t_vec = 0:dt:duration-dt;
@@ -34,3 +49,14 @@ figure; hist(spike_times,0:.2:75); xlim([0 74.5])
 
 CC=[CC;[spike_times',repmat(nn,[length(spike_times),1])]];
 end
+
+R = 8 : 10 : duration;
+
+Block = ones(length(R), 3);
+Block(floor(length(R)/2),3) = 2;
+
+idchan = zeros(size(CC, 2), 7);
+idchan(:,1) = 1:max(unique(CC(:,2)));
+idchan(:,4) = 1; % make all neurons "good"
+
+

@@ -15,15 +15,16 @@
 slidingWindowSize = 4;% For d2, use a small window to try to optimize temporal resolution
 
 % User-specified reach data file (should match the one used in criticality_reach_ar.m)
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_11-May-2023 17_31_00_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_11-May-2023 17_31_00_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/makeSpikes.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
 
 areasToTest = 1:4;
 

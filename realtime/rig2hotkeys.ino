@@ -92,6 +92,13 @@ void loop() {
       case '1':
         // Manual solenoid click
         if (!givingReward) {
+          // Ensure LED is off and cancel any pending wait before manual click
+          if (ledOn) {
+            turnOffLED();
+          }
+          if (waitingForBeam) {
+            waitingForBeam = false;
+          }
           openSolenoid();
           writeState("MANUAL_SOLENOID_CLICK");
         }
