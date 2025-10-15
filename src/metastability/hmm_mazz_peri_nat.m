@@ -21,7 +21,7 @@ preBhvTime = -.2;
 areasToTest = 1:4;
 
 % Define window parameters
-windowDurationSec = 16; % 16-second window around each trial
+windowDurationSec = 8; % 16-second window around each trial
 
 % Determine save directory and filename based on parameters
 hmmdir = fullfile(paths.dropPath, 'metastability');
@@ -44,6 +44,44 @@ areas = results.areas;
 binSizes = results.binSize;
 numStates = results.numStates;
 hmmResults = results.hmm_results;
+
+% Prepare distinct colormaps per area for states and metastates
+stateCmaps = cell(1, length(areas));
+metaCmaps = cell(1, length(areas));
+for a = 1:length(areas)
+    try
+        if numStates(a) > 0
+            rgb = maxdistcolor(numStates(a), @sRGB_to_OKLab);
+            stateCmaps{a} = [1 1 1; rgb]; % state 0 is white
+        else
+            stateCmaps{a} = lines(max(1, numStates(a)+1));
+            stateCmaps{a}(1,:) = [1 1 1];
+        end
+    catch
+        % Fallback if maxdistcolor not available
+        ctmp = lines(max(1, numStates(a)+1));
+        ctmp(1,:) = [1 1 1];
+        stateCmaps{a} = ctmp;
+    end
+    % Metastate colormap (if available)
+    if ~isempty(hmmResults{a}) && isfield(hmmResults{a}, 'metastate_results') && isfield(hmmResults{a}.metastate_results, 'num_metastates')
+        nMeta = hmmResults{a}.metastate_results.num_metastates;
+        try
+            if nMeta > 0
+                rgbm = maxdistcolor(nMeta, @sRGB_to_OKLab);
+                metaCmaps{a} = [1 1 1; rgbm]; % metastate 0 is white
+            else
+                metaCmaps{a} = lines(1); metaCmaps{a}(1,:) = [1 1 1];
+            end
+        catch
+            ctmp = lines(max(1, nMeta+1));
+            ctmp(1,:) = [1 1 1];
+            metaCmaps{a} = ctmp;
+        end
+    else
+        metaCmaps{a} = [];
+    end
+end
 
 % Load naturalistic behavioral data
 % fprintf('Loading naturalistic behavioral data...\n');
@@ -190,19 +228,16 @@ for areaIdx = 1:length(areasToTest)
     % Create imagesc plot
     imagesc(timeAxisPeriTrial, 1:size(stateDataValid, 1), stateDataValid);
     
-    % Set colormap to distinguish states with state 0 as white
-    if numStates(a) > 0
-        % Create custom colormap with white for state 0
-        cmap = lines(numStates(a));
-        % Ensure state 0 (undefined) is white
-        cmap(1, :) = [1 1 1]; % White for state 0
-        colormap(cmap);
-    else
-        colormap('lines');
+    % Set colormap to be consistent within area; state 0 is white
+    if ~isempty(stateCmaps{a})
+        colormap(ha(areaIdx), stateCmaps{a});
+        caxis(ha(areaIdx), [0, max(1, numStates(a))]);
     end
     
-    % Add colorbar
-    c = colorbar;
+    % Add colorbar (single row: add per area) with fixed ticks/labels
+    c = colorbar('peer', ha(areaIdx));
+    c.Ticks = 0:max(1, numStates(a));
+    c.TickLabels = string(0:max(1, numStates(a)));
     c.Label.String = 'HMM State';
     c.Label.FontSize = 8;
     
@@ -308,24 +343,19 @@ if hasAnyMetastates
         % Create imagesc plot
         imagesc(timeAxisPeriTrial, 1:size(metastateDataValid, 1), metastateDataValid);
         
-        % Set colormap to distinguish metastates with metastate 0 as white
-        if ~isempty(results.hmm_results{a}) && isfield(results.hmm_results{a}, 'metastate_results') && ~isempty(results.hmm_results{a}.metastate_results.communities)
-            numMetastates = results.hmm_results{a}.metastate_results.num_metastates;
-            if numMetastates > 0
-                % Create custom colormap with white for metastate 0
-                cmap = lines(numMetastates + 1); % +1 for metastate 0
-                % Ensure metastate 0 (undefined) is white
-                cmap(1, :) = [1 1 1]; % White for metastate 0
-                colormap(cmap);
-            else
-                colormap('lines');
-            end
-        else
-            colormap('lines');
+        % Set colormap for metastates; metastate 0 is white
+        if ~isempty(metaCmaps{a})
+            colormap(ha(areaIdx), metaCmaps{a});
+            nMeta = size(metaCmaps{a},1) - 1;
+            caxis(ha(areaIdx), [0, max(1, nMeta)]);
         end
         
-        % Add colorbar
-        c = colorbar;
+        % Add colorbar (single row: add per area) with fixed ticks/labels
+        c = colorbar('peer', ha(areaIdx));
+        if exist('nMeta','var') && ~isempty(nMeta)
+            c.Ticks = 0:max(1, nMeta);
+            c.TickLabels = string(0:max(1, nMeta));
+        end
         c.Label.String = 'Metastate';
         c.Label.FontSize = 8;
         

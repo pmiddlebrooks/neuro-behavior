@@ -12,7 +12,7 @@
 %   meanD2PeriReach - mean d2 values across all reaches for each area
 
 %% Load existing results if requested
-slidingWindowSize = 4;% For d2, use a small window to try to optimize temporal resolution
+slidingWindowSize = 8;% For d2, use a small window to try to optimize temporal resolution
 
 % User-specified reach data file (should match the one used in criticality_reach_ar.m)
 reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
@@ -32,7 +32,7 @@ areasToTest = 1:4;
 plotErrors = true;
 % Plotting toggles
 plotD2 = true;     % plot d2 panels
-plotMrBr = false;   % plot mrBr panels (only if d2 exists for area)
+plotMrBr = true;   % plot mrBr panels (only if d2 exists for area)
 
 %
 paths = get_paths;

@@ -35,14 +35,14 @@ areasToTest = 1:4;
 plotErrors = true;
 
 % Define window parameters
-windowDurationSec = 16; % 40-second window around each reach
+windowDurationSec = 8; % 40-second window around each reach
 
 % Extract session name from filename
 [~, sessionName, ~] = fileparts(reachDataFile);
 
 % Determine save directory based on loaded data file name (same as hmm_mazz_reach.m)
 [~, dataBaseName, ~] = fileparts(reachDataFile);
-saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
+saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
 filename = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f.mat', binSize, minDur);
 resultsPath = fullfile(saveDir, filename);
 
@@ -62,6 +62,44 @@ areas = results.areas;
 binSizes = results.binSize;
 numStates = results.numStates;
 hmmResults = results.hmm_results;
+
+% Prepare distinct colormaps per area for states and metastates
+stateCmaps = cell(1, length(areas));
+metaCmaps = cell(1, length(areas));
+for a = 1:length(areas)
+    try
+        if numStates(a) > 0
+            rgb = maxdistcolor(numStates(a), @sRGB_to_OKLab);
+            stateCmaps{a} = [1 1 1; rgb]; % state 0 is white
+        else
+            stateCmaps{a} = lines(max(1, numStates(a)+1));
+            stateCmaps{a}(1,:) = [1 1 1];
+        end
+    catch
+        % Fallback if maxdistcolor not available
+        ctmp = lines(max(1, numStates(a)+1));
+        ctmp(1,:) = [1 1 1];
+        stateCmaps{a} = ctmp;
+    end
+    % Metastate colormap (if available)
+    if ~isempty(hmmResults{a}) && isfield(hmmResults{a}, 'metastate_results') && isfield(hmmResults{a}.metastate_results, 'num_metastates')
+        nMeta = hmmResults{a}.metastate_results.num_metastates;
+        try
+            if nMeta > 0
+                rgbm = maxdistcolor(nMeta, @sRGB_to_OKLab);
+                metaCmaps{a} = [1 1 1; rgbm]; % metastate 0 is white
+            else
+                metaCmaps{a} = lines(1); metaCmaps{a}(1,:) = [1 1 1];
+            end
+        catch
+            ctmp = lines(max(1, nMeta+1));
+            ctmp(1,:) = [1 1 1];
+            metaCmaps{a} = ctmp;
+        end
+    else
+        metaCmaps{a} = [];
+    end
+end
 
 % Load reach behavioral data
 fprintf('Loading reach behavioral data from: %s\n', reachDataFile);
@@ -336,21 +374,20 @@ for condIdx = 1:numConditions
         % Create imagesc plot
         imagesc(timeAxisPeriReach, 1:size(stateDataValid, 1), stateDataValid);
         
-        % Set colormap to distinguish states with state 0 as white
-        if numStates(a) > 0
-            % Create custom colormap with white for state 0
-            cmap = lines(numStates(a));
-            % Ensure state 0 (undefined) is white
-            cmap(1, :) = [1 1 1]; % White for state 0
-            colormap(cmap);
-        else
-            colormap('lines');
+        % Set colormap to be consistent within area; state 0 is white
+        if ~isempty(stateCmaps{a})
+            colormap(ha(plotIdx), stateCmaps{a});
+            caxis(ha(plotIdx), [0, max(1, numStates(a))]);
         end
         
-        % Add colorbar
-        c = colorbar;
-        c.Label.String = 'HMM State';
-        c.Label.FontSize = 8;
+        % Add colorbar only on top row, and keep fixed ticks/labels per area
+        if condIdx == 1
+            c = colorbar('peer', ha(plotIdx));
+            c.Ticks = 0:max(1, numStates(a));
+            c.TickLabels = string(0:max(1, numStates(a)));
+            c.Label.String = 'HMM State';
+            c.Label.FontSize = 8;
+        end
         
         % Add vertical line at reach onset
         plot([0 0], ylim, 'k--', 'LineWidth', 2);
@@ -481,26 +518,23 @@ if hasAnyMetastates
             % Create imagesc plot
             imagesc(timeAxisPeriReach, 1:size(metastateDataValid, 1), metastateDataValid);
             
-            % Set colormap to distinguish metastates with metastate 0 as white
-            if ~isempty(results.hmm_results{a}) && isfield(results.hmm_results{a}, 'metastate_results') && ~isempty(results.hmm_results{a}.metastate_results.communities)
-                numMetastates = results.hmm_results{a}.metastate_results.num_metastates;
-                if numMetastates > 0
-                    % Create custom colormap with white for metastate 0
-                    cmap = lines(numMetastates + 1); % +1 for metastate 0
-                    % Ensure metastate 0 (undefined) is white
-                    cmap(1, :) = [1 1 1]; % White for metastate 0
-                    colormap(cmap);
-                else
-                    colormap('lines');
-                end
-            else
-                colormap('lines');
+            % Set colormap for metastates; metastate 0 is white
+            if ~isempty(metaCmaps{a})
+                colormap(ha(plotIdx), metaCmaps{a});
+                nMeta = size(metaCmaps{a},1) - 1;
+                caxis(ha(plotIdx), [0, max(1, nMeta)]);
             end
             
-            % Add colorbar
-            c = colorbar;
-            c.Label.String = 'Metastate';
-            c.Label.FontSize = 8;
+            % Add colorbar only on top row, and keep fixed ticks/labels per area
+            if condIdx == 1
+                c = colorbar('peer', ha(plotIdx));
+                if exist('nMeta','var') && ~isempty(nMeta)
+                    c.Ticks = 0:max(1, nMeta);
+                    c.TickLabels = string(0:max(1, nMeta));
+                end
+                c.Label.String = 'Metastate';
+                c.Label.FontSize = 8;
+            end
             
             % Add vertical line at reach onset
             plot([0 0], ylim, 'k--', 'LineWidth', 2);

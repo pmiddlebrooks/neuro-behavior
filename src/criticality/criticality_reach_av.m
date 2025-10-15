@@ -13,9 +13,10 @@ loadExistingResults = false; makePlots = true;
 slidingWindowSize = 120; avStepSize = 20;
 
 % Reach data file and save directory
-reachDataFile = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/makeSpikes.mat');
 [~, dataBaseName, ~] = fileparts(reachDataFile);
-saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
+saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
 if ~exist(saveDir, 'dir'); mkdir(saveDir); end
 
 resultsPath = fullfile(saveDir, sprintf('criticality_reach_av_win%d_step%d.mat', slidingWindowSize, avStepSize));

@@ -6,7 +6,7 @@ paths = get_paths;
 
 
 % Sliding window size (seconds)
-slidingWindowSize = 4;
+slidingWindowSize = 8;
 
 % Flags
 loadExistingResults = false;
@@ -47,7 +47,7 @@ function run_reach_analysis_for_file(reachDataFile, slidingWindowSize, makePlots
 
 % Flags
 analyzeD2 = true;      % compute d2
-analyzeMrBr = false;    % compute mrBr
+analyzeMrBr = true;    % compute mrBr
 
 minSegmentLength = 50;
 

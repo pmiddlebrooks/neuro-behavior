@@ -112,7 +112,8 @@ hmmdir = fullfile(paths.dropPath, 'metastability');
 if ~exist(hmmdir, 'dir')
     mkdir(hmmdir);
 end
-filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f_bhv%d_offset%.3f.mat', opts.HmmParam.BinSize, opts.HmmParam.MinDur, bhvStartID, preBhvTime);
+% filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f_bhv%d_offset%.3f.mat', opts.HmmParam.BinSize, opts.HmmParam.MinDur, bhvStartID, preBhvTime);
+filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3.mat', opts.HmmParam.BinSize, opts.HmmParam.MinDur);
 filepath = fullfile(hmmdir, filename);
 
 % Loop through areas
@@ -402,7 +403,8 @@ fprintf('Saving all HMM Nat results to: %s\n', filepath);
 save(filepath, 'results', '-v7.3');
 
 % Save a summary text file
-summary_filename = sprintf('HMM_summary_Nat_bin%.3f_minDur%.3f_bhv%d_offset%.3f.txt', opts.HmmParam.BinSize, opts.HmmParam.MinDur, bhvStartID, preBhvTime);
+% summary_filename = sprintf('HMM_summary_Nat_bin%.3f_minDur%.3f_bhv%d_offset%.3f.txt', opts.HmmParam.BinSize, opts.HmmParam.MinDur, bhvStartID, preBhvTime);
+summary_filename = sprintf('HMM_summary_Nat_bin%.3f_minDur%.3f.txt', opts.HmmParam.BinSize, opts.HmmParam.MinDur);
 summary_filepath = fullfile(hmmdir, summary_filename);
 fid = fopen(summary_filepath, 'w');
 if fid ~= -1
