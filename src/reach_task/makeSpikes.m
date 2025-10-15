@@ -17,7 +17,7 @@ duration = 2000; % Duration of simulation in seconds
 dt = 0.001; % Time step in seconds
 t_vec = 0:dt:duration-dt;
 facInc=4; %how much larger is peak activity?
-nCount=3
+nCount=100;
 
 preRampT=300; %ms
 maxT=700;
@@ -45,18 +45,25 @@ spike_counts = poissrnd(rate * dt);
 spike_train = double(spike_counts > 0);
 spike_times = find(spike_train>0)/1000;
 
-figure; hist(spike_times,0:.2:75); xlim([0 74.5])
+% figure; hist(spike_times,0:.2:75); xlim([0 74.5])
 
 CC=[CC;[spike_times',repmat(nn,[length(spike_times),1])]];
 end
 
-R = 8 : 10 : duration;
+%% Make variables to emulate Mark's data formatting
+R = 1000 * (8 : 10 : duration)';
+R = [R, zeros(length(R), 1)];
 
 Block = ones(length(R), 3);
-Block(floor(length(R)/2),3) = 2;
+Block(1:floor(length(R)/2),3) = 2;
 
-idchan = zeros(size(CC, 2), 7);
+idchan = zeros(nCount, 7);
 idchan(:,1) = 1:max(unique(CC(:,2)));
 idchan(:,4) = 1; % make all neurons "good"
+idchan(:,end) = 2;
+% Make a CSV file with spiking data
+CSV = CC;
 
-
+%%
+saveDir = fullfile(paths.dropPath, 'reach_task/data');
+save(fullfile(saveDir, 'makeSpikes.mat'), 'Block', 'R', 'idchan', 'CSV')

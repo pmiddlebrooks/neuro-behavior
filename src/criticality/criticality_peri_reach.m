@@ -39,7 +39,7 @@ paths = get_paths;
 
 % Determine save directory based on loaded data file name (same as criticality_reach_ar.m)
 [~, dataBaseName, ~] = fileparts(reachDataFile);
-saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);
+saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
 resultsPathWin = fullfile(saveDir, sprintf('criticality_reach_ar_win%d.mat', slidingWindowSize));
 
 % Extract first 10 characters of filename for titles and file names
@@ -65,8 +65,8 @@ fprintf('Loading reach behavioral data from: %s\n', reachDataFile);
 dataR = load(reachDataFile);
 
 reachStart = dataR.R(:,1); % In seconds
-reachStop = dataR.R(:,2);
-reachAmp = dataR.R(:,3); % Amplitude of each reach (distance from 0)
+% reachStop = dataR.R(:,2);
+% reachAmp = dataR.R(:,3); % Amplitude of each reach (distance from 0)
 
  % block or BlockWithErrors - columns are BlockNum Correct? ReachClassification1-4 ReachClassification-20-20
  %     -rows are reaches
@@ -92,7 +92,7 @@ reachAmp = dataR.R(:,3); % Amplitude of each reach (distance from 0)
 %     reachClass = dataR.BlockWithErrors(:,4);
 %     reachClass = dataR.BlockWithErrors(:,3);
 % elseif isfield(dataR, 'Block') && size(dataR.Block,2) >= 5
-    reachClass = dataR.Block(:,5);
+    % reachClass = dataR.Block(:,5);
     reachClass = dataR.Block(:,3);
 % else
 %     error('Neither BlockWithErrors(:,4) nor Block(:,5) found in dataR.');

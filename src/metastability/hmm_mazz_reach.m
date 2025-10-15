@@ -34,6 +34,7 @@ HmmParam.BinSize=0.002;%0.005; % time step of Markov chain
 HmmParam.MinDur=0.05;   % .05 min duration of an admissible state (s) in HMM DECODING
 HmmParam.MinP=0.8;      % pstate>MinP for an admissible state in HMM ADMISSIBLE STATES
 HmmParam.NumSteps=10;%    %10 number of fits at fixed parameters to avoid non-convexity
+HmmParam.singleSeqXval.K = 5; % Cross-validation
 HmmParam.NumRuns=50;%     % 50% % number of times we iterate hmmtrain over all trials
 
 opts.HmmParam = HmmParam;
@@ -108,7 +109,7 @@ filepath = fullfile(saveDir, filename);
 
 % Set collection parameters based on reach data
 opts.collectStart = 0;
-opts.collectFor = round(dataR.R(end,1) + 5000) / 1000;
+opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
 
 % Convert reach data to neural matrix format
 [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
@@ -231,49 +232,66 @@ for areaIdx = areasToTest
     fprintf('Found %d reaches, created %d trials\n', length(reachStartTimes_s), ntrials);
     fprintf('Trial duration range: %.1f - %.1f seconds\n', min(trialEndTimes - trialStartTimes), max(trialEndTimes - trialStartTimes));
 
-    % Convert time bin matrix to spike times format with variable-length trials
-    spikes = struct('spk', cell(ntrials, gnunits));
-    win_train = zeros(ntrials, 2); % trial windows [start, end] for each trial
+    % % Convert time bin matrix to spike times format with variable-length trials
+    % spikes = struct('spk', cell(ntrials, gnunits));
+    % win_train = zeros(ntrials, 2); % trial windows [start, end] for each trial
+    % 
+    % % For each trial
+    % for i_trial = 1:ntrials
+    %     % Get trial start and end times
+    %     trialStart_s = trialStartTimes(i_trial);
+    %     trialEnd_s = trialEndTimes(i_trial);
+    %     trialDuration_s = trialEnd_s - trialStart_s;
+    % 
+    %     % Convert to bin indices (1-indexed)
+    %     start_bin = round(trialStart_s / binSizeLoaded) + 1;
+    %     end_bin = round(trialEnd_s / binSizeLoaded);
+    % 
+    %     % Ensure we don't exceed data bounds
+    %     start_bin = max(1, start_bin);
+    %     end_bin = min(end_bin, size(dataMatMain, 1));
+    % 
+    %     % Skip trials with invalid bounds
+    %     if start_bin >= end_bin
+    %         fprintf('Warning: Skipping trial %d due to invalid bounds\n', i_trial);
+    %         continue;
+    %     end
+    % 
+    %     % Trial window in seconds (relative to trial start)
+    %     win_train(i_trial, :) = [0, trialDuration_s];
+    % 
+    %     % For each neuron in this trial
+    %     for i_neuron = 1:gnunits
+    %         % Get data for this trial
+    %         trial_data = dataMatMain(start_bin:end_bin, i_neuron);
+    % 
+    %         % Find time bins where this neuron spiked (value > 0)
+    %         spike_bins = find(trial_data > 0);
+    % 
+    %         % Convert bin indices to time in seconds (relative to trial start)
+    %         spike_times = (spike_bins - 1) * binSizeLoaded; % -1 because bins are 1-indexed
+    % 
+    %         % Store spike times for this neuron in this trial
+    %         spikes(i_trial, i_neuron).spk = spike_times;
+    %     end
+    % end
 
-    % For each trial
-    for i_trial = 1:ntrials
-        % Get trial start and end times
-        trialStart_s = trialStartTimes(i_trial);
-        trialEnd_s = trialEndTimes(i_trial);
+        spikes = struct('spk', cell(1, gnunits));
+        trialStart_s = 0;
+        trialEnd_s = size(dataMatMain, 1) * opts.frameSize;
+        start_bin = max(1, round(trialStart_s / binSizeLoaded) + 1);
+        end_bin = min(size(dataMatMain, 1), round(trialEnd_s / binSizeLoaded));
         trialDuration_s = trialEnd_s - trialStart_s;
-        
-        % Convert to bin indices (1-indexed)
-        start_bin = round(trialStart_s / binSizeLoaded) + 1;
-        end_bin = round(trialEnd_s / binSizeLoaded);
-        
-        % Ensure we don't exceed data bounds
-        start_bin = max(1, start_bin);
-        end_bin = min(end_bin, size(dataMatMain, 1));
-        
-        % Skip trials with invalid bounds
-        if start_bin >= end_bin
-            fprintf('Warning: Skipping trial %d due to invalid bounds\n', i_trial);
+        if end_bin <= start_bin
             continue;
         end
-
-        % Trial window in seconds (relative to trial start)
-        win_train(i_trial, :) = [0, trialDuration_s];
-
-        % For each neuron in this trial
+        win_train = [0, trialDuration_s];
         for i_neuron = 1:gnunits
-            % Get data for this trial
             trial_data = dataMatMain(start_bin:end_bin, i_neuron);
-
-            % Find time bins where this neuron spiked (value > 0)
             spike_bins = find(trial_data > 0);
-
-            % Convert bin indices to time in seconds (relative to trial start)
-            spike_times = (spike_bins - 1) * binSizeLoaded; % -1 because bins are 1-indexed
-
-            % Store spike times for this neuron in this trial
-            spikes(i_trial, i_neuron).spk = spike_times;
+            spike_times = (spike_bins - 1) * binSizeLoaded;
+            spikes(1, i_neuron).spk = spike_times;
         end
-    end
 
     %----------------------------
     % HMM ANALYSIS

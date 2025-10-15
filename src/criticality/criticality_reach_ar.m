@@ -19,7 +19,7 @@ reachDataFiles = cell(1, numel(matFiles));
 for i = 1:numel(matFiles)
     reachDataFiles{i} = fullfile(reachDir, matFiles(i).name);
 end
-% reachDataFiles = cell(1);
+reachDataFiles = cell(1);
 % reachDataFiles{1} = fullfile(paths.dropPath, 'reach_task/data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
 reachDataFiles{1} = fullfile(paths.dropPath, 'reach_task/data/makeSpikes.mat');
 for fileIdx = 1:numel(reachDataFiles)
