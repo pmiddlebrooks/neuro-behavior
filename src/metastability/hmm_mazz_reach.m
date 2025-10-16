@@ -13,7 +13,6 @@
 %                   HMM_summary_[BrainArea]_bin[BinSize]_minDur[MinDur].txt
 
 paths = get_paths;
-cd(fullfile(paths.homePath, 'toolboxes/contamineuro_2019_spiking_net/'));
 
 opts = neuro_behavior_options;
 opts.minActTime = .16;

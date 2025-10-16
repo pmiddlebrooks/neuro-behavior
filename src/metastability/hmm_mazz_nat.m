@@ -4,7 +4,6 @@
 % before HMM fitting. Aggregates results across brain areas and saves a single results file.
 
 paths = get_paths;
-cd(fullfile(paths.homePath, 'toolboxes/contamineuro_2019_spiking_net/'));
 
 opts = neuro_behavior_options;
 opts.minActTime = .16;
