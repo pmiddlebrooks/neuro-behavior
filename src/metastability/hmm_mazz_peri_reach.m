@@ -18,16 +18,16 @@ minDur = .05;
 
 % User-specified reach data file (should match the one used in hmm_mazz_reach.m)
 % User-specified reach data file (should match the one used in criticality_reach_ar.m)
-reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_11-May-2023 17_31_00_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_task/data/reach_test.mat');
+reachDataFile = fullfile(paths.reachDataPath, 'AB2_01-May-2023 15_34_59_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'AB2_11-May-2023 17_31_00_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'AB2_30-May-2023 12_49_52_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_test.mat');
 
 areasToTest = 1:4;
 
@@ -42,7 +42,7 @@ windowDurationSec = 8; % 40-second window around each reach
 
 % Determine save directory based on loaded data file name (same as hmm_mazz_reach.m)
 [~, dataBaseName, ~] = fileparts(reachDataFile);
-saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
+saveDir = fullfile(paths.reachResultsPath, dataBaseName);
 filename = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f.mat', binSize, minDur);
 resultsPath = fullfile(saveDir, filename);
 

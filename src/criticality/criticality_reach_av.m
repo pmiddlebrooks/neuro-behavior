@@ -2,15 +2,12 @@
 % Criticality Reach-only Avalanche Script (dcc + kappa)
 % Analyzes reach data only; saves results to a folder named after the data file
 
-opts = neuro_behavior_options;
-opts.minActTime = .16; opts.collectStart = 0; opts.minFiringRate = .05; opts.frameSize = .001;
-paths = get_paths;
 
 % Flags
 loadExistingResults = false; makePlots = true;
 
 % Window/step (seconds)
-slidingWindowSize = 120; avStepSize = 20;
+slidingWindowSize = 120; avStepSize = 27;
 
 % Reach data file and save directory
 reachDataFile = fullfile(paths.dropPath, 'reach_task/data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
@@ -22,15 +19,31 @@ if ~exist(saveDir, 'dir'); mkdir(saveDir); end
 resultsPath = fullfile(saveDir, sprintf('criticality_reach_av_win%d_step%d.mat', slidingWindowSize, avStepSize));
 
 % Load reach data
+opts = neuro_behavior_options;
+opts.frameSize = .001;
+opts.firingRateCheckTime = 5 * 60;
+opts.collectStart = 0;
+opts.collectFor = round(dataR.R(end,1) + 5000) / 1000;
+opts.minFiringRate = .1;
+opts.maxFiringRate = 70;
+paths = get_paths;
+
 dataR = load(reachDataFile);
 [dataMatR, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
 areas = {'M23','M56','DS','VS'};
-idM23R = find(strcmp(areaLabels, 'M23')); idM56R = find(strcmp(areaLabels, 'M56'));
-idDSR = find(strcmp(areaLabels, 'DS')); idVSR = find(strcmp(areaLabels, 'VS'));
-idListRea = {idM23R, idM56R, idDSR, idVSR}; areasToTest = 1:4;
+idM23R = find(strcmp(areaLabels, 'M23')); 
+idM56R = find(strcmp(areaLabels, 'M56'));
+idDSR = find(strcmp(areaLabels, 'DS')); 
+idVSR = find(strcmp(areaLabels, 'VS'));
+idListRea = {idM23R, idM56R, idDSR, idVSR}; 
+areasToTest = 1:4;
 
 % Params
-pcaFlag = 0; pcaFirstFlag = 1; nDim = 4; thresholdFlag = 1; thresholdPct = 0.75;
+pcaFlag = 0; 
+pcaFirstFlag = 1; 
+nDim = 4; 
+thresholdFlag = 1; 
+thresholdPct = 0.75;
 candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15];
 candidateWindowSizes = [30, 45, 60, 90, 120];
 
@@ -44,7 +57,11 @@ for a = areasToTest
     [optimalBinSizeRea(a), ~] = find_optimal_bin_and_window(reconstructedDataMatRea{a}, candidateFrameSizes, candidateWindowSizes, 3, 50, 1000);
 end
 
-% Analyze reach with avalanche methods
+validMask = isfinite(optimalBinSizeRea) & (optimalBinSizeRea > 0);
+areasToTest = areasToTest(validMask);
+
+
+%% Analyze reach with avalanche methods
 dccRea = cell(1, length(areas)); kappaRea = cell(1, length(areas)); decadesRea = cell(1, length(areas)); startSRea_dcc = cell(1, length(areas));
 for a = areasToTest
     aID = idListRea{a};
@@ -116,3 +133,54 @@ if makePlots
 end
 
 
+%% ==============================================     Helper Functions     ==============================================
+
+function [tau, pSz, tauC, pSzC, alpha, pDr, paramSD, decades] = avalanche_log(Av, plotFlag)
+
+if plotFlag == 1
+    plotFlag = 'plot';
+else
+    plotFlag = 'nothing';
+end
+
+% size distribution (SZ)
+[tau, xminSZ, xmaxSZ, sigmaSZ, pSz, pCritSZ, ksDR, DataSZ] =...
+    avpropvals(Av.size, 'size', plotFlag);
+tau = cell2mat(tau);
+pSz = cell2mat(pSz);
+
+decades = log10(cell2mat(xmaxSZ)/cell2mat(xminSZ));
+
+% size distribution (SZ) with cutoffs
+tauC = nan;
+pSzC = nan;
+UniqSizes = unique(Av.size);
+Occurances = hist(Av.size,UniqSizes);
+% AllowedSizes = UniqSizes(Occurances >= 20);
+AllowedSizes = UniqSizes(Occurances >= 4);
+% AllowedSizes = UniqSizes(Occurances >= 2);
+AllowedSizes(AllowedSizes < 4) = [];
+% AllowedSizes(AllowedSizes < 3) = [];
+if length(AllowedSizes) > 1
+    LimSize = Av.size(ismember(Av.size,AllowedSizes));
+    [tauC, xminSZ, xmaxSZ, sigmaSZ, pSzC, pCritSZ, DataSZ] =...
+        avpropvals(LimSize, 'size', plotFlag);
+    tauC = cell2mat(tauC);
+    pSzC = cell2mat(pSzC);
+end
+% decades = log10(xmaxSZ/xminSZ);
+
+% duration distribution (DR)
+if length(unique(Av.duration)) > 1
+    [alpha, xminDR, xmaxDR, sigmaDR, pDr, pCritDR, ksDR, DataDR] =...
+        avpropvals(Av.duration, 'duration', plotFlag);
+    alpha = cell2mat(alpha);
+    pDr = cell2mat(pDr);
+    % size given duration distribution (SD)
+    [paramSD, waste, waste, sigmaSD] = avpropvals({Av.size, Av.duration},...
+        'sizgivdur', 'durmin', xminDR{1}, 'durmax', xmaxDR{1}, plotFlag);
+else
+    alpha = nan;
+    paramSD = nan;
+end
+end

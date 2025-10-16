@@ -21,9 +21,14 @@ elseif exist('/Users/paulmiddlebrooks/Projects/', 'dir')
             bhvDataPath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/data/processed_behavior/';
             nrnDataPath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/data/raw_ephys/';
             saveDataPath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/data/';
-            dropPath = '/Users/paulmiddlebrooks/Library/CloudStorage/Dropbox/Data/';
-           
+            dropPath = '/Users/paulmiddlebrooks/Library/CloudStorage/Dropbox/Data/';            
 end
+
+
+            reachDataPath = fullfile(dropPath, 'reach_task/data');
+            reachResultsPath = fullfile(dropPath, 'reach_task/results');
+
+
 if ~exist(figurePath, 'dir')
     mkdir(figurePath);
 end
@@ -43,4 +48,6 @@ paths.figurePath = figurePath;
 paths.bhvDataPath = bhvDataPath;
 paths.nrnDataPath = nrnDataPath;
 paths.saveDataPath = saveDataPath;
+paths.reachDataPath = reachDataPath;
+paths.reachResultsPath = reachResultsPath;
 paths.dropPath = dropPath;
