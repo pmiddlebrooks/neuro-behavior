@@ -17,7 +17,7 @@ duration = 2000; % Duration of simulation in seconds
 dt = 0.001; % Time step in seconds
 t_vec = 0:dt:duration-dt;
 facInc=4; %how much larger is peak activity?
-nCount=100;
+nCount=70;
 
 preRampT=300; %ms
 maxT=700;
@@ -50,7 +50,7 @@ spike_times = find(spike_train>0)/1000;
 CC=[CC;[spike_times',repmat(nn,[length(spike_times),1])]];
 end
 
-%% Make variables to emulate Mark's data formatting
+% Make variables to emulate Mark's data formatting
 R = 1000 * (8 : 10 : duration)';
 R = [R, zeros(length(R), 1)];
 
@@ -64,6 +64,6 @@ idchan(:,end) = 2;
 % Make a CSV file with spiking data
 CSV = CC;
 
-%%
+%
 saveDir = fullfile(paths.dropPath, 'reach_task/data');
 save(fullfile(saveDir, 'makeSpikes.mat'), 'Block', 'R', 'idchan', 'CSV')

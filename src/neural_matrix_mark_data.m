@@ -61,7 +61,7 @@ areaLabels(brainAreas == 3) = {'DS'};
 areaLabels(brainAreas == 4) = {'VS'};
 
 % Preallocate data matrix
-if numFrames > 30 * 60 / 0.001
+if numFrames > 60 * 60 / 0.001
     dataMat = int8(zeros(numFrames, length(idLabels)));
 else
     dataMat = zeros(numFrames, length(idLabels));
