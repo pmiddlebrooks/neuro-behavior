@@ -62,7 +62,7 @@ switch natOrReach
         get_standard_data
     case 'Reach'
         % Mark's reach data
-        % reachDataFile = fullfile(paths.reachDataPath, 'AB2_01-May-2023 15_34_59_NeuroBeh.mat');
+        reachDataFile = fullfile(paths.reachDataPath, 'AB2_01-May-2023 15_34_59_NeuroBeh.mat');
         % reachDataFile = fullfile(paths.reachDataPath, 'AB2_11-May-2023 17_31_00_NeuroBeh.mat');
         % reachDataFile = fullfile(paths.reachDataPath, 'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
         % reachDataFile = fullfile(paths.reachDataPath, 'AB2_30-May-2023 12_49_52_NeuroBeh.mat');
@@ -70,7 +70,7 @@ switch natOrReach
         % reachDataFile = fullfile(paths.reachDataPath, 'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
         % reachDataFile = fullfile(paths.reachDataPath, 'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
         % reachDataFile = fullfile(paths.reachDataPath, 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
-        reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
 reachDataFile = fullfile(paths.reachDataPath, 'reach_test.mat');
         dataR = load(reachDataFile);
 
@@ -287,6 +287,64 @@ for areaIdx = areasToTest
     end
 
 
+% ----------------------------
+    % METASTATE DETECTION
+    %----------------------------
+    
+    if ~isempty(res) && isfield(res, 'hmm_bestfit') && isfield(res.hmm_bestfit, 'tpm')
+        fprintf('Detecting metastates from transition probability matrix...\n');
+        
+        % Get transition probability matrix
+        tpm = res.hmm_bestfit.tpm;
+        numStates = size(tpm, 1);
+        
+        fprintf('Transition probability matrix size: %dx%d\n', numStates, numStates);
+        
+        % Detect metastate communities using Vidaurre method
+        try
+            communities = detect_metastates_vidaurre(tpm, true); % verbose output
+            
+            % Create continuous metastates sequence
+            continuous_metastates = zeros(size(continuous_sequence));
+            
+            % Map each state to its metastate
+            for iBin = 1:length(continuous_sequence)
+                state = continuous_sequence(iBin);
+                if ~isnan(state) && state > 0 && state <= numStates
+                    continuous_metastates(iBin) = communities(state);
+                else
+                    continuous_metastates(iBin) = 0; % Keep undefined states as 0
+                end
+            end
+            
+            % Get unique metastates and their composition
+            uniqueMetastates = unique(communities);
+            numMetastates = length(uniqueMetastates);
+            
+            fprintf('\t\t\tNumber of metastates: %d (from %d states)\n', numMetastates, numStates);
+            for m = 1:numMetastates
+                metastateLabel = uniqueMetastates(m);
+                statesInMetastate = find(communities == metastateLabel);
+                fprintf('  Metastate %d: states [%s]\n', metastateLabel, num2str(statesInMetastate));
+            end
+            
+            fprintf('Successfully created continuous metastates sequence\n');
+            
+        catch ME
+            fprintf('Error in metastate detection: %s\n', ME.message);
+            fprintf('Skipping metastate analysis for area %s\n', idAreaName);
+            
+            % Set empty metastate results
+            communities = [];
+            continuous_metastates = [];
+            numMetastates = 0;
+        end
+    else
+        fprintf('No transition probability matrix available for metastate detection\n');
+        communities = [];
+        continuous_metastates = [];
+        numMetastates = 0;
+    end
 
     % ----------------------------
     % SAVE HMM RESULTS
@@ -349,7 +407,17 @@ for areaIdx = areasToTest
     hmm_res.continuous_results.sequence = continuous_sequence;
     hmm_res.continuous_results.totalTime = totalTimeBins * res.HmmParam.BinSize;
 
-    % Store results in allResults structure
+% Store metastate results
+    hmm_res.metastate_results = struct();
+    hmm_res.metastate_results.communities = communities;
+    hmm_res.metastate_results.continuous_metastates = continuous_metastates;
+    hmm_res.metastate_results.num_metastates = numMetastates;
+    if exist('tpm', 'var')
+        hmm_res.metastate_results.transition_matrix = tpm;
+    else
+        hmm_res.metastate_results.transition_matrix = [];
+    end
+        % Store results in allResults structure
     allResults.binSize(areaIdx) = res.HmmParam.BinSize;
     allResults.numStates(areaIdx) = res.HmmParam.VarStates(res.BestStateInd);
     allResults.hmm_results{areaIdx} = hmm_res;
