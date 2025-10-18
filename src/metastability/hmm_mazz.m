@@ -33,7 +33,7 @@ HmmParam.BinSize=0.002;%0.005; % time step of Markov chain
 HmmParam.MinDur=0.05;   % .05 min duration of an admissible state (s) in HMM DECODING
 HmmParam.MinP=0.8;      % pstate>MinP for an admissible state in HMM ADMISSIBLE STATES
 HmmParam.NumSteps=10;%    %10 number of fits at fixed parameters to avoid non-convexity
-HmmParam.singleSeqXval.K = 5; % Cross-validation
+HmmParam.singleSeqXval.K = 3; % Cross-validation
 HmmParam.NumRuns=50;%     % 50% % number of times we iterate hmmtrain over all trials
 
 opts.HmmParam = HmmParam;
@@ -43,10 +43,14 @@ opts.HmmParam = HmmParam;
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
-natOrReach = 'Nat'; % 'Nat'  'Reach'
+natOrReach = 'Reach'; % 'Nat'  'Reach'
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 areasToTest = 1:4; % Indices of areas to test
+
+% Set "trial duration" for reach data (required for the hmm fitting in
+% toolbox
+trialDur = 30; % "trial" duration in seconds
 
 switch natOrReach
     case 'Nat'
@@ -67,6 +71,7 @@ switch natOrReach
         % reachDataFile = fullfile(paths.reachDataPath, 'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
         % reachDataFile = fullfile(paths.reachDataPath, 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
         reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFile = fullfile(paths.reachDataPath, 'reach_test.mat');
         dataR = load(reachDataFile);
 
         opts.collectStart = 0;
@@ -90,7 +95,7 @@ allResults.binSize = zeros(1, length(areas));
 allResults.numStates = zeros(1, length(areas));
 allResults.hmm_results = cell(1, length(areas));
 
-%% Loop through each brain area specified in areasToTest
+% Loop through each brain area specified in areasToTest
 for areaIdx = areasToTest
     idAreaName = areas{areaIdx};
     idArea = idList{areaIdx};
@@ -99,47 +104,6 @@ for areaIdx = areasToTest
     fprintf('\n=== Processing Brain Area: %s (Index %d) ===\n', idAreaName, areaIdx);
 
 
-    %  Nat or Reach-specific variables
-
-    switch natOrReach
-        case 'Reach'
-            % preTime = 4; % s before reach onset
-            % postTime = 3;
-
-            % Find all reach starts
-            block1Err = 1;
-            block1Corr = 2;
-            block2Err = 3;
-            block2Corr = 4;
-
-            % First and second block trials
-            trialIdx = ismember(dataR.block(:, 3), 1:4);
-            trialIdx1 = ismember(dataR.block(:, 3), 1:2);
-            trialIdx2 = ismember(dataR.block(:, 3), 3:4);
-
-            % Find when blocks begin and end
-            block1Last = find(trialIdx1, 1, 'last');
-            block2First = find(trialIdx2, 1);
-            block1End = dataR.R(block1Last, 2);
-
-            block2StartFrame = round(dataR.R(block2First, 1) / 1000 / opts.frameSize);
-            rStarts = round(dataR.R(trialIdx,1)/opts.frameSize/1000); % in frames
-            rStops = round(dataR.R(trialIdx,2)/opts.frameSize/1000); % in frames
-            firstFrame = round(opts.collectStart / opts.frameSize);
-            lastFrame = round((opts.collectStart + opts.collectFor) / opts.frameSize);
-            validTrials = rStarts > firstFrame & rStops < lastFrame;
-
-            rStarts = rStarts(validTrials);
-            rStops = rStops(validTrials);
-            rAcc = dataR.BlockWithErrors(validTrials, 4);
-
-            % Set trial duration for reach data (same as natural data for unified approach)
-            trialDur = 20; % "trial" duration in seconds
-
-        case 'Nat'
-            % Parameters for natural trials
-            trialDur = 20; % "trial" duration in seconds
-    end
 
     %
     %----------------------------
@@ -212,30 +176,22 @@ for areaIdx = areasToTest
 
 
     %
-    %----------------------------
+    %----------------------------%----------------------------
     % HMM ANALYSIS
-    %----------------------------
+    %----------------------------%----------------------------
     fprintf('\n\nRunning HMM on %s for area %s\n\n', natOrReach, idAreaName)
     disp('In fun_HMM_modelSel.m, select hhmParam values!!!')
 
     % Model selection method
     MODELSEL = 'XVAL'; % 'BIC'; % 'AIC';
 
-    % Setup directories
-    hmmdir = fullfile(paths.dropPath, 'metastability');
-    if ~exist(hmmdir, 'dir')
-        mkdir(hmmdir);
-    end
-
     % Prepare data structure for HMM analysis
     DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL, 'HmmParam', opts.HmmParam);
 
     % Run HMM analysis
-    % Note: This assumes you have the hmm.funHMM function available
-    % If not, you'll need to implement the HMM fitting separately
     % try
         myCluster = parcluster('local');
-        NumWorkers=min(myCluster.NumWorkers, 6);
+        NumWorkers=min(myCluster.NumWorkers, 2);
         parpool('local', NumWorkers);
 
         res = hmm.funHMM(DATAIN);
@@ -283,9 +239,9 @@ for areaIdx = areasToTest
     delete(pid)
 
 
-    % ----------------------------
+    % --------------------------------------------------------
     % TRANSFORM TRIAL RESULTS BACK TO CONTINUOUS TIME SERIES
-    %----------------------------
+    %--------------------------------------------------------
 
     if ~isempty(res) && isfield(res, 'hmm_results') && isfield(res, 'hmm_postfit')
         fprintf('Transforming trial results back to continuous time series...\n');
@@ -349,8 +305,8 @@ for areaIdx = areasToTest
 
     % Data parameters
     hmm_res.data_params = struct();
-    hmm_res.data_params.num_neurons = gnunits;
-    hmm_res.data_params.num_trials = ntrials;
+    % hmm_res.data_params.num_neurons = gnunits;
+    % hmm_res.data_params.num_trials = ntrials;
     hmm_res.data_params.bin_size = opts.frameSize;
     hmm_res.data_params.collect_start = opts.collectStart;
     hmm_res.data_params.collect_duration = opts.collectFor;
@@ -362,13 +318,13 @@ for areaIdx = areasToTest
     hmm_res.trial_params.trial_windows = win_train; % [start, end] for each trial
     hmm_res.trial_params.trial_duration = trialDur;
 
-    % Add reach-specific parameters if applicable
-    if strcmp(natOrReach, 'Reach')
-        hmm_res.trial_params.reach_starts = rStarts;
-        hmm_res.trial_params.reach_stops = rStops;
-        hmm_res.trial_params.reach_accuracy = rAcc;
-        hmm_res.trial_params.valid_trials = validTrials;
-    end
+    % % Add reach-specific parameters if applicable
+    % if strcmp(natOrReach, 'Reach')
+    %     hmm_res.trial_params.reach_starts = rStarts;
+    %     hmm_res.trial_params.reach_stops = rStops;
+    %     hmm_res.trial_params.reach_accuracy = rAcc;
+    %     hmm_res.trial_params.valid_trials = validTrials;
+    % end
 
     % HMM results
     hmm_res.hmm_data = res.hmm_data;
@@ -403,7 +359,7 @@ disp(slackMsg)
     slack_code_done(slackMsg)
 end % End of loop through brain areas
 
-%% Save all results in a single file
+% Save all results in a single file
 hmmdir = fullfile(paths.dropPath, 'metastability');
 if ~exist(hmmdir, 'dir')
     mkdir(hmmdir);

@@ -34,7 +34,7 @@ if numel(sequence)==1
         trainIdx=[1:edges(k)-1, edges(k+1):T];
         seqTrainSingle=struct('data', seqData(:,trainIdx));
         % train as single sequence (no repeated state-1 starts)
-        fit_k=hmm.fun_HMM_training_NOPARFOR(seqTrainSingle,gnunits,HmmParam);
+        fit_k=hmm.fun_HMM_training(seqTrainSingle,gnunits,HmmParam);
         % evaluate on hold-out segment for each state count
         for s=1:NStates
             esttr=fit_k(s).tpm;
