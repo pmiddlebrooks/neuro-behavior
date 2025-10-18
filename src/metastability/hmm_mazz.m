@@ -58,15 +58,15 @@ switch natOrReach
         get_standard_data
     case 'Reach'
         % Mark's reach data
-        % reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_01-May-2023 15_34_59_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_11-May-2023 17_31_00_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB2_30-May-2023 12_49_52_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.dropPath, 'reach_task/data/AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
-        reachDataFile = fullfile(paths.dropPath, 'reach_task/data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'AB2_01-May-2023 15_34_59_NeuroBeh.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'AB2_11-May-2023 17_31_00_NeuroBeh.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'AB2_30-May-2023 12_49_52_NeuroBeh.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
+        reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
         dataR = load(reachDataFile);
 
         opts.collectStart = 0;
@@ -82,6 +82,13 @@ switch natOrReach
 end
 
 idList = {idM23, idM56, idDS, idVS};
+
+%% Initialize storage for all areas
+allResults = struct();
+allResults.areas = areas;
+allResults.binSize = zeros(1, length(areas));
+allResults.numStates = zeros(1, length(areas));
+allResults.hmm_results = cell(1, length(areas));
 
 %% Loop through each brain area specified in areasToTest
 for areaIdx = areasToTest
@@ -386,102 +393,56 @@ for areaIdx = areasToTest
     hmm_res.continuous_results.sequence = continuous_sequence;
     hmm_res.continuous_results.totalTime = totalTimeBins * res.HmmParam.BinSize;
 
-    % Create filename without timestamp
-    filename = sprintf('HMM_results_%s_%s.mat', natOrReach, idAreaName);
-    filepath = fullfile(hmmdir, filename);
+    % Store results in allResults structure
+    allResults.binSize(areaIdx) = res.HmmParam.BinSize;
+    allResults.numStates(areaIdx) = res.HmmParam.VarStates(res.BestStateInd);
+    allResults.hmm_results{areaIdx} = hmm_res;
 
-    % Save the results
-    fprintf('Saving HMM results to: %s\n', filepath);
-    save(filepath, 'hmm_res', '-v7.3');
+    slackMsg = sprintf('HMM_MAZZ: Completed analysis for brain area: %s\n', idAreaName);
+disp(slackMsg)
+    slack_code_done(slackMsg)
+end % End of loop through brain areas
 
-    % Also save a summary text file
-    summary_filename = sprintf('HMM_summary_%s_%s.txt', natOrReach, idAreaName);
-    summary_filepath = fullfile(hmmdir, summary_filename);
+%% Save all results in a single file
+hmmdir = fullfile(paths.dropPath, 'metastability');
+if ~exist(hmmdir, 'dir')
+    mkdir(hmmdir);
+end
 
-    % Create summary file
-    fid = fopen(summary_filepath, 'w');
-    if fid ~= -1
-        fprintf(fid, 'HMM Analysis Summary\n');
-        fprintf(fid, '===================\n\n');
-        fprintf(fid, 'Analysis Date: %s\n', hmm_res.metadata.analysis_date);
-        fprintf(fid, 'Data Type: %s\n', hmm_res.metadata.data_type);
-        fprintf(fid, 'Brain Area: %s\n', hmm_res.metadata.brain_area);
-        fprintf(fid, 'Model Selection Method: %s\n', hmm_res.metadata.model_selection_method);
-        fprintf(fid, '\n');
-        fprintf(fid, 'Data Parameters:\n');
-        fprintf(fid, '  Number of neurons: %d\n', hmm_res.data_params.num_neurons);
-        fprintf(fid, '  Number of trials: %d\n', hmm_res.data_params.num_trials);
-        fprintf(fid, '  Frame size: %.6f seconds\n', opts.frameSize);
-        fprintf(fid, '  Collection start: %.1f seconds\n', hmm_res.data_params.collect_start);
-        fprintf(fid, '  Collection duration: %.1f seconds\n', hmm_res.data_params.collect_duration);
-        fprintf(fid, '\n');
-        fprintf(fid, 'Trial Parameters:\n');
-        fprintf(fid, '  Trial duration: %.1f seconds\n', hmm_res.trial_params.trial_duration);
-        % if strcmp(natOrReach, 'Reach')
-        %     fprintf(fid, '  Pre-reach time: %.1f seconds\n', hmm_res.trial_params.pre_time);
-        %     fprintf(fid, '  Post-reach time: %.1f seconds\n', hmm_res.trial_params.post_time);
-        % end
-        fprintf(fid, '\n');
-        fprintf(fid, 'HMM Results:\n');
-        fprintf(fid, '  Number of states: %d\n', hmm_res.best_model.num_states);
-        fprintf(fid, '  Log-likelihood: %.2f\n', hmm_res.best_model.log_likelihood);
-        fprintf(fid, '  Best state index: %d\n', hmm_res.best_model.best_state_index);
-        fprintf(fid, '\n');
-        fprintf(fid, 'Files saved:\n');
-        fprintf(fid, '  Results: %s\n', filename);
-        fprintf(fid, '  Summary: %s\n', summary_filename);
-        fclose(fid);
+% Create filename without area name
+filename = sprintf('HMM_results_%s.mat', natOrReach);
+filepath = fullfile(hmmdir, filename);
 
-        fprintf('Summary saved to: %s\n', summary_filepath);
-    end
+% Save all results
+fprintf('Saving all HMM results to: %s\n', filepath);
+save(filepath, 'allResults', '-v7.3');
 
-    fprintf('HMM analysis saved successfully!\n');
-
-    %% Plot full sequence
-    figure(8); clf;
-    hold on;
-
-    x = (1:length(continuous_sequence)) * res.HmmParam.BinSize;
-    numStates = size(continuous_pStates, 2);
-
-    % Get colors for states
-    func = @sRGB_to_OKLab;
-    cOpts.exc = [0,0,0;1,1,1];
-    colors = maxdistcolor(numStates,func, cOpts);
-    % colors = distinguishable_colors(numStates, {'w','k'}, func);
-
-    % Plot rectangles for each state
-    for state = 1:numStates
-        stateIdx = continuous_sequence == state;
-        if any(stateIdx)
-            % Find contiguous segments
-            d = diff([0; stateIdx; 0]);
-            startIdx = find(d == 1);
-            endIdx = find(d == -1) - 1;
-
-            % Plot each segment as a rectangle
-            for i = 1:length(startIdx)
-                xStart = x(startIdx(i));
-                xEnd = x(endIdx(i));
-                patch([xStart xEnd xEnd xStart], [0 0 1 1], colors(state,:), ...
-                    'FaceAlpha', 0.2, 'EdgeColor', 'none');
-            end
+% Create summary text file
+summary_filename = sprintf('HMM_summary_%s.txt', natOrReach);
+summary_filepath = fullfile(hmmdir, summary_filename);
+fid = fopen(summary_filepath, 'w');
+if fid ~= -1
+    fprintf(fid, 'HMM Analysis Summary\n');
+    fprintf(fid, '===================\n\n');
+    fprintf(fid, 'Analysis Date: %s\n', datestr(now, 'yyyy-mm-dd_HH-MM-SS'));
+    fprintf(fid, 'Data Type: %s\n', natOrReach);
+    fprintf(fid, 'Model Selection Method: %s\n', MODELSEL);
+    fprintf(fid, '\n');
+    fprintf(fid, 'Areas Analyzed:\n');
+    for a = areasToTest
+        if ~isempty(allResults.hmm_results{a})
+            fprintf(fid, '  %s: %d states, bin size %.6f s\n', areas{a}, allResults.numStates(a), allResults.binSize(a));
+        else
+            fprintf(fid, '  %s: Analysis failed\n', areas{a});
         end
     end
-
-    % Plot probability traces
-    for state = 1:numStates
-        plot(x, continuous_pStates(:,state), 'Color', colors(state,:), 'LineWidth', 2);
-    end
-
-    xlabel('Time (s)');
-    ylabel('State Probability');
-    ylim([0 1]);
-    hold off;
-
-    fprintf('Completed analysis for brain area: %s\n', idAreaName);
-
-end % End of loop through brain areas
+    fprintf(fid, '\n');
+    fprintf(fid, 'Files saved:\n');
+    fprintf(fid, '  Results: %s\n', filename);
+    fprintf(fid, '  Summary: %s\n', summary_filename);
+    fclose(fid);
+    fprintf('Summary saved to: %s\n', summary_filepath);
+end
 
 fprintf('\n=== All brain area analyses completed ===\n');
 
