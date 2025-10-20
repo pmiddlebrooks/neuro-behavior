@@ -39,14 +39,13 @@ HmmParam.NumRuns=50;%     % 50% % number of times we iterate hmmtrain over all t
 opts.HmmParam = HmmParam;
 
 
-
+minNumNeurons = 10;
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
 natOrReach = 'Reach'; % 'Nat'  'Reach'
 
 areas = {'M23', 'M56', 'DS', 'VS'};
-areasToTest = 1:4; % Indices of areas to test
 
 % Set "trial duration" for reach data (required for the hmm fitting in
 % toolbox
@@ -71,11 +70,12 @@ switch natOrReach
         % reachDataFile = fullfile(paths.reachDataPath, 'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
         % reachDataFile = fullfile(paths.reachDataPath, 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
         % reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-reachDataFile = fullfile(paths.reachDataPath, 'reach_test.mat');
+        % reachDataFile = fullfile(paths.reachDataPath, 'reach_test.mat');
         dataR = load(reachDataFile);
 
         opts.collectStart = 0;
         opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
+opts.firingRateCheckTime = 60;
 
         [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
@@ -88,7 +88,16 @@ end
 
 idList = {idM23, idM56, idDS, idVS};
 
-%% Initialize storage for all areas
+
+
+%% RUN THE LOOP ACROSS AREAS, SAVING PER AREA
+
+areasToTest = 1:4; % Indices of areas to test
+areasMask = [length(idM23) >= minNumNeurons, length(idM56) >= minNumNeurons, length(idDS) >= minNumNeurons, length(idVS) >= minNumNeurons];
+areasToTest = areasToTest(areasMask)
+% areasToTest = 2
+
+% Initialize storage for all areas
 allResults = struct();
 allResults.areas = areas;
 allResults.binSize = zeros(1, length(areas));
@@ -183,47 +192,47 @@ for areaIdx = areasToTest
     disp('In fun_HMM_modelSel.m, select hhmParam values!!!')
 
     % Model selection method
-    MODELSEL = 'XVAL'; % 'BIC'; % 'AIC';
+    MODELSEL = 'BIC'; %'XVAL'; % 'BIC'; % 'AIC';
 
     % Prepare data structure for HMM analysis
     DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL, 'HmmParam', opts.HmmParam);
 
     % Run HMM analysis
     % try
-        myCluster = parcluster('local');
-        NumWorkers=min(myCluster.NumWorkers, 2);
-        parpool('local', NumWorkers);
+    myCluster = parcluster('local');
+    NumWorkers=min(myCluster.NumWorkers, 3);
+    parpool('local', NumWorkers);
 
-        res = hmm.funHMM(DATAIN);
+    res = hmm.funHMM(DATAIN);
 
-        % OUTPUT OF HMM FIT
-        % 'res' is a structure array with fields: 'hmm_data','hmm_bestfit','hmm_results',
-        %                                        'hmm_postfit','hmm_multispikes','HmmParam',
-        %                                        'win_train','colors','BestStateInd','LLtot'
-        % Important fields:
-        %     .hmm_bestfit.tpm: K x K transition probability matrix, where K is the number of hidden states
-        %     .hmm_bestfit.epm: K x (nunits+1) emission probability matrix, where K is the number of hidden states, the (n+1)-th column represents the probability of silence - you can safely drop it
-        %     .hmm_bestfit.LLtrain: -2*loglikelihood of the data
-        %
-        %     .hmm_results(i_trial).pStates: array of dim [K,time] with posterior probabilities of each state in trial i_trial
-        %     .hmm_results(i_trial).rates: array of dim [K,nunits] with local estimate of emissions (i.e., firing rates in each state) conditioned on observations in trial i_trial
-        %     .hmm_results(i_trial).Logpseq: -2*loglikelihood from local observations in trial i_trial
-        %
-        %     .hmm_postfit(i_trial).sequence: array of dimension [4,nseq] where columns represent detected states (intervals with prob(state)>0.8), in the order they appear in trial
-        %         i_trial, and rows represent state [onset,offset,duration,label].
-        %
-        %      HmmParam.VarStates: number of states K chosen with model selection
-        %      HmmParam.BinSize: bin size (seconds)
-        %      HmmParam.MinDur: shortest duration of detected states; shorter states are excluded from hmm_postfit(i_trial).sequence
-        %      HmmParam.MinP: state detection probability
-        %      HmmParam.NumSteps: number of independent EM runs used to non-convexity issues
-        %      HmmParam.NumRuns: maximum number of iterations each EM runs for
+    % OUTPUT OF HMM FIT
+    % 'res' is a structure array with fields: 'hmm_data','hmm_bestfit','hmm_results',
+    %                                        'hmm_postfit','hmm_multispikes','HmmParam',
+    %                                        'win_train','colors','BestStateInd','LLtot'
+    % Important fields:
+    %     .hmm_bestfit.tpm: K x K transition probability matrix, where K is the number of hidden states
+    %     .hmm_bestfit.epm: K x (nunits+1) emission probability matrix, where K is the number of hidden states, the (n+1)-th column represents the probability of silence - you can safely drop it
+    %     .hmm_bestfit.LLtrain: -2*loglikelihood of the data
+    %
+    %     .hmm_results(i_trial).pStates: array of dim [K,time] with posterior probabilities of each state in trial i_trial
+    %     .hmm_results(i_trial).rates: array of dim [K,nunits] with local estimate of emissions (i.e., firing rates in each state) conditioned on observations in trial i_trial
+    %     .hmm_results(i_trial).Logpseq: -2*loglikelihood from local observations in trial i_trial
+    %
+    %     .hmm_postfit(i_trial).sequence: array of dimension [4,nseq] where columns represent detected states (intervals with prob(state)>0.8), in the order they appear in trial
+    %         i_trial, and rows represent state [onset,offset,duration,label].
+    %
+    %      HmmParam.VarStates: number of states K chosen with model selection
+    %      HmmParam.BinSize: bin size (seconds)
+    %      HmmParam.MinDur: shortest duration of detected states; shorter states are excluded from hmm_postfit(i_trial).sequence
+    %      HmmParam.MinP: state detection probability
+    %      HmmParam.NumSteps: number of independent EM runs used to non-convexity issues
+    %      HmmParam.NumRuns: maximum number of iterations each EM runs for
 
-        fprintf('HMM analysis completed successfully!\n');
-        fprintf('Number of states: %d\n', res.HmmParam.VarStates(res.BestStateInd));
-        fprintf('Log-likelihood: %.2f\n', res.hmm_bestfit.LLtrain);
+    fprintf('HMM analysis completed successfully!\n');
+    fprintf('Number of states: %d\n', res.HmmParam.VarStates(res.BestStateInd));
+    fprintf('Log-likelihood: %.2f\n', res.hmm_bestfit.LLtrain);
 
-        fprintf('HMM completed successfully: Need to save it!\n');
+    fprintf('HMM completed successfully: Need to save it!\n');
 
 
     % catch ME
@@ -284,29 +293,30 @@ for areaIdx = areasToTest
 
         fprintf('Successfully transformed results to continuous format\n');
         fprintf('Total time bins: %d (%.1f seconds)\n', totalTimeBins, totalTimeBins * res.HmmParam.BinSize);
+        fprintf('Proportion of undefined states: %.2f\n', sum(continuous_sequence == 0)/length(continuous_sequence));
     end
 
 
-% ----------------------------
+    % ----------------------------
     % METASTATE DETECTION
     %----------------------------
-    
+
     if ~isempty(res) && isfield(res, 'hmm_bestfit') && isfield(res.hmm_bestfit, 'tpm')
         fprintf('Detecting metastates from transition probability matrix...\n');
-        
+
         % Get transition probability matrix
         tpm = res.hmm_bestfit.tpm;
         numStates = size(tpm, 1);
-        
+
         fprintf('Transition probability matrix size: %dx%d\n', numStates, numStates);
-        
+
         % Detect metastate communities using Vidaurre method
         try
             communities = detect_metastates_vidaurre(tpm, true); % verbose output
-            
+
             % Create continuous metastates sequence
             continuous_metastates = zeros(size(continuous_sequence));
-            
+
             % Map each state to its metastate
             for iBin = 1:length(continuous_sequence)
                 state = continuous_sequence(iBin);
@@ -316,24 +326,24 @@ for areaIdx = areasToTest
                     continuous_metastates(iBin) = 0; % Keep undefined states as 0
                 end
             end
-            
+
             % Get unique metastates and their composition
             uniqueMetastates = unique(communities);
             numMetastates = length(uniqueMetastates);
-            
-            fprintf('\t\t\tNumber of metastates: %d (from %d states)\n', numMetastates, numStates);
+
+            fprintf('\t\t\t\tNumber of metastates: %d (from %d states)\n', numMetastates, numStates);
             for m = 1:numMetastates
                 metastateLabel = uniqueMetastates(m);
                 statesInMetastate = find(communities == metastateLabel);
                 fprintf('  Metastate %d: states [%s]\n', metastateLabel, num2str(statesInMetastate));
             end
-            
+
             fprintf('Successfully created continuous metastates sequence\n');
-            
+
         catch ME
             fprintf('Error in metastate detection: %s\n', ME.message);
             fprintf('Skipping metastate analysis for area %s\n', idAreaName);
-            
+
             % Set empty metastate results
             communities = [];
             continuous_metastates = [];
@@ -407,7 +417,7 @@ for areaIdx = areasToTest
     hmm_res.continuous_results.sequence = continuous_sequence;
     hmm_res.continuous_results.totalTime = totalTimeBins * res.HmmParam.BinSize;
 
-% Store metastate results
+    % Store metastate results
     hmm_res.metastate_results = struct();
     hmm_res.metastate_results.communities = communities;
     hmm_res.metastate_results.continuous_metastates = continuous_metastates;
@@ -417,13 +427,13 @@ for areaIdx = areasToTest
     else
         hmm_res.metastate_results.transition_matrix = [];
     end
-        % Store results in allResults structure
+    % Store results in allResults structure
     allResults.binSize(areaIdx) = res.HmmParam.BinSize;
     allResults.numStates(areaIdx) = res.HmmParam.VarStates(res.BestStateInd);
     allResults.hmm_results{areaIdx} = hmm_res;
 
     slackMsg = sprintf('HMM_MAZZ: Completed analysis for brain area: %s\n', idAreaName);
-disp(slackMsg)
+    disp(slackMsg)
     slack_code_done(slackMsg)
 end % End of loop through brain areas
 
@@ -438,7 +448,7 @@ filename = sprintf('HMM_results_%s.mat', natOrReach);
 filepath = fullfile(hmmdir, filename);
 
 % Save all results
-fprintf('Saving all HMM results to: %s\n', filepath);
+fprintf('Saving all HMM results to: \n%s\n', filepath);
 save(filepath, 'allResults', '-v7.3');
 
 % Create summary text file
@@ -465,7 +475,7 @@ if fid ~= -1
     fprintf(fid, '  Results: %s\n', filename);
     fprintf(fid, '  Summary: %s\n', summary_filename);
     fclose(fid);
-    fprintf('Summary saved to: %s\n', summary_filepath);
+    fprintf('Summary saved to: \n%s\n', summary_filepath);
 end
 
 fprintf('\n=== All brain area analyses completed ===\n');
