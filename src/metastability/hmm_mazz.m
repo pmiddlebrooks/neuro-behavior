@@ -71,7 +71,7 @@ switch natOrReach
         % reachDataFile = fullfile(paths.reachDataPath, 'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
         % reachDataFile = fullfile(paths.reachDataPath, 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
         reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-reachDataFile = fullfile(paths.reachDataPath, 'reach_test.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'reach_test.mat');
         dataR = load(reachDataFile);
 
         opts.collectStart = 0;
