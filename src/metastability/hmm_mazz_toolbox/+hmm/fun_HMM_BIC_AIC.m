@@ -39,9 +39,16 @@ if numel(sequence)==1
             esttr=fit_k(s).tpm;
             estemis=fit_k(s).epm;
             MinValue=1e-100;
+            MinValue=1e-10;
             esttr(esttr<MinValue)=MinValue;
             estemis(estemis<MinValue)=MinValue;
             holdSeq=seqData(:,holdIdx);
+fprintf('Emission matrix analysis:\n');
+    state_emissions = estemis(st, 1:end-1); % Exclude silence column
+    min_emission = min(state_emissions);
+    max_emission = max(state_emissions);
+    mean_emission = mean(state_emissions);
+    fprintf('  State %d: min=%.6f, max=%.6f, mean=%.6f\n', st, min_emission, max_emission, mean_emission);
             [~,logpseq]=hmmdecode(holdSeq,esttr,estemis);
             LLacc(k,s)=logpseq;
         end

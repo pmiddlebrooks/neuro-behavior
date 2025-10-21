@@ -28,12 +28,34 @@ data = load_data(opts, 'spikes');
 % Define brain area mapping: 1=M23, 2=M56, 3=DS, 4=VS
 areaMapping = containers.Map({'M23', 'M56', 'DS', 'VS'}, {1, 2, 3, 4});
 
+
+% Define good neurons
+    useMulti = 1;
+    if ~useMulti
+    allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
+    else
+    allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | (strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua'));
+warning('on','all');
+warning('Warning in get_standard_data: you are loading muas with the good spiking units.')
+    end
+    
+    goodM23 = allGood & strcmp(data.ci.area, 'M23');
+    goodM56= allGood & strcmp(data.ci.area, 'M56');
+    goodCC = allGood & strcmp(data.ci.area, 'CC');
+    goodDS = allGood & strcmp(data.ci.area, 'DS');
+    goodVS = allGood & strcmp(data.ci.area, 'VS');
+
+    % which neurons to use in the neural matrix
+    opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS | goodCC);
+    opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
+
 % Define neuron IDs
 if ismember('id', data.ci.Properties.VariableNames)
     idLabels = data.ci.id(opts.useNeurons);
 else
     idLabels = data.ci.cluster_id(opts.useNeurons);
 end
+
 
 % Initialize area labels
 areaLabels = {};
@@ -89,13 +111,13 @@ for i = 1:length(idLabels)
     iSpikeTime = iSpikeTime(validSpikes);
     
     % Get area label for current neuron
-    neuronIdx = find(opts.useNeurons == idLabels(i));
+    neuronIdx = find(data.ci.cluster_id == idLabels(i));
     if ~isempty(neuronIdx)
-        currentAreaText = data.ci.area(opts.useNeurons(neuronIdx));
+        currentAreaText = data.ci.area(neuronIdx);
         
         % Convert text area label to numeric value
         if isKey(areaMapping, currentAreaText)
-            currentAreaLabel = areaMapping(currentAreaText);
+            currentAreaLabel = areaMapping(char(currentAreaText));
         else
             warning('Unknown brain area: %s. Using default value 1 (M23)', currentAreaText);
             currentAreaLabel = 1;
