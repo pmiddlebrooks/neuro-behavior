@@ -42,11 +42,11 @@ for trial=1:ntrials
     % estemis
     for st_cnt=1:numel(VarStates)
         % DEBUG: Add debugging information
-        fprintf('Debug: st_cnt=%d, VarStates(st_cnt)=%d\n', st_cnt, VarStates(st_cnt));
-        fprintf('Debug: hmm_bestfit size = [%d, %d]\n', size(hmm_bestfit,1), size(hmm_bestfit,2));
-        if isfield(hmm_bestfit, 'VarStates')
-            fprintf('Debug: hmm_bestfit.VarStates = %d\n', hmm_bestfit.VarStates);
-        end
+        % fprintf('Debug: st_cnt=%d, VarStates(st_cnt)=%d\n', st_cnt, VarStates(st_cnt));
+        % fprintf('Debug: hmm_bestfit size = [%d, %d]\n', size(hmm_bestfit,1), size(hmm_bestfit,2));
+        % if isfield(hmm_bestfit, 'VarStates')
+        %     fprintf('Debug: hmm_bestfit.VarStates = %d\n', hmm_bestfit.VarStates);
+        % end
 
         % ORIGINAL PROBLEMATIC CODE (commented out):
         % NumStates=VarStates(st_cnt);
@@ -65,9 +65,9 @@ for trial=1:ntrials
         estemis = hmm_bestfit.epm;
 
         % DEBUG: Check matrix dimensions
-        fprintf('Debug: esttr size = [%d, %d]\n', size(esttr,1), size(esttr,2));
-        fprintf('Debug: estemis size = [%d, %d]\n', size(estemis,1), size(estemis,2));
-        fprintf('Debug: seq(trial).data size = [%d, %d]\n', size(seq(trial).data,1), size(seq(trial).data,2));
+        % fprintf('Debug: esttr size = [%d, %d]\n', size(esttr,1), size(esttr,2));
+        % fprintf('Debug: estemis size = [%d, %d]\n', size(estemis,1), size(estemis,2));
+        % fprintf('Debug: seq(trial).data size = [%d, %d]\n', size(seq(trial).data,1), size(seq(trial).data,2));
 
         % hmmdecode return NaN if any entry in esttr or estemis is zero
         % fix it with this hack (incorporated in hmmdecode.m)
@@ -80,18 +80,18 @@ for trial=1:ntrials
         %         else
 
         % Add debugging before line 56:
-        fprintf('Debug info for st_cnt=%d:\n', st_cnt);
-        fprintf('  NumStates = %d\n', NumStates);
-        fprintf('  esttr size = [%d, %d]\n', size(esttr,1), size(esttr,2));
-        fprintf('  estemis size = [%d, %d]\n', size(estemis,1), size(estemis,2));
-        fprintf('  seq(trial).data size = [%d, %d]\n', size(seq(trial).data,1), size(seq(trial).data,2));
+        % fprintf('Debug info for st_cnt=%d:\n', st_cnt);
+        % fprintf('  NumStates = %d\n', NumStates);
+        % fprintf('  esttr size = [%d, %d]\n', size(esttr,1), size(esttr,2));
+        % fprintf('  estemis size = [%d, %d]\n', size(estemis,1), size(estemis,2));
+        % fprintf('  seq(trial).data size = [%d, %d]\n', size(seq(trial).data,1), size(seq(trial).data,2));
 
         [pstates,logpseq]=hmmdecode(seq(trial).data,esttr,estemis);
         %         end
 
         % DEBUG: Check what hmmdecode returned
-        fprintf('Debug: pstates size = [%d, %d]\n', size(pstates,1), size(pstates,2));
-        fprintf('Debug: logpseq = %f\n', logpseq);
+        % fprintf('Debug: pstates size = [%d, %d]\n', size(pstates,1), size(pstates,2));
+        % fprintf('Debug: logpseq = %f\n', logpseq);
 
         % Check for dimension mismatch and fix if needed
         if size(pstates,1) ~= NumStates
@@ -111,13 +111,13 @@ for trial=1:ntrials
         pstates_rate=pstates(:,round(AdjustT/BinSize)+1:end);
 
         % DEBUG: Check pstates_rate after trimming
-        fprintf('Debug: pstates_rate size = [%d, %d]\n', size(pstates_rate,1), size(pstates_rate,2));
+        % fprintf('Debug: pstates_rate size = [%d, %d]\n', size(pstates_rate,1), size(pstates_rate,2));
         v1=ones(size(pstates_rate,2),1);
         lambda=zeros(NumStates,gnunits);
         win=win_train(trial,:);
         for st=1:NumStates
             if size(pstates_rate, 1) ~= NumStates
-                disp('Something wrong: size(p_states_rate, 1) ~= NumStates')
+                disp('fun_HMM_decoding: Something wrong: size(p_states_rate, 1) ~= NumStates')
             end
             for unit=1:gnunits
                 yt=zeros(1,size(pstates_rate,2));
