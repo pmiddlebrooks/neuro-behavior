@@ -47,13 +47,13 @@ pOrder = 10;
 critType = 2;
 d2StepSize = .02;
 
-% =============================    Data Loading    =============================
+%% =============================    Data Loading    =============================
 fprintf('\n=== Loading %s data ===\n', dataType);
 
 if strcmp(dataType, 'reach')
     % Load reach data
     reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-    reachDataFile = fullfile(paths.reachDataPath, 'makeSpikes.mat');
+    % reachDataFile = fullfile(paths.reachDataPath, 'makeSpikes.mat');
     
     [~, dataBaseName, ~] = fileparts(reachDataFile);
     saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
@@ -104,7 +104,7 @@ end
 fprintf('\n=== %s Data Analysis ===\n', dataType);
 
 % Adjust areasToTest based on which areas have data
-areasToTest = areasToTest(~cellfun(@isempty, idList));
+% areasToTest = areasToTest(~cellfun(@isempty, idList));
 
 % Step 1-2: Apply PCA to original data if requested
 fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');

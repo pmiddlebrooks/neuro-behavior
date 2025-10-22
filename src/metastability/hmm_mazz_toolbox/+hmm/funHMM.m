@@ -22,7 +22,8 @@ HmmParam = DATAIN.HmmParam;
 % run HMM
 IN=struct('METHOD',METHOD,'Spikes',spikes,'win_train',win_train,'SELECTION',SELECTION, 'HmmParam', HmmParam);
 OUT=hmm.fun_HMM_modelSel(IN);
-%
+
+
 aux.v2struct(OUT);
 % PICK BEST FIT
 BestStateInd=find(StatesSelected==HiddenTotal);

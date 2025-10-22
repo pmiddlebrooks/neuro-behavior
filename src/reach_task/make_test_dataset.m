@@ -1,12 +1,9 @@
 %% Creates a test dataset (small) from real data for reach
 
-reachDataFile = fullfile(paths.dropPath, 'reach_data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+reachDataFile = fullfile(paths.reachDataPath, 'AB2_01-May-2023 15_34_59_NeuroBeh.mat');
 
 load(reachDataFile);
-
-opts = neuro_behavior_options;
-opts.minFiringRate = .1;
-opts.frameSize = .001;
 
 % % Find the first reach after block switch
 % block2FirstIdx = find(ismember(Block(:,3), 3:4), 1);
@@ -24,5 +21,5 @@ Block([11 13 14],3) = 3;
 
 R = R(1:15,:);
 
-savePath = fullfile(paths.dropPath, 'reach_data', 'reach_test.mat');
+savePath = fullfile(paths.reachDataPath, 'reach_test.mat');
 save(savePath, 'R', 'Block', 'README', 'CSV', 'idchan', '-mat');

@@ -18,7 +18,7 @@ end
 
 AdjustT=0.;
 if any(strcmp(fieldnames(HmmParam),'AdjustT'))
-    AdjustT=HmmParam.AdjustT; 
+    AdjustT=HmmParam.AdjustT;
 end
 win_decode=win_train;
 win_decode(:,1)=win_decode(:,1)-AdjustT;
@@ -41,28 +41,84 @@ for trial=1:ntrials
     % logpseq=log probability of the sequence given esttr and
     % estemis
     for st_cnt=1:numel(VarStates)
-        NumStates=VarStates(st_cnt);
-        esttr=hmm_bestfit(st_cnt).tpm;
-        estemis=hmm_bestfit(st_cnt).epm;
+        % DEBUG: Add debugging information
+        fprintf('Debug: st_cnt=%d, VarStates(st_cnt)=%d\n', st_cnt, VarStates(st_cnt));
+        fprintf('Debug: hmm_bestfit size = [%d, %d]\n', size(hmm_bestfit,1), size(hmm_bestfit,2));
+        if isfield(hmm_bestfit, 'VarStates')
+            fprintf('Debug: hmm_bestfit.VarStates = %d\n', hmm_bestfit.VarStates);
+        end
+
+        % ORIGINAL PROBLEMATIC CODE (commented out):
+        % NumStates=VarStates(st_cnt);
+        % esttr=hmm_bestfit(st_cnt).tpm;
+        % estemis=hmm_bestfit(st_cnt).epm;
+
+        % CORRECTED CODE:
+        % Use the selected state count from the best fit, not the iteration index
+        if isfield(hmm_bestfit, 'VarStates')
+            NumStates = hmm_bestfit.VarStates;
+        else
+            % Fallback: use the size of the transition matrix
+            NumStates = size(hmm_bestfit.tpm, 1);
+        end
+        esttr = hmm_bestfit.tpm;
+        estemis = hmm_bestfit.epm;
+
+        % DEBUG: Check matrix dimensions
+        fprintf('Debug: esttr size = [%d, %d]\n', size(esttr,1), size(esttr,2));
+        fprintf('Debug: estemis size = [%d, %d]\n', size(estemis,1), size(estemis,2));
+        fprintf('Debug: seq(trial).data size = [%d, %d]\n', size(seq(trial).data,1), size(seq(trial).data,2));
+
         % hmmdecode return NaN if any entry in esttr or estemis is zero
         % fix it with this hack (incorporated in hmmdecode.m)
         MinValue=1e-100;
         esttr(esttr<MinValue)=MinValue;
         estemis(estemis<MinValue)=MinValue;
-%         if strcmp(DISTR,'poisson')
-%             [~,~,logpseq,pstates]=ph_em(seq(trial).data',esttr,estemis,1);
-%             pstates=pstates';
-%         else
-            [pstates,logpseq]=hmmdecode(seq(trial).data,esttr,estemis);
-%         end
+        %         if strcmp(DISTR,'poisson')
+        %             [~,~,logpseq,pstates]=ph_em(seq(trial).data',esttr,estemis,1);
+        %             pstates=pstates';
+        %         else
+
+        % Add debugging before line 56:
+        fprintf('Debug info for st_cnt=%d:\n', st_cnt);
+        fprintf('  NumStates = %d\n', NumStates);
+        fprintf('  esttr size = [%d, %d]\n', size(esttr,1), size(esttr,2));
+        fprintf('  estemis size = [%d, %d]\n', size(estemis,1), size(estemis,2));
+        fprintf('  seq(trial).data size = [%d, %d]\n', size(seq(trial).data,1), size(seq(trial).data,2));
+
+        [pstates,logpseq]=hmmdecode(seq(trial).data,esttr,estemis);
+        %         end
+
+        % DEBUG: Check what hmmdecode returned
+        fprintf('Debug: pstates size = [%d, %d]\n', size(pstates,1), size(pstates,2));
+        fprintf('Debug: logpseq = %f\n', logpseq);
+
+        % Check for dimension mismatch and fix if needed
+        if size(pstates,1) ~= NumStates
+            fprintf('Warning: pstates has %d rows but NumStates=%d\n', size(pstates,1), NumStates);
+            fprintf('This might be due to silent state elimination\n');
+
+            % Option 1: Skip this iteration
+            continue;
+
+            % Option 2: Pad with zeros (not recommended)
+            % pstates = [pstates; zeros(NumStates-size(pstates,1), size(pstates,2))];
+        end
+
         % FIT FIRING RATES IN EACH STATE
         % POST DELIVERY RATE FIT
         % remove first 0.2 s in pstates
         pstates_rate=pstates(:,round(AdjustT/BinSize)+1:end);
+
+        % DEBUG: Check pstates_rate after trimming
+        fprintf('Debug: pstates_rate size = [%d, %d]\n', size(pstates_rate,1), size(pstates_rate,2));
         v1=ones(size(pstates_rate,2),1);
         lambda=zeros(NumStates,gnunits);
         win=win_train(trial,:);
         for st=1:NumStates
+            if size(pstates_rate, 1) ~= NumStates
+                disp('Something wrong: size(p_states_rate, 1) ~= NumStates')
+            end
             for unit=1:gnunits
                 yt=zeros(1,size(pstates_rate,2));
                 % turn spikes into yt

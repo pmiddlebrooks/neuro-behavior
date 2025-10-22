@@ -25,28 +25,29 @@ SELECTION='elbow';
 switch METHOD
     case 'XVAL'
         NP=@(NumStates,gnunits,logT)0;
+        NP=@(NumStates,gnunits,logT)(NumStates.*(NumStates-1)+NumStates.*gnunits)*0.1*logT;
         HmmParam.NumSteps=1;
         HiddenStep=1; % increment in hidden states% RUNNING EACH SESSION SEPARATELY
-        HiddenMin=4;
-        HiddenMax=50; % max value allowed
+        HiddenMin=3;
+        HiddenMax=25; % max value allowed
     case 'BIC'
         NP=@(NumStates,gnunits,logT)(NumStates.*(NumStates-1)+NumStates.*gnunits+NumStates-1)*logT;
         fprintf('\n BIC...\n');
         HiddenStep=1; % increment in hidden states% RUNNING EACH SESSION SEPARATELY
         HiddenMin=2;
-        HiddenMax=50; % max value allowed
+        HiddenMax=20; % max value allowed
     case 'AIC'
         NP=@(NumStates,gnunits,logT)(NumStates.*(NumStates-1)+NumStates.*gnunits+NumStates-1)*2;
         fprintf('\n AIC...\n');
         HiddenStep=1; % increment in hidden states% RUNNING EACH SESSION SEPARATELY
         HiddenMin=2;
-        HiddenMax=50; % max value allowed
+        HiddenMax=20; % max value allowed
     case 'simMatch'
         NP=@(NumStates,gnunits,logT)0;
         fprintf('\n Similarity matching...\n');
         HiddenStep=1; % increment in hidden states% RUNNING EACH SESSION SEPARATELY
         HiddenMin=2;
-        HiddenMax=50; % max value allowed
+        HiddenMax=20; % max value allowed
 end
 HmmParam.NP=NP;
 optionsCrit=struct('SELECTION',SELECTION);
