@@ -29,12 +29,12 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 HmmParam=struct();
 HmmParam.AdjustT=0.; % interval to skip at trial start to avoid canonical choise of 1st state in matlab
 % HmmParam.BinSize=0.002;%0.005; % time step of Markov chain
-HmmParam.BinSize=0.005;%0.005; % time step of Markov chain
+HmmParam.BinSize=0.01;%0.005; % time step of Markov chain
 HmmParam.MinDur=0.05;   % .05 min duration of an admissible state (s) in HMM DECODING
 HmmParam.MinP=0.8;      % pstate>MinP for an admissible state in HMM ADMISSIBLE STATES
-HmmParam.NumSteps=7;%    %10 number of fits at fixed parameters to avoid non-convexity
-HmmParam.NumRuns=25;%     % 50% % number of times we iterate hmmtrain over all trials
-HmmParam.singleSeqXval.K = 3; % Cross-validation
+HmmParam.NumSteps=8;%    %10 number of fits at fixed parameters to avoid non-convexity
+HmmParam.NumRuns=40;%     % 50% % number of times we iterate hmmtrain over all trials
+HmmParam.singleSeqXval.K = 5; % Cross-validation
 
 opts.HmmParam = HmmParam;
 
@@ -76,7 +76,7 @@ spikeData = spike_times_per_area(opts);
         % sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat';
         % sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat';
         sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
-        sessionName = 'reach_test.mat';
+        % sessionName = 'reach_test.mat';
         reachDataFile = fullfile(paths.reachDataPath, sessionName);
         % dataR = load(reachDataFile);
 
@@ -107,7 +107,7 @@ fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(i
 areasToTest = 1:4; % Indices of areas to test
 areasMask = [length(idM23) >= minNumNeurons, length(idM56) >= minNumNeurons, length(idDS) >= minNumNeurons, length(idVS) >= minNumNeurons];
 areasToTest = areasToTest(areasMask)
-% areasToTest = 3
+areasToTest = 2:3
 
 % Initialize storage for all areas
 allResults = struct();
