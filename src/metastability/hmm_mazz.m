@@ -29,11 +29,11 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 HmmParam=struct();
 HmmParam.AdjustT=0.; % interval to skip at trial start to avoid canonical choise of 1st state in matlab
 % HmmParam.BinSize=0.002;%0.005; % time step of Markov chain
-HmmParam.BinSize=0.002;%0.005; % time step of Markov chain
+HmmParam.BinSize=0.005;%0.005; % time step of Markov chain
 HmmParam.MinDur=0.05;   % .05 min duration of an admissible state (s) in HMM DECODING
 HmmParam.MinP=0.8;      % pstate>MinP for an admissible state in HMM ADMISSIBLE STATES
-HmmParam.NumSteps=5;%    %10 number of fits at fixed parameters to avoid non-convexity
-HmmParam.NumRuns=20;%     % 50% % number of times we iterate hmmtrain over all trials
+HmmParam.NumSteps=7;%    %10 number of fits at fixed parameters to avoid non-convexity
+HmmParam.NumRuns=25;%     % 50% % number of times we iterate hmmtrain over all trials
 HmmParam.singleSeqXval.K = 3; % Cross-validation
 
 opts.HmmParam = HmmParam;
@@ -57,7 +57,7 @@ switch natOrReach
         getDataType = 'spikes';
         opts.collectStart = 0 * 60 * 60; % seconds
         opts.collectFor = 45 * 60; % seconds
-        opts.collectFor = 5 * 60; % seconds
+        opts.collectFor = 10 * 60; % seconds
         % get_standard_data
 animal = 'ag25290';
 sessionNrn = '112321';
@@ -67,16 +67,17 @@ spikeData = spike_times_per_area(opts);
 
     case 'Reach'
         % Mark's reach data
-        reachDataFile = fullfile(paths.reachDataPath, 'AB2_01-May-2023 15_34_59_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.reachDataPath, 'AB2_11-May-2023 17_31_00_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.reachDataPath, 'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.reachDataPath, 'AB2_30-May-2023 12_49_52_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.reachDataPath, 'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.reachDataPath, 'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.reachDataPath, 'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.reachDataPath, 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
-        reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-        % reachDataFile = fullfile(paths.reachDataPath, 'reach_test.mat');
+        sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh.mat';
+        % sessionName =  'AB2_11-May-2023 17_31_00_NeuroBeh.mat';
+        % sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
+        % sessionName =  'AB2_30-May-2023 12_49_52_NeuroBeh.mat';
+        % sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat';
+        % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat';
+        % sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat';
+        % sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat';
+        sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
+        sessionName = 'reach_test.mat';
+        reachDataFile = fullfile(paths.reachDataPath, sessionName);
         % dataR = load(reachDataFile);
 
         opts.collectStart = 0;
@@ -106,7 +107,7 @@ fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(i
 areasToTest = 1:4; % Indices of areas to test
 areasMask = [length(idM23) >= minNumNeurons, length(idM56) >= minNumNeurons, length(idDS) >= minNumNeurons, length(idVS) >= minNumNeurons];
 areasToTest = areasToTest(areasMask)
-% areasToTest = 2
+% areasToTest = 3
 
 % Initialize storage for all areas
 allResults = struct();
@@ -160,20 +161,22 @@ for areaIdx = areasToTest
     %----------------------------%----------------------------
     % HMM ANALYSIS
     %----------------------------%----------------------------
-    fprintf('\n\nRunning HMM on %s for area %s\n\n', natOrReach, idAreaName)
+    fprintf('\n\nRunning HMM on %s %s for area %s\n\n', natOrReach, sessionName, idAreaName)
     disp('In fun_HMM_modelSel.m, select hhmParam values!!!')
 
     % Model selection method
-    MODELSEL = 'AIC'; %'XVAL'; % 'BIC'; % 'AIC';
+    MODELSEL = 'XVAL'; %'XVAL'; % 'BIC'; % 'AIC';
 
     % Prepare data structure for HMM analysis
     DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL, 'HmmParam', opts.HmmParam);
 
     % Run HMM analysis
     % try
-    myCluster = parcluster('local');
-    NumWorkers=min(myCluster.NumWorkers, 3);
-    parpool('local', NumWorkers);
+    if isempty(gcp('nocreate'))
+        myCluster = parcluster('local');
+        NumWorkers = min(myCluster.NumWorkers, 3);
+        parpool('local', NumWorkers);
+    end
 
     res = hmm.funHMM(DATAIN);
 
@@ -216,8 +219,6 @@ for areaIdx = areasToTest
     % end
 
 
-    pid = gcp;
-    delete(pid)
 
 
     % --------------------------------------------------------
@@ -409,6 +410,7 @@ for areaIdx = areasToTest
     slack_code_done(slackMsg)
 end % End of loop through brain areas
 
+
 % Save all results in a single file
 hmmdir = fullfile(paths.dropPath, 'metastability');
 if ~exist(hmmdir, 'dir')
@@ -452,6 +454,8 @@ end
 
 fprintf('\n=== All brain area analyses completed ===\n');
 
+    pid = gcp;
+    delete(pid)
 
 
 
