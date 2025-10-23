@@ -21,7 +21,7 @@ function interval_behavior()
     % File paths
     dataPath = 'E:\Dropbox\Data\interval_timing_task\data\mouse99';
     resultsPath = 'E:\Dropbox\Data\interval_timing_task\results\mouse99';
-    logFile = 'log.txt';
+    logFile = 'log.txt';  % Use original TXT file
     
     % Extract mouse name from path
     mouseName = 'mouse99';
@@ -59,84 +59,101 @@ function interval_behavior()
 end
 
 function [events, states] = parse_log_data(logFilePath)
-% PARSE_LOG_DATA - Parse Arduino log file into structured data
+% PARSE_LOG_DATA - Parse CSV log file into structured data with mixed types
 %
 % Variables:
-%   logFilePath - path to log file
-%   fid - file identifier
-%   rawData - raw text data from file
-%   timestamps - all timestamps
-%   eventTypes - all event types
-%   values - all values/states
+%   logFilePath - path to CSV log file
+%   data - table containing all log data
 %   stateIdx - logical index for state events
 %   eventIdx - logical index for regular events
+%   events - struct array for events (L, R, B)
+%   states - struct array for states (S)
 %
-% Goal: Extract all events and states from log file for analysis
+% Goal: Extract all events and states from CSV log file for analysis
 
-    fprintf('Reading log file...\n');
+    fprintf('Reading TXT log file...\n');
     
-    % Read entire file at once - much faster than line by line
-    fid = fopen(logFilePath, 'r');
-    if fid == -1
-        error('Could not open log file: %s', logFilePath);
+    % Check if CSV file exists
+    if ~exist(logFilePath, 'file')
+        error('CSV log file not found: %s', logFilePath);
     end
     
-    % Read all lines at once
-    rawData = textscan(fid, '%s', 'Delimiter', '\n');
+    % Read CSV file line by line to preserve mixed data types
+    fid = fopen(logFilePath, 'r');
+    if fid == -1
+        error('Could not open TXT file: %s', logFilePath);
+    end
+    
+    % Read all lines
+    rawLines = textscan(fid, '%s', 'Delimiter', '\n');
     fclose(fid);
-    rawData = rawData{1};
+    rawLines = rawLines{1};
     
-    fprintf('Parsing %d lines...\n', length(rawData));
-    
-    % Pre-allocate arrays for maximum efficiency
-    nLines = length(rawData);
+    % Parse each line manually to preserve data types
+    nLines = length(rawLines);
     timestamps = zeros(nLines, 1);
-    eventTypes = cell(nLines, 1);
+    types = cell(nLines, 1);
     values = cell(nLines, 1);
     
-    % Parse all lines efficiently
     for i = 1:nLines
-        line = rawData{i};
-        if isempty(line)
-            continue;
-        end
-        
-        % Parse line: timestamp eventType value/state
+        line = rawLines{i};
         parts = strsplit(line, ' ');
-        if length(parts) < 3
-            continue;
-        end
-        
-        timestamps(i) = str2double(parts{1});
-        eventTypes{i} = parts{2};
-        
-        if strcmp(parts{2}, 'S')
-            % State event - join remaining parts
+        if length(parts) >= 3
+            timestamps(i) = str2double(parts{1});
+            types{i} = parts{2};
+            % Join remaining parts for state descriptions
             values{i} = strjoin(parts(3:end), ' ');
-        else
-            % Regular event - convert value to number
-            values{i} = str2double(parts{3});
         end
     end
     
     % Remove empty entries
-    validIdx = ~cellfun(@isempty, eventTypes);
+    validIdx = ~cellfun(@isempty, types);
     timestamps = timestamps(validIdx);
-    eventTypes = eventTypes(validIdx);
+    types = types(validIdx);
     values = values(validIdx);
     
+    % Create data table with proper types
+    data = table(timestamps, types, values, 'VariableNames', {'timestamp', 'type', 'value'});
+    
+    fprintf('Loaded %d rows from TXT\n', length(timestamps));
+    
     % Separate state events from regular events
-    stateIdx = strcmp(eventTypes, 'S');
+    stateIdx = strcmp(data.type, 'S');
     eventIdx = ~stateIdx;
     
-    % Create events structure
-    events = struct('timestamp', num2cell(timestamps(eventIdx)), ...
-                   'type', eventTypes(eventIdx), ...
-                   'value', values(eventIdx));
+    % Create events structure (L, R, B events)
+    eventTimestamps = timestamps(eventIdx);
+    eventTypes = types(eventIdx);
+    eventValues = values(eventIdx);
+    nEvents = length(eventTimestamps);
     
-    % Create states structure
-    states = struct('timestamp', num2cell(timestamps(stateIdx)), ...
-                  'state', values(stateIdx));
+    events = struct('timestamp', cell(nEvents, 1), 'type', cell(nEvents, 1), 'value', cell(nEvents, 1));
+    
+    for i = 1:nEvents
+        events(i).timestamp = eventTimestamps(i);
+        events(i).type = eventTypes{i};
+        
+        % Try to convert to number, if fails keep as string
+        valStr = eventValues{i};
+        valNum = str2double(valStr);
+        if ~isnan(valNum)
+            events(i).value = valNum;
+        else
+            events(i).value = valStr;
+        end
+    end
+    
+    % Create states structure (S events)
+    stateTimestamps = timestamps(stateIdx);
+    stateValues = values(stateIdx);
+    nStates = length(stateTimestamps);
+    
+    states = struct('timestamp', cell(nStates, 1), 'state', cell(nStates, 1));
+    
+    for i = 1:nStates
+        states(i).timestamp = stateTimestamps(i);
+        states(i).state = stateValues{i};
+    end
     
     fprintf('Parsed %d events and %d states\n', length(events), length(states));
 end
@@ -149,13 +166,13 @@ function trials = analyze_trials(events, states, interTrialInterval, rewardWindo
 %   states - parsed state data
 %   interTrialInterval - duration between trials (ms)
 %   rewardWindow - duration reward is available (ms)
-%   trialStartTimes - timestamps when trials begin
-%   trialEndTimes - timestamps when trials end
+%   itiStartTimes - timestamps when ITI starts (trial starts)
+%   trialArmTimes - timestamps when trials are armed (reward window starts)
 %   eventTimestamps - all event timestamps
 %   eventTypes - all event types
 %   eventValues - all event values
 %
-% Goal: Identify trial boundaries and classify trial outcomes efficiently
+% Goal: Identify trial boundaries and classify trial outcomes correctly
 
     fprintf('Analyzing trials...\n');
     
@@ -164,77 +181,72 @@ function trials = analyze_trials(events, states, interTrialInterval, rewardWindo
     eventTypes = {events.type};
     eventValues = [events.value];
     
-    % Find trial start times (TRIAL_ARMED states)
-    trialStartIdx = strcmp({states.state}, 'TRIAL_ARMED');
-    trialStartTimes = [states(trialStartIdx).timestamp];
+    % Find ITI_START times (trial starts)
+    itiStartIdx = strcmp({states.state}, 'ITI_START');
+    itiStartTimes = [states(itiStartIdx).timestamp];
     
-    % Find trial end times (ITI_START states)
-    trialEndIdx = strcmp({states.state}, 'ITI_START');
-    trialEndTimes = [states(trialEndIdx).timestamp];
+    % Find TRIAL_ARMED times (reward window starts)
+    trialArmIdx = strcmp({states.state}, 'TRIAL_ARMED');
+    trialArmTimes = [states(trialArmIdx).timestamp];
     
-    fprintf('Found %d trial starts and %d trial ends\n', length(trialStartTimes), length(trialEndTimes));
+    fprintf('Found %d ITI starts and %d trial arms\n', length(itiStartTimes), length(trialArmTimes));
     
-    % Pre-allocate trial structure
-    nTrials = length(trialStartTimes);
+    % Each trial starts with ITI_START and ends with the next ITI_START
+    nTrials = length(itiStartTimes) - 1; % Last ITI_START has no corresponding end
     trials = struct('startTime', cell(nTrials, 1), 'endTime', cell(nTrials, 1), ...
                    'type', cell(nTrials, 1), 'duration', cell(nTrials, 1), ...
                    'rewardWindowStart', cell(nTrials, 1), 'beamBreakTime', cell(nTrials, 1));
     
-    % Process trials efficiently
+    % Process each trial
     for i = 1:nTrials
-        startTime = trialStartTimes(i);
+        trialStartTime = itiStartTimes(i);
+        trialEndTime = itiStartTimes(i + 1);
         
-        % Find the next ITI_START after this trial start
-        endIdx = find(trialEndTimes > startTime, 1);
-        if isempty(endIdx)
-            continue; % Skip incomplete trial
+        % Find TRIAL_ARMED within this trial period
+        trialArmIdx = find(trialArmTimes > trialStartTime & trialArmTimes < trialEndTime, 1);
+        
+        if isempty(trialArmIdx)
+            % No TRIAL_ARMED found - this shouldn't happen in normal operation
+            continue;
         end
-        endTime = trialEndTimes(endIdx);
+        
+        rewardWindowStart = trialArmTimes(trialArmIdx);
         
         % Find events within this trial period
-        trialEventIdx = eventTimestamps >= startTime & eventTimestamps < endTime;
+        trialEventIdx = eventTimestamps >= trialStartTime & eventTimestamps < trialEndTime;
         trialTimestamps = eventTimestamps(trialEventIdx);
         trialTypes = eventTypes(trialEventIdx);
         trialValues = eventValues(trialEventIdx);
         
-        % Find reward window start (LED on)
-        ledOnIdx = find(strcmp(trialTypes, 'L') & trialValues == 1, 1);
-        if isempty(ledOnIdx)
-            continue;
-        end
-        rewardWindowStart = trialTimestamps(ledOnIdx);
-        
-        % Find beam break during reward window
+        % Check for beam breaks during reward window (correct trials)
         rewardWindowIdx = trialTimestamps >= rewardWindowStart;
         beamBreakIdx = find(rewardWindowIdx & strcmp(trialTypes, 'B') & trialValues == 1, 1);
         
-        % Classify trial type
         if ~isempty(beamBreakIdx)
+            % Beam break during reward window - CORRECT trial
             beamBreakTime = trialTimestamps(beamBreakIdx);
             trialType = 'correct';
         else
+            % No beam break during reward window - check for early errors
             beamBreakTime = NaN;
-            % Check if reward window expired
-            ledOffIdx = find(rewardWindowIdx & strcmp(trialTypes, 'L') & trialValues == 0, 1);
-            if ~isempty(ledOffIdx)
-                trialType = 'abort';
+            
+            % Check for beam break before reward window (early error)
+            earlyIdx = trialTimestamps < rewardWindowStart;
+            earlyBeamIdx = find(earlyIdx & strcmp(trialTypes, 'B') & trialValues == 1, 1);
+            
+            if ~isempty(earlyBeamIdx)
+                trialType = 'early_error';
             else
-                trialType = 'unknown';
+                % No beam break at all - ABORT trial
+                trialType = 'abort';
             end
         end
         
-        % Check for early errors (beam break before reward window)
-        earlyIdx = trialTimestamps < rewardWindowStart;
-        earlyBeamIdx = find(earlyIdx & strcmp(trialTypes, 'B') & trialValues == 1, 1);
-        if ~isempty(earlyBeamIdx)
-            trialType = 'early_error';
-        end
-        
         % Store trial data
-        trials(i).startTime = startTime;
-        trials(i).endTime = endTime;
+        trials(i).startTime = trialStartTime;
+        trials(i).endTime = trialEndTime;
         trials(i).type = trialType;
-        trials(i).duration = endTime - startTime;
+        trials(i).duration = trialEndTime - trialStartTime;
         trials(i).rewardWindowStart = rewardWindowStart;
         trials(i).beamBreakTime = beamBreakTime;
     end
@@ -262,7 +274,10 @@ function metrics = calculate_metrics(trials)
 % Goal: Calculate accuracy, error rates, and trial duration statistics
 
     if isempty(trials)
-        metrics = struct();
+        % Return empty metrics with default values
+        metrics = struct('totalTrials', 0, 'correctTrials', 0, 'earlyErrorTrials', 0, ...
+                       'abortTrials', 0, 'accuracy', 0, 'correctDurationMean', 0, ...
+                       'correctDurationStd', 0, 'errorDurationMean', 0, 'errorDurationStd', 0);
         return;
     end
     
@@ -285,10 +300,23 @@ function metrics = calculate_metrics(trials)
     metrics.earlyErrorTrials = earlyErrorTrials;
     metrics.abortTrials = abortTrials;
     metrics.accuracy = accuracy;
-    metrics.correctDurationMean = mean(correctDurations);
-    metrics.correctDurationStd = std(correctDurations);
-    metrics.errorDurationMean = mean(errorDurations);
-    metrics.errorDurationStd = std(errorDurations);
+    
+    % Handle cases with no trials of certain types
+    if ~isempty(correctDurations)
+        metrics.correctDurationMean = mean(correctDurations);
+        metrics.correctDurationStd = std(correctDurations);
+    else
+        metrics.correctDurationMean = 0;
+        metrics.correctDurationStd = 0;
+    end
+    
+    if ~isempty(errorDurations)
+        metrics.errorDurationMean = mean(errorDurations);
+        metrics.errorDurationStd = std(errorDurations);
+    else
+        metrics.errorDurationMean = 0;
+        metrics.errorDurationStd = 0;
+    end
 end
 
 function create_session_plot(events, trials, mouseName, interTrialInterval, rewardWindow)
