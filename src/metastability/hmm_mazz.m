@@ -30,10 +30,10 @@ HmmParam=struct();
 HmmParam.AdjustT=0.; % interval to skip at trial start to avoid canonical choise of 1st state in matlab
 % HmmParam.BinSize=0.002;%0.005; % time step of Markov chain
 HmmParam.BinSize=0.01;%0.005; % time step of Markov chain
-HmmParam.MinDur=0.05;   % .05 min duration of an admissible state (s) in HMM DECODING
+HmmParam.MinDur=0.04;   % .05 min duration of an admissible state (s) in HMM DECODING
 HmmParam.MinP=0.8;      % pstate>MinP for an admissible state in HMM ADMISSIBLE STATES
 HmmParam.NumSteps=8;%    %10 number of fits at fixed parameters to avoid non-convexity
-HmmParam.NumRuns=40;%     % 50% % number of times we iterate hmmtrain over all trials
+HmmParam.NumRuns=33;%     % 50% % number of times we iterate hmmtrain over all trials
 HmmParam.singleSeqXval.K = 5; % Cross-validation
 
 opts.HmmParam = HmmParam;
@@ -165,7 +165,7 @@ for areaIdx = areasToTest
     disp('In fun_HMM_modelSel.m, select hhmParam values!!!')
 
     % Model selection method
-    MODELSEL = 'XVAL'; %'XVAL'; % 'BIC'; % 'AIC';
+    MODELSEL = 'AIC'; %'XVAL'; % 'BIC'; % 'AIC';
 
     % Prepare data structure for HMM analysis
     DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL, 'HmmParam', opts.HmmParam);
