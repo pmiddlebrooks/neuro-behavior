@@ -10,7 +10,7 @@ paths = get_paths;
 dataType = 'reach';  % 'reach' or 'naturalistic'
 
 % Sliding window size (seconds)
-slidingWindowSize = 3;
+slidingWindowSize = 4;
 
 % Flags
 loadExistingResults = false;
@@ -19,6 +19,14 @@ makePlots = true;
 % Analysis flags
 analyzeD2 = true;      % compute d2
 analyzeMrBr = false;   % compute mrBr
+
+% NEW: Modulation analysis flags
+analyzeModulation = true;  % Set to true to split into modulated/unmodulated
+modulationThreshold = 2;   % Standard deviations for modulation detection
+modulationBinSize = 0.1;   % Bin size for modulation analysis
+modulationBaseWindow = 4.0; % Baseline window duration (seconds)
+modulationEventWindow = .4; % Event window duration (seconds)
+modulationPlotFlag = false; % Set to true to generate modulation analysis plots
 
 % Analysis parameters
 minSegmentLength = 50;
@@ -77,7 +85,16 @@ if strcmp(dataType, 'reach')
     idM56 = find(strcmp(areaLabels, 'M56'));
     idDS = find(strcmp(areaLabels, 'DS'));
     idVS = find(strcmp(areaLabels, 'VS'));
-    idList = {idM23, idM56, idDS, idVS};
+    idMatIdx = {idM23, idM56, idDS, idVS};
+    idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
+    
+    % NEW: Load spike data for modulation analysis
+    if analyzeModulation
+        fprintf('\n=== Loading spike data for modulation analysis ===\n');
+        % spikeData = spike_times_per_area_reach(opts);
+        spikeData = dataR.CSV(:,1:2);
+        fprintf('Loaded spike data: %d spikes from %d neurons\n', size(spikeData, 1), length(unique(spikeData(:,2))));
+    end
     
 elseif strcmp(dataType, 'naturalistic')
     % Load naturalistic data
@@ -89,28 +106,96 @@ elseif strcmp(dataType, 'naturalistic')
     get_standard_data
     
     areas = {'M23', 'M56', 'DS', 'VS'};
-    idList = {idM23, idM56, idDS, idVS};
+    idMatIdx = {idM23, idM56, idDS, idVS};
+    idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
     
     % Create save directory for naturalistic data
     saveDir = fullfile(paths.dropPath, 'criticality/results');
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
     resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar_win%d.mat', slidingWindowSize));
     
+    % NEW: Load spike data for modulation analysis
+    if analyzeModulation
+        fprintf('\n=== Loading spike data for modulation analysis ===\n');
+        % spikeData = spike_times_per_area(opts);
+        spikeData = [spikeTimes, spikeClusters];
+        fprintf('Loaded spike data: %d spikes from %d neurons\n', size(spikeData, 1), length(unique(spikeData(:,2))));
+    end
+    
 else
     error('Invalid dataType. Must be ''reach'' or ''naturalistic''');
+end
+fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
+
+%% =============================    Modulation Analysis    =============================
+modulationResults = cell(1, length(areas));
+
+if analyzeModulation
+    fprintf('\n=== Performing modulation analysis ===\n');
+    
+    % Define alignment times for modulation analysis
+    % For reach data, use reach events; for naturalistic, use regular intervals
+    if strcmp(dataType, 'reach')
+        % Use reach start times as alignment points
+        alignTimes = dataR.R(:,1) / 1000; %
+    else
+        % For naturalistic data, use regular intervals
+        disp('Code for what behaviors you want to align to for naturalistic')
+        return
+        totalTime = opts.collectFor;
+        alignTimes = (modulationEventWindow/2):(modulationEventWindow*2):(totalTime - modulationEventWindow/2);
+    end
+    
+    % Perform modulation analysis for each area
+    for a = areasToTest
+        fprintf('\nAnalyzing modulation for area %s...\n', areas{a});
+        
+        % Get neuron IDs for this area
+        areaNeuronIds = idLabel{a};
+        
+        % Filter spike data for this area
+        areaSpikeMask = ismember(spikeData(:,2), areaNeuronIds);
+        areaSpikeData = spikeData(areaSpikeMask, :);
+        
+        if size(areaSpikeData, 1) < 100 % Need minimum spikes for analysis
+            fprintf('Insufficient spikes in area %s for modulation analysis\n', areas{a});
+            modulationResults{a} = [];
+            continue;
+        end
+        
+        % Set up modulation analysis options
+        modOpts = struct();
+        modOpts.binSize = modulationBinSize;
+        modOpts.baseWindow = modulationBaseWindow;
+        modOpts.eventWindow = modulationEventWindow;
+        modOpts.alignTimes = alignTimes;
+        modOpts.threshold = modulationThreshold;
+        modOpts.plotFlag = modulationPlotFlag;
+        
+        % Run modulation analysis
+        try
+            modulationResults{a} = spike_modulation(areaSpikeData, modOpts);
+            fprintf('Area %s: %d/%d neurons modulated (%.1f%%)\n', areas{a}, ...
+                sum(modulationResults{a}.isModulated), length(modulationResults{a}.neuronIds), ...
+                100*sum(modulationResults{a}.isModulated)/length(modulationResults{a}.neuronIds));
+        catch ME
+            fprintf('Error in modulation analysis for area %s: %s\n', areas{a}, ME.message);
+            modulationResults{a} = [];
+        end
+    end
 end
 
 % =============================    Analysis    =============================
 fprintf('\n=== %s Data Analysis ===\n', dataType);
 
 % Adjust areasToTest based on which areas have data
-% areasToTest = areasToTest(~cellfun(@isempty, idList));
+% areasToTest = areasToTest(~cellfun(@isempty, idMatIdx));
 
 % Step 1-2: Apply PCA to original data if requested
 fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');
 reconstructedDataMat = cell(1, length(areas));
 for a = areasToTest
-    aID = idList{a}; 
+    aID = idMatIdx{a}; 
     thisDataMat = dataMat(:, aID);
     if pcaFlag
         [coeff, score, ~, ~, explained, mu] = pca(thisDataMat);
@@ -127,11 +212,77 @@ end
 fprintf('\n--- Step 3: Finding optimal parameters ---\n');
 optimalBinSize = zeros(1, length(areas));
 optimalWindowSize = zeros(1, length(areas));
-for a = areasToTest
-    thisDataMat = reconstructedDataMat{a};
-    [optimalBinSize(a), optimalWindowSize(a)] = ...
-        find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
-    fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
+
+if analyzeModulation
+    % NEW: Find optimal parameters separately for modulated and unmodulated populations
+    optimalBinSizeModulated = zeros(1, length(areas));
+    optimalBinSizeUnmodulated = zeros(1, length(areas));
+    optimalWindowSizeModulated = zeros(1, length(areas));
+    optimalWindowSizeUnmodulated = zeros(1, length(areas));
+    
+    for a = areasToTest
+        thisDataMat = reconstructedDataMat{a};
+        
+        if ~isempty(modulationResults{a})
+            % Get modulated and unmodulated neuron indices
+            modulatedNeurons = modulationResults{a}.neuronIds(modulationResults{a}.isModulated);
+            unmodulatedNeurons = modulationResults{a}.neuronIds(~modulationResults{a}.isModulated);
+            
+            % Find indices in the data matrix
+            modulatedIndices = ismember(idLabel{a}, modulatedNeurons);
+            unmodulatedIndices = ismember(idLabel{a}, unmodulatedNeurons);
+            
+            % Analyze modulated neurons
+            if sum(modulatedIndices) >= 5 % Need minimum neurons
+                modulatedDataMat = thisDataMat(:, modulatedIndices);
+                [optimalBinSizeModulated(a), optimalWindowSizeModulated(a)] = ...
+                    find_optimal_bin_and_window(modulatedDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+            else
+                optimalBinSizeModulated(a) = NaN;
+                optimalWindowSizeModulated(a) = NaN;
+            end
+            
+            % Analyze unmodulated neurons
+            if sum(unmodulatedIndices) >= 5 % Need minimum neurons
+                unmodulatedDataMat = thisDataMat(:, unmodulatedIndices);
+                [optimalBinSizeUnmodulated(a), optimalWindowSizeUnmodulated(a)] = ...
+                    find_optimal_bin_and_window(unmodulatedDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+            else
+                optimalBinSizeUnmodulated(a) = NaN;
+                optimalWindowSizeUnmodulated(a) = NaN;
+            end
+            
+            % Use the larger bin size for analysis (as requested)
+            if ~isnan(optimalBinSizeModulated(a)) && ~isnan(optimalBinSizeUnmodulated(a))
+                optimalBinSize(a) = max(optimalBinSizeModulated(a), optimalBinSizeUnmodulated(a));
+                optimalWindowSize(a) = max(optimalWindowSizeModulated(a), optimalWindowSizeUnmodulated(a));
+            elseif ~isnan(optimalBinSizeModulated(a))
+                optimalBinSize(a) = optimalBinSizeModulated(a);
+                optimalWindowSize(a) = optimalWindowSizeModulated(a);
+            elseif ~isnan(optimalBinSizeUnmodulated(a))
+                optimalBinSize(a) = optimalBinSizeUnmodulated(a);
+                optimalWindowSize(a) = optimalWindowSizeUnmodulated(a);
+            else
+                optimalBinSize(a) = NaN;
+                optimalWindowSize(a) = NaN;
+            end
+            
+            fprintf('Area %s: Modulated bin=%.3f, Unmodulated bin=%.3f, Using=%.3f\n', areas{a}, ...
+                optimalBinSizeModulated(a), optimalBinSizeUnmodulated(a), optimalBinSize(a));
+        else
+            % Fallback to original analysis
+            [optimalBinSize(a), optimalWindowSize(a)] = ...
+                find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+        end
+    end
+else
+    % Original analysis for all neurons
+    for a = areasToTest
+        thisDataMat = reconstructedDataMat{a};
+        [optimalBinSize(a), optimalWindowSize(a)] = ...
+            find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+        fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
+    end
 end
 
 % Use optimal bin sizes for each area
@@ -144,10 +295,18 @@ areasToTest = areasToTest(validMask);
 [popActivity, mrBr, d2, startS, popActivityWindows, popActivityFull] = ...
     deal(cell(1, length(areas)));
 
+% NEW: Initialize results for modulated/unmodulated populations
+if analyzeModulation
+    [popActivityModulated, mrBrModulated, d2Modulated, startSModulated, popActivityWindowsModulated, popActivityFullModulated] = ...
+        deal(cell(1, length(areas)));
+    [popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, popActivityWindowsUnmodulated, popActivityFullUnmodulated] = ...
+        deal(cell(1, length(areas)));
+end
+
 for a = areasToTest
     fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataType); 
     tic;
-    aID = idList{a};
+    aID = idMatIdx{a};
     stepSamples = round(d2StepSizeData(a) / optimalBinSize(a));
     winSamples = round(d2WindowSizeData(a) / optimalBinSize(a));
 
@@ -191,6 +350,75 @@ for a = areasToTest
         end
     end
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+    
+    % NEW: Analyze modulated and unmodulated populations separately
+    if analyzeModulation && ~isempty(modulationResults{a})
+        % Get modulated and unmodulated neuron indices
+        modulatedNeurons = modulationResults{a}.neuronIds(modulationResults{a}.isModulated);
+        unmodulatedNeurons = modulationResults{a}.neuronIds(~modulationResults{a}.isModulated);
+        
+        % Find indices in the data matrix
+        modulatedIndices = ismember(idLabel{a}, modulatedNeurons);
+        unmodulatedIndices = ismember(idLabel{a}, unmodulatedNeurons);
+        
+        % Analyze modulated neurons
+        if sum(modulatedIndices) >= 5
+            modulatedDataMat = aDataMat(:, modulatedIndices);
+            popActivityModulated{a} = round(sum(modulatedDataMat, 2));
+            [startSModulated{a}, mrBrModulated{a}, d2Modulated{a}, popActivityWindowsModulated{a}, popActivityFullModulated{a}] = ...
+                deal(nan(1, numWindows));
+            
+            for w = 1:numWindows
+                startIdx = (w - 1) * stepSamples + 1; 
+                endIdx = startIdx + winSamples - 1;
+                startSModulated{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSize(a);
+                wPopActivity = popActivityModulated{a}(startIdx:endIdx);
+                popActivityWindowsModulated{a}(w) = mean(wPopActivity);
+                popActivityFullModulated{a}(w) = popActivityModulated{a}((startIdx + round(winSamples/2)-1));
+                if analyzeMrBr
+                    result = branching_ratio_mr_estimation(wPopActivity);
+                    mrBrModulated{a}(w) = result.branching_ratio;
+                else
+                    mrBrModulated{a}(w) = nan;
+                end
+                if analyzeD2
+                    [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                    d2Modulated{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+                else
+                    d2Modulated{a}(w) = nan;
+                end
+            end
+        end
+        
+        % Analyze unmodulated neurons
+        if sum(unmodulatedIndices) >= 5
+            unmodulatedDataMat = aDataMat(:, unmodulatedIndices);
+            popActivityUnmodulated{a} = round(sum(unmodulatedDataMat, 2));
+            [startSUnmodulated{a}, mrBrUnmodulated{a}, d2Unmodulated{a}, popActivityWindowsUnmodulated{a}, popActivityFullUnmodulated{a}] = ...
+                deal(nan(1, numWindows));
+            
+            for w = 1:numWindows
+                startIdx = (w - 1) * stepSamples + 1; 
+                endIdx = startIdx + winSamples - 1;
+                startSUnmodulated{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSize(a);
+                wPopActivity = popActivityUnmodulated{a}(startIdx:endIdx);
+                popActivityWindowsUnmodulated{a}(w) = mean(wPopActivity);
+                popActivityFullUnmodulated{a}(w) = popActivityUnmodulated{a}((startIdx + round(winSamples/2)-1));
+                if analyzeMrBr
+                    result = branching_ratio_mr_estimation(wPopActivity);
+                    mrBrUnmodulated{a}(w) = result.branching_ratio;
+                else
+                    mrBrUnmodulated{a}(w) = nan;
+                end
+                if analyzeD2
+                    [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                    d2Unmodulated{a}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+                else
+                    d2Unmodulated{a}(w) = nan;
+                end
+            end
+        end
+    end
 end
 
 % =============================    Correlations    =============================
@@ -252,6 +480,38 @@ for a = areasToTest
     end
 end
 
+% NEW: Compute correlations for modulated vs unmodulated populations
+if analyzeModulation
+    fprintf('\n=== Modulated vs Unmodulated Population Correlations ===\n');
+    for a = areasToTest
+        if ~isempty(modulationResults{a})
+            fprintf('\n--- Area %s ---\n', areas{a});
+            
+            % Modulated population correlations
+            if ~isempty(popActivityWindowsModulated{a}) && ~isempty(d2Modulated{a})
+                validIdx = ~isnan(popActivityWindowsModulated{a}) & ~isnan(d2Modulated{a});
+                if sum(validIdx) > 10
+                    popAct = popActivityModulated{a}(validIdx);
+                    d2Vals = d2Modulated{a}(validIdx);
+                    [rPopD2, pPopD2] = corrcoef(popAct, d2Vals);
+                    fprintf('Modulated: PopActivity vs d2: r=%.3f, p=%.3f (n=%d)\n', rPopD2(1,2), pPopD2(1,2), sum(validIdx));
+                end
+            end
+            
+            % Unmodulated population correlations
+            if ~isempty(popActivityWindowsUnmodulated{a}) && ~isempty(d2Unmodulated{a})
+                validIdx = ~isnan(popActivityWindowsUnmodulated{a}) & ~isnan(d2Unmodulated{a});
+                if sum(validIdx) > 10
+                    popAct = popActivityUnmodulated{a}(validIdx);
+                    d2Vals = d2Unmodulated{a}(validIdx);
+                    [rPopD2, pPopD2] = corrcoef(popAct, d2Vals);
+                    fprintf('Unmodulated: PopActivity vs d2: r=%.3f, p=%.3f (n=%d)\n', rPopD2(1,2), pPopD2(1,2), sum(validIdx));
+                end
+            end
+        end
+    end
+end
+
 % =============================    Save Results    =============================
 results = struct(); 
 results.dataType = dataType;
@@ -259,7 +519,8 @@ results.areas = areas;
 results.mrBr = mrBr; 
 results.d2 = d2; 
 results.startS = startS;
-results.popActivity = popActivityWindows;
+% results.popActivityWindows = popActivityWindows;
+results.popActivity = popActivity;  % Store full population activity for each area
 results.optimalBinSize = optimalBinSize; 
 results.optimalWindowSize = optimalWindowSize;
 results.d2StepSize = d2StepSizeData; 
@@ -273,10 +534,42 @@ results.params.nDim = nDim;
 results.params.pOrder = pOrder;
 results.params.critType = critType;
 
+% NEW: Save modulation analysis results
+if analyzeModulation
+    results.analyzeModulation = true;
+    results.modulationResults = modulationResults;
+    results.modulationThreshold = modulationThreshold;
+    results.modulationBinSize = modulationBinSize;
+    results.modulationBaseWindow = modulationBaseWindow;
+    results.modulationEventWindow = modulationEventWindow;
+    results.modulationPlotFlag = modulationPlotFlag;
+    
+    % Save modulated/unmodulated results
+    results.popActivityModulated = popActivityWindowsModulated;
+    results.mrBrModulated = mrBrModulated;
+    results.d2Modulated = d2Modulated;
+    results.startSModulated = startSModulated;
+    results.popActivityFullModulated = popActivityFullModulated;
+    
+    results.popActivityUnmodulated = popActivityWindowsUnmodulated;
+    results.mrBrUnmodulated = mrBrUnmodulated;
+    results.d2Unmodulated = d2Unmodulated;
+    results.startSUnmodulated = startSUnmodulated;
+    results.popActivityFullUnmodulated = popActivityFullUnmodulated;
+    
+    % Save optimal parameters for each population
+    results.optimalBinSizeModulated = optimalBinSizeModulated;
+    results.optimalBinSizeUnmodulated = optimalBinSizeUnmodulated;
+    results.optimalWindowSizeModulated = optimalWindowSizeModulated;
+    results.optimalWindowSizeUnmodulated = optimalWindowSizeUnmodulated;
+else
+    results.analyzeModulation = false;
+end
+
 save(resultsPath, 'results'); 
 fprintf('Saved %s d2/mrBr to %s\n', dataType, resultsPath);
 
-% =============================    Plotting    =============================
+%% =============================    Plotting    =============================
 if makePlots
     % Detect monitors and size figure to full screen (prefer second monitor if present)
     monitorPositions = get(0, 'MonitorPositions');
@@ -415,6 +708,110 @@ if makePlots
     sgtitle(sprintf('%s Population Activity vs Criticality Correlations - win=%gs', dataType, slidingWindowSize));
     exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
     fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('criticality_%s_correlations_win%d.png', dataType, slidingWindowSize)));
+    
+    % NEW: Create comparison plots for modulated vs unmodulated populations
+    if analyzeModulation
+        figure(902); clf;
+        set(gcf, 'Units', 'pixels');
+        set(gcf, 'Position', targetPos);
+        
+        numRows = length(areasToTest);
+        ha = tight_subplot(numRows, 1, [0.08 0.04], [0.15 0.1], [0.08 0.04]);
+        
+        for idx = 1:length(areasToTest)
+            a = areasToTest(idx);
+            axes(ha(idx)); hold on;
+            
+            if analyzeD2
+                % Plot modulated population
+                if ~isempty(d2Modulated{a}) && any(~isnan(d2Modulated{a}))
+                    plot(startSModulated{a}, d2Modulated{a}, '-', 'Color', [1 0 0], 'LineWidth', 2, 'DisplayName', 'Modulated');
+                end
+                
+                % Plot unmodulated population
+                if ~isempty(d2Unmodulated{a}) && any(~isnan(d2Unmodulated{a}))
+                    plot(startSUnmodulated{a}, d2Unmodulated{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'Unmodulated');
+                end
+                
+                ylabel('d2'); grid on;
+                legend('Location', 'best');
+            end
+            
+            if ~isempty(startS{a})
+                xlim([startS{a}(1) startS{a}(end)])
+            end
+            title(sprintf('%s - Modulated (red) vs Unmodulated (blue) d2', areas{a}));
+            xlabel('Time (s)');
+        end
+        
+        sgtitle(sprintf('%s Modulated vs Unmodulated d2 Comparison - win=%gs', dataType, slidingWindowSize));
+        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
+        
+        % Scatter plots comparing modulated vs unmodulated
+        figure(903); clf;
+        set(gcf, 'Units', 'pixels');
+        set(gcf, 'Position', targetPos);
+        
+        numAreas = length(areasToPlot);
+        numRows = 2;
+        numCols = numAreas;
+        ha = tight_subplot(numRows, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
+        
+        for idx = 1:numAreas
+            a = areasToPlot(idx);
+            
+            % Row 1: Modulated population scatter
+            axes(ha(idx));
+            if ~isempty(popActivityWindowsModulated{a}) && ~isempty(d2Modulated{a})
+                validIdx = ~isnan(popActivityWindowsModulated{a}) & ~isnan(d2Modulated{a});
+                if sum(validIdx) > 5
+                    xData = popActivityWindowsModulated{a}(validIdx);
+                    yData = d2Modulated{a}(validIdx);
+                    scatter(xData, yData, 20, 'filled', 'MarkerFaceColor', [1 0 0], 'MarkerFaceAlpha', 0.6);
+                    [r, p] = corrcoef(xData, yData);
+                    title(sprintf('%s Modulated\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
+                    
+                    % Add regression line
+                    hold on;
+                    p_fit = polyfit(xData, yData, 1);
+                    x_fit = linspace(min(xData), max(xData), 100);
+                    y_fit = polyval(p_fit, x_fit);
+                    plot(x_fit, y_fit, 'r-', 'LineWidth', 2);
+                else
+                    title(sprintf('%s Modulated\nInsufficient data', areas{a}));
+                end
+            end
+            xlabel('PopActivity'); ylabel('d2');
+            grid on;
+            
+            % Row 2: Unmodulated population scatter
+            axes(ha(numAreas + idx));
+            if ~isempty(popActivityWindowsUnmodulated{a}) && ~isempty(d2Unmodulated{a})
+                validIdx = ~isnan(popActivityWindowsUnmodulated{a}) & ~isnan(d2Unmodulated{a});
+                if sum(validIdx) > 5
+                    xData = popActivityWindowsUnmodulated{a}(validIdx);
+                    yData = d2Unmodulated{a}(validIdx);
+                    scatter(xData, yData, 20, 'filled', 'MarkerFaceColor', [0 0 1], 'MarkerFaceAlpha', 0.6);
+                    [r, p] = corrcoef(xData, yData);
+                    title(sprintf('%s Unmodulated\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
+                    
+                    % Add regression line
+                    hold on;
+                    p_fit = polyfit(xData, yData, 1);
+                    x_fit = linspace(min(xData), max(xData), 100);
+                    y_fit = polyval(p_fit, x_fit);
+                    plot(x_fit, y_fit, 'b-', 'LineWidth', 2);
+                else
+                    title(sprintf('%s Unmodulated\nInsufficient data', areas{a}));
+                end
+            end
+            xlabel('PopActivity'); ylabel('d2');
+            grid on;
+        end
+        
+        sgtitle(sprintf('%s Modulated vs Unmodulated Population Activity vs Criticality', dataType));
+        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_unmodulated_scatter_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
+    end
 end
 
 fprintf('\n=== %s Analysis Complete ===\n', dataType);

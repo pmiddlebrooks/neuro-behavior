@@ -248,8 +248,8 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'spikes')
     data = load_data(opts, 'spikes');
     data.bhvDur = dataBhv.Dur;
     % clusterInfo = data.ci;
-    % spikeTimes = data.spikeTimes;
-    % spikeClusters = data.spikeClusters;
+    spikeTimes = data.spikeTimes;
+    spikeClusters = data.spikeClusters;
 
 
     % Find the neuron clusters (ids) in each brain region

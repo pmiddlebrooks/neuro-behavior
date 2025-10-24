@@ -15,6 +15,7 @@ function [modulationResults] = spike_modulation(spikeData, opts)
 %       .eventWindow  - Duration of event window in seconds (centered on align time)
 %       .alignTimes   - Vector of alignment times around which to place windows
 %       .threshold    - Number of standard deviations above/below mean for modulation
+%       .plotFlag     - Optional: Set to true to generate modulation analysis plots (default: true)
 %
 % OUTPUTS:
 %   modulationResults - Structure containing:
@@ -37,6 +38,7 @@ function [modulationResults] = spike_modulation(spikeData, opts)
 %   opts.eventWindow = 1.0;        % Event: 1 second centered on align time
 %   opts.alignTimes = [10, 20, 30]; % Align windows around these times
 %   opts.threshold = 2;            % 2 standard deviations
+%   opts.plotFlag = true;          % Generate plots (optional, default: true)
 %   results = spike_modulation(spikeData, opts);
 
 %% Extract data
@@ -53,6 +55,13 @@ baseWindow = opts.baseWindow;
 eventWindow = opts.eventWindow;
 alignTimes = opts.alignTimes;
 threshold = opts.threshold;
+
+% Extract plotFlag with default value
+if isfield(opts, 'plotFlag')
+    plotFlag = opts.plotFlag;
+else
+    plotFlag = true; % Default to true for backward compatibility
+end
 
 % Validate inputs
 if ~isscalar(baseWindow) || ~isscalar(eventWindow)
@@ -222,7 +231,9 @@ fprintf('Event mean spikes/second: %.3f ± %.3f\n', mean(eventMean), std(eventMe
 fprintf('Total alignments analyzed per neuron: %d baseline + %d event\n', round(mean(baseBins)), round(mean(eventBins)));
 
 %% Create visualization
-createModulationPlot(modulationResults);
+if plotFlag
+    createModulationPlot(modulationResults);
+end
 
 end
 
