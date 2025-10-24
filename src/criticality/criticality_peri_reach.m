@@ -12,7 +12,7 @@
 %   meanD2PeriReach - mean d2 values across all reaches for each area
 
 %% Load existing results if requested
-slidingWindowSize = 8;% For d2, use a small window to try to optimize temporal resolution
+slidingWindowSize = 3;% For d2, use a small window to try to optimize temporal resolution
 
 % User-specified reach data file (should match the one used in criticality_reach_ar.m)
 reachDataFile = fullfile(paths.reachDataPath, 'AB2_01-May-2023 15_34_59_NeuroBeh.mat');
@@ -23,8 +23,8 @@ reachDataFile = fullfile(paths.reachDataPath, 'AB2_01-May-2023 15_34_59_NeuroBeh
 % reachDataFile = fullfile(paths.reachDataPath, 'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
 % reachDataFile = fullfile(paths.reachDataPath, 'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
 % reachDataFile = fullfile(paths.reachDataPath, 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-reachDataFile = fullfile(paths.reachDataPath, 'makeSpikes.mat');
+reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'makeSpikes.mat');
 % reachDataFile = fullfile(paths.dropPath, 'reach_task/data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
 
 areasToTest = 1:4;
@@ -33,11 +33,11 @@ areasToTest = 1:4;
 plotErrors = true;
 % Plotting toggles
 plotD2 = true;     % plot d2 panels
-plotMrBr = true;   % plot mrBr panels (only if d2 exists for area)
+plotMrBr = false;   % plot mrBr panels (only if d2 exists for area)
 
 % NEW: Sliding window d2 calculation options
 calculateSlidingWindowD2 = true;  % Set to true to perform sliding window d2 on mean-centered popActivity
-d2Window = 60;  % Window duration in seconds for collecting popActivity per reach
+d2Window = 30;  % Window duration in seconds for collecting popActivity per reach
 
 %
 paths = get_paths;
@@ -45,7 +45,7 @@ paths = get_paths;
 % Determine save directory based on loaded data file name (same as criticality_reach_ar.m)
 [~, dataBaseName, ~] = fileparts(reachDataFile);
 saveDir = fullfile(paths.reachResultsPath, dataBaseName);
-resultsPathWin = fullfile(saveDir, sprintf('criticality_reach_ar_win%d.mat', slidingWindowSize));
+resultsPathWin = fullfile(saveDir, sprintf('criticality_sliding_window_ar_win%d.mat', slidingWindowSize));
 
 % Extract first 10 characters of filename for titles and file names
 filePrefix = dataBaseName(1:min(10, length(dataBaseName)));
@@ -60,10 +60,10 @@ results = results.results;
 
 % Extract areas and parameters
 areas = results.areas;
-optimalBinSize = results.reach.optimalBinSize;
-d2Rea = results.reach.d2;
-mrBrRea = results.reach.mrBr;
-startS = results.reach.startS;
+optimalBinSize = results.optimalBinSize;
+d2Rea = results.d2;
+mrBrRea = results.mrBr;
+startS = results.startS;
 
 % Load reach behavioral data
 fprintf('Loading reach behavioral data from: %s\n', reachDataFile);
@@ -102,7 +102,7 @@ err2Idx = ismember(reachClass, 3);
 % ==============================================     Peri-Reach Analysis     ==============================================
 
 % Define window parameters
-windowDurationSec = 40; % 3-second window around each reach
+windowDurationSec = 30; % 3-second window around each reach
 windowDurationFrames = cell(1, length(areas));
 for a = areasToTest
     windowDurationFrames{a} = ceil(windowDurationSec / optimalBinSize(a));
@@ -191,8 +191,6 @@ for a = areasToTest
         meanMrBrPeriReachErr2{a} = nanmean(mrBrWindows{a}(err2Idx, :), 1);
     end
 
-    fprintf('Area %s: Total=%d valid reaches (Corr1=%d, Corr2=%d, Err1=%d, Err2=%d)\n', areas{a}, validReaches, ...
-        sum(corr1Idx), sum(corr2Idx), sum(err1Idx), sum(err2Idx));
 end
 
 % ==============================================     Sliding Window D2 Analysis     ==============================================
@@ -204,7 +202,7 @@ if calculateSlidingWindowD2
     pOrder = results.params.pOrder;
     critType = results.params.critType;
     
-    % Initialize storage for sliding window d2 results (combined approach)
+    % Initialize storage for sliding window d2 results
     slidingD2Windows = cell(1, length(areas));
     
     for a = areasToTest
@@ -225,14 +223,18 @@ if calculateSlidingWindowD2
         d2WindowFrames = ceil(d2Window / binSize);
         halfD2Window = floor(d2WindowFrames / 2);
         
-        % Use shared reach data (same for all areas)
-        % Initialize storage for all reach windows (combined)
+        % Calculate sliding window parameters
+        stepSamples = round(results.d2StepSize(a) / binSize);
+        winSamples = round(results.d2WindowSize(a) / binSize);
+        
+        % Initialize storage for all reach windows
         slidingD2Windows{a} = nan(totalReaches, windowDurationFrames{a} + 1);
         
         % Collect all popActivity windows for mean-centering
         allPopActivityWindows = [];
+        validReachIndices = [];
         
-        % Collect popActivity windows for all reaches
+        % First pass: collect all valid popActivity windows for mean-centering
         for r = 1:totalReaches
             reachTime = reachStart(r)/1000; % Convert to seconds
             [~, closestIdx] = min(abs(timePoints - reachTime));
@@ -241,7 +243,8 @@ if calculateSlidingWindowD2
             
             if winStart >= 1 && winEnd <= length(popActivityFull)
                 popWindow = popActivityFull(winStart:winEnd);
-                allPopActivityWindows = [allPopActivityWindows; popWindow'];
+                allPopActivityWindows = [allPopActivityWindows; popWindow];
+                validReachIndices = [validReachIndices, r];
             end
         end
         
@@ -250,58 +253,95 @@ if calculateSlidingWindowD2
             continue;
         end
         
-        % Calculate mean popActivity across all reaches
+        % Calculate mean popActivity across all valid reaches
         meanPopActivity = mean(allPopActivityWindows, 1);
         
         % Mean-center each popActivity window
         meanCenteredPopActivity = allPopActivityWindows - meanPopActivity;
         
-        % Now perform sliding window d2 analysis on each mean-centered reach
-        for r = 1:totalReaches
+        % Second pass: perform sliding window d2 analysis on each mean-centered reach
+        for reachIdx = 1:length(validReachIndices)
+            r = validReachIndices(reachIdx);
             reachTime = reachStart(r)/1000;
             [~, closestIdx] = min(abs(timePoints - reachTime));
-            winStart = closestIdx - halfD2Window;
-            winEnd = closestIdx + halfD2Window;
             
-            if winStart >= 1 && winEnd <= length(popActivityFull)
-                meanCenteredPop = meanCenteredPopActivity(r, :);
+            % Get the mean-centered popActivity for this reach
+            meanCenteredPop = meanCenteredPopActivity(reachIdx, :);
+            
+            % Perform sliding window d2 analysis within the d2Window
+            % The sliding window should slide from half-window-size into the d2Window
+            % until half-window-size remains, with results centered on d2Window center
+            
+            % Calculate how many sliding windows we can fit within the d2Window
+            % Start when we have a full sliding window, end when we have a full sliding window remaining
+            startOffset = floor(winSamples / 2);  % Half sliding window size
+            endOffset = floor(winSamples / 2);    % Half sliding window size
+            
+            % Calculate the range of sliding window positions within d2Window
+            maxStartPos = length(meanCenteredPop) - winSamples - endOffset + 1;
+            minStartPos = startOffset + 1;
+            
+            if maxStartPos >= minStartPos
+                % Calculate number of sliding windows that fit
+                numSlidingWindows = floor((maxStartPos - minStartPos) / stepSamples) + 1;
                 
-                % Perform sliding window d2 analysis
-                slidingD2Values = nan(1, windowDurationFrames{a} + 1);
+                % Initialize array to store d2 values at their proper positions
+                slidingD2Values = nan(1, d2WindowFrames);
                 
-                % Calculate sliding window parameters
-                stepSamples = round(results.d2StepSize(a) / binSize);
-                winSamples = round(results.d2WindowSize(a) / binSize);
-                
-                % Ensure we have enough data
-                if length(meanCenteredPop) >= winSamples
-                    numSlidingWindows = floor((length(meanCenteredPop) - winSamples) / stepSamples) + 1;
+                for w = 1:numSlidingWindows
+                    % Calculate start position for this sliding window
+                    startIdx = minStartPos + (w - 1) * stepSamples;
+                    endIdx = startIdx + winSamples - 1;
                     
-                    for w = 1:min(numSlidingWindows, windowDurationFrames{a} + 1)
-                        startIdx = (w - 1) * stepSamples + 1;
-                        endIdx = min(startIdx + winSamples - 1, length(meanCenteredPop));
+                    if endIdx <= length(meanCenteredPop)
+                        wPopActivity = meanCenteredPop(startIdx:endIdx);
                         
-                        if endIdx - startIdx + 1 >= winSamples * 0.8 % Use at least 80% of window
-                            wPopActivity = meanCenteredPop(startIdx:endIdx);
+                        % Calculate d2 using Yule-Walker
+                        try
+                            [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                            d2Value = getFixedPointDistance2(pOrder, critType, varphi);
                             
-                            % Calculate d2 using Yule-Walker
-                            try
-                                [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
-                                slidingD2Values(w) = getFixedPointDistance2(pOrder, critType, varphi);
-                            catch
-                                slidingD2Values(w) = nan;
+                            % Store d2 value at the center position of the sliding window
+                            centerPos = startIdx + floor(winSamples / 2);
+                            if centerPos >= 1 && centerPos <= length(slidingD2Values)
+                                slidingD2Values(centerPos) = d2Value;
                             end
+                        catch
+                            % Leave as NaN if calculation fails
                         end
                     end
                 end
+            else
+                slidingD2Values = nan(1, d2WindowFrames);
+            end
+            
+            % Map sliding window d2 values to peri-reach window
+            % The d2Window is centered on the reach time, so we need to map
+            % the sliding window d2 values to the peri-reach window centered on reach time
+            
+            winStartPeri = closestIdx - halfWindow;
+            winEndPeri = closestIdx + halfWindow;
+            
+            if winStartPeri >= 1 && winEndPeri <= length(timePoints)
+                % The d2Window starts at (closestIdx - halfD2Window) and ends at (closestIdx + halfD2Window)
+                % The peri-reach window starts at (closestIdx - halfWindow) and ends at (closestIdx + halfWindow)
                 
-                % Store in the appropriate window position
-                winStartPeri = closestIdx - halfWindow;
-                winEndPeri = closestIdx + halfWindow;
-                if winStartPeri >= 1 && winEndPeri <= length(timePoints)
-                    periStartIdx = max(1, winStartPeri - (closestIdx - halfD2Window) + 1);
-                    periEndIdx = min(length(slidingD2Values), winEndPeri - (closestIdx - halfD2Window) + 1);
-                    slidingD2Windows{a}(r, periStartIdx:periEndIdx) = slidingD2Values(periStartIdx:periEndIdx);
+                % Calculate the offset between d2Window start and peri-reach window start
+                d2WindowStart = closestIdx - halfD2Window;
+                periWindowStart = closestIdx - halfWindow;
+                offsetToPeriWindow = periWindowStart - d2WindowStart;
+                
+                % Map each d2 value from d2Window coordinates to peri-reach window coordinates
+                for d2Idx = 1:length(slidingD2Values)
+                    if ~isnan(slidingD2Values(d2Idx))
+                        % Convert d2Window index to peri-reach window index
+                        periIdx = d2Idx + offsetToPeriWindow;
+                        
+                        % Ensure the index is within the peri-reach window bounds
+                        if periIdx >= 1 && periIdx <= size(slidingD2Windows{a}, 2)
+                            slidingD2Windows{a}(r, periIdx) = slidingD2Values(d2Idx);
+                        end
+                    end
                 end
             end
         end
@@ -373,7 +413,8 @@ end
 pad = 0.05 * (globalYMax - globalYMin + eps);
 yLimCommon = [globalYMin - pad, globalYMax + pad];
 
-% Compute global mrBr y-limits across areas (use mean traces; include errors if enabled)
+    % Compute global mrBr y-limits across areas (use mean traces; include errors if enabled)
+if plotMrBr
 allMrBrMeanVals = [];
 for a = areasToTest
     if ~isempty(meanMrBrPeriReachCorr1{a})
@@ -397,6 +438,7 @@ if isempty(mrBrYMin) || isnan(mrBrYMin)
 end
 mrBrYMin = mrBrYMin - 0.05; % minimum minus 0.05
 mrBrYMax = 1.05;            % maximum is 1 plus 0.05
+end
 
 % Compute global sliding window d2 y-limits across areas (if enabled)
 if calculateSlidingWindowD2
@@ -491,7 +533,7 @@ for idx = 1:length(areasToTest)
     % Formatting (applies for both data-present and blank cases)
     xlabel('Time relative to reach onset (s)', 'FontSize', 12);
     ylabel('d2 Criticality', 'FontSize', 12);
-    title(sprintf('%s - %s - Peri-Reach d2 Criticality (Window: %gs)', filePrefix, areas{a}, slidingWindowSize), 'FontSize', 14);
+    title(sprintf('%s - Peri-Reach d2 Criticality (Window: %gs)', areas{a}, slidingWindowSize), 'FontSize', 14);
     grid on;
     xlim([xMin xMax]);
     xTicks = ceil(xMin):floor(xMax);
@@ -579,7 +621,7 @@ for idx = 1:length(areasToTest)
         % Formatting (applies for both data-present and blank cases)
         xlabel('Time relative to reach onset (s)', 'FontSize', 12);
         ylabel('Sliding Window d2', 'FontSize', 12);
-        title(sprintf('%s - %s - Sliding Window d2 (Mean-Centered)', filePrefix, areas{a}), 'FontSize', 14);
+        title(sprintf('%s - Sliding Window d2 (Mean-Centered)', areas{a}), 'FontSize', 14);
         grid on;
         xlim([xMin xMax]);
         xTicks = ceil(xMin):floor(xMax);
@@ -616,6 +658,7 @@ for idx = 1:length(areasToTest)
     hold on;
 
     % Determine if mrBr data exist for this area (any mean trace non-NaN)
+if plotMrBr
     hasMr = (~isempty(meanMrBrPeriReachCorr1{a}) && any(~isnan(meanMrBrPeriReachCorr1{a}))) || ...
             (~isempty(meanMrBrPeriReachCorr2{a}) && any(~isnan(meanMrBrPeriReachCorr2{a}))) || ...
             (plotErrors && ~isempty(meanMrBrPeriReachErr1{a}) && any(~isnan(meanMrBrPeriReachErr1{a}))) || ...
@@ -673,7 +716,7 @@ for idx = 1:length(areasToTest)
     % Formatting (applies for both data-present and blank cases)
     xlabel('Time relative to reach onset (s)', 'FontSize', 12);
     ylabel('MR Branching Ratio', 'FontSize', 12);
-    title(sprintf('%s - %s - Peri-Reach mrBr (Window: %gs)', filePrefix, areas{a}, slidingWindowSize), 'FontSize', 14);
+    title(sprintf('%s - Peri-Reach mrBr (Window: %gs)', areas{a}, slidingWindowSize), 'FontSize', 14);
     grid on;
     xlim([xMin xMax]);
     xTicks = ceil(xMin):floor(xMax); if isempty(xTicks), xTicks = linspace(xMin, xMax, 5); end
@@ -689,6 +732,7 @@ for idx = 1:length(areasToTest)
             legend([hMrCorr1 hMrCorr2], {'mrBr Correct B1','mrBr Correct B2'}, 'Location', 'best', 'FontSize', 9);
         end
     end
+end
 end
 
 if calculateSlidingWindowD2

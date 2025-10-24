@@ -10,7 +10,7 @@ paths = get_paths;
 dataType = 'reach';  % 'reach' or 'naturalistic'
 
 % Sliding window size (seconds)
-slidingWindowSize = 4;
+slidingWindowSize = 3;
 
 % Flags
 loadExistingResults = false;
@@ -21,7 +21,7 @@ analyzeD2 = true;      % compute d2
 analyzeMrBr = false;   % compute mrBr
 
 % NEW: Modulation analysis flags
-analyzeModulation = true;  % Set to true to split into modulated/unmodulated
+analyzeModulation = false;  % Set to true to split into modulated/unmodulated
 modulationThreshold = 2;   % Standard deviations for modulation detection
 modulationBinSize = 0.1;   % Bin size for modulation analysis
 modulationBaseWindow = 4.0; % Baseline window duration (seconds)
@@ -127,10 +127,12 @@ else
 end
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
-%% =============================    Modulation Analysis    =============================
-modulationResults = cell(1, length(areas));
+%% =============================    Analysis    =============================
 
+
+% =============================    Modulation Analysis    =============================
 if analyzeModulation
+modulationResults = cell(1, length(areas));
     fprintf('\n=== Performing modulation analysis ===\n');
     
     % Define alignment times for modulation analysis
