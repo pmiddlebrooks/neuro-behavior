@@ -1,21 +1,28 @@
 #include <SPI.h>
 #include <SD.h>
+#include <Wire.h>
+#include <RTClib.h>
 
 // Pins
-const int SOLENOID_PORT = 13;
+const int SOLENOID_PORT = 12;
 const int BEAM_BREAK_PORT = 2;   // active low beam sensor
 const int LED_PORT = 10;         // reward cue LED
 
 // Timing (ms)
-const int SOLENOID_ON_TIME = 50;       // duration solenoid stays open
+const int SOLENOID_ON_TIME = 30; //50;       // duration solenoid stays open
 const int SOLENOID_OFF_TIME = 300;     // spacing between clicks in a burst
-const int SOLENOID_REPEATS = 2;        // additional clicks after first
-const unsigned long INTERTRIAL_INTERVAL = 8 * 1000; // time to wait between trials
-const unsigned long REWARD_WINDOW = 3 * 1000;       // LED on window to wait for port entry
+const int SOLENOID_REPEATS = 1;        // additional clicks after first
+const unsigned long INTERTRIAL_INTERVAL = 3 * 1000; // time to wait between trials
+const unsigned long REWARD_WINDOW = 2 * 1000;       // LED on window to wait for port entry
 
 // SD card
 const int chipSelect = 53;
 File dataFile;
+File configFile;
+RTC_DS1307 rtc;
+
+char logFileName[50];
+char configFileName[50];
 
 // State
 bool ledOn = false;
@@ -40,7 +47,7 @@ int pulsesGivenInBurst = 0;            // counts pulses after the initial click
 char buffer[100];
 
 void logLine(const char* tag, int value) {
-  sprintf(buffer, "%lu %s %d", millis(), tag, value);
+  sprintf(buffer, "%lu,%s,%d,", millis(), tag, value);
   dataFile.println(buffer);
   dataFile.flush();
 }
@@ -50,7 +57,7 @@ void writeLEDOff() { logLine("L", 0); }
 void writeRewardOn() { logLine("R", 1); }
 void writeRewardOff() { logLine("R", 0); }
 void writeBeam(int state) { logLine("B", state); }
-void writeState(const char* tag) { sprintf(buffer, "%lu S %s", millis(), tag); dataFile.println(buffer); dataFile.flush(); }
+void writeState(const char* tag) { sprintf(buffer, "%lu,S,0,%s", millis(), tag); dataFile.println(buffer); dataFile.flush(); }
 
 void turnOnLED() { digitalWrite(LED_PORT, HIGH); ledOn = true; writeLEDOn(); }
 void turnOffLED() { digitalWrite(LED_PORT, LOW); ledOn = false; writeLEDOff(); }
@@ -82,12 +89,46 @@ void setup() {
   digitalWrite(LED_PORT, LOW);
 
   Serial.begin(9600);
-
+  Wire.begin();
+  
   if (!SD.begin(chipSelect)) {
     while (1);
   }
-  dataFile = SD.open("log.txt", FILE_WRITE);
-
+  
+  // Create folder and filename with timestamp
+  if (!SD.exists("interval_task")) {
+    SD.mkdir("interval_task");
+  }
+  
+  DateTime now = rtc.now();
+  
+  // Create config filename
+  sprintf(configFileName, "interval_task/config_%04d%02d%02d_%02d%02d.txt", 
+          now.year(), now.month(), now.day(), now.hour(), now.minute());
+  
+  // Create CSV log filename
+  sprintf(logFileName, "interval_task/log_%04d%02d%02d_%02d%02d.csv", 
+          now.year(), now.month(), now.day(), now.hour(), now.minute());
+  
+  // Write config file with timing constants
+  configFile = SD.open(configFileName, FILE_WRITE);
+  configFile.println("TIMING_CONSTANTS:");
+  sprintf(buffer, "SOLENOID_ON_TIME: %d ms", SOLENOID_ON_TIME);
+  configFile.println(buffer);
+  sprintf(buffer, "SOLENOID_OFF_TIME: %d ms", SOLENOID_OFF_TIME);
+  configFile.println(buffer);
+  sprintf(buffer, "SOLENOID_REPEATS: %d", SOLENOID_REPEATS);
+  configFile.println(buffer);
+  sprintf(buffer, "INTERTRIAL_INTERVAL: %d ms", INTERTRIAL_INTERVAL);
+  configFile.println(buffer);
+  sprintf(buffer, "REWARD_WINDOW: %d ms", REWARD_WINDOW);
+  configFile.println(buffer);
+  configFile.close();
+  
+  // Write CSV header
+  dataFile = SD.open(logFileName, FILE_WRITE);
+  dataFile.println("timestamp_ms,event,value,state_label");
+  
   // Auto-start without waiting for Python
   writeState("AUTO_START");
   
