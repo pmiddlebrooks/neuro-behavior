@@ -15,17 +15,18 @@ slidingWindowSize = 3;
 % Flags
 loadExistingResults = false;
 makePlots = true;
+plotCorrelations = false;
 
 % Analysis flags
 analyzeD2 = true;      % compute d2
 analyzeMrBr = false;   % compute mrBr
 
 % NEW: Modulation analysis flags
-analyzeModulation = false;  % Set to true to split into modulated/unmodulated
-modulationThreshold = 2;   % Standard deviations for modulation detection
-modulationBinSize = 0.1;   % Bin size for modulation analysis
-modulationBaseWindow = 4.0; % Baseline window duration (seconds)
-modulationEventWindow = .4; % Event window duration (seconds)
+analyzeModulation = true;  % Set to true to split into modulated/unmodulated
+modulationThreshold = 2;   % Standard deviations for modulation detection (legacy fallback)
+modulationBinSize = nan;   % Bin size for modulation analysis
+modulationBaseWindow = [-3, -2];    % Baseline time range [min max] in seconds relative to reach onset
+modulationEventWindow = [-0.2, 0.6]; % Event time range [min max] in seconds relative to reach onset
 modulationPlotFlag = false; % Set to true to generate modulation analysis plots
 
 % Analysis parameters
@@ -87,7 +88,7 @@ if strcmp(dataType, 'reach')
     idVS = find(strcmp(areaLabels, 'VS'));
     idMatIdx = {idM23, idM56, idDS, idVS};
     idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
-    
+
     % NEW: Load spike data for modulation analysis
     if analyzeModulation
         fprintf('\n=== Loading spike data for modulation analysis ===\n');
@@ -121,7 +122,7 @@ elseif strcmp(dataType, 'naturalistic')
         spikeData = [spikeTimes, spikeClusters];
         fprintf('Loaded spike data: %d spikes from %d neurons\n', size(spikeData, 1), length(unique(spikeData(:,2))));
     end
-    
+
 else
     error('Invalid dataType. Must be ''reach'' or ''naturalistic''');
 end
@@ -132,59 +133,9 @@ fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(i
 
 % =============================    Modulation Analysis    =============================
 if analyzeModulation
-modulationResults = cell(1, length(areas));
-    fprintf('\n=== Performing modulation analysis ===\n');
-    
-    % Define alignment times for modulation analysis
-    % For reach data, use reach events; for naturalistic, use regular intervals
-    if strcmp(dataType, 'reach')
-        % Use reach start times as alignment points
-        alignTimes = dataR.R(:,1) / 1000; %
-    else
-        % For naturalistic data, use regular intervals
-        disp('Code for what behaviors you want to align to for naturalistic')
-        return
-        totalTime = opts.collectFor;
-        alignTimes = (modulationEventWindow/2):(modulationEventWindow*2):(totalTime - modulationEventWindow/2);
-    end
-    
-    % Perform modulation analysis for each area
-    for a = areasToTest
-        fprintf('\nAnalyzing modulation for area %s...\n', areas{a});
-        
-        % Get neuron IDs for this area
-        areaNeuronIds = idLabel{a};
-        
-        % Filter spike data for this area
-        areaSpikeMask = ismember(spikeData(:,2), areaNeuronIds);
-        areaSpikeData = spikeData(areaSpikeMask, :);
-        
-        if size(areaSpikeData, 1) < 100 % Need minimum spikes for analysis
-            fprintf('Insufficient spikes in area %s for modulation analysis\n', areas{a});
-            modulationResults{a} = [];
-            continue;
-        end
-        
-        % Set up modulation analysis options
-        modOpts = struct();
-        modOpts.binSize = modulationBinSize;
-        modOpts.baseWindow = modulationBaseWindow;
-        modOpts.eventWindow = modulationEventWindow;
-        modOpts.alignTimes = alignTimes;
-        modOpts.threshold = modulationThreshold;
-        modOpts.plotFlag = modulationPlotFlag;
-        
-        % Run modulation analysis
-        try
-            modulationResults{a} = spike_modulation(areaSpikeData, modOpts);
-            fprintf('Area %s: %d/%d neurons modulated (%.1f%%)\n', areas{a}, ...
-                sum(modulationResults{a}.isModulated), length(modulationResults{a}.neuronIds), ...
-                100*sum(modulationResults{a}.isModulated)/length(modulationResults{a}.neuronIds));
-        catch ME
-            fprintf('Error in modulation analysis for area %s: %s\n', areas{a}, ME.message);
-            modulationResults{a} = [];
-        end
-    end
+    modulationResults = perform_modulation_analysis(spikeData, areas, idLabel, areasToTest, dataType, dataR, opts, modulationBinSize, modulationBaseWindow, modulationEventWindow, modulationThreshold, modulationPlotFlag);
+else
+    modulationResults = cell(1, length(areas));
 end
 
 % =============================    Analysis    =============================
@@ -197,7 +148,7 @@ fprintf('\n=== %s Data Analysis ===\n', dataType);
 fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');
 reconstructedDataMat = cell(1, length(areas));
 for a = areasToTest
-    aID = idMatIdx{a}; 
+    aID = idMatIdx{a};
     thisDataMat = dataMat(:, aID);
     if pcaFlag
         [coeff, score, ~, ~, explained, mu] = pca(thisDataMat);
@@ -215,25 +166,34 @@ fprintf('\n--- Step 3: Finding optimal parameters ---\n');
 optimalBinSize = zeros(1, length(areas));
 optimalWindowSize = zeros(1, length(areas));
 
+% FIRST: Find optimal parameters for ALL neurons (original analysis)
+for a = areasToTest
+    thisDataMat = reconstructedDataMat{a};
+    [optimalBinSize(a), optimalWindowSize(a)] = ...
+        find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+    fprintf('Area %s (all neurons): optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
+end
+
+% SECOND: If modulation analysis is enabled, find optimal parameters for modulated and unmodulated separately
 if analyzeModulation
-    % NEW: Find optimal parameters separately for modulated and unmodulated populations
+    % Initialize optimal parameters for modulated and unmodulated
     optimalBinSizeModulated = zeros(1, length(areas));
     optimalBinSizeUnmodulated = zeros(1, length(areas));
     optimalWindowSizeModulated = zeros(1, length(areas));
     optimalWindowSizeUnmodulated = zeros(1, length(areas));
-    
+
     for a = areasToTest
         thisDataMat = reconstructedDataMat{a};
-        
+
         if ~isempty(modulationResults{a})
             % Get modulated and unmodulated neuron indices
             modulatedNeurons = modulationResults{a}.neuronIds(modulationResults{a}.isModulated);
             unmodulatedNeurons = modulationResults{a}.neuronIds(~modulationResults{a}.isModulated);
-            
+
             % Find indices in the data matrix
             modulatedIndices = ismember(idLabel{a}, modulatedNeurons);
             unmodulatedIndices = ismember(idLabel{a}, unmodulatedNeurons);
-            
+
             % Analyze modulated neurons
             if sum(modulatedIndices) >= 5 % Need minimum neurons
                 modulatedDataMat = thisDataMat(:, modulatedIndices);
@@ -243,7 +203,7 @@ if analyzeModulation
                 optimalBinSizeModulated(a) = NaN;
                 optimalWindowSizeModulated(a) = NaN;
             end
-            
+
             % Analyze unmodulated neurons
             if sum(unmodulatedIndices) >= 5 % Need minimum neurons
                 unmodulatedDataMat = thisDataMat(:, unmodulatedIndices);
@@ -253,37 +213,12 @@ if analyzeModulation
                 optimalBinSizeUnmodulated(a) = NaN;
                 optimalWindowSizeUnmodulated(a) = NaN;
             end
-            
-            % Use the larger bin size for analysis (as requested)
-            if ~isnan(optimalBinSizeModulated(a)) && ~isnan(optimalBinSizeUnmodulated(a))
-                optimalBinSize(a) = max(optimalBinSizeModulated(a), optimalBinSizeUnmodulated(a));
-                optimalWindowSize(a) = max(optimalWindowSizeModulated(a), optimalWindowSizeUnmodulated(a));
-            elseif ~isnan(optimalBinSizeModulated(a))
-                optimalBinSize(a) = optimalBinSizeModulated(a);
-                optimalWindowSize(a) = optimalWindowSizeModulated(a);
-            elseif ~isnan(optimalBinSizeUnmodulated(a))
-                optimalBinSize(a) = optimalBinSizeUnmodulated(a);
-                optimalWindowSize(a) = optimalWindowSizeUnmodulated(a);
-            else
-                optimalBinSize(a) = NaN;
-                optimalWindowSize(a) = NaN;
-            end
-            
-            fprintf('Area %s: Modulated bin=%.3f, Unmodulated bin=%.3f, Using=%.3f\n', areas{a}, ...
-                optimalBinSizeModulated(a), optimalBinSizeUnmodulated(a), optimalBinSize(a));
+
+            fprintf('Area %s (modulated): bin=%.3f, (unmodulated): bin=%.3f\n', areas{a}, ...
+                optimalBinSizeModulated(a), optimalBinSizeUnmodulated(a));
         else
-            % Fallback to original analysis
-            [optimalBinSize(a), optimalWindowSize(a)] = ...
-                find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+            fprintf('Area %s: No modulation data available\n', areas{a});
         end
-    end
-else
-    % Original analysis for all neurons
-    for a = areasToTest
-        thisDataMat = reconstructedDataMat{a};
-        [optimalBinSize(a), optimalWindowSize(a)] = ...
-            find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
-        fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
     end
 end
 
@@ -352,26 +287,26 @@ for a = areasToTest
         end
     end
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
-    
+
     % NEW: Analyze modulated and unmodulated populations separately
     if analyzeModulation && ~isempty(modulationResults{a})
         % Get modulated and unmodulated neuron indices
         modulatedNeurons = modulationResults{a}.neuronIds(modulationResults{a}.isModulated);
         unmodulatedNeurons = modulationResults{a}.neuronIds(~modulationResults{a}.isModulated);
-        
+
         % Find indices in the data matrix
         modulatedIndices = ismember(idLabel{a}, modulatedNeurons);
         unmodulatedIndices = ismember(idLabel{a}, unmodulatedNeurons);
-        
+
         % Analyze modulated neurons
         if sum(modulatedIndices) >= 5
             modulatedDataMat = aDataMat(:, modulatedIndices);
             popActivityModulated{a} = round(sum(modulatedDataMat, 2));
             [startSModulated{a}, mrBrModulated{a}, d2Modulated{a}, popActivityWindowsModulated{a}, popActivityFullModulated{a}] = ...
                 deal(nan(1, numWindows));
-            
+
             for w = 1:numWindows
-                startIdx = (w - 1) * stepSamples + 1; 
+                startIdx = (w - 1) * stepSamples + 1;
                 endIdx = startIdx + winSamples - 1;
                 startSModulated{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSize(a);
                 wPopActivity = popActivityModulated{a}(startIdx:endIdx);
@@ -391,16 +326,16 @@ for a = areasToTest
                 end
             end
         end
-        
+
         % Analyze unmodulated neurons
         if sum(unmodulatedIndices) >= 5
             unmodulatedDataMat = aDataMat(:, unmodulatedIndices);
             popActivityUnmodulated{a} = round(sum(unmodulatedDataMat, 2));
             [startSUnmodulated{a}, mrBrUnmodulated{a}, d2Unmodulated{a}, popActivityWindowsUnmodulated{a}, popActivityFullUnmodulated{a}] = ...
                 deal(nan(1, numWindows));
-            
+
             for w = 1:numWindows
-                startIdx = (w - 1) * stepSamples + 1; 
+                startIdx = (w - 1) * stepSamples + 1;
                 endIdx = startIdx + winSamples - 1;
                 startSUnmodulated{a}(w) = (startIdx + round(winSamples/2)-1) * optimalBinSize(a);
                 wPopActivity = popActivityUnmodulated{a}(startIdx:endIdx);
@@ -488,7 +423,7 @@ if analyzeModulation
     for a = areasToTest
         if ~isempty(modulationResults{a})
             fprintf('\n--- Area %s ---\n', areas{a});
-            
+
             % Modulated population correlations
             if ~isempty(popActivityWindowsModulated{a}) && ~isempty(d2Modulated{a})
                 validIdx = ~isnan(popActivityWindowsModulated{a}) & ~isnan(d2Modulated{a});
@@ -499,7 +434,7 @@ if analyzeModulation
                     fprintf('Modulated: PopActivity vs d2: r=%.3f, p=%.3f (n=%d)\n', rPopD2(1,2), pPopD2(1,2), sum(validIdx));
                 end
             end
-            
+
             % Unmodulated population correlations
             if ~isempty(popActivityWindowsUnmodulated{a}) && ~isempty(d2Unmodulated{a})
                 validIdx = ~isnan(popActivityWindowsUnmodulated{a}) & ~isnan(d2Unmodulated{a});
@@ -545,20 +480,20 @@ if analyzeModulation
     results.modulationBaseWindow = modulationBaseWindow;
     results.modulationEventWindow = modulationEventWindow;
     results.modulationPlotFlag = modulationPlotFlag;
-    
+
     % Save modulated/unmodulated results
     results.popActivityModulated = popActivityWindowsModulated;
     results.mrBrModulated = mrBrModulated;
     results.d2Modulated = d2Modulated;
     results.startSModulated = startSModulated;
     results.popActivityFullModulated = popActivityFullModulated;
-    
+
     results.popActivityUnmodulated = popActivityWindowsUnmodulated;
     results.mrBrUnmodulated = mrBrUnmodulated;
     results.d2Unmodulated = d2Unmodulated;
     results.startSUnmodulated = startSUnmodulated;
     results.popActivityFullUnmodulated = popActivityFullUnmodulated;
-    
+
     % Save optimal parameters for each population
     results.optimalBinSizeModulated = optimalBinSizeModulated;
     results.optimalBinSizeUnmodulated = optimalBinSizeUnmodulated;
@@ -566,6 +501,11 @@ if analyzeModulation
     results.optimalWindowSizeUnmodulated = optimalWindowSizeUnmodulated;
 else
     results.analyzeModulation = false;
+    % Initialize empty arrays for modulated/unmodulated when not analyzed
+    results.optimalBinSizeModulated = nan(1, length(areas));
+    results.optimalBinSizeUnmodulated = nan(1, length(areas));
+    results.optimalWindowSizeModulated = nan(1, length(areas));
+    results.optimalWindowSizeUnmodulated = nan(1, length(areas));
 end
 
 save(resultsPath, 'results'); 
@@ -583,12 +523,91 @@ if makePlots
         targetPos = monitorOne;
     end
     
-    % Time series plot
+    % Create all plots using functions
+    if strcmp(dataType, 'reach')
+        reachOnsetTimes = dataR.R(:,1) / 1000; % Convert from ms to seconds
+    else
+        reachOnsetTimes = []; % No reach onsets for naturalistic data
+    end
+    plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes);
+
+    if plotCorrelations
+        plot_criticality_correlations(popActivityWindows, popActivityFull, d2, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos);
+    end
+    if analyzeModulation
+        plot_modulated_vs_unmodulated(d2Modulated, d2Unmodulated, startSModulated, startSUnmodulated, popActivityWindowsModulated, popActivityWindowsUnmodulated, areasToTest, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, reachOnsetTimes);
+    end
+end
+
+fprintf('\n=== %s Analysis Complete ===\n', dataType);
+
+%% =============================    Function Definitions    =============================
+
+function modulationResults = perform_modulation_analysis(spikeData, areas, idLabel, areasToTest, dataType, dataR, opts, modulationBinSize, modulationBaseWindow, modulationEventWindow, modulationThreshold, modulationPlotFlag)
+% Perform modulation analysis for all areas
+fprintf('\n=== Performing modulation analysis ===\n');
+
+modulationResults = cell(1, length(areas));
+
+% Define alignment times for modulation analysis
+if strcmp(dataType, 'reach')
+    % Use reach start times as alignment points
+    alignTimes = dataR.R(:,1) / 1000;
+else
+    % For naturalistic data, use regular intervals
+    disp('Code for what behaviors you want to align to for naturalistic')
+    return
+    totalTime = opts.collectFor;
+    alignTimes = (modulationEventWindow/2):(modulationEventWindow*2):(totalTime - modulationEventWindow/2);
+end
+
+% Perform modulation analysis for each area
+for a = areasToTest
+    fprintf('\nAnalyzing modulation for area %s...\n', areas{a});
+
+    % Get neuron IDs for this area
+    areaNeuronIds = idLabel{a};
+
+    % Filter spike data for this area
+    areaSpikeMask = ismember(spikeData(:,2), areaNeuronIds);
+    areaSpikeData = spikeData(areaSpikeMask, :);
+
+    if size(areaSpikeData, 1) < 100 % Need minimum spikes for analysis
+        fprintf('Insufficient spikes in area %s for modulation analysis\n', areas{a});
+        modulationResults{a} = [];
+        continue;
+    end
+
+    % Set up modulation analysis options
+    modOpts = struct();
+    modOpts.binSize = modulationBinSize;
+    modOpts.baseWindow = modulationBaseWindow;
+    modOpts.eventWindow = modulationEventWindow;
+    modOpts.alignTimes = alignTimes;
+    modOpts.threshold = modulationThreshold;
+    modOpts.plotFlag = modulationPlotFlag;
+
+    % Run modulation analysis
+    % try
+    modulationResults{a} = spike_modulation(areaSpikeData, modOpts);
+    fprintf('Area %s: %d/%d neurons modulated (%.1f%%)\n', areas{a}, ...
+        sum(modulationResults{a}.isModulated), length(modulationResults{a}.neuronIds), ...
+        100*sum(modulationResults{a}.isModulated)/length(modulationResults{a}.neuronIds));
+    % catch ME
+    %     fprintf('Error in modulation analysis for area %s: %s\n', areas{a}, ME.message);
+    %     modulationResults{a} = [];
+    % end
+end
+end
+
+function plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes)
+% Plot time series of criticality measures
     figure(900); clf;
     set(gcf, 'Units', 'pixels');
     set(gcf, 'Position', targetPos);
     numRows = length(areasToTest);
-    ha = tight_subplot(numRows, 1, [0.08 0.04], [0.15 0.1], [0.08 0.04]);
+ha = tight_subplot(numRows, 1, [0.05 0.04], [0.03 0.08], [0.08 0.04]);
+
     for idx = 1:length(areasToTest)
         a = areasToTest(idx); 
         axes(ha(idx)); hold on;
@@ -614,17 +633,15 @@ if makePlots
             ylabel('mrBr', 'Color', [0 0 0]); ylim('auto');
         end
         
-        % Add normalized population activity as a third y-axis (using left axis with different color)
+    % Add normalized population activity
         if ~isempty(popActNorm) && any(~isnan(popActNorm))
             yyaxis left;
             plot(startS{a}, popActNorm, '-', 'Color', [1 0 0], 'LineWidth', 1, 'LineStyle', ':'); 
         end
         
-        % Also add full population activity (normalized) for comparison
+    % Add full population activity (normalized) for comparison
         if ~isempty(popActivity{a}) && any(~isnan(popActivity{a}))
-            % Get time points for full population activity
             timeIndices = (1:length(popActivity{a})) * optimalBinSize(a);
-            % Normalize full population activity
             popActFullNorm = (popActivity{a} - min(popActivity{a}(~isnan(popActivity{a})))) / ...
                            (max(popActivity{a}(~isnan(popActivity{a}))) - min(popActivity{a}(~isnan(popActivity{a}))));
             popActFullNorm(isnan(popActivity{a})) = nan;
@@ -632,6 +649,22 @@ if makePlots
             yyaxis left;
             plot(timeIndices, popActFullNorm, '-', 'Color', [0.8 0.4 0.4], 'LineWidth', 0.5, 'LineStyle', '-.'); 
         end
+
+    % Add vertical lines at reach onsets (only for reach data)
+    if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
+        yyaxis left;
+        % Filter reach onsets to only show those within the current plot's time range
+        if ~isempty(startS{a})
+            plotTimeRange = [startS{a}(1), startS{a}(end)];
+            reachOnsetsInRange = reachOnsetTimes(reachOnsetTimes >= plotTimeRange(1) & reachOnsetTimes <= plotTimeRange(2));
+
+            if ~isempty(reachOnsetsInRange)
+                for i = 1:length(reachOnsetsInRange)
+                    xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
+                end
+            end
+        end
+    end
         
         if ~isempty(startS{a})
         xlim([startS{a}(1) startS{a}(end)])
@@ -639,21 +672,25 @@ if makePlots
         title(sprintf('%s - d2 (blue), mrBr (black), PopActWin (red dotted), PopActFull (brown dash-dot)', areas{a})); 
         xlabel('Time (s)'); grid on; set(gca, 'XTickLabelMode', 'auto'); set(gca, 'YTickLabelMode', 'auto');
     end
+
+if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
+    sgtitle(sprintf('%s d2 (blue, left) and mrBr (black, right) with reach onsets (gray dashed) - win=%gs', dataType, slidingWindowSize));
+else
     sgtitle(sprintf('%s d2 (blue, left) and mrBr (black, right) - win=%gs', dataType, slidingWindowSize));
+end
     exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
+end
     
-    % Scatter plots for correlations
+function plot_criticality_correlations(popActivityWindows, popActivityFull, d2, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos)
+% Plot correlation scatter plots
     figure(901); clf;
     set(gcf, 'Units', 'pixels');
     set(gcf, 'Position', targetPos);
     
-    % Use original areasToTest values to determine numAreas
     numAreas = length(areasToPlot);
-    
-    % 2 rows x 4 columns: d2 vs popActivityFull, d2 vs popActivityWindows
     numRows = 2;
     numCols = 4;
-    ha = tight_subplot(numRows, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
+ha = tight_subplot(numRows, numCols, [0.05 0.04], [0.03 0.08], [0.08 0.04]);
     
     for idx = 1:numAreas
         a = areasToPlot(idx);
@@ -669,7 +706,7 @@ if makePlots
                 [r, p] = corrcoef(xData, yData);
                 title(sprintf('%s: d2 vs PopActFull\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
                 
-                % Add best fitting regression line
+            % Add regression line
                 hold on;
                 p_fit = polyfit(xData, yData, 1);
                 x_fit = linspace(min(xData), max(xData), 100);
@@ -693,7 +730,7 @@ if makePlots
                 [r, p] = corrcoef(xData, yData);
                 title(sprintf('%s: d2 vs PopActWin\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
                 
-                % Add best fitting regression line
+            % Add regression line
                 hold on;
                 p_fit = polyfit(xData, yData, 1);
                 x_fit = linspace(min(xData), max(xData), 100);
@@ -710,110 +747,118 @@ if makePlots
     sgtitle(sprintf('%s Population Activity vs Criticality Correlations - win=%gs', dataType, slidingWindowSize));
     exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
     fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('criticality_%s_correlations_win%d.png', dataType, slidingWindowSize)));
-    
-    % NEW: Create comparison plots for modulated vs unmodulated populations
-    if analyzeModulation
-        figure(902); clf;
-        set(gcf, 'Units', 'pixels');
-        set(gcf, 'Position', targetPos);
-        
-        numRows = length(areasToTest);
-        ha = tight_subplot(numRows, 1, [0.08 0.04], [0.15 0.1], [0.08 0.04]);
-        
-        for idx = 1:length(areasToTest)
-            a = areasToTest(idx);
-            axes(ha(idx)); hold on;
-            
-            if analyzeD2
-                % Plot modulated population
-                if ~isempty(d2Modulated{a}) && any(~isnan(d2Modulated{a}))
-                    plot(startSModulated{a}, d2Modulated{a}, '-', 'Color', [1 0 0], 'LineWidth', 2, 'DisplayName', 'Modulated');
-                end
-                
-                % Plot unmodulated population
-                if ~isempty(d2Unmodulated{a}) && any(~isnan(d2Unmodulated{a}))
-                    plot(startSUnmodulated{a}, d2Unmodulated{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'Unmodulated');
-                end
-                
-                ylabel('d2'); grid on;
-                legend('Location', 'best');
-            end
-            
-            if ~isempty(startS{a})
-                xlim([startS{a}(1) startS{a}(end)])
-            end
-            title(sprintf('%s - Modulated (red) vs Unmodulated (blue) d2', areas{a}));
-            xlabel('Time (s)');
-        end
-        
-        sgtitle(sprintf('%s Modulated vs Unmodulated d2 Comparison - win=%gs', dataType, slidingWindowSize));
-        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
-        
-        % Scatter plots comparing modulated vs unmodulated
-        figure(903); clf;
-        set(gcf, 'Units', 'pixels');
-        set(gcf, 'Position', targetPos);
-        
-        numAreas = length(areasToPlot);
-        numRows = 2;
-        numCols = numAreas;
-        ha = tight_subplot(numRows, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
-        
-        for idx = 1:numAreas
-            a = areasToPlot(idx);
-            
-            % Row 1: Modulated population scatter
-            axes(ha(idx));
-            if ~isempty(popActivityWindowsModulated{a}) && ~isempty(d2Modulated{a})
-                validIdx = ~isnan(popActivityWindowsModulated{a}) & ~isnan(d2Modulated{a});
-                if sum(validIdx) > 5
-                    xData = popActivityWindowsModulated{a}(validIdx);
-                    yData = d2Modulated{a}(validIdx);
-                    scatter(xData, yData, 20, 'filled', 'MarkerFaceColor', [1 0 0], 'MarkerFaceAlpha', 0.6);
-                    [r, p] = corrcoef(xData, yData);
-                    title(sprintf('%s Modulated\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
-                    
-                    % Add regression line
-                    hold on;
-                    p_fit = polyfit(xData, yData, 1);
-                    x_fit = linspace(min(xData), max(xData), 100);
-                    y_fit = polyval(p_fit, x_fit);
-                    plot(x_fit, y_fit, 'r-', 'LineWidth', 2);
-                else
-                    title(sprintf('%s Modulated\nInsufficient data', areas{a}));
-                end
-            end
-            xlabel('PopActivity'); ylabel('d2');
-            grid on;
-            
-            % Row 2: Unmodulated population scatter
-            axes(ha(numAreas + idx));
-            if ~isempty(popActivityWindowsUnmodulated{a}) && ~isempty(d2Unmodulated{a})
-                validIdx = ~isnan(popActivityWindowsUnmodulated{a}) & ~isnan(d2Unmodulated{a});
-                if sum(validIdx) > 5
-                    xData = popActivityWindowsUnmodulated{a}(validIdx);
-                    yData = d2Unmodulated{a}(validIdx);
-                    scatter(xData, yData, 20, 'filled', 'MarkerFaceColor', [0 0 1], 'MarkerFaceAlpha', 0.6);
-                    [r, p] = corrcoef(xData, yData);
-                    title(sprintf('%s Unmodulated\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
-                    
-                    % Add regression line
-                    hold on;
-                    p_fit = polyfit(xData, yData, 1);
-                    x_fit = linspace(min(xData), max(xData), 100);
-                    y_fit = polyval(p_fit, x_fit);
-                    plot(x_fit, y_fit, 'b-', 'LineWidth', 2);
-                else
-                    title(sprintf('%s Unmodulated\nInsufficient data', areas{a}));
-                end
-            end
-            xlabel('PopActivity'); ylabel('d2');
-            grid on;
-        end
-        
-        sgtitle(sprintf('%s Modulated vs Unmodulated Population Activity vs Criticality', dataType));
-        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_unmodulated_scatter_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
-    end
 end
 
-fprintf('\n=== %s Analysis Complete ===\n', dataType);
+function plot_modulated_vs_unmodulated(d2Modulated, d2Unmodulated, startSModulated, startSUnmodulated, popActivityWindowsModulated, popActivityWindowsUnmodulated, areasToTest, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, reachOnsetTimes)
+% Plot modulated vs unmodulated comparisons
+plotCorrelations = false;
+
+% Time series comparison
+figure(902); clf;
+set(gcf, 'Units', 'pixels');
+set(gcf, 'Position', targetPos);
+
+numRows = length(areasToTest);
+ha = tight_subplot(numRows, 1, [0.08 0.04], [0.03 0.08], [0.08 0.04]);
+
+for idx = 1:length(areasToTest)
+    a = areasToTest(idx);
+    axes(ha(idx)); hold on;
+
+    if analyzeD2
+        % Plot modulated population
+        if ~isempty(d2Modulated{a}) && any(~isnan(d2Modulated{a}))
+            plot(startSModulated{a}, d2Modulated{a}, '-', 'Color', [1 0 0], 'LineWidth', 2, 'DisplayName', 'Modulated');
+        end
+
+        % Plot unmodulated population
+        if ~isempty(d2Unmodulated{a}) && any(~isnan(d2Unmodulated{a}))
+            plot(startSUnmodulated{a}, d2Unmodulated{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'Unmodulated');
+        end
+
+        ylabel('d2'); grid on;
+        legend({'Modulated', 'Unmodulated'}, 'Location', 'best', 'AutoUpdate', 'off');
+        % Add vertical lines at reach onsets (only for reach data)
+        if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
+                    for i = 1:length(reachOnsetTimes)
+                        xline(reachOnsetTimes(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
+                    end
+        end
+
+    end
+
+    title(sprintf('%s - Modulated (red) vs Unmodulated (blue) d2', areas{a}));
+    xlabel('Time (s)'); grid on; set(gca, 'XTickLabelMode', 'auto'); set(gca, 'YTickLabelMode', 'auto');
+end
+
+sgtitle(sprintf('%s Modulated neurons d2 win=%gs', dataType, slidingWindowSize));
+exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
+
+if plotCorrelations
+
+% Scatter plots comparing modulated vs unmodulated
+figure(903); clf;
+set(gcf, 'Units', 'pixels');
+set(gcf, 'Position', targetPos);
+
+numAreas = length(areasToPlot);
+numRows = 2;
+numCols = numAreas;
+ha = tight_subplot(numRows, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
+
+for idx = 1:numAreas
+    a = areasToPlot(idx);
+
+    % Row 1: Modulated population scatter
+    axes(ha(idx));
+    if ~isempty(popActivityWindowsModulated{a}) && ~isempty(d2Modulated{a})
+        validIdx = ~isnan(popActivityWindowsModulated{a}) & ~isnan(d2Modulated{a});
+        if sum(validIdx) > 5
+            xData = popActivityWindowsModulated{a}(validIdx);
+            yData = d2Modulated{a}(validIdx);
+            scatter(xData, yData, 20, 'filled', 'MarkerFaceColor', [1 0 0], 'MarkerFaceAlpha', 0.6);
+            [r, p] = corrcoef(xData, yData);
+            title(sprintf('%s Modulated\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
+
+            % Add regression line
+            hold on;
+            p_fit = polyfit(xData, yData, 1);
+            x_fit = linspace(min(xData), max(xData), 100);
+            y_fit = polyval(p_fit, x_fit);
+            plot(x_fit, y_fit, 'r-', 'LineWidth', 2);
+        else
+            title(sprintf('%s Modulated\nInsufficient data', areas{a}));
+        end
+    end
+    xlabel('PopActivity'); ylabel('d2');
+    grid on;
+
+    % Row 2: Unmodulated population scatter
+    axes(ha(numAreas + idx));
+    if ~isempty(popActivityWindowsUnmodulated{a}) && ~isempty(d2Unmodulated{a})
+        validIdx = ~isnan(popActivityWindowsUnmodulated{a}) & ~isnan(d2Unmodulated{a});
+        if sum(validIdx) > 5
+            xData = popActivityWindowsUnmodulated{a}(validIdx);
+            yData = d2Unmodulated{a}(validIdx);
+            scatter(xData, yData, 20, 'filled', 'MarkerFaceColor', [0 0 1], 'MarkerFaceAlpha', 0.6);
+            [r, p] = corrcoef(xData, yData);
+            title(sprintf('%s Unmodulated\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
+
+            % Add regression line
+            hold on;
+            p_fit = polyfit(xData, yData, 1);
+            x_fit = linspace(min(xData), max(xData), 100);
+            y_fit = polyval(p_fit, x_fit);
+            plot(x_fit, y_fit, 'b-', 'LineWidth', 2);
+        else
+            title(sprintf('%s Unmodulated\nInsufficient data', areas{a}));
+        end
+    end
+    xlabel('PopActivity'); ylabel('d2');
+    grid on;
+end
+
+sgtitle(sprintf('%s Modulated vs Unmodulated Population Activity vs Criticality', dataType));
+exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_unmodulated_scatter_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
+end
+end

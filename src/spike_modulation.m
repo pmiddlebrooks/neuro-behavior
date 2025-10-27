@@ -10,11 +10,12 @@ function [modulationResults] = spike_modulation(spikeData, opts)
 %       Column 1: Spike times (timestamps in seconds)
 %       Column 2: Neuron IDs corresponding to each spike
 %   opts - Structure containing the following options:
-%       .binSize      - Time bin size in seconds for spike counting
-%       .baseWindow   - Duration of baseline window in seconds (before event window)
-%       .eventWindow  - Duration of event window in seconds (centered on align time)
+%       .baseWindow   - Baseline time range [min max] in seconds relative to align time
+%                       Example: [-3, -2] for 1 second window from -3 to -2 sec
+%       .eventWindow  - Event time range [min max] in seconds relative to align time
+%                       Example: [-0.2, 0.6] for 0.8 second window from -0.2 to 0.6 sec
 %       .alignTimes   - Vector of alignment times around which to place windows
-%       .threshold    - Number of standard deviations above/below mean for modulation
+%       .threshold    - Number of standard deviations above/below mean for modulation (legacy)
 %       .plotFlag     - Optional: Set to true to generate modulation analysis plots (default: true)
 %
 % OUTPUTS:
@@ -24,6 +25,7 @@ function [modulationResults] = spike_modulation(spikeData, opts)
 %       .eventMean        - Mean spikes per second in event window
 %       .modulationIndex  - (eventMean - baseMean) / baseMean
 %       .zScore          - Z-score of modulation (standardized difference)
+%       .pValue          - p-value from paired t-test
 %       .isModulated     - Logical array indicating modulated neurons
 %       .modulationType   - 'positive', 'negative', or 'none' for each neuron
 %       .baseStd         - Standard deviation of baseline spikes per second
@@ -33,11 +35,10 @@ function [modulationResults] = spike_modulation(spikeData, opts)
 %       .opts            - Copy of input options
 %
 % EXAMPLE:
-%   opts.binSize = 0.1;           % 100ms bins
-%   opts.baseWindow = 2.0;         % Baseline: 2 seconds before event window
-%   opts.eventWindow = 1.0;        % Event: 1 second centered on align time
+%   opts.baseWindow = [-3, -2];    % Baseline: -3 to -2 seconds (relative to reach)
+%   opts.eventWindow = [-0.2, 0.6]; % Event: -0.2 to 0.6 seconds (relative to reach)
 %   opts.alignTimes = [10, 20, 30]; % Align windows around these times
-%   opts.threshold = 2;            % 2 standard deviations
+%   opts.threshold = 2;            % 2 standard deviations (legacy fallback)
 %   opts.plotFlag = true;          % Generate plots (optional, default: true)
 %   results = spike_modulation(spikeData, opts);
 
@@ -50,7 +51,6 @@ uniqueNeurons = unique(neuronIds);
 nNeurons = length(uniqueNeurons);
 
 % Extract options
-binSize = opts.binSize;
 baseWindow = opts.baseWindow;
 eventWindow = opts.eventWindow;
 alignTimes = opts.alignTimes;
@@ -63,14 +63,28 @@ else
     plotFlag = true; % Default to true for backward compatibility
 end
 
-% Validate inputs
-if ~isscalar(baseWindow) || ~isscalar(eventWindow)
-    error('baseWindow and eventWindow must be scalar values (window durations in seconds)');
+% Validate inputs - baseWindow and eventWindow should be [min max] ranges
+if ~isnumeric(baseWindow) || ~isnumeric(eventWindow)
+    error('baseWindow and eventWindow must be numeric arrays');
 end
 
-if baseWindow <= 0 || eventWindow <= 0
-    error('Window durations must be positive');
+if length(baseWindow) ~= 2 || length(eventWindow) ~= 2
+    error('baseWindow and eventWindow must be 2-element arrays [min max]');
 end
+
+if baseWindow(1) >= baseWindow(2) || eventWindow(1) >= eventWindow(2)
+    error('Window ranges must have min < max (e.g., [-3, -2])');
+end
+
+% Extract window boundaries
+baseStartOffset = baseWindow(1);   % Relative to align time
+baseEndOffset = baseWindow(2);     % Relative to align time
+eventStartOffset = eventWindow(1); % Relative to align time
+eventEndOffset = eventWindow(2);   % Relative to align time
+
+% Calculate window durations for reporting
+baseDuration = baseEndOffset - baseStartOffset;
+eventDuration = eventEndOffset - eventStartOffset;
 
 if threshold <= 0
     error('Threshold must be positive');
@@ -83,11 +97,10 @@ end
 nAlignTimes = length(alignTimes);
 
 fprintf('Analyzing %d neurons for spike modulation\n', nNeurons);
-fprintf('Bin size: %.3f seconds\n', binSize);
-fprintf('Baseline window: %.1f seconds before event window\n', baseWindow);
-fprintf('Event window: %.1f seconds centered on align time\n', eventWindow);
+fprintf('Baseline window: [%.2f, %.2f] seconds (%.2f sec duration)\n', baseStartOffset, baseEndOffset, baseDuration);
+fprintf('Event window: [%.2f, %.2f] seconds (%.2f sec duration)\n', eventStartOffset, eventEndOffset, eventDuration);
 fprintf('Number of alignment times: %d\n', nAlignTimes);
-fprintf('Modulation threshold: %.1f standard deviations\n', threshold);
+fprintf('Modulation test: Paired t-test (p < 0.05 for significance)\n');
 
 %% Initialize storage
 baseMean = zeros(nNeurons, 1);
@@ -100,6 +113,7 @@ baseStd = zeros(nNeurons, 1);
 eventStd = zeros(nNeurons, 1);
 baseBins = zeros(nNeurons, 1);
 eventBins = zeros(nNeurons, 1);
+pValue = zeros(nNeurons, 1);  % p-value from paired t-test
 
 %% Analyze each neuron
 for i = 1:nNeurons
@@ -116,24 +130,23 @@ for i = 1:nNeurons
     for alignIdx = 1:nAlignTimes
         alignTime = alignTimes(alignIdx);
         
-        % Calculate absolute window times
-        % Event window is centered on align time
-        eventHalfWidth = eventWindow / 2;
-        absEventStart = alignTime - eventHalfWidth;
-        absEventEnd = alignTime + eventHalfWidth;
+        % Calculate absolute window times using input ranges
+        % Baseline window: relative to align time
+        absBaseStart = alignTime + baseStartOffset;
+        absBaseEnd = alignTime + baseEndOffset;
         
-        % Baseline window ends 0.001s before event window starts
-        absBaseEnd = absEventStart - 0.001;
-        absBaseStart = absBaseEnd - baseWindow;
+        % Event window: relative to align time
+        absEventStart = alignTime + eventStartOffset;
+        absEventEnd = alignTime + eventEndOffset;
         
         
         % Count spikes in baseline window for this alignment
         baseSpikes = sum(neuronSpikes >= absBaseStart & neuronSpikes <= absBaseEnd);
-        baseSpikesPerSecond = baseSpikes / baseWindow;
+        baseSpikesPerSecond = baseSpikes / baseDuration;
         
         % Count spikes in event window for this alignment
         eventSpikes = sum(neuronSpikes >= absEventStart & neuronSpikes <= absEventEnd);
-        eventSpikesPerSecond = eventSpikes / eventWindow;
+        eventSpikesPerSecond = eventSpikes / eventDuration;
         
         % Collect spikes per second across all alignments
         allBaseSpikesPerSecond = [allBaseSpikesPerSecond, baseSpikesPerSecond];
@@ -169,7 +182,7 @@ for i = 1:nNeurons
         modulationIndex(i) = eventMean(i);
     end
     
-    % Calculate z-score (standardized difference)
+    % Calculate z-score (standardized difference) for backward compatibility
     if baseStd(i) > 0
         zScore(i) = (eventMean(i) - baseMean(i)) / baseStd(i);
     else
@@ -177,16 +190,46 @@ for i = 1:nNeurons
         zScore(i) = eventMean(i) - baseMean(i);
     end
     
-    % Determine modulation type
-    if abs(zScore(i)) >= threshold
-        isModulated(i) = true;
-        if zScore(i) > 0
-            modulationType{i} = 'positive';
-        else
-            modulationType{i} = 'negative';
+    % Determine modulation using paired t-test instead of z-score threshold
+    % Perform paired t-test between baseline and event windows
+    if length(allBaseSpikesPerSecond) >= 3 && length(allEventSpikesPerSecond) >= 3
+        % Perform paired t-test (event - baseline)
+        try
+            [h, pVal] = ttest(allEventSpikesPerSecond - allBaseSpikesPerSecond);
+            pValue(i) = pVal;
+            
+            % Determine if significant modulation exists
+            if h == 1 && pVal < 0.05  % p < 0.05 for significance
+                isModulated(i) = true;
+                % Determine positive or negative modulation
+                if mean(allEventSpikesPerSecond) > mean(allBaseSpikesPerSecond)
+                    modulationType{i} = 'positive';
+                else
+                    modulationType{i} = 'negative';
+                end
+            else
+                isModulated(i) = false;
+                modulationType{i} = 'none';
+            end
+        catch
+            % If t-test fails, use z-score method as fallback
+            pValue(i) = 1.0;
+            isModulated(i) = false;
+            modulationType{i} = 'none';
         end
     else
-        modulationType{i} = 'none';
+        % Not enough samples for t-test, use z-score method
+        pValue(i) = 1.0;
+        if abs(zScore(i)) >= threshold
+            isModulated(i) = true;
+            if zScore(i) > 0
+                modulationType{i} = 'positive';
+            else
+                modulationType{i} = 'negative';
+            end
+        else
+            modulationType{i} = 'none';
+        end
     end
     
     % Progress indicator
@@ -202,6 +245,7 @@ modulationResults.baseMean = baseMean;
 modulationResults.eventMean = eventMean;
 modulationResults.modulationIndex = modulationIndex;
 modulationResults.zScore = zScore;
+modulationResults.pValue = pValue;
 modulationResults.isModulated = isModulated;
 modulationResults.modulationType = modulationType;
 modulationResults.baseStd = baseStd;

@@ -33,11 +33,14 @@ areasToTest = 1:4;
 plotErrors = true;
 % Plotting toggles
 plotD2 = true;     % plot d2 panels
-plotMrBr = false;   % plot mrBr panels (only if d2 exists for area)
+analyzeMrBr = false;   % plot mrBr panels (only if d2 exists for area)
 
 % NEW: Sliding window d2 calculation options
-calculateSlidingWindowD2 = true;  % Set to true to perform sliding window d2 on mean-centered popActivity
-d2Window = 30;  % Window duration in seconds for collecting popActivity per reach
+analyzeMeanCenteredD2 = true;  % Set to true to perform sliding window d2 on mean-centered popActivity
+d2Window = 36;  % Window duration in seconds for collecting popActivity per reach
+
+% NEW: Modulation analysis options
+analyzeModulation = true;  % Set to true to plot modulated vs unmodulated (combines all conditions)
 
 %
 paths = get_paths;
@@ -64,6 +67,43 @@ optimalBinSize = results.optimalBinSize;
 d2Rea = results.d2;
 mrBrRea = results.mrBr;
 startS = results.startS;
+
+% Extract modulation results if available
+if isfield(results, 'analyzeModulation') && results.analyzeModulation && isfield(results, 'modulationResults')
+    modulationResults = results.modulationResults;
+    fprintf('Loaded modulation analysis results.\n');
+
+    % Display modulation statistics
+    if analyzeModulation
+        fprintf('\n=== Modulation Statistics ===\n');
+        for a = areasToTest
+            if ~isempty(modulationResults{a})
+                fprintf('Area %s: %d/%d neurons modulated (%.1f%%)\n', areas{a}, ...
+                    sum(modulationResults{a}.isModulated), length(modulationResults{a}.neuronIds), ...
+                    100*sum(modulationResults{a}.isModulated)/length(modulationResults{a}.neuronIds));
+            end
+        end
+    end
+    
+    % Extract modulated/unmodulated bin sizes if available
+    if isfield(results, 'optimalBinSizeModulated') && isfield(results, 'optimalBinSizeUnmodulated')
+        optimalBinSizeModulated = results.optimalBinSizeModulated;
+        optimalBinSizeUnmodulated = results.optimalBinSizeUnmodulated;
+        fprintf('Loaded modulated/unmodulated optimal bin sizes.\n');
+    else
+        optimalBinSizeModulated = nan(1, length(areas));
+        optimalBinSizeUnmodulated = nan(1, length(areas));
+    end
+else
+    modulationResults = cell(1, length(areas));
+    optimalBinSizeModulated = nan(1, length(areas));
+    optimalBinSizeUnmodulated = nan(1, length(areas));
+    fprintf('No modulation analysis results found in saved data.\n');
+    if analyzeModulation
+        fprintf('Warning: analyzeModulation is set to true, but no modulation data exists. Setting analyzeModulation to false.\n');
+        analyzeModulation = false;
+    end
+end
 
 % Load reach behavioral data
 fprintf('Loading reach behavioral data from: %s\n', reachDataFile);
@@ -160,7 +200,7 @@ for a = areasToTest
         [~, closestIdx] = min(abs(timePoints - reachTime));
         winStart = closestIdx - halfWindow;
         winEnd = closestIdx + halfWindow;
-        
+
         if winStart >= 1 && winEnd <= length(timePoints)
             if hasD2Area(a)
                 d2Windows{a}(r, :) = d2Values(winStart:winEnd);
@@ -177,14 +217,14 @@ for a = areasToTest
 
     % Calculate mean d2/mrBr values by condition
     % Use shared condition indices
-    if hasD2Area(a)
+            if hasD2Area(a)
         meanD2PeriReachCorr1{a} = nanmean(d2Windows{a}(corr1Idx, :), 1);
         meanD2PeriReachCorr2{a} = nanmean(d2Windows{a}(corr2Idx, :), 1);
         meanD2PeriReachErr1{a} = nanmean(d2Windows{a}(err1Idx, :), 1);
         meanD2PeriReachErr2{a} = nanmean(d2Windows{a}(err2Idx, :), 1);
     end
-    
-    if hasMrBrArea(a)
+
+    if hasMrBrArea(a) && analyzeMrBr
         meanMrBrPeriReachCorr1{a} = nanmean(mrBrWindows{a}(corr1Idx, :), 1);
         meanMrBrPeriReachCorr2{a} = nanmean(mrBrWindows{a}(corr2Idx, :), 1);
         meanMrBrPeriReachErr1{a} = nanmean(mrBrWindows{a}(err1Idx, :), 1);
@@ -195,165 +235,102 @@ end
 
 % ==============================================     Sliding Window D2 Analysis     ==============================================
 
-if calculateSlidingWindowD2
-    fprintf('\n=== Sliding Window D2 Analysis on Mean-Centered Population Activity ===\n');
+if analyzeMeanCenteredD2
+    [slidingD2Windows, meanSlidingD2PeriReachCorr1, meanSlidingD2PeriReachCorr2, meanSlidingD2PeriReachErr1, meanSlidingD2PeriReachErr2] = calculate_sliding_window_d2(results, areasToTest, areas, optimalBinSize, reachStart, windowDurationFrames, d2Window, corr1Idx, corr2Idx, err1Idx, err2Idx);
+end
+
+% ==============================================     Modulation Analysis     ==============================================
+
+if analyzeModulation
+    fprintf('\n=== Modulated vs Unmodulated Peri-Reach Analysis ===\n');
     
-    % Get parameters from results
-    pOrder = results.params.pOrder;
-    critType = results.params.critType;
-    
-    % Initialize storage for sliding window d2 results
-    slidingD2Windows = cell(1, length(areas));
+    % Initialize storage for modulated/unmodulated peri-reach windows
+    d2ModulatedWindows = cell(1, length(areas));
+    d2UnmodulatedWindows = cell(1, length(areas));
+    meanD2ModulatedPeriReach = cell(1, length(areas));
+    meanD2UnmodulatedPeriReach = cell(1, length(areas));
+    timeAxisModulated = cell(1, length(areas));
+    timeAxisUnmodulated = cell(1, length(areas));
     
     for a = areasToTest
-        fprintf('\nProcessing sliding window d2 for area %s...\n', areas{a});
+        fprintf('\nProcessing area %s for modulated vs unmodulated...\n', areas{a});
         
-        % Get population activity for this area
-        popActivityFull = results.popActivity{a};
-        if isempty(popActivityFull)
-            fprintf('Skipping area %s due to missing population activity data.\n', areas{a});
+        % Check if modulation data exists
+        if isempty(modulationResults{a})
+            fprintf('Skipping area %s - no modulation data\n', areas{a});
             continue;
         end
         
-        % Get time points and bin size for this area
-        timePoints = startS{a};
-        binSize = optimalBinSize(a);
+        % Get d2 values for modulated and unmodulated populations
+        d2Mod = results.d2Modulated{a};
+        d2Unmod = results.d2Unmodulated{a};
+        startSMod = results.startSModulated{a};
+        startSUnmod = results.startSUnmodulated{a};
         
-        % Calculate window parameters
-        d2WindowFrames = ceil(d2Window / binSize);
-        halfD2Window = floor(d2WindowFrames / 2);
+        if isempty(d2Mod) || isempty(d2Unmod)
+            fprintf('Skipping area %s - no modulated/unmodulated d2 data\n', areas{a});
+            continue;
+        end
         
-        % Calculate sliding window parameters
-        stepSamples = round(results.d2StepSize(a) / binSize);
-        winSamples = round(results.d2WindowSize(a) / binSize);
+        % Get the appropriate bin sizes for each population
+        if ~isnan(optimalBinSizeModulated(a)) && optimalBinSizeModulated(a) > 0
+            binSizeMod = optimalBinSizeModulated(a);
+        else
+            binSizeMod = optimalBinSize(a);
+        end
         
-        % Initialize storage for all reach windows
-        slidingD2Windows{a} = nan(totalReaches, windowDurationFrames{a} + 1);
+        if ~isnan(optimalBinSizeUnmodulated(a)) && optimalBinSizeUnmodulated(a) > 0
+            binSizeUnmod = optimalBinSizeUnmodulated(a);
+        else
+            binSizeUnmod = optimalBinSize(a);
+        end
         
-        % Collect all popActivity windows for mean-centering
-        allPopActivityWindows = [];
-        validReachIndices = [];
+        % Calculate window parameters for each population
+        windowDurationFramesMod = ceil(windowDurationSec / binSizeMod);
+        windowDurationFramesUnmod = ceil(windowDurationSec / binSizeUnmod);
+        halfWindowMod = floor(windowDurationFramesMod / 2);
+        halfWindowUnmod = floor(windowDurationFramesUnmod / 2);
         
-        % First pass: collect all valid popActivity windows for mean-centering
+        % Create time axis for each population (centered on reach onset, 0 at center)
+        timeAxisModulated{a} = (-halfWindowMod:halfWindowMod) * binSizeMod;
+        timeAxisUnmodulated{a} = (-halfWindowUnmod:halfWindowUnmod) * binSizeUnmod;
+        
+        % Initialize storage for each population using its window size
+        d2ModulatedWindows{a} = nan(totalReaches, windowDurationFramesMod + 1);
+        d2UnmodulatedWindows{a} = nan(totalReaches, windowDurationFramesUnmod + 1);
+        
+        % Extract around each reach (same approach as normal d2)
         for r = 1:totalReaches
             reachTime = reachStart(r)/1000; % Convert to seconds
-            [~, closestIdx] = min(abs(timePoints - reachTime));
-            winStart = closestIdx - halfD2Window;
-            winEnd = closestIdx + halfD2Window;
             
-            if winStart >= 1 && winEnd <= length(popActivityFull)
-                popWindow = popActivityFull(winStart:winEnd);
-                allPopActivityWindows = [allPopActivityWindows; popWindow];
-                validReachIndices = [validReachIndices, r];
-            end
-        end
-        
-        if isempty(allPopActivityWindows)
-            fprintf('No valid popActivity windows found for area %s\n', areas{a});
-            continue;
-        end
-        
-        % Calculate mean popActivity across all valid reaches
-        meanPopActivity = mean(allPopActivityWindows, 1);
-        
-        % Mean-center each popActivity window
-        meanCenteredPopActivity = allPopActivityWindows - meanPopActivity;
-        
-        % Second pass: perform sliding window d2 analysis on each mean-centered reach
-        for reachIdx = 1:length(validReachIndices)
-            r = validReachIndices(reachIdx);
-            reachTime = reachStart(r)/1000;
-            [~, closestIdx] = min(abs(timePoints - reachTime));
+            % Modulated population
+            [~, closestIdxMod] = min(abs(startSMod - reachTime));
+            winStartMod = closestIdxMod - halfWindowMod;
+            winEndMod = closestIdxMod + halfWindowMod;
             
-            % Get the mean-centered popActivity for this reach
-            meanCenteredPop = meanCenteredPopActivity(reachIdx, :);
-            
-            % Perform sliding window d2 analysis within the d2Window
-            % The sliding window should slide from half-window-size into the d2Window
-            % until half-window-size remains, with results centered on d2Window center
-            
-            % Calculate how many sliding windows we can fit within the d2Window
-            % Start when we have a full sliding window, end when we have a full sliding window remaining
-            startOffset = floor(winSamples / 2);  % Half sliding window size
-            endOffset = floor(winSamples / 2);    % Half sliding window size
-            
-            % Calculate the range of sliding window positions within d2Window
-            maxStartPos = length(meanCenteredPop) - winSamples - endOffset + 1;
-            minStartPos = startOffset + 1;
-            
-            if maxStartPos >= minStartPos
-                % Calculate number of sliding windows that fit
-                numSlidingWindows = floor((maxStartPos - minStartPos) / stepSamples) + 1;
-                
-                % Initialize array to store d2 values at their proper positions
-                slidingD2Values = nan(1, d2WindowFrames);
-                
-                for w = 1:numSlidingWindows
-                    % Calculate start position for this sliding window
-                    startIdx = minStartPos + (w - 1) * stepSamples;
-                    endIdx = startIdx + winSamples - 1;
-                    
-                    if endIdx <= length(meanCenteredPop)
-                        wPopActivity = meanCenteredPop(startIdx:endIdx);
-                        
-                        % Calculate d2 using Yule-Walker
-                        try
-                            [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
-                            d2Value = getFixedPointDistance2(pOrder, critType, varphi);
-                            
-                            % Store d2 value at the center position of the sliding window
-                            centerPos = startIdx + floor(winSamples / 2);
-                            if centerPos >= 1 && centerPos <= length(slidingD2Values)
-                                slidingD2Values(centerPos) = d2Value;
-                            end
-                        catch
-                            % Leave as NaN if calculation fails
-                        end
-                    end
-                end
+            if winStartMod >= 1 && winEndMod <= length(startSMod)
+                d2ModulatedWindows{a}(r, :) = d2Mod(winStartMod:winEndMod);
             else
-                slidingD2Values = nan(1, d2WindowFrames);
+                d2ModulatedWindows{a}(r, :) = nan(1, windowDurationFramesMod + 1);
             end
             
-            % Map sliding window d2 values to peri-reach window
-            % The d2Window is centered on the reach time, so we need to map
-            % the sliding window d2 values to the peri-reach window centered on reach time
+            % Unmodulated population
+            [~, closestIdxUnmod] = min(abs(startSUnmod - reachTime));
+            winStartUnmod = closestIdxUnmod - halfWindowUnmod;
+            winEndUnmod = closestIdxUnmod + halfWindowUnmod;
             
-            winStartPeri = closestIdx - halfWindow;
-            winEndPeri = closestIdx + halfWindow;
-            
-            if winStartPeri >= 1 && winEndPeri <= length(timePoints)
-                % The d2Window starts at (closestIdx - halfD2Window) and ends at (closestIdx + halfD2Window)
-                % The peri-reach window starts at (closestIdx - halfWindow) and ends at (closestIdx + halfWindow)
-                
-                % Calculate the offset between d2Window start and peri-reach window start
-                d2WindowStart = closestIdx - halfD2Window;
-                periWindowStart = closestIdx - halfWindow;
-                offsetToPeriWindow = periWindowStart - d2WindowStart;
-                
-                % Map each d2 value from d2Window coordinates to peri-reach window coordinates
-                for d2Idx = 1:length(slidingD2Values)
-                    if ~isnan(slidingD2Values(d2Idx))
-                        % Convert d2Window index to peri-reach window index
-                        periIdx = d2Idx + offsetToPeriWindow;
-                        
-                        % Ensure the index is within the peri-reach window bounds
-                        if periIdx >= 1 && periIdx <= size(slidingD2Windows{a}, 2)
-                            slidingD2Windows{a}(r, periIdx) = slidingD2Values(d2Idx);
-                        end
-                    end
-                end
-            end
+            if winStartUnmod >= 1 && winEndUnmod <= length(startSUnmod)
+                d2UnmodulatedWindows{a}(r, :) = d2Unmod(winStartUnmod:winEndUnmod);
+            else
+                d2UnmodulatedWindows{a}(r, :) = nan(1, windowDurationFramesUnmod + 1);
         end
+    end
+
+        % Calculate mean across all reaches (combining all conditions)
+        meanD2ModulatedPeriReach{a} = nanmean(d2ModulatedWindows{a}, 1);
+        meanD2UnmodulatedPeriReach{a} = nanmean(d2UnmodulatedWindows{a}, 1);
         
-        % Calculate mean sliding d2 values by condition
-        % Use shared condition indices
-        meanSlidingD2PeriReachCorr1{a} = nanmean(slidingD2Windows{a}(corr1Idx, :), 1);
-        meanSlidingD2PeriReachCorr2{a} = nanmean(slidingD2Windows{a}(corr2Idx, :), 1);
-        meanSlidingD2PeriReachErr1{a} = nanmean(slidingD2Windows{a}(err1Idx, :), 1);
-        meanSlidingD2PeriReachErr2{a} = nanmean(slidingD2Windows{a}(err2Idx, :), 1);
-        
-        fprintf('Area %s: Sliding window d2 analysis completed\n', areas{a});
+        fprintf('Area %s: Modulated vs unmodulated analysis completed\n', areas{a});
     end
 end
 
@@ -361,12 +338,13 @@ end
 
 
 % Create peri-reach plots for each area
-if calculateSlidingWindowD2
-    % 3 rows: original d2, sliding window d2, mrBr
-    numRows = 3;
-else
-    % 2 rows: original d2, mrBr
-    numRows = 2;
+% Determine number of rows based on enabled analyses
+numRows = 1; % Always plot original d2 (row 1)
+if analyzeMeanCenteredD2
+    numRows = numRows + 1; % Mean-centered d2 (row 2)
+end
+if analyzeModulation
+    numRows = numRows + 1; % Modulated vs unmodulated (row 3)
 end
 
 figure(300 + slidingWindowSize); clf;
@@ -385,89 +363,381 @@ ha = tight_subplot(numRows, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
 
 colors = {'k', [0 0 .6], [.6 0 0], [0 0.6 0]};
 
+% Initialize modulated/unmodulated variables if not created
+if ~exist('d2ModulatedWindows', 'var')
+    d2ModulatedWindows = cell(1, length(areas));
+    d2UnmodulatedWindows = cell(1, length(areas));
+    meanD2ModulatedPeriReach = cell(1, length(areas));
+    meanD2UnmodulatedPeriReach = cell(1, length(areas));
+    timeAxisModulated = cell(1, length(areas));
+    timeAxisUnmodulated = cell(1, length(areas));
+end
 
-% Compute global y-limits across areas (use mean traces; include errors if enabled)
-allMeanVals = [];
+% Calculate plot y-limits
+[yLimCommon, slidingD2YLim] = calculate_d2_plot_ylimits(meanD2PeriReachCorr1, meanD2PeriReachCorr2, meanD2PeriReachErr1, meanD2PeriReachErr2, meanSlidingD2PeriReachCorr1, meanSlidingD2PeriReachCorr2, meanSlidingD2PeriReachErr1, meanSlidingD2PeriReachErr2, meanD2ModulatedPeriReach, meanD2UnmodulatedPeriReach, areasToTest, plotErrors, analyzeMeanCenteredD2, analyzeModulation);
+
+% Calculate mrBr y-limits separately (only if plotting mrBr)
+if analyzeMrBr
+    mrBrYLim = calculate_mrbr_plot_ylimits(mrBrWindows, corr1Idx, corr2Idx, err1Idx, err2Idx, areasToTest, plotErrors, analyzeMrBr);
+else
+    mrBrYLim = [0, 1]; % Default fallback
+end
+
+% Create all plots using function
+create_peri_reach_plots(d2Windows, mrBrWindows, slidingD2Windows, d2ModulatedWindows, d2UnmodulatedWindows, timeAxisPeriReach, timeAxisModulated, timeAxisUnmodulated, meanD2PeriReachCorr1, meanD2PeriReachCorr2, meanD2PeriReachErr1, meanD2PeriReachErr2, meanSlidingD2PeriReachCorr1, meanSlidingD2PeriReachCorr2, meanSlidingD2PeriReachErr1, meanSlidingD2PeriReachErr2, meanD2ModulatedPeriReach, meanD2UnmodulatedPeriReach, areasToTest, areas, slidingWindowSize, filePrefix, plotD2, analyzeMrBr, plotErrors, analyzeMeanCenteredD2, analyzeModulation, yLimCommon, mrBrYLim, slidingD2YLim, corr1Idx, corr2Idx, err1Idx, err2Idx, saveDir, colors, ha, numCols, hasD2Area);
+
+% Generate title based on enabled analyses
+if analyzeMeanCenteredD2 && analyzeModulation && analyzeMrBr
+    sgtitle(sprintf('%s - d2, Sliding d2, Mod/Unmod, mrBr (Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
+elseif analyzeMeanCenteredD2 && analyzeModulation
+    sgtitle(sprintf('%s - d2, Sliding d2, Mod/Unmod (Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
+elseif analyzeModulation && analyzeMrBr
+    sgtitle(sprintf('%s - d2, Mod/Unmod, mrBr (Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
+elseif analyzeMeanCenteredD2 && analyzeMrBr
+    sgtitle(sprintf('%s - Peri-Reach d2 (top), Sliding Window d2 (middle), and mrBr (bottom) (Sliding Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
+elseif analyzeMeanCenteredD2
+    sgtitle(sprintf('%s - Peri-Reach d2 (top) and Sliding Window d2 (bottom) (Sliding Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
+elseif analyzeModulation
+    sgtitle(sprintf('%s - Peri-Reach d2 (top) and Modulated vs Unmodulated (Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
+elseif analyzeMrBr
+    sgtitle(sprintf('%s - Peri-Reach d2 (top) and mrBr (bottom) (Sliding Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
+else
+    sgtitle(sprintf('%s - Peri-Reach d2 (Sliding Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
+end
+
+% Save combined figure (in same data-specific folder)
+if analyzeMeanCenteredD2 && analyzeModulation && analyzeMrBr
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_sliding_mod_unmod_mrbr_win%gs.png', filePrefix, slidingWindowSize));
+    fprintf('Saved peri-reach d2+sliding+mod/unmod+mrBr plot to: %s\n', filename);
+elseif analyzeMeanCenteredD2 && analyzeModulation
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_sliding_mod_unmod_win%gs.png', filePrefix, slidingWindowSize));
+    fprintf('Saved peri-reach d2+sliding+mod/unmod plot to: %s\n', filename);
+elseif analyzeModulation && analyzeMrBr
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_mod_unmod_mrbr_win%gs.png', filePrefix, slidingWindowSize));
+    fprintf('Saved peri-reach d2+mod/unmod+mrBr plot to: %s\n', filename);
+elseif analyzeModulation
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_mod_unmod_win%gs.png', filePrefix, slidingWindowSize));
+    fprintf('Saved peri-reach d2+mod/unmod plot to: %s\n', filename);
+elseif analyzeMeanCenteredD2 && analyzeMrBr
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_sliding_d2_mrbr_win%gs.png', filePrefix, slidingWindowSize));
+    fprintf('Saved peri-reach d2+sliding d2+mrBr plot to: %s\n', filename);
+elseif analyzeMeanCenteredD2
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_sliding_d2_win%gs.png', filePrefix, slidingWindowSize));
+    fprintf('Saved peri-reach d2+sliding d2 plot to: %s\n', filename);
+elseif analyzeMrBr
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_mrbr_win%gs.png', filePrefix, slidingWindowSize));
+    fprintf('Saved peri-reach d2+mrBr plot to: %s\n', filename);
+else
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_win%gs.png', filePrefix, slidingWindowSize));
+    fprintf('Saved peri-reach d2 plot to: %s\n', filename);
+end
+exportgraphics(gcf, filename, 'Resolution', 300);
+
+%% ==============================================     Summary Statistics     ==============================================
+
+fprintf('\n=== Peri-Reach Analysis Summary ===\n');
+for a = areasToTest
+    fprintf('\nArea %s:\n', areas{a});
+    fprintf('  Total reaches: %d\n', totalReaches);
+    fprintf('  Valid reaches: %d\n', sum(~all(isnan(d2Windows{a}), 2)));
+    if hasD2Area(a) && ~isempty(meanD2PeriReachCorr1{a})
+        halfWindow = floor(windowDurationFrames{a} / 2);
+        fprintf('  Mean d2 at reach onset: %.4f\n', meanD2PeriReachCorr1{a}(halfWindow + 1));
+        fprintf('  Mean d2 pre-reach (-1s): %.4f\n', meanD2PeriReachCorr1{a}(halfWindow - round(1/optimalBinSize(a)) + 1));
+        fprintf('  Mean d2 post-reach (+1s): %.4f\n', meanD2PeriReachCorr1{a}(halfWindow + round(1/optimalBinSize(a)) + 1));
+    end
+end
+
+fprintf('\nPeri-reach analysis complete!\n');
+
+%% =============================    Function Definitions    =============================
+
+function [slidingD2Windows, meanSlidingD2PeriReachCorr1, meanSlidingD2PeriReachCorr2, meanSlidingD2PeriReachErr1, meanSlidingD2PeriReachErr2] = ...
+    calculate_sliding_window_d2(results, areasToTest, areas, optimalBinSize, reachStart, windowDurationFrames, d2Window, corr1Idx, corr2Idx, err1Idx, err2Idx)
+% Calculate sliding window d2 analysis on mean-centered population activity
+fprintf('\n=== D2 Analysis on Mean-Centered Population Activity ===\n');
+
+% Get parameters from results
+pOrder = results.params.pOrder;
+critType = results.params.critType;
+
+% Initialize storage for sliding window d2 results
+slidingD2Windows = cell(1, length(areas));
+meanSlidingD2PeriReachCorr1 = cell(1, length(areas));
+meanSlidingD2PeriReachCorr2 = cell(1, length(areas));
+meanSlidingD2PeriReachErr1 = cell(1, length(areas));
+meanSlidingD2PeriReachErr2 = cell(1, length(areas));
+
+totalReaches = length(reachStart);
+
+for a = areasToTest
+    fprintf('\nProcessing sliding window d2 for area %s...\n', areas{a});
+
+    % Get population activity for this area
+    popActivityFull = results.popActivity{a};
+    if isempty(popActivityFull)
+        fprintf('Skipping area %s due to missing population activity data.\n', areas{a});
+        continue;
+    end
+
+    % Get time points and bin size for this area
+    binSize = optimalBinSize(a);
+    timePoints = 0 : binSize : length(popActivityFull)*binSize - binSize; % real time points (not sliding window centers)
+
+    % Calculate window parameters
+    d2WindowFrames = ceil(d2Window / binSize);
+    halfD2Window = floor(d2WindowFrames / 2);
+
+    % Calculate sliding window parameters
+    stepSamples = round(results.d2StepSize(a) / binSize);
+    winSamples = round(results.d2WindowSize(a) / binSize);
+
+    % Initialize storage for all reach windows
+    slidingD2Windows{a} = nan(totalReaches, windowDurationFrames{a} + 1);
+
+    % Collect all popActivity windows for mean-centering
+    allPopActivityWindows = [];
+    validReachIndices = [];
+
+    % First pass: collect all valid popActivity windows for mean-centering
+    for r = 1:totalReaches
+        reachTime = reachStart(r)/1000; % Convert to seconds
+        [~, closestIdx] = min(abs(timePoints - reachTime));
+        winStart = closestIdx - halfD2Window;
+        winEnd = closestIdx + halfD2Window-1;
+
+        if winStart >= 1 && winEnd <= length(popActivityFull)
+            popWindow = popActivityFull(winStart:winEnd);
+            allPopActivityWindows = [allPopActivityWindows; popWindow'];
+            validReachIndices = [validReachIndices, r];
+        end
+    end
+
+    if isempty(allPopActivityWindows)
+        fprintf('No valid popActivity windows found for area %s\n', areas{a});
+        continue;
+    end
+
+    % Calculate mean popActivity across all valid reaches
+    meanPopActivity = mean(allPopActivityWindows, 1);
+
+    % Mean-center each popActivity window
+    meanCenteredPopActivity = allPopActivityWindows - meanPopActivity;
+
+    % Second pass: perform sliding window d2 analysis on each mean-centered reach
+    for reachIdx = 1:length(validReachIndices)
+        r = validReachIndices(reachIdx);
+        reachTime = reachStart(r)/1000;
+        [~, closestIdx] = min(abs(timePoints - reachTime));
+
+        % Get the mean-centered popActivity for this reach
+        meanCenteredPop = meanCenteredPopActivity(reachIdx, :);
+
+        % Perform sliding window d2 analysis within the d2Window
+        % The sliding window should slide from half-window-size into the d2Window
+        % until half-window-size remains, with results centered on d2Window center
+
+        % Calculate how many sliding windows we can fit within the d2Window
+        % Start when we have a full sliding window, end when we have a full sliding window remaining
+        startOffset = floor(winSamples / 2);  % Half sliding window size
+        endOffset = floor(winSamples / 2);    % Half sliding window size
+
+        % Calculate the range of sliding window positions within d2Window
+        maxStartPos = length(meanCenteredPop) - winSamples - endOffset + 1;
+        minStartPos = startOffset + 1;
+
+        if maxStartPos >= minStartPos
+            % Calculate number of sliding windows that fit
+            numSlidingWindows = floor((maxStartPos - minStartPos) / stepSamples) + 1;
+
+            % Initialize array to store d2 values at their proper positions
+            slidingD2Values = nan(1, d2WindowFrames);
+
+            for w = 1:numSlidingWindows
+                % Calculate start position for this sliding window
+                startIdx = minStartPos + (w - 1) * stepSamples;
+                endIdx = startIdx + winSamples - 1;
+
+                if endIdx <= length(meanCenteredPop)
+                    wPopActivity = meanCenteredPop(startIdx:endIdx);
+
+                    % Calculate d2 using Yule-Walker
+                    try
+                        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                        d2Value = getFixedPointDistance2(pOrder, critType, varphi);
+
+                        % Store d2 value at the center position of the sliding window
+                        centerPos = startIdx + floor(winSamples / 2);
+                        if centerPos >= 1 && centerPos <= length(slidingD2Values)
+                            slidingD2Values(centerPos) = d2Value;
+                        end
+                    catch
+                        % Leave as NaN if calculation fails
+                    end
+                end
+            end
+        else
+            slidingD2Values = nan(1, d2WindowFrames);
+        end
+
+        % Map sliding window d2 values to peri-reach window
+        % Both windows should be centered on the reach time (closestIdx)
+
+        halfWindow = floor(windowDurationFrames{a} / 2);
+        winStartPeri = closestIdx - halfWindow;
+        winEndPeri = closestIdx + halfWindow;
+
+        if winStartPeri >= 1 && winEndPeri <= length(timePoints)
+            % The sliding window d2 analysis is performed within the d2Window
+            % which is centered on the reach time. We need to map these values
+            % to the peri-reach window which is also centered on the reach time.
+
+            % Calculate the center position of the d2Window (where reach onset is)
+            d2WindowCenter = floor(d2WindowFrames / 2) + 1;
+
+            % Map sliding window d2 values to peri-reach window
+            % The center of the d2Window (reach onset) should align with the center of the peri-reach window
+            for d2Idx = 1:length(slidingD2Values)
+                if ~isnan(slidingD2Values(d2Idx))
+                    % Calculate offset from d2Window center
+                    offsetFromCenter = d2Idx - d2WindowCenter;
+
+                    % Map to peri-reach window center + offset
+                    periIdx = floor(windowDurationFrames{a} / 2) + 1 + offsetFromCenter;
+
+                    % Ensure the index is within the peri-reach window bounds
+                    if periIdx >= 1 && periIdx <= size(slidingD2Windows{a}, 2)
+                        slidingD2Windows{a}(r, periIdx) = slidingD2Values(d2Idx);
+                    end
+                end
+            end
+        end
+    end
+
+    % Calculate mean sliding d2 values by condition
+    % Use shared condition indices
+    meanSlidingD2PeriReachCorr1{a} = nanmean(slidingD2Windows{a}(corr1Idx, :), 1);
+    meanSlidingD2PeriReachCorr2{a} = nanmean(slidingD2Windows{a}(corr2Idx, :), 1);
+    meanSlidingD2PeriReachErr1{a} = nanmean(slidingD2Windows{a}(err1Idx, :), 1);
+    meanSlidingD2PeriReachErr2{a} = nanmean(slidingD2Windows{a}(err2Idx, :), 1);
+
+    fprintf('Area %s: Sliding window d2 analysis completed\n', areas{a});
+end
+end
+
+function [yLimCommon, slidingD2YLim] = calculate_d2_plot_ylimits(meanD2PeriReachCorr1, meanD2PeriReachCorr2, meanD2PeriReachErr1, meanD2PeriReachErr2, meanSlidingD2PeriReachCorr1, meanSlidingD2PeriReachCorr2, meanSlidingD2PeriReachErr1, meanSlidingD2PeriReachErr2, meanD2ModulatedPeriReach, meanD2UnmodulatedPeriReach, areasToTest, plotErrors, analyzeMeanCenteredD2, analyzeModulation)
+% Calculate unified global y-limits for all d2 plots (normal, mean-centered, and modulated/unmodulated)
+
+% Collect all d2 values for unified y-limits
+allD2Vals = [];
+
+% Add normal d2 values
 for a = areasToTest
     % Block 1 (correct and error)
     if ~isempty(meanD2PeriReachCorr1{a})
-        allMeanVals = [allMeanVals; meanD2PeriReachCorr1{a}(:)]; %#ok<AGROW>
+        allD2Vals = [allD2Vals; meanD2PeriReachCorr1{a}(:)]; %#ok<AGROW>
     end
     if plotErrors && ~isempty(meanD2PeriReachErr1{a})
-        allMeanVals = [allMeanVals; meanD2PeriReachErr1{a}(:)]; %#ok<AGROW>
+        allD2Vals = [allD2Vals; meanD2PeriReachErr1{a}(:)]; %#ok<AGROW>
     end
     % Block 2 (correct and error)
     if ~isempty(meanD2PeriReachCorr2{a})
-        allMeanVals = [allMeanVals; meanD2PeriReachCorr2{a}(:)]; %#ok<AGROW>
+        allD2Vals = [allD2Vals; meanD2PeriReachCorr2{a}(:)]; %#ok<AGROW>
     end
     if plotErrors && ~isempty(meanD2PeriReachErr2{a})
-        allMeanVals = [allMeanVals; meanD2PeriReachErr2{a}(:)]; %#ok<AGROW>
+        allD2Vals = [allD2Vals; meanD2PeriReachErr2{a}(:)]; %#ok<AGROW>
     end
 end
-globalYMin = nanmin(allMeanVals);
-globalYMax = nanmax(allMeanVals);
+
+% Add mean-centered d2 values (if enabled)
+if analyzeMeanCenteredD2
+    for a = areasToTest
+        % Block 1 (correct and error)
+        if ~isempty(meanSlidingD2PeriReachCorr1{a})
+            allD2Vals = [allD2Vals; meanSlidingD2PeriReachCorr1{a}(:)];
+        end
+        if plotErrors && ~isempty(meanSlidingD2PeriReachErr1{a})
+            allD2Vals = [allD2Vals; meanSlidingD2PeriReachErr1{a}(:)];
+        end
+        % Block 2 (correct and error)
+        if ~isempty(meanSlidingD2PeriReachCorr2{a})
+            allD2Vals = [allD2Vals; meanSlidingD2PeriReachCorr2{a}(:)];
+        end
+        if plotErrors && ~isempty(meanSlidingD2PeriReachErr2{a})
+            allD2Vals = [allD2Vals; meanSlidingD2PeriReachErr2{a}(:)];
+        end
+    end
+end
+
+% Add modulated/unmodulated d2 values (if enabled)
+if analyzeModulation
+    for a = areasToTest
+        if ~isempty(meanD2ModulatedPeriReach{a})
+            allD2Vals = [allD2Vals; meanD2ModulatedPeriReach{a}(:)];
+        end
+        if ~isempty(meanD2UnmodulatedPeriReach{a})
+            allD2Vals = [allD2Vals; meanD2UnmodulatedPeriReach{a}(:)];
+        end
+    end
+end
+
+% Calculate unified y-limits
+globalYMin = nanmin(allD2Vals);
+globalYMax = nanmax(allD2Vals);
 if isempty(globalYMin) || isempty(globalYMax) || isnan(globalYMin) || isnan(globalYMax)
     globalYMin = 0; globalYMax = 1;
 end
 % Add small padding
 pad = 0.05 * (globalYMax - globalYMin + eps);
-yLimCommon = [globalYMin - pad, globalYMax + pad];
+unifiedYLim = [globalYMin - pad, globalYMax + pad];
 
-    % Compute global mrBr y-limits across areas (use mean traces; include errors if enabled)
-if plotMrBr
+% Use the same y-limits for both normal d2 and sliding window d2
+yLimCommon = unifiedYLim;
+slidingD2YLim = unifiedYLim;
+end
+
+function mrBrYLim = calculate_mrbr_plot_ylimits(mrBrWindows, corr1Idx, corr2Idx, err1Idx, err2Idx, areasToTest, plotErrors, analyzeMrBr)
+% Calculate global y-limits for mrBr plots
+
 allMrBrMeanVals = [];
 for a = areasToTest
-    if ~isempty(meanMrBrPeriReachCorr1{a})
-        allMrBrMeanVals = [allMrBrMeanVals; meanMrBrPeriReachCorr1{a}(:)];
-    end
-    if ~isempty(meanMrBrPeriReachCorr2{a})
-        allMrBrMeanVals = [allMrBrMeanVals; meanMrBrPeriReachCorr2{a}(:)];
-    end
-    if plotErrors
-        if ~isempty(meanMrBrPeriReachErr1{a})
-            allMrBrMeanVals = [allMrBrMeanVals; meanMrBrPeriReachErr1{a}(:)];
+    if ~isempty(mrBrWindows{a})
+        % Calculate mean mrBr values for each condition
+        meanMrBrCorr1 = nanmean(mrBrWindows{a}(corr1Idx, :), 1);
+        meanMrBrCorr2 = nanmean(mrBrWindows{a}(corr2Idx, :), 1);
+
+        if ~isempty(meanMrBrCorr1)
+            allMrBrMeanVals = [allMrBrMeanVals; meanMrBrCorr1(:)];
         end
-        if ~isempty(meanMrBrPeriReachErr2{a})
-            allMrBrMeanVals = [allMrBrMeanVals; meanMrBrPeriReachErr2{a}(:)];
+        if ~isempty(meanMrBrCorr2)
+            allMrBrMeanVals = [allMrBrMeanVals; meanMrBrCorr2(:)];
+        end
+
+        if plotErrors
+            meanMrBrErr1 = nanmean(mrBrWindows{a}(err1Idx, :), 1);
+            meanMrBrErr2 = nanmean(mrBrWindows{a}(err2Idx, :), 1);
+
+            if ~isempty(meanMrBrErr1)
+                allMrBrMeanVals = [allMrBrMeanVals; meanMrBrErr1(:)];
+            end
+            if ~isempty(meanMrBrErr2)
+                allMrBrMeanVals = [allMrBrMeanVals; meanMrBrErr2(:)];
+            end
         end
     end
 end
+
 mrBrYMin = nanmin(allMrBrMeanVals);
 if isempty(mrBrYMin) || isnan(mrBrYMin)
     mrBrYMin = 0; % fallback
 end
 mrBrYMin = mrBrYMin - 0.05; % minimum minus 0.05
 mrBrYMax = 1.05;            % maximum is 1 plus 0.05
+mrBrYLim = [mrBrYMin, mrBrYMax];
 end
 
-% Compute global sliding window d2 y-limits across areas (if enabled)
-if calculateSlidingWindowD2
-    allSlidingD2MeanVals = [];
-    for a = areasToTest
-        % Block 1 (correct and error)
-        if ~isempty(meanSlidingD2PeriReachCorr1{a})
-            allSlidingD2MeanVals = [allSlidingD2MeanVals; meanSlidingD2PeriReachCorr1{a}(:)];
-        end
-        if plotErrors && ~isempty(meanSlidingD2PeriReachErr1{a})
-            allSlidingD2MeanVals = [allSlidingD2MeanVals; meanSlidingD2PeriReachErr1{a}(:)];
-        end
-        % Block 2 (correct and error)
-        if ~isempty(meanSlidingD2PeriReachCorr2{a})
-            allSlidingD2MeanVals = [allSlidingD2MeanVals; meanSlidingD2PeriReachCorr2{a}(:)];
-        end
-        if plotErrors && ~isempty(meanSlidingD2PeriReachErr2{a})
-            allSlidingD2MeanVals = [allSlidingD2MeanVals; meanSlidingD2PeriReachErr2{a}(:)];
-        end
-    end
-    slidingD2YMin = nanmin(allSlidingD2MeanVals);
-    slidingD2YMax = nanmax(allSlidingD2MeanVals);
-    if isempty(slidingD2YMin) || isnan(slidingD2YMin) || isempty(slidingD2YMax) || isnan(slidingD2YMax)
-        slidingD2YMin = 0; slidingD2YMax = 1;
-    end
-    % Add small padding
-    pad = 0.05 * (slidingD2YMax - slidingD2YMin + eps);
-    slidingD2YLim = [slidingD2YMin - pad, slidingD2YMax + pad];
-end
+function create_peri_reach_plots(d2Windows, mrBrWindows, slidingD2Windows, d2ModulatedWindows, d2UnmodulatedWindows, timeAxisPeriReach, timeAxisModulated, timeAxisUnmodulated, meanD2PeriReachCorr1, meanD2PeriReachCorr2, meanD2PeriReachErr1, meanD2PeriReachErr2, meanSlidingD2PeriReachCorr1, meanSlidingD2PeriReachCorr2, meanSlidingD2PeriReachErr1, meanSlidingD2PeriReachErr2, meanD2ModulatedPeriReach, meanD2UnmodulatedPeriReach, areasToTest, areas, slidingWindowSize, filePrefix, plotD2, analyzeMrBr, plotErrors, analyzeMeanCenteredD2, analyzeModulation, yLimCommon, mrBrYLim, slidingD2YLim, corr1Idx, corr2Idx, err1Idx, err2Idx, saveDir, colors, ha, numCols, hasD2Area)
+% Create all peri-reach plots
 
 for idx = 1:length(areasToTest)
     a = areasToTest(idx);
@@ -559,15 +829,15 @@ for idx = 1:length(areasToTest)
     end
 
     % Middle row: Sliding Window d2 (if enabled)
-    if calculateSlidingWindowD2
-        axes(ha(numCols + idx));
-        hold on;
+    if analyzeMeanCenteredD2
+    axes(ha(numCols + idx));
+    hold on;
 
         % Determine if sliding window d2 data exist for this area
         hasSlidingD2 = (~isempty(meanSlidingD2PeriReachCorr1{a}) && any(~isnan(meanSlidingD2PeriReachCorr1{a}))) || ...
-                       (~isempty(meanSlidingD2PeriReachCorr2{a}) && any(~isnan(meanSlidingD2PeriReachCorr2{a}))) || ...
-                       (plotErrors && ~isempty(meanSlidingD2PeriReachErr1{a}) && any(~isnan(meanSlidingD2PeriReachErr1{a}))) || ...
-                       (plotErrors && ~isempty(meanSlidingD2PeriReachErr2{a}) && any(~isnan(meanSlidingD2PeriReachErr2{a})));
+            (~isempty(meanSlidingD2PeriReachCorr2{a}) && any(~isnan(meanSlidingD2PeriReachCorr2{a}))) || ...
+            (plotErrors && ~isempty(meanSlidingD2PeriReachErr1{a}) && any(~isnan(meanSlidingD2PeriReachErr1{a}))) || ...
+            (plotErrors && ~isempty(meanSlidingD2PeriReachErr2{a}) && any(~isnan(meanSlidingD2PeriReachErr2{a})));
 
         % Compute x-limits safely
         if ~isempty(timeAxisPeriReach{a})
@@ -591,19 +861,19 @@ for idx = 1:length(areasToTest)
             colCorr1 = baseColor;                                % block 1
             colCorr2 = min(1, baseColor + 0.4);                  % lighten for block 2
             fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-                 [meanSlidingD2PeriReachCorr1{a} + semSlidingCorr1, fliplr(meanSlidingD2PeriReachCorr1{a} - semSlidingCorr1)], ...
-                 colCorr1, 'FaceAlpha', 0.35, 'EdgeColor', 'none');
+                [meanSlidingD2PeriReachCorr1{a} + semSlidingCorr1, fliplr(meanSlidingD2PeriReachCorr1{a} - semSlidingCorr1)], ...
+                colCorr1, 'FaceAlpha', 0.35, 'EdgeColor', 'none');
             fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-                 [meanSlidingD2PeriReachCorr2{a} + semSlidingCorr2, fliplr(meanSlidingD2PeriReachCorr2{a} - semSlidingCorr2)], ...
-                 colCorr2, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+                [meanSlidingD2PeriReachCorr2{a} + semSlidingCorr2, fliplr(meanSlidingD2PeriReachCorr2{a} - semSlidingCorr2)], ...
+                colCorr2, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
 
             if plotErrors
                 fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-                     [meanSlidingD2PeriReachErr1{a} + semSlidingErr1, fliplr(meanSlidingD2PeriReachErr1{a} - semSlidingErr1)], ...
-                     colCorr1, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+                    [meanSlidingD2PeriReachErr1{a} + semSlidingErr1, fliplr(meanSlidingD2PeriReachErr1{a} - semSlidingErr1)], ...
+                    colCorr1, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
                 fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-                     [meanSlidingD2PeriReachErr2{a} + semSlidingErr2, fliplr(meanSlidingD2PeriReachErr2{a} - semSlidingErr2)], ...
-                     colCorr2, 'FaceAlpha', 0.1, 'EdgeColor', 'none');
+                    [meanSlidingD2PeriReachErr2{a} + semSlidingErr2, fliplr(meanSlidingD2PeriReachErr2{a} - semSlidingErr2)], ...
+                    colCorr2, 'FaceAlpha', 0.1, 'EdgeColor', 'none');
             end
 
             % Plot mean sliding window d2 values per block
@@ -621,7 +891,7 @@ for idx = 1:length(areasToTest)
         % Formatting (applies for both data-present and blank cases)
         xlabel('Time relative to reach onset (s)', 'FontSize', 12);
         ylabel('Sliding Window d2', 'FontSize', 12);
-        title(sprintf('%s - Sliding Window d2 (Mean-Centered)', areas{a}), 'FontSize', 14);
+        title(sprintf('%s - Mean-Centered d2', areas{a}), 'FontSize', 14);
         grid on;
         xlim([xMin xMax]);
         xTicks = ceil(xMin):floor(xMax);
@@ -630,7 +900,7 @@ for idx = 1:length(areasToTest)
         end
         xticks(xTicks);
         xticklabels(string(xTicks));
-        if calculateSlidingWindowD2
+        if analyzeMeanCenteredD2
             ylim(slidingD2YLim);
             yTicks = linspace(slidingD2YLim(1), slidingD2YLim(2), 5);
             yticks(yTicks);
@@ -649,20 +919,81 @@ for idx = 1:length(areasToTest)
         end
     end
 
-    % Bottom row: mrBr
-    if calculateSlidingWindowD2
-        axes(ha(2*numCols + idx));
-    else
-        axes(ha(numCols + idx));
+    % Third row: Modulated vs Unmodulated (if enabled)
+    if analyzeModulation
+        % Determine which row based on whether mean-centered d2 is enabled
+        if analyzeMeanCenteredD2
+            axes(ha(2*numCols + idx)); % Row 3 (after mean-centered d2)
+        else
+            axes(ha(numCols + idx)); % Row 2 (if mean-centered d2 not enabled)
+        end
+        hold on;
+
+        % Check if data exists
+        hasModData = ~isempty(meanD2ModulatedPeriReach{a}) && any(~isnan(meanD2ModulatedPeriReach{a}));
+        hasUnmodData = ~isempty(meanD2UnmodulatedPeriReach{a}) && any(~isnan(meanD2UnmodulatedPeriReach{a}));
+
+        if hasModData || hasUnmodData
+            % Plot modulated using its own time axis
+            if hasModData && ~isempty(timeAxisModulated{a})
+                plot(timeAxisModulated{a}, meanD2ModulatedPeriReach{a}, 'r-', 'LineWidth', 3, 'DisplayName', 'Modulated');
+            end
+
+            % Plot unmodulated using its own time axis
+            if hasUnmodData && ~isempty(timeAxisUnmodulated{a})
+                plot(timeAxisUnmodulated{a}, meanD2UnmodulatedPeriReach{a}, 'b-', 'LineWidth', 3, 'DisplayName', 'Unmodulated');
+            end
+
+            plot([0 0], ylim, 'k--', 'LineWidth', 2);
+            legend('Location', 'best', 'FontSize', 10);
+        end
+
+        xlabel('Time relative to reach onset (s)', 'FontSize', 12);
+        ylabel('d2', 'FontSize', 12);
+        title(sprintf('%s - Modulated vs Unmodulated', areas{a}), 'FontSize', 14);
+        grid on;
+        
+        % Use x-limits based on the broader time range
+        if hasModData && ~isempty(timeAxisModulated{a})
+            xMin = min(timeAxisModulated{a});
+            xMax = max(timeAxisModulated{a});
+        elseif hasUnmodData && ~isempty(timeAxisUnmodulated{a})
+            xMin = min(timeAxisUnmodulated{a});
+            xMax = max(timeAxisUnmodulated{a});
+        end
+        if hasUnmodData && ~isempty(timeAxisUnmodulated{a})
+            xMin = min(xMin, min(timeAxisUnmodulated{a}));
+            xMax = max(xMax, max(timeAxisUnmodulated{a}));
+        end
+        
+        xlim([xMin xMax]);
+        xTicks = ceil(xMin):floor(xMax); if isempty(xTicks), xTicks = linspace(xMin, xMax, 5); end
+        xticks(xTicks); xticklabels(string(xTicks));
+        ylim(yLimCommon);
+        set(gca, 'YTickLabelMode', 'auto');
     end
+
+    % Bottom row: mrBr (skip if modulation is enabled as mrBr is not being plotted)
+    if ~analyzeModulation && analyzeMrBr
+        if analyzeMeanCenteredD2
+            axes(ha(2*numCols + idx));
+        else
+            axes(ha(numCols + idx));
+        end
     hold on;
 
     % Determine if mrBr data exist for this area (any mean trace non-NaN)
-if plotMrBr
-    hasMr = (~isempty(meanMrBrPeriReachCorr1{a}) && any(~isnan(meanMrBrPeriReachCorr1{a}))) || ...
-            (~isempty(meanMrBrPeriReachCorr2{a}) && any(~isnan(meanMrBrPeriReachCorr2{a}))) || ...
-            (plotErrors && ~isempty(meanMrBrPeriReachErr1{a}) && any(~isnan(meanMrBrPeriReachErr1{a}))) || ...
-            (plotErrors && ~isempty(meanMrBrPeriReachErr2{a}) && any(~isnan(meanMrBrPeriReachErr2{a})));
+        if analyzeMrBr
+            % Calculate mrBr means internally
+            meanMrBrPeriReachCorr1 = nanmean(mrBrWindows{a}(corr1Idx, :), 1);
+            meanMrBrPeriReachCorr2 = nanmean(mrBrWindows{a}(corr2Idx, :), 1);
+            meanMrBrPeriReachErr1 = nanmean(mrBrWindows{a}(err1Idx, :), 1);
+            meanMrBrPeriReachErr2 = nanmean(mrBrWindows{a}(err2Idx, :), 1);
+
+            hasMr = (~isempty(meanMrBrPeriReachCorr1) && any(~isnan(meanMrBrPeriReachCorr1))) || ...
+                (~isempty(meanMrBrPeriReachCorr2) && any(~isnan(meanMrBrPeriReachCorr2))) || ...
+                (plotErrors && ~isempty(meanMrBrPeriReachErr1) && any(~isnan(meanMrBrPeriReachErr1))) || ...
+                (plotErrors && ~isempty(meanMrBrPeriReachErr2) && any(~isnan(meanMrBrPeriReachErr2)));
 
     % Compute x-limits safely
     if ~isempty(timeAxisPeriReach{a})
@@ -671,41 +1002,41 @@ if plotMrBr
         xMin = -1; xMax = 1;
     end
 
-    if plotMrBr && hasD2Area(a) && hasMr
-        % Compute SEM for mrBr (use shared condition indices)
+            if analyzeMrBr && hasD2Area(a) && hasMr
+                % Compute SEM for mrBr (use shared condition indices)
         baseColor = colorSpecToRGB(colors{a});
         colCorr1 = baseColor;
         colCorr2 = min(1, baseColor + 0.3);
-        
-        semMrCorr1 = nanstd(mrBrWindows{a}(corr1Idx, :), 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindows{a}(corr1Idx, :)), 2))));
-        semMrCorr2 = nanstd(mrBrWindows{a}(corr2Idx, :), 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindows{a}(corr2Idx, :)), 2))));
+
+                semMrCorr1 = nanstd(mrBrWindows{a}(corr1Idx, :), 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindows{a}(corr1Idx, :)), 2))));
+                semMrCorr2 = nanstd(mrBrWindows{a}(corr2Idx, :), 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindows{a}(corr2Idx, :)), 2))));
         if plotErrors
-            semMrErr1 = nanstd(mrBrWindows{a}(err1Idx, :), 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindows{a}(err1Idx, :)), 2))));
-            semMrErr2 = nanstd(mrBrWindows{a}(err2Idx, :), 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindows{a}(err2Idx, :)), 2))));
+                    semMrErr1 = nanstd(mrBrWindows{a}(err1Idx, :), 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindows{a}(err1Idx, :)), 2))));
+                    semMrErr2 = nanstd(mrBrWindows{a}(err2Idx, :), 0, 1) / max(1, sqrt(sum(~all(isnan(mrBrWindows{a}(err2Idx, :)), 2))));
         end
 
         % SEM ribbons
         fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-             [meanMrBrPeriReachCorr1{a} + semMrCorr1, fliplr(meanMrBrPeriReachCorr1{a} - semMrCorr1)], ...
+                    [meanMrBrPeriReachCorr1 + semMrCorr1, fliplr(meanMrBrPeriReachCorr1 - semMrCorr1)], ...
              colCorr1, 'FaceAlpha', 0.5, 'EdgeColor', 'none');
         fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-             [meanMrBrPeriReachCorr2{a} + semMrCorr2, fliplr(meanMrBrPeriReachCorr2{a} - semMrCorr2)], ...
+                    [meanMrBrPeriReachCorr2 + semMrCorr2, fliplr(meanMrBrPeriReachCorr2 - semMrCorr2)], ...
              colCorr2, 'FaceAlpha', 0.4, 'EdgeColor', 'none');
         if plotErrors
             fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-                 [meanMrBrPeriReachErr1{a} + semMrErr1, fliplr(meanMrBrPeriReachErr1{a} - semMrErr1)], ...
+                        [meanMrBrPeriReachErr1 + semMrErr1, fliplr(meanMrBrPeriReachErr1 - semMrErr1)], ...
                  colCorr1, 'FaceAlpha', 0.3, 'EdgeColor', 'none');
             fill([timeAxisPeriReach{a}, fliplr(timeAxisPeriReach{a})], ...
-                 [meanMrBrPeriReachErr2{a} + semMrErr2, fliplr(meanMrBrPeriReachErr2{a} - semMrErr2)], ...
+                        [meanMrBrPeriReachErr2 + semMrErr2, fliplr(meanMrBrPeriReachErr2 - semMrErr2)], ...
                  colCorr2, 'FaceAlpha', 0.2, 'EdgeColor', 'none');
         end
 
         % Mean lines
-        hMrCorr1 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachCorr1{a}, 'Color', colCorr1, 'LineWidth', 3, 'LineStyle', '-');
-        hMrCorr2 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachCorr2{a}, 'Color', colCorr2, 'LineWidth', 3, 'LineStyle', '-.');
+                hMrCorr1 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachCorr1, 'Color', colCorr1, 'LineWidth', 3, 'LineStyle', '-');
+                hMrCorr2 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachCorr2, 'Color', colCorr2, 'LineWidth', 3, 'LineStyle', '-.');
         if plotErrors
-            hMrErr1 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachErr1{a}, 'Color', colCorr1, 'LineWidth', 2.5, 'LineStyle', '--');
-            hMrErr2 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachErr2{a}, 'Color', colCorr2, 'LineWidth', 2.5, 'LineStyle', '--');
+                    hMrErr1 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachErr1, 'Color', colCorr1, 'LineWidth', 2.5, 'LineStyle', '--');
+                    hMrErr2 = plot(timeAxisPeriReach{a}, meanMrBrPeriReachErr2, 'Color', colCorr2, 'LineWidth', 2.5, 'LineStyle', '--');
         end
 
         % Reference and onset lines
@@ -716,16 +1047,16 @@ if plotMrBr
     % Formatting (applies for both data-present and blank cases)
     xlabel('Time relative to reach onset (s)', 'FontSize', 12);
     ylabel('MR Branching Ratio', 'FontSize', 12);
-    title(sprintf('%s - Peri-Reach mrBr (Window: %gs)', areas{a}, slidingWindowSize), 'FontSize', 14);
+            title(sprintf('%s - Peri-Reach mrBr (Window: %gs)', areas{a}, slidingWindowSize), 'FontSize', 14);
     grid on;
     xlim([xMin xMax]);
     xTicks = ceil(xMin):floor(xMax); if isempty(xTicks), xTicks = linspace(xMin, xMax, 5); end
     xticks(xTicks); xticklabels(string(xTicks));
-    ylim([mrBrYMin mrBrYMax]);
+            ylim(mrBrYLim);
     set(gca, 'YTickLabelMode', 'auto');
 
     % Legend only if data were plotted
-    if plotMrBr && hasD2Area(a) && hasMr
+            if analyzeMrBr && hasD2Area(a) && hasMr
         if plotErrors
             legend([hMrCorr1 hMrCorr2 hMrErr1 hMrErr2], {'mrBr Correct B1','mrBr Correct B2','mrBr Error B1','mrBr Error B2'}, 'Location', 'best', 'FontSize', 9);
         else
@@ -733,38 +1064,9 @@ if plotMrBr
         end
     end
 end
+    end
 end
-
-if calculateSlidingWindowD2
-    sgtitle(sprintf('%s - Peri-Reach d2 (top), Sliding Window d2 (middle), and mrBr (bottom) (Sliding Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
-else
-    sgtitle(sprintf('%s - Peri-Reach d2 (top) and mrBr (bottom) (Sliding Window: %gs)', filePrefix, slidingWindowSize), 'FontSize', 16);
 end
-
-% Save combined figure (in same data-specific folder)
-if calculateSlidingWindowD2
-    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_sliding_d2_mrbr_win%gs.png', filePrefix, slidingWindowSize));
-    fprintf('Saved peri-reach d2+sliding d2+mrBr plot to: %s\n', filename);
-else
-    filename = fullfile(saveDir, sprintf('%s_peri_reach_d2_mrbr_win%gs.png', filePrefix, slidingWindowSize));
-    fprintf('Saved peri-reach d2+mrBr plot to: %s\n', filename);
-end
-exportgraphics(gcf, filename, 'Resolution', 300);
-
-%% ==============================================     Summary Statistics     ==============================================
-
-fprintf('\n=== Peri-Reach Analysis Summary ===\n');
-for a = areasToTest
-    fprintf('\nArea %s:\n', areas{a});
-    fprintf('  Total reaches: %d\n', length(reachStartFrame{a}));
-    fprintf('  Valid reaches: %d\n', sum(~all(isnan(d2Windows{a}), 2)));
-    fprintf('  Mean d2 at reach onset: %.4f\n', meanD2PeriReach{a}(halfWindow + 1));
-    fprintf('  Mean d2 pre-reach (-1s): %.4f\n', meanD2PeriReach{a}(halfWindow - round(1/optimalBinSize(a)) + 1));
-    fprintf('  Mean d2 post-reach (+1s): %.4f\n', meanD2PeriReach{a}(halfWindow + round(1/optimalBinSize(a)) + 1));
-end
-
-fprintf('\nPeri-reach analysis complete!\n');
-
 
 
 
