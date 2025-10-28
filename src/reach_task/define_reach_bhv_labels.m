@@ -69,14 +69,15 @@ for r = 1:length(reachStartSec)
     startTime = reachStartSec(r);
     stopTime = reachStopSec(r);
     
+    % 2: reach [reachStart-0.2, reachStop] seconds
+    reachWinStart = startTime - 0.1;
+    reachWinStop = stopTime;
+
     % Define time windows relative to this reach (in seconds)
     % 1: pre-reach [-1.0, -0.2] seconds w.r.t. reachStart
     preReachStart = startTime - 1.0;
-    preReachStop = startTime - 0.05;
+    preReachStop = reachWinStart;
     
-    % 2: reach [reachStart-0.2, reachStop] seconds
-    reachWinStart = startTime - 0.05;
-    reachWinStop = stopTime;
     
     % 3: pre-reward [reachStop, reachStart+1] seconds
     preRewardStart = stopTime;
@@ -98,7 +99,7 @@ for r = 1:length(reachStartSec)
     
     % Label 1: pre-reach
     firstBin = floor(preReachStart / frameSize) + 1;
-    lastBin = floor((preReachStop - 1e-10) / frameSize) + 1;
+    lastBin = floor(preReachStop / frameSize);
     if firstBin <= numBins && lastBin >= 1 && firstBin <= lastBin
         binIndices = max(1, firstBin):min(numBins, lastBin);
         bhvID(binIndices) = 1;
@@ -106,7 +107,7 @@ for r = 1:length(reachStartSec)
     
     % Label 2: reach
     firstBin = floor(reachWinStart / frameSize) + 1;
-    lastBin = floor((reachWinStop - 1e-10) / frameSize) + 1;
+    lastBin = floor(reachWinStop / frameSize);
     if firstBin <= numBins && lastBin >= 1 && firstBin <= lastBin
         binIndices = max(1, firstBin):min(numBins, lastBin);
         bhvID(binIndices) = 2;
@@ -116,7 +117,7 @@ for r = 1:length(reachStartSec)
     if isCorrect(r)
         % Label 3: pre-reward
         firstBin = floor(preRewardStart / frameSize) + 1;
-        lastBin = floor((preRewardStop - 1e-10) / frameSize) + 1;
+        lastBin = floor(preRewardStop / frameSize);
         if firstBin <= numBins && lastBin >= 1 && firstBin <= lastBin
             binIndices = max(1, firstBin):min(numBins, lastBin);
             bhvID(binIndices) = 3;
@@ -124,7 +125,7 @@ for r = 1:length(reachStartSec)
         
         % Label 4: reward
         firstBin = floor(rewardStart / frameSize) + 1;
-        lastBin = floor((rewardStop - 1e-10) / frameSize) + 1;
+        lastBin = floor(rewardStop / frameSize);
         if firstBin <= numBins && lastBin >= 1 && firstBin <= lastBin
             binIndices = max(1, firstBin):min(numBins, lastBin);
             bhvID(binIndices) = 4;
@@ -132,7 +133,7 @@ for r = 1:length(reachStartSec)
         
         % Label 5: post-reward
         firstBin = floor(postRewardStart / frameSize) + 1;
-        lastBin = floor((postRewardStop - 1e-10) / frameSize) + 1;
+        lastBin = floor(postRewardStop / frameSize);
         if firstBin <= numBins && lastBin >= 1 && firstBin <= lastBin
             binIndices = max(1, firstBin):min(numBins, lastBin);
             bhvID(binIndices) = 5;

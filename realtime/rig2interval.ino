@@ -1,7 +1,5 @@
 #include <SPI.h>
 #include <SD.h>
-#include <Wire.h>
-#include <RTClib.h>
 
 // Pins
 const int SOLENOID_PORT = 12;
@@ -19,7 +17,6 @@ const unsigned long REWARD_WINDOW = 2 * 1000;       // LED on window to wait for
 const int chipSelect = 53;
 File dataFile;
 File configFile;
-RTC_DS1307 rtc;
 
 char logFileName[50];
 char configFileName[50];
@@ -89,7 +86,6 @@ void setup() {
   digitalWrite(LED_PORT, LOW);
 
   Serial.begin(9600);
-  Wire.begin();
   
   if (!SD.begin(chipSelect)) {
     while (1);
@@ -100,15 +96,14 @@ void setup() {
     SD.mkdir("interval_task");
   }
   
-  DateTime now = rtc.now();
+  // Use millis() for unique filename instead of RTC
+  unsigned long timestamp = millis();
   
   // Create config filename
-  sprintf(configFileName, "interval_task/config_%04d%02d%02d_%02d%02d.txt", 
-          now.year(), now.month(), now.day(), now.hour(), now.minute());
+  sprintf(configFileName, "interval_task/config_%lu.txt", timestamp);
   
   // Create CSV log filename
-  sprintf(logFileName, "interval_task/log_%04d%02d%02d_%02d%02d.csv", 
-          now.year(), now.month(), now.day(), now.hour(), now.minute());
+  sprintf(logFileName, "interval_task/log_%lu.csv", timestamp);
   
   // Write config file with timing constants
   configFile = SD.open(configFileName, FILE_WRITE);

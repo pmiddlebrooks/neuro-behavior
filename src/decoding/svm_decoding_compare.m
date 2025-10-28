@@ -5,6 +5,7 @@
 
 
 %% Specify main parameters
+paths = get_paths;
 
 % Data type selection
 dataType = 'reach';  % 'reach' or 'naturalistic'
@@ -19,7 +20,7 @@ transWithinToTest = {'trans'};
 % transOrWithin = 'trans';  % 'trans','transPost' 'within', 'all'
 
 % Frame/bin size
-frameSize = .05;
+frameSize = .1;
 
 % SVM parameters
 kernelFunction = 'polynomial'; % 'linear' polynomial
@@ -32,7 +33,6 @@ if ~exist(savePath, 'dir')
 end
 
 %%
-paths = get_paths;
 
 % Data loading based on data type
 if strcmp(dataType, 'reach')
@@ -43,7 +43,6 @@ if strcmp(dataType, 'reach')
     dataR = load(reachDataFile);
 
     opts = neuro_behavior_options;
-    opts.frameSize = .001;
     opts.firingRateCheckTime = 5 * 60;
     opts.collectStart = 0;
     opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
@@ -139,8 +138,8 @@ areasToTest = 2:4;  % Test M56, DS, VS (append ICG to existing results)
 loadExistingResults = false;  % Set to true to load and append to existing results
 
 % Determine which methods to run
-methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv', 'psidBhv', 'psidBhv_nonBhv', 'icg'};
-methodsToRun = {'pca', 'umap'};
+methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv', 'psidBhv', 'psidBhv_nonBhv', 'icg'}';
+methodsToRun = {'pca', 'umap'}';
 fprintf('Running methods: %s\n', strjoin(methodsToRun, ', '));
 
 % Permutation testing
@@ -159,18 +158,9 @@ allFontSize = 12;
 
 
 
-%% =============================================================================
+% =============================================================================
 % --------    NESTED LOOPS FOR ALL CONDITIONS
 % =============================================================================
-% Parallel processing setup
-nWorkers = 4;  % Number of parallel workers to use
-
-fprintf('Setting up parallel pool with %d workers...\n', nWorkers);
-if isempty(gcp('nocreate'))
-    parpool('local', nWorkers);
-else
-    fprintf('Parallel pool already exists with %d workers\n', gcp('nocreate').NumWorkers);
-end
 
 ttime = tic;
 
@@ -200,16 +190,16 @@ fprintf('\n=======================   CONDITION: %s   =======================\n',
 % --------    LOAD EXISTING RESULTS (IF REQUESTED)
 % =============================================================================
 
-% Load existing results for this combination
-filename = sprintf('svm_%s_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
-    kernelFunction, transOrWithin, nDim, opts.frameSize, nShuffles);
-fullFilePath = fullfile(savePath, filename);
-
-if exist(fullFilePath, 'file')
-    fprintf('Loading existing results from: %s\n', filename);
-    load(fullFilePath, 'allResults');
-    fprintf('Loaded existing results for %s %dD\n', transOrWithin, nDim);
-else
+% % Load existing results for this combination
+% filename = sprintf('svm_%s_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
+%     kernelFunction, transOrWithin, nDim, opts.frameSize, nShuffles);
+% fullFilePath = fullfile(savePath, filename);
+% 
+% if exist(fullFilePath, 'file')
+%     fprintf('Loading existing results from: %s\n', filename);
+%     load(fullFilePath, 'allResults');
+%     fprintf('Loaded existing results for %s %dD\n', transOrWithin, nDim);
+% else
     fprintf('No existing results found for %s %dD. Creating new analysis.\n', transOrWithin, nDim);
     % Initialize storage for all areas
     allResults = struct();
@@ -238,7 +228,7 @@ else
     allResults.svmModels = cell(1, length(areas));
     allResults.allPredictions = cell(1, length(areas));
     allResults.allPredictionIndices = cell(1, length(areas));
-end
+% end
 
 % Update parameters for this combination
 allResults.parameters.nDim = nDim;
@@ -288,14 +278,14 @@ for areaIdx = areasToTest
         cd(fullfile(paths.homePath, '/toolboxes/umapFileExchange (4.4)/umap/'))
 
         % UMAP parameters
-        min_dist = 0.2;
+        min_dist = 0.3;
         spread = 1;
         n_neighbors = 15;
 
         % Add parameters to prevent GUI from appearing
         [latents.umap, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, ...
             'randomize', true, 'verbose', 'none', 'min_dist', min_dist, ...
-            'spread', spread, 'n_neighbors', n_neighbors, 'ask', false);
+            'spread', spread, 'n_neighbors', n_neighbors);
 
         % Return to original directory
         cd(fullfile(paths.homePath, 'neuro-behavior/src/decoding'));
@@ -421,107 +411,130 @@ for areaIdx = areasToTest
 
     fprintf('All methods completed for area %s.\n', areaName);
 
-    %% =============================================================================
-    % --------    CHOOSE WHICH DATA POINTS TO MODEL
-    % =============================================================================
-    switch dataType
-        case 'naturalistic'
-            % Shift behavior labels if needed
-            shiftSec = 0;
-            shiftFrame = 0;
-            if shiftSec > 0
-                shiftFrame = ceil(shiftSec / opts.frameSize);
-                bhvID = double(bhvID(1+shiftFrame:end));
-            end
 
-            % Adjust latents for shift
-            if shiftFrame > 0
-                fieldNames = fieldnames(latents);
-                for i = 1:length(fieldNames)
-                    latents.(fieldNames{i}) = latents.(fieldNames{i})(1:end-shiftFrame, :);
+end
+
+
+
+
+
+%% =============================================================================
+% --------    CHOOSE WHICH DATA POINTS TO MODEL
+% =============================================================================
+switch dataType
+    case 'naturalistic'
+        % Shift behavior labels if needed
+        shiftSec = 0;
+        shiftFrame = 0;
+        if shiftSec > 0
+            shiftFrame = ceil(shiftSec / opts.frameSize);
+            bhvID = double(bhvID(1+shiftFrame:end));
+        end
+
+        % Adjust latents for shift
+        if shiftFrame > 0
+            fieldNames = fieldnames(latents);
+            for i = 1:length(fieldNames)
+                latents.(fieldNames{i}) = latents.(fieldNames{i})(1:end-shiftFrame, :);
+            end
+        end
+
+        % Find behavior transitions
+        preIdx = find(diff(bhvID) ~= 0);
+
+        % Prepare behavior labels based on analysis type
+        switch transOrWithin
+            case 'all'
+                svmInd = 1:length(bhvID);
+                svmID = bhvID;
+                transWithinLabel = 'all';
+            case 'trans'
+                svmID = bhvID(preIdx + 1);
+                svmInd = preIdx;
+                transWithinLabel = 'transitions: Pre';
+            case 'transPost'
+                svmID = bhvID(preIdx + 1);
+                svmInd = preIdx + 1;
+                transWithinLabel = 'transitions: Post';
+            case 'within'
+                svmInd = setdiff(1:length(bhvID), preIdx);
+                svmID = bhvID(svmInd);
+                transWithinLabel = 'within-behavior';
+        end
+
+        % Remove invalid behavior labels
+        deleteInd = svmID == -1;
+        svmID(deleteInd) = [];
+        svmInd(deleteInd) = [];
+    case 'reach'
+        switch transOrWithin
+            case 'all'
+                svmInd = 1:length(bhvID);
+                svmID = bhvID;
+                transWithinLabel = 'all';
+            case 'trans'
+                % Build windows around reach starts: [-2s, +3s] relative to each reach start
+                % Reach starts are the first indices where bhvID transitions into 2
+                reachMask = (bhvID == reachCode);
+                reachStarts = find([reachMask(1); diff(reachMask) == 1]);
+                reachStops = find([reachMask(1); diff(reachMask) == -1]);
+
+                preSec = 1;  % seconds before reach start
+                postSec = 0; % seconds after reach start
+                preFrames = round(preSec / opts.frameSize);
+                postFrames = round(postSec / opts.frameSize);
+
+                keepMask = false(length(bhvID), 1);
+                for r = 1:length(reachStarts)
+                    winStart = reachStarts(r) - preFrames;
+                    winEnd = max(min(length(bhvID), reachStarts(r) + postFrames), reachStops(r));
+                    keepMask(winStart:winEnd) = true;
                 end
-            end
 
-            % Find behavior transitions
-            preIdx = find(diff(bhvID) ~= 0);
+                svmInd = find(keepMask);
+                svmID = bhvID(svmInd);
+                transWithinLabel = 'peri-reach (-2s to +2s)';
+        end
+end
+% Get behavior codes and names for modeling
+bhv2ModelCodes = unique(svmID);
+if strcmp(dataType, 'reach')
+    bhv2ModelNames = behaviors(bhv2ModelCodes);
+else
+    bhv2ModelNames = behaviors(bhv2ModelCodes+colorsAdjust);
+    bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
+end
 
-            % Prepare behavior labels based on analysis type
-            switch transOrWithin
-                case 'all'
-                    svmInd = 1:length(bhvID);
-                    svmID = bhvID;
-                    transWithinLabel = 'all';
-                case 'trans'
-                    svmID = bhvID(preIdx + 1);
-                    svmInd = preIdx;
-                    transWithinLabel = 'transitions: Pre';
-                case 'transPost'
-                    svmID = bhvID(preIdx + 1);
-                    svmInd = preIdx + 1;
-                    transWithinLabel = 'transitions: Post';
-                case 'within'
-                    svmInd = setdiff(1:length(bhvID), preIdx);
-                    svmID = bhvID(svmInd);
-                    transWithinLabel = 'within-behavior';
-            end
+% For reach task, assign colors based on behavior codes
+if strcmp(dataType, 'reach')
+    bhv2ModelColors = colors(bhv2ModelCodes, :);
+end
 
-            % Remove invalid behavior labels
-            deleteInd = svmID == -1;
-            svmID(deleteInd) = [];
-            svmInd(deleteInd) = [];
-        case 'reach'
-            switch transOrWithin
-                case 'all'
-                    svmInd = 1:length(bhvID);
-                    svmID = bhvID;
-                    transWithinLabel = 'all';
-                case 'trans'
-                    % Build windows around reach starts: [-2s, +3s] relative to each reach start
-                    % Reach starts are the first indices where bhvID transitions into 2
-                    reachMask = (bhvID == reachCode);
-                    reachStarts = find([reachMask(1); diff(reachMask) == 1]);
-
-                    preSec = 2;  % seconds before reach start
-                    postSec = 2; % seconds after reach start
-                    preFrames = round(preSec / opts.frameSize);
-                    postFrames = round(postSec / opts.frameSize);
-
-                    keepMask = false(length(bhvID), 1);
-                    for rs = reachStarts(:)'
-                        winStart = max(1, rs - preFrames);
-                        winEnd = min(length(bhvID), rs + postFrames);
-                        keepMask(winStart:winEnd) = true;
-                    end
-
-                    svmInd = find(keepMask);
-                    svmID = bhvID(svmInd);
-                    transWithinLabel = 'peri-reach (-2s to +2s)';
-            end
-    end
-    % Get behavior codes and names for modeling
-    bhv2ModelCodes = unique(svmID);
-    if strcmp(dataType, 'reach')
-        bhv2ModelNames = behaviors(bhv2ModelCodes);
-    else
-        bhv2ModelNames = behaviors(bhv2ModelCodes+colorsAdjust);
-        bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
-    end
-
-    % For reach task, assign colors based on behavior codes
-    if strcmp(dataType, 'reach')
-        bhv2ModelColors = colors(bhv2ModelCodes, :);
-    end
 
     fprintf('Modeling %s behaviors: %s\n', transWithinLabel, strjoin(bhv2ModelNames, ', '));
 
-    %% =============================================================================
-    % --------    RUN SVM DECODING FOR EACH METHOD
-    % =============================================================================
+
+
+%% =============================================================================
+% --------    RUN SVM DECODING FOR EACH METHOD
+% =============================================================================
+% Parallel processing setup
+nWorkers = min(4,length(methodsToRun));  % Number of parallel workers to use
+
+fprintf('Setting up parallel pool with %d workers...\n', nWorkers);
+if isempty(gcp('nocreate'))
+    parpool('local', nWorkers);
+else
+    fprintf('Parallel pool already exists with %d workers\n', gcp('nocreate').NumWorkers);
+end
+
+for areaIdx = areasToTest
+    areaName = areas{areaIdx};
 
     fprintf('Running SVM decoding for specified methods...\n');
 
     % Get methods that were actually run
-    methods = fieldnames(latents);
+    methods = methodsToRun;
 
 
     nMethods = length(methods);
@@ -668,7 +681,7 @@ for areaIdx = areasToTest
         allResults.methods{areaIdx} = methods;
     else
         % Append new methods to existing list
-        allResults.methods{areaIdx} = [allResults.methods{areaIdx}; methods'];
+        allResults.methods{areaIdx} = [allResults.methods{areaIdx}; methods];
     end
 
     allResults.accuracy{areaIdx} = accuracy;
@@ -683,6 +696,9 @@ for areaIdx = areasToTest
 
     fprintf('\nArea %s completed.\n', areaName);
 end
+delete(gcp('nocreate'));
+fprintf('Parallel pool closed.\n');
+
 %%
 % =============================================================================
 % --------    PLOT FULL DATA FOR EACH METHOD
