@@ -49,7 +49,16 @@ else
     lastSecond = ceil(max(data.CSV(:,1)));
 end
 
-numFrames = ceil((lastSecond-firstSecond) / opts.frameSize);
+% Define time edges and number of frames based on method to avoid off-by-one
+if isfield(opts, 'method') && strcmp(opts.method, 'gaussian')
+    % Will compute numFrames later for gaussian
+    numFrames = ceil((lastSecond-firstSecond) / opts.frameSize);
+else
+    % For 'standard' and 'useOverlap', base frames on explicit edges
+    baseStep = opts.frameSize;
+    timeEdgesGlobal = firstSecond:baseStep:lastSecond;
+    numFrames = max(0, length(timeEdgesGlobal) - 1);
+end
 
 useNeurons = find(data.idchan(:,end) ~= 0 & ismember(data.idchan(:,4), [1 2])); % Keep everything that isn't corpus collosum
 idLabels = data.idchan(useNeurons, 1);
@@ -95,8 +104,8 @@ for i = 1:length(idLabels)
 
     switch opts.method
         case 'useOverlap'
-            % Overlapping bin edges
-            timeEdges = firstSecond:stepSize:lastSecond; % Define steps
+            % Overlapping bin edges (reuse global edges for consistent sizing)
+            timeEdges = timeEdgesGlobal; % firstSecond:stepSize:lastSecond
             dataMatTemp = zeros(length(timeEdges) - 1, 1);
 
             % Apply sliding window approach
@@ -121,8 +130,8 @@ for i = 1:length(idLabels)
             % Store in dataMat
             dataMat(:, i) = dataMatTemp;
         case 'standard'
-            % Standard non-overlapping binning
-            timeEdges = firstSecond:opts.frameSize:lastSecond;
+            % Standard non-overlapping binning (reuse global edges)
+            timeEdges = timeEdgesGlobal;
             [iSpikeCount, ~] = histcounts(iSpikeTime, timeEdges);
             dataMat(:, i) = iSpikeCount';
         case 'gaussian'

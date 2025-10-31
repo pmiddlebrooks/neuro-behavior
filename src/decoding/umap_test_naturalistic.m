@@ -1,35 +1,34 @@
-%%                     Test UMAP parameters on reach data
+%%                     Test UMAP parameters on naturalistic data
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This script tests different UMAP parameters (min_dist, spread, n_neighbors)
-% to fit reach data and visualize the results
+% to fit naturalistic data and visualize the results
 
 %% Specify main parameters
 paths = get_paths;
 
 % Data parameters
-reachCode = 2; % Behavior label for reaching animats
-frameSize = .140;
+frameSize = .1;
 slidingWindowSec = .2; % Duration of sliding window for spike summation
 
-% Load reach data
-reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-dataR = load(reachDataFile);
-
+% Load naturalistic data
 opts = neuro_behavior_options;
-opts.firingRateCheckTime = 5 * 60;
-opts.collectStart = 0;
-opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
-opts.minFiringRate = .1;
-opts.maxFiringRate = 70;
+opts.minActTime = .16;
+opts.collectStart = 0 * 60 * 60; % seconds
+opts.collectFor = 45 * 60; % seconds
 opts.frameSize = frameSize;
 
-[dataMat, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
+% Get kinematics data for reference
+getDataType = 'kinematics';
+get_standard_data
 
-% Get behavior labels for reach task
-bhvOpts = opts;
-bhvID = define_reach_bhv_labels(reachDataFile, bhvOpts);
+% Get neural data
+getDataType = 'spikes';
+get_standard_data
 
-fprintf('Loaded reach data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
+% Curate behavior labels
+[dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
+
+fprintf('Loaded naturalistic data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
 fprintf('Frame size: %.3f seconds\n', frameSize);
 fprintf('Sliding window: %.3f seconds\n', slidingWindowSec);
 
@@ -67,13 +66,13 @@ for binIdx = validStart:validEnd
     % Define window bounds (symmetric window)
     winStart = binIdx - halfWindow;
     winEnd = binIdx + halfWindow;
-
+    
     % Sum spikes within the window
     dataMatSliding(validIdx, :) = sum(dataMat(winStart:winEnd, :), 1);
-
+    
     % Store the center time (corresponding to original bin time)
     centerTimes(validIdx) = binIdx * frameSize;
-
+    
     validIdx = validIdx + 1;
 end
 
@@ -87,13 +86,12 @@ fprintf('Behavior labels indexed for sliding window data\n');
 fprintf('First centerTime: %.3f s, Last centerTime: %.3f s\n', centerTimes(1), centerTimes(end));
 
 % Define behavior labels and colors
-behaviors = {'pre-reach', 'reach', 'pre-reward', 'reward', 'post-reward', 'intertrial'};
+behaviors = {'investigate_1', 'investigate_2', 'investigate_3', ...
+    'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
+    'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...
+    'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
 nBehaviors = length(behaviors);
-func = @sRGB_to_OKLab;
-cOpts.exc = [0,0,0];
-cOpts.Lmax = .8;
-colors = maxdistcolor(nBehaviors,func, cOpts);
-colors(end,:) = [.85 .8 .75];
+colors = colors_for_behaviors(codes);
 
 % Select brain area to analyze
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -103,39 +101,16 @@ idDS = find(strcmp(areaLabels, 'DS'));
 idVS = find(strcmp(areaLabels, 'VS'));
 
 %%
-selectFrom = 'VS';  % Change to test different areas
+selectFrom = 'M56';  % Change to test different areas
 switch selectFrom
     case 'M23'
         idSelect = idM23;
-        min_dist_values = [0.3];
-        spread_values = [1.2];
-        n_neighbors_values = [30];
-        min_dist_values = [0.4, 0.6 1];
-        spread_values = [1 1.2 1.5 2.5];
-        n_neighbors_values = [25 35 60];
     case 'M56'
         idSelect = idM56;
-        min_dist_values = [.6];
-        spread_values = [1.3];
-        n_neighbors_values = [25];
-        min_dist_values = [.3];
-        n_neighbors_values = [120]; 
     case 'DS'
         idSelect = idDS;
-        min_dist_values = [0.4, 0.6 1];
-        spread_values = [1 1.2 1.5 2.5];
-        n_neighbors_values = [25 35 60];
-        min_dist_values = [0.5];
-        spread_values = [1.2];
-        n_neighbors_values = [35];
     case 'VS'
         idSelect = idVS;
-        min_dist_values = [0.1, 0.3, 0.5];
-        spread_values = [1 1.2 1.5]  ;
-        n_neighbors_values = [15 25 35];
-        min_dist_values = [0.3];
-        spread_values = [1.2];
-        n_neighbors_values = [60];
 end
 
 fprintf('Selected %d neurons for area %s\n', length(idSelect), selectFrom);
@@ -144,6 +119,10 @@ fprintf('Selected %d neurons for area %s\n', length(idSelect), selectFrom);
 nDim = 3;  % 3D for visualization
 
 % Test different parameter combinations
+min_dist_values = [0.05, 0.1, 0.2, 0.5];
+min_dist_values = [ 0.2, 0.5];
+spread_values = [1.0, 1.5, 2.0];
+n_neighbors_values = [10, 15, 30];
 
 % Or test a specific combination
 % min_dist_values = [0.1];
@@ -172,48 +151,50 @@ configIdx = 1;
 for min_dist = min_dist_values
     for spread = spread_values
         for n_neighbors = n_neighbors_values
-
+            
             fprintf('\n===========================================\n');
             fprintf('Configuration %d:\n', configIdx);
             fprintf('min_dist=%.2f, spread=%.1f, n_neighbors=%d\n', min_dist, spread, n_neighbors);
             fprintf('===========================================\n');
-
+            
             % Run UMAP on sliding window data
             fprintf('Running UMAP on sliding window data...\n');
             tic;
             [umapProjections, ~, ~, ~] = run_umap(zscore(dataMatSliding(:, idSelect)), 'n_components', nDim, ...
                 'randomize', true, 'verbose', 'none', 'min_dist', min_dist, ...
-                'spread', spread, 'n_neighbors', n_neighbors);
+                'spread', spread, 'n_neighbors', n_neighbors, 'ask', false);
             elapsedTime = toc;
             fprintf('UMAP completed in %.2f seconds\n', elapsedTime);
-
+            
             % Plot the results
             figure(100 + configIdx);
             clf; hold on;
-
+            
             % Set figure position (vertically fill second monitor, half-width horizontal)
             figWidth = monitorTwo(3) * 0.5;
             figHeight = monitorTwo(4);
             figX = monitorTwo(1) + (monitorTwo(3) - figWidth) / 2;
             figY = monitorTwo(2);
             set(gcf, 'Position', [figX, figY, figWidth, figHeight]);
-
+            
             % Plot data colored by behavior (use sliding window indexed behavior labels)
             for bhvIdx = 1:nBehaviors
-                bhvIndices = find(bhvIDSliding == bhvIdx);
+                % Map behavior code (1-based) to behavior index
+                bhvCode = bhvIdx - 1;  % Convert to 0-based code
+                bhvIndices = find(bhvIDSliding == bhvCode);
                 if ~isempty(bhvIndices)
                     scatter3(umapProjections(bhvIndices, 1), umapProjections(bhvIndices, 2), umapProjections(bhvIndices, 3), ...
                         40, colors(bhvIdx, :), 'MarkerEdgeColor', colors(bhvIdx, :), 'LineWidth', 2, 'DisplayName', behaviors{bhvIdx});
                 end
             end
-
+            
             % Customize plot
             view(45, 30);
             xlabel('D1'); ylabel('D2'); zlabel('D3');
             title(sprintf('UMAP %s - min_dist=%.2f, spread=%.1f, nn=%d', selectFrom, min_dist, spread, n_neighbors), 'Interpreter', 'none');
             legend('Location', 'best', 'Interpreter', 'none');
             grid on;
-
+            
             configIdx = configIdx + 1;
         end
     end
@@ -226,4 +207,5 @@ fprintf('===========================================\n');
 
 % Return to original directory
 cd(fullfile(paths.homePath, 'neuro-behavior/src/decoding'));
+
 

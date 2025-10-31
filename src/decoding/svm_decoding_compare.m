@@ -4,11 +4,13 @@
 % dimensionality reduction methods using the same neural data and behavior labels
 
 
-%% Specify main parameters
+%% =============================================================================
+% --------    ANALYSIS PARAMETERS & INITIALIZATIONS
+% =============================================================================
 paths = get_paths;
 
 % Data type selection
-dataType = 'reach';  % 'reach' or 'naturalistic'
+dataType = 'naturalistic';  % 'reach' or 'naturalistic'
 
 % Dimensionality for all methods
 dimToTest = [4 6 8];
@@ -16,7 +18,7 @@ dimToTest = 8;
 
 % Analysis type
 transWithinToTest = {'trans','transPost' 'within', 'all'};
-transWithinToTest = {'trans'};
+transWithinToTest = {'all'};
 % transOrWithin = 'trans';  % 'trans','transPost' 'within', 'all'
 
 % Frame/bin size
@@ -31,6 +33,38 @@ savePath = fullfile(paths.dropPath, 'decoding');
 if ~exist(savePath, 'dir')
     mkdir(savePath);
 end
+
+
+% Define brain areas to test
+areas = {'M23', 'M56', 'DS', 'VS'};
+areasToTest = 2; %:4;  % Test M56, DS, VS (append ICG to existing results)
+
+
+% Analysis control flags
+loadExistingResults = false;  % Set to true to load and append to existing results
+
+% Determine which methods to run
+methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv', 'psidBhv', 'psidBhv_nonBhv', 'icg'}';
+methodsToRun = {'pca', 'umap'}';
+fprintf('Running methods: %s\n', strjoin(methodsToRun, ', '));
+
+% Permutation testing
+nShuffles = 2;  % Number of permutation tests
+permuteStrategy = 'circular';  % 'label' (shuffle labels) or 'circular' (circularly shift each neuron's time series)
+
+% Class balance strategy for training folds
+balanceStrategy = 'subsample';  % 'none' or 'subsample' (subsample each class to the minority count in training folds)
+maxSubsampleSize = 500;  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
+
+% Plotting options
+plotFullMap = 0;
+plotModelData = 1;
+plotResults = 1;
+savePlotFlag = 1;  % Save plots as PNG files
+
+% Figure properties
+allFontSize = 12;
+
 
 %%
 
@@ -65,8 +99,8 @@ if strcmp(dataType, 'reach')
     bhvOpts.collectFor = opts.collectFor;
     bhvID = define_reach_bhv_labels(reachDataFile, bhvOpts);
 
-    disp('Modeling reach vs non-reach')
-    bhvID(bhvID ~= reachCode) = 6;
+    % disp('Modeling reach vs non-reach')
+    % bhvID(bhvID ~= reachCode) = 6;
 
 
     fprintf('Loaded reach data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
@@ -108,7 +142,11 @@ if strcmp(dataType, 'reach')
 
     % Create colors for each behavior (simple color scheme for reach behaviors)
     nBehaviors = length(behaviors);
-    colors = lines(nBehaviors);
+func = @sRGB_to_OKLab;
+cOpts.exc = [0,0,0];
+cOpts.Lmax = .8;
+colors = maxdistcolor(nBehaviors,func, cOpts);
+colors(end,:) = [.85 .8 .75];
     colorsAdjust = 0;
 else
     % For naturalistic data: use existing color system
@@ -125,40 +163,12 @@ monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :);
 monitorTwo = monitorPositions(size(monitorPositions, 1), :);
 
+
+
+
+
+
 %% =============================================================================
-% --------    ANALYSIS PARAMETERS & INITIALIZATIONS
-% =============================================================================
-
-% Define brain areas to test
-areas = {'M23', 'M56', 'DS', 'VS'};
-areasToTest = 2:4;  % Test M56, DS, VS (append ICG to existing results)
-
-
-% Analysis control flags
-loadExistingResults = false;  % Set to true to load and append to existing results
-
-% Determine which methods to run
-methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv', 'psidBhv', 'psidBhv_nonBhv', 'icg'}';
-methodsToRun = {'pca', 'umap'}';
-fprintf('Running methods: %s\n', strjoin(methodsToRun, ', '));
-
-% Permutation testing
-nShuffles = 2;  % Number of permutation tests
-
-% Plotting options
-plotFullMap = 0;
-plotModelData = 1;
-plotResults = 1;
-savePlotFlag = 1;  % Save plots as PNG files
-
-% Figure properties
-allFontSize = 12;
-
-
-
-
-
-% =============================================================================
 % --------    NESTED LOOPS FOR ALL CONDITIONS
 % =============================================================================
 
@@ -238,7 +248,7 @@ allResults.parameters.kernelFunction = kernelFunction;
 
 for areaIdx = areasToTest
     areaName = areas{areaIdx};
-    fprintf('\n=======================   --- Processing Area: %s ---  ==================\n', areaName);
+    fprintf('\n=======================   --- Generating Latents for Area: %s ---  ==================\n', areaName);
 
 
     % Select data for this area using idList
@@ -278,9 +288,24 @@ for areaIdx = areasToTest
         cd(fullfile(paths.homePath, '/toolboxes/umapFileExchange (4.4)/umap/'))
 
         % UMAP parameters
-        min_dist = 0.3;
-        spread = 1;
-        n_neighbors = 15;
+switch areaIdx
+    case 1
+        min_dist_values = [0.3];
+        spread_values = [1.2];
+        n_neighbors_values = [30];
+    case 2
+        spread_values = [1.3];
+        min_dist_values = [.3];
+        n_neighbors_values = [50]; 
+    case 3
+        min_dist_values = [0.5];
+        spread_values = [1.2];
+        n_neighbors_values = [35];
+    case 4
+        min_dist_values = [0.3];
+        spread_values = [1.2];
+        n_neighbors_values = [50];
+end
 
         % Add parameters to prevent GUI from appearing
         [latents.umap, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, ...
@@ -418,6 +443,9 @@ end
 
 
 
+
+
+
 %% =============================================================================
 % --------    CHOOSE WHICH DATA POINTS TO MODEL
 % =============================================================================
@@ -471,6 +499,8 @@ switch dataType
             case 'all'
                 svmInd = 1:length(bhvID);
                 svmID = bhvID;
+                % svmInd(svmID == 6) = [];
+                % svmID(svmID == 6) = [];
                 transWithinLabel = 'all';
             case 'trans'
                 % Build windows around reach starts: [-2s, +3s] relative to each reach start
@@ -515,6 +545,12 @@ end
 
 
 
+
+
+
+
+
+
 %% =============================================================================
 % --------    RUN SVM DECODING FOR EACH METHOD
 % =============================================================================
@@ -530,6 +566,7 @@ end
 
 for areaIdx = areasToTest
     areaName = areas{areaIdx};
+    fprintf('\n=======================   --- Fitting SVMs for Area: %s ---  ==================\n', areaName);
 
     fprintf('Running SVM decoding for specified methods...\n');
 
@@ -622,8 +659,21 @@ for areaIdx = areasToTest
             tempAllPredictions{m} = predict(svmModelFull, svmProj);
             tempAllPredictionIndices{m} = svmInd;  % Store the indices that were predicted
 
-            % For cross-validation accuracy calculation, use the holdout approach
-            svmModelCV = fitcecoc(trainData, trainLabels, 'Learners', t);
+            % For cross-validation accuracy calculation, optionally balance training data
+            if strcmp(balanceStrategy, 'subsample')
+                if strcmp(dataType, 'reach')
+                balIdx = balance_subsample_indices(trainLabels);
+                elseif strcmp(dataType, 'naturalistic')
+                balIdx = balance_subsample_indices(trainLabels, maxSubsampleSize);
+                end
+                trainDataCV = trainData(balIdx, :);
+                trainLabelsCV = trainLabels(balIdx);
+            else
+                trainDataCV = trainData;
+                trainLabelsCV = trainLabels;
+            end
+
+            svmModelCV = fitcecoc(trainDataCV, trainLabelsCV, 'Learners', t);
             predictedLabels = predict(svmModelCV, testData);
             tempAccuracy(m) = sum(predictedLabels == testLabels) / length(testLabels);
 
@@ -638,17 +688,58 @@ for areaIdx = areasToTest
             methodAccuracyPermuted = zeros(nShuffles, 1);
 
             for s = 1:nShuffles
-                % Circular shuffle of training labels
                 rng('shuffle');
-                randShift = randi([1, length(trainLabels)]);
-                shuffledLabels = circshift(trainLabels, randShift);
+                switch permuteStrategy
+                    case 'label'
+                        % Circular shuffle of training labels
+                        randShift = randi([1, length(trainLabels)]);
+                        shuffledLabels = circshift(trainLabels, randShift);
 
-                % Train model on shuffled data
-                svmModelPermuted = fitcecoc(trainData, shuffledLabels, 'Learners', t);
+                        % Train model on shuffled labels
+                        if strcmp(balanceStrategy, 'subsample')
+                            balIdxPerm = balance_subsample_indices(shuffledLabels, maxSubsampleSize);
+                            trainDataPerm = trainData(balIdxPerm, :);
+                            shuffledLabelsPerm = shuffledLabels(balIdxPerm);
+                        else
+                            trainDataPerm = trainData;
+                            shuffledLabelsPerm = shuffledLabels;
+                        end
+                        svmModelPermuted = fitcecoc(trainDataPerm, shuffledLabelsPerm, 'Learners', t);
 
-                % Test on real data
-                predictedLabelsPermuted = predict(svmModelPermuted, testData);
-                methodAccuracyPermuted(s) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
+                        % Test on real data
+                        predictedLabelsPermuted = predict(svmModelPermuted, testData);
+                        methodAccuracyPermuted(s) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
+
+                    case 'circular'
+                        % Circularly shift each neuron's time series independently across all samples
+                        shuffledProj = svmProj;
+                        nSamples = size(shuffledProj, 1);
+                        nFeatures = size(shuffledProj, 2);
+                        for c = 1:nFeatures
+                            shiftC = randi([1, nSamples]);
+                            shuffledProj(:, c) = circshift(shuffledProj(:, c), shiftC);
+                        end
+
+                        % Split permuted data into train/test with the same folds
+                        shuffledTrainData = shuffledProj(training(cv), :);
+                        shuffledTestData = shuffledProj(test(cv), :);
+
+                        % Train on permuted data, evaluate against real labels (optionally balance)
+                        if strcmp(balanceStrategy, 'subsample')
+                            balIdxPerm2 = balance_subsample_indices(trainLabels, maxSubsampleSize);
+                            shuffledTrainDataPerm = shuffledTrainData(balIdxPerm2, :);
+                            trainLabelsPerm2 = trainLabels(balIdxPerm2);
+                        else
+                            shuffledTrainDataPerm = shuffledTrainData;
+                            trainLabelsPerm2 = trainLabels;
+                        end
+                        svmModelPermuted = fitcecoc(shuffledTrainDataPerm, trainLabelsPerm2, 'Learners', t);
+                        predictedLabelsPermuted = predict(svmModelPermuted, shuffledTestData);
+                        methodAccuracyPermuted(s) = sum(predictedLabelsPermuted == testLabels) / length(testLabels);
+
+                    otherwise
+                        error('Unknown permuteStrategy: %s', permuteStrategy);
+                end
 
                 fprintf('  Permutation %d: %.4f\n', s, methodAccuracyPermuted(s));
             end
@@ -1056,6 +1147,42 @@ fprintf('\n\nTotal analysis time: %.2f hours\n', toc(ttime)/60/60);
 %% =============================================================================
 % --------    HELPER FUNCTIONS
 % =============================================================================
+
+function idx = balance_subsample_indices(labels, maxSubsampleSize)
+% Returns indices that subsample each class
+% If maxSubsampleSize is provided: categories with > max samples are subsampled to max,
+%   categories with <= max samples use all their data
+% If maxSubsampleSize is not provided: all categories subsampled to minority class size (old behavior)
+    if nargin < 2
+        maxSubsampleSize = [];
+    end
+    
+    classes = unique(labels);
+    counts = arrayfun(@(c) sum(labels==c), classes);
+    
+    idx = [];
+    for k = 1:length(classes)
+        c = classes(k);
+        inds = find(labels==c);
+        
+        if isempty(maxSubsampleSize)
+            % Old behavior: subsample all to minority class size
+            target = min(counts);
+        else
+            % New behavior: subsample to maxSubsampleSize, but keep all if fewer than max
+            target = min(counts(k), maxSubsampleSize);
+        end
+        
+        if length(inds) > target
+            sel = randperm(length(inds), target);
+            inds = inds(sel);
+        end
+        idx = [idx; inds(:)]; %#ok<AGROW>
+    end
+    % randomize order
+    idx = idx(randperm(length(idx)));
+end
+
 
 function downsampledData = downsample_kinematics(data, originalBinSize, targetBinSize)
 % Downsamples kinematics data using boxcar averaging
