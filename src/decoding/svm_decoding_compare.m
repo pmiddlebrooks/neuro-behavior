@@ -22,7 +22,7 @@ transWithinToTest = {'all'};
 % transOrWithin = 'trans';  % 'trans','transPost' 'within', 'all'
 
 % Frame/bin size
-frameSize = .1;
+frameSize = .15;
 
 % SVM parameters
 kernelFunction = 'polynomial'; % 'linear' polynomial
@@ -37,11 +37,8 @@ end
 
 % Define brain areas to test
 areas = {'M23', 'M56', 'DS', 'VS'};
-areasToTest = 2; %:4;  % Test M56, DS, VS (append ICG to existing results)
+areasToTest = 2:4; %:4;  % Test M56, DS, VS (append ICG to existing results)
 
-
-% Analysis control flags
-loadExistingResults = false;  % Set to true to load and append to existing results
 
 % Determine which methods to run
 methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv', 'psidBhv', 'psidBhv_nonBhv', 'icg'}';
@@ -50,11 +47,15 @@ fprintf('Running methods: %s\n', strjoin(methodsToRun, ', '));
 
 % Permutation testing
 nShuffles = 2;  % Number of permutation tests
-permuteStrategy = 'circular';  % 'label' (shuffle labels) or 'circular' (circularly shift each neuron's time series)
+permuteStrategy = 'label';  % 'label' (shuffle labels) or 'circular' (circularly shift each neuron's time series)
 
 % Class balance strategy for training folds
 balanceStrategy = 'subsample';  % 'none' or 'subsample' (subsample each class to the minority count in training folds)
-maxSubsampleSize = 500;  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
+maxSubsampleSize = 650;  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
+
+
+% Analysis control flags
+loadExistingResults = false;  % Set to true to load and append to existing results
 
 % Plotting options
 plotFullMap = 0;
@@ -66,7 +67,9 @@ savePlotFlag = 1;  % Save plots as PNG files
 allFontSize = 12;
 
 
-%%
+%% =============================================================================
+%            DATA LOADING (IF NECESSARY TO RELOAD)
+% =============================================================================
 
 % Data loading based on data type
 if strcmp(dataType, 'reach')
@@ -259,7 +262,7 @@ for areaIdx = areasToTest
 
     fprintf('Selected %d neurons for area %s\n', length(idSelect), areaName);
 
-    %% =============================================================================
+    % =============================================================================
     % --------    GENERATE LATENTS FOR EACH METHOD
     % =============================================================================
 
@@ -273,7 +276,7 @@ for areaIdx = areasToTest
         latents = allResults.latents{areaIdx};
     end
 
-    %% PCA
+    % PCA
     if ismember('pca', methodsToRun)
         fprintf('Running PCA...\n');
         [coeff, score, ~, ~, explained] = pca(zscore(dataMat(:, idSelect)));
@@ -281,7 +284,7 @@ for areaIdx = areasToTest
         fprintf('PCA explained variance: %.2f%%\n', sum(explained(1:nDim)));
     end
 
-    %% UMAP
+    % UMAP
     if ismember('umap', methodsToRun)
         fprintf('Running UMAP...\n');
         % Change to UMAP directory
@@ -296,15 +299,15 @@ switch areaIdx
     case 2
         spread_values = [1.3];
         min_dist_values = [.3];
-        n_neighbors_values = [50]; 
+        n_neighbors_values = [40]; 
     case 3
         min_dist_values = [0.5];
         spread_values = [1.2];
-        n_neighbors_values = [35];
+        n_neighbors_values = [40];
     case 4
         min_dist_values = [0.3];
         spread_values = [1.2];
-        n_neighbors_values = [50];
+        n_neighbors_values = [40];
 end
 
         % Add parameters to prevent GUI from appearing
@@ -316,7 +319,7 @@ end
         cd(fullfile(paths.homePath, 'neuro-behavior/src/decoding'));
     end
 
-    %% PSID with Kinematics (psidKin)
+    % PSID with Kinematics (psidKin)
     if (ismember('psidKin', methodsToRun) || ismember('psidKin_nonBhv', methodsToRun)) && strcmp(dataType, 'naturalistic')
         fprintf('Running PSID with kinematics...\n');
         % Return to original directory
@@ -353,7 +356,7 @@ end
     end
 
 
-    %% PSID with Behavior Labels (psidBhv)
+    % PSID with Behavior Labels (psidBhv)
     if ismember('psidBhv', methodsToRun) || ismember('psidBhv_nonBhv', methodsToRun)
         fprintf('Running PSID with behavior labels...\n');
 
@@ -413,7 +416,7 @@ end
     end
 
 
-    %% ICG
+    % ICG
     if ismember('icg', methodsToRun)
         fprintf('Running ICG...\n');
         dataICG = dataMat(:, idSelect);
@@ -530,16 +533,11 @@ end
 bhv2ModelCodes = unique(svmID);
 if strcmp(dataType, 'reach')
     bhv2ModelNames = behaviors(bhv2ModelCodes);
+    bhv2ModelColors = colors(bhv2ModelCodes, :);
 else
     bhv2ModelNames = behaviors(bhv2ModelCodes+colorsAdjust);
     bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
 end
-
-% For reach task, assign colors based on behavior codes
-if strcmp(dataType, 'reach')
-    bhv2ModelColors = colors(bhv2ModelCodes, :);
-end
-
 
     fprintf('Modeling %s behaviors: %s\n', transWithinLabel, strjoin(bhv2ModelNames, ', '));
 
@@ -607,6 +605,23 @@ for areaIdx = areasToTest
     % Cross-validation setup
     cv = cvpartition(svmID, 'HoldOut', 0.2);
 
+    % Precompute masks and labels for CV folds (shared across methods/shuffles)
+    trainMask = training(cv);
+    testMask = test(cv);
+    baseTrainLabels = svmID(trainMask);
+    baseTestLabels = svmID(testMask);
+
+    % Precompute class-balance subsample indices once per area/fold
+    if strcmp(balanceStrategy, 'subsample')
+        if strcmp(dataType, 'reach')
+            balIdx = balance_subsample_indices(baseTrainLabels);
+        else
+            balIdx = balance_subsample_indices(baseTrainLabels, maxSubsampleSize);
+        end
+    else
+        balIdx = [];
+    end
+
     % Only process if there are new methods
     if nMethods > 0
         % Calculate starting index for new methods (after existing methods)
@@ -642,10 +657,10 @@ for areaIdx = areasToTest
 
             % Prepare data for SVM
             svmProj = latentData(svmInd, :);
-            trainData = svmProj(training(cv), :);
-            testData = svmProj(test(cv), :);
-            trainLabels = svmID(training(cv));
-            testLabels = svmID(test(cv));
+            trainData = svmProj(trainMask, :);
+            testData = svmProj(testMask, :);
+            trainLabels = baseTrainLabels;
+            testLabels = baseTestLabels;
 
             % Train SVM model on all relevant data (not just training set)
             tic;
@@ -661,11 +676,6 @@ for areaIdx = areasToTest
 
             % For cross-validation accuracy calculation, optionally balance training data
             if strcmp(balanceStrategy, 'subsample')
-                if strcmp(dataType, 'reach')
-                balIdx = balance_subsample_indices(trainLabels);
-                elseif strcmp(dataType, 'naturalistic')
-                balIdx = balance_subsample_indices(trainLabels, maxSubsampleSize);
-                end
                 trainDataCV = trainData(balIdx, :);
                 trainLabelsCV = trainLabels(balIdx);
             else
@@ -697,9 +707,9 @@ for areaIdx = areasToTest
 
                         % Train model on shuffled labels
                         if strcmp(balanceStrategy, 'subsample')
-                            balIdxPerm = balance_subsample_indices(shuffledLabels, maxSubsampleSize);
-                            trainDataPerm = trainData(balIdxPerm, :);
-                            shuffledLabelsPerm = shuffledLabels(balIdxPerm);
+                            % Re-use the same subsample indices for fairness across real vs shuffled
+                            trainDataPerm = trainData(balIdx, :);
+                            shuffledLabelsPerm = shuffledLabels(balIdx);
                         else
                             trainDataPerm = trainData;
                             shuffledLabelsPerm = shuffledLabels;
@@ -721,14 +731,13 @@ for areaIdx = areasToTest
                         end
 
                         % Split permuted data into train/test with the same folds
-                        shuffledTrainData = shuffledProj(training(cv), :);
-                        shuffledTestData = shuffledProj(test(cv), :);
+                        shuffledTrainData = shuffledProj(trainMask, :);
+                        shuffledTestData = shuffledProj(testMask, :);
 
                         % Train on permuted data, evaluate against real labels (optionally balance)
                         if strcmp(balanceStrategy, 'subsample')
-                            balIdxPerm2 = balance_subsample_indices(trainLabels, maxSubsampleSize);
-                            shuffledTrainDataPerm = shuffledTrainData(balIdxPerm2, :);
-                            trainLabelsPerm2 = trainLabels(balIdxPerm2);
+                            shuffledTrainDataPerm = shuffledTrainData(balIdx, :);
+                            trainLabelsPerm2 = trainLabels(balIdx);
                         else
                             shuffledTrainDataPerm = shuffledTrainData;
                             trainLabelsPerm2 = trainLabels;
@@ -807,11 +816,7 @@ for areaIdx = areasToTest
             latentData = allResults.latents{areaIdx}.(methodName);
 
             % Plot full time of all behaviors
-            if strcmp(dataType, 'reach')
-                colorsForPlot = arrayfun(@(x) colors(x,:), bhvID, 'UniformOutput', false);
-            else
                 colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + colorsAdjust, 'UniformOutput', false);
-            end
             colorsForPlot = vertcat(colorsForPlot{:});
 
             figure(figHFull + i);
@@ -873,7 +878,7 @@ for areaIdx = areasToTest
             latentData = allResults.latents{areaIdx}.(methodName);
 
             % Get colors for modeled behaviors
-            colorsForPlot = arrayfun(@(x) colors(x,:), allResults.svmID{areaIdx} + colorsAdjust, 'UniformOutput', false);
+            colorsForPlot = arrayfun(@(x) bhv2ModelColors(x,:), allResults.svmID{areaIdx} + colorsAdjust, 'UniformOutput', false);
             colorsForPlot = vertcat(colorsForPlot{:});
 
             figure(figHModel + i);

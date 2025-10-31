@@ -1,5 +1,6 @@
 #include <SPI.h>
 #include <SD.h>
+#include <string.h>
 
 // Pins
 const int SOLENOID_PORT = 12;
@@ -44,9 +45,11 @@ int pulsesGivenInBurst = 0;            // counts pulses after the initial click
 char buffer[100];
 
 void logLine(const char* tag, int value) {
-  sprintf(buffer, "%lu,%s,%d,", millis(), tag, value);
-  dataFile.println(buffer);
-  dataFile.flush();
+  if (dataFile) {
+    sprintf(buffer, "%lu,%s,%d,", millis(), tag, value);
+    dataFile.println(buffer);
+    dataFile.flush();
+  }
 }
 
 void writeLEDOn() { logLine("L", 1); }
@@ -54,7 +57,13 @@ void writeLEDOff() { logLine("L", 0); }
 void writeRewardOn() { logLine("R", 1); }
 void writeRewardOff() { logLine("R", 0); }
 void writeBeam(int state) { logLine("B", state); }
-void writeState(const char* tag) { sprintf(buffer, "%lu,S,0,%s", millis(), tag); dataFile.println(buffer); dataFile.flush(); }
+void writeState(const char* tag) { 
+  if (dataFile) {
+    sprintf(buffer, "%lu,S,0,%s", millis(), tag); 
+    dataFile.println(buffer); 
+    dataFile.flush(); 
+  }
+}
 
 void turnOnLED() { digitalWrite(LED_PORT, HIGH); ledOn = true; writeLEDOn(); }
 void turnOffLED() { digitalWrite(LED_PORT, LOW); ledOn = false; writeLEDOff(); }
@@ -86,43 +95,95 @@ void setup() {
   digitalWrite(LED_PORT, LOW);
 
   Serial.begin(9600);
+  delay(100); // Give serial time to initialize
   
   if (!SD.begin(chipSelect)) {
+    Serial.println("SD card initialization failed!");
     while (1);
   }
+  Serial.println("SD card initialized successfully.");
   
   // Create folder and filename with timestamp
   if (!SD.exists("interval_task")) {
     SD.mkdir("interval_task");
   }
   
-  // Use millis() for unique filename instead of RTC
-  unsigned long timestamp = millis();
+  // Use compile-time date and time for unique filename
+  // __DATE__ format: "MMM DD YYYY" (e.g., "Jan 15 2024")
+  // __TIME__ format: "HH:MM:SS" (e.g., "14:30:45")
+  char monthStr[4] = "";
+  int day = 1, year = 2024;
+  int hour = 0, minute = 0, second = 0;
   
-  // Create config filename
-  sprintf(configFileName, "interval_task/config_%lu.txt", timestamp);
+  // Parse __DATE__: "MMM DD YYYY"
+  if (sscanf(__DATE__, "%3s %d %d", monthStr, &day, &year) != 3) {
+    Serial.println("Warning: Could not parse __DATE__, using defaults");
+    year = 2024; monthStr[0] = 'J'; monthStr[1] = 'a'; monthStr[2] = 'n'; day = 1;
+  }
   
-  // Create CSV log filename
-  sprintf(logFileName, "interval_task/log_%lu.csv", timestamp);
+  // Convert month string to number
+  int month = 1;
+  if (strcmp(monthStr, "Jan") == 0) month = 1;
+  else if (strcmp(monthStr, "Feb") == 0) month = 2;
+  else if (strcmp(monthStr, "Mar") == 0) month = 3;
+  else if (strcmp(monthStr, "Apr") == 0) month = 4;
+  else if (strcmp(monthStr, "May") == 0) month = 5;
+  else if (strcmp(monthStr, "Jun") == 0) month = 6;
+  else if (strcmp(monthStr, "Jul") == 0) month = 7;
+  else if (strcmp(monthStr, "Aug") == 0) month = 8;
+  else if (strcmp(monthStr, "Sep") == 0) month = 9;
+  else if (strcmp(monthStr, "Oct") == 0) month = 10;
+  else if (strcmp(monthStr, "Nov") == 0) month = 11;
+  else if (strcmp(monthStr, "Dec") == 0) month = 12;
+  
+  // Parse __TIME__: "HH:MM:SS"
+  if (sscanf(__TIME__, "%d:%d:%d", &hour, &minute, &second) != 3) {
+    Serial.println("Warning: Could not parse __TIME__, using defaults");
+    hour = 0; minute = 0; second = 0;
+  }
+  
+  // Create filenames with date and time: YYYYMMDD_HHMMSS
+  sprintf(configFileName, "interval_task/config_%04d%02d%02d_%02d%02d%02d.txt", 
+          year, month, day, hour, minute, second);
+  sprintf(logFileName, "interval_task/log_%04d%02d%02d_%02d%02d%02d.csv", 
+          year, month, day, hour, minute, second);
+  
+  Serial.print("Config file: ");
+  Serial.println(configFileName);
+  Serial.print("Log file: ");
+  Serial.println(logFileName);
   
   // Write config file with timing constants
   configFile = SD.open(configFileName, FILE_WRITE);
-  configFile.println("TIMING_CONSTANTS:");
-  sprintf(buffer, "SOLENOID_ON_TIME: %d ms", SOLENOID_ON_TIME);
-  configFile.println(buffer);
-  sprintf(buffer, "SOLENOID_OFF_TIME: %d ms", SOLENOID_OFF_TIME);
-  configFile.println(buffer);
-  sprintf(buffer, "SOLENOID_REPEATS: %d", SOLENOID_REPEATS);
-  configFile.println(buffer);
-  sprintf(buffer, "INTERTRIAL_INTERVAL: %d ms", INTERTRIAL_INTERVAL);
-  configFile.println(buffer);
-  sprintf(buffer, "REWARD_WINDOW: %d ms", REWARD_WINDOW);
-  configFile.println(buffer);
-  configFile.close();
+  if (configFile) {
+    configFile.println("TIMING_CONSTANTS:");
+    sprintf(buffer, "SOLENOID_ON_TIME: %d ms", SOLENOID_ON_TIME);
+    configFile.println(buffer);
+    sprintf(buffer, "SOLENOID_OFF_TIME: %d ms", SOLENOID_OFF_TIME);
+    configFile.println(buffer);
+    sprintf(buffer, "SOLENOID_REPEATS: %d", SOLENOID_REPEATS);
+    configFile.println(buffer);
+    sprintf(buffer, "INTERTRIAL_INTERVAL: %d ms", INTERTRIAL_INTERVAL);
+    configFile.println(buffer);
+    sprintf(buffer, "REWARD_WINDOW: %d ms", REWARD_WINDOW);
+    configFile.println(buffer);
+    configFile.flush();
+    configFile.close();
+    Serial.println("Config file created and saved.");
+  } else {
+    Serial.println("Warning: Could not open config file - continuing without config file.");
+  }
   
   // Write CSV header
   dataFile = SD.open(logFileName, FILE_WRITE);
-  dataFile.println("timestamp_ms,event,value,state_label");
+  if (dataFile) {
+    dataFile.println("timestamp_ms,event,value,state_label");
+    dataFile.flush(); // Ensure header is written immediately
+    Serial.println("Log file created. Starting task...");
+  } else {
+    Serial.println("Warning: Could not open log file - continuing without logging.");
+    Serial.println("Task will run but data will not be saved.");
+  }
   
   // Auto-start without waiting for Python
   writeState("AUTO_START");
