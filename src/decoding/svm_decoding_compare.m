@@ -932,8 +932,8 @@ for areaIdx = areasToTest
 
             % Save plot if flag is set
             if savePlotFlag
-                plotFilename = sprintf('full_data_%s_%s_%dD_bin%.2f.png', ...
-                    areaName, methodName, nDim, opts.frameSize);
+                plotFilename = sprintf('full_data_%s_%s_%s_%dD_bin%.2f.png', ...
+                    dataType, areaName, methodName, nDim, opts.frameSize);
                 plotPath = fullfile(savePath, plotFilename);
                 exportgraphics(figure(figHFull + i), plotPath, 'Resolution', 300);
                 fprintf('Saved plot: %s\n', plotFilename);
@@ -992,8 +992,8 @@ for areaIdx = areasToTest
 
             % Save plot if flag is set
             if savePlotFlag
-                plotFilename = sprintf('modeling_data_%s_%s_%s_%dD_bin%.2f.png', ...
-                    areaName, methodName, dataSubset, nDim, opts.frameSize);
+                plotFilename = sprintf('modeling_%s_%s_%s_%s_%dD_bin%.2f.png', ...
+                    dataType, areaName, methodName, dataSubset, nDim, opts.frameSize);
                 plotPath = fullfile(savePath, plotFilename);
                 exportgraphics(figure(figHModel + i), plotPath, 'Resolution', 300);
                 fprintf('Saved plot: %s\n', plotFilename);
@@ -1104,7 +1104,7 @@ if plotComparisons
 
     % Save comparison plot if flag is set
     if savePlotFlag
-        plotFilename = sprintf('%s svm_%s_results_comparison_all_areas_%s_%dD_bin%.2f_nShuffles%d.png', ...
+        plotFilename = sprintf('accuracy_svm_%s_%s_%dD_bin%.2f_nShuffles%d.png', ...
             dataType, kernelFunction, dataSubset, nDim, opts.frameSize, nShuffles);
         plotPath = fullfile(savePath, plotFilename);
         exportgraphics(fig, plotPath, 'Resolution', 300);

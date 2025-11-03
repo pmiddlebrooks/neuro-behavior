@@ -6,6 +6,7 @@
 const int SOLENOID_PORT = 12;
 const int BEAM_BREAK_PORT = 2;   // active low beam sensor
 const int LED_PORT = 10;         // reward cue LED
+const int ITI_LED_PORT = 9;      // inter-trial interval LED
 
 // Timing (ms)
 const int SOLENOID_ON_TIME = 30; //50;       // duration solenoid stays open
@@ -28,6 +29,7 @@ bool givingReward = false;
 bool inBurst = false;
 bool inITI = false;              // true when counting ITI
 bool trialReady = false;         // LED on, waiting for beam break
+bool itiLedOn = false;           // ITI indicator LED state
 
 // Beam and serial
 int lastBeamState = 0;
@@ -54,6 +56,8 @@ void logLine(const char* tag, int value) {
 
 void writeLEDOn() { logLine("L", 1); }
 void writeLEDOff() { logLine("L", 0); }
+void writeITIOn() { logLine("I", 1); }
+void writeITIOff() { logLine("I", 0); }
 void writeRewardOn() { logLine("R", 1); }
 void writeRewardOff() { logLine("R", 0); }
 void writeBeam(int state) { logLine("B", state); }
@@ -67,6 +71,8 @@ void writeState(const char* tag) {
 
 void turnOnLED() { digitalWrite(LED_PORT, HIGH); ledOn = true; writeLEDOn(); }
 void turnOffLED() { digitalWrite(LED_PORT, LOW); ledOn = false; writeLEDOff(); }
+void turnOnITI() { digitalWrite(ITI_LED_PORT, HIGH); itiLedOn = true; writeITIOn(); }
+void turnOffITI() { digitalWrite(ITI_LED_PORT, LOW); itiLedOn = false; writeITIOff(); }
 
 void openSolenoid() { digitalWrite(SOLENOID_PORT, HIGH); givingReward = true; rewardStartTime = millis(); writeRewardOn(); }
 void closeSolenoid() { digitalWrite(SOLENOID_PORT, LOW); givingReward = false; writeRewardOff(); lastPulseEndTime = millis(); }
@@ -76,11 +82,13 @@ void startITI() {
   itiStartTime = millis(); 
   trialReady = false; 
   turnOffLED(); // Ensure LED is off during ITI
+  if (!itiLedOn) { turnOnITI(); }
   writeState("ITI_START"); 
 }
 void endITIAndArmTrial() { 
   inITI = false; 
   trialReady = true; 
+  if (itiLedOn) { turnOffITI(); }
   turnOnLED(); 
   ledOnTime = millis(); 
   writeState("TRIAL_ARMED"); 
@@ -90,9 +98,11 @@ void setup() {
   pinMode(SOLENOID_PORT, OUTPUT);
   pinMode(LED_PORT, OUTPUT);
   pinMode(BEAM_BREAK_PORT, INPUT);
+  pinMode(ITI_LED_PORT, OUTPUT);
 
   digitalWrite(SOLENOID_PORT, LOW);
   digitalWrite(LED_PORT, LOW);
+  digitalWrite(ITI_LED_PORT, LOW);
 
   Serial.begin(9600);
   delay(100); // Give serial time to initialize
@@ -201,8 +211,9 @@ void loop() {
 
     // Beam broken (mouse enters port)
     if (beamState) {
-      // If beam broken during ITI, mark that we need to restart ITI when beam is unbroken
+      // If beam broken during ITI, mark error and turn off ITI indicator
       if (inITI) {
+        if (itiLedOn) { turnOffITI(); }
         writeState("BEAM_BROKEN_DURING_ITI");
       }
       // If beam broken during trial (LED on), trigger burst
@@ -229,6 +240,7 @@ void loop() {
       // If beam was broken during ITI and now unbroken, restart ITI
       else if (inITI) {
         itiStartTime = millis();
+        if (!itiLedOn) { turnOnITI(); }
         writeState("ITI_RESTART_AFTER_BEAM_UNBROKEN");
       }
     }
