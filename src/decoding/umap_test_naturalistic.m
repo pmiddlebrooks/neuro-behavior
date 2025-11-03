@@ -7,7 +7,7 @@
 paths = get_paths;
 
 % Data parameters
-frameSize = .1;
+frameSize = .05;
 slidingWindowSec = .2; % Duration of sliding window for spike summation
 
 % Load naturalistic data
@@ -28,11 +28,19 @@ get_standard_data
 % Curate behavior labels
 [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 
+% Select brain area to analyze
+areas = {'M23', 'M56', 'DS', 'VS'};
+idM23 = find(strcmp(areaLabels, 'M23'));
+idM56 = find(strcmp(areaLabels, 'M56'));
+idDS = find(strcmp(areaLabels, 'DS'));
+idVS = find(strcmp(areaLabels, 'VS'));
+
+
+%% Apply sliding window to sum spikes
 fprintf('Loaded naturalistic data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
 fprintf('Frame size: %.3f seconds\n', frameSize);
 fprintf('Sliding window: %.3f seconds\n', slidingWindowSec);
 
-%% Apply sliding window to sum spikes
 % Calculate how many original bins fit in the sliding window
 binsPerWindow = floor(slidingWindowSec / frameSize);
 if binsPerWindow < 1
@@ -86,20 +94,13 @@ fprintf('Behavior labels indexed for sliding window data\n');
 fprintf('First centerTime: %.3f s, Last centerTime: %.3f s\n', centerTimes(1), centerTimes(end));
 
 % Define behavior labels and colors
-behaviors = {'investigate_1', 'investigate_2', 'investigate_3', ...
+bhv2Plot = {'investigate_1', 'investigate_2', 'investigate_3', ...
     'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
     'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...
     'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
-nBehaviors = length(behaviors);
 colors = colors_for_behaviors(codes);
-
-% Select brain area to analyze
-areas = {'M23', 'M56', 'DS', 'VS'};
-idM23 = find(strcmp(areaLabels, 'M23'));
-idM56 = find(strcmp(areaLabels, 'M56'));
-idDS = find(strcmp(areaLabels, 'DS'));
-idVS = find(strcmp(areaLabels, 'VS'));
-
+colors2Plot = colors(2:end,:);
+codes2Plot = codes(2:end);
 %%
 selectFrom = 'M56';  % Change to test different areas
 switch selectFrom
@@ -120,9 +121,12 @@ nDim = 3;  % 3D for visualization
 
 % Test different parameter combinations
 min_dist_values = [0.05, 0.1, 0.2, 0.5];
-min_dist_values = [ 0.2, 0.5];
-spread_values = [1.0, 1.5, 2.0];
-n_neighbors_values = [10, 15, 30];
+min_dist_values = [0.2, 0.5];
+spread_values = [1.0, 1.5];
+n_neighbors_values = [15, 30, 60];
+min_dist_values = [0.2];
+spread_values = [1.2];
+n_neighbors_values = [30];
 
 % Or test a specific combination
 % min_dist_values = [0.1];
@@ -176,15 +180,15 @@ for min_dist = min_dist_values
             figX = monitorTwo(1) + (monitorTwo(3) - figWidth) / 2;
             figY = monitorTwo(2);
             set(gcf, 'Position', [figX, figY, figWidth, figHeight]);
-            
-            % Plot data colored by behavior (use sliding window indexed behavior labels)
-            for bhvIdx = 1:nBehaviors
+                       
+                % Plot data colored by behavior (use sliding window indexed behavior labels)
+            for bhvIdx = 1:length(codes2Plot)
                 % Map behavior code (1-based) to behavior index
                 bhvCode = bhvIdx - 1;  % Convert to 0-based code
                 bhvIndices = find(bhvIDSliding == bhvCode);
                 if ~isempty(bhvIndices)
                     scatter3(umapProjections(bhvIndices, 1), umapProjections(bhvIndices, 2), umapProjections(bhvIndices, 3), ...
-                        40, colors(bhvIdx, :), 'MarkerEdgeColor', colors(bhvIdx, :), 'LineWidth', 2, 'DisplayName', behaviors{bhvIdx});
+                        40, colors(bhvIdx, :), 'MarkerEdgeColor', colors2Plot(bhvIdx, :), 'LineWidth', 2, 'DisplayName', behaviors{bhvIdx});
                 end
             end
             

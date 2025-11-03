@@ -16,13 +16,13 @@ dataType = 'naturalistic';  % 'reach' or 'naturalistic'
 dimToTest = [4 6 8];
 dimToTest = 8;
 
-% Analysis type
-transWithinToTest = {'trans','transPost' 'within', 'all'};
-transWithinToTest = {'all'};
-% transOrWithin = 'trans';  % 'trans','transPost' 'within', 'all'
+% Analysis type - which subset of data points to include for fitting
+dataSubsetToTest = {'trans','transPost' 'within', 'all', 'no_intertrial'};
+dataSubsetToTest = {'all'};
+% dataSubset = 'trans';  % 'trans','transPost' 'within', 'all', 'no_intertrial'
 
 % Frame/bin size
-frameSize = .15;
+frameSize = .1;
 
 % SVM parameters
 kernelFunction = 'polynomial'; % 'linear' polynomial
@@ -37,30 +37,35 @@ end
 
 % Define brain areas to test
 areas = {'M23', 'M56', 'DS', 'VS'};
-areasToTest = 2:4; %:4;  % Test M56, DS, VS (append ICG to existing results)
+areasToTest = 1:4;  % Test M23 M56, DS, VS
 
 
 % Determine which methods to run
 methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv', 'psidBhv', 'psidBhv_nonBhv', 'icg'}';
-methodsToRun = {'pca', 'umap'}';
+methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv'}';
+% methodsToRun = {'pca', 'umap'}';
 fprintf('Running methods: %s\n', strjoin(methodsToRun, ', '));
+
+% Cross-validation settings
+cvType = 'holdout';  % 'holdout' or 'kfold'
+holdoutRatio = 0.2;  % Proportion of data held out (for 'holdout' type)
+nFolds = 4;  % Number of folds (for 'kfold' type)
 
 % Permutation testing
 nShuffles = 2;  % Number of permutation tests
-permuteStrategy = 'label';  % 'label' (shuffle labels) or 'circular' (circularly shift each neuron's time series)
+permuteStrategy = 'circular';  % 'label' (randomly permute labels, keeping neural data intact) or 'circular' (circularly shift each neuron's time series)
 
 % Class balance strategy for training folds
 balanceStrategy = 'subsample';  % 'none' or 'subsample' (subsample each class to the minority count in training folds)
-maxSubsampleSize = 650;  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
+maxSubsampleSize = 1000;  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
 
 
-% Analysis control flags
-loadExistingResults = false;  % Set to true to load and append to existing results
+% Analysis control flags (removed loadExistingResults - always start fresh)
 
 % Plotting options
 plotFullMap = 0;
 plotModelData = 1;
-plotResults = 1;
+plotComparisons = 1;
 savePlotFlag = 1;  % Save plots as PNG files
 
 % Figure properties
@@ -145,11 +150,11 @@ if strcmp(dataType, 'reach')
 
     % Create colors for each behavior (simple color scheme for reach behaviors)
     nBehaviors = length(behaviors);
-func = @sRGB_to_OKLab;
-cOpts.exc = [0,0,0];
-cOpts.Lmax = .8;
-colors = maxdistcolor(nBehaviors,func, cOpts);
-colors(end,:) = [.85 .8 .75];
+    func = @sRGB_to_OKLab;
+    cOpts.exc = [0,0,0];
+    cOpts.Lmax = .8;
+    colors = maxdistcolor(nBehaviors,func, cOpts);
+    colors(end,:) = [.85 .8 .75];
     colorsAdjust = 0;
 else
     % For naturalistic data: use existing color system
@@ -166,6 +171,13 @@ monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :);
 monitorTwo = monitorPositions(size(monitorPositions, 1), :);
 
+% Choose target monitor (use second/last monitor if connected)
+if size(monitorPositions, 1) > 1
+    targetMonitor = monitorTwo;
+else
+    targetMonitor = monitorOne;
+end
+
 
 
 
@@ -179,7 +191,7 @@ ttime = tic;
 
 fprintf('\n=== Processing All Combinations ===\n');
 fprintf('Dimensions to test: %s\n', mat2str(dimToTest));
-fprintf('Trans/Within conditions to test: %s\n', strjoin(transWithinToTest, ', '));
+fprintf('Data subsets to test: %s\n', strjoin(dataSubsetToTest, ', '));
 fprintf('Areas to test: %s\n', strjoin(areas(areasToTest), ', '));
 % Loop through all dimensions
 % for dimIdx = 1:length(dimToTest)
@@ -187,66 +199,59 @@ dimIdx = 1;
 nDim = dimToTest(dimIdx);
 fprintf('\n\n=======================   DIMENSION: %dD   =======================\n', nDim);
 
-% Loop through all trans/within conditions
-% for transIdx = 1:length(transWithinToTest)
-transIdx = 1;
-transOrWithin = transWithinToTest{transIdx};
+% Loop through all data subsets
+% for subsetIdx = 1:length(dataSubsetToTest)
+subsetIdx = 1;
+dataSubset = dataSubsetToTest{subsetIdx};
 
 
-fprintf('\n=======================   CONDITION: %s   =======================\n', upper(transOrWithin));
+fprintf('\n=======================   DATA SUBSET: %s   =======================\n', upper(dataSubset));
 
 
 
 
 
 % =============================================================================
-% --------    LOAD EXISTING RESULTS (IF REQUESTED)
+% --------    INITIALIZE RESULTS STRUCTURE (FRESH START)
 % =============================================================================
 
-% % Load existing results for this combination
-% filename = sprintf('svm_%s_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
-%     kernelFunction, transOrWithin, nDim, opts.frameSize, nShuffles);
-% fullFilePath = fullfile(savePath, filename);
-% 
-% if exist(fullFilePath, 'file')
-%     fprintf('Loading existing results from: %s\n', filename);
-%     load(fullFilePath, 'allResults');
-%     fprintf('Loaded existing results for %s %dD\n', transOrWithin, nDim);
-% else
-    fprintf('No existing results found for %s %dD. Creating new analysis.\n', transOrWithin, nDim);
-    % Initialize storage for all areas
-    allResults = struct();
-    allResults.areas = areas;
-    allResults.areasToTest = areasToTest;
-    allResults.parameters = struct();
-    allResults.parameters.frameSize = opts.frameSize;
-    allResults.parameters.nShuffles = nShuffles;
-    allResults.parameters.kernelFunction = kernelFunction;
-    allResults.parameters.collectStart = opts.collectStart;
-    allResults.parameters.collectFor = opts.collectFor;
-    allResults.parameters.minActTime = opts.minActTime;
-    allResults.parameters.transOrWithin = transOrWithin;
-
-    % Initialize results storage for each area
-    allResults.latents = cell(1, length(areas));
-    allResults.accuracy = cell(1, length(areas));
-    allResults.accuracyPermuted = cell(1, length(areas));
-    allResults.methods = cell(1, length(areas));
-    allResults.bhv2ModelCodes = cell(1, length(areas));
-    allResults.bhv2ModelNames = cell(1, length(areas));
-    allResults.svmInd = cell(1, length(areas));
-    allResults.svmID = cell(1, length(areas));
-    allResults.idSelect = cell(1, length(areas));
-    allResults.bhvMapping = cell(1, length(areas));
-    allResults.svmModels = cell(1, length(areas));
-    allResults.allPredictions = cell(1, length(areas));
-    allResults.allPredictionIndices = cell(1, length(areas));
-% end
-
-% Update parameters for this combination
-allResults.parameters.nDim = nDim;
-allResults.parameters.transOrWithin = transOrWithin;
+fprintf('Initializing fresh analysis for %s %dD...\n', dataSubset, nDim);
+% Initialize storage for all areas
+allResults = struct();
+allResults.areas = areas;
+allResults.areasToTest = areasToTest;
+allResults.parameters = struct();
+allResults.parameters.frameSize = opts.frameSize;
+allResults.parameters.nShuffles = nShuffles;
 allResults.parameters.kernelFunction = kernelFunction;
+allResults.parameters.collectStart = opts.collectStart;
+allResults.parameters.collectFor = opts.collectFor;
+if strcmp(dataType, 'naturalistic')
+    allResults.parameters.minActTime = opts.minActTime;
+end
+allResults.parameters.dataSubset = dataSubset;
+allResults.parameters.nDim = nDim;
+allResults.parameters.cvType = cvType;
+if strcmp(cvType, 'holdout')
+    allResults.parameters.holdoutRatio = holdoutRatio;
+else
+    allResults.parameters.nFolds = nFolds;
+end
+
+% Initialize results storage for each area (all empty)
+allResults.latents = cell(1, length(areas));
+allResults.accuracy = cell(1, length(areas));
+allResults.accuracyPermuted = cell(1, length(areas));
+allResults.methods = cell(1, length(areas));
+allResults.bhv2ModelCodes = cell(1, length(areas));
+allResults.bhv2ModelNames = cell(1, length(areas));
+allResults.svmInd = cell(1, length(areas));
+allResults.svmID = cell(1, length(areas));
+allResults.idSelect = cell(1, length(areas));
+allResults.bhvMapping = cell(1, length(areas));
+allResults.svmModels = cell(1, length(areas));
+allResults.allPredictions = cell(1, length(areas));
+allResults.allPredictionIndices = cell(1, length(areas));
 
 
 for areaIdx = areasToTest
@@ -290,30 +295,64 @@ for areaIdx = areasToTest
         % Change to UMAP directory
         cd(fullfile(paths.homePath, '/toolboxes/umapFileExchange (4.4)/umap/'))
 
-        % UMAP parameters
-switch areaIdx
-    case 1
-        min_dist_values = [0.3];
-        spread_values = [1.2];
-        n_neighbors_values = [30];
-    case 2
-        spread_values = [1.3];
-        min_dist_values = [.3];
-        n_neighbors_values = [40]; 
-    case 3
-        min_dist_values = [0.5];
-        spread_values = [1.2];
-        n_neighbors_values = [40];
-    case 4
-        min_dist_values = [0.3];
-        spread_values = [1.2];
-        n_neighbors_values = [40];
-end
-
+        % UMAP parameters (extract scalar values from arrays)
+        switch dataType
+            case 'reach'
+                switch areaIdx
+                    case 1
+                        min_dist = 0.3;
+                        spread = 1.2;
+                        n_neighbors = 30;
+                    case 2
+                        spread = 1.3;
+                        min_dist = 0.3;
+                        n_neighbors = 40;
+                    case 3
+                        min_dist = 0.5;
+                        spread = 1.2;
+                        n_neighbors = 40;
+                    case 4
+                        min_dist = 0.3;
+                        spread = 1.2;
+                        n_neighbors = 40;
+                    otherwise
+                        % Default values if areaIdx doesn't match
+                        min_dist = 0.3;
+                        spread = 1.2;
+                        n_neighbors = 30;
+                end
+            case 'naturalistic'
+                switch areaIdx
+                    case 1
+                        min_dist = 0.1;
+                        spread = 1;
+                        n_neighbors = 15;
+                    case 2
+                        min_dist = 0.2;
+                        spread = 1.2;
+                        n_neighbors = 30;
+                    case 3
+                         min_dist = 0.2;
+                        spread = 1.2;
+                        n_neighbors = 30;
+                   case 4
+                          min_dist = 0.2;
+                        spread = 1.2;
+                        n_neighbors = 30;
+                  otherwise
+                        % Default values if areaIdx doesn't match
+                        min_dist = 0.3;
+                        spread = 1.2;
+                        n_neighbors = 30;
+                end
+        end
         % Add parameters to prevent GUI from appearing
+        % Suppress UMAP toolbox pragma warnings (harmless warnings from toolbox code)
+        warning('off', 'MATLAB:unrecognizedPragma');
         [latents.umap, ~, ~, ~] = run_umap(zscore(dataMat(:, idSelect)), 'n_components', nDim, ...
             'randomize', true, 'verbose', 'none', 'min_dist', min_dist, ...
-            'spread', spread, 'n_neighbors', n_neighbors);
+            'spread', spread, 'n_neighbors', n_neighbors, 'ask', false);
+        warning('on', 'MATLAB:unrecognizedPragma');
 
         % Return to original directory
         cd(fullfile(paths.homePath, 'neuro-behavior/src/decoding'));
@@ -437,109 +476,128 @@ end
         end
     end
 
-    fprintf('All methods completed for area %s.\n', areaName);
-
+    % fprintf('All methods completed for area %s.\n', areaName);
+    % Store area-specific results
+    allResults.latents{areaIdx} = latents;    
+    fprintf('Stored latents for area %s.\n', areaName);
 
 end
-
-
-
-
-
-
 
 
 %% =============================================================================
-% --------    CHOOSE WHICH DATA POINTS TO MODEL
-% =============================================================================
-switch dataType
-    case 'naturalistic'
-        % Shift behavior labels if needed
-        shiftSec = 0;
-        shiftFrame = 0;
-        if shiftSec > 0
-            shiftFrame = ceil(shiftSec / opts.frameSize);
-            bhvID = double(bhvID(1+shiftFrame:end));
-        end
-
+    % --------    CHOOSE WHICH DATA POINTS TO MODEL (PER AREA)
+    % =============================================================================
+    % Shift behavior labels if needed (for naturalistic data)
+for areaIdx = areasToTest
+    shiftSec = 0;
+    shiftFrame = 0;
+    if shiftSec > 0 && strcmp(dataType, 'naturalistic')
+        shiftFrame = ceil(shiftSec / opts.frameSize);
+        bhvIDShifted = double(bhvID(1+shiftFrame:end));
+        
         % Adjust latents for shift
-        if shiftFrame > 0
-            fieldNames = fieldnames(latents);
-            for i = 1:length(fieldNames)
-                latents.(fieldNames{i}) = latents.(fieldNames{i})(1:end-shiftFrame, :);
+        fieldNames = fieldnames(latents);
+        for i = 1:length(fieldNames)
+            latents.(fieldNames{i}) = latents.(fieldNames{i})(1:end-shiftFrame, :);
+        end
+    else
+        bhvIDShifted = double(bhvID);
+    end
+
+    % Prepare behavior labels based on analysis type (per area)
+    switch dataType
+        case 'naturalistic'
+            % Find behavior transitions
+            preIdx = find(diff(bhvIDShifted) ~= 0);
+
+            % Prepare behavior labels based on analysis type
+            switch dataSubset
+                case 'all'
+                    svmInd = 1:length(bhvIDShifted);
+                    svmID = bhvIDShifted;
+                case 'trans'
+                    svmID = bhvIDShifted(preIdx + 1);
+                    svmInd = preIdx;
+                case 'transPost'
+                    svmID = bhvIDShifted(preIdx + 1);
+                    svmInd = preIdx + 1;
+                case 'within'
+                    svmInd = setdiff(1:length(bhvIDShifted), preIdx);
+                    svmID = bhvIDShifted(svmInd);
             end
-        end
 
-        % Find behavior transitions
-        preIdx = find(diff(bhvID) ~= 0);
+            % Remove invalid behavior labels
+            deleteInd = svmID == -1;
+            svmID(deleteInd) = [];
+            svmInd(deleteInd) = [];
+            
+        case 'reach'
+            switch dataSubset
+                case 'all'
+                    svmInd = 1:length(bhvID);
+                    svmID = bhvID;
+                case 'trans'
+                    % Build windows around reach starts: [-2s, +3s] relative to each reach start
+                    % Reach starts are the first indices where bhvID transitions into 2
+                    reachMask = (bhvID == reachCode);
+                    reachStarts = find([reachMask(1); diff(reachMask) == 1]);
+                    reachStops = find([reachMask(1); diff(reachMask) == -1]);
 
-        % Prepare behavior labels based on analysis type
-        switch transOrWithin
-            case 'all'
-                svmInd = 1:length(bhvID);
-                svmID = bhvID;
-                transWithinLabel = 'all';
-            case 'trans'
-                svmID = bhvID(preIdx + 1);
-                svmInd = preIdx;
-                transWithinLabel = 'transitions: Pre';
-            case 'transPost'
-                svmID = bhvID(preIdx + 1);
-                svmInd = preIdx + 1;
-                transWithinLabel = 'transitions: Post';
-            case 'within'
-                svmInd = setdiff(1:length(bhvID), preIdx);
-                svmID = bhvID(svmInd);
-                transWithinLabel = 'within-behavior';
-        end
+                    preSec = 1;  % seconds before reach start
+                    postSec = 0; % seconds after reach start
+                    preFrames = round(preSec / opts.frameSize);
+                    postFrames = round(postSec / opts.frameSize);
 
-        % Remove invalid behavior labels
-        deleteInd = svmID == -1;
-        svmID(deleteInd) = [];
-        svmInd(deleteInd) = [];
-    case 'reach'
-        switch transOrWithin
-            case 'all'
-                svmInd = 1:length(bhvID);
-                svmID = bhvID;
-                % svmInd(svmID == 6) = [];
-                % svmID(svmID == 6) = [];
-                transWithinLabel = 'all';
-            case 'trans'
-                % Build windows around reach starts: [-2s, +3s] relative to each reach start
-                % Reach starts are the first indices where bhvID transitions into 2
-                reachMask = (bhvID == reachCode);
-                reachStarts = find([reachMask(1); diff(reachMask) == 1]);
-                reachStops = find([reachMask(1); diff(reachMask) == -1]);
+                    keepMask = false(length(bhvID), 1);
+                    for r = 1:length(reachStarts)
+                        winStart = reachStarts(r) - preFrames;
+                        winEnd = max(min(length(bhvID), reachStarts(r) + postFrames), reachStops(r));
+                        keepMask(winStart:winEnd) = true;
+                    end
 
-                preSec = 1;  % seconds before reach start
-                postSec = 0; % seconds after reach start
-                preFrames = round(preSec / opts.frameSize);
-                postFrames = round(postSec / opts.frameSize);
+                    svmInd = find(keepMask);
+                    svmID = bhvID(svmInd);
+                case 'no_intertrial'
+                    % Remove intertrial data (bhvID == 6)
+                    svmInd = 1:length(bhvID);
+                    svmID = bhvID;
+                    svmInd(svmID == 6) = [];
+                    svmID(svmID == 6) = [];
+            end
+    end
 
-                keepMask = false(length(bhvID), 1);
-                for r = 1:length(reachStarts)
-                    winStart = reachStarts(r) - preFrames;
-                    winEnd = max(min(length(bhvID), reachStarts(r) + postFrames), reachStops(r));
-                    keepMask(winStart:winEnd) = true;
-                end
+    % Store area-specific results
+    allResults.svmID{areaIdx} = svmID;
+    allResults.svmInd{areaIdx} = svmInd;
+    
 
-                svmInd = find(keepMask);
-                svmID = bhvID(svmInd);
-                transWithinLabel = 'peri-reach (-2s to +2s)';
-        end
 end
-% Get behavior codes and names for modeling
-bhv2ModelCodes = unique(svmID);
-if strcmp(dataType, 'reach')
-    bhv2ModelNames = behaviors(bhv2ModelCodes);
-    bhv2ModelColors = colors(bhv2ModelCodes, :);
-else
-    bhv2ModelNames = behaviors(bhv2ModelCodes+colorsAdjust);
-    bhv2ModelColors = colors(ismember(codes, bhv2ModelCodes), :);
-end
+    fprintf('Stored SVM indices\n');
 
-    fprintf('Modeling %s behaviors: %s\n', transWithinLabel, strjoin(bhv2ModelNames, ', '));
+
+
+
+
+
+
+
+% Data subset label for reporting (same across all areas)
+switch dataSubset
+    case 'all'
+        dataSubsetLabel = 'all';
+    case 'trans'
+        if strcmp(dataType, 'naturalistic')
+            dataSubsetLabel = 'transitions: Pre';
+        else
+            dataSubsetLabel = 'peri-reach (-2s to +2s)';
+        end
+    case 'transPost'
+        dataSubsetLabel = 'transitions: Post';
+    case 'within'
+        dataSubsetLabel = 'within-behavior';
+    case 'no_intertrial'
+        dataSubsetLabel = 'all except intertrial';
+end
 
 
 
@@ -566,6 +624,22 @@ for areaIdx = areasToTest
     areaName = areas{areaIdx};
     fprintf('\n=======================   --- Fitting SVMs for Area: %s ---  ==================\n', areaName);
 
+    % Load area-specific variables from stored results
+    latents = allResults.latents{areaIdx};
+    svmID = allResults.svmID{areaIdx};
+    svmInd = allResults.svmInd{areaIdx};
+    idSelect = allResults.idSelect{areaIdx};
+    
+    % Recalculate area-specific behavior mappings
+    bhv2ModelCodes = unique(svmID);
+    if strcmp(dataType, 'reach')
+        bhv2ModelNames = behaviors(bhv2ModelCodes);
+        bhv2ModelColors = colors(bhv2ModelCodes, :);
+    else
+        bhv2ModelNames = behaviors(bhv2ModelCodes+colorsAdjust);
+        bhv2ModelColors = colors;
+    end
+
     fprintf('Running SVM decoding for specified methods...\n');
 
     % Get methods that were actually run
@@ -574,63 +648,29 @@ for areaIdx = areasToTest
 
     nMethods = length(methods);
 
-    % Initialize or load existing results
-    if isempty(allResults.accuracy{areaIdx})
-        accuracy = zeros(nMethods, 1);
-        accuracyPermuted = zeros(nMethods, nShuffles);
-        svmModels = cell(1, nMethods);
-        allPredictions = cell(1, nMethods);
-        allPredictionIndices = cell(1, nMethods);
-        existingMethods = {};
-    else
-        % Load existing results
-        accuracy = allResults.accuracy{areaIdx};
-        accuracyPermuted = allResults.accuracyPermuted{areaIdx};
-        svmModels = allResults.svmModels{areaIdx};
-        allPredictions = allResults.allPredictions{areaIdx};
-        allPredictionIndices = allResults.allPredictionIndices{areaIdx};
-        existingMethods = allResults.methods{areaIdx};
-
-        % Extend arrays for new methods only
-        if nMethods > 0  % Only extend if there are new methods
-            accuracy = [accuracy; zeros(nMethods, 1)];
-            accuracyPermuted = [accuracyPermuted; zeros(nMethods, nShuffles)];
-            svmModels = [svmModels, cell(1, nMethods)];
-            allPredictions = [allPredictions, cell(1, nMethods)];
-            allPredictionIndices = [allPredictionIndices, cell(1, nMethods)];
-        end
-    end
+    % Initialize results storage (always start fresh)
+    accuracy = zeros(nMethods, 1);
+    accuracyPermuted = zeros(nMethods, nShuffles);
+    svmModels = cell(1, nMethods);
+    allPredictions = cell(1, nMethods);
+    allPredictionIndices = cell(1, nMethods);
 
 
     % Cross-validation setup
-    cv = cvpartition(svmID, 'HoldOut', 0.2);
-
-    % Precompute masks and labels for CV folds (shared across methods/shuffles)
-    trainMask = training(cv);
-    testMask = test(cv);
-    baseTrainLabels = svmID(trainMask);
-    baseTestLabels = svmID(testMask);
-
-    % Precompute class-balance subsample indices once per area/fold
-    if strcmp(balanceStrategy, 'subsample')
-        if strcmp(dataType, 'reach')
-            balIdx = balance_subsample_indices(baseTrainLabels);
-        else
-            balIdx = balance_subsample_indices(baseTrainLabels, maxSubsampleSize);
-        end
+    if strcmp(cvType, 'holdout')
+        cv = cvpartition(svmID, 'HoldOut', holdoutRatio);
+        nCVFolds = 1;  % Single holdout split
+    elseif strcmp(cvType, 'kfold')
+        cv = cvpartition(svmID, 'KFold', nFolds);
+        nCVFolds = nFolds;
     else
-        balIdx = [];
+        error('Unknown cvType: %s. Must be ''holdout'' or ''kfold''', cvType);
     end
 
-    % Only process if there are new methods
-    if nMethods > 0
-        % Calculate starting index for new methods (after existing methods)
-        if isempty(allResults.accuracy{areaIdx})
-            startIdx = 1;  % First methods
-        else
-            startIdx = length(allResults.methods{areaIdx}) + 1;  % After existing methods
-        end
+    fprintf('Using %s cross-validation (%d fold(s))\n', cvType, nCVFolds);
 
+    % Process methods if any are specified
+    if nMethods > 0
         % Process methods in parallel (each method is independent)
         % Pre-allocate temporary storage for parfor results
         tempAccuracy = zeros(nMethods, 1);
@@ -657,10 +697,6 @@ for areaIdx = areasToTest
 
             % Prepare data for SVM
             svmProj = latentData(svmInd, :);
-            trainData = svmProj(trainMask, :);
-            testData = svmProj(testMask, :);
-            trainLabels = baseTrainLabels;
-            testLabels = baseTestLabels;
 
             % Train SVM model on all relevant data (not just training set)
             tic;
@@ -674,24 +710,55 @@ for areaIdx = areasToTest
             tempAllPredictions{m} = predict(svmModelFull, svmProj);
             tempAllPredictionIndices{m} = svmInd;  % Store the indices that were predicted
 
-            % For cross-validation accuracy calculation, optionally balance training data
-            if strcmp(balanceStrategy, 'subsample')
-                trainDataCV = trainData(balIdx, :);
-                trainLabelsCV = trainLabels(balIdx);
-            else
-                trainDataCV = trainData;
-                trainLabelsCV = trainLabels;
+            % Cross-validation accuracy calculation
+            foldAccuracies = zeros(nCVFolds, 1);
+            for fold = 1:nCVFolds
+                % Get train/test split for this fold
+                if strcmp(cvType, 'holdout')
+                    % Holdout only has one fold
+                    trainMask = training(cv);
+                    testMask = test(cv);
+                else
+                    % K-fold has multiple folds
+                    trainMask = training(cv, fold);
+                    testMask = test(cv, fold);
+                end
+
+                trainData = svmProj(trainMask, :);
+                testData = svmProj(testMask, :);
+                trainLabels = svmID(trainMask);
+                testLabels = svmID(testMask);
+
+                % Optionally balance training data
+                if strcmp(balanceStrategy, 'subsample')
+                    if strcmp(dataType, 'reach')
+                        balIdx = balance_subsample_indices(trainLabels);
+                    else
+                        balIdx = balance_subsample_indices(trainLabels, maxSubsampleSize);
+                    end
+                    trainDataCV = trainData(balIdx, :);
+                    trainLabelsCV = trainLabels(balIdx);
+                else
+                    trainDataCV = trainData;
+                    trainLabelsCV = trainLabels;
+                end
+
+                svmModelCV = fitcecoc(trainDataCV, trainLabelsCV, 'Learners', t);
+                predictedLabels = predict(svmModelCV, testData);
+                foldAccuracies(fold) = sum(predictedLabels == testLabels) / length(testLabels);
             end
 
-            svmModelCV = fitcecoc(trainDataCV, trainLabelsCV, 'Learners', t);
-            predictedLabels = predict(svmModelCV, testData);
-            tempAccuracy(m) = sum(predictedLabels == testLabels) / length(testLabels);
-
-            fprintf('Real data accuracy: %.4f\n', tempAccuracy(m));
+            tempAccuracy(m) = mean(foldAccuracies);
+            fprintf('Real %s data accuracy: %.4f', methodName, tempAccuracy(m));
+            if nCVFolds > 1
+                fprintf(' (mean across %d folds, range: [%.4f, %.4f])', nCVFolds, min(foldAccuracies), max(foldAccuracies));
+            end
+            fprintf('\n');
             fprintf('Model training time: %.2f seconds\n', toc);
 
             % Permutation tests - collect results in a temporary array
-            fprintf('Running %d permutation tests...\n', nShuffles);
+            % NOTE: Permutations always use holdout (not k-fold) for computational efficiency
+            fprintf('Running %d permutation tests (using holdout CV)...\n', nShuffles);
             tic;
 
             % Pre-allocate permutation results for this method
@@ -699,17 +766,32 @@ for areaIdx = areasToTest
 
             for s = 1:nShuffles
                 rng('shuffle');
+
+                % Create a holdout partition for this permutation (independent of real data CV)
+                permCv = cvpartition(svmID, 'HoldOut', holdoutRatio);
+                trainMask = training(permCv);
+                testMask = test(permCv);
+                trainData = svmProj(trainMask, :);
+                testData = svmProj(testMask, :);
+                trainLabels = svmID(trainMask);
+                testLabels = svmID(testMask);
+
                 switch permuteStrategy
                     case 'label'
-                        % Circular shuffle of training labels
-                        randShift = randi([1, length(trainLabels)]);
-                        shuffledLabels = circshift(trainLabels, randShift);
+                        % Randomly permute training labels (breaks temporal structure completely)
+                        % Neural activity remains unchanged, only labels are shuffled
+                        permIdx = randperm(length(trainLabels));
+                        shuffledLabels = trainLabels(permIdx);
 
                         % Train model on shuffled labels
                         if strcmp(balanceStrategy, 'subsample')
-                            % Re-use the same subsample indices for fairness across real vs shuffled
-                            trainDataPerm = trainData(balIdx, :);
-                            shuffledLabelsPerm = shuffledLabels(balIdx);
+                            if strcmp(dataType, 'reach')
+                                balIdxPerm = balance_subsample_indices(shuffledLabels);
+                            else
+                                balIdxPerm = balance_subsample_indices(shuffledLabels, maxSubsampleSize);
+                            end
+                            trainDataPerm = trainData(balIdxPerm, :);
+                            shuffledLabelsPerm = shuffledLabels(balIdxPerm);
                         else
                             trainDataPerm = trainData;
                             shuffledLabelsPerm = shuffledLabels;
@@ -730,14 +812,19 @@ for areaIdx = areasToTest
                             shuffledProj(:, c) = circshift(shuffledProj(:, c), shiftC);
                         end
 
-                        % Split permuted data into train/test with the same folds
+                        % Split permuted data into train/test with holdout split
                         shuffledTrainData = shuffledProj(trainMask, :);
                         shuffledTestData = shuffledProj(testMask, :);
 
                         % Train on permuted data, evaluate against real labels (optionally balance)
                         if strcmp(balanceStrategy, 'subsample')
-                            shuffledTrainDataPerm = shuffledTrainData(balIdx, :);
-                            trainLabelsPerm2 = trainLabels(balIdx);
+                            if strcmp(dataType, 'reach')
+                                balIdxPerm = balance_subsample_indices(trainLabels);
+                            else
+                                balIdxPerm = balance_subsample_indices(trainLabels, maxSubsampleSize);
+                            end
+                            shuffledTrainDataPerm = shuffledTrainData(balIdxPerm, :);
+                            trainLabelsPerm2 = trainLabels(balIdxPerm);
                         else
                             shuffledTrainDataPerm = shuffledTrainData;
                             trainLabelsPerm2 = trainLabels;
@@ -750,46 +837,35 @@ for areaIdx = areasToTest
                         error('Unknown permuteStrategy: %s', permuteStrategy);
                 end
 
-                fprintf('  Permutation %d: %.4f\n', s, methodAccuracyPermuted(s));
+                fprintf('  %s Permutation %d: %.4f\n', methodName, s, methodAccuracyPermuted(s));
             end
 
             % Store permutation results for this method
             tempAccuracyPermuted{m} = methodAccuracyPermuted;
 
             fprintf('Permutation testing time: %.2f seconds\n', toc);
-            fprintf('Mean permuted accuracy: %.4f\n', mean(methodAccuracyPermuted));
+            fprintf('Mean permuted %s accuracy: %.4f\n', methodName, mean(methodAccuracyPermuted));
         end
 
-        % Assign temporary results to final arrays
+        % Assign temporary results to final arrays (always start at index 1)
         for m = 1:nMethods
-            fullIdx = startIdx + m - 1;
-            accuracy(fullIdx) = tempAccuracy(m);
-            accuracyPermuted(fullIdx, :) = tempAccuracyPermuted{m}';  % Convert cell to row vector
-            svmModels{fullIdx} = tempSvmModels{m};
-            allPredictions{fullIdx} = tempAllPredictions{m};
-            allPredictionIndices{fullIdx} = tempAllPredictionIndices{m};
+            accuracy(m) = tempAccuracy(m);
+            accuracyPermuted(m, :) = tempAccuracyPermuted{m}';  % Convert cell to row vector
+            svmModels{m} = tempSvmModels{m};
+            allPredictions{m} = tempAllPredictions{m};
+            allPredictionIndices{m} = tempAllPredictionIndices{m};
         end
     else
         fprintf('No new methods to process for area %s\n', areaName);
     end
 
-    % Store results for this area
-    allResults.latents{areaIdx} = latents;
-
-    % Update methods list to include new methods
-    if isempty(allResults.methods{areaIdx})
-        allResults.methods{areaIdx} = methods;
-    else
-        % Append new methods to existing list
-        allResults.methods{areaIdx} = [allResults.methods{areaIdx}; methods];
-    end
+    % Store results for this area (always replace, never append)
+    allResults.methods{areaIdx} = methods;
 
     allResults.accuracy{areaIdx} = accuracy;
     allResults.accuracyPermuted{areaIdx} = accuracyPermuted;
     allResults.bhv2ModelCodes{areaIdx} = bhv2ModelCodes;
     allResults.bhv2ModelNames{areaIdx} = bhv2ModelNames;
-    allResults.svmInd{areaIdx} = svmInd;
-    allResults.svmID{areaIdx} = svmID;
     allResults.svmModels{areaIdx} = svmModels;
     allResults.allPredictions{areaIdx} = allPredictions;
     allResults.allPredictionIndices{areaIdx} = allPredictionIndices;
@@ -816,15 +892,15 @@ for areaIdx = areasToTest
             latentData = allResults.latents{areaIdx}.(methodName);
 
             % Plot full time of all behaviors
-                colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + colorsAdjust, 'UniformOutput', false);
+            colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + colorsAdjust, 'UniformOutput', false);
             colorsForPlot = vertcat(colorsForPlot{:});
 
             figure(figHFull + i);
             % Set figure position using monitor dimensions (3/4 height, 1/2 width)
-            figWidth = monitorOne(3) * 0.5;  % Half width
-            figHeight = monitorOne(4) * 0.75; % Three-quarters height
-            figX = monitorOne(1) + (monitorOne(3) - figWidth) / 2;  % Center horizontally
-            figY = monitorOne(2) + (monitorOne(4) - figHeight) / 2; % Center vertically
+            figWidth = targetMonitor(3) * 0.5;  % Half width
+            figHeight = targetMonitor(4) * 0.75; % Three-quarters height
+            figX = targetMonitor(1) + (targetMonitor(3) - figWidth) / 2;  % Center horizontally
+            figY = targetMonitor(2) + (targetMonitor(4) - figHeight) / 2; % Center vertically
             set(figHFull + i, 'Position', [figX, figY, figWidth, figHeight]);
             clf; hold on;
 
@@ -883,10 +959,10 @@ for areaIdx = areasToTest
 
             figure(figHModel + i);
             % Set figure position using monitor dimensions (3/4 height, 1/2 width)
-            figWidth = monitorOne(3) * 0.5;  % Half width
-            figHeight = monitorOne(4) * 0.75; % Three-quarters height
-            figX = monitorOne(1) + (monitorOne(3) - figWidth) / 2;  % Center horizontally
-            figY = monitorOne(2) + (monitorOne(4) - figHeight) / 2; % Center vertically
+            figWidth = targetMonitor(3) * 0.5;  % Half width
+            figHeight = targetMonitor(4) * 0.75; % Three-quarters height
+            figX = targetMonitor(1) + (targetMonitor(3) - figWidth) / 2;  % Center horizontally
+            figY = targetMonitor(2) + (targetMonitor(4) - figHeight) / 2; % Center vertically
             set(figHModel + i, 'Position', [figX, figY, figWidth, figHeight]);
             clf; hold on;
 
@@ -898,7 +974,7 @@ for areaIdx = areasToTest
                 scatter(latentData(allResults.svmInd{areaIdx}, 1), latentData(allResults.svmInd{areaIdx}, 2), 40, colorsForPlot, 'filled');
             end
 
-            title(sprintf('%s %s %dD - %s (bin=%.2f)', areaName, upper(methodName), nDim, transWithinLabel, opts.frameSize), 'Interpreter','none');
+            title(sprintf('%s %s %dD - %s (bin=%.2f)', areaName, upper(methodName), nDim, dataSubsetLabel, opts.frameSize), 'Interpreter','none');
             xlabel('D1'); ylabel('D2');
             if nDim > 2
                 zlabel('D3');
@@ -917,7 +993,7 @@ for areaIdx = areasToTest
             % Save plot if flag is set
             if savePlotFlag
                 plotFilename = sprintf('modeling_data_%s_%s_%s_%dD_bin%.2f.png', ...
-                    areaName, methodName, transOrWithin, nDim, opts.frameSize);
+                    areaName, methodName, dataSubset, nDim, opts.frameSize);
                 plotPath = fullfile(savePath, plotFilename);
                 exportgraphics(figure(figHModel + i), plotPath, 'Resolution', 300);
                 fprintf('Saved plot: %s\n', plotFilename);
@@ -930,12 +1006,12 @@ end
 % --------    PLOT RESULTS COMPARISON FOR ALL AREAS
 % =============================================================================
 
-if plotResults
+if plotComparisons
     fprintf('Plotting results comparison for all areas...\n');
 
     % Create comparison figure for all areas
-    fig = figure(100);
-    set(fig, 'Position', [monitorOne(1), monitorOne(2), monitorOne(3), monitorOne(4)]);
+    fig = figure(112);
+    set(fig, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)]);
     clf;
 
     % Plot all areas regardless of which ones are being analyzed
@@ -969,7 +1045,7 @@ if plotResults
             % No data for this area - show empty plot
             text(0.5, 0.5, 'No Data', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
                 'FontSize', 14, 'Color', 'red');
-            title(sprintf('%s (%s) - No Data', areaName, transWithinLabel), 'Interpreter','none');
+            title(sprintf('%s (%s) - No Data', areaName, dataSubsetLabel), 'Interpreter','none');
             ylim([0, 1]);
             xlim([0, 1]);
             continue;
@@ -999,7 +1075,7 @@ if plotResults
         % Customize plot
         set(gca, 'XTick', x, 'XTickLabel', upper(methods), 'TickLabelInterpreter', 'none');
         ylabel('Accuracy');
-        title(sprintf('%s (%s)', areaName, transWithinLabel), 'Interpreter','none');
+        title(sprintf('%s (%s)', areaName, dataSubsetLabel), 'Interpreter','none');
         legend('Location', 'best');
         grid on;
         ylim([0, 1]);
@@ -1028,8 +1104,8 @@ if plotResults
 
     % Save comparison plot if flag is set
     if savePlotFlag
-        plotFilename = sprintf('svm_%s_results_comparison_all_areas_%s_%dD_bin%.2f_nShuffles%d.png', ...
-            kernelFunction, transOrWithin, nDim, opts.frameSize, nShuffles);
+        plotFilename = sprintf('%s svm_%s_results_comparison_all_areas_%s_%dD_bin%.2f_nShuffles%d.png', ...
+            dataType, kernelFunction, dataSubset, nDim, opts.frameSize, nShuffles);
         plotPath = fullfile(savePath, plotFilename);
         exportgraphics(fig, plotPath, 'Resolution', 300);
         fprintf('Saved comparison plot: %s\n', plotFilename);
@@ -1072,11 +1148,11 @@ end
 % --------    SAVE RESULTS
 % =============================================================================
 
-fprintf('Saving updated results with M23 data for %s %dD...\n', transOrWithin, nDim);
+fprintf('Saving results for %s %dD...\n', dataSubset, nDim);
 
 % Create filename without brain area name
 filename = sprintf('svm_%s_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
-    kernelFunction, transOrWithin, nDim, opts.frameSize, nShuffles);
+    kernelFunction, dataSubset, nDim, opts.frameSize, nShuffles);
 
 
 fullFilePath = fullfile(savePath, filename);
@@ -1094,7 +1170,7 @@ fid = fopen(summaryPath, 'w');
 fprintf(fid, 'SVM Decoding Comparison Results - Multi-Area\n');
 fprintf(fid, '============================================\n\n');
 fprintf(fid, 'Areas Tested: %s\n', strjoin(areas(areasToTest), ', '));
-fprintf(fid, 'Analysis Type: %s\n', transOrWithin);
+fprintf(fid, 'Data Subset: %s\n', dataSubset);
 fprintf(fid, 'Number of Dimensions: %d\n', nDim);
 fprintf(fid, 'Frame Size: %.2f seconds\n', opts.frameSize);
 fprintf(fid, 'Number of Permutations: %d\n', nShuffles);
@@ -1137,9 +1213,9 @@ end
 fclose(fid);
 
 fprintf('Summary saved to: %s\n', summaryPath);
-fprintf('\nM23 analysis complete for %s %dD! Results added to existing file.\n', transOrWithin, nDim);
+fprintf('\nAnalysis complete for %s %dD! Results saved.\n', dataSubset, nDim);
 
-%     end  % End transWithinToTest loop
+%     end  % End dataSubsetToTest loop
 % end  % End dimToTest loop
 
 % Clean up parallel pool
@@ -1158,34 +1234,34 @@ function idx = balance_subsample_indices(labels, maxSubsampleSize)
 % If maxSubsampleSize is provided: categories with > max samples are subsampled to max,
 %   categories with <= max samples use all their data
 % If maxSubsampleSize is not provided: all categories subsampled to minority class size (old behavior)
-    if nargin < 2
-        maxSubsampleSize = [];
+if nargin < 2
+    maxSubsampleSize = [];
+end
+
+classes = unique(labels);
+counts = arrayfun(@(c) sum(labels==c), classes);
+
+idx = [];
+for k = 1:length(classes)
+    c = classes(k);
+    inds = find(labels==c);
+
+    if isempty(maxSubsampleSize)
+        % Old behavior: subsample all to minority class size
+        target = min(counts);
+    else
+        % New behavior: subsample to maxSubsampleSize, but keep all if fewer than max
+        target = min(counts(k), maxSubsampleSize);
     end
-    
-    classes = unique(labels);
-    counts = arrayfun(@(c) sum(labels==c), classes);
-    
-    idx = [];
-    for k = 1:length(classes)
-        c = classes(k);
-        inds = find(labels==c);
-        
-        if isempty(maxSubsampleSize)
-            % Old behavior: subsample all to minority class size
-            target = min(counts);
-        else
-            % New behavior: subsample to maxSubsampleSize, but keep all if fewer than max
-            target = min(counts(k), maxSubsampleSize);
-        end
-        
-        if length(inds) > target
-            sel = randperm(length(inds), target);
-            inds = inds(sel);
-        end
-        idx = [idx; inds(:)]; %#ok<AGROW>
+
+    if length(inds) > target
+        sel = randperm(length(inds), target);
+        inds = inds(sel);
     end
-    % randomize order
-    idx = idx(randperm(length(idx)));
+    idx = [idx; inds(:)]; %#ok<AGROW>
+end
+% randomize order
+idx = idx(randperm(length(idx)));
 end
 
 
