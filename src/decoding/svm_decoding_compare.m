@@ -348,8 +348,8 @@ for areaIdx = areasToTest
                         spread = 1.2;
                         n_neighbors = 30;
                     case 2
-                        spread = 1.3;
                         min_dist = 0.3;
+                        spread = 1.3;
                         n_neighbors = 40;
                     case 3
                         min_dist = 0.5;

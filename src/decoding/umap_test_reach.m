@@ -8,8 +8,8 @@ paths = get_paths;
 
 % Data parameters
 reachCode = 2; % Behavior label for reaching animats
-frameSize = .140;
-slidingWindowSec = .2; % Duration of sliding window for spike summation
+frameSize = .02;
+slidingWindowSec = .1; % Duration of sliding window for spike summation
 
 % Load reach data
 reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
@@ -18,7 +18,7 @@ dataR = load(reachDataFile);
 opts = neuro_behavior_options;
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 0;
-opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
+opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
 opts.minFiringRate = .1;
 opts.maxFiringRate = 70;
 opts.frameSize = frameSize;
@@ -115,11 +115,9 @@ switch selectFrom
         n_neighbors_values = [25 35 60];
     case 'M56'
         idSelect = idM56;
-        min_dist_values = [.6];
-        spread_values = [1.3];
-        n_neighbors_values = [25];
         min_dist_values = [.3];
-        n_neighbors_values = [120]; 
+        spread_values = [1.3];
+        n_neighbors_values = [40]; 
     case 'DS'
         idSelect = idDS;
         min_dist_values = [0.4, 0.6 1];
@@ -133,9 +131,9 @@ switch selectFrom
         min_dist_values = [0.1, 0.3, 0.5];
         spread_values = [1 1.2 1.5]  ;
         n_neighbors_values = [15 25 35];
-        min_dist_values = [0.3];
-        spread_values = [1.2];
-        n_neighbors_values = [60];
+        min_dist_values = [0.8];
+        spread_values = [1.6];
+        n_neighbors_values = [20];
 end
 
 fprintf('Selected %d neurons for area %s\n', length(idSelect), selectFrom);
