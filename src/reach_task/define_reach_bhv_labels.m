@@ -19,7 +19,7 @@ function bhvID = define_reach_bhv_labels(fileName, opts)
 %   frameSize - Size of each time bin in seconds
 %   opts      - Structure with optional fields:
 %       .collectStart  - Start time (s) of collection window (default: 0)
-%       .collectFor    - Number of seconds to collect (default: use all data)
+%       .collectEnd    - Number of seconds to collect (default: use all data)
 %
 % Outputs:
 %   bhvID     - Vector of behavioral labels for each time bin
@@ -27,7 +27,7 @@ function bhvID = define_reach_bhv_labels(fileName, opts)
 % Example:
 %   opts.frameSize = 0.05;
 %   opts.collectStart = 0;
-%   opts.collectFor = 100;
+%   opts.collectEnd = 100;
 %   bhvID = define_reach_bhv_labels('Y4_100623_Spiketimes_idchan_BEH.mat', 0.05, opts);
 
 % Default options
@@ -37,8 +37,8 @@ end
 if ~isfield(opts, 'collectStart')
     opts.collectStart = 0;
 end
-if ~isfield(opts, 'collectFor')
-    opts.collectFor = []; % Will use all data
+if ~isfield(opts, 'collectEnd')
+    opts.collectEnd = []; % Will use all data
 end
 frameSize = opts.frameSize;
 
@@ -143,10 +143,11 @@ for r = 1:length(reachStartSec)
     % Note: For error reaches, bins in the reward-related time windows remain as 6 (intertrial)
 end
 
-% Trim to match collectFor if specified
-if ~isempty(opts.collectFor)
-    numBinsToKeep = floor(opts.collectFor / frameSize);
-    bhvID = bhvID(1:numBinsToKeep);
+% Trim to match collectEnd if specified
+if ~isempty(opts.collectEnd)
+    binStart = 1+floor(opts.collectStart / frameSize);
+    binEnd = floor(opts.collectEnd / frameSize);
+    bhvID = bhvID(binStart:binEnd);
 end
 
 end

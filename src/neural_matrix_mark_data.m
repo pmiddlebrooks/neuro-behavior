@@ -43,8 +43,8 @@ firstSecond = opts.collectStart;
 else
     firstSecond = 0;
 end
-if ~isempty(opts.collectFor)
-    lastSecond = firstSecond + opts.collectFor;
+if ~isempty(opts.collectEnd)
+    lastSecond = firstSecond + opts.collectEnd;
 else
     lastSecond = ceil(max(data.CSV(:,1)));
 end

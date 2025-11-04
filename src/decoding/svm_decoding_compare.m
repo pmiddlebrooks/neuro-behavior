@@ -10,11 +10,14 @@
 paths = get_paths;
 
 % Data type selection
-dataType = 'naturalistic';  % 'reach' or 'naturalistic'
+dataType = 'reach';  % 'reach' or 'naturalistic'
 
 % Dimensionality for all methods
 dimToTest = [4 6 8];
 dimToTest = 8;
+% for dimIdx = 1:length(dimToTest)
+dimIdx = 1;
+nDim = dimToTest(dimIdx);
 
 % Analysis type - which subset of data points to include for fitting
 dataSubsetToTest = {'trans','transPost' 'within', 'all', 'no_intertrial'};
@@ -57,8 +60,7 @@ permuteStrategy = 'circular';  % 'label' (randomly permute labels, keeping neura
 
 % Class balance strategy for training folds
 balanceStrategy = 'subsample';  % 'none' or 'subsample' (subsample each class to the minority count in training folds)
-maxSubsampleSize = 1000;  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
-
+% maxSubsampleSize = 2000;  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
 
 % Analysis control flags (removed loadExistingResults - always start fresh)
 
@@ -80,17 +82,22 @@ allFontSize = 12;
 if strcmp(dataType, 'reach')
     reachCode = 2; % Behavior label for reaching indices
     % Load reach data
-    reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+        sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
+        % sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh.mat';
+    reachDataFile = fullfile(paths.reachDataPath, sessionName);
 
-    dataR = load(reachDataFile);
+    dataR = load(reachDataFile);    
 
     opts = neuro_behavior_options;
     opts.firingRateCheckTime = 5 * 60;
     opts.collectStart = 0;
-    opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
+    opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
     opts.minFiringRate = .1;
     opts.maxFiringRate = 70;
     opts.frameSize = frameSize;
+
+    % Find a few sec before first reach, for choosing data to decode
+svmFirstBin = floor(dataR.R(1,1) / opts.frameSize / 1000);
 
     [dataMat, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
     areas = {'M23', 'M56', 'DS', 'VS'};
@@ -104,8 +111,42 @@ if strcmp(dataType, 'reach')
     bhvOpts = struct();
     bhvOpts.frameSize = frameSize;
     bhvOpts.collectStart = opts.collectStart;
-    bhvOpts.collectFor = opts.collectFor;
+    bhvOpts.collectEnd = opts.collectEnd;
     bhvID = define_reach_bhv_labels(reachDataFile, bhvOpts);
+
+    jsX = zscore(dataR.NIDATA(7,2:end)); % Continuous absolute value of amplitude trace of joystick jsTrace = sqrt(x^2 + y^2)
+jsY = zscore(dataR.NIDATA(8,2:end)); % Continuous absolute value of amplitude trace of joystick jsTrace = sqrt(x^2 + y^2)
+jsAmp = sqrt(dataR.NIDATA(7,2:end).^2 + dataR.NIDATA(8,2:end).^2);
+% jsAmp = movmean(jsAmp, 61);
+% jsAmp = zscore(jsAmp); % Continuous absolute value of amplitude trace of joystick jsTrace = sqrt(x^2 + y^2)
+
+%     % Lick times
+% filtLick = bandpass(dataR.NIDATA(6,2:end)', [1 10], 1000); 
+% filtLick = abs(filtLick); 
+% filtLick(filtLick>300)=300;
+% % filtLick = movmean(filtLick, 101);
+% % filtLick = zscore(filtLick);
+
+kinData = [jsX(:), jsY(:)];
+    % Downsample kinData (at original fsBhv) to new bin size (opts.frameSize), taking mean within each window
+    % Only downsample if frameSize is larger than the original bin size
+    if opts.frameSize > .001
+        % Calculate number of original bins per new bin
+        binsPerFrame = round(opts.frameSize * 1000);
+        numFrames = floor(size(kinData,1) / binsPerFrame);
+        % Preallocate downsampled data
+        kinDataDown = zeros(numFrames, size(kinData,2));
+        % fitLickDown = zeros(numFrames, size(kinData,2));
+        for i = 1:numFrames
+            idxStart = (i-1)*binsPerFrame + 1;
+            idxEnd = i*binsPerFrame;
+            kinDataDown(i,:) = mean(kinData(idxStart:idxEnd,:), 1, 'omitnan');
+            % fitLickDown(i,:) = mean(filtLick(idxStart:idxEnd,:), 1, 'omitnan');
+        end
+        kinData = kinDataDown(1:size(dataMat, 1),:);
+        % filtLick = fitLickDown(1:size(dataMat, 1));
+    end
+
 
     % disp('Modeling reach vs non-reach')
     % bhvID(bhvID ~= reachCode) = 6;
@@ -140,6 +181,14 @@ elseif strcmp(dataType, 'naturalistic')
 else
     error('Invalid dataType. Must be ''reach'' or ''naturalistic''');
 end
+
+
+
+if length(idM23) <= nDim; fprintf('Skipping M23: not enough neurons!\n'); areasToTest(areasToTest == 1) = []; end
+if length(idM56) <= nDim; fprintf('Skipping M56: not enough neurons!\n'); areasToTest(areasToTest == 2) = []; end
+if length(idDS) <= nDim; fprintf('Skipping DS: not enough neurons!\n'); areasToTest(areasToTest == 3) = []; end
+if length(idVS) <= nDim; fprintf('Skipping VS: not enough neurons!\n'); areasToTest(areasToTest == 4) = []; end
+
 
 
 % Get colors for behaviors (set up for reach task)
@@ -182,7 +231,6 @@ end
 
 
 
-
 %% =============================================================================
 % --------    NESTED LOOPS FOR ALL CONDITIONS
 % =============================================================================
@@ -193,10 +241,7 @@ fprintf('\n=== Processing All Combinations ===\n');
 fprintf('Dimensions to test: %s\n', mat2str(dimToTest));
 fprintf('Data subsets to test: %s\n', strjoin(dataSubsetToTest, ', '));
 fprintf('Areas to test: %s\n', strjoin(areas(areasToTest), ', '));
-% Loop through all dimensions
-% for dimIdx = 1:length(dimToTest)
-dimIdx = 1;
-nDim = dimToTest(dimIdx);
+
 fprintf('\n\n=======================   DIMENSION: %dD   =======================\n', nDim);
 
 % Loop through all data subsets
@@ -211,9 +256,8 @@ fprintf('\n=======================   DATA SUBSET: %s   =======================\n
 
 
 
-% =============================================================================
 % --------    INITIALIZE RESULTS STRUCTURE (FRESH START)
-% =============================================================================
+% =======================================================
 
 fprintf('Initializing fresh analysis for %s %dD...\n', dataSubset, nDim);
 % Initialize storage for all areas
@@ -332,14 +376,14 @@ for areaIdx = areasToTest
                         spread = 1.2;
                         n_neighbors = 30;
                     case 3
-                         min_dist = 0.2;
+                        min_dist = 0.2;
                         spread = 1.2;
                         n_neighbors = 30;
-                   case 4
-                          min_dist = 0.2;
+                    case 4
+                        min_dist = 0.2;
                         spread = 1.2;
                         n_neighbors = 30;
-                  otherwise
+                    otherwise
                         % Default values if areaIdx doesn't match
                         min_dist = 0.3;
                         spread = 1.2;
@@ -359,7 +403,7 @@ for areaIdx = areasToTest
     end
 
     % PSID with Kinematics (psidKin)
-    if (ismember('psidKin', methodsToRun) || ismember('psidKin_nonBhv', methodsToRun)) && strcmp(dataType, 'naturalistic')
+    if ismember('psidKin', methodsToRun) || ismember('psidKin_nonBhv', methodsToRun)
         fprintf('Running PSID with kinematics...\n');
         % Return to original directory
         cd(fullfile(paths.homePath, 'neuro-behavior/src/decoding'));
@@ -390,8 +434,6 @@ for areaIdx = areasToTest
                 latents.psidKin_nonBhv = [];
             end
         end
-    elseif (ismember('psidKin', methodsToRun) || ismember('psidKin_nonBhv', methodsToRun)) && strcmp(dataType, 'reach')
-        fprintf('Skipping PSID with kinematics (kinData not available for reach task)...\n');
     end
 
 
@@ -478,23 +520,23 @@ for areaIdx = areasToTest
 
     % fprintf('All methods completed for area %s.\n', areaName);
     % Store area-specific results
-    allResults.latents{areaIdx} = latents;    
+    allResults.latents{areaIdx} = latents;
     fprintf('Stored latents for area %s.\n', areaName);
 
 end
 
 
 %% =============================================================================
-    % --------    CHOOSE WHICH DATA POINTS TO MODEL (PER AREA)
-    % =============================================================================
-    % Shift behavior labels if needed (for naturalistic data)
+% --------    CHOOSE WHICH DATA POINTS TO MODEL (PER AREA)
+% =============================================================================
+% Shift behavior labels if needed (for naturalistic data)
 for areaIdx = areasToTest
     shiftSec = 0;
     shiftFrame = 0;
     if shiftSec > 0 && strcmp(dataType, 'naturalistic')
         shiftFrame = ceil(shiftSec / opts.frameSize);
         bhvIDShifted = double(bhvID(1+shiftFrame:end));
-        
+
         % Adjust latents for shift
         fieldNames = fieldnames(latents);
         for i = 1:length(fieldNames)
@@ -530,12 +572,12 @@ for areaIdx = areasToTest
             deleteInd = svmID == -1;
             svmID(deleteInd) = [];
             svmInd(deleteInd) = [];
-            
+
         case 'reach'
             switch dataSubset
                 case 'all'
-                    svmInd = 1:length(bhvID);
-                    svmID = bhvID;
+                    svmInd = svmFirstBin:length(bhvID);
+                    svmID = bhvID(svmFirstBin:end);
                 case 'trans'
                     % Build windows around reach starts: [-2s, +3s] relative to each reach start
                     % Reach starts are the first indices where bhvID transitions into 2
@@ -559,8 +601,8 @@ for areaIdx = areasToTest
                     svmID = bhvID(svmInd);
                 case 'no_intertrial'
                     % Remove intertrial data (bhvID == 6)
-                    svmInd = 1:length(bhvID);
-                    svmID = bhvID;
+                    svmInd = svmFirstBin:length(bhvID);
+                    svmID = bhvID(svmFirstBin:end);
                     svmInd(svmID == 6) = [];
                     svmID(svmID == 6) = [];
             end
@@ -569,10 +611,10 @@ for areaIdx = areasToTest
     % Store area-specific results
     allResults.svmID{areaIdx} = svmID;
     allResults.svmInd{areaIdx} = svmInd;
-    
+
 
 end
-    fprintf('Stored SVM indices\n');
+fprintf('Stored SVM indices\n');
 
 
 
@@ -600,8 +642,12 @@ switch dataSubset
 end
 
 
-
-
+% For subsampling if chosen
+                if strcmp(balanceStrategy, 'subsample')
+                    counts = arrayfun(@(c) sum(svmID==c), unique(svmID));
+                    maxSubsampleSize = round(mean(counts));  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
+                     fprintf('Sub-sampling training data to maximum %d per category\n', maxSubsampleSize)
+               end
 
 
 
@@ -629,7 +675,7 @@ for areaIdx = areasToTest
     svmID = allResults.svmID{areaIdx};
     svmInd = allResults.svmInd{areaIdx};
     idSelect = allResults.idSelect{areaIdx};
-    
+
     % Recalculate area-specific behavior mappings
     bhv2ModelCodes = unique(svmID);
     if strcmp(dataType, 'reach')
@@ -731,11 +777,7 @@ for areaIdx = areasToTest
 
                 % Optionally balance training data
                 if strcmp(balanceStrategy, 'subsample')
-                    if strcmp(dataType, 'reach')
-                        balIdx = balance_subsample_indices(trainLabels);
-                    else
-                        balIdx = balance_subsample_indices(trainLabels, maxSubsampleSize);
-                    end
+                    balIdx = balance_subsample_indices(trainLabels, maxSubsampleSize);
                     trainDataCV = trainData(balIdx, :);
                     trainLabelsCV = trainLabels(balIdx);
                 else
@@ -754,7 +796,7 @@ for areaIdx = areasToTest
                 fprintf(' (mean across %d folds, range: [%.4f, %.4f])', nCVFolds, min(foldAccuracies), max(foldAccuracies));
             end
             fprintf('\n');
-            fprintf('Model training time: %.2f seconds\n', toc);
+            % fprintf('Model training time: %.2f seconds\n', toc);
 
             % Permutation tests - collect results in a temporary array
             % NOTE: Permutations always use holdout (not k-fold) for computational efficiency
@@ -785,11 +827,7 @@ for areaIdx = areasToTest
 
                         % Train model on shuffled labels
                         if strcmp(balanceStrategy, 'subsample')
-                            if strcmp(dataType, 'reach')
-                                balIdxPerm = balance_subsample_indices(shuffledLabels);
-                            else
-                                balIdxPerm = balance_subsample_indices(shuffledLabels, maxSubsampleSize);
-                            end
+                            balIdxPerm = balance_subsample_indices(shuffledLabels, maxSubsampleSize);
                             trainDataPerm = trainData(balIdxPerm, :);
                             shuffledLabelsPerm = shuffledLabels(balIdxPerm);
                         else
@@ -837,13 +875,13 @@ for areaIdx = areasToTest
                         error('Unknown permuteStrategy: %s', permuteStrategy);
                 end
 
-                fprintf('  %s Permutation %d: %.4f\n', methodName, s, methodAccuracyPermuted(s));
+                % fprintf('  %s Permutation %d: %.4f\n', methodName, s, methodAccuracyPermuted(s));
             end
 
             % Store permutation results for this method
             tempAccuracyPermuted{m} = methodAccuracyPermuted;
 
-            fprintf('Permutation testing time: %.2f seconds\n', toc);
+            % fprintf('Permutation testing time: %.2f seconds\n', toc);
             fprintf('Mean permuted %s accuracy: %.4f\n', methodName, mean(methodAccuracyPermuted));
         end
 
@@ -870,279 +908,13 @@ for areaIdx = areasToTest
     allResults.allPredictions{areaIdx} = allPredictions;
     allResults.allPredictionIndices{areaIdx} = allPredictionIndices;
 
-    fprintf('\nArea %s completed.\n', areaName);
+    fprintf('\nArea %s completed in %.2f seconds\n', toc);
+
 end
 delete(gcp('nocreate'));
 fprintf('Parallel pool closed.\n');
 
-%%
-% =============================================================================
-% --------    PLOT FULL DATA FOR EACH METHOD
-% =============================================================================
-for areaIdx = areasToTest
-    areaName = areas{areaIdx};
-
-    figHFull = 270;
-    if plotFullMap
-        fprintf('Plotting full data for each method...\n');
-
-        fieldNames = fieldnames(allResults.latents{areaIdx});
-        for i = 1:length(fieldNames)
-            methodName = fieldNames{i};
-            latentData = allResults.latents{areaIdx}.(methodName);
-
-            % Plot full time of all behaviors
-            colorsForPlot = arrayfun(@(x) colors(x,:), bhvID + colorsAdjust, 'UniformOutput', false);
-            colorsForPlot = vertcat(colorsForPlot{:});
-
-            figure(figHFull + i);
-            % Set figure position using monitor dimensions (3/4 height, 1/2 width)
-            figWidth = targetMonitor(3) * 0.5;  % Half width
-            figHeight = targetMonitor(4) * 0.75; % Three-quarters height
-            figX = targetMonitor(1) + (targetMonitor(3) - figWidth) / 2;  % Center horizontally
-            figY = targetMonitor(2) + (targetMonitor(4) - figHeight) / 2; % Center vertically
-            set(figHFull + i, 'Position', [figX, figY, figWidth, figHeight]);
-            clf; hold on;
-
-            if nDim > 2
-                scatter3(latentData(:, 1), latentData(:, 2), latentData(:, 3), 20, colorsForPlot, 'filled', 'MarkerFaceAlpha', 0.6);
-                % Set view angle to show all three axes with depth
-                view(45, 30);
-            else
-                scatter(latentData(:, 1), latentData(:, 2), 20, colorsForPlot, 'filled', 'MarkerFaceAlpha', 0.6);
-            end
-
-            title(sprintf('%s %s %dD - All Behaviors (bin=%.2f)', areaName, upper(methodName), nDim, opts.frameSize), 'Interpreter','none');
-            xlabel('D1'); ylabel('D2');
-            if nDim > 2
-                zlabel('D3');
-            end
-            grid on;
-
-            % Add legend for behaviors
-            uniqueBhv = unique(bhvID);
-            uniqueBhv = uniqueBhv(uniqueBhv >= 0);
-            for j = 1:length(uniqueBhv)
-                bhvIdx = uniqueBhv(j);
-                if bhvIdx < length(behaviors)
-                    scatter(NaN, NaN, 20, colors(bhvIdx+colorsAdjust,:), 'filled', 'DisplayName', behaviors{bhvIdx+colorsAdjust});
-                end
-            end
-            legend('Location', 'best', 'Interpreter', 'none');
-
-            % Save plot if flag is set
-            if savePlotFlag
-                plotFilename = sprintf('full_data_%s_%s_%s_%dD_bin%.2f.png', ...
-                    dataType, areaName, methodName, nDim, opts.frameSize);
-                plotPath = fullfile(savePath, plotFilename);
-                exportgraphics(figure(figHFull + i), plotPath, 'Resolution', 300);
-                fprintf('Saved plot: %s\n', plotFilename);
-            end
-        end
-    end
-
-    % =============================================================================
-    % --------    PLOT MODELING DATA FOR EACH METHOD
-    % =============================================================================
-    figHModel = 280;
-    if plotModelData
-        fprintf('Plotting modeling data for each method...\n');
-
-        fieldNames = fieldnames(allResults.latents{areaIdx});
-        for i = 1:length(fieldNames)
-            methodName = fieldNames{i};
-            latentData = allResults.latents{areaIdx}.(methodName);
-
-            % Get colors for modeled behaviors
-            colorsForPlot = arrayfun(@(x) bhv2ModelColors(x,:), allResults.svmID{areaIdx} + colorsAdjust, 'UniformOutput', false);
-            colorsForPlot = vertcat(colorsForPlot{:});
-
-            figure(figHModel + i);
-            % Set figure position using monitor dimensions (3/4 height, 1/2 width)
-            figWidth = targetMonitor(3) * 0.5;  % Half width
-            figHeight = targetMonitor(4) * 0.75; % Three-quarters height
-            figX = targetMonitor(1) + (targetMonitor(3) - figWidth) / 2;  % Center horizontally
-            figY = targetMonitor(2) + (targetMonitor(4) - figHeight) / 2; % Center vertically
-            set(figHModel + i, 'Position', [figX, figY, figWidth, figHeight]);
-            clf; hold on;
-
-            if nDim > 2
-                scatter3(latentData(allResults.svmInd{areaIdx}, 1), latentData(allResults.svmInd{areaIdx}, 2), latentData(allResults.svmInd{areaIdx}, 3), 40, colorsForPlot, 'filled');
-                % Set view angle to show all three axes with depth
-                view(45, 30);
-            else
-                scatter(latentData(allResults.svmInd{areaIdx}, 1), latentData(allResults.svmInd{areaIdx}, 2), 40, colorsForPlot, 'filled');
-            end
-
-            title(sprintf('%s %s %dD - %s (bin=%.2f)', areaName, upper(methodName), nDim, dataSubsetLabel, opts.frameSize), 'Interpreter','none');
-            xlabel('D1'); ylabel('D2');
-            if nDim > 2
-                zlabel('D3');
-            end
-            grid on;
-
-            % Add legend for modeled behaviors
-            for j = 1:length(allResults.bhv2ModelCodes{areaIdx})
-                bhvIdx = allResults.bhv2ModelCodes{areaIdx}(j);
-                if bhvIdx < length(behaviors)
-                    scatter(NaN, NaN, 40, colors(bhvIdx+colorsAdjust,:), 'filled', 'DisplayName', behaviors{bhvIdx+colorsAdjust});
-                end
-            end
-            legend('Location', 'best');
-
-            % Save plot if flag is set
-            if savePlotFlag
-                plotFilename = sprintf('modeling_%s_%s_%s_%s_%dD_bin%.2f.png', ...
-                    dataType, areaName, methodName, dataSubset, nDim, opts.frameSize);
-                plotPath = fullfile(savePath, plotFilename);
-                exportgraphics(figure(figHModel + i), plotPath, 'Resolution', 300);
-                fprintf('Saved plot: %s\n', plotFilename);
-            end
-        end
-    end
-end
-
-% =============================================================================
-% --------    PLOT RESULTS COMPARISON FOR ALL AREAS
-% =============================================================================
-
-if plotComparisons
-    fprintf('Plotting results comparison for all areas...\n');
-
-    % Create comparison figure for all areas
-    fig = figure(112);
-    set(fig, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)]);
-    clf;
-
-    % Plot all areas regardless of which ones are being analyzed
-    allAreasToPlot = 1:4;  % M23, M56, DS, VS
-    nAreas = length(allAreasToPlot);
-
-    % Find the first area that has data to determine number of methods
-    nMethods = 0;
-    for checkArea = allAreasToPlot
-        if ~isempty(allResults.methods{checkArea})
-            nMethods = length(allResults.methods{checkArea});
-            break;
-        end
-    end
-
-    if nMethods == 0
-        fprintf('No data found for any area. Skipping plot.\n');
-        % continue;
-    end
-
-    % Create subplots for each area
-    for a = 1:nAreas
-        areaIdx = allAreasToPlot(a);
-        areaName = areas{areaIdx};
-
-        subplot(1, nAreas, a);
-        hold on;
-
-        % Check if this area has data
-        if isempty(allResults.methods{areaIdx}) || isempty(allResults.accuracy{areaIdx})
-            % No data for this area - show empty plot
-            text(0.5, 0.5, 'No Data', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-                'FontSize', 14, 'Color', 'red');
-            title(sprintf('%s (%s) - No Data', areaName, dataSubsetLabel), 'Interpreter','none');
-            ylim([0, 1]);
-            xlim([0, 1]);
-            continue;
-        end
-
-        % Get data for this area
-        accuracy = allResults.accuracy{areaIdx};
-        accuracyPermuted = allResults.accuracyPermuted{areaIdx};
-        methods = allResults.methods{areaIdx};
-
-        % Use the actual number of methods for this area
-        areaMethods = length(methods);
-
-        % Bar plot of accuracies
-        x = 1:areaMethods;
-        barWidth = 0.35;
-
-        % Real data bars
-        b1 = bar(x, accuracy(:), barWidth, 'FaceColor', 'blue', 'DisplayName', 'Real Data');
-
-        % Permuted data bars
-        b2 = bar(x + barWidth/2, mean(accuracyPermuted, 2), barWidth, 'FaceColor', 'red', 'DisplayName', 'Permuted (mean)');
-
-        % Add error bars for permuted data
-        errorbar(x + barWidth/2, mean(accuracyPermuted, 2), std(accuracyPermuted, [], 2), 'k.', 'LineWidth', 1.5, 'DisplayName', 'Permuted (std)');
-
-        % Customize plot
-        set(gca, 'XTick', x, 'XTickLabel', upper(methods), 'TickLabelInterpreter', 'none');
-        ylabel('Accuracy');
-        title(sprintf('%s (%s)', areaName, dataSubsetLabel), 'Interpreter','none');
-        legend('Location', 'best');
-        grid on;
-        ylim([0, 1]);
-
-        % Add significance indicators
-        for m = 1:areaMethods
-            % Simple significance test: if real accuracy > 95th percentile of permuted
-            permSorted = sort(accuracyPermuted(m, :));
-            threshold95 = permSorted(ceil(0.95 * nShuffles));
-
-            if accuracy(m) > threshold95
-                text(m, accuracy(m) + 0.02, '*', 'HorizontalAlignment', 'center', 'FontSize', 16, 'FontWeight', 'bold');
-            end
-        end
-
-        % Add accuracy values as text
-        for m = 1:areaMethods
-            text(m - barWidth/2, accuracy(m) + 0.01, sprintf('%.3f', accuracy(m)), ...
-                'HorizontalAlignment', 'center', 'FontSize', 10);
-            text(m + barWidth/2, mean(accuracyPermuted(m, :)) + 0.01, sprintf('%.3f', mean(accuracyPermuted(m, :))), ...
-                'HorizontalAlignment', 'center', 'FontSize', 10);
-        end
-    end
-
-    sgtitle('SVM Decoding Accuracy Comparison - All Areas', 'FontSize', 16);
-
-    % Save comparison plot if flag is set
-    if savePlotFlag
-        plotFilename = sprintf('accuracy_svm_%s_%s_%dD_bin%.2f_nShuffles%d.png', ...
-            dataType, kernelFunction, dataSubset, nDim, opts.frameSize, nShuffles);
-        plotPath = fullfile(savePath, plotFilename);
-        exportgraphics(fig, plotPath, 'Resolution', 300);
-        fprintf('Saved comparison plot: %s\n', plotFilename);
-    end
-
-    % Summary statistics for all areas
-    fprintf('\n=== SUMMARY FOR ALL AREAS ===\n');
-    fprintf('Area\t\tMethod\t\tReal\t\tPermuted (mean ± std)\t\tDifference\n');
-    fprintf('----\t\t-----\t\t----\t\t----------------------\t\t----------\n');
-
-    for a = 1:nAreas
-        areaIdx = allAreasToPlot(a);
-        areaName = areas{areaIdx};
-
-        % Check if this area has data
-        if isempty(allResults.methods{areaIdx}) || isempty(allResults.accuracy{areaIdx})
-            fprintf('%s\t\tNo Data Available\n', areaName);
-            continue;
-        end
-
-        accuracy = allResults.accuracy{areaIdx};
-        accuracyPermuted = allResults.accuracyPermuted{areaIdx};
-        methods = allResults.methods{areaIdx};
-
-        for m = 1:length(methods)
-            diffAcc = accuracy(m) - mean(accuracyPermuted(m, :));
-            fprintf('%s\t\t%s\t\t%.3f\t\t%.3f ± %.3f\t\t%.3f\n', ...
-                areaName, upper(methods{m}), accuracy(m), mean(accuracyPermuted(m, :)), ...
-                std(accuracyPermuted(m, :)), diffAcc);
-        end
-
-        % Find best method for this area
-        [bestAcc, bestIdx] = max(accuracy);
-        fprintf('Best method for %s: %s (accuracy: %.3f)\n', areaName, upper(methods{bestIdx}), bestAcc);
-        fprintf('\n');
-    end
-end
+slack_code_done
 
 % =============================================================================
 % --------    SAVE RESULTS
