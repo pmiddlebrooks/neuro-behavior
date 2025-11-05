@@ -94,6 +94,7 @@ cOpts.exc = [0,0,0];
 cOpts.Lmax = .8;
 colors = maxdistcolor(nBehaviors,func, cOpts);
 colors(end,:) = [.85 .8 .75];
+colors(end,:) = [0 0 0];
 
 % Select brain area to analyze
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -103,7 +104,7 @@ idDS = find(strcmp(areaLabels, 'DS'));
 idVS = find(strcmp(areaLabels, 'VS'));
 
 %%
-selectFrom = 'VS';  % Change to test different areas
+selectFrom = 'DS';  % Change to test different areas
 switch selectFrom
     case 'M23'
         idSelect = idM23;
@@ -118,22 +119,24 @@ switch selectFrom
         min_dist_values = [.3];
         spread_values = [1.3];
         n_neighbors_values = [40]; 
+        spread_values = [1.6];
+        n_neighbors_values = [15]; 
     case 'DS'
         idSelect = idDS;
         min_dist_values = [0.4, 0.6 1];
         spread_values = [1 1.2 1.5 2.5];
         n_neighbors_values = [25 35 60];
-        min_dist_values = [0.5];
-        spread_values = [1.2];
-        n_neighbors_values = [35];
+        min_dist_values = [0.6];
+        spread_values = [1];
+        n_neighbors_values = [70];
     case 'VS'
         idSelect = idVS;
         min_dist_values = [0.1, 0.3, 0.5];
         spread_values = [1 1.2 1.5]  ;
         n_neighbors_values = [15 25 35];
-        min_dist_values = [0.8];
+        min_dist_values = [0.3];
         spread_values = [1.6];
-        n_neighbors_values = [20];
+        n_neighbors_values = [10];
 end
 
 fprintf('Selected %d neurons for area %s\n', length(idSelect), selectFrom);
@@ -185,6 +188,10 @@ for min_dist = min_dist_values
             elapsedTime = toc;
             fprintf('UMAP completed in %.2f seconds\n', elapsedTime);
 
+            % Subsample the inter-trial for plotting
+                              counts = arrayfun(@(c) sum(bhvIDSliding==c), unique(bhvIDSliding));
+                    maxSubsampleSize = round(mean(counts));  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
+
             % Plot the results
             figure(100 + configIdx);
             clf; hold on;
@@ -199,9 +206,19 @@ for min_dist = min_dist_values
             % Plot data colored by behavior (use sliding window indexed behavior labels)
             for bhvIdx = 1:nBehaviors
                 bhvIndices = find(bhvIDSliding == bhvIdx);
+                if bhvIdx == 6
+                    bhvIndices = bhvIndices(randperm(length(bhvIndices), maxSubsampleSize));
+                end
                 if ~isempty(bhvIndices)
-                    scatter3(umapProjections(bhvIndices, 1), umapProjections(bhvIndices, 2), umapProjections(bhvIndices, 3), ...
-                        40, colors(bhvIdx, :), 'MarkerEdgeColor', colors(bhvIdx, :), 'LineWidth', 2, 'DisplayName', behaviors{bhvIdx});
+                    if bhvIdx == 6
+                        % Make intertrial (bhvIdx == 6) translucent edges only (no fill)
+                        scatter3(umapProjections(bhvIndices, 1), umapProjections(bhvIndices, 2), umapProjections(bhvIndices, 3), ...
+                            40, 'MarkerFaceColor', 'none', 'MarkerEdgeColor', colors(bhvIdx, :), 'LineWidth', 2, ...
+                            'MarkerEdgeAlpha', 0.5, 'DisplayName', behaviors{bhvIdx});
+                    else
+                        scatter3(umapProjections(bhvIndices, 1), umapProjections(bhvIndices, 2), umapProjections(bhvIndices, 3), ...
+                            40, colors(bhvIdx, :), 'MarkerEdgeColor', colors(bhvIdx, :), 'LineWidth', 2, 'DisplayName', behaviors{bhvIdx});
+                    end
                 end
             end
 

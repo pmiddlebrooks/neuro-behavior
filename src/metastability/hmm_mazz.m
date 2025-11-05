@@ -41,6 +41,9 @@ opts.HmmParam = HmmParam;
 
 minNumNeurons = 10;
 
+% Model selection method
+MODELSEL = 'XVAL'; %'XVAL'; % 'BIC'; % 'AIC';
+
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
 natOrReach = 'Reach'; % 'Nat'  'Reach'
@@ -82,7 +85,7 @@ spikeData = spike_times_per_area(opts);
 
         opts.collectStart = 0;
         opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
-opts.firingRateCheckTime = 3*60;
+opts.firingRateCheckTime = 5*60;
 opts.dataPath = reachDataFile;
 spikeData = spike_times_per_area_reach(opts);
 
@@ -102,12 +105,12 @@ idList = {idM23, idM56, idDS, idVS};
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
 
-%% RUN THE LOOP ACROSS AREAS, SAVING PER AREA
+%%    =====================    RUN THE LOOP ACROSS AREAS, SAVING PER AREA        =================================
 
 areasToTest = 1:4; % Indices of areas to test
 areasMask = [length(idM23) >= minNumNeurons, length(idM56) >= minNumNeurons, length(idDS) >= minNumNeurons, length(idVS) >= minNumNeurons];
 areasToTest = areasToTest(areasMask)
-areasToTest = 2:3
+% areasToTest = 2:3
 
 % Initialize storage for all areas
 allResults = struct();
@@ -164,8 +167,6 @@ for areaIdx = areasToTest
     fprintf('\n\nRunning HMM on %s %s for area %s\n\n', natOrReach, sessionName, idAreaName)
     disp('In fun_HMM_modelSel.m, select hhmParam values!!!')
 
-    % Model selection method
-    MODELSEL = 'AIC'; %'XVAL'; % 'BIC'; % 'AIC';
 
     % Prepare data structure for HMM analysis
     DATAIN = struct('spikes', spikes, 'win', win_train, 'METHOD', MODELSEL, 'HmmParam', opts.HmmParam);
@@ -411,45 +412,98 @@ for areaIdx = areasToTest
 end % End of loop through brain areas
 
 
-% Save all results in a single file
-hmmdir = fullfile(paths.dropPath, 'metastability');
-if ~exist(hmmdir, 'dir')
-    mkdir(hmmdir);
-end
-
-% Create filename without area name
-filename = sprintf('HMM_results_%s.mat', natOrReach);
-filepath = fullfile(hmmdir, filename);
-
-% Save all results
-fprintf('Saving all HMM results to: \n%s\n', filepath);
-save(filepath, 'allResults', '-v7.3');
-
-% Create summary text file
-summary_filename = sprintf('HMM_summary_%s.txt', natOrReach);
-summary_filepath = fullfile(hmmdir, summary_filename);
-fid = fopen(summary_filepath, 'w');
-if fid ~= -1
-    fprintf(fid, 'HMM Analysis Summary\n');
-    fprintf(fid, '===================\n\n');
-    fprintf(fid, 'Analysis Date: %s\n', datestr(now, 'yyyy-mm-dd_HH-MM-SS'));
-    fprintf(fid, 'Data Type: %s\n', natOrReach);
-    fprintf(fid, 'Model Selection Method: %s\n', MODELSEL);
-    fprintf(fid, '\n');
-    fprintf(fid, 'Areas Analyzed:\n');
-    for a = areasToTest
-        if ~isempty(allResults.hmm_results{a})
-            fprintf(fid, '  %s: %d states, bin size %.6f s\n', areas{a}, allResults.numStates(a), allResults.binSize(a));
-        else
-            fprintf(fid, '  %s: Analysis failed\n', areas{a});
-        end
+% Save results (Reach: session-specific; Naturalistic: original location)
+if strcmpi(natOrReach, 'Reach')
+    % Determine session folder name
+    if exist('reachDataFile','var') && ~isempty(reachDataFile)
+        [~, dataBaseName, ~] = fileparts(reachDataFile);
+    elseif exist('sessionName','var') && ~isempty(sessionName)
+        [~, dataBaseName, ~] = fileparts(sessionName);
+    else
+        dataBaseName = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
     end
-    fprintf(fid, '\n');
-    fprintf(fid, 'Files saved:\n');
-    fprintf(fid, '  Results: %s\n', filename);
-    fprintf(fid, '  Summary: %s\n', summary_filename);
-    fclose(fid);
-    fprintf('Summary saved to: \n%s\n', summary_filepath);
+
+    % Build results struct expected by peri-reach analysis
+    results = struct();
+    results.areas = allResults.areas;
+    results.binSize = allResults.binSize;
+    results.numStates = allResults.numStates;
+    results.hmm_results = allResults.hmm_results;
+
+    % Save to session-specific directory
+    saveDirReach = fullfile(paths.reachResultsPath, dataBaseName);
+    if ~exist(saveDirReach, 'dir')
+        mkdir(saveDirReach);
+    end
+    binSizeSave = opts.HmmParam.BinSize;
+    minDurSave = opts.HmmParam.MinDur;
+    filenameReach = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f.mat', binSizeSave, minDurSave);
+    filePathReach = fullfile(saveDirReach, filenameReach);
+    fprintf('Saving Reach HMM results to: \n%s\n', filePathReach);
+    save(filePathReach, 'results', '-v7.3');
+
+    % Save summary alongside results
+    summary_filename = sprintf('HMM_summary_%s.txt', dataBaseName);
+    summary_filepath = fullfile(saveDirReach, summary_filename);
+    fid = fopen(summary_filepath, 'w');
+    if fid ~= -1
+        fprintf(fid, 'HMM Analysis Summary\n');
+        fprintf(fid, '===================\n\n');
+        fprintf(fid, 'Analysis Date: %s\n', datestr(now, 'yyyy-mm-dd_HH-MM-SS'));
+        fprintf(fid, 'Data Type: %s\n', natOrReach);
+        fprintf(fid, 'Model Selection Method: %s\n', MODELSEL);
+        fprintf(fid, '\n');
+        fprintf(fid, 'Areas Analyzed:\n');
+        for a = areasToTest
+            if ~isempty(allResults.hmm_results{a})
+                fprintf(fid, '  %s: %d states, bin size %.6f s\n', areas{a}, allResults.numStates(a), allResults.binSize(a));
+            else
+                fprintf(fid, '  %s: Analysis failed\n', areas{a});
+            end
+        end
+        fprintf(fid, '\n');
+        fprintf(fid, 'Files saved:\n');
+        fprintf(fid, '  Results: %s\n', filenameReach);
+        fprintf(fid, '  Summary: %s\n', summary_filename);
+        fclose(fid);
+        fprintf('Summary saved to: \n%s\n', summary_filepath);
+    end
+else
+    % Naturalistic save (unchanged)
+    hmmdir = fullfile(paths.dropPath, 'metastability');
+    if ~exist(hmmdir, 'dir')
+        mkdir(hmmdir);
+    end
+    filename = sprintf('HMM_results_%s.mat', natOrReach);
+    filepath = fullfile(hmmdir, filename);
+    fprintf('Saving all HMM results to: \n%s\n', filepath);
+    save(filepath, 'allResults', '-v7.3');
+
+    summary_filename = sprintf('HMM_summary_%s.txt', natOrReach);
+    summary_filepath = fullfile(hmmdir, summary_filename);
+    fid = fopen(summary_filepath, 'w');
+    if fid ~= -1
+        fprintf(fid, 'HMM Analysis Summary\n');
+        fprintf(fid, '===================\n\n');
+        fprintf(fid, 'Analysis Date: %s\n', datestr(now, 'yyyy-mm-dd_HH-MM-SS'));
+        fprintf(fid, 'Data Type: %s\n', natOrReach);
+        fprintf(fid, 'Model Selection Method: %s\n', MODELSEL);
+        fprintf(fid, '\n');
+        fprintf(fid, 'Areas Analyzed:\n');
+        for a = areasToTest
+            if ~isempty(allResults.hmm_results{a})
+                fprintf(fid, '  %s: %d states, bin size %.6f s\n', areas{a}, allResults.numStates(a), allResults.binSize(a));
+            else
+                fprintf(fid, '  %s: Analysis failed\n', areas{a});
+            end
+        end
+        fprintf(fid, '\n');
+        fprintf(fid, 'Files saved:\n');
+        fprintf(fid, '  Results: %s\n', filename);
+        fprintf(fid, '  Summary: %s\n', summary_filename);
+        fclose(fid);
+        fprintf('Summary saved to: \n%s\n', summary_filepath);
+    end
 end
 
 fprintf('\n=== All brain area analyses completed ===\n');
@@ -463,3 +517,5 @@ fprintf('\n=== All brain area analyses completed ===\n');
 
 
 
+
+% (Reach session-specific save handled above; no additional save)

@@ -7,8 +7,8 @@
 paths = get_paths;
 
 % Data parameters
-frameSize = .05;
-slidingWindowSec = .2; % Duration of sliding window for spike summation
+frameSize = .02;
+slidingWindowSec = .1; % Duration of sliding window for spike summation
 
 % Load naturalistic data
 opts = neuro_behavior_options;
@@ -102,7 +102,7 @@ colors = colors_for_behaviors(codes);
 colors2Plot = colors(2:end,:);
 codes2Plot = codes(2:end);
 %%
-selectFrom = 'M56';  % Change to test different areas
+selectFrom = 'DS';  % Change to test different areas
 switch selectFrom
     case 'M23'
         idSelect = idM23;
@@ -182,13 +182,12 @@ for min_dist = min_dist_values
             set(gcf, 'Position', [figX, figY, figWidth, figHeight]);
                        
                 % Plot data colored by behavior (use sliding window indexed behavior labels)
-            for bhvIdx = 1:length(codes2Plot)
-                % Map behavior code (1-based) to behavior index
-                bhvCode = bhvIdx - 1;  % Convert to 0-based code
-                bhvIndices = find(bhvIDSliding == bhvCode);
+            for bhvIdx = 2:length(codes)
+                % Map behavior code to behavior index
+                bhvIndices = find(bhvIDSliding == codes(bhvIdx));
                 if ~isempty(bhvIndices)
                     scatter3(umapProjections(bhvIndices, 1), umapProjections(bhvIndices, 2), umapProjections(bhvIndices, 3), ...
-                        40, colors(bhvIdx, :), 'MarkerEdgeColor', colors2Plot(bhvIdx, :), 'LineWidth', 2, 'DisplayName', behaviors{bhvIdx});
+                        40, colors(bhvIdx, :), 'MarkerEdgeColor', colors(bhvIdx, :), 'LineWidth', 2, 'DisplayName', behaviors{bhvIdx});
                 end
             end
             

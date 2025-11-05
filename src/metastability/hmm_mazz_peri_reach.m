@@ -13,8 +13,8 @@
 
 %% Load existing results if requested
 paths = get_paths;
-binSize = .005;
-minDur = .05;
+binSize = .01;
+minDur = .04;
 
 % User-specified reach data file (should match the one used in hmm_mazz_reach.m)
 % User-specified reach data file (should match the one used in criticality_reach_ar.m)
@@ -26,8 +26,8 @@ reachDataFile = fullfile(paths.reachDataPath, 'AB2_01-May-2023 15_34_59_NeuroBeh
 % reachDataFile = fullfile(paths.reachDataPath, 'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
 % reachDataFile = fullfile(paths.reachDataPath, 'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat');
 % reachDataFile = fullfile(paths.reachDataPath, 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat');
-% reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_test.mat');
+reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_test.mat');
 
 areasToTest = 1:4;
 
@@ -35,7 +35,10 @@ areasToTest = 1:4;
 plotErrors = true;
 
 % Define window parameters
-windowDurationSec = 8; % 40-second window around each reach
+periReachWindow = 30; % peri-reach window around each reach (used for all analyses)
+% Sliding metrics window (slides across the peri window for entropy/behavior/kin)
+slidingWindowSize = 2.0;  % seconds
+metricsStepSec = [];     % default: one HMM bin step (set per area)
 
 % Extract session name from filename
 [~, sessionName, ~] = fileparts(reachDataFile);
@@ -166,7 +169,7 @@ for a = areasToTest
     end
     
     % Calculate window duration in bins
-    windowDurationBins = ceil(windowDurationSec / binSize);
+    windowDurationBins = ceil(periReachWindow / binSize);
     halfWindow = floor(windowDurationBins / 2);
     
     % Initialize arrays for this area
@@ -282,6 +285,121 @@ for a = areasToTest
     end
     
     fprintf('Area %s: Corr B1=%d, Corr B2=%d, Err B1=%d, Err B2=%d valid reaches\n', areas{a}, validCorr1, validCorr2, validErr1, validErr2);
+end
+
+% ==============================================     Sliding Window Metrics (State/Metastate/Behavior/Kin)     ==============================================
+
+% Initialize storage for sliding-window metrics per area
+stateEntropyWindows = cell(1, length(areas));        % (reaches x frames)
+metaEntropyWindows = cell(1, length(areas));         % (reaches x frames)
+behaviorSwitchesWindows = cell(1, length(areas));    % (reaches x frames)
+behaviorProportionWindows = cell(1, length(areas));  % (reaches x frames)
+behaviorEntropyWindows = cell(1, length(areas));     % (reaches x frames)
+kinPCAStdWindows = cell(1, length(areas));           % (reaches x frames)
+
+% Build a binary reach timeline at reference binning for behavior metrics (0=non-reach,1=reach)
+refBinSize = binSizes(find(binSizes>0,1,'first')); if isempty(refBinSize), refBinSize = 0.01; end
+recordingDurationSec = max([reachStart; reachStop]);
+bhvTimelineLen = ceil(recordingDurationSec / refBinSize);
+reachMaskTimeline = zeros(bhvTimelineLen,1);
+for r = 1:length(reachStart)
+    rs = max(1, floor(reachStart(r)/1000/refBinSize)+1);
+    re = min(bhvTimelineLen, max(rs, ceil(reachStop(r)/1000/refBinSize)));
+    reachMaskTimeline(rs:re) = 1;
+end
+
+% Optional kinematics (joystick amplitude) downsampled to refBinSize
+hasKin = isfield(dataR,'NIDATA') && size(dataR.NIDATA,1) >= 8;
+if hasKin
+    jsAmp = sqrt(double(dataR.NIDATA(7,2:end)).^2 + double(dataR.NIDATA(8,2:end)).^2)';
+    srcFs = 1000; % Hz
+    binsPerFrame = max(1, round(refBinSize * srcFs));
+    numFramesKin = floor(length(jsAmp)/binsPerFrame);
+    kinDown = zeros(numFramesKin,1);
+    for i=1:numFramesKin
+        sIdx = (i-1)*binsPerFrame + 1; eIdx = i*binsPerFrame;
+        kinDown(i) = mean(jsAmp(sIdx:eIdx), 'omitnan');
+    end
+    kinDown = zscore(kinDown);
+else
+    kinDown = [];
+end
+
+% Helper to compute entropy from integer labels
+computeEntropy = @(x) (isempty(x) || all(isnan(x))) * NaN + (~(isempty(x) || all(isnan(x)))) * ( ...
+    -sum( max(eps, histcounts(x(~isnan(x)), 'BinMethod','integers','Normalization','probability')) ...
+         .* log2(max(eps, histcounts(x(~isnan(x)), 'BinMethod','integers','Normalization','probability'))) ) );
+
+for a = areasToTest
+    if ~hasHmmArea(a), continue; end
+    hmmRes = hmmResults{a};
+    binSizeA = binSizes(a);
+    winBinsA = ceil(periReachWindow / binSizeA);
+    halfWinA = floor(winBinsA/2);
+    nFramesPeri = winBinsA + 1;
+
+    % local step/size
+    stepBins = max(1, round((isempty(metricsStepSec) || isnan(metricsStepSec) || metricsStepSec<=0)*binSizeA/binSizeA + (~(isempty(metricsStepSec) || isnan(metricsStepSec) || metricsStepSec<=0))*metricsStepSec/binSizeA));
+    metWinBins = max(1, round(slidingWindowSize / binSizeA));
+
+    seq = hmmRes.continuous_results.sequence;
+    hasMeta = isfield(hmmRes,'metastate_results') && isfield(hmmRes.metastate_results,'continuous_metastates') && ~isempty(hmmRes.metastate_results.continuous_metastates);
+    if hasMeta, metaSeq = hmmRes.metastate_results.continuous_metastates; else, metaSeq = []; end
+    tA = (0:length(seq)-1) * binSizeA;
+    mapIdx = @(tSec) max(1, min(length(reachMaskTimeline), round(tSec/refBinSize)+1));
+
+    stateEntropyWindows{a} = nan(length(reachStart), nFramesPeri);
+    metaEntropyWindows{a} = nan(length(reachStart), nFramesPeri);
+    behaviorSwitchesWindows{a} = nan(length(reachStart), nFramesPeri);
+    behaviorProportionWindows{a} = nan(length(reachStart), nFramesPeri);
+    behaviorEntropyWindows{a} = nan(length(reachStart), nFramesPeri);
+    kinPCAStdWindows{a} = nan(length(reachStart), nFramesPeri);
+
+    for r = 1:length(reachStart)
+        centerTime = reachStart(r)/1000;
+        [~, cIdx] = min(abs(tA - centerTime));
+        periStart = cIdx - halfWinA; periEnd = cIdx + halfWinA;
+        if periStart < 1 || periEnd > length(seq), continue; end
+
+        for p = periStart:stepBins:periEnd
+            swStart = max(periStart, p - floor(metWinBins/2));
+            swEnd = min(periEnd, swStart + metWinBins - 1);
+            swStart = max(periStart, swEnd - metWinBins + 1);
+            if swEnd <= swStart, continue; end
+            periPos = (p - periStart) + 1;
+
+            % State entropy
+            segS = seq(swStart:swEnd); segS = segS(segS>0);
+            stateEntropyWindows{a}(r, periPos) = computeEntropy(segS);
+
+            % Metastate entropy
+            if hasMeta
+                segM = metaSeq(swStart:swEnd); segM = segM(segM>0);
+                metaEntropyWindows{a}(r, periPos) = computeEntropy(segM);
+            end
+
+            % Behavior metrics from reach/no-reach timeline
+            tStart = (swStart-1)*binSizeA; tEnd = (swEnd-1)*binSizeA;
+            bStart = mapIdx(tStart); bEnd = mapIdx(tEnd);
+            if bEnd >= bStart
+                segB = reachMaskTimeline(bStart:bEnd);
+                if ~isempty(segB)
+                    behaviorSwitchesWindows{a}(r, periPos) = sum(diff(segB)~=0);
+                    behaviorProportionWindows{a}(r, periPos) = mean(segB);
+                    p0 = mean(segB==0); p1 = mean(segB==1); pr = [p0 p1]; pr = pr(pr>0);
+                    behaviorEntropyWindows{a}(r, periPos) = -sum(pr.*log2(pr));
+                end
+            end
+
+            % Kin PCA std proxy from joystick amplitude
+            if ~isempty(kinDown)
+                kStart = bStart; kEnd = min(bEnd, length(kinDown));
+                if kEnd >= kStart
+                    kinPCAStdWindows{a}(r, periPos) = std(kinDown(kStart:kEnd));
+                end
+            end
+        end
+    end
 end
 
 % ==============================================     Plotting Results     ==============================================
@@ -422,10 +540,10 @@ for condIdx = 1:numConditions
 end
 
 % Add overall title
-sgtitle(sprintf('%s - Peri-Reach HMM State Sequences (Window: %gs)', filePrefix, windowDurationSec), 'FontSize', 16);
+sgtitle(sprintf('%s - Peri-Reach HMM State Sequences (Window: %gs)', filePrefix, periReachWindow), 'FontSize', 16);
 
 % Save combined figure (in same data-specific folder)
-filename = fullfile(saveDir, sprintf('%s_peri_reach_hmm_states_win%gs.png', filePrefix, windowDurationSec));
+filename = fullfile(saveDir, sprintf('%s_peri_reach_hmm_states_win%gs.png', filePrefix, periReachWindow));
 exportgraphics(gcf, filename, 'Resolution', 300);
 fprintf('Saved peri-reach HMM state plot to: %s\n', filename);
 
@@ -569,10 +687,10 @@ if hasAnyMetastates
     end
 
     % Add overall title
-    sgtitle(sprintf('%s - Peri-Reach Metastate Sequences (Window: %gs)', filePrefix, windowDurationSec), 'FontSize', 16);
+    sgtitle(sprintf('%s - Peri-Reach Metastate Sequences (Window: %gs)', filePrefix, periReachWindow), 'FontSize', 16);
 
     % Save combined metastate figure (in same data-specific folder)
-    filename = fullfile(saveDir, sprintf('%s_peri_reach_metastates_win%gs.png', filePrefix, windowDurationSec));
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_metastates_win%gs.png', filePrefix, periReachWindow));
     exportgraphics(gcf, filename, 'Resolution', 300);
     fprintf('Saved peri-reach metastate plot to: %s\n', filename);
 else
