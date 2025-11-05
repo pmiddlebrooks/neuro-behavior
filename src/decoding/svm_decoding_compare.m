@@ -159,7 +159,7 @@ elseif strcmp(dataType, 'naturalistic')
     opts = neuro_behavior_options;
     opts.minActTime = .16;
     opts.collectStart = 0 * 60 * 60; % seconds
-    opts.collectFor = 45 * 60; % seconds
+    opts.collectEnd = 45 * 60; % seconds
     opts.frameSize = frameSize;
 
     % Get kinematics data for PSID
@@ -269,7 +269,7 @@ allResults.parameters.frameSize = opts.frameSize;
 allResults.parameters.nShuffles = nShuffles;
 allResults.parameters.kernelFunction = kernelFunction;
 allResults.parameters.collectStart = opts.collectStart;
-allResults.parameters.collectFor = opts.collectFor;
+allResults.parameters.collectFor = opts.collectEnd;
 if strcmp(dataType, 'naturalistic')
     allResults.parameters.minActTime = opts.minActTime;
 end
@@ -947,7 +947,7 @@ fprintf(fid, 'Number of Dimensions: %d\n', nDim);
 fprintf(fid, 'Frame Size: %.2f seconds\n', opts.frameSize);
 fprintf(fid, 'Number of Permutations: %d\n', nShuffles);
 fprintf(fid, 'Kernel Function: %s\n', 'polynomial');
-fprintf(fid, 'Data Collection Duration: %.0f seconds\n', opts.collectFor);
+fprintf(fid, 'Data Collection Duration: %.0f seconds\n', opts.collectEnd);
 fprintf(fid, 'Minimum Activity Time: %.2f seconds\n', opts.minActTime);
 fprintf(fid, '\n');
 

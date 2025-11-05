@@ -6,7 +6,7 @@ addpath fa_util
 
 %% Run this, then go to spiking_script and get the behavior and data matrix
 % opts.frameSize = .05; % 50 ms framesize for now
-opts.collectFor = 60*60; % Get an hour of data
+opts.collectEnd = 60*60; % Get an hour of data
 
 
 

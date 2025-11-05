@@ -2,7 +2,7 @@
 
 opts = neuro_behavior_options;
 opts.frameSize = .05; % 50 ms framesize for now
-opts.collectFor = 60*60; % Get 45 min
+opts.collectEnd = 60*60; % Get 45 min
 opts.minActTime = .16;
 
 get_standard_data

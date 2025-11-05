@@ -31,7 +31,7 @@ switch natOrReach
         opts = neuro_behavior_options;
         opts.frameSize = hmm_results.HmmParam.BinSize;
         opts.collectStart = 0 * 60 * 60; % seconds
-        opts.collectFor = 45 * 60; % seconds
+        opts.collectEnd = 45 * 60; % seconds
         getDataType = 'behavior';
         get_standard_data
     case 'Reach'

@@ -5,7 +5,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 60 * 60; % seconds
+opts.collectEnd = 60 * 60; % seconds
 opts.frameSize = .1;
 % opts.shiftAlignFactor = .05; % I want spike counts xxx ms peri-behavior label
 
@@ -23,14 +23,14 @@ get_standard_data
 opts = neuro_behavior_options;
 opts.method = 'gaussian';
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 60 * 60; % seconds
+opts.collectEnd = 60 * 60; % seconds
 opts.frameSize = 1/60;
 opts.gaussWidth = 10; % ms
 getDataType = 'behavior';
 get_standard_data
 
             %%
-            fileName = sprintf('dataMat_%d_min_gaussian%d.mat', opts.collectFor/60, opts.gaussWidth);
+            fileName = sprintf('dataMat_%d_min_gaussian%d.mat', opts.collectEnd/60, opts.gaussWidth);
             load(fullfile(paths.dropPath, 'dataMat', fileName));
 
 

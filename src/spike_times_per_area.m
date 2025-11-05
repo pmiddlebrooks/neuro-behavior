@@ -64,7 +64,7 @@ areaLabels = {};
 rmvNeurons = [];
 if opts.removeSome
     checkTime = opts.firingRateCheckTime;
-    collectTime = opts.collectFor;
+    collectTime = opts.collectEnd;
     
     % Calculate firing rates for each neuron directly from spike counts
     firingRatesStart = zeros(length(idLabels), 1);
@@ -106,7 +106,7 @@ for i = 1:length(idLabels)
     iSpikeTime = data.spikeTimes(data.spikeClusters == idLabels(i));
     
     % Filter spikes to only include those within collectTime
-    collectTime = opts.collectFor;
+    collectTime = opts.collectEnd;
     validSpikes = iSpikeTime >= 0 & iSpikeTime <= collectTime;
     iSpikeTime = iSpikeTime(validSpikes);
     

@@ -3,7 +3,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0; % seconds
-opts.collectFor = 60*60*3.5; % seconds
+opts.collectEnd = 60*60*3.5; % seconds
 
 get_standard_data
 

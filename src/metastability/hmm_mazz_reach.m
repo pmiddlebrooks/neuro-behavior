@@ -108,7 +108,7 @@ filepath = fullfile(saveDir, filename);
 
 % Set collection parameters based on reach data
 opts.collectStart = 0;
-opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
+opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
 
 % Convert reach data to neural matrix format
 [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
@@ -142,7 +142,7 @@ idList = {idM23, idM56, idDS, idVS};
 % rStarts = round(dataR.R(trialIdx,1)/opts.frameSize/1000); % in frames
 % rStops = round(dataR.R(trialIdx,2)/opts.frameSize/1000); % in frames
 % firstFrame = round(opts.collectStart / opts.frameSize);
-% lastFrame = round((opts.collectStart + opts.collectFor) / opts.frameSize);
+% lastFrame = round((opts.collectEnd) / opts.frameSize);
 % validTrials = rStarts > firstFrame & rStops < lastFrame;
 % 
 % rStarts = rStarts(validTrials);
@@ -227,7 +227,7 @@ for areaIdx = areasToTest
     end
     
     ntrials = size(trialWindows, 1);
-    fprintf('Total time: %.1f seconds\n', opts.collectFor);
+    fprintf('Total time: %.1f seconds\n', opts.collectEnd);
     fprintf('Found %d reaches, created %d trials\n', length(reachStartTimes_s), ntrials);
     fprintf('Trial duration range: %.1f - %.1f seconds\n', min(trialEndTimes - trialStartTimes), max(trialEndTimes - trialStartTimes));
 
@@ -502,7 +502,7 @@ for areaIdx = areasToTest
     hmm_res.data_params.num_trials = ntrials;
     hmm_res.data_params.bin_size = opts.frameSize;
     hmm_res.data_params.collect_start = opts.collectStart;
-    hmm_res.data_params.collect_duration = opts.collectFor;
+    hmm_res.data_params.collect_duration = opts.collectEnd;
     hmm_res.data_params.min_act_time = opts.minActTime;
     hmm_res.data_params.min_firing_rate = opts.minFiringRate;
 

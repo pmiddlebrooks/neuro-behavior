@@ -19,7 +19,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 % Naturalistic data
 getDataType = 'spikes';
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 45 * 60; % seconds
+opts.collectEnd = 45 * 60; % seconds
 opts.firingRateCheckTime = 5 * 60;
 opts.frameSize = .03;
 opts.frameSize = .001;

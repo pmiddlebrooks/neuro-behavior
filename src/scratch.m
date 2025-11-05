@@ -1,3 +1,57 @@
+
+%% Replace in files
+files = dir('**/*.m');
+filesModified = 0;
+
+for i = 1:length(files)
+    % Get full file path including subfolder
+    filepath = fullfile(files(i).folder, files(i).name);
+   
+        % Read file
+        text = fileread(filepath);
+        
+        % Check if text contains the string to be replaced
+        if contains(text, 'opts.collectStart + opts.collectEnd')
+            % Replace text
+            newText = strrep(text, 'opts.collectStart + opts.collectEnd', 'opts.collectEnd');
+            
+            % Write back to the same location
+            fid = fopen(filepath, 'w');
+            if fid == -1
+                error('Could not open file for writing: %s', filepath);
+            end
+            fprintf(fid, '%s', newText);
+            fclose(fid);
+            
+            filesModified = filesModified + 1;
+            fprintf('Processed: %s\n', filepath);
+        end
+end
+
+fprintf('Done! Modified %d files.\n', filesModified);
+%% Get all .m files in folder
+files = dir('**/*.m');
+
+for i = 2 :length(files)
+    filename = files(i).name;
+    if ~strcmp(filename, 'scratch.m')
+    text = fileread(filename);
+    
+    
+    % Check if text contains the string to be replaced
+    if contains(text, 'opts.collectEnd')
+    % Replace text
+    newText = strrep(text, 'opts.collectEnd', 'opts.collectEnd');
+    % Write back
+    fid = fopen(filename, 'w');
+    fprintf(fid, '%s', newText);
+    fclose(fid);
+    
+    fprintf('Processed: %s\n', filename);
+    end
+    end
+end
+
 % SaniOG_etal_2021_NatNeuro: Modeling behaviorally relevant neural dynamics enabled by preferential subspace identification
 %%
 cd '/Users/paulmiddlebrooks/Projects/toolboxes/PSID/'
@@ -56,7 +110,7 @@ end
 %%
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 2 * 60 * 60; % seconds
+opts.collectEnd = 2 * 60 * 60; % seconds
 opts.frameSize = .05;
 
 getDataType = 'behavior';

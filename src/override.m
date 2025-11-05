@@ -2,7 +2,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 30 * 60; % seconds
+opts.collectEnd = 30 * 60; % seconds
 
 paths = get_paths;
 %% Need to find an appropriate bin size for each brain area
@@ -91,7 +91,7 @@ Av = avprops(asdfMat, 'ratio', 'fingerprint');
 
 %% Set variables and get data
 opts.minFiringRate = .1;
-opts.collectFor = 45 * 60;
+opts.collectEnd = 45 * 60;
 getDataType = 'spikes';
 
 nIter = 20;
@@ -109,7 +109,7 @@ alpha = tau;
 sigmaNuZInvSD = tau;
 %% Set variables and get data
 opts.minFiringRate = .1;
-opts.collectFor = 5 * 60;
+opts.collectEnd = 5 * 60;
 getDataType = 'spikes';
 opts.frameSize = .001;
 get_standard_data
@@ -295,7 +295,7 @@ slack_code_done
 %%   =============     Test transition vs. within-bout criticality BETWEEN behaviors.   =============
 opts.minFiringRate = .1;
 opts.collectStart = 0;
-opts.collectFor = 45 * 60;
+opts.collectEnd = 45 * 60;
 getDataType = 'spikes';
 
 opts.frameSize = .001;
@@ -493,7 +493,7 @@ sgtitle('Avalanche Params Reaching vs ITI')
 opts.frameSize = .001;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 30 * 60;
+opts.collectEnd = 30 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 
@@ -593,7 +593,7 @@ save(fileName, 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'centers
 
 %% =======================    Mark's reaching vs ITI     =======================
 opts.minFiringRate = .1;
-opts.collectFor = 45 * 60;
+opts.collectEnd = 45 * 60;
 getDataType = 'spikes';
 opts.frameSize = .001;
 

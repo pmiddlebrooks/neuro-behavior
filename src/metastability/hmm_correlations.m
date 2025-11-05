@@ -27,7 +27,7 @@ getDataType = 'kinematics';
 get_standard_data
 
 startFrame = 1 + opts.collectStart / kinBinSize;
-endFrame = startFrame - 1 + (opts.collectFor / kinBinSize);
+endFrame = startFrame - 1 + (opts.collectEnd / kinBinSize);
 kinData = kinData(startFrame:endFrame,:);
 
 [coeff, score, ~, ~, explained] = pca(zscore(kinData));
