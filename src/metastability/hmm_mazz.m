@@ -34,7 +34,7 @@ HmmParam.MinDur=0.04;   % .05 min duration of an admissible state (s) in HMM DEC
 HmmParam.MinP=0.8;      % pstate>MinP for an admissible state in HMM ADMISSIBLE STATES
 HmmParam.NumSteps=8;%    %10 number of fits at fixed parameters to avoid non-convexity
 HmmParam.NumRuns=33;%     % 50% % number of times we iterate hmmtrain over all trials
-HmmParam.singleSeqXval.K = 5; % Cross-validation
+HmmParam.singleSeqXval.K = 3; % Cross-validation
 
 opts.HmmParam = HmmParam;
 

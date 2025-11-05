@@ -402,6 +402,7 @@ for a = areasToTest
     end
 end
 
+
 % ==============================================     Plotting Results     ==============================================
 
 % Create peri-reach plots for each area: conditions x areas
