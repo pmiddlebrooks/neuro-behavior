@@ -22,7 +22,7 @@
 %%    Load behavior IDs
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 45 * 60; % seconds
+opts.collectEnd = 45 * 60; % seconds
 
 paths = get_paths;
 
@@ -139,7 +139,7 @@ getDataType = 'kinematics';
 get_standard_data
 
 startFrame = 1 + opts.collectStart / kinBinSize;
-endFrame = startFrame - 1 + (opts.collectFor / kinBinSize);
+endFrame = startFrame - 1 + (opts.collectEnd / kinBinSize);
 kinData = kinData(startFrame:endFrame,:);
 
 [coeff, score, ~, ~, explained] = pca(zscore(kinData));
@@ -1246,7 +1246,7 @@ correlationResults.parameters.propBhvList = propBhvList;
 
 % Store data collection timing parameters
 correlationResults.parameters.collectStart = opts.collectStart;
-correlationResults.parameters.collectFor = opts.collectFor;
+correlationResults.parameters.collectFor = opts.collectEnd;
 
 % Store bin sizes for each data type
 correlationResults.parameters.hmmBinSize = hmmBinSize;
@@ -1288,8 +1288,8 @@ fprintf('3. Criticality vs HMM metrics: %d significant correlations\n', length(c
 
 fprintf('\nData collection parameters:\n');
 fprintf('  Collection start: %.1f s (%.1f min)\n', opts.collectStart, opts.collectStart/60);
-fprintf('  Collection duration: %.1f s (%.1f min)\n', opts.collectFor, opts.collectFor/60);
-fprintf('  Collection end: %.1f s (%.1f min)\n', opts.collectStart + opts.collectFor, (opts.collectStart + opts.collectFor)/60);
+fprintf('  Collection duration: %.1f s (%.1f min)\n', opts.collectEnd, opts.collectEnd/60);
+fprintf('  Collection end: %.1f s (%.1f min)\n', opts.collectEnd, (opts.collectEnd)/60);
 
 fprintf('\nData bin sizes used:\n');
 fprintf('  HMM data: %.6f s\n', hmmBinSize);

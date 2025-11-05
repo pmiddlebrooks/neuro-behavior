@@ -34,8 +34,8 @@ areasToTest = 1:4;
 
 % Naturalistic data parameters
 opts.collectStart = 0 * 60 * 60;
-opts.collectFor = 45 * 60;
-opts.collectFor = 5 * 60;
+opts.collectEnd = 45 * 60;
+opts.collectEnd = 5 * 60;
 
 % Load naturalistic data using helper from hmm_mazz.m
 getDataType = 'spikes';
@@ -340,7 +340,7 @@ for areaIdx = areasToTest
     hmm_res.data_params.num_trials = ntrials;
     hmm_res.data_params.bin_size = opts.frameSize;
     hmm_res.data_params.collect_start = opts.collectStart;
-    hmm_res.data_params.collect_duration = opts.collectFor;
+    hmm_res.data_params.collect_duration = opts.collectEnd;
     hmm_res.data_params.min_act_time = opts.minActTime;
     hmm_res.data_params.min_firing_rate = opts.minFiringRate;
 

@@ -59,8 +59,8 @@ switch natOrReach
         % Naturalistic data
         getDataType = 'spikes';
         opts.collectStart = 0 * 60 * 60; % seconds
-        opts.collectFor = 45 * 60; % seconds
-        opts.collectFor = 10 * 60; % seconds
+        opts.collectEnd = 45 * 60; % seconds
+        opts.collectEnd = 10 * 60; % seconds
         % get_standard_data
 animal = 'ag25290';
 sessionNrn = '112321';
@@ -84,7 +84,7 @@ spikeData = spike_times_per_area(opts);
         % dataR = load(reachDataFile);
 
         opts.collectStart = 0;
-        opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
+        opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
 opts.firingRateCheckTime = 5*60;
 opts.dataPath = reachDataFile;
 spikeData = spike_times_per_area_reach(opts);
@@ -133,9 +133,9 @@ for areaIdx = areasToTest
     spikes = struct('spk', cell(1, gnunits));
 
     % Determine trial window in seconds using collected duration
-    if isfield(opts, 'collectFor') && ~isempty(opts.collectFor)
+    if isfield(opts, 'collectFor') && ~isempty(opts.collectEnd)
         trialStart_s = 0;
-        trialEnd_s = opts.collectFor;
+        trialEnd_s = opts.collectEnd;
     else
         % Fallback to max available spike time in this area
         areaMask = ismember(spikeData(:,2), idArea) & (spikeData(:,3) == areaIdx);
@@ -351,7 +351,7 @@ for areaIdx = areasToTest
     % hmm_res.data_params.num_trials = ntrials;
     hmm_res.data_params.bin_size = opts.frameSize;
     hmm_res.data_params.collect_start = opts.collectStart;
-    hmm_res.data_params.collect_duration = opts.collectFor;
+    hmm_res.data_params.collect_duration = opts.collectEnd;
     hmm_res.data_params.min_act_time = opts.minActTime;
     hmm_res.data_params.min_firing_rate = opts.minFiringRate;
 

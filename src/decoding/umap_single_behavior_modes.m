@@ -7,7 +7,7 @@ cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 4 * 60 * 60; % seconds
+opts.collectEnd = 4 * 60 * 60; % seconds
 opts.frameSize = .1;
 
 getDataType = 'all';
@@ -29,7 +29,7 @@ opts.fileName = bhvFileName;
 dataFull = readtable([opts.dataPath, opts.fileName]);
 
 % Use a time window of recorded data
-% getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectStart + opts.collectFor));
+% getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectEnd));
 % dataWindow = dataFull(getWindow,:);
 % dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
 % bhvID = dataWindow.Code;
@@ -142,7 +142,7 @@ dataBhvCsv.Properties.VariableNames{2} = 'Time';
 dataBhvCsv.Time = dataBhvCsv.Time / opts.fsBhv;
 % bhvData.Frame = 1 + floor(bhvData.Time / opts.frameSize);
 
-dataBhvCsv(dataBhvCsv.Time >= opts.collectFor, :) = [];
+dataBhvCsv(dataBhvCsv.Time >= opts.collectEnd, :) = [];
 
 %% Plot bouts, each frame color-coded by b-soid label
 boutFrame = [1; find(diff(dataBhvCsv.Time) > .017) + 1];
@@ -183,7 +183,7 @@ dataBhvSingle.StartTime = [dataBhvCsv.Time(1); dataBhvCsv.Time(changeBhvIdx)];
 dataBhvSingle.StartFrame = 1 + floor(dataBhvSingle.StartTime / opts.frameSize);
 
 
-    nFrame = ceil(opts.collectFor / opts.frameSize);
+    nFrame = ceil(opts.collectEnd / opts.frameSize);
     % Use StartFrame and DurFrame method:
     bhvIDMatSingle = int8(zeros(nFrame, 1));
     for i = 1 : size(dataBhv, 1) - 1

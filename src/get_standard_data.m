@@ -23,7 +23,7 @@ end
 % Need to get behavior data if you call spikes, too (for making the
 % neural_matrix)
 if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDataType, 'spikes')
-    % figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectFor)]);
+    % figurePath = strcat(paths.figurePath, animal, '/', sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectEnd)]);
     % if ~exist(figurePath, 'dir')
     %     mkdir(figurePath);
     % end
@@ -65,7 +65,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDa
 
 
 
-    nFrame = ceil(opts.collectFor / opts.frameSize);
+    nFrame = ceil(opts.collectEnd / opts.frameSize);
 
     dataBhv.StartFrame = 1 + round(dataBhv.StartTime / opts.frameSize);
     % dataBhv.DurFrame = [diff(dataBhv.StartFrame); nFrame - sum(dataBhv.StartFrame)];

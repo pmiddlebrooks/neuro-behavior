@@ -11,13 +11,13 @@ opts.frameSize = .2;
 getDataType = 'spikes';
 opts.method = 'standard';
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 60 * 60; % seconds
+opts.collectEnd = 60 * 60; % seconds
 get_standard_data
 %%
-fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
+fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectEnd/60, opts.frameSize, opts.gaussWidth);
 save(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat', '-mat');
 %%
-fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
+fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectEnd/60, opts.frameSize, opts.gaussWidth);
 load(fullfile(paths.dropPath, 'dataMat', fileName));
 
 
@@ -125,7 +125,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 60 * 60; % seconds
+opts.collectEnd = 60 * 60; % seconds
 opts.frameSize = .1;
 
 opts.frameSize = 1/60;
@@ -151,7 +151,7 @@ get_standard_data
 %             opts.windowAlign = windowAligns{a};
 %
 %             get_standard_data
-%             fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+%             fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectEnd/60, opts.stepSize, opts.windowSize, opts.windowAlign);
 %             save(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat', '-mat');
 %             toc
 %         end
@@ -298,8 +298,8 @@ for m = 1 :length(lowDs)
 
                 getDataType = 'behavior';
                 get_standard_data
-                fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
-                % fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectFor/60, opts.frameSize, opts.gaussWidth);
+                fileName = sprintf('dataMat_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectEnd/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+                % fileName = sprintf('dataMat_%d_min_frame%.3f_gaussian%d.mat', opts.collectEnd/60, opts.frameSize, opts.gaussWidth);
                 load(fullfile(paths.dropPath, 'dataMat', fileName), 'dataMat');
 
                 % tic
@@ -322,7 +322,7 @@ for m = 1 :length(lowDs)
                 switch lowDModel
                     case 'umap'
 
-                        fileName = sprintf('umap_%ddim_%d_min_step%.3f_window%.2f_align_%s.mat', nDim, opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+                        fileName = sprintf('umap_%ddim_%d_min_step%.3f_window%.2f_align_%s.mat', nDim, opts.collectEnd/60, opts.stepSize, opts.windowSize, opts.windowAlign);
                         saveP = fullfile(paths.dropPath, 'dataMat', fileName);
                         if exist(saveP, 'file')
                             load(saveP);
@@ -344,7 +344,7 @@ for m = 1 :length(lowDs)
                             save(saveP, 'projSelect');
                         end
                     case 'pca'
-                        % fileName = sprintf('pca_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+                        % fileName = sprintf('pca_%d_min_step%.3f_window%.2f_align_%s.mat', opts.collectEnd/60, opts.stepSize, opts.windowSize, opts.windowAlign);
                         % saveP = fullfile(paths.dropPath, 'dataMat', fileName);
                         % if exist(saveP, 'file')
                         %     load(saveP);
@@ -359,7 +359,7 @@ for m = 1 :length(lowDs)
                         % save(saveP, 'projSelect', 'coeff', 'explained');
                         % end
                     case 'tsne'
-                        fileName = sprintf('tsne_%ddim_%d_min_step%.3f_window%.2f_align_%s.mat', nDim, opts.collectFor/60, opts.stepSize, opts.windowSize, opts.windowAlign);
+                        fileName = sprintf('tsne_%ddim_%d_min_step%.3f_window%.2f_align_%s.mat', nDim, opts.collectEnd/60, opts.stepSize, opts.windowSize, opts.windowAlign);
                         saveP = fullfile(paths.dropPath, 'dataMat', fileName);
                         if exist(saveP, 'file')
                             load(saveP);

@@ -53,7 +53,7 @@ end
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 45 * 60; % seconds
+opts.collectEnd = 45 * 60; % seconds
 opts.minFiringRate = .05;
 get_standard_data
 
@@ -388,7 +388,7 @@ end
 results.measures = measures;
 results.measureNames = measureNames;
 results.naturalistic.collectStart = opts.collectStart;
-results.naturalistic.collectFor = opts.collectFor;
+results.naturalistic.collectFor = opts.collectEnd;
 
 % Naturalistic data results (conditional updates)
 if exist('optimalBinSizeNat', 'var')

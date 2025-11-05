@@ -13,7 +13,7 @@ load(reachDataFile);
 % beforeAfterReach = 5;
 % 
 % opts.collectStart = block2FirstSec - beforeAfter;
-% opts.collectFor = beforeAfter;
+% opts.collectEnd = beforeAfter;
 
 nTrial = 50;
 Block = Block(1:nTrial,:);

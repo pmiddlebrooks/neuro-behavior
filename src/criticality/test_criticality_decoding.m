@@ -6,7 +6,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 5 * 60; % seconds - shorter for testing
+opts.collectEnd = 5 * 60; % seconds - shorter for testing
 opts.minFiringRate = .05;
 opts.frameSize = .001;
 

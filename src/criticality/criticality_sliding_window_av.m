@@ -58,7 +58,7 @@ if strcmp(dataType, 'reach')
     opts.frameSize = .001;
     opts.firingRateCheckTime = 5 * 60;
     opts.collectStart = 0;
-    opts.collectFor = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
+    opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
     opts.minFiringRate = .1;
     opts.maxFiringRate = 70;
     
@@ -75,7 +75,7 @@ elseif strcmp(dataType, 'naturalistic')
     getDataType = 'spikes';
     opts.firingRateCheckTime = 5 * 60;
     opts.collectStart = 0 * 60; % seconds
-    opts.collectFor = 45 * 60; % seconds
+    opts.collectEnd = 45 * 60; % seconds
     opts.minFiringRate = .05;
     get_standard_data
     

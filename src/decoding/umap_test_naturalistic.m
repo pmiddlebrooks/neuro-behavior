@@ -14,7 +14,7 @@ slidingWindowSec = .1; % Duration of sliding window for spike summation
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 45 * 60; % seconds
+opts.collectEnd = 45 * 60; % seconds
 opts.frameSize = frameSize;
 
 % Get kinematics data for reference

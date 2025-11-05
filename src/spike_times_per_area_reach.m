@@ -27,10 +27,10 @@ if ~isempty(opts.collectStart)
 else
     firstSecond = 0;
 end
-if ~isempty(opts.collectFor)
-    lastSecond = firstSecond + opts.collectFor;
+if ~isempty(opts.collectEnd)
+    lastSecond = firstSecond + opts.collectEnd;
 else
-    error('opts.collectFor must be provided.');
+    error('opts.collectEnd must be provided.');
 end
 
 % Map numeric area codes to 1..4 per convention: 1=M23, 2=M56, 3=DS, 4=VS

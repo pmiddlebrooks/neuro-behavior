@@ -3,7 +3,7 @@
 opts = neuro_behavior_options;
 opts.frameSize = .1; % 100 ms framesize for now
 opts.collectStart = 0*60*60; % Start collection here
-opts.collectFor = 60*60; % Get 45 min
+opts.collectEnd = 60*60; % Get 45 min
 
 
 getDataType = 'all';
@@ -497,7 +497,7 @@ saveas(gcf, fullfile(paths.figurePath, 'Number of postively modulated neurons ac
 
 opts = neuro_behavior_options;
 opts.collectStart = 0; % seconds
-opts.collectFor = 60*60*4; % seconds
+opts.collectEnd = 60*60*4; % seconds
 
 get_standard_data
 

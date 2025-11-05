@@ -2,7 +2,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 4*60 * 60; % seconds
+opts.collectEnd = 4*60 * 60; % seconds
 
 paths = get_paths;
 
@@ -36,7 +36,7 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .05;
 getDataType = 'spikes';
-opts.collectFor = 20 * 60;
+opts.collectEnd = 20 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 %%
@@ -434,7 +434,7 @@ copy_figure_to_clipboard
 opts = neuro_behavior_options;
 opts.minFiringRate = .1;
 opts.collectStart = 0;
-opts.collectFor = 60 * 60;
+opts.collectEnd = 60 * 60;
 getDataType = 'lfp';
 
 opts.frameSize = .001;
@@ -445,7 +445,7 @@ nrnDataPath = [nrnDataPath, 'recording1/'];
 opts.dataPath = nrnDataPath;
 
 data = readmatrix([opts.dataPath, 'lfp.txt']);
-data = data(1 + (opts.collectStart * opts.fsLfp) : (opts.collectStart + opts.collectFor) * opts.fsLfp, :);
+data = data(1 + (opts.collectStart * opts.fsLfp) : (opts.collectEnd) * opts.fsLfp, :);
 data = fliplr(data); % flip data so first column (channel) is brain surface
 
 channelSpacing = 100;
@@ -599,7 +599,7 @@ copy_figure_to_clipboard
 opts = neuro_behavior_options;
 opts.minFiringRate = .1;
 opts.collectStart = 0;
-opts.collectFor = 60 * 60;
+opts.collectEnd = 60 * 60;
 getDataType = 'spikes';
 
 opts.frameSize = .001;
@@ -1249,7 +1249,7 @@ opts.firingRateCheckTime = 5 * 60;
 %% ==============================================      Naturalistic
 getDataType = 'spikes';
 opts.collectStart = 0*60*60;
-opts.collectFor = 45 * 60;  % Collect for 45 min to match Mark's data duration
+opts.collectEnd = 45 * 60;  % Collect for 45 min to match Mark's data duration
 get_standard_data
 
 dataMatMain = dataMat;
@@ -1559,7 +1559,7 @@ legend('Empirical Data', 'Power-Law Fit');
 % Define behaviors to include (input as a vector)
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 1 * 60 * 60; % seconds
+opts.collectEnd = 1 * 60 * 60; % seconds
 animal = 'ag25290';
 sessionBhv = '112321_1';
 sessionNrn = '112321';

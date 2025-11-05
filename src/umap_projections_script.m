@@ -2,7 +2,7 @@
 cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 45 * 60; % seconds
+opts.collectEnd = 45 * 60; % seconds
 % opts.frameSize = .1;
 
 getDataType = 'all';
@@ -312,7 +312,7 @@ cd 'E:/Projects/toolboxes/umapFileExchange (4.4)/umap/'
 
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 2 * 60 * 60; % seconds
+opts.collectEnd = 2 * 60 * 60; % seconds
 opts.frameSize = .15;
 
 getDataType = 'all';

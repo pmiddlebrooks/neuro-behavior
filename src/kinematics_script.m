@@ -1,7 +1,7 @@
 %%
 opts = neuro_behavior_options;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 1 * 60 * 60; % seconds
+opts.collectEnd = 1 * 60 * 60; % seconds
 % opts.frameSize = 1/60;
 opts.frameSize = 1/60;
 

@@ -7,7 +7,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 30 * 60; % seconds
+opts.collectEnd = 30 * 60; % seconds
 opts.minFiringRate = .05;
 
 paths = get_paths;
@@ -31,7 +31,7 @@ getDataType = 'kinematics';
 get_standard_data
 
 startFrame = 1 + opts.collectStart / kinBinSize;
-endFrame = startFrame - 1 + (opts.collectFor / kinBinSize);
+endFrame = startFrame - 1 + (opts.collectEnd / kinBinSize);
 kinData = kinData(startFrame:endFrame,:);
 
 [coeff, score, ~, ~, explained] = pca(zscore(kinData));

@@ -11,7 +11,7 @@ opts = neuro_behavior_options;
 opts.frameSize = .01;
 opts.minFiringRate = .1;
 getDataType = 'spikes';
-opts.collectFor = 5 * 60;
+opts.collectEnd = 5 * 60;
 opts.firingRateCheckTime = 5 * 60;
 get_standard_data
 

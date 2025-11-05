@@ -27,7 +27,7 @@ areasToTest = 1:4;
 
 % Data collection parameters
 opts.collectStart = 0 * 60; % seconds
-opts.collectFor = 45 * 60; % seconds
+opts.collectEnd = 45 * 60; % seconds
 
 
 %% Load existing results if requested
@@ -83,7 +83,7 @@ if makePlots
         grid on;
         set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
         set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
-        xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
+        xlim([opts.collectStart/60 (opts.collectStart+opts.collectEnd)/60]);
 
         % Plot kappa
         axes(ha(2));
@@ -96,7 +96,7 @@ if makePlots
         grid on;
         set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
         set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
-        xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
+        xlim([opts.collectStart/60 (opts.collectStart+opts.collectEnd)/60]);
 
         % Plot decades
         axes(ha(3));
@@ -110,7 +110,7 @@ if makePlots
         xlabel('Minutes', 'FontSize', 14); % Only add xlabel to bottom subplot
         set(gca, 'YTickLabelMode', 'auto', 'FontSize', 14);  % Enable Y-axis labels
         set(gca, 'XTickLabelMode', 'auto');  % Enable X-axis labels
-        xlim([opts.collectStart/60 (opts.collectStart+opts.collectFor)/60]);
+        xlim([opts.collectStart/60 (opts.collectStart+opts.collectEnd)/60]);
 
         sgtitle(sprintf('Avalanche Criticality Measures - %s', areas{a}), 'FontSize', 14);
 

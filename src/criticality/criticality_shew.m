@@ -18,7 +18,7 @@
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 1*60 * 60; % seconds
+opts.collectEnd = 1*60 * 60; % seconds
 opts.minFiringRate = .05;
 opts.frameSize = .001;
 
@@ -39,7 +39,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 %% Naturalistic data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
-opts.collectFor = 45 * 60; % seconds
+opts.collectEnd = 45 * 60; % seconds
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -155,7 +155,7 @@ plot(startSRea{3}/60, d2ReaR{3}, '*r');
 xlabel('Minutes'); ylabel('d2 estimate');
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest');
 title(['Reach Data ', num2str(maxWindowSizeRea), ' sec window, ' num2str(stepSize), ' sec steps']);
-xlim([0 opts.collectFor/60]);
+xlim([0 opts.collectEnd/60]);
 
 
 
@@ -242,7 +242,7 @@ plot(startSNat{3}/60, d2NatR{3}, '*r');
 xlabel('Minutes'); ylabel('d2 estimate');
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest');
 title(['Naturalistic Data ', num2str(maxWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps']);
-xlim([0 opts.collectFor/60]);
+xlim([0 opts.collectEnd/60]);
 
 
 %% ========== Test how d2Nat changes as a function of number of neurons in area (mirrored from MR estimator) ==========
@@ -349,7 +349,7 @@ end
 xlabel('Minutes'); ylabel('d2 estimate');
 title(sprintf('%s: d2 estimate vs. time for increasing neuron counts', areas{a}));
 legend('show');
-xlim([0 opts.collectFor/60]);
+xlim([0 opts.collectEnd/60]);
 
 % ========== End mirrored sections ==========
 

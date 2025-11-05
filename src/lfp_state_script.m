@@ -14,7 +14,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 60 * 60; % seconds
+opts.collectEnd = 60 * 60; % seconds
 opts.frameSize = .1;
 
 getDataType = 'lfp';

@@ -16,7 +16,7 @@ opts = neuro_behavior_options;
 opts.frameSize = 1/opts.fsBhv;
 opts.frameSize = .02;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 45 * 60; % seconds
+opts.collectEnd = 45 * 60; % seconds
 getDataType = 'behavior';
 get_standard_data
 

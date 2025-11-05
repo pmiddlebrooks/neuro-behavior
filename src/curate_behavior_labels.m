@@ -40,7 +40,7 @@ dataBhv.Valid = behavior_selection(dataBhv, opts);
 
 % Recalculate StartFrame
 dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
-    nFrame = ceil(opts.collectFor / opts.frameSize);
+    nFrame = ceil(opts.collectEnd / opts.frameSize);
 
 % Re-Create bhvIDMat, a vector of ID labels, one element per frame to match the
 % neural matrix (see get_standard_data.m)

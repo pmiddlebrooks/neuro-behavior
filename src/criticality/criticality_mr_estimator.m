@@ -48,7 +48,7 @@ opts.frameSize = 0.001; % Set to 1 ms as requested
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 Fs = 1000; % dataR is in ms (1000 Hz)
 opts.collectStart = 5 * 60; % seconds
-opts.collectFor = 25 * 60; % seconds
+opts.collectEnd = 25 * 60; % seconds
 [dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
 
 % % Get data until 1 sec after the last reach ending.
@@ -213,7 +213,7 @@ ylabel('MR estimate')
 % set(h1, 'HandleVisibility', 'off');
 % set(h2, 'HandleVisibility', 'off');
 title(['Reach Data ', num2str(maxWindowSize), ' sec window, ' num2str(stepSize), ' sec steps'])
-xlim([0 opts.collectFor/60])
+xlim([0 opts.collectEnd/60])
 
 
 
@@ -232,7 +232,7 @@ xlim([0 opts.collectFor/60])
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 5 * 60; % seconds
-opts.collectFor = 25 * 60; % seconds
+opts.collectEnd = 25 * 60; % seconds
 get_standard_data
 
 areas = {'M23', 'M56', 'DS', 'VS'};
@@ -331,7 +331,7 @@ legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('MR estimate')
 title(['Naturalistic Data ', num2str(maxWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps'])
-xlim([0 opts.collectFor/60])
+xlim([0 opts.collectEnd/60])
 
 
 
@@ -475,7 +475,7 @@ xlabel('Minutes');
 ylabel('MR estimate');
 title(sprintf('%s: MR estimate vs. time for increasing neuron counts', areas{a}));
 legend('show');
-xlim([0 opts.collectFor/60]);
+xlim([0 opts.collectEnd/60]);
 
 
 

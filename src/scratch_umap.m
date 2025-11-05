@@ -1364,7 +1364,7 @@ opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.frameSize = .1;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectFor = 4 * 60 * 60; % seconds
+opts.collectEnd = 4 * 60 * 60; % seconds
 
 getDataType = 'all';
 get_standard_data

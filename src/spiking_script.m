@@ -16,7 +16,7 @@ saveDataPath = strcat(paths.saveDataPath, animal,'/', sessionNrn, '/');
 if ~exist(saveDataPath, 'dir')
     mkdir(saveDataPath)
 end
-saveFileName = ['neural_matrix ', 'frame_size_' num2str(opts.frameSize), [' start_', num2str(opts.collectStart), ' for_', num2str(opts.collectFor), '.mat']];
+saveFileName = ['neural_matrix ', 'frame_size_' num2str(opts.frameSize), [' start_', num2str(opts.collectStart), ' for_', num2str(opts.collectEnd), '.mat']];
 save(fullfile(saveDataPath,saveFileName), 'dataMat', 'idLabels', 'areaLabels', 'removedNeurons')
 
 %% Or load an existing dataMat
@@ -199,7 +199,7 @@ minTrial = sum(strcmp(areaLabels, 'DS')) * 1.3;
 fig = figure(87);
 clf
 set(fig, 'PaperOrientation', 'portrait','Position', [50, 50, 1000, 800])
-figurePath = ['E:/Projects/neuro-behavior/docs/',animal,'/',sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectFor)]];
+figurePath = ['E:/Projects/neuro-behavior/docs/',animal,'/',sessionSave, '/figures/', ['start ' num2str(opts.collectStart), ' for ', num2str(opts.collectEnd)]];
 
 
 
@@ -526,7 +526,7 @@ plot(distAll, 'r', 'linewidth', 2)
 %
 opts = neuro_behavior_options;
 opts.collectStart = 0;
-opts.collectFor = 4*60*60;
+opts.collectEnd = 4*60*60;
 
 %             Go get  behavior data and neural matrix from above, thne run
 %             below

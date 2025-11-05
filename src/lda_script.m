@@ -1,6 +1,6 @@
 %% Get data from get_standard_data
 opts = neuro_behavior_options;
-opts.collectFor = 60*60;
+opts.collectEnd = 60*60;
 get_standard_data
 
 %%

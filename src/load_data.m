@@ -17,7 +17,7 @@ switch dataType
 
 
         % Use a time window of recorded data
-        getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectStart + opts.collectFor));
+        getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectEnd));
         dataWindow = dataFull(getWindow,:);
         dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
         bhvID = dataWindow.Code;
@@ -31,7 +31,7 @@ switch dataType
 
 
         data = table();
-        data.Dur = [diff([0; dataWindow.Time(changeBhvIdx)]); opts.collectFor - dataWindow.Time(changeBhvIdx(end))];
+        data.Dur = [diff([0; dataWindow.Time(changeBhvIdx)]); opts.collectEnd - dataWindow.Time(changeBhvIdx(end))];
         data.ID = [bhvID(1); bhvID(changeBhvIdx)];
         % data.Name = bhvName;
         data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
@@ -57,7 +57,7 @@ switch dataType
        % kData = readmatrix(csvFilePath);
 
 
-        getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectStart + opts.collectFor));
+        getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectEnd));
         data = kinData(getWindow, :);
 
 
@@ -109,7 +109,7 @@ switch dataType
         spikeClusters = readNPY([opts.dataPath, 'spike_clusters.npy']);
 
         % Return the requested window of data, formatted  so start time is zero,
-        dataWindow = spikeTimes >= opts.collectStart & spikeTimes < (opts.collectStart + opts.collectFor);
+        dataWindow = spikeTimes >= opts.collectStart & spikeTimes < (opts.collectEnd);
         spikeTimes = spikeTimes(dataWindow);
         spikeTimes = spikeTimes - opts.collectStart;
         spikeClusters = spikeClusters(dataWindow);
@@ -121,7 +121,7 @@ switch dataType
     case 'lfp'
         data = readmatrix([opts.dataPath, 'lfp.txt']);
 
-        data = data(1 + (opts.collectStart * opts.fsLfp) : (opts.collectStart + opts.collectFor) * opts.fsLfp, :);
+        data = data(1 + (opts.collectStart * opts.fsLfp) : (opts.collectEnd) * opts.fsLfp, :);
 
 end
 

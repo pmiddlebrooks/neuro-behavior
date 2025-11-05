@@ -30,7 +30,7 @@ numPairs = size(areaPairs, 1);
 getDataType = 'spikes';
 opts = neuro_behavior_options;
 opts.firingRateCheckTime = 5 * 60;
-opts.collectFor = 30 * 60; % seconds
+opts.collectEnd = 30 * 60; % seconds
 get_standard_data
 idListNat = {idM23, idM56, idDS, idVS};
 
