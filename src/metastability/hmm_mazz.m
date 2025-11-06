@@ -13,7 +13,7 @@
 %                   HMM_summary_[DataType]_[BrainArea]_[Timestamp].txt
 
 paths = get_paths;
-
+x
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.minFiringRate = .05;
@@ -46,7 +46,7 @@ MODELSEL = 'XVAL'; %'XVAL'; % 'BIC'; % 'AIC';
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
 
-natOrReach = 'Reach'; % 'Nat'  'Reach'
+natOrReach = 'Nat'; % 'Nat'  'Reach'
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 
@@ -64,6 +64,7 @@ switch natOrReach
         % get_standard_data
 animal = 'ag25290';
 sessionNrn = '112321';
+sessionName = [animal, '_', sessionNrn];
     nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/recording1/');
     opts.dataPath = nrnDataPath;
 spikeData = spike_times_per_area(opts);

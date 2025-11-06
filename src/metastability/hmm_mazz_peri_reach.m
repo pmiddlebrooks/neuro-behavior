@@ -325,10 +325,7 @@ else
     kinDown = [];
 end
 
-% Helper to compute entropy from integer labels
-computeEntropy = @(x) (isempty(x) || all(isnan(x))) * NaN + (~(isempty(x) || all(isnan(x)))) * ( ...
-    -sum( max(eps, histcounts(x(~isnan(x)), 'BinMethod','integers','Normalization','probability')) ...
-         .* log2(max(eps, histcounts(x(~isnan(x)), 'BinMethod','integers','Normalization','probability'))) ) );
+% Note: Entropy computation now matches hmm_correlations.m approach (inline code below)
 
 for a = areasToTest
     if ~hasHmmArea(a), continue; end
@@ -368,14 +365,44 @@ for a = areasToTest
             if swEnd <= swStart, continue; end
             periPos = (p - periStart) + 1;
 
-            % State entropy
+            % State entropy (same approach as hmm_correlations.m)
             segS = seq(swStart:swEnd); segS = segS(segS>0);
-            stateEntropyWindows{a}(r, periPos) = computeEntropy(segS);
+            if isempty(segS) || all(isnan(segS))
+                stateEntropyWindows{a}(r, periPos) = NaN;
+            elseif length(unique(segS)) <= 1
+                stateEntropyWindows{a}(r, periPos) = 0;
+            else
+                % Count occurrences of each state
+                stateCounts = histcounts(segS, 1:(numStates(a)+1));
+                stateProportions = stateCounts / length(segS);
+                stateProportions = stateProportions(stateProportions > 0); % Remove zero probabilities
+                if ~isempty(stateProportions)
+                    stateEntropyWindows{a}(r, periPos) = -sum(stateProportions .* log2(stateProportions));
+                else
+                    stateEntropyWindows{a}(r, periPos) = NaN;
+                end
+            end
 
-            % Metastate entropy
+            % Metastate entropy (same approach as hmm_correlations.m)
             if hasMeta
                 segM = metaSeq(swStart:swEnd); segM = segM(segM>0);
-                metaEntropyWindows{a}(r, periPos) = computeEntropy(segM);
+                if isempty(segM) || all(isnan(segM))
+                    metaEntropyWindows{a}(r, periPos) = NaN;
+                elseif length(unique(segM)) <= 1
+                    metaEntropyWindows{a}(r, periPos) = 0;
+                else
+                    % Get maximum metastate value
+                    maxMetastate = hmmRes.metastate_results.num_metastates;
+                    % Count occurrences of each metastate
+                    metaCounts = histcounts(segM, 1:(maxMetastate+1));
+                    metaProportions = metaCounts / length(segM);
+                    metaProportions = metaProportions(metaProportions > 0); % Remove zero probabilities
+                    if ~isempty(metaProportions)
+                        metaEntropyWindows{a}(r, periPos) = -sum(metaProportions .* log2(metaProportions));
+                    else
+                        metaEntropyWindows{a}(r, periPos) = NaN;
+                    end
+                end
             end
 
             % Behavior metrics from reach/no-reach timeline
@@ -402,8 +429,208 @@ for a = areasToTest
     end
 end
 
+%% ==============================================     Sliding Window Metrics Plotting     ==============================================
 
-% ==============================================     Plotting Results     ==============================================
+% Create condition indices (like criticality_peri_reach.m)
+corr1Idx = ismember(reachClass, 2); % Block 1 correct
+corr2Idx = ismember(reachClass, 4); % Block 2 correct
+err1Idx = ismember(reachClass, 1);  % Block 1 error
+err2Idx = ismember(reachClass, 3);  % Block 2 error
+
+% Determine number of conditions to plot
+numConditions = 2; % Block 1 Correct, Block 1 Error
+if plotErrors
+    numConditions = numConditions + 2; % Add Block 2 Correct, Block 2 Error
+end
+
+% Metrics to plot
+metricsToPlot = {'stateEntropy', 'behaviorSwitches', 'behaviorEntropy', 'kinPCAStd'};
+metricNames = {'State Entropy', 'Behavior Switches', 'Behavior Entropy', 'Kin PCA Std'};
+metricWindows = {stateEntropyWindows, behaviorSwitchesWindows, behaviorEntropyWindows, kinPCAStdWindows};
+
+% Create figure for metrics
+figure(402); clf;
+monitorPositions = get(0, 'MonitorPositions');
+monitorTwo = monitorPositions(size(monitorPositions, 1), :);
+if size(monitorPositions, 1) >= 2
+    set(gcf, 'Position', monitorTwo);
+else
+    set(gcf, 'Position', monitorPositions(1, :));
+end
+
+% Layout: rows = conditions (4 if plotErrors, else 2), columns = areas
+numCols = length(areasToTest);
+ha_metrics = tight_subplot(numConditions, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
+
+% Create time axes for each area (same as peri-reach window)
+timeAxisPerArea = cell(1, length(areas));
+for a = areasToTest
+    if hasHmmArea(a)
+        binSizeA = binSizes(a);
+        winBinsA = ceil(periReachWindow / binSizeA);
+        halfWinA = floor(winBinsA / 2);
+        timeAxisPerArea{a} = (-halfWinA:halfWinA) * binSizeA;
+    end
+end
+
+% Colors for metrics (different colors for each metric)
+metricColors = {[0 0.4470 0.7410], [0.8500 0.3250 0.0980], [0.9290 0.6940 0.1250], [0.4940 0.1840 0.5560]}; % Blue, Red-orange, Yellow, Purple
+metricLineStyles = {'-', '--', ':', '-.'};
+
+plotIdx = 0;
+for condIdx = 1:numConditions
+    % Determine which condition
+    if condIdx == 1
+        condIdx_use = corr1Idx;
+        condName = 'Block 1 Correct';
+    elseif condIdx == 2 && plotErrors
+        condIdx_use = err1Idx;
+        condName = 'Block 1 Error';
+    elseif (condIdx == 2 && ~plotErrors) || (condIdx == 3 && plotErrors)
+        condIdx_use = corr2Idx;
+        condName = 'Block 2 Correct';
+    elseif condIdx == 4 && plotErrors
+        condIdx_use = err2Idx;
+        condName = 'Block 2 Error';
+    else
+        continue;
+    end
+    
+    % Plot each area
+    for areaIdx = 1:length(areasToTest)
+        a = areasToTest(areaIdx);
+        plotIdx = plotIdx + 1;
+        
+        axes(ha_metrics(plotIdx));
+        hold on;
+        
+        % Check if we have any data for this area
+        hasData = false;
+        for mIdx = 1:length(metricsToPlot)
+            metricWindows_m = metricWindows{mIdx};
+            if hasHmmArea(a) && ~isempty(metricWindows_m{a}) && any(~isnan(metricWindows_m{a}(:)))
+                hasData = true;
+                break;
+            end
+        end
+        
+        if ~hasData
+            xlim([-periReachWindow/2, periReachWindow/2]);
+            ylim([0 1]);
+            title(sprintf('%s - %s\n(No Data)', areas{a}, condName), 'FontSize', 10);
+            continue;
+        end
+        
+        % Get time axis for this area
+        if ~isempty(timeAxisPerArea{a})
+            timeAxis = timeAxisPerArea{a};
+        else
+            % Fallback
+            binSizeA = binSizes(a);
+            winBinsA = ceil(periReachWindow / binSizeA);
+            halfWinA = floor(winBinsA / 2);
+            timeAxis = (-halfWinA:halfWinA) * binSizeA;
+        end
+        
+        timeAxis_plot = timeAxis; % Initialize with full time axis
+        
+        % Plot each metric on the same axes
+        for mIdx = 1:length(metricsToPlot)
+            metricWindows_m = metricWindows{mIdx};
+            
+            % Check if data exists
+            if ~hasHmmArea(a) || isempty(metricWindows_m{a}) || all(isnan(metricWindows_m{a}(:)))
+                continue;
+            end
+            
+            % Extract data for this condition
+            metricData = metricWindows_m{a}(condIdx_use, :);
+            validRows = ~all(isnan(metricData), 2);
+            
+            if ~any(validRows)
+                continue;
+            end
+            
+            metricDataValid = metricData(validRows, :);
+            
+            % Calculate mean and std
+            meanMetric = nanmean(metricDataValid, 1);
+            stdMetric = nanstd(metricDataValid, 0, 1);
+            
+            % Ensure timeAxis matches data length
+            if length(timeAxis) ~= length(meanMetric)
+                minLen = min(length(timeAxis), length(meanMetric));
+                timeAxis_plot_metric = timeAxis(1:minLen);
+                meanMetric = meanMetric(1:minLen);
+                stdMetric = stdMetric(1:minLen);
+            else
+                timeAxis_plot_metric = timeAxis;
+            end
+            
+            % Update timeAxis_plot to the shortest one (in case metrics have different lengths)
+            if length(timeAxis_plot_metric) < length(timeAxis_plot)
+                timeAxis_plot = timeAxis_plot_metric;
+            end
+            
+            % Plot std ribbon
+            fill([timeAxis_plot_metric, fliplr(timeAxis_plot_metric)], ...
+                 [meanMetric + stdMetric, fliplr(meanMetric - stdMetric)], ...
+                 metricColors{mIdx}, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'DisplayName', [metricNames{mIdx} ' ± std']);
+            
+            % Plot mean line
+            plot(timeAxis_plot_metric, meanMetric, 'Color', metricColors{mIdx}, 'LineWidth', 2, ...
+                 'LineStyle', metricLineStyles{mIdx}, 'DisplayName', metricNames{mIdx});
+        end
+        
+        % Add vertical line at reach onset
+        plot([0 0], ylim, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+        
+        % Formatting
+        xlabel('Time (s)', 'FontSize', 10);
+        ylabel('Metric Value', 'FontSize', 10);
+        title(sprintf('%s - %s', areas{a}, condName), 'FontSize', 10);
+        grid on;
+        
+        % Set axis limits
+        if ~isempty(timeAxis_plot)
+            xlim([timeAxis_plot(1), timeAxis_plot(end)]);
+        else
+            xlim([-periReachWindow/2, periReachWindow/2]);
+        end
+        
+        % Auto-scale y-axis with some padding
+        ylim('auto');
+        yLim = ylim;
+        if ~isnan(yLim(1)) && ~isnan(yLim(2)) && yLim(2) > yLim(1)
+            ylim([yLim(1) - 0.05*range(yLim), yLim(2) + 0.05*range(yLim)]);
+        end
+        
+        % Set tick labels
+        if ~isempty(timeAxis_plot)
+            xTicks = ceil(timeAxis_plot(1)):floor(timeAxis_plot(end));
+            if isempty(xTicks)
+                xTicks = linspace(timeAxis_plot(1), timeAxis_plot(end), 5);
+            end
+            xticks(xTicks);
+            xticklabels(string(xTicks));
+        end
+        
+        % Add legend only on first subplot (top-left)
+        if condIdx == 1 && areaIdx == 1
+            legend('Location', 'best', 'FontSize', 8);
+        end
+    end
+end
+
+% Add overall title
+sgtitle(sprintf('%s - Sliding Window Metrics (Window: %.1fs, Peri: %.1fs)', filePrefix, slidingWindowSize, periReachWindow), 'FontSize', 14);
+
+% Save figure
+filename_metrics = fullfile(saveDir, sprintf('%s_peri_reach_metrics_win%.1f_peri%.1f.png', filePrefix, slidingWindowSize, periReachWindow));
+exportgraphics(gcf, filename_metrics, 'Resolution', 300);
+fprintf('Saved peri-reach metrics plot to: %s\n', filename_metrics);
+
+%% ==============================================     Plotting Results     ==============================================
 
 % Create peri-reach plots for each area: conditions x areas
 figure(400); clf;
