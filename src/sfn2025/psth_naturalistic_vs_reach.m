@@ -23,15 +23,19 @@
 clear; close all;
 
 %% Parameters
-binSize = 0.02; % seconds
-psthWindow = 2; % seconds (window extends from -psthWindow to +psthWindow around event)
-baselineWindow = [-6, -2]; % seconds relative to event onset
-sortWindow = [-0.2, 0.2]; % seconds relative to event onset for sorting neurons
+binSize = 0.05; % seconds
+psthWindow = 3; % seconds (window extends from -psthWindow to +psthWindow around event) - used for plotting
+baselineWindow = [-5, 5]; % seconds relative to event onset
+sortWindow = [-0.25, 0.25]; % seconds relative to event onset for sorting neurons
 
-% Ensure PSTH window includes baseline window
+natCodesToPlot = [2 3 8 9 10 11 12 13 14 15];
+
+% Calculate analysis window (may extend beyond psthWindow to include baseline)
+% This is used for data extraction, while psthWindow is used for plotting
+analysisWindow = psthWindow; % Start with plotting window
 if baselineWindow(1) < -psthWindow
-    psthWindow = abs(baselineWindow(1)); % Extend window to include baseline
-    fprintf('Extended PSTH window to %.1f seconds to include baseline\n', psthWindow);
+    analysisWindow = abs(baselineWindow(1)); % Extend window to include baseline
+    fprintf('Analysis window extended to %.1f seconds to include baseline (plotting window remains %.1f seconds)\n', analysisWindow, psthWindow);
 end
 
 % Brain areas: 1=M23, 2=M56, 3=DS, 4=VS
@@ -44,7 +48,7 @@ opts = neuro_behavior_options;
 opts.removeSome = true;
 opts.firingRateCheckTime = 5 * 60;
 opts.minFiringRate = 0.5;
-opts.maxFiringRate = 40;
+opts.maxFiringRate = 70;
 
 % Add path to figure_tools if needed
 if exist('E:/Projects/figure_tools', 'dir')
@@ -177,22 +181,42 @@ for a = 1:length(areas)
             neuronMask = (spikeDataReach(:,2) == neuronId) & (spikeDataReach(:,3) == areaNumeric(a));
             spikeTimes = spikeDataReach(neuronMask, 1);
             
-            % Extract spikes in PSTH window relative to reach onset
-            windowStart = reachTime - psthWindow;
-            windowEnd = reachTime + psthWindow;
+            % Extract spikes in analysis window relative to reach onset
+            windowStart = reachTime - analysisWindow;
+            windowEnd = reachTime + analysisWindow;
             spikeWindow = spikeTimes(spikeTimes >= windowStart & spikeTimes <= windowEnd);
             
             % Convert to relative times (centered on reach onset)
             spikeWindowRel = spikeWindow - reachTime;
             
-            % Bin spikes
-            spikeCounts = histcounts(spikeWindowRel, binEdges)';
+            % Bin spikes (use extended bin edges if analysis window is larger than psthWindow)
+            if analysisWindow > psthWindow
+                % Create extended bin edges for analysis window
+                extendedTimeAxis = (-analysisWindow:binSize:analysisWindow)';
+                extendedBinEdges = [extendedTimeAxis; extendedTimeAxis(end) + binSize];
+                spikeCountsExtended = histcounts(spikeWindowRel, extendedBinEdges)';
+                
+                % Calculate baseline from extended data (where baseline actually falls)
+                extendedBaselineIdx = extendedTimeAxis >= baselineWindow(1) & extendedTimeAxis <= baselineWindow(2);
+                baselineCounts = spikeCountsExtended(extendedBaselineIdx);
+                baselineMean = mean(baselineCounts);
+                baselineStd = std(baselineCounts);
+                
+                % Extract only the portion corresponding to psthWindow
+                psthStartIdx = find(extendedTimeAxis >= -psthWindow, 1);
+                psthEndIdx = find(extendedTimeAxis <= psthWindow, 1, 'last');
+                spikeCounts = spikeCountsExtended(psthStartIdx:psthEndIdx);
+            else
+                % Use standard bin edges
+                spikeCounts = histcounts(spikeWindowRel, binEdges)';
+                
+                % Z-score using baseline
+                baselineCounts = spikeCounts(baselineIdx);
+                baselineMean = mean(baselineCounts);
+                baselineStd = std(baselineCounts);
+            end
             
             % Z-score using baseline
-            baselineCounts = spikeCounts(baselineIdx);
-            baselineMean = mean(baselineCounts);
-            baselineStd = std(baselineCounts);
-            
             if baselineStd > 0
                 psthPerNeuron(:, n, r) = (spikeCounts - baselineMean) / baselineStd;
             else
@@ -266,22 +290,42 @@ for a = 1:length(areas)
                 neuronMask = (spikeDataNat(:,2) == neuronId) & (spikeDataNat(:,3) == areaNumeric(a));
                 spikeTimes = spikeDataNat(neuronMask, 1);
                 
-                % Extract spikes in PSTH window relative to behavior onset
-                windowStart = behaviorTime - psthWindow;
-                windowEnd = behaviorTime + psthWindow;
+                % Extract spikes in analysis window relative to behavior onset
+                windowStart = behaviorTime - analysisWindow;
+                windowEnd = behaviorTime + analysisWindow;
                 spikeWindow = spikeTimes(spikeTimes >= windowStart & spikeTimes <= windowEnd);
                 
                 % Convert to relative times (centered on behavior onset)
                 spikeWindowRel = spikeWindow - behaviorTime;
                 
-                % Bin spikes
-                spikeCounts = histcounts(spikeWindowRel, binEdges)';
+                % Bin spikes (use extended bin edges if analysis window is larger than psthWindow)
+                if analysisWindow > psthWindow
+                    % Create extended bin edges for analysis window
+                    extendedTimeAxis = (-analysisWindow:binSize:analysisWindow)';
+                    extendedBinEdges = [extendedTimeAxis; extendedTimeAxis(end) + binSize];
+                    spikeCountsExtended = histcounts(spikeWindowRel, extendedBinEdges)';
+                    
+                    % Calculate baseline from extended data (where baseline actually falls)
+                    extendedBaselineIdx = extendedTimeAxis >= baselineWindow(1) & extendedTimeAxis <= baselineWindow(2);
+                    baselineCounts = spikeCountsExtended(extendedBaselineIdx);
+                    baselineMean = mean(baselineCounts);
+                    baselineStd = std(baselineCounts);
+                    
+                    % Extract only the portion corresponding to psthWindow
+                    psthStartIdx = find(extendedTimeAxis >= -psthWindow, 1);
+                    psthEndIdx = find(extendedTimeAxis <= psthWindow, 1, 'last');
+                    spikeCounts = spikeCountsExtended(psthStartIdx:psthEndIdx);
+                else
+                    % Use standard bin edges
+                    spikeCounts = histcounts(spikeWindowRel, binEdges)';
+                    
+                    % Z-score using baseline
+                    baselineCounts = spikeCounts(baselineIdx);
+                    baselineMean = mean(baselineCounts);
+                    baselineStd = std(baselineCounts);
+                end
                 
                 % Z-score using baseline
-                baselineCounts = spikeCounts(baselineIdx);
-                baselineMean = mean(baselineCounts);
-                baselineStd = std(baselineCounts);
-                
                 if baselineStd > 0
                     psthPerNeuron(:, n, bout) = (spikeCounts - baselineMean) / baselineStd;
                 else
@@ -316,6 +360,8 @@ end
 
 fprintf('\n=== Creating Plots ===\n');
 
+xlimPlot = [-1 1];
+
 % Find common color scale range
 allValues = [];
 for a = 1:length(areas)
@@ -335,78 +381,209 @@ if isempty(allValues)
     error('No valid PSTH data to plot');
 end
 
-colorRange = [min(allValues), max(allValues)];
-% Make symmetric around zero for better visualization
-maxAbs = max(abs(colorRange));
-colorRange = [-maxAbs, maxAbs];
+% Set colormap range to saturate at ±2
+colorRange = [-2, 2];
+colorRange = [-.8, .8];
 
 % Create colormap (function returns colormap and sets clim on current axes)
 customColormap = bluewhitered_custom(colorRange);
 
-% Create figure for reach data
-figure('Position', [100, 100, 400, 800]);
-for a = 1:length(areas)
-    subplot(length(areas), 1, a);
-    
-    if ~isempty(psthReach{a}) && ~all(isnan(psthReach{a}(:)))
-        numNeurons = size(psthReach{a}, 2);
-        imagesc(timeAxis, 1:numNeurons, psthReach{a}');
-        colormap(customColormap);
-        caxis(colorRange);
-        hold on;
-        plot([0, 0], [0.5, numNeurons+0.5], 'k-', 'LineWidth', 1); % Vertical line at event onset
-        hold off;
-        if a == 1
-            colorbar;
-        end
-        ylabel(areas{a});
-        if a == length(areas)
-            xlabel('Time from reach onset (s)');
-        end
-        title(sprintf('Reach PSTH (%d neurons)', numNeurons));
-        set(gca, 'YTick', []);
-    else
-        text(0, 0.5, sprintf('No data for %s', areas{a}), 'HorizontalAlignment', 'center');
-        ylabel(areas{a});
-    end
+% Monitor setup - prefer second monitor if available
+monitorPositions = get(0, 'MonitorPositions');
+monitorOne = monitorPositions(1, :);
+monitorTwo = monitorPositions(size(monitorPositions, 1), :);
+if size(monitorPositions, 1) >= 2
+    targetMonitor = monitorTwo;
+else
+    targetMonitor = monitorOne;
 end
-sgtitle('Reach Data - Peri-Reach PSTH (sorted by mean z-score in [-0.2, 0.2]s)');
 
-% Create figure for naturalistic data
-figure('Position', [550, 100, 400*length(validCodes), 800]);
+% Create figure for reach data - stack all areas in single plot
+figure(33); clf;
+ha_rea = tight_subplot(1, 1, [0.02 0.01], [0.05 0.08], [0.02 0.02]);
+set(gcf, 'Units', 'pixels');
+set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)/4]);
+axes;
+
+% Combine all areas with separator rows between them
+separatorWidth = 2; % Number of separator rows between areas
+psthCombined = [];
+areaBoundaries = nan(1, length(areas)); % Track where each area starts (for potential labeling)
+currentRow = 0;
+
 for a = 1:length(areas)
-    for b = 1:length(validCodes)
-        subplot(length(areas), length(validCodes), (a-1)*length(validCodes) + b);
-        
-        if ~isempty(psthNat{a}) && length(psthNat{a}) >= b && ~isempty(psthNat{a}{b}) && ~all(isnan(psthNat{a}{b}(:)))
-            numNeurons = size(psthNat{a}{b}, 2);
-            imagesc(timeAxis, 1:numNeurons, psthNat{a}{b}');
-            colormap(customColormap);
-            caxis(colorRange);
-            hold on;
-            plot([0, 0], [0.5, numNeurons+0.5], 'k-', 'LineWidth', 1); % Vertical line at event onset
-            hold off;
-            if a == 1 && b == length(validCodes)
-                colorbar;
-            end
-            ylabel(areas{a});
-            if a == length(areas)
-                xlabel('Time from behavior onset (s)');
-            end
-            if a == 1
-                title(sprintf('%s (%d neurons)', validBehaviors{b}, numNeurons), 'Interpreter', 'none');
-            end
-        else
-            text(0, 0.5, sprintf('No data'), 'HorizontalAlignment', 'center');
-            ylabel(areas{a});
-            if a == 1
-                title(validBehaviors{b}, 'Interpreter', 'none');
-            end
+    if ~isempty(psthReach{a}) && ~all(isnan(psthReach{a}(:)))
+        % Add separator row before this area (except first area)
+        if a > 1
+            separatorRow = zeros(separatorWidth, size(psthReach{a}, 1)); % [separatorWidth x timeBins] - zeros show as white
+            psthCombined = [psthCombined; separatorRow]; % Concatenate vertically
+            currentRow = currentRow + separatorWidth;
         end
-        set(gca, 'YTick', []);
+        
+        % Track area boundary
+        areaBoundaries(a) = currentRow + 1;
+        
+        % Add this area's data
+        psthCombined = [psthCombined; psthReach{a}'];
+        currentRow = currentRow + size(psthReach{a}, 2);
     end
 end
-sgtitle('Naturalistic Data - Peri-Behavior PSTH (sorted by mean z-score in [-0.2, 0.2]s)');
+
+if ~isempty(psthCombined)
+    numTotalNeurons = size(psthCombined, 1);
+    imagesc(timeAxis, 1:numTotalNeurons, psthCombined);
+    xlim(xlimPlot);
+    colormap(customColormap);
+    caxis(colorRange);
+    hold on;
+    
+    % Add vertical line at event onset
+    plot([0, 0], [0.5, numTotalNeurons+0.5], 'k-', 'LineWidth', 1);
+    
+    % Add horizontal black lines between areas
+    for a = 2:length(areas)
+        if ~isnan(areaBoundaries(a)) && areaBoundaries(a) > 1
+            boundaryY = areaBoundaries(a) - separatorWidth/2 - 0.5;
+            plot(xlimPlot, [boundaryY, boundaryY], 'k-', 'LineWidth', 6);
+        end
+    end
+    
+    hold off;
+    title(sprintf('Reach PSTH (All Areas, %d neurons)', numTotalNeurons));
+else
+    text(0, 0.5, 'No data available', 'HorizontalAlignment', 'center');
+end
+
+set(gca, 'YTick', [], 'XTick', [], 'XTickLabel', [], 'YTickLabel', []);
+sgtitle('Reach Data - Peri-Reach PSTH (sorted by mean z-score in [-0.4, 0.4]s)');
+
+% Create figure for naturalistic data - stack all areas in single plot per behavior
+% Filter behaviors to only plot those in natCodesToPlot
+plotBehaviorIndices = [];
+plotBehaviorCodes = [];
+plotBehaviorNames = {};
+for i = 1:length(validCodes)
+    if ismember(validCodes(i), natCodesToPlot)
+        plotBehaviorIndices = [plotBehaviorIndices, i]; % Original index in validCodes
+        plotBehaviorCodes = [plotBehaviorCodes, validCodes(i)];
+        plotBehaviorNames = [plotBehaviorNames, validBehaviors(i)];
+    end
+end
+
+fprintf('Plotting %d of %d behaviors (codes: %s)\n', length(plotBehaviorCodes), length(validCodes), mat2str(plotBehaviorCodes));
+
+figure(34); clf;
+set(gcf, 'Units', 'pixels');
+set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)]);
+ha_nat = tight_subplot(1, length(plotBehaviorCodes), [0.02 0.01], [0.05 0.08], [0.02 0.02]);
+
+for plotIdx = 1:length(plotBehaviorCodes)
+    axes(ha_nat(plotIdx));
+    
+    % Get original behavior index
+    origB = plotBehaviorIndices(plotIdx);
+    
+    % Combine all areas with separator rows between them for this behavior
+    separatorWidth = 2; % Number of separator rows between areas
+    psthCombined = [];
+    areaBoundaries = nan(1, length(areas)); % Track where each area starts
+    currentRow = 0;
+    
+    for a = 1:length(areas)
+        if ~isempty(psthNat{a}) && length(psthNat{a}) >= origB && ~isempty(psthNat{a}{origB}) && ~all(isnan(psthNat{a}{origB}(:)))
+            % Add separator row before this area (except first area)
+            if a > 1
+                separatorRow = zeros(separatorWidth, size(psthNat{a}{origB}, 1)); % [separatorWidth x timeBins] - zeros show as white
+                psthCombined = [psthCombined; separatorRow]; % Concatenate vertically
+                currentRow = currentRow + separatorWidth;
+            end
+            
+            % Track area boundary
+            areaBoundaries(a) = currentRow + 1;
+            
+            % Add this area's data
+            psthCombined = [psthCombined; psthNat{a}{origB}'];
+            currentRow = currentRow + size(psthNat{a}{origB}, 2);
+        end
+    end
+    
+    if ~isempty(psthCombined)
+        numTotalNeurons = size(psthCombined, 1);
+        imagesc(timeAxis, 1:numTotalNeurons, psthCombined);
+        xlim(xlimPlot);
+        colormap(ha_nat(plotIdx), customColormap);
+        caxis(ha_nat(plotIdx), colorRange);
+        hold on;
+        
+        % Add vertical line at event onset
+        plot([0, 0], [0.5, numTotalNeurons+0.5], 'k-', 'LineWidth', 1);
+        
+        % Add horizontal black lines between areas
+        for a = 2:length(areas)
+            if ~isnan(areaBoundaries(a)) && areaBoundaries(a) > 1
+                boundaryY = areaBoundaries(a) - separatorWidth/2 - 0.5;
+                plot(xlimPlot, [boundaryY, boundaryY], 'k-', 'LineWidth', 6);
+            end
+        end
+        
+        hold off;
+        title(sprintf('%s (%d neurons)', plotBehaviorNames{plotIdx}, numTotalNeurons), 'Interpreter', 'none');
+    else
+        text(0, 0.5, sprintf('No data'), 'HorizontalAlignment', 'center');
+        title(plotBehaviorNames{plotIdx}, 'Interpreter', 'none');
+    end
+    
+    set(gca, 'YTick', [], 'XTick', [], 'XTickLabel', [], 'YTickLabel', []);
+end
+sgtitle('Naturalistic Data - Peri-Behavior PSTH (sorted by mean z-score in [-0.4, 0.4]s)');
+
+%% Save figures as .eps files
+figuresDir = fullfile('/Users/paulmiddlebrooks/Projects/neuro-behavior/src/sfn2025/figures');
+if ~exist(figuresDir, 'dir')
+    mkdir(figuresDir);
+    fprintf('Created figures directory: %s\n', figuresDir);
+end
+
+% Save reach figure
+figure(33);
+saveFileReach = fullfile(figuresDir, 'psth_reach.eps');
+print(gcf, '-depsc', '-painters', saveFileReach);
+fprintf('Saved reach figure to: %s\n', saveFileReach);
+
+% Save naturalistic figure
+figure(34);
+saveFileNat = fullfile(figuresDir, 'psth_naturalistic.eps');
+print(gcf, '-depsc', '-painters', saveFileNat);
+fprintf('Saved naturalistic figure to: %s\n', saveFileNat);
 
 fprintf('\n=== Complete ===\n');
 
+
+%%
+%% Create standalone colorbar figure
+figure(35); clf;
+set(gcf, 'Units', 'pixels');
+% Make it a narrow vertical figure for the colorbar
+colorbarWidth = 100; % pixels
+colorbarHeight = 400; % pixels
+set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), colorbarWidth, colorbarHeight]);
+
+% Create a dummy axes with the colormap
+axes('Position', [0.1 0.1 0.3 0.8]);
+colormap(customColormap);
+caxis(colorRange);
+
+% Create the colorbar
+c = colorbar('Location', 'east');
+c.Label.String = 'Z-scored firing rate';
+c.Label.FontSize = 12;
+c.Ticks = linspace(colorRange(1), colorRange(2), 5); % 5 ticks from min to max
+c.TickLabels = arrayfun(@(x) sprintf('%.1f', x), c.Ticks, 'UniformOutput', false);
+
+% Remove the axes (we only want the colorbar)
+axis off;
+
+% Save colorbar figure
+saveFileColorbar = fullfile(figuresDir, 'psth_colorbar.eps');
+print(gcf, '-depsc', '-painters', saveFileColorbar);
+fprintf('Saved colorbar figure to: %s\n', saveFileColorbar);

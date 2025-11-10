@@ -79,53 +79,73 @@ end
 %% Load paths and setup
 try
     paths = get_paths;
-    hmmdir = fullfile(paths.dropPath, 'metastability');
 catch
     error('Could not load paths. Make sure get_paths() function is available.');
 end
 
-% Check if hmm directory exists
-if ~exist(hmmdir, 'dir')
-    error('HMM directory not found: %s', hmmdir);
+% Map brain area name to index
+areaMap = containers.Map({'M23', 'M56', 'DS', 'VS'}, {1, 2, 3, 4});
+if ~isKey(areaMap, brainArea)
+    error('Invalid brain area: %s', brainArea);
 end
+areaIdx = areaMap(brainArea);
 
 %% Find and load the HMM results file
 fprintf('Looking for HMM results files...\n');
 fprintf('Data type: %s\n', natOrReach);
 fprintf('Brain area: %s\n', brainArea);
 
-% Get all files in the hmm directory
-files = dir(fullfile(hmmdir, '*.mat'));
-fileNames = {files.name};
-
-% Filter files that match our criteria
 matchingFiles = {};
-for i = 1:length(fileNames)
-    fileName = fileNames{i};
+filePaths = {};
+
+if strcmpi(natOrReach, 'Reach')
+    % For Reach data: look in session-specific folders
+    reachResultsDir = paths.reachResultsPath;
+    if ~exist(reachResultsDir, 'dir')
+        error('Reach results directory not found: %s', reachResultsDir);
+    end
     
-    % Check if file matches our pattern
-    if contains(fileName, 'HMM_results_') && ...
-       contains(fileName, ['_' natOrReach '_']) && ...
-       contains(fileName, ['_' brainArea]) && ...
-       ~contains(fileName, 'FAILED') % Exclude failed analyses
-        
-        matchingFiles{end+1} = fileName;
+    % Get all session folders
+    sessionDirs = dir(fullfile(reachResultsDir, '*'));
+    sessionDirs = sessionDirs([sessionDirs.isdir] & ~strncmp({sessionDirs.name}, '.', 1));
+    
+    % Search for hmm_mazz_reach files in each session folder
+    for s = 1:length(sessionDirs)
+        sessionPath = fullfile(reachResultsDir, sessionDirs(s).name);
+        files = dir(fullfile(sessionPath, 'hmm_mazz_reach_bin*.mat'));
+        for f = 1:length(files)
+            matchingFiles{end+1} = files(f).name;
+            filePaths{end+1} = fullfile(sessionPath, files(f).name);
+        end
+    end
+    
+else
+    % For Naturalistic data: look in metastability folder
+    hmmdir = fullfile(paths.dropPath, 'metastability');
+    if ~exist(hmmdir, 'dir')
+        error('HMM directory not found: %s', hmmdir);
+    end
+    
+    % Look for HMM_results_Nat.mat
+    natFile = fullfile(hmmdir, sprintf('HMM_results_%s.mat', natOrReach));
+    if exist(natFile, 'file')
+        matchingFiles{end+1} = sprintf('HMM_results_%s.mat', natOrReach);
+        filePaths{end+1} = natFile;
     end
 end
 
 if isempty(matchingFiles)
-    error('No matching HMM results files found for %s data in %s area.\nCheck the hmm directory: %s', ...
-          natOrReach, brainArea, hmmdir);
+    error('No matching HMM results files found for %s data.\nCheck the results directories.', natOrReach);
 end
 
 % Sort files by date (most recent first)
-filePaths = fullfile(hmmdir, matchingFiles);
 fileInfo = dir(filePaths{1});
 for i = 2:length(filePaths)
     fileInfo(i) = dir(filePaths{i});
 end
 [~, sortIdx] = sort([fileInfo.datenum], 'descend');
 matchingFiles = matchingFiles(sortIdx);
+filePaths = filePaths(sortIdx);
 
 % Check if requested file index exists
 if fileIndex > length(matchingFiles)
@@ -134,7 +154,7 @@ end
 
 % Load the requested file
 selectedFile = matchingFiles{fileIndex};
-filePath = fullfile(hmmdir, selectedFile);
+filePath = filePaths{fileIndex};
 
 fprintf('Loading file %d of %d: %s\n', fileIndex, length(matchingFiles), selectedFile);
 
@@ -142,13 +162,28 @@ fprintf('Loading file %d of %d: %s\n', fileIndex, length(matchingFiles), selecte
 try
     loadedData = load(filePath);
     
-    % Check if the expected structure exists
-    if isfield(loadedData, 'hmm_res')
-        hmm_results = loadedData.hmm_res;
-        fprintf('Successfully loaded HMM results!\n');
+    % Extract hmm_res for the requested brain area
+    if strcmpi(natOrReach, 'Reach')
+        % Reach data: loadedData contains 'results' struct
+        if ~isfield(loadedData, 'results')
+            error('File does not contain expected ''results'' structure');
+        end
+        if isempty(loadedData.results.hmm_results{areaIdx})
+            error('No HMM results found for brain area %s in this file', brainArea);
+        end
+        hmm_results = loadedData.results.hmm_results{areaIdx};
     else
-        error('File does not contain expected hmm_res structure');
+        % Naturalistic data: loadedData contains 'allResults' struct
+        if ~isfield(loadedData, 'allResults')
+            error('File does not contain expected ''allResults'' structure');
+        end
+        if isempty(loadedData.allResults.hmm_results{areaIdx})
+            error('No HMM results found for brain area %s in this file', brainArea);
+        end
+        hmm_results = loadedData.allResults.hmm_results{areaIdx};
     end
+    
+    fprintf('Successfully loaded HMM results for %s area!\n', brainArea);
     
 catch ME
     error('Failed to load file %s: %s', selectedFile, ME.message);

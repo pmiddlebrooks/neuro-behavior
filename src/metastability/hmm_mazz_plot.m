@@ -40,46 +40,47 @@ end
 % Extract HMM parameters
 HmmParam = hmm_res.HmmParam;
 if isfield(HmmParam, 'VarStates')
-    if isfield(res, 'BestStateInd')
-        HmmParam.VarStates = hmm_res.HmmParam.VarStates(hmm_res.BestStateInd);
+    if isfield(hmm_res, 'best_model') && isfield(hmm_res.best_model, 'best_state_index')
+        bestStateIdx = hmm_res.best_model.best_state_index;
+        if isscalar(HmmParam.VarStates)
+            HmmParam.VarStates = HmmParam.VarStates;
+        else
+            HmmParam.VarStates = HmmParam.VarStates(bestStateIdx);
+        end
+    elseif isfield(hmm_res, 'best_model') && isfield(hmm_res.best_model, 'num_states')
+        HmmParam.VarStates = hmm_res.best_model.num_states;
+    elseif isscalar(HmmParam.VarStates)
+        HmmParam.VarStates = HmmParam.VarStates;
     else
-        HmmParam.VarStates = hmm_res.HmmParam.VarStates(1); % Use first if no best index
+        HmmParam.VarStates = HmmParam.VarStates(1); % Use first if no best index
     end
+elseif isfield(hmm_res, 'best_model') && isfield(hmm_res.best_model, 'num_states')
+    HmmParam.VarStates = hmm_res.best_model.num_states;
 end
 
-hmm_bestfit = hmm_res.hmm_bestfit;
+% Extract HMM results
 hmm_results = hmm_res.hmm_results;
 hmm_postfit = hmm_res.hmm_postfit;
 
 % Create distinguishable colors for states
-colors = distinguishable_colors(max(HmmParam.VarStates, 4));
+numStates = HmmParam.VarStates;
+colors = distinguishable_colors(max(numStates, 4));
 
 % Plot transition probability matrix and emission probability matrix
 figure;
 [ha, ~] = tight_subplot(1, 2, 0.05, [0.08 0.06], [0.06 0.03]);
 axes(ha(1));
-imagesc(hmm_bestfit.tpm);
+imagesc(hmm_res.best_model.transition_matrix);
 colorbar;
 title('Transition Probability Matrix');
 xlabel('State'); ylabel('State');
 
 axes(ha(2));
-imagesc(hmm_bestfit.epm(:, 1:end-1)); % Exclude silence column
+imagesc(hmm_res.best_model.emission_matrix(:, 1:end-1)); % Exclude silence column
 colorbar;
 title('Emission Probability Matrix');
 xlabel('Neuron'); ylabel('State');
 
-% Plot example state sequence over time
-figure;
-iTrial = 3;
-if isfield(hmm_results, 'pStates') && ~isempty(hmm_results) && length(hmm_results) >= iTrial
-    imagesc(hmm_results(iTrial).pStates);
-    colorbar;
-    title('Posterior State Probabilities Over Time');
-    xlabel('Time'); ylabel('State');
-else
-    fprintf('Warning: Could not plot posterior probabilities - data not available\n');
-end
 
 %% Proportion of data in various states
 % This section can be expanded later for additional analyses
@@ -87,11 +88,11 @@ end
 %% Plot full sequence
 figure(8); clf;
 hold on;
-sequence = hmm_results_save.continuous_results.sequence;
-probabilities = hmm_results_save.continuous_results.pStates;
+sequence = hmm_res.continuous_results.sequence;
+probabilities = hmm_res.continuous_results.pStates;
 
 x = (1:length(sequence)) * HmmParam.BinSize;
-numStates = size(sequence, 2);
+numStates = size(probabilities, 2); % Number of states from probability matrix
 
 % Get colors for states
 colors = distinguishable_colors(numStates);
@@ -162,9 +163,21 @@ try
 
         % Determine number of states
         numStatesLocal = 0;
-        if isfield(hmm_res_area, 'HmmParam') && isfield(hmm_res_area.HmmParam, 'VarStates') && ...
-                isfield(hmm_res_area, 'BestStateInd')
-            numStatesLocal = hmm_res_area.HmmParam.VarStates(hmm_res_area.BestStateInd);
+        if isfield(hmm_res_area, 'best_model') && isfield(hmm_res_area.best_model, 'num_states')
+            numStatesLocal = hmm_res_area.best_model.num_states;
+        elseif isfield(hmm_res_area, 'HmmParam') && isfield(hmm_res_area.HmmParam, 'VarStates')
+            if isfield(hmm_res_area, 'best_model') && isfield(hmm_res_area.best_model, 'best_state_index')
+                bestStateIdx = hmm_res_area.best_model.best_state_index;
+                if isscalar(hmm_res_area.HmmParam.VarStates)
+                    numStatesLocal = hmm_res_area.HmmParam.VarStates;
+                else
+                    numStatesLocal = hmm_res_area.HmmParam.VarStates(bestStateIdx);
+                end
+            elseif isscalar(hmm_res_area.HmmParam.VarStates)
+                numStatesLocal = hmm_res_area.HmmParam.VarStates;
+            else
+                numStatesLocal = hmm_res_area.HmmParam.VarStates(1);
+            end
         else
             assignedStates = seq(seq > 0);
             if ~isempty(assignedStates)
