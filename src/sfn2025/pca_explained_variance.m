@@ -13,26 +13,30 @@
 % - Cumulative explained variance plots (1x4 figure, one per area)
 % - Number of components needed to explain at least 50% variance
 
-clear; close all;
+% clear; close all;
 
 %% Parameters
-binSize = 0.02; % seconds
-eventWindow = 2; % seconds (window around events for event-aligned analysis)
-natBhvID = 10; % Behavior ID for naturalistic event-aligned analysis
+binSize = 0.05; % seconds
+eventWindow = [-.75, 1]; % seconds [before, after] relative to event onset for event-aligned analysis
+natBhvID = 15; % Behavior ID for naturalistic event-aligned analysis
 
-% Brain areas: 1=M23, 2=M56, 3=DS, 4=VS
+minBhvDur = 0.03; % Minimum behavior duration (seconds)
+minSeparation = 0.5; % Minimum time between same behaviors (seconds)
+
+areasToTest = 2:3;
+%% Brain areas: 1=M23, 2=M56, 3=DS, 4=VS
 areas = {'M23', 'M56', 'DS', 'VS'};
 areaNumeric = [1, 2, 3, 4];
 
-%% Setup paths and options
+% Setup paths and options
 paths = get_paths;
 opts = neuro_behavior_options;
 opts.removeSome = true;
 opts.firingRateCheckTime = 5 * 60;
-opts.minFiringRate = 0.5;
+opts.minFiringRate = 0.3;
 opts.maxFiringRate = 70;
 
-%% ==================== REACH DATA ====================
+% ==================== REACH DATA ====================
 fprintf('\n=== Loading Reach Data ===\n');
 
 % Load reach data
@@ -54,7 +58,7 @@ reachOnsets = reachOnsets(reachOnsets >= opts.collectStart & reachOnsets <= opts
 
 fprintf('Loaded %d reaches\n', length(reachOnsets));
 
-%% ==================== NATURALISTIC DATA ====================
+% ==================== NATURALISTIC DATA ====================
 fprintf('\n=== Loading Naturalistic Data ===\n');
 
 % Naturalistic data parameters
@@ -76,10 +80,55 @@ nrnDataPath = strcat(paths.nrnDataPath, 'animal_', animal, '/', sessionNrn, '/re
 opts.dataPath = nrnDataPath;
 spikeDataNat = spike_times_per_area(opts);
 
-% Extract behavior onset times for bhvID = 10
-bhvMask = (dataBhv.ID == natBhvID) & (dataBhv.Valid == 1);
-natEventOnsets = dataBhv.StartTime(bhvMask);
-fprintf('Found %d onsets for behavior ID %d\n', length(natEventOnsets), natBhvID);
+%% Extract behavior onset times for natBhvID with additional filtering
+% Filter criteria:
+%   1. Duration >= 0.03 seconds
+%   2. Valid behavior (from behavior_selection)
+%   3. Separated from same behavior by at least 0.5 seconds
+
+
+% Initial mask: correct behavior ID, valid, and long enough duration
+bhvMask = (dataBhv.ID == natBhvID) & (dataBhv.Valid == 1) & (dataBhv.Dur >= minBhvDur);
+
+% Get all candidate behavior indices
+candidateIndices = find(bhvMask);
+candidateStartTimes = dataBhv.StartTime(candidateIndices);
+candidateDurations = dataBhv.Dur(candidateIndices);
+
+% Filter by minimum separation from same behavior
+% Sort candidate indices by start time to process chronologically
+[~, sortOrder] = sort(candidateStartTimes);
+candidateIndices = candidateIndices(sortOrder);
+candidateStartTimes = candidateStartTimes(sortOrder);
+
+validIndices = [];
+for i = 1:length(candidateIndices)
+    idx = candidateIndices(i);
+    startTime = dataBhv.StartTime(idx);
+    
+    % Check if there's a previous valid behavior of the same type within minSeparation
+    hasRecentSame = false;
+    if ~isempty(validIndices)
+        % Get the most recent valid behavior start time
+        lastValidStart = dataBhv.StartTime(validIndices(end));
+        timeSinceLast = startTime - lastValidStart;
+        
+        % If the last valid behavior was the same type and too recent, skip this one
+        if timeSinceLast < minSeparation
+            hasRecentSame = true;
+        end
+    end
+    
+    % Keep this behavior if no recent same behavior found
+    if ~hasRecentSame
+        validIndices = [validIndices; idx];
+    end
+end
+
+% Extract onset times for valid behaviors
+natEventOnsets = dataBhv.StartTime(validIndices);
+fprintf('Found %d onsets for behavior ID %d (after filtering: Dur>=%.2fs, Sep>=%.2fs)\n', ...
+    length(natEventOnsets), natBhvID, minBhvDur, minSeparation);
 
 %% ==================== ANALYSIS 1: WHOLE SESSION ====================
 fprintf('\n=== Analysis 1: Whole Session PCA ===\n');
@@ -90,19 +139,51 @@ cumVarNatWhole = cell(1, length(areas));
 numComp50ReachWhole = zeros(1, length(areas));
 numComp50NatWhole = zeros(1, length(areas));
 
-for a = 1:length(areas)
+for a = areasToTest
     fprintf('\nProcessing area %s (whole session)...\n', areas{a});
     
     %% Reach data - whole session
     areaMask = spikeDataReach(:,3) == areaNumeric(a);
-    neuronIds = unique(spikeDataReach(areaMask, 2));
+    neuronIdsReach = unique(spikeDataReach(areaMask, 2));
     
-    if isempty(neuronIds)
-        fprintf('  No neurons found in area %s (reach)\n', areas{a});
+    %% Naturalistic data - whole session (get neuron count first for comparison)
+    areaMask = spikeDataNat(:,3) == areaNumeric(a);
+    neuronIdsNat = unique(spikeDataNat(areaMask, 2));
+    
+    % Determine minimum neuron count and downsample if needed
+    numReach = length(neuronIdsReach);
+    numNat = length(neuronIdsNat);
+    minNeurons = min(numReach, numNat);
+    
+    if minNeurons == 0
+        fprintf('  No neurons found in area %s\n', areas{a});
         cumVarReachWhole{a} = [];
+        cumVarNatWhole{a} = [];
         numComp50ReachWhole(a) = NaN;
+        numComp50NatWhole(a) = NaN;
+        continue;
+    end
+    
+    % Downsample to match minimum
+    if numReach > minNeurons
+        rng(42); % Set seed for reproducibility
+        neuronIdsReach = neuronIdsReach(randperm(numReach, minNeurons));
+        fprintf('  Reach: downsampled from %d to %d neurons\n', numReach, minNeurons);
     else
-        fprintf('  Reach: %d neurons\n', length(neuronIds));
+        fprintf('  Reach: %d neurons\n', numReach);
+    end
+    
+    if numNat > minNeurons
+        rng(43); % Different seed for naturalistic
+        neuronIdsNat = neuronIdsNat(randperm(numNat, minNeurons));
+        fprintf('  Naturalistic: downsampled from %d to %d neurons\n', numNat, minNeurons);
+    else
+        fprintf('  Naturalistic: %d neurons\n', numNat);
+    end
+    
+    %% Process reach data
+    if ~isempty(neuronIdsReach)
+        neuronIds = neuronIdsReach;
         
         % Bin all spike data for this area
         timeEdges = opts.collectStart:binSize:opts.collectEnd;
@@ -144,16 +225,9 @@ for a = 1:length(areas)
         end
     end
     
-    %% Naturalistic data - whole session
-    areaMask = spikeDataNat(:,3) == areaNumeric(a);
-    neuronIds = unique(spikeDataNat(areaMask, 2));
-    
-    if isempty(neuronIds)
-        fprintf('  No neurons found in area %s (naturalistic)\n', areas{a});
-        cumVarNatWhole{a} = [];
-        numComp50NatWhole(a) = NaN;
-    else
-        fprintf('  Naturalistic: %d neurons\n', length(neuronIds));
+    %% Process naturalistic data
+    if ~isempty(neuronIdsNat)
+        neuronIds = neuronIdsNat;
         
         % Bin all spike data for this area
         timeEdges = opts.collectStart:binSize:opts.collectEnd;
@@ -193,44 +267,112 @@ for a = 1:length(areas)
             cumVarNatWhole{a} = [];
             numComp50NatWhole(a) = NaN;
         end
+    else
+        cumVarNatWhole{a} = [];
+        numComp50NatWhole(a) = NaN;
     end
 end
 
-%% ==================== ANALYSIS 2: EVENT-ALIGNED ====================
+% ==================== ANALYSIS 2: EVENT-ALIGNED ====================
 fprintf('\n=== Analysis 2: Event-Aligned PCA ===\n');
 
-% Initialize storage for event-aligned results
-cumVarReachEvent = cell(1, length(areas));
-cumVarNatEvent = cell(1, length(areas));
-numComp50ReachEvent = zeros(1, length(areas));
-numComp50NatEvent = zeros(1, length(areas));
+% Subsample events to match minimum between reach and naturalistic
+numReachEvents = length(reachOnsets);
+numNatEvents = length(natEventOnsets);
+minEvents = min(numReachEvents, numNatEvents);
 
-for a = 1:length(areas)
+if minEvents == 0
+    fprintf('No events available for event-aligned analysis\n');
+    % Initialize empty results
+    cumVarReachEvent = cell(1, length(areas));
+    cumVarNatEvent = cell(1, length(areas));
+    numComp50ReachEvent = zeros(1, length(areas));
+    numComp50NatEvent = zeros(1, length(areas));
+else
+    % Downsample events to match minimum
+    if numReachEvents > minEvents
+        rng(46); % Set seed for reproducibility
+        reachOnsetsSub = reachOnsets(randperm(numReachEvents, minEvents));
+        fprintf('Reach events: downsampled from %d to %d events\n', numReachEvents, minEvents);
+    else
+        reachOnsetsSub = reachOnsets;
+        fprintf('Reach events: %d events\n', numReachEvents);
+    end
+    
+    if numNatEvents > minEvents
+        rng(47); % Different seed for naturalistic
+        natEventOnsetsSub = natEventOnsets(randperm(numNatEvents, minEvents));
+        fprintf('Naturalistic events: downsampled from %d to %d events\n', numNatEvents, minEvents);
+    else
+        natEventOnsetsSub = natEventOnsets;
+        fprintf('Naturalistic events: %d events\n', numNatEvents);
+    end
+    
+    % Initialize storage for event-aligned results
+    cumVarReachEvent = cell(1, length(areas));
+    cumVarNatEvent = cell(1, length(areas));
+    numComp50ReachEvent = zeros(1, length(areas));
+    numComp50NatEvent = zeros(1, length(areas));
+    
+    for a = areasToTest
     fprintf('\nProcessing area %s (event-aligned)...\n', areas{a});
     
     %% Reach data - event-aligned
     areaMask = spikeDataReach(:,3) == areaNumeric(a);
-    neuronIds = unique(spikeDataReach(areaMask, 2));
+    neuronIdsReach = unique(spikeDataReach(areaMask, 2));
     
-    if isempty(neuronIds) || isempty(reachOnsets)
-        fprintf('  No neurons or reaches found in area %s (reach)\n', areas{a});
+    %% Naturalistic data - event-aligned (get neuron count first for comparison)
+    areaMask = spikeDataNat(:,3) == areaNumeric(a);
+    neuronIdsNat = unique(spikeDataNat(areaMask, 2));
+    
+    % Determine minimum neuron count and downsample if needed
+    numReach = length(neuronIdsReach);
+    numNat = length(neuronIdsNat);
+    minNeurons = min(numReach, numNat);
+    
+    if minNeurons == 0
+        fprintf('  No neurons found in area %s\n', areas{a});
         cumVarReachEvent{a} = [];
+        cumVarNatEvent{a} = [];
         numComp50ReachEvent(a) = NaN;
+        numComp50NatEvent(a) = NaN;
+        continue;
+    end
+    
+    % Downsample to match minimum
+    if numReach > minNeurons
+        rng(44); % Set seed for reproducibility (different from whole session)
+        neuronIdsReach = neuronIdsReach(randperm(numReach, minNeurons));
+        fprintf('  Reach: downsampled from %d to %d neurons\n', numReach, minNeurons);
     else
-        fprintf('  Reach: %d neurons, %d events\n', length(neuronIds), length(reachOnsets));
+        fprintf('  Reach: %d neurons\n', numReach);
+    end
+    
+    if numNat > minNeurons
+        rng(45); % Different seed for naturalistic
+        neuronIdsNat = neuronIdsNat(randperm(numNat, minNeurons));
+        fprintf('  Naturalistic: downsampled from %d to %d neurons\n', numNat, minNeurons);
+    else
+        fprintf('  Naturalistic: %d neurons\n', numNat);
+    end
+    
+    %% Process reach data
+    if ~isempty(neuronIdsReach)
+        neuronIds = neuronIdsReach;
         
-        % Extract 2 second windows around each reach onset
-        numBinsPerWindow = round(eventWindow / binSize);
-        timeEdgesWindow = 0:binSize:eventWindow;
+        % Extract windows around each reach onset
+        windowDuration = eventWindow(2) - eventWindow(1);
+        numBinsPerWindow = round(windowDuration / binSize);
+        timeEdgesWindow = eventWindow(1):binSize:eventWindow(2);
         numBinsWindow = length(timeEdgesWindow) - 1;
         
         % Initialize data matrix: [timeBins x neurons x events]
-        dataMatReachEvent = nan(numBinsWindow, length(neuronIds), length(reachOnsets));
+        dataMatReachEvent = nan(numBinsWindow, length(neuronIds), minEvents);
         
-        for r = 1:length(reachOnsets)
-            reachTime = reachOnsets(r);
-            windowStart = reachTime;
-            windowEnd = reachTime + eventWindow;
+        for r = 1:minEvents
+            reachTime = reachOnsetsSub(r);
+            windowStart = reachTime + eventWindow(1);
+            windowEnd = reachTime + eventWindow(2);
             
             for n = 1:length(neuronIds)
                 neuronId = neuronIds(n);
@@ -240,8 +382,8 @@ for a = 1:length(areas)
                 % Extract spikes in window
                 spikeWindow = spikeTimes(spikeTimes >= windowStart & spikeTimes <= windowEnd);
                 
-                % Convert to relative times (0 to eventWindow)
-                spikeWindowRel = spikeWindow - windowStart;
+                % Convert to relative times (eventWindow(1) to eventWindow(2))
+                spikeWindowRel = spikeWindow - reachTime;
                 
                 % Bin spikes
                 spikeCounts = histcounts(spikeWindowRel, timeEdgesWindow);
@@ -252,7 +394,7 @@ for a = 1:length(areas)
         end
         
         % Reshape to [timeBins*events x neurons]
-        dataMatReachEvent = reshape(dataMatReachEvent, numBinsWindow * length(reachOnsets), length(neuronIds));
+        dataMatReachEvent = reshape(dataMatReachEvent, numBinsWindow * minEvents, length(neuronIds));
         
         % Remove neurons with no spikes
         validNeurons = sum(dataMatReachEvent, 1, 'omitnan') > 0;
@@ -282,29 +424,23 @@ for a = 1:length(areas)
         end
     end
     
-    %% Naturalistic data - event-aligned
-    areaMask = spikeDataNat(:,3) == areaNumeric(a);
-    neuronIds = unique(spikeDataNat(areaMask, 2));
-    
-    if isempty(neuronIds) || isempty(natEventOnsets)
-        fprintf('  No neurons or events found in area %s (naturalistic)\n', areas{a});
-        cumVarNatEvent{a} = [];
-        numComp50NatEvent(a) = NaN;
-    else
-        fprintf('  Naturalistic: %d neurons, %d events\n', length(neuronIds), length(natEventOnsets));
+    %% Process naturalistic data
+    if ~isempty(neuronIdsNat)
+        neuronIds = neuronIdsNat;
         
-        % Extract 2 second windows around each behavior onset
-        numBinsPerWindow = round(eventWindow / binSize);
-        timeEdgesWindow = 0:binSize:eventWindow;
+        % Extract windows around each behavior onset
+        windowDuration = eventWindow(2) - eventWindow(1);
+        numBinsPerWindow = round(windowDuration / binSize);
+        timeEdgesWindow = eventWindow(1):binSize:eventWindow(2);
         numBinsWindow = length(timeEdgesWindow) - 1;
         
         % Initialize data matrix: [timeBins x neurons x events]
-        dataMatNatEvent = nan(numBinsWindow, length(neuronIds), length(natEventOnsets));
+        dataMatNatEvent = nan(numBinsWindow, length(neuronIds), minEvents);
         
-        for e = 1:length(natEventOnsets)
-            eventTime = natEventOnsets(e);
-            windowStart = eventTime;
-            windowEnd = eventTime + eventWindow;
+        for e = 1:minEvents
+            eventTime = natEventOnsetsSub(e);
+            windowStart = eventTime + eventWindow(1);
+            windowEnd = eventTime + eventWindow(2);
             
             for n = 1:length(neuronIds)
                 neuronId = neuronIds(n);
@@ -314,8 +450,8 @@ for a = 1:length(areas)
                 % Extract spikes in window
                 spikeWindow = spikeTimes(spikeTimes >= windowStart & spikeTimes <= windowEnd);
                 
-                % Convert to relative times (0 to eventWindow)
-                spikeWindowRel = spikeWindow - windowStart;
+                % Convert to relative times (eventWindow(1) to eventWindow(2))
+                spikeWindowRel = spikeWindow - eventTime;
                 
                 % Bin spikes
                 spikeCounts = histcounts(spikeWindowRel, timeEdgesWindow);
@@ -326,7 +462,7 @@ for a = 1:length(areas)
         end
         
         % Reshape to [timeBins*events x neurons]
-        dataMatNatEvent = reshape(dataMatNatEvent, numBinsWindow * length(natEventOnsets), length(neuronIds));
+        dataMatNatEvent = reshape(dataMatNatEvent, numBinsWindow * minEvents, length(neuronIds));
         
         % Remove neurons with no spikes
         validNeurons = sum(dataMatNatEvent, 1, 'omitnan') > 0;
@@ -355,7 +491,8 @@ for a = 1:length(areas)
             numComp50NatEvent(a) = NaN;
         end
     end
-end
+    end % End of else block for event-aligned analysis
+end % End of if minEvents == 0
 
 %% ==================== PLOTTING ====================
 fprintf('\n=== Plotting Results ===\n');
