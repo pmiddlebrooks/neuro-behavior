@@ -23,9 +23,6 @@ plotModelData = 1;
 plotComparisons = 1;
 savePlotFlag = 1;
 
-% Choose target monitor for plotting
-monitorPositions = get(0, 'MonitorPositions');
-targetMonitor = monitorPositions(1, :);
 
 % ---------------------------- Load saved results ------------------------------
 fileName = sprintf('svm_%s_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...

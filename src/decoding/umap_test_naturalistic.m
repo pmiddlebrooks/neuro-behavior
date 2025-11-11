@@ -16,6 +16,8 @@ opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectEnd = 45 * 60; % seconds
 opts.frameSize = frameSize;
+opts.minFiringRate = 0.1;
+opts.maxFiringRate = 70;
 
 % Get kinematics data for reference
 getDataType = 'kinematics';
@@ -106,32 +108,32 @@ selectFrom = 'DS';  % Change to test different areas
 switch selectFrom
     case 'M23'
         idSelect = idM23;
+min_dist_values = [0.3];
+spread_values = [1.2];
+n_neighbors_values = [30];
     case 'M56'
         idSelect = idM56;
+min_dist_values = [0.6];
+spread_values = [1.5];
+n_neighbors_values = [20];
+n_neighbors_values = [30];
     case 'DS'
         idSelect = idDS;
+min_dist_values = [0.5];
+min_dist_values = [0.3];
+spread_values = [1.6];
+n_neighbors_values = [30];
     case 'VS'
         idSelect = idVS;
+min_dist_values = [0.3];
+spread_values = [1.2];
+n_neighbors_values = [30];
 end
 
 fprintf('Selected %d neurons for area %s\n', length(idSelect), selectFrom);
 
 % UMAP parameters to test
 nDim = 3;  % 3D for visualization
-
-% Test different parameter combinations
-min_dist_values = [0.05, 0.1, 0.2, 0.5];
-min_dist_values = [0.2, 0.5];
-spread_values = [1.0, 1.5];
-n_neighbors_values = [15, 30, 60];
-min_dist_values = [0.2];
-spread_values = [1.2];
-n_neighbors_values = [30];
-
-% Or test a specific combination
-% min_dist_values = [0.1];
-% spread_values = [1.0];
-% n_neighbors_values = [15];
 
 fprintf('\nTesting UMAP parameters:\n');
 fprintf('min_dist: %s\n', mat2str(min_dist_values));

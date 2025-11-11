@@ -13,6 +13,7 @@ slidingWindowSec = .1; % Duration of sliding window for spike summation
 
 % Load reach data
 reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.reachDataPath, 'reach_test.mat');
 dataR = load(reachDataFile);
 
 opts = neuro_behavior_options;
@@ -126,9 +127,10 @@ switch selectFrom
         min_dist_values = [0.4, 0.6 1];
         spread_values = [1 1.2 1.5 2.5];
         n_neighbors_values = [25 35 60];
-        min_dist_values = [0.6];
-        spread_values = [1];
-        n_neighbors_values = [70];
+
+        min_dist_values = [1];
+        spread_values = [1.6];
+        n_neighbors_values = [12];
     case 'VS'
         idSelect = idVS;
         min_dist_values = [0.1, 0.3, 0.5];
@@ -192,7 +194,7 @@ for min_dist = min_dist_values
                               counts = arrayfun(@(c) sum(bhvIDSliding==c), unique(bhvIDSliding));
                     maxSubsampleSize = round(mean(counts));  % Maximum samples per class when subsampling (categories with fewer samples use all their data, categories with more are subsampled to this max)
 
-            % Plot the results
+            %% Plot the results
             figure(100 + configIdx);
             clf; hold on;
 

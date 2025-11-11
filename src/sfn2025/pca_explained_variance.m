@@ -5,9 +5,9 @@
 %
 % Two analyses:
 % 1. Whole session: All data without event alignment
-% 2. Event-aligned: 2 second windows around events
+% 2. Event-aligned: Windows around events
 %    - Reach: All reach onsets
-%    - Naturalistic: Onsets of bhvID = 10
+%    - Naturalistic: Onsets of bhvID(s) specified in natBhvID (can be vector to collapse multiple behaviors)
 %
 % Outputs:
 % - Cumulative explained variance plots (1x4 figure, one per area)
@@ -17,11 +17,12 @@
 
 %% Parameters
 binSize = 0.05; % seconds
-eventWindow = [-.75, 1]; % seconds [before, after] relative to event onset for event-aligned analysis
-natBhvID = 15; % Behavior ID for naturalistic event-aligned analysis
+eventWindow = [-.5, .5]; % seconds [before, after] relative to event onset for event-aligned analysis
+natBhvID = [6:8]; % Behavior ID(s) for naturalistic event-aligned analysis (can be vector to collapse multiple behaviors)
+natBhvID = [15]; % Behavior ID(s) for naturalistic event-aligned analysis (can be vector to collapse multiple behaviors)
 
 minBhvDur = 0.03; % Minimum behavior duration (seconds)
-minSeparation = 0.5; % Minimum time between same behaviors (seconds)
+minSeparation = 0.2; % Minimum time between same behaviors (seconds)
 
 areasToTest = 2:3;
 %% Brain areas: 1=M23, 2=M56, 3=DS, 4=VS
@@ -33,7 +34,7 @@ paths = get_paths;
 opts = neuro_behavior_options;
 opts.removeSome = true;
 opts.firingRateCheckTime = 5 * 60;
-opts.minFiringRate = 0.3;
+opts.minFiringRate = 0.2;
 opts.maxFiringRate = 70;
 
 % ==================== REACH DATA ====================
@@ -84,42 +85,50 @@ spikeDataNat = spike_times_per_area(opts);
 % Filter criteria:
 %   1. Duration >= 0.03 seconds
 %   2. Valid behavior (from behavior_selection)
-%   3. Separated from same behavior by at least 0.5 seconds
+%   3. Separated from any behavior in natBhvID by at least 0.5 seconds
+%
+% If natBhvID is a vector, all specified behaviors are collapsed together
 
+% Ensure natBhvID is a row vector
+if iscolumn(natBhvID)
+    natBhvID = natBhvID';
+end
 
-% Initial mask: correct behavior ID, valid, and long enough duration
-bhvMask = (dataBhv.ID == natBhvID) & (dataBhv.Valid == 1) & (dataBhv.Dur >= minBhvDur);
+% Initial mask: any behavior ID in natBhvID, valid, and long enough duration
+bhvMask = ismember(dataBhv.ID, natBhvID) & (dataBhv.Valid == 1) & (dataBhv.Dur >= minBhvDur);
 
 % Get all candidate behavior indices
 candidateIndices = find(bhvMask);
 candidateStartTimes = dataBhv.StartTime(candidateIndices);
 candidateDurations = dataBhv.Dur(candidateIndices);
+candidateBhvIDs = dataBhv.ID(candidateIndices);
 
-% Filter by minimum separation from same behavior
+% Filter by minimum separation from any behavior in natBhvID
 % Sort candidate indices by start time to process chronologically
 [~, sortOrder] = sort(candidateStartTimes);
 candidateIndices = candidateIndices(sortOrder);
 candidateStartTimes = candidateStartTimes(sortOrder);
+candidateBhvIDs = candidateBhvIDs(sortOrder);
 
 validIndices = [];
 for i = 1:length(candidateIndices)
     idx = candidateIndices(i);
     startTime = dataBhv.StartTime(idx);
     
-    % Check if there's a previous valid behavior of the same type within minSeparation
+    % Check if there's a previous valid behavior (any in natBhvID) within minSeparation
     hasRecentSame = false;
     if ~isempty(validIndices)
         % Get the most recent valid behavior start time
         lastValidStart = dataBhv.StartTime(validIndices(end));
         timeSinceLast = startTime - lastValidStart;
         
-        % If the last valid behavior was the same type and too recent, skip this one
+        % If the last valid behavior was in natBhvID and too recent, skip this one
         if timeSinceLast < minSeparation
             hasRecentSame = true;
         end
     end
     
-    % Keep this behavior if no recent same behavior found
+    % Keep this behavior if no recent behavior found
     if ~hasRecentSame
         validIndices = [validIndices; idx];
     end
@@ -127,8 +136,13 @@ end
 
 % Extract onset times for valid behaviors
 natEventOnsets = dataBhv.StartTime(validIndices);
-fprintf('Found %d onsets for behavior ID %d (after filtering: Dur>=%.2fs, Sep>=%.2fs)\n', ...
-    length(natEventOnsets), natBhvID, minBhvDur, minSeparation);
+if isscalar(natBhvID)
+    fprintf('Found %d onsets for behavior ID %d (after filtering: Dur>=%.2fs, Sep>=%.2fs)\n', ...
+        length(natEventOnsets), natBhvID, minBhvDur, minSeparation);
+else
+    fprintf('Found %d onsets for behavior IDs [%s] (collapsed, after filtering: Dur>=%.2fs, Sep>=%.2fs)\n', ...
+        length(natEventOnsets), num2str(natBhvID), minBhvDur, minSeparation);
+end
 
 %% ==================== ANALYSIS 1: WHOLE SESSION ====================
 fprintf('\n=== Analysis 1: Whole Session PCA ===\n');
@@ -514,12 +528,12 @@ for a = 1:length(areas)
     
     % Plot reach data
     if ~isempty(cumVarReachWhole{a})
-        plot(1:length(cumVarReachWhole{a}), cumVarReachWhole{a}, 'b-', 'LineWidth', 2, 'DisplayName', sprintf('Reach (n=%d)', numComp50ReachWhole(a)));
+        plot(1:length(cumVarReachWhole{a}), cumVarReachWhole{a}, 'b-', 'LineWidth', 4, 'DisplayName', sprintf('Reach (n=%d)', numComp50ReachWhole(a)));
     end
     
     % Plot naturalistic data
     if ~isempty(cumVarNatWhole{a})
-        plot(1:length(cumVarNatWhole{a}), cumVarNatWhole{a}, 'r-', 'LineWidth', 2, 'DisplayName', sprintf('Naturalistic (n=%d)', numComp50NatWhole(a)));
+        plot(1:length(cumVarNatWhole{a}), cumVarNatWhole{a}, 'r-', 'LineWidth', 4, 'DisplayName', sprintf('Naturalistic (n=%d)', numComp50NatWhole(a)));
     end
     
     % Add 50% line
@@ -535,6 +549,15 @@ end
 
 sgtitle('PCA Explained Variance - Whole Session', 'FontSize', 14, 'FontWeight', 'bold');
 
+% Save whole session figure
+saveDir = fullfile(paths.dropPath, 'sfn2025', 'explained_variance');
+if ~exist(saveDir, 'dir')
+    mkdir(saveDir);
+end
+saveFileWhole = fullfile(saveDir, 'pca_explained_variance_whole_session.eps');
+exportgraphics(figure(1), saveFileWhole, 'ContentType', 'vector');
+fprintf('Saved whole session figure to: %s\n', saveFileWhole);
+
 % Create figure for event-aligned
 figure(2); clf;
 set(gcf, 'Units', 'pixels');
@@ -546,12 +569,12 @@ for a = 1:length(areas)
     
     % Plot reach data
     if ~isempty(cumVarReachEvent{a})
-        plot(1:length(cumVarReachEvent{a}), cumVarReachEvent{a}, 'b-', 'LineWidth', 2, 'DisplayName', sprintf('Reach (n=%d)', numComp50ReachEvent(a)));
+        plot(1:length(cumVarReachEvent{a}), cumVarReachEvent{a}, 'b-', 'LineWidth', 4, 'DisplayName', sprintf('Reach (n=%d)', numComp50ReachEvent(a)));
     end
     
     % Plot naturalistic data
     if ~isempty(cumVarNatEvent{a})
-        plot(1:length(cumVarNatEvent{a}), cumVarNatEvent{a}, 'r-', 'LineWidth', 2, 'DisplayName', sprintf('Naturalistic (n=%d)', numComp50NatEvent(a)));
+        plot(1:length(cumVarNatEvent{a}), cumVarNatEvent{a}, 'r-', 'LineWidth', 4, 'DisplayName', sprintf('Naturalistic (n=%d)', numComp50NatEvent(a)));
     end
     
     % Add 50% line
@@ -565,7 +588,18 @@ for a = 1:length(areas)
     ylim([0, 100]);
 end
 
-sgtitle(sprintf('PCA Explained Variance - Event-Aligned (Reach: all onsets, Naturalistic: bhvID=%d)', natBhvID), 'FontSize', 14, 'FontWeight', 'bold');
+if isscalar(natBhvID)
+    sgtitle(sprintf('PCA Explained Variance - Event-Aligned (Reach: all onsets, Naturalistic: bhvID=%d)', natBhvID), 'FontSize', 14, 'FontWeight', 'bold');
+    bhvIDStr = sprintf('%d', natBhvID);
+else
+    sgtitle(sprintf('PCA Explained Variance - Event-Aligned (Reach: all onsets, Naturalistic: bhvID=[%s])', num2str(natBhvID)), 'FontSize', 14, 'FontWeight', 'bold');
+    bhvIDStr = sprintf('%s', strrep(num2str(natBhvID), ' ', '_'));
+end
+
+% Save event-aligned figure
+saveFileEvent = fullfile(saveDir, sprintf('pca_explained_variance_event_aligned_bhvID_%s.eps', bhvIDStr));
+exportgraphics(figure(2), saveFileEvent, 'ContentType', 'vector');
+fprintf('Saved event-aligned figure to: %s\n', saveFileEvent);
 
 %% ==================== SUMMARY REPORT ====================
 fprintf('\n=== SUMMARY: Components Needed for 50%% Variance ===\n');

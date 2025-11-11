@@ -10,7 +10,7 @@
 paths = get_paths;
 
 % Data type selection
-dataType = 'reach';  % 'reach' or 'naturalistic'
+dataType = 'naturalistic';  % 'reach' or 'naturalistic'
 
 % Dimensionality for all methods
 dimToTest = [4 6 8];
@@ -40,12 +40,12 @@ end
 
 % Define brain areas to test
 areas = {'M23', 'M56', 'DS', 'VS'};
-areasToTest = 1:4;  % Test M23 M56, DS, VS
+areasToTest = 2:3;  % Test M23 M56, DS, VS
 
 
 % Determine which methods to run
 methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv', 'psidBhv', 'psidBhv_nonBhv', 'icg'}';
-methodsToRun = {'pca', 'umap', 'psidKin', 'psidKin_nonBhv'}';
+methodsToRun = {'pca', 'umap', 'psidKin'}';
 % methodsToRun = {'pca', 'umap'}';
 fprintf('Running methods: %s\n', strjoin(methodsToRun, ', '));
 
@@ -215,17 +215,6 @@ else
         'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
 end
 
-% Monitor setup for plotting
-monitorPositions = get(0, 'MonitorPositions');
-monitorOne = monitorPositions(1, :);
-monitorTwo = monitorPositions(size(monitorPositions, 1), :);
-
-% Choose target monitor (use second/last monitor if connected)
-if size(monitorPositions, 1) > 1
-    targetMonitor = monitorTwo;
-else
-    targetMonitor = monitorOne;
-end
 
 
 

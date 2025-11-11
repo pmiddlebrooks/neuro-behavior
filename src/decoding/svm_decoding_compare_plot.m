@@ -2,7 +2,41 @@
 % (svm_decoding_compare.m) or by loading specific data
 % (svm_decoding_compare_load.m)
 
-% =============================================================================
+%%
+savePath = fullfile(paths.dropPath, 'sfn2025/decoding');
+if ~exist(savePath, 'dir')
+    mkdir(savePath);
+end
+
+% Monitor setup for plotting
+monitorPositions = get(0, 'MonitorPositions');
+monitorOne = monitorPositions(1, :);
+monitorTwo = monitorPositions(size(monitorPositions, 1), :);
+
+% Choose target monitor (use second/last monitor if connected)
+if size(monitorPositions, 1) > 1
+    targetMonitor = monitorTwo;
+else
+    targetMonitor = monitorOne;
+end
+
+%%
+% set(0, 'DefaultTextColor', '#efdb7b');
+% set(0, 'DefaultAxesXColor', '#efdb7b');
+% set(0, 'DefaultAxesYColor', '#efdb7b');
+% set(0, 'DefaultAxesZColor', '#efdb7b');
+set(0, 'DefaultTextColor', '#D5A570');
+set(0, 'DefaultAxesXColor', '#D5A570');
+set(0, 'DefaultAxesYColor', '#D5A570');
+set(0, 'DefaultAxesZColor', '#D5A570');
+set(0, 'DefaultFigureColor', '#D5A570');
+set(0, 'DefaultAxesFontSize', 24);
+% set(0, 'DefaultAxesTickLength', [0.02 0.04]); % Default tick mark length
+set(0, 'DefaultAxesLineWidth', 3); % Default tick mark linewidth = 4
+
+%% Reset
+
+%% =============================================================================
 % --------    PLOT FULL DATA FOR EACH METHOD
 % =============================================================================
 for areaIdx = areasToTest
@@ -61,7 +95,7 @@ for areaIdx = areasToTest
                 plotFilename = sprintf('full_data_%s_%s_%s_%dD_bin%.2f.png', ...
                     dataType, areaName, methodName, nDim, opts.frameSize);
                 plotPath = fullfile(savePath, plotFilename);
-                exportgraphics(figure(figHFull + i), plotPath, 'Resolution', 300);
+        print(figHFull, '-depsc', '-vector', plotPath);
                 fprintf('Saved plot: %s\n', plotFilename);
             end
         end
@@ -120,14 +154,14 @@ end
                 plotFilename = sprintf('modeling_%s_%s_%s_%s_%dD_bin%.2f.png', ...
                     dataType, areaName, methodName, dataSubset, nDim, opts.frameSize);
                 plotPath = fullfile(savePath, plotFilename);
-                exportgraphics(figure(figHModel + i), plotPath, 'Resolution', 300);
+        print(figure(figHModel + i), '-depsc', '-vector', plotPath);
                 fprintf('Saved plot: %s\n', plotFilename);
             end
         end
     end
 end
 
-% =============================================================================
+%% =============================================================================
 % --------    PLOT RESULTS COMPARISON FOR ALL AREAS
 % =============================================================================
 
@@ -136,11 +170,11 @@ if plotComparisons
 
     % Create comparison figure for all areas
     fig = figure(112);
-    set(fig, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)]);
+    set(fig, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3)/2, targetMonitor(4)/1.5]);
     clf;
 
     % Plot all areas regardless of which ones are being analyzed
-    allAreasToPlot = 1:4;  % M23, M56, DS, VS
+    allAreasToPlot = 2:3;  % M23, M56, DS, VS
     nAreas = length(allAreasToPlot);
 
     % Find the first area that has data to determine number of methods
@@ -200,9 +234,11 @@ if plotComparisons
         % Customize plot
         set(gca, 'XTick', x, 'XTickLabel', upper(methods), 'TickLabelInterpreter', 'none');
         ylabel('Accuracy');
-        title(sprintf('%s (%s)', areaName, dataSubsetLabel), 'Interpreter','none');
+        title(sprintf('%s', areaName), 'Interpreter','none');
+        if a == 1
         legend('Location', 'best');
-        grid on;
+        end
+        % grid on;
         ylim([0, 1]);
 
         % Add significance indicators
@@ -216,23 +252,23 @@ if plotComparisons
             end
         end
 
-        % Add accuracy values as text
-        for m = 1:areaMethods
-            text(m - barWidth/2, accuracy(m) + 0.01, sprintf('%.3f', accuracy(m)), ...
-                'HorizontalAlignment', 'center', 'FontSize', 10);
-            text(m + barWidth/2, mean(accuracyPermuted(m, :)) + 0.01, sprintf('%.3f', mean(accuracyPermuted(m, :))), ...
-                'HorizontalAlignment', 'center', 'FontSize', 10);
-        end
+        % % Add accuracy values as text
+        % for m = 1:areaMethods
+        %     text(m - barWidth/2, accuracy(m) + 0.01, sprintf('%.3f', accuracy(m)), ...
+        %         'HorizontalAlignment', 'center', 'FontSize', 10);
+        %     text(m + barWidth/2, mean(accuracyPermuted(m, :)) + 0.01, sprintf('%.3f', mean(accuracyPermuted(m, :))), ...
+        %         'HorizontalAlignment', 'center', 'FontSize', 10);
+        % end
     end
 
     sgtitle('SVM Decoding Accuracy Comparison - All Areas', 'FontSize', 16);
 
     % Save comparison plot if flag is set
     if savePlotFlag
-        plotFilename = sprintf('accuracy_svm_%s_%s_%s_%dD_bin%.2f_nShuffles%d.png', ...
+        plotFilename = sprintf('accuracy_svm_%s_%s_%s_%dD_bin%.2f_nShuffles%d.eps', ...
             dataType, kernelFunction, dataSubset, nDim, opts.frameSize, nShuffles);
         plotPath = fullfile(savePath, plotFilename);
-        exportgraphics(fig, plotPath, 'Resolution', 300);
+        print(fig, '-depsc', '-vector', plotPath);
         fprintf('Saved comparison plot: %s\n', plotFilename);
     end
 
