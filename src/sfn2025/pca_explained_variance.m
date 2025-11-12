@@ -537,12 +537,12 @@ for a = 1:length(areas)
     end
     
     % Add 50% line
-    yline(50, 'k--', 'LineWidth', 1, 'DisplayName', '50%');
+    % yline(50, 'k--', 'LineWidth', 2, 'DisplayName', '50%');
     
     xlabel('PCA Component');
-    ylabel('Cumulative Explained Variance (%)');
+    ylabel('Explained Variance (%)');
     title(sprintf('%s - Whole Session', areas{a}));
-    legend('Location', 'best');
+    % legend('Location', 'best');
     grid on;
     ylim([0, 100]);
 end
@@ -578,12 +578,12 @@ for a = 1:length(areas)
     end
     
     % Add 50% line
-    yline(50, 'k--', 'LineWidth', 1, 'DisplayName', '50%');
+    % yline(50, 'k--', 'LineWidth', 1, 'DisplayName', '50%');
     
     xlabel('PCA Component');
-    ylabel('Cumulative Explained Variance (%)');
+    ylabel('Explained Variance (%)');
     title(sprintf('%s - Event-Aligned', areas{a}));
-    legend('Location', 'best');
+    % legend('Location', 'best');
     grid on;
     ylim([0, 100]);
 end

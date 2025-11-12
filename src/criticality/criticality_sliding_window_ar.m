@@ -10,7 +10,7 @@ paths = get_paths;
 dataType = 'reach';  % 'reach' or 'naturalistic'
 
 % Sliding window size (seconds)
-slidingWindowSize = 3;
+slidingWindowSize = 20;
 
 % Flags
 loadExistingResults = false;
@@ -22,7 +22,7 @@ analyzeD2 = true;      % compute d2
 analyzeMrBr = false;   % compute mrBr
 
 % NEW: Modulation analysis flags
-analyzeModulation = true;  % Set to true to split into modulated/unmodulated
+analyzeModulation = false;  % Set to true to split into modulated/unmodulated
 modulationThreshold = 2;   % Standard deviations for modulation detection (legacy fallback)
 modulationBinSize = nan;   % Bin size for modulation analysis
 modulationBaseWindow = [-3, -2];    % Baseline time range [min max] in seconds relative to reach onset
@@ -55,8 +55,9 @@ windowSizes = repmat(slidingWindowSize, 1, 4);
 pOrder = 10;
 critType = 2;
 d2StepSize = .02;
+d2StepSize = repmat(.2,1,4);
 
-%% =============================    Data Loading    =============================
+% =============================    Data Loading    =============================
 fprintf('\n=== Loading %s data ===\n', dataType);
 
 if strcmp(dataType, 'reach')
@@ -128,7 +129,12 @@ else
 end
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
-%% =============================    Analysis    =============================
+
+
+
+
+
+% =============================    Analysis    =============================
 
 
 % =============================    Modulation Analysis    =============================
@@ -223,7 +229,8 @@ if analyzeModulation
 end
 
 % Use optimal bin sizes for each area
-d2StepSizeData = optimalBinSize;
+d2StepSizeData = d2StepSize; % optimalBinSize;
+warning('Change step size back to optimalBinSize')
 d2WindowSizeData = windowSizes;
 validMask = isfinite(optimalBinSize(areasToTest)) & (optimalBinSize(areasToTest) > 0);
 areasToTest = areasToTest(validMask);

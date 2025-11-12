@@ -1,6 +1,6 @@
 %%
 % Peri-Behavior HMM State Analysis for Naturalistic Data
-% Loads results from hmm_mazz_nat.m and analyzes HMM state sequences
+% Loads results from hmm_mazz.m and analyzes HMM state sequences
 % around behavior onset times for each brain area
 %
 % Variables:
@@ -16,6 +16,7 @@ paths = get_paths;
 binSize = .01;
 minDur = .04;
 bhvStartIDs = [1, 5, 11, 15];
+bhvStartIDs = [1, 5, 9, 15];
 
 areasToTest = 1:4;
 
@@ -28,7 +29,7 @@ periBhvWindow = 30; % peri-behavior window around each behavior onset (used for 
 
 % Determine save directory and filename based on parameters
 hmmdir = fullfile(paths.dropPath, 'metastability');
-filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f_bhv%s.mat', binSize, minDur, mat2str(bhvStartIDs));
+filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', binSize, minDur);
 resultsPath = fullfile(hmmdir, filename);
 
 % Extract first 10 characters of filename for titles and file names
@@ -37,7 +38,7 @@ filePrefix = 'Nat';
 % Load HMM analysis results
 fprintf('Loading HMM analysis results from: %s\n', resultsPath);
 if ~exist(resultsPath, 'file')
-    error('Results file not found: %s\nMake sure hmm_mazz_nat.m has been run for this dataset.', resultsPath);
+    error('Results file not found: %s\nMake sure hmm_mazz.m has been run for this dataset.', resultsPath);
 end
 results = load(resultsPath);
 results = results.results;
@@ -537,8 +538,8 @@ end
 sgtitle(sprintf('%s - Sliding Window Metrics (Window: %.1fs, Peri: %.1fs)', filePrefix, slidingWindowSize, periBhvWindow), 'FontSize', 14);
 
 % Save figure
-filename_metrics = fullfile(hmmdir, sprintf('%s_peri_bhv_metrics_win%.1f_peri%.1f.png', filePrefix, slidingWindowSize, periBhvWindow));
-exportgraphics(gcf, filename_metrics, 'Resolution', 300);
+filename_metrics = fullfile(hmmdir, sprintf('%s_peri_bhv_metrics_win%.1f_peri%.1f.eps', filePrefix, slidingWindowSize, periBhvWindow));
+exportgraphics(gcf, filename_metrics, 'ContentType', 'vector');
 fprintf('Saved peri-behavior metrics plot to: %s\n', filename_metrics);
 
 %% ==============================================     Plotting Results     ==============================================
@@ -559,9 +560,7 @@ numCols = length(areasToTest);
 ha = tight_subplot(numRows, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
 
 % Create time axis for peri-behavior window (centered on behavior onset)
-% Use first area's bin size for time axis (will be recalculated per area as needed)
-halfWindow = floor(ceil(periBhvWindow / binSizes(1)) / 2);
-timeAxisPeriBhv = (-halfWindow:halfWindow) * binSizes(1);
+timeAxisPeriBhv = (-halfWindow:halfWindow) * binSizes(1); % Use first area's bin size for time axis
 
 % Plot each behavior ID (row) and area (column)
 plotIdx = 0;
@@ -653,8 +652,8 @@ end
 sgtitle(sprintf('%s - Peri-Behavior HMM State Sequences (Window: %gs)', filePrefix, periBhvWindow), 'FontSize', 16);
 
 % Save combined figure
-filename = fullfile(hmmdir, sprintf('%s_peri_bhv_hmm_states_win%gs.png', filePrefix, periBhvWindow));
-exportgraphics(gcf, filename, 'Resolution', 300);
+filename = fullfile(hmmdir, sprintf('%s_peri_bhv_hmm_states_win%gs.eps', filePrefix, periBhvWindow));
+exportgraphics(gcf, filename, 'ContentType', 'vector');
 fprintf('Saved peri-behavior HMM state plot to: %s\n', filename);
 
 % ==============================================     Metastate Plotting     ==============================================
@@ -779,8 +778,8 @@ if hasAnyMetastates
     sgtitle(sprintf('%s - Peri-Behavior Metastate Sequences (Window: %gs)', filePrefix, periBhvWindow), 'FontSize', 16);
 
     % Save combined metastate figure
-    filename = fullfile(hmmdir, sprintf('%s_peri_bhv_metastates_win%gs.png', filePrefix, periBhvWindow));
-    exportgraphics(gcf, filename, 'Resolution', 300);
+    filename = fullfile(hmmdir, sprintf('%s_peri_bhv_metastates_win%gs.eps', filePrefix, periBhvWindow));
+    exportgraphics(gcf, filename, 'ContentType', 'vector');
     fprintf('Saved peri-behavior metastate plot to: %s\n', filename);
 else
     fprintf('\nNo metastate data available for plotting\n');

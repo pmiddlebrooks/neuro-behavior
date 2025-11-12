@@ -429,6 +429,300 @@ for a = areasToTest
     end
 end
 
+%% ==============================================     Plotting Results     ==============================================
+
+% Create peri-reach plots for each area: conditions x areas
+figure(400); clf;
+% Prefer plotting on second screen if available
+monitorPositions = get(0, 'MonitorPositions');
+monitorTwo = monitorPositions(size(monitorPositions, 1), :);
+if size(monitorPositions, 1) >= 2
+    set(gcf, 'Position', monitorTwo);
+else
+    set(gcf, 'Position', monitorPositions(1, :));
+end
+
+% Determine number of conditions to plot
+% Order: Block 1 Correct, Block 1 Error, Block 2 Correct, Block 2 Error
+numConditions = 2; % Block 1 Correct, Block 1 Error
+if plotErrors
+    numConditions = numConditions + 2; % Add Block 2 Correct, Block 2 Error
+end
+
+% Use tight_subplot for layout: conditions (rows) x areas (columns)
+numCols = length(areasToTest);
+ha = tight_subplot(numConditions, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
+
+% Create time axis for peri-reach window (centered on reach onset)
+timeAxisPeriReach = (-halfWindow:halfWindow) * binSizes(1); % Use first area's bin size for time axis
+
+% Define colors for different conditions
+colors = {'k', [0 0 .6], [.6 0 0], [0 0.6 0]};
+
+% Plot each condition (row) and area (column)
+plotIdx = 0;
+for condIdx = 1:numConditions
+    for areaIdx = 1:length(areasToTest)
+        a = areasToTest(areaIdx);
+        plotIdx = plotIdx + 1;
+        
+        axes(ha(plotIdx));
+        hold on;
+        
+        % Determine which condition to plot
+        % Order: Block 1 Correct, Block 1 Error, Block 2 Correct, Block 2 Error
+        if condIdx == 1
+            % Block 1 Correct
+            stateData = stateWindowsCorr1{a};
+            condName = 'Block 1 Correct';
+            colorIdx = 1;
+        elseif condIdx == 2 && plotErrors
+            % Block 1 Error
+            stateData = stateWindowsErr1{a};
+            condName = 'Block 1 Error';
+            colorIdx = 2;
+        elseif (condIdx == 2 && ~plotErrors) || (condIdx == 3 && plotErrors)
+            % Block 2 Correct
+            stateData = stateWindowsCorr2{a};
+            condName = 'Block 2 Correct';
+            colorIdx = 3;
+        elseif condIdx == 4 && plotErrors
+            % Block 2 Error
+            stateData = stateWindowsErr2{a};
+            condName = 'Block 2 Error';
+            colorIdx = 4;
+        else
+            continue; % Skip if not plotting errors
+        end
+        
+        % Check if we have data for this area and condition
+        if ~hasHmmArea(a) || isempty(stateData) || all(isnan(stateData(:)))
+            % No data - show blank plot
+            xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
+            ylim([0.5, 1.5]);
+            title(sprintf('%s - %s\n(No Data)', areas{a}, condName), 'FontSize', 10);
+            continue;
+        end
+        
+        % Remove rows that are all NaN and ensure trials are in order
+        validRows = ~all(isnan(stateData), 2);
+        if ~any(validRows)
+            xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
+            ylim([0.5, 1.5]);
+            title(sprintf('%s - %s\n(No Valid Reaches)', areas{a}, condName), 'FontSize', 10);
+            continue;
+        end
+        
+        % Keep trials in original order (top to bottom)
+        stateDataValid = stateData(validRows, :);
+        
+        % Create imagesc plot
+        imagesc(timeAxisPeriReach, 1:size(stateDataValid, 1), stateDataValid);
+        
+        % Set colormap to be consistent within area; state 0 is white
+        if ~isempty(stateCmaps{a})
+            colormap(ha(plotIdx), stateCmaps{a});
+            caxis(ha(plotIdx), [0, max(1, numStates(a))]);
+        end
+        
+        % Add colorbar only on top row, and keep fixed ticks/labels per area
+        if condIdx == 1
+            c = colorbar('peer', ha(plotIdx));
+            c.Ticks = 0:max(1, numStates(a));
+            c.TickLabels = string(0:max(1, numStates(a)));
+            c.Label.String = 'HMM State';
+            c.Label.FontSize = 8;
+        end
+        
+        % Add vertical line at reach onset
+        plot([0 0], ylim, 'k--', 'LineWidth', 2);
+        
+        % Formatting
+        xlabel('Time relative to reach onset (s)', 'FontSize', 8);
+        ylabel('Reach Trial', 'FontSize', 8);
+        title(sprintf('%s - %s\n(%d trials)', areas{a}, condName, sum(validRows)), 'FontSize', 10);
+        
+        % Set axis limits
+        xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
+        ylim([0.5, size(stateDataValid, 1) + 0.5]);
+        
+        % Set tick labels
+        xTicks = ceil(timeAxisPeriReach(1)):floor(timeAxisPeriReach(end));
+        if isempty(xTicks)
+            xTicks = linspace(timeAxisPeriReach(1), timeAxisPeriReach(end), 5);
+        end
+        xticks(xTicks);
+        xticklabels(string(xTicks));
+        
+        % Set y-axis ticks to show trial numbers
+        if size(stateDataValid, 1) <= 10
+            yticks(1:size(stateDataValid, 1));
+        else
+            yticks(1:5:size(stateDataValid, 1));
+        end
+        
+        grid on;
+        set(gca, 'GridAlpha', 0.3);
+    end
+end
+
+% Add overall title
+sgtitle(sprintf('%s - Peri-Reach HMM State Sequences (Window: %gs)', filePrefix, periReachWindow), 'FontSize', 16);
+
+% Save combined figure (in same data-specific folder)
+filename = fullfile(saveDir, sprintf('%s_peri_reach_hmm_states_win%gs.eps', filePrefix, periReachWindow));
+exportgraphics(gcf, filename, 'ContentType', 'vector');
+fprintf('Saved peri-reach HMM state plot to: %s\n', filename);
+
+% ==============================================     Metastate Plotting     ==============================================
+
+% Check if any area has metastate data
+hasAnyMetastates = false;
+for a = areasToTest
+    if hasHmmArea(a) && ~isempty(results.hmm_results{a}) && isfield(results.hmm_results{a}, 'metastate_results') && ~isempty(results.hmm_results{a}.metastate_results.continuous_metastates)
+        hasAnyMetastates = true;
+        break;
+    end
+end
+
+if hasAnyMetastates
+    fprintf('\n=== Creating Peri-Reach Metastate Plot ===\n');
+    
+    % Create peri-reach metastate plots for each area: conditions x areas
+    figure(401); clf;
+    % Prefer plotting on second screen if available
+    monitorPositions = get(0, 'MonitorPositions');
+    monitorTwo = monitorPositions(size(monitorPositions, 1), :);
+    if size(monitorPositions, 1) >= 2
+        set(gcf, 'Position', monitorTwo);
+    else
+        set(gcf, 'Position', monitorPositions(1, :));
+    end
+
+    % Use tight_subplot for layout: conditions (rows) x areas (columns)
+    numCols = length(areasToTest);
+    ha = tight_subplot(numConditions, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
+
+    % Plot each condition (row) and area (column)
+    plotIdx = 0;
+    for condIdx = 1:numConditions
+        for areaIdx = 1:length(areasToTest)
+            a = areasToTest(areaIdx);
+            plotIdx = plotIdx + 1;
+            
+            axes(ha(plotIdx));
+            hold on;
+            
+            % Determine which condition to plot
+            % Order: Block 1 Correct, Block 1 Error, Block 2 Correct, Block 2 Error
+            if condIdx == 1
+                % Block 1 Correct
+                metastateData = metastateWindowsCorr1{a};
+                condName = 'Block 1 Correct';
+                colorIdx = 1;
+            elseif condIdx == 2 && plotErrors
+                % Block 1 Error
+                metastateData = metastateWindowsErr1{a};
+                condName = 'Block 1 Error';
+                colorIdx = 2;
+            elseif (condIdx == 2 && ~plotErrors) || (condIdx == 3 && plotErrors)
+                % Block 2 Correct
+                metastateData = metastateWindowsCorr2{a};
+                condName = 'Block 2 Correct';
+                colorIdx = 3;
+            elseif condIdx == 4 && plotErrors
+                % Block 2 Error
+                metastateData = metastateWindowsErr2{a};
+                condName = 'Block 2 Error';
+                colorIdx = 4;
+            else
+                continue; % Skip if not plotting errors
+            end
+            
+            % Check if we have metastate data for this area and condition
+            if ~hasHmmArea(a) || isempty(metastateData) || all(isnan(metastateData(:)))
+                % No data - show blank plot
+                xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
+                ylim([0.5, 1.5]);
+                title(sprintf('%s - %s\n(No Metastate Data)', areas{a}, condName), 'FontSize', 10);
+                continue;
+            end
+            
+            % Remove rows that are all NaN and ensure trials are in order
+            validRows = ~all(isnan(metastateData), 2);
+            if ~any(validRows)
+                xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
+                ylim([0.5, 1.5]);
+                title(sprintf('%s - %s\n(No Valid Reaches)', areas{a}, condName), 'FontSize', 10);
+                continue;
+            end
+            
+            % Keep trials in original order (top to bottom)
+            metastateDataValid = metastateData(validRows, :);
+            
+            % Create imagesc plot
+            imagesc(timeAxisPeriReach, 1:size(metastateDataValid, 1), metastateDataValid);
+            
+            % Set colormap for metastates; metastate 0 is white
+            if ~isempty(metaCmaps{a})
+                colormap(ha(plotIdx), metaCmaps{a});
+                nMeta = size(metaCmaps{a},1) - 1;
+                caxis(ha(plotIdx), [0, max(1, nMeta)]);
+            end
+            
+            % Add colorbar only on top row, and keep fixed ticks/labels per area
+            if condIdx == 1
+                c = colorbar('peer', ha(plotIdx));
+                if exist('nMeta','var') && ~isempty(nMeta)
+                    c.Ticks = 0:max(1, nMeta);
+                    c.TickLabels = string(0:max(1, nMeta));
+                end
+                c.Label.String = 'Metastate';
+                c.Label.FontSize = 8;
+            end
+            
+            % Add vertical line at reach onset
+            plot([0 0], ylim, 'k--', 'LineWidth', 2);
+            
+            % Formatting
+            xlabel('Time relative to reach onset (s)', 'FontSize', 8);
+            ylabel('Reach Trial', 'FontSize', 8);
+            title(sprintf('%s - %s\n(%d trials)', areas{a}, condName, sum(validRows)), 'FontSize', 10);
+            
+            % Set axis limits
+            xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
+            ylim([0.5, size(metastateDataValid, 1) + 0.5]);
+            
+            % Set tick labels
+            xTicks = ceil(timeAxisPeriReach(1)):floor(timeAxisPeriReach(end));
+            if isempty(xTicks)
+                xTicks = linspace(timeAxisPeriReach(1), timeAxisPeriReach(end), 5);
+            end
+            xticks(xTicks);
+            xticklabels(string(xTicks));
+            
+            % Set y-axis ticks to show trial numbers
+            if size(metastateDataValid, 1) <= 10
+                yticks(1:size(metastateDataValid, 1));
+            else
+                yticks(1:5:size(metastateDataValid, 1));
+            end
+            
+            grid on;
+            set(gca, 'GridAlpha', 0.3);
+        end
+    end
+
+    % Add overall title
+    sgtitle(sprintf('%s - Peri-Reach Metastate Sequences (Window: %gs)', filePrefix, periReachWindow), 'FontSize', 16);
+
+    % Save combined metastate figure (in same data-specific folder)
+    filename = fullfile(saveDir, sprintf('%s_peri_reach_metastates_win%gs.eps', filePrefix, periReachWindow));
+    exportgraphics(gcf, filename, 'ContentType', 'vector');
+    fprintf('Saved peri-reach metastate plot to: %s\n', filename);
+else
+    fprintf('\nNo metastate data available for plotting\n');
+end
 %% ==============================================     Sliding Window Metrics Plotting     ==============================================
 
 % Create condition indices (like criticality_peri_reach.m)
@@ -626,304 +920,10 @@ end
 sgtitle(sprintf('%s - Sliding Window Metrics (Window: %.1fs, Peri: %.1fs)', filePrefix, slidingWindowSize, periReachWindow), 'FontSize', 14);
 
 % Save figure
-filename_metrics = fullfile(saveDir, sprintf('%s_peri_reach_metrics_win%.1f_peri%.1f.png', filePrefix, slidingWindowSize, periReachWindow));
-exportgraphics(gcf, filename_metrics, 'Resolution', 300);
+filename_metrics = fullfile(saveDir, sprintf('%s_peri_reach_metrics_win%.1f_peri%.1f.eps', filePrefix, slidingWindowSize, periReachWindow));
+exportgraphics(gcf, filename_metrics, 'ContentType', 'vector');
 fprintf('Saved peri-reach metrics plot to: %s\n', filename_metrics);
 
-%% ==============================================     Plotting Results     ==============================================
-
-% Create peri-reach plots for each area: conditions x areas
-figure(400); clf;
-% Prefer plotting on second screen if available
-monitorPositions = get(0, 'MonitorPositions');
-monitorTwo = monitorPositions(size(monitorPositions, 1), :);
-if size(monitorPositions, 1) >= 2
-    set(gcf, 'Position', monitorTwo);
-else
-    set(gcf, 'Position', monitorPositions(1, :));
-end
-
-% Determine number of conditions to plot
-% Order: Block 1 Correct, Block 1 Error, Block 2 Correct, Block 2 Error
-numConditions = 2; % Block 1 Correct, Block 1 Error
-if plotErrors
-    numConditions = numConditions + 2; % Add Block 2 Correct, Block 2 Error
-end
-
-% Use tight_subplot for layout: conditions (rows) x areas (columns)
-numCols = length(areasToTest);
-ha = tight_subplot(numConditions, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
-
-% Create time axis for peri-reach window (centered on reach onset)
-timeAxisPeriReach = (-halfWindow:halfWindow) * binSizes(1); % Use first area's bin size for time axis
-
-% Define colors for different conditions
-colors = {'k', [0 0 .6], [.6 0 0], [0 0.6 0]};
-
-% Plot each condition (row) and area (column)
-plotIdx = 0;
-for condIdx = 1:numConditions
-    for areaIdx = 1:length(areasToTest)
-        a = areasToTest(areaIdx);
-        plotIdx = plotIdx + 1;
-        
-        axes(ha(plotIdx));
-        hold on;
-        
-        % Determine which condition to plot
-        % Order: Block 1 Correct, Block 1 Error, Block 2 Correct, Block 2 Error
-        if condIdx == 1
-            % Block 1 Correct
-            stateData = stateWindowsCorr1{a};
-            condName = 'Block 1 Correct';
-            colorIdx = 1;
-        elseif condIdx == 2 && plotErrors
-            % Block 1 Error
-            stateData = stateWindowsErr1{a};
-            condName = 'Block 1 Error';
-            colorIdx = 2;
-        elseif (condIdx == 2 && ~plotErrors) || (condIdx == 3 && plotErrors)
-            % Block 2 Correct
-            stateData = stateWindowsCorr2{a};
-            condName = 'Block 2 Correct';
-            colorIdx = 3;
-        elseif condIdx == 4 && plotErrors
-            % Block 2 Error
-            stateData = stateWindowsErr2{a};
-            condName = 'Block 2 Error';
-            colorIdx = 4;
-        else
-            continue; % Skip if not plotting errors
-        end
-        
-        % Check if we have data for this area and condition
-        if ~hasHmmArea(a) || isempty(stateData) || all(isnan(stateData(:)))
-            % No data - show blank plot
-            xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
-            ylim([0.5, 1.5]);
-            title(sprintf('%s - %s\n(No Data)', areas{a}, condName), 'FontSize', 10);
-            continue;
-        end
-        
-        % Remove rows that are all NaN and ensure trials are in order
-        validRows = ~all(isnan(stateData), 2);
-        if ~any(validRows)
-            xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
-            ylim([0.5, 1.5]);
-            title(sprintf('%s - %s\n(No Valid Reaches)', areas{a}, condName), 'FontSize', 10);
-            continue;
-        end
-        
-        % Keep trials in original order (top to bottom)
-        stateDataValid = stateData(validRows, :);
-        
-        % Create imagesc plot
-        imagesc(timeAxisPeriReach, 1:size(stateDataValid, 1), stateDataValid);
-        
-        % Set colormap to be consistent within area; state 0 is white
-        if ~isempty(stateCmaps{a})
-            colormap(ha(plotIdx), stateCmaps{a});
-            caxis(ha(plotIdx), [0, max(1, numStates(a))]);
-        end
-        
-        % Add colorbar only on top row, and keep fixed ticks/labels per area
-        if condIdx == 1
-            c = colorbar('peer', ha(plotIdx));
-            c.Ticks = 0:max(1, numStates(a));
-            c.TickLabels = string(0:max(1, numStates(a)));
-            c.Label.String = 'HMM State';
-            c.Label.FontSize = 8;
-        end
-        
-        % Add vertical line at reach onset
-        plot([0 0], ylim, 'k--', 'LineWidth', 2);
-        
-        % Formatting
-        xlabel('Time relative to reach onset (s)', 'FontSize', 8);
-        ylabel('Reach Trial', 'FontSize', 8);
-        title(sprintf('%s - %s\n(%d trials)', areas{a}, condName, sum(validRows)), 'FontSize', 10);
-        
-        % Set axis limits
-        xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
-        ylim([0.5, size(stateDataValid, 1) + 0.5]);
-        
-        % Set tick labels
-        xTicks = ceil(timeAxisPeriReach(1)):floor(timeAxisPeriReach(end));
-        if isempty(xTicks)
-            xTicks = linspace(timeAxisPeriReach(1), timeAxisPeriReach(end), 5);
-        end
-        xticks(xTicks);
-        xticklabels(string(xTicks));
-        
-        % Set y-axis ticks to show trial numbers
-        if size(stateDataValid, 1) <= 10
-            yticks(1:size(stateDataValid, 1));
-        else
-            yticks(1:5:size(stateDataValid, 1));
-        end
-        
-        grid on;
-        set(gca, 'GridAlpha', 0.3);
-    end
-end
-
-% Add overall title
-sgtitle(sprintf('%s - Peri-Reach HMM State Sequences (Window: %gs)', filePrefix, periReachWindow), 'FontSize', 16);
-
-% Save combined figure (in same data-specific folder)
-filename = fullfile(saveDir, sprintf('%s_peri_reach_hmm_states_win%gs.png', filePrefix, periReachWindow));
-exportgraphics(gcf, filename, 'Resolution', 300);
-fprintf('Saved peri-reach HMM state plot to: %s\n', filename);
-
-% ==============================================     Metastate Plotting     ==============================================
-
-% Check if any area has metastate data
-hasAnyMetastates = false;
-for a = areasToTest
-    if hasHmmArea(a) && ~isempty(results.hmm_results{a}) && isfield(results.hmm_results{a}, 'metastate_results') && ~isempty(results.hmm_results{a}.metastate_results.continuous_metastates)
-        hasAnyMetastates = true;
-        break;
-    end
-end
-
-if hasAnyMetastates
-    fprintf('\n=== Creating Peri-Reach Metastate Plot ===\n');
-    
-    % Create peri-reach metastate plots for each area: conditions x areas
-    figure(401); clf;
-    % Prefer plotting on second screen if available
-    monitorPositions = get(0, 'MonitorPositions');
-    monitorTwo = monitorPositions(size(monitorPositions, 1), :);
-    if size(monitorPositions, 1) >= 2
-        set(gcf, 'Position', monitorTwo);
-    else
-        set(gcf, 'Position', monitorPositions(1, :));
-    end
-
-    % Use tight_subplot for layout: conditions (rows) x areas (columns)
-    numCols = length(areasToTest);
-    ha = tight_subplot(numConditions, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
-
-    % Plot each condition (row) and area (column)
-    plotIdx = 0;
-    for condIdx = 1:numConditions
-        for areaIdx = 1:length(areasToTest)
-            a = areasToTest(areaIdx);
-            plotIdx = plotIdx + 1;
-            
-            axes(ha(plotIdx));
-            hold on;
-            
-            % Determine which condition to plot
-            % Order: Block 1 Correct, Block 1 Error, Block 2 Correct, Block 2 Error
-            if condIdx == 1
-                % Block 1 Correct
-                metastateData = metastateWindowsCorr1{a};
-                condName = 'Block 1 Correct';
-                colorIdx = 1;
-            elseif condIdx == 2 && plotErrors
-                % Block 1 Error
-                metastateData = metastateWindowsErr1{a};
-                condName = 'Block 1 Error';
-                colorIdx = 2;
-            elseif (condIdx == 2 && ~plotErrors) || (condIdx == 3 && plotErrors)
-                % Block 2 Correct
-                metastateData = metastateWindowsCorr2{a};
-                condName = 'Block 2 Correct';
-                colorIdx = 3;
-            elseif condIdx == 4 && plotErrors
-                % Block 2 Error
-                metastateData = metastateWindowsErr2{a};
-                condName = 'Block 2 Error';
-                colorIdx = 4;
-            else
-                continue; % Skip if not plotting errors
-            end
-            
-            % Check if we have metastate data for this area and condition
-            if ~hasHmmArea(a) || isempty(metastateData) || all(isnan(metastateData(:)))
-                % No data - show blank plot
-                xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
-                ylim([0.5, 1.5]);
-                title(sprintf('%s - %s\n(No Metastate Data)', areas{a}, condName), 'FontSize', 10);
-                continue;
-            end
-            
-            % Remove rows that are all NaN and ensure trials are in order
-            validRows = ~all(isnan(metastateData), 2);
-            if ~any(validRows)
-                xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
-                ylim([0.5, 1.5]);
-                title(sprintf('%s - %s\n(No Valid Reaches)', areas{a}, condName), 'FontSize', 10);
-                continue;
-            end
-            
-            % Keep trials in original order (top to bottom)
-            metastateDataValid = metastateData(validRows, :);
-            
-            % Create imagesc plot
-            imagesc(timeAxisPeriReach, 1:size(metastateDataValid, 1), metastateDataValid);
-            
-            % Set colormap for metastates; metastate 0 is white
-            if ~isempty(metaCmaps{a})
-                colormap(ha(plotIdx), metaCmaps{a});
-                nMeta = size(metaCmaps{a},1) - 1;
-                caxis(ha(plotIdx), [0, max(1, nMeta)]);
-            end
-            
-            % Add colorbar only on top row, and keep fixed ticks/labels per area
-            if condIdx == 1
-                c = colorbar('peer', ha(plotIdx));
-                if exist('nMeta','var') && ~isempty(nMeta)
-                    c.Ticks = 0:max(1, nMeta);
-                    c.TickLabels = string(0:max(1, nMeta));
-                end
-                c.Label.String = 'Metastate';
-                c.Label.FontSize = 8;
-            end
-            
-            % Add vertical line at reach onset
-            plot([0 0], ylim, 'k--', 'LineWidth', 2);
-            
-            % Formatting
-            xlabel('Time relative to reach onset (s)', 'FontSize', 8);
-            ylabel('Reach Trial', 'FontSize', 8);
-            title(sprintf('%s - %s\n(%d trials)', areas{a}, condName, sum(validRows)), 'FontSize', 10);
-            
-            % Set axis limits
-            xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
-            ylim([0.5, size(metastateDataValid, 1) + 0.5]);
-            
-            % Set tick labels
-            xTicks = ceil(timeAxisPeriReach(1)):floor(timeAxisPeriReach(end));
-            if isempty(xTicks)
-                xTicks = linspace(timeAxisPeriReach(1), timeAxisPeriReach(end), 5);
-            end
-            xticks(xTicks);
-            xticklabels(string(xTicks));
-            
-            % Set y-axis ticks to show trial numbers
-            if size(metastateDataValid, 1) <= 10
-                yticks(1:size(metastateDataValid, 1));
-            else
-                yticks(1:5:size(metastateDataValid, 1));
-            end
-            
-            grid on;
-            set(gca, 'GridAlpha', 0.3);
-        end
-    end
-
-    % Add overall title
-    sgtitle(sprintf('%s - Peri-Reach Metastate Sequences (Window: %gs)', filePrefix, periReachWindow), 'FontSize', 16);
-
-    % Save combined metastate figure (in same data-specific folder)
-    filename = fullfile(saveDir, sprintf('%s_peri_reach_metastates_win%gs.png', filePrefix, periReachWindow));
-    exportgraphics(gcf, filename, 'Resolution', 300);
-    fprintf('Saved peri-reach metastate plot to: %s\n', filename);
-else
-    fprintf('\nNo metastate data available for plotting\n');
-end
 
 %% ==============================================     Summary Statistics     ==============================================
 

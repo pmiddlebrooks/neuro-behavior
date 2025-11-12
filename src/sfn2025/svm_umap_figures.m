@@ -34,7 +34,7 @@ subPropInter = 0.15; % Proportion of intertrial data to plot for reach data (bhv
 
 % Brain areas
 areas = {'M23', 'M56', 'DS', 'VS'};
-areasToTest = 2:3;
+areasToTest = 2;
 
 %% ==================== REACH DATA ====================
 

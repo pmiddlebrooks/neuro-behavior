@@ -13,7 +13,6 @@
 %                   HMM_summary_[DataType]_[BrainArea]_[Timestamp].txt
 
 paths = get_paths;
-x
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.minFiringRate = .05;
@@ -470,15 +469,25 @@ if strcmpi(natOrReach, 'Reach')
         fprintf('Summary saved to: \n%s\n', summary_filepath);
     end
 else
-    % Naturalistic save (unchanged)
+    % Naturalistic save (matching reach style)
     hmmdir = fullfile(paths.dropPath, 'metastability');
     if ~exist(hmmdir, 'dir')
         mkdir(hmmdir);
     end
-    filename = sprintf('HMM_results_%s.mat', natOrReach);
+    
+    % Build results struct expected by peri-nat analysis (matching reach style)
+    results = struct();
+    results.areas = allResults.areas;
+    results.binSize = allResults.binSize;
+    results.numStates = allResults.numStates;
+    results.hmm_results = allResults.hmm_results;
+    
+    binSizeSave = opts.HmmParam.BinSize;
+    minDurSave = opts.HmmParam.MinDur;
+    filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', binSizeSave, minDurSave);
     filepath = fullfile(hmmdir, filename);
-    fprintf('Saving all HMM results to: \n%s\n', filepath);
-    save(filepath, 'allResults', '-v7.3');
+    fprintf('Saving Naturalistic HMM results to: \n%s\n', filepath);
+    save(filepath, 'results', '-v7.3');
 
     summary_filename = sprintf('HMM_summary_%s.txt', natOrReach);
     summary_filepath = fullfile(hmmdir, summary_filename);

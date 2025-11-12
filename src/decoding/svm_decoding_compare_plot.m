@@ -29,7 +29,8 @@ set(0, 'DefaultTextColor', '#D5A570');
 set(0, 'DefaultAxesXColor', '#D5A570');
 set(0, 'DefaultAxesYColor', '#D5A570');
 set(0, 'DefaultAxesZColor', '#D5A570');
-set(0, 'DefaultFigureColor', '#D5A570');
+set(0, 'DefaultFigureColor', 'remove');
+set(0, 'DefaultAxesColor', 'remove');
 set(0, 'DefaultAxesFontSize', 24);
 % set(0, 'DefaultAxesTickLength', [0.02 0.04]); % Default tick mark length
 set(0, 'DefaultAxesLineWidth', 3); % Default tick mark linewidth = 4
@@ -235,9 +236,9 @@ if plotComparisons
         set(gca, 'XTick', x, 'XTickLabel', upper(methods), 'TickLabelInterpreter', 'none');
         ylabel('Accuracy');
         title(sprintf('%s', areaName), 'Interpreter','none');
-        if a == 1
-        legend('Location', 'best');
-        end
+        % if a == 1
+        % legend('Location', 'best');
+        % end
         % grid on;
         ylim([0, 1]);
 

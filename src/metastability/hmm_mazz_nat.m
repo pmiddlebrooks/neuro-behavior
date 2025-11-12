@@ -112,7 +112,7 @@ if ~exist(hmmdir, 'dir')
     mkdir(hmmdir);
 end
 % filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f_bhv%d_offset%.3f.mat', opts.HmmParam.BinSize, opts.HmmParam.MinDur, bhvStartID, preBhvTime);
-filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3.mat', opts.HmmParam.BinSize, opts.HmmParam.MinDur);
+filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', opts.HmmParam.BinSize, opts.HmmParam.MinDur);
 filepath = fullfile(hmmdir, filename);
 
 % Loop through areas
