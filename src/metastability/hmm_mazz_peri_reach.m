@@ -35,7 +35,7 @@ areasToTest = 1:4;
 plotErrors = true;
 
 % Define window parameters
-periReachWindow = 30; % peri-reach window around each reach (used for all analyses)
+periReachWindow = 20; % peri-reach window around each reach (used for all analyses)
 % Sliding metrics window (slides across the peri window for entropy/behavior/kin)
 slidingWindowSize = 2.0;  % seconds
 metricsStepSec = [];     % default: one HMM bin step (set per area)
@@ -336,97 +336,163 @@ for a = areasToTest
     nFramesPeri = winBinsA + 1;
 
     % local step/size
-    stepBins = max(1, round((isempty(metricsStepSec) || isnan(metricsStepSec) || metricsStepSec<=0)*binSizeA/binSizeA + (~(isempty(metricsStepSec) || isnan(metricsStepSec) || metricsStepSec<=0))*metricsStepSec/binSizeA));
+    if isempty(metricsStepSec) || isnan(metricsStepSec) || metricsStepSec <= 0
+        stepBins = 1; % Default: one HMM bin step
+    else
+        stepBins = max(1, round(metricsStepSec / binSizeA));
+    end
     metWinBins = max(1, round(slidingWindowSize / binSizeA));
 
     seq = hmmRes.continuous_results.sequence;
+    
+    % Check if sequence has any valid states
+    if isempty(seq) || all(seq == 0) || all(isnan(seq))
+        fprintf('Warning: Area %s has no valid states in sequence (all zeros or NaN)\n', areas{a});
+        continue;
+    end
     hasMeta = isfield(hmmRes,'metastate_results') && isfield(hmmRes.metastate_results,'continuous_metastates') && ~isempty(hmmRes.metastate_results.continuous_metastates);
     if hasMeta, metaSeq = hmmRes.metastate_results.continuous_metastates; else, metaSeq = []; end
     tA = (0:length(seq)-1) * binSizeA;
     mapIdx = @(tSec) max(1, min(length(reachMaskTimeline), round(tSec/refBinSize)+1));
 
+    % ========== STEP 1: Calculate sliding window metrics across entire dataset ==========
+    numBins = length(seq);
+    stateEntropyFull = nan(numBins, 1);
+    metaEntropyFull = nan(numBins, 1);
+    behaviorSwitchesFull = nan(numBins, 1);
+    behaviorProportionFull = nan(numBins, 1);
+    behaviorEntropyFull = nan(numBins, 1);
+    kinPCAStdFull = nan(numBins, 1);
+    
+    halfMetWin = floor(metWinBins / 2);
+    
+    fprintf('Area %s: Calculating sliding window metrics across %d bins...\n', areas{a}, numBins);
+    for p = 1:numBins
+        % Define sliding window boundaries centered at p
+        % The metric at position p should represent a window centered at p
+        % Window spans from p - halfMetWin to p + halfMetWin (or as close as possible)
+        swStart = max(1, p - halfMetWin);
+        swEnd = min(numBins, p + halfMetWin);
+        
+        % Ensure window has minimum size (metWinBins)
+        actualWinSize = swEnd - swStart + 1;
+        if actualWinSize < metWinBins
+            if swStart == 1
+                % At start: extend window to the right to maintain size
+                swEnd = min(numBins, swStart + metWinBins - 1);
+            elseif swEnd == numBins
+                % At end: extend window to the left to maintain size
+                swStart = max(1, swEnd - metWinBins + 1);
+            end
+        end
+        
+        if swEnd <= swStart, continue; end
+        
+        % The metric at position p represents the window centered at p
+        % Time alignment: metric at bin p corresponds to time at bin p in original sequence
+        
+        % State entropy
+        segS = seq(swStart:swEnd);
+        segS = segS(segS > 0); % Remove zeros (unassigned states)
+        if isempty(segS) || all(isnan(segS))
+            stateEntropyFull(p) = NaN;
+        elseif length(unique(segS)) <= 1
+            stateEntropyFull(p) = 0;
+        else
+            stateCounts = histcounts(segS, 1:(numStates(a)+1));
+            stateProportions = stateCounts / length(segS);
+            stateProportions = stateProportions(stateProportions > 0);
+            if ~isempty(stateProportions)
+                stateEntropyFull(p) = -sum(stateProportions .* log2(stateProportions));
+            end
+        end
+        
+        % Metastate entropy
+        if hasMeta
+            segM = metaSeq(swStart:swEnd);
+            segM = segM(segM > 0);
+            if isempty(segM) || all(isnan(segM))
+                metaEntropyFull(p) = NaN;
+            elseif length(unique(segM)) <= 1
+                metaEntropyFull(p) = 0;
+            else
+                maxMetastate = hmmRes.metastate_results.num_metastates;
+                metaCounts = histcounts(segM, 1:(maxMetastate+1));
+                metaProportions = metaCounts / length(segM);
+                metaProportions = metaProportions(metaProportions > 0);
+                if ~isempty(metaProportions)
+                    metaEntropyFull(p) = -sum(metaProportions .* log2(metaProportions));
+                end
+            end
+        end
+        
+        % Behavior metrics from reach/no-reach timeline
+        tStart = (swStart-1) * binSizeA;
+        tEnd = (swEnd-1) * binSizeA;
+        bStart = mapIdx(tStart);
+        bEnd = mapIdx(tEnd);
+        if bEnd >= bStart
+            segB = reachMaskTimeline(bStart:bEnd);
+            if ~isempty(segB)
+                behaviorSwitchesFull(p) = sum(diff(segB) ~= 0);
+                behaviorProportionFull(p) = mean(segB);
+                p0 = mean(segB==0); p1 = mean(segB==1); pr = [p0 p1]; pr = pr(pr>0);
+                behaviorEntropyFull(p) = -sum(pr.*log2(pr));
+            end
+        end
+        
+        % Kin PCA std proxy from joystick amplitude
+        if ~isempty(kinDown)
+            kStart = bStart;
+            kEnd = min(bEnd, length(kinDown));
+            if kEnd >= kStart
+                kinPCAStdFull(p) = std(kinDown(kStart:kEnd), 'omitnan');
+            end
+        end
+    end
+    
+    % ========== STEP 2: Extract peri-event windows from pre-calculated metrics ==========
     stateEntropyWindows{a} = nan(length(reachStart), nFramesPeri);
     metaEntropyWindows{a} = nan(length(reachStart), nFramesPeri);
     behaviorSwitchesWindows{a} = nan(length(reachStart), nFramesPeri);
     behaviorProportionWindows{a} = nan(length(reachStart), nFramesPeri);
     behaviorEntropyWindows{a} = nan(length(reachStart), nFramesPeri);
     kinPCAStdWindows{a} = nan(length(reachStart), nFramesPeri);
-
+    
+    fprintf('  Extracting peri-event windows for %d reaches...\n', length(reachStart));
     for r = 1:length(reachStart)
         centerTime = reachStart(r)/1000;
         [~, cIdx] = min(abs(tA - centerTime));
-        periStart = cIdx - halfWinA; periEnd = cIdx + halfWinA;
-        if periStart < 1 || periEnd > length(seq), continue; end
-
-        for p = periStart:stepBins:periEnd
-            swStart = max(periStart, p - floor(metWinBins/2));
-            swEnd = min(periEnd, swStart + metWinBins - 1);
-            swStart = max(periStart, swEnd - metWinBins + 1);
-            if swEnd <= swStart, continue; end
+        periStart = cIdx - halfWinA;
+        periEnd = cIdx + halfWinA;
+        
+        if periStart < 1 || periEnd > numBins
+            continue;
+        end
+        
+        % Extract windows from pre-calculated metrics
+        periIndices = periStart:stepBins:periEnd;
+        periIndices = periIndices(periIndices >= 1 & periIndices <= numBins);
+        
+        for idx = 1:length(periIndices)
+            p = periIndices(idx);
             periPos = (p - periStart) + 1;
-
-            % State entropy (same approach as hmm_correlations.m)
-            segS = seq(swStart:swEnd); segS = segS(segS>0);
-            if isempty(segS) || all(isnan(segS))
-                stateEntropyWindows{a}(r, periPos) = NaN;
-            elseif length(unique(segS)) <= 1
-                stateEntropyWindows{a}(r, periPos) = 0;
-            else
-                % Count occurrences of each state
-                stateCounts = histcounts(segS, 1:(numStates(a)+1));
-                stateProportions = stateCounts / length(segS);
-                stateProportions = stateProportions(stateProportions > 0); % Remove zero probabilities
-                if ~isempty(stateProportions)
-                    stateEntropyWindows{a}(r, periPos) = -sum(stateProportions .* log2(stateProportions));
-                else
-                    stateEntropyWindows{a}(r, periPos) = NaN;
+            if periPos > 0 && periPos <= nFramesPeri
+                stateEntropyWindows{a}(r, periPos) = stateEntropyFull(p);
+                if hasMeta
+                    metaEntropyWindows{a}(r, periPos) = metaEntropyFull(p);
                 end
-            end
-
-            % Metastate entropy (same approach as hmm_correlations.m)
-            if hasMeta
-                segM = metaSeq(swStart:swEnd); segM = segM(segM>0);
-                if isempty(segM) || all(isnan(segM))
-                    metaEntropyWindows{a}(r, periPos) = NaN;
-                elseif length(unique(segM)) <= 1
-                    metaEntropyWindows{a}(r, periPos) = 0;
-                else
-                    % Get maximum metastate value
-                    maxMetastate = hmmRes.metastate_results.num_metastates;
-                    % Count occurrences of each metastate
-                    metaCounts = histcounts(segM, 1:(maxMetastate+1));
-                    metaProportions = metaCounts / length(segM);
-                    metaProportions = metaProportions(metaProportions > 0); % Remove zero probabilities
-                    if ~isempty(metaProportions)
-                        metaEntropyWindows{a}(r, periPos) = -sum(metaProportions .* log2(metaProportions));
-                    else
-                        metaEntropyWindows{a}(r, periPos) = NaN;
-                    end
-                end
-            end
-
-            % Behavior metrics from reach/no-reach timeline
-            tStart = (swStart-1)*binSizeA; tEnd = (swEnd-1)*binSizeA;
-            bStart = mapIdx(tStart); bEnd = mapIdx(tEnd);
-            if bEnd >= bStart
-                segB = reachMaskTimeline(bStart:bEnd);
-                if ~isempty(segB)
-                    behaviorSwitchesWindows{a}(r, periPos) = sum(diff(segB)~=0);
-                    behaviorProportionWindows{a}(r, periPos) = mean(segB);
-                    p0 = mean(segB==0); p1 = mean(segB==1); pr = [p0 p1]; pr = pr(pr>0);
-                    behaviorEntropyWindows{a}(r, periPos) = -sum(pr.*log2(pr));
-                end
-            end
-
-            % Kin PCA std proxy from joystick amplitude
-            if ~isempty(kinDown)
-                kStart = bStart; kEnd = min(bEnd, length(kinDown));
-                if kEnd >= kStart
-                    kinPCAStdWindows{a}(r, periPos) = std(kinDown(kStart:kEnd));
+                behaviorSwitchesWindows{a}(r, periPos) = behaviorSwitchesFull(p);
+                behaviorProportionWindows{a}(r, periPos) = behaviorProportionFull(p);
+                behaviorEntropyWindows{a}(r, periPos) = behaviorEntropyFull(p);
+                if ~isempty(kinDown)
+                    kinPCAStdWindows{a}(r, periPos) = kinPCAStdFull(p);
                 end
             end
         end
     end
+    
+    fprintf('  Completed area %s\n', areas{a});
 end
 
 %% ==============================================     Plotting Results     ==============================================

@@ -59,7 +59,7 @@ switch natOrReach
         getDataType = 'spikes';
         opts.collectStart = 0 * 60 * 60; % seconds
         opts.collectEnd = 45 * 60; % seconds
-        opts.collectEnd = 10 * 60; % seconds
+        opts.collectEnd = 45 * 60; % seconds
         % get_standard_data
 animal = 'ag25290';
 sessionNrn = '112321';
