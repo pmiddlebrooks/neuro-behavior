@@ -40,6 +40,9 @@ periReachWindow = 20; % peri-reach window around each reach (used for all analys
 slidingWindowSize = 2.0;  % seconds
 metricsStepSec = [];     % default: one HMM bin step (set per area)
 
+% Maximum number of trials to plot per condition
+maxTrial = 60;
+
 % Extract session name from filename
 [~, sessionName, ~] = fileparts(reachDataFile);
 
@@ -579,8 +582,10 @@ for condIdx = 1:numConditions
             continue;
         end
         
-        % Keep trials in original order (top to bottom)
-        stateDataValid = stateData(validRows, :);
+        % Keep trials in original order (top to bottom) and limit to maxTrial
+        validIndices = find(validRows);
+        numTrialsToPlot = min(length(validIndices), maxTrial);
+        stateDataValid = stateData(validIndices(1:numTrialsToPlot), :);
         
         % Create imagesc plot
         imagesc(timeAxisPeriReach, 1:size(stateDataValid, 1), stateDataValid);
@@ -606,14 +611,20 @@ for condIdx = 1:numConditions
         % Formatting
         xlabel('Time relative to reach onset (s)', 'FontSize', 8);
         ylabel('Reach Trial', 'FontSize', 8);
-        title(sprintf('%s - %s\n(%d trials)', areas{a}, condName, sum(validRows)), 'FontSize', 10);
+        totalValidTrials = sum(validRows);
+        if totalValidTrials > maxTrial
+            title(sprintf('%s - %s\n(%d/%d trials)', areas{a}, condName, numTrialsToPlot, totalValidTrials), 'FontSize', 10);
+        else
+            title(sprintf('%s - %s\n(%d trials)', areas{a}, condName, numTrialsToPlot), 'FontSize', 10);
+        end
         
         % Set axis limits
         xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
         ylim([0.5, size(stateDataValid, 1) + 0.5]);
         
         % Set tick labels
-        xTicks = ceil(timeAxisPeriReach(1)):floor(timeAxisPeriReach(end));
+        % xTicks = ceil(timeAxisPeriBhv(1)):floor(timeAxisPeriBhv(end));
+            xTicks = linspace(timeAxisPeriBhv(1), timeAxisPeriBhv(end), 5);
         if isempty(xTicks)
             xTicks = linspace(timeAxisPeriReach(1), timeAxisPeriReach(end), 5);
         end
@@ -629,6 +640,7 @@ for condIdx = 1:numConditions
         
         grid on;
         set(gca, 'GridAlpha', 0.3);
+        set(gca, 'FontSize', 16);
     end
 end
 
@@ -723,8 +735,10 @@ if hasAnyMetastates
                 continue;
             end
             
-            % Keep trials in original order (top to bottom)
-            metastateDataValid = metastateData(validRows, :);
+            % Keep trials in original order (top to bottom) and limit to maxTrial
+            validIndices = find(validRows);
+            numTrialsToPlot = min(length(validIndices), maxTrial);
+            metastateDataValid = metastateData(validIndices(1:numTrialsToPlot), :);
             
             % Create imagesc plot
             imagesc(timeAxisPeriReach, 1:size(metastateDataValid, 1), metastateDataValid);
@@ -753,14 +767,20 @@ if hasAnyMetastates
             % Formatting
             xlabel('Time relative to reach onset (s)', 'FontSize', 8);
             ylabel('Reach Trial', 'FontSize', 8);
-            title(sprintf('%s - %s\n(%d trials)', areas{a}, condName, sum(validRows)), 'FontSize', 10);
+            totalValidTrials = sum(validRows);
+            if totalValidTrials > maxTrial
+                title(sprintf('%s - %s\n(%d/%d trials)', areas{a}, condName, numTrialsToPlot, totalValidTrials), 'FontSize', 10);
+            else
+                title(sprintf('%s - %s\n(%d trials)', areas{a}, condName, numTrialsToPlot), 'FontSize', 10);
+            end
             
             % Set axis limits
             xlim([timeAxisPeriReach(1), timeAxisPeriReach(end)]);
             ylim([0.5, size(metastateDataValid, 1) + 0.5]);
             
             % Set tick labels
-            xTicks = ceil(timeAxisPeriReach(1)):floor(timeAxisPeriReach(end));
+        % xTicks = ceil(timeAxisPeriBhv(1)):floor(timeAxisPeriBhv(end));
+            xTicks = linspace(timeAxisPeriBhv(1), timeAxisPeriBhv(end), 5);
             if isempty(xTicks)
                 xTicks = linspace(timeAxisPeriReach(1), timeAxisPeriReach(end), 5);
             end
@@ -804,9 +824,9 @@ if plotErrors
 end
 
 % Metrics to plot
-metricsToPlot = {'stateEntropy', 'behaviorSwitches', 'behaviorEntropy', 'kinPCAStd'};
-metricNames = {'State Entropy', 'Behavior Switches', 'Behavior Entropy', 'Kin PCA Std'};
-metricWindows = {stateEntropyWindows, behaviorSwitchesWindows, behaviorEntropyWindows, kinPCAStdWindows};
+metricsToPlot = {'stateEntropy', 'behaviorEntropy', 'kinPCAStd'};
+metricNames = {'State Entropy', 'Behavior Entropy', 'Kin PCA Std'};
+metricWindows = {stateEntropyWindows, behaviorEntropyWindows, kinPCAStdWindows};
 
 % Create figure for metrics
 figure(402); clf;

@@ -16,14 +16,24 @@
 %   colorsNat - Color mapping for naturalistic behaviors
 
 %% User-specified parameters
-areaIdx = 3; % Brain area: 1=M23, 2=M56, 3=DS, 4=VS
+areaIdx = 2; % Brain area: 1=M23, 2=M56, 3=DS, 4=VS
 
 % Sliding window size (should match the one used in criticality_sliding_window_ar.m)
 slidingWindowSize = 20; % seconds
 
+% PCA flag (should match the one used in criticality_sliding_window_ar.m)
+usePCA = true;  % Set to true if PCA was used in the analysis
+
 % Setup paths
 paths = get_paths;
 areas = {'M23', 'M56', 'DS', 'VS'};
+
+% Create filename suffix based on PCA flag
+if usePCA
+    filenameSuffix = '_pca';
+else
+    filenameSuffix = '';
+end
 
 % Reach data file (should match the one used in criticality_sliding_window_ar.m)
 reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
@@ -33,36 +43,11 @@ reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.
 animal = 'ag25290';
 sessionBhv = '112321_1';
 
-%% ================================    Find maximum d2 across all areas and conditions
-% Loop through all areas to find the global maximum d2 value
-fprintf('\n=== Finding Maximum d2 Across All Areas and Conditions ===\n');
-maxD2 = -inf;
-for iArea = 1:length(areas)
-    % Extract d2 for reach condition
-    d2ReachAll = resultsReach.d2{iArea};
-    if ~isempty(d2ReachAll) && ~all(isnan(d2ReachAll))
-        maxD2Reach = max(d2ReachAll(~isnan(d2ReachAll)));
-        if maxD2Reach > maxD2
-            maxD2 = maxD2Reach;
-        end
-    end
-    
-    % Extract d2 for naturalistic condition
-    d2NatAll = resultsNat.d2{iArea};
-    if ~isempty(d2NatAll) && ~all(isnan(d2NatAll))
-        maxD2Nat = max(d2NatAll(~isnan(d2NatAll)));
-        if maxD2Nat > maxD2
-            maxD2 = maxD2Nat;
-        end
-    end
-end
-fprintf('Maximum d2 value across all areas and conditions: %.4f\n', maxD2);
-
-%% ================================    Load criticality results
+% ================================    Load criticality results
 % Load reach criticality results
 fprintf('\n=== Loading Reach Criticality Results ===\n');
 reachSaveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
-reachResultsPath = fullfile(reachSaveDir, sprintf('criticality_sliding_window_ar_win%d.mat', slidingWindowSize));
+reachResultsPath = fullfile(reachSaveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
 
 if ~exist(reachResultsPath, 'file')
     error('Reach results file not found: %s\nRun criticality_sliding_window_ar.m for reach data first.', reachResultsPath);
@@ -75,7 +60,7 @@ fprintf('Loaded reach results for area %s\n', areas{areaIdx});
 % Load naturalistic criticality results
 fprintf('\n=== Loading Naturalistic Criticality Results ===\n');
 natSaveDir = fullfile(paths.dropPath, 'criticality/results');
-natResultsPath = fullfile(natSaveDir, sprintf('criticality_sliding_window_ar_win%d.mat', slidingWindowSize));
+natResultsPath = fullfile(natSaveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
 
 if ~exist(natResultsPath, 'file')
     error('Naturalistic results file not found: %s\nRun criticality_sliding_window_ar.m for naturalistic data first.', natResultsPath);
@@ -159,7 +144,33 @@ catch
     colorsNat = lines(max(codesNat) + 2);
 end
 
-%% ================================    Analysis   ================================
+% ================================    Find maximum d2 across all areas and conditions
+% Loop through all areas to find the global maximum d2 value
+fprintf('\n=== Finding Maximum d2 Across All Areas and Conditions ===\n');
+maxD2 = -inf;
+for iArea = 1:length(areas)
+    % Extract d2 for reach condition
+    d2ReachAll = resultsReach.d2{iArea};
+    if ~isempty(d2ReachAll) && ~all(isnan(d2ReachAll))
+        maxD2Reach = max(d2ReachAll(~isnan(d2ReachAll)));
+        if maxD2Reach > maxD2
+            maxD2 = maxD2Reach;
+        end
+    end
+    
+    % Extract d2 for naturalistic condition
+    d2NatAll = resultsNat.d2{iArea};
+    if ~isempty(d2NatAll) && ~all(isnan(d2NatAll))
+        maxD2Nat = max(d2NatAll(~isnan(d2NatAll)));
+        if maxD2Nat > maxD2
+            maxD2 = maxD2Nat;
+        end
+    end
+end
+fprintf('Maximum d2 value across all areas and conditions: %.4f\n', maxD2);
+
+
+% ================================    Analysis   ================================
 % Extract d2 data for specified area
 d2Reach = resultsReach.d2{areaIdx};
 startSReach = resultsReach.startS{areaIdx};
@@ -170,7 +181,12 @@ startSNat = resultsNat.startS{areaIdx};
 timeStart = min([min(startSReach), min(startSNat), 0]);
 timeEnd = max([max(startSReach), max(startSNat), max(timeAxisReachBhv), max(timeAxisNatBhv)]);
 
-% ================================    Create Ethogram Figure
+saveDir = fullfile(paths.dropPath, 'sfn2025', 'd2_comparison');
+if ~exist(saveDir, 'dir')
+    mkdir(saveDir);
+end
+
+%% ================================    Create Ethogram Figure
 fprintf('\n=== Creating Ethogram Figure ===\n');
 figure(711); clf;
 set(gcf, 'Units', 'pixels');
@@ -239,15 +255,11 @@ xlabel('Time (s)', 'FontSize', 12);
 grid on;
 
 % Save ethogram figure
-saveDir = fullfile(paths.dropPath, 'sfn2025', 'd2_comparison');
-if ~exist(saveDir, 'dir')
-    mkdir(saveDir);
-end
-saveFileEthogram = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s_win%d_ethogram.eps', areas{areaIdx}, slidingWindowSize));
+saveFileEthogram = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_ethogram.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
 exportgraphics(gcf, saveFileEthogram, 'ContentType', 'vector');
 fprintf('Saved ethogram figure to: %s\n', saveFileEthogram);
 
-% ================================    Create d2 Time Series Figure
+%% ================================    Create d2 Time Series Figure
 fprintf('\n=== Creating d2 Time Series Figure ===\n');
 figure(713); clf;
 set(gcf, 'Units', 'pixels');
@@ -257,18 +269,18 @@ if size(monitorPositions, 1) >= 2
 else
     targetMonitor = monitorPositions(1, :);
 end
-set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)/2]);
+set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)*.5]);
 
 hold on;
 
 % Plot reach d2
 if ~isempty(d2Reach) && ~all(isnan(d2Reach))
-    plot(startSReach, d2Reach, 'b-', 'LineWidth', 2, 'DisplayName', 'task d2');
+    plot(startSReach, d2Reach, 'b-', 'LineWidth', 3, 'DisplayName', 'task d2');
 end
 
 % Plot naturalistic d2
 if ~isempty(d2Nat) && ~all(isnan(d2Nat))
-    plot(startSNat, d2Nat, 'r-', 'LineWidth', 2, 'DisplayName', 'spontaneous d2');
+    plot(startSNat, d2Nat, 'r-', 'LineWidth', 3, 'DisplayName', 'spontaneous d2');
 end
 
 % Plot reach start markers (filled green circles)
@@ -276,20 +288,21 @@ reachStartInRange = reachStart(reachStart >= timeStart & reachStart <= timeEnd);
 if ~isempty(reachStartInRange)
     % Get d2 values at reach start times (interpolate if needed)
     d2AtReach = interp1(startSReach, d2Reach, reachStartInRange, 'linear', 'extrap');
-    scatter(reachStartInRange, d2AtReach, 50, 'g', 'filled', 'o', ...
+    scatter(reachStartInRange, d2AtReach, 80, 'g', 'filled', 'o', ...
         'DisplayName', 'task Start', 'MarkerEdgeColor', 'k', 'LineWidth', 1);
 end
 
 xlim([timeStart, timeEnd]);
-ylim([0 maxD2]);
+ylim([0 max([d2Reach(:); d2Nat(:)])]);
 xlabel('Time (s)', 'FontSize', 12);
 ylabel('d2', 'FontSize', 12);
 title(sprintf('%s - d2 Criticality Comparison', areas{areaIdx}), 'FontSize', 12);
 legend('Location', 'best');
 grid on;
 
+set(gca, 'FontSize', 18)
 % Save d2 time series figure
-saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s_win%d_d2.eps', areas{areaIdx}, slidingWindowSize));
+saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_d2.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
 exportgraphics(gcf, saveFileD2, 'ContentType', 'vector');
 fprintf('Saved d2 time series figure to: %s\n', saveFileD2);
 
@@ -386,7 +399,7 @@ grid on;
 ylim([0, maxD2]);
 
 % Save comparison figure
-saveFileBar = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s_win%d_bar.eps', areas{areaIdx}, slidingWindowSize));
+saveFileBar = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_bar.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
 exportgraphics(gcf, saveFileBar, 'ContentType', 'vector');
 fprintf('Saved comparison figure to: %s\n', saveFileBar);
 
@@ -490,39 +503,52 @@ set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3)/2, ta
 
 hold on;
 
-% Prepare data for scatter plot
+% Prepare data for bar plot
 nAreas = length(areas);
 xPos = 1:nAreas;
-xOffset = 0.12;
-xTask = xPos - xOffset;
-xSpont = xPos + xOffset;
 
-% Plot scatter markers for task condition (only plot valid data)
+% Prepare data matrix for grouped bar chart
+% Keep NaN values - MATLAB bar will skip drawing those bars
+barData = [summaryMeansTask, summaryMeansSpont];
+
+% Create grouped bar chart
+barColors = [0 0 1; 1 0 0]; % Blue for task, red for spontaneous
+b = bar(xPos, barData, 'grouped');
+
+% Set colors using CData property (proper way for 'FaceColor', 'flat')
+% CData should be nAreas x 3 (RGB) for each bar series
+b(1).CData = repmat(barColors(1, :), nAreas, 1);
+b(2).CData = repmat(barColors(2, :), nAreas, 1);
+
+% Add error bars
+% Calculate x positions for error bars (centered on each bar group)
+xTask = xPos - 0.14;
+xSpont = xPos + 0.14;
+
+% Plot error bars for task condition (only for valid data)
 validTaskIdx = ~isnan(summaryMeansTask);
 if any(validTaskIdx)
-    scatter(xTask(validTaskIdx), summaryMeansTask(validTaskIdx), 150, [0 0 1], ...
-        'filled', 'o', 'DisplayName', 'Task', 'MarkerEdgeColor', 'k', 'LineWidth', 1);
-    % Add error bars for task
     errorbar(xTask(validTaskIdx), summaryMeansTask(validTaskIdx), ...
         summaryStdsTask(validTaskIdx), 'k', 'LineWidth', 1.5, 'LineStyle', 'none', ...
         'CapSize', 5, 'HandleVisibility', 'off');
 end
 
-% Plot scatter markers for spontaneous condition (only plot valid data)
+% Plot error bars for spontaneous condition (only for valid data)
 validSpontIdx = ~isnan(summaryMeansSpont);
 if any(validSpontIdx)
-    scatter(xSpont(validSpontIdx), summaryMeansSpont(validSpontIdx), 150, [1 0 0], ...
-        'filled', 'o', 'DisplayName', 'Spontaneous', 'MarkerEdgeColor', 'k', 'LineWidth', 1);
-    % Add error bars for spontaneous
     errorbar(xSpont(validSpontIdx), summaryMeansSpont(validSpontIdx), ...
         summaryStdsSpont(validSpontIdx), 'k', 'LineWidth', 1.5, 'LineStyle', 'none', ...
         'CapSize', 5, 'HandleVisibility', 'off');
 end
 
+% Set display names for legend
+b(1).DisplayName = 'Task';
+b(2).DisplayName = 'Spontaneous';
+
 % Formatting
 set(gca, 'XTick', xPos, 'XTickLabel', areas);
 xlim([0.5, nAreas + 0.5]);
-ylim([0, maxD2]);
+ylim([0, max(barData(:)*1.3)]);
 ylabel('d2', 'FontSize', 12);
 xlabel('Brain Area', 'FontSize', 12);
 title('Mean d2 Across All Areas and Contexts', 'FontSize', 12);
@@ -530,7 +556,7 @@ legend('Location', 'best');
 grid on;
 
 % Save summary figure
-saveFileSummary = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_summary_win%d.eps', slidingWindowSize));
+saveFileSummary = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_summary%s_win%d.eps', filenameSuffix, slidingWindowSize));
 exportgraphics(gcf, saveFileSummary, 'ContentType', 'vector');
 fprintf('Saved summary figure to: %s\n', saveFileSummary);
 

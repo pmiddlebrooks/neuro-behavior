@@ -7,7 +7,7 @@ paths = get_paths;
 
 % =============================    Configuration    =============================
 % Data type selection
-dataType = 'reach';  % 'reach' or 'naturalistic'
+dataType = 'naturalistic';  % 'reach' or 'naturalistic'
 
 % Sliding window size (seconds)
 slidingWindowSize = 20;
@@ -40,7 +40,7 @@ areasToTest = 1:4;
 areasToPlot = areasToTest;
 
 % PCA options
-pcaFlag = 0;           % Set to 1 to use PCA
+pcaFlag = 1;           % Set to 1 to use PCA
 pcaFirstFlag = 1;      % Use first nDim dimensions if 1, last nDim if 0
 nDim = 4;              % Number of PCA dimensions to use
 
@@ -60,6 +60,13 @@ d2StepSize = repmat(.2,1,4);
 % =============================    Data Loading    =============================
 fprintf('\n=== Loading %s data ===\n', dataType);
 
+% Create filename suffix based on PCA flag
+if pcaFlag
+    filenameSuffix = '_pca';
+else
+    filenameSuffix = '';
+end
+
 if strcmp(dataType, 'reach')
     % Load reach data
     reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
@@ -69,7 +76,7 @@ if strcmp(dataType, 'reach')
     saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
     
-    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar_win%d.mat', slidingWindowSize));
+    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
     
     dataR = load(reachDataFile);
     
@@ -114,7 +121,7 @@ elseif strcmp(dataType, 'naturalistic')
     % Create save directory for naturalistic data
     saveDir = fullfile(paths.dropPath, 'criticality/results');
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
-    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar_win%d.mat', slidingWindowSize));
+    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
     
     % NEW: Load spike data for modulation analysis
     if analyzeModulation
@@ -536,13 +543,13 @@ if makePlots
     else
         reachOnsetTimes = []; % No reach onsets for naturalistic data
     end
-    plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes);
+    plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix);
 
     if plotCorrelations
-        plot_criticality_correlations(popActivityWindows, popActivityFull, d2, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos);
+        plot_criticality_correlations(popActivityWindows, popActivityFull, d2, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, filenameSuffix);
     end
     if analyzeModulation
-        plot_modulated_vs_unmodulated(d2Modulated, d2Unmodulated, startSModulated, startSUnmodulated, popActivityWindowsModulated, popActivityWindowsUnmodulated, areasToTest, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, reachOnsetTimes);
+        plot_modulated_vs_unmodulated(d2Modulated, d2Unmodulated, startSModulated, startSUnmodulated, popActivityWindowsModulated, popActivityWindowsUnmodulated, areasToTest, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, reachOnsetTimes, filenameSuffix);
     end
 end
 
@@ -607,7 +614,7 @@ for a = areasToTest
 end
 end
 
-function plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes)
+function plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix)
 % Plot time series of criticality measures
     figure(900); clf;
     set(gcf, 'Units', 'pixels');
@@ -685,10 +692,10 @@ if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
 else
     sgtitle(sprintf('%s d2 (blue, left) and mrBr (black, right) - win=%gs', dataType, slidingWindowSize));
 end
-    exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
+    exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
 end
     
-function plot_criticality_correlations(popActivityWindows, popActivityFull, d2, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos)
+function plot_criticality_correlations(popActivityWindows, popActivityFull, d2, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, filenameSuffix)
 % Plot correlation scatter plots
     figure(901); clf;
     set(gcf, 'Units', 'pixels');
@@ -752,11 +759,11 @@ ha = tight_subplot(numRows, numCols, [0.05 0.04], [0.03 0.08], [0.08 0.04]);
     end
     
     sgtitle(sprintf('%s Population Activity vs Criticality Correlations - win=%gs', dataType, slidingWindowSize));
-    exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
-    fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('criticality_%s_correlations_win%d.png', dataType, slidingWindowSize)));
+    exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
+    fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)));
 end
 
-function plot_modulated_vs_unmodulated(d2Modulated, d2Unmodulated, startSModulated, startSUnmodulated, popActivityWindowsModulated, popActivityWindowsUnmodulated, areasToTest, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, reachOnsetTimes)
+function plot_modulated_vs_unmodulated(d2Modulated, d2Unmodulated, startSModulated, startSUnmodulated, popActivityWindowsModulated, popActivityWindowsUnmodulated, areasToTest, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, reachOnsetTimes, filenameSuffix)
 % Plot modulated vs unmodulated comparisons
 plotCorrelations = false;
 
@@ -799,7 +806,7 @@ for idx = 1:length(areasToTest)
 end
 
 sgtitle(sprintf('%s Modulated neurons d2 win=%gs', dataType, slidingWindowSize));
-exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
+exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
 
 if plotCorrelations
 
@@ -866,6 +873,6 @@ for idx = 1:numAreas
 end
 
 sgtitle(sprintf('%s Modulated vs Unmodulated Population Activity vs Criticality', dataType));
-exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_unmodulated_scatter_win%d.png', dataType, slidingWindowSize)), 'Resolution', 300);
+exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_unmodulated_scatter%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
 end
 end

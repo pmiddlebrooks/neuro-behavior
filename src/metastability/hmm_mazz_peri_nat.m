@@ -31,6 +31,9 @@ periBhvWindow = 20; % peri-behavior window around each behavior onset (used for 
 minDurValid = 0.5; % minimum duration of valid behavior (seconds)
 minDurBetweenValid = 1.0; % minimum time between end of previous behavior and start of next (seconds)
 
+% Maximum number of trials/bouts to plot per behavior ID
+maxTrial = 60;
+
 % Determine save directory and filename based on parameters
 hmmdir = fullfile(paths.dropPath, 'metastability');
 filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', binSize, minDur);
@@ -555,8 +558,10 @@ for bhvRowIdx = 1:numRows
             continue;
         end
         
-        % Keep onsets in original order (top to bottom)
-        stateDataValid = stateData(validRows, :);
+        % Keep onsets in original order (top to bottom) and limit to maxTrial
+        validIndices = find(validRows);
+        numTrialsToPlot = min(length(validIndices), maxTrial);
+        stateDataValid = stateData(validIndices(1:numTrialsToPlot), :);
         
         % Create imagesc plot
         imagesc(timeAxisPeriBhv, 1:size(stateDataValid, 1), stateDataValid);
@@ -567,14 +572,14 @@ for bhvRowIdx = 1:numRows
             caxis(ha(plotIdx), [0, max(1, numStates(a))]);
         end
         
-        % Add colorbar only on top row, and keep fixed ticks/labels per area
-        if bhvRowIdx == 1
-            c = colorbar('peer', ha(plotIdx));
-            c.Ticks = 0:max(1, numStates(a));
-            c.TickLabels = string(0:max(1, numStates(a)));
-            c.Label.String = 'HMM State';
-            c.Label.FontSize = 8;
-        end
+        % % Add colorbar only on top row, and keep fixed ticks/labels per area
+        % if bhvRowIdx == 1
+        %     c = colorbar('peer', ha(plotIdx));
+        %     c.Ticks = 0:max(1, numStates(a));
+        %     c.TickLabels = string(0:max(1, numStates(a)));
+        %     c.Label.String = 'HMM State';
+        %     c.Label.FontSize = 8;
+        % end
         
         % Add vertical line at behavior onset
         plot([0 0], ylim, 'k--', 'LineWidth', 2);
@@ -582,14 +587,20 @@ for bhvRowIdx = 1:numRows
         % Formatting
         xlabel('Time relative to behavior onset (s)', 'FontSize', 8);
         ylabel('Onset Trial', 'FontSize', 8);
-        title(sprintf('%s - %s\n(%d onsets)', areas{a}, condName, sum(validRows)), 'FontSize', 10);
+        totalValidOnsets = sum(validRows);
+        if totalValidOnsets > maxTrial
+            title(sprintf('%s - %s\n(%d/%d onsets)', areas{a}, condName, numTrialsToPlot, totalValidOnsets), 'FontSize', 10);
+        else
+            title(sprintf('%s - %s\n(%d onsets)', areas{a}, condName, numTrialsToPlot), 'FontSize', 10);
+        end
         
         % Set axis limits
         xlim([timeAxisPeriBhv(1), timeAxisPeriBhv(end)]);
         ylim([0.5, size(stateDataValid, 1) + 0.5]);
         
         % Set tick labels
-        xTicks = ceil(timeAxisPeriBhv(1)):floor(timeAxisPeriBhv(end));
+        % xTicks = ceil(timeAxisPeriBhv(1)):floor(timeAxisPeriBhv(end));
+            xTicks = linspace(timeAxisPeriBhv(1), timeAxisPeriBhv(end), 5);
         if isempty(xTicks)
             xTicks = linspace(timeAxisPeriBhv(1), timeAxisPeriBhv(end), 5);
         end
@@ -605,6 +616,7 @@ for bhvRowIdx = 1:numRows
         
         grid on;
         set(gca, 'GridAlpha', 0.3);
+        set(gca, 'FontSize', 16);
     end
 end
 
@@ -678,8 +690,10 @@ if hasAnyMetastates
                 continue;
             end
             
-            % Keep onsets in original order (top to bottom)
-            metastateDataValid = metastateData(validRows, :);
+            % Keep onsets in original order (top to bottom) and limit to maxTrial
+            validIndices = find(validRows);
+            numTrialsToPlot = min(length(validIndices), maxTrial);
+            metastateDataValid = metastateData(validIndices(1:numTrialsToPlot), :);
             
             % Create imagesc plot
             imagesc(timeAxisPeriBhv, 1:size(metastateDataValid, 1), metastateDataValid);
@@ -691,16 +705,16 @@ if hasAnyMetastates
                 caxis(ha(plotIdx), [0, max(1, nMeta)]);
             end
             
-            % Add colorbar only on top row, and keep fixed ticks/labels per area
-            if bhvRowIdx == 1
-                c = colorbar('peer', ha(plotIdx));
-                if exist('nMeta','var') && ~isempty(nMeta)
-                    c.Ticks = 0:max(1, nMeta);
-                    c.TickLabels = string(0:max(1, nMeta));
-                end
-                c.Label.String = 'Metastate';
-                c.Label.FontSize = 8;
-            end
+            % % Add colorbar only on top row, and keep fixed ticks/labels per area
+            % if bhvRowIdx == 1
+            %     c = colorbar('peer', ha(plotIdx));
+            %     if exist('nMeta','var') && ~isempty(nMeta)
+            %         c.Ticks = 0:max(1, nMeta);
+            %         c.TickLabels = string(0:max(1, nMeta));
+            %     end
+            %     c.Label.String = 'Metastate';
+            %     c.Label.FontSize = 8;
+            % end
             
             % Add vertical line at behavior onset
             plot([0 0], ylim, 'k--', 'LineWidth', 2);
@@ -708,14 +722,20 @@ if hasAnyMetastates
             % Formatting
             xlabel('Time relative to behavior onset (s)', 'FontSize', 8);
             ylabel('Onset Trial', 'FontSize', 8);
-            title(sprintf('%s - %s\n(%d onsets)', areas{a}, condName, sum(validRows)), 'FontSize', 10);
+            totalValidOnsets = sum(validRows);
+            if totalValidOnsets > maxTrial
+                title(sprintf('%s - %s\n(%d/%d onsets)', areas{a}, condName, numTrialsToPlot, totalValidOnsets), 'FontSize', 10);
+            else
+                title(sprintf('%s - %s\n(%d onsets)', areas{a}, condName, numTrialsToPlot), 'FontSize', 10);
+            end
             
             % Set axis limits
             xlim([timeAxisPeriBhv(1), timeAxisPeriBhv(end)]);
             ylim([0.5, size(metastateDataValid, 1) + 0.5]);
             
             % Set tick labels
-            xTicks = ceil(timeAxisPeriBhv(1)):floor(timeAxisPeriBhv(end));
+        % xTicks = ceil(timeAxisPeriBhv(1)):floor(timeAxisPeriBhv(end));
+            xTicks = linspace(timeAxisPeriBhv(1), timeAxisPeriBhv(end), 5);
             if isempty(xTicks)
                 xTicks = linspace(timeAxisPeriBhv(1), timeAxisPeriBhv(end), 5);
             end

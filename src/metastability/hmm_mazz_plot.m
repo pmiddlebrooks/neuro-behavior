@@ -10,7 +10,7 @@ if strcmp(dataSource, 'load')
     fprintf('Loading saved HMM model...\n');
     
     % Parameters for loading saved model - CHANGE THESE AS NEEDED
-    natOrReach = 'Reach'; % 'Nat' or 'Reach'
+    natOrReach = 'Nat'; % 'Nat' or 'Reach'
     brainArea = 'M56';    % 'M23', 'M56', 'DS', 'VS'
     
     % Load the saved model
