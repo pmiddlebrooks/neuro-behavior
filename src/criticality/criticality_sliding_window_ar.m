@@ -21,6 +21,10 @@ plotCorrelations = false;
 analyzeD2 = true;      % compute d2
 analyzeMrBr = false;   % compute mrBr
 
+% NEW: Permutation testing flags
+enablePermutations = true;  % Set to true to perform circular permutation testing
+nShuffles = 10;  % Number of circular permutations to perform
+
 % NEW: Modulation analysis flags
 analyzeModulation = false;  % Set to true to split into modulated/unmodulated
 modulationThreshold = 2;   % Standard deviations for modulation detection (legacy fallback)
@@ -246,6 +250,16 @@ areasToTest = areasToTest(validMask);
 [popActivity, mrBr, d2, startS, popActivityWindows, popActivityFull] = ...
     deal(cell(1, length(areas)));
 
+% NEW: Initialize permutation results
+if enablePermutations
+    d2Permuted = cell(1, length(areas));  % Store all permutation results [nWindows x nShuffles]
+    mrBrPermuted = cell(1, length(areas)); % Store all permutation results [nWindows x nShuffles]
+    for a = 1:length(areas)
+        d2Permuted{a} = [];
+        mrBrPermuted{a} = [];
+    end
+end
+
 % NEW: Initialize results for modulated/unmodulated populations
 if analyzeModulation
     [popActivityModulated, mrBrModulated, d2Modulated, startSModulated, popActivityWindowsModulated, popActivityFullModulated] = ...
@@ -301,6 +315,66 @@ for a = areasToTest
         end
     end
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+    
+    % NEW: Perform circular permutations if enabled
+    if enablePermutations
+        fprintf('  Running %d circular permutations for area %s...\n', nShuffles, areas{a});
+        ticPerm = tic;
+        
+        % Initialize storage for permutation results [nWindows x nShuffles]
+        d2Permuted{a} = nan(numWindows, nShuffles);
+        mrBrPermuted{a} = nan(numWindows, nShuffles);
+        
+        % Get original data matrix (before PCA if applied)
+        originalDataMat = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSize(a));
+        
+        for shuffle = 1:nShuffles
+            % Circularly permute each neuron independently
+            permutedDataMat = originalDataMat;
+            nNeurons = size(permutedDataMat, 2);
+            nSamples = size(permutedDataMat, 1);
+            
+            for n = 1:nNeurons
+                % Random circular shift for this neuron
+                shiftAmount = randi([1, nSamples]);
+                permutedDataMat(:, n) = circshift(permutedDataMat(:, n), shiftAmount);
+            end
+            
+            % Apply PCA if needed (compute PCA on permuted data separately)
+            if pcaFlag
+                [coeffPerm, scorePerm, ~, ~, explainedPerm, muPerm] = pca(permutedDataMat);
+                forDimPerm = find(cumsum(explainedPerm) > 30, 1); 
+                forDimPerm = max(3, min(6, forDimPerm));
+                nDimPerm = 1:forDimPerm; 
+                permutedDataMat = scorePerm(:,nDimPerm) * coeffPerm(:,nDimPerm)' + muPerm;
+            end
+            
+            % Calculate population activity for permuted data
+            permutedPopActivity = round(sum(permutedDataMat, 2));
+            
+            % Run sliding window analysis on permuted data
+            for w = 1:numWindows
+                startIdx = (w - 1) * stepSamples + 1; 
+                endIdx = startIdx + winSamples - 1;
+                wPopActivityPerm = permutedPopActivity(startIdx:endIdx);
+                
+                if analyzeMrBr
+                    resultPerm = branching_ratio_mr_estimation(wPopActivityPerm);
+                    mrBrPermuted{a}(w, shuffle) = resultPerm.branching_ratio;
+                end
+                
+                if analyzeD2
+                    [varphiPerm, ~] = myYuleWalker3(wPopActivityPerm, pOrder);
+                    d2Permuted{a}(w, shuffle) = getFixedPointDistance2(pOrder, critType, varphiPerm);
+                end
+            end
+            
+            if mod(shuffle, max(1, round(nShuffles/10))) == 0
+                fprintf('    Completed %d/%d permutations (%.1f min elapsed)\n', shuffle, nShuffles, toc(ticPerm)/60);
+            end
+        end
+        fprintf('  Permutations completed in %.1f minutes\n', toc(ticPerm)/60);
+    end
 
     % NEW: Analyze modulated and unmodulated populations separately
     if analyzeModulation && ~isempty(modulationResults{a})
@@ -485,6 +559,49 @@ results.params.nDim = nDim;
 results.params.pOrder = pOrder;
 results.params.critType = critType;
 
+% NEW: Save permutation results
+if enablePermutations
+    results.enablePermutations = true;
+    results.nShuffles = nShuffles;
+    results.d2Permuted = d2Permuted;
+    results.mrBrPermuted = mrBrPermuted;
+    
+    % Calculate mean and SEM for permutations
+    d2PermutedMean = cell(1, length(areas));
+    d2PermutedSEM = cell(1, length(areas));
+    mrBrPermutedMean = cell(1, length(areas));
+    mrBrPermutedSEM = cell(1, length(areas));
+    
+    for a = 1:length(areas)
+        if ~isempty(d2Permuted{a})
+            d2PermutedMean{a} = nanmean(d2Permuted{a}, 2);
+            d2PermutedSEM{a} = nanstd(d2Permuted{a}, 0, 2) / sqrt(nShuffles);
+        else
+            d2PermutedMean{a} = [];
+            d2PermutedSEM{a} = [];
+        end
+        if ~isempty(mrBrPermuted{a})
+            mrBrPermutedMean{a} = nanmean(mrBrPermuted{a}, 2);
+            mrBrPermutedSEM{a} = nanstd(mrBrPermuted{a}, 0, 2) / sqrt(nShuffles);
+        else
+            mrBrPermutedMean{a} = [];
+            mrBrPermutedSEM{a} = [];
+        end
+    end
+    
+    results.d2PermutedMean = d2PermutedMean;
+    results.d2PermutedSEM = d2PermutedSEM;
+    results.mrBrPermutedMean = mrBrPermutedMean;
+    results.mrBrPermutedSEM = mrBrPermutedSEM;
+else
+    results.enablePermutations = false;
+    results.nShuffles = 0;
+    d2PermutedMean = cell(1, length(areas));
+    d2PermutedSEM = cell(1, length(areas));
+    mrBrPermutedMean = cell(1, length(areas));
+    mrBrPermutedSEM = cell(1, length(areas));
+end
+
 % NEW: Save modulation analysis results
 if analyzeModulation
     results.analyzeModulation = true;
@@ -543,7 +660,13 @@ if makePlots
     else
         reachOnsetTimes = []; % No reach onsets for naturalistic data
     end
-    plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix);
+    
+    % Get permutation results if available
+    if enablePermutations && exist('d2PermutedMean', 'var') && ~isempty(d2PermutedMean{areasToTest(1)})
+        plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix, d2PermutedMean, d2PermutedSEM, mrBrPermutedMean, mrBrPermutedSEM);
+    else
+        plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix);
+    end
 
     if plotCorrelations
         plot_criticality_correlations(popActivityWindows, popActivityFull, d2, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, filenameSuffix);
@@ -614,8 +737,17 @@ for a = areasToTest
 end
 end
 
-function plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix)
+function plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix, d2PermutedMean, d2PermutedSEM, mrBrPermutedMean, mrBrPermutedSEM)
 % Plot time series of criticality measures
+% Optional inputs: d2PermutedMean, d2PermutedSEM, mrBrPermutedMean, mrBrPermutedSEM for permutation results
+
+% Handle optional permutation inputs
+if nargin < 16
+    d2PermutedMean = cell(1, length(areas));
+    d2PermutedSEM = cell(1, length(areas));
+    mrBrPermutedMean = cell(1, length(areas));
+    mrBrPermutedSEM = cell(1, length(areas));
+end
     figure(900); clf;
     set(gcf, 'Units', 'pixels');
     set(gcf, 'Position', targetPos);
@@ -637,12 +769,52 @@ ha = tight_subplot(numRows, 1, [0.05 0.04], [0.03 0.08], [0.08 0.04]);
         
         if analyzeD2
             yyaxis left; 
-            plot(startS{a}, d2{a}, '-', 'Color', [0 0 1], 'LineWidth', 2); 
+            % Plot permutation mean ± SEM if available
+            if ~isempty(d2PermutedMean{a}) && ~isempty(d2PermutedSEM{a}) && any(~isnan(d2PermutedMean{a}))
+                validIdx = ~isnan(d2PermutedMean{a}) & ~isnan(d2PermutedSEM{a});
+                if any(validIdx)
+                    xFill = startS{a}(validIdx);
+                    yMean = d2PermutedMean{a}(validIdx);
+                    ySEM = d2PermutedSEM{a}(validIdx);
+                    % Ensure row vectors for fill
+                    if iscolumn(xFill); xFill = xFill'; end
+                    if iscolumn(yMean); yMean = yMean'; end
+                    if iscolumn(ySEM); ySEM = ySEM'; end
+                    % Shaded region for SEM
+                    fill([xFill, fliplr(xFill)], ...
+                         [yMean + ySEM, fliplr(yMean - ySEM)], ...
+                         [0.7 0.7 1], 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'DisplayName', 'Permuted mean ± SEM');
+                    % Mean line
+                    plot(startS{a}(validIdx), d2PermutedMean{a}(validIdx), '-', 'Color', [0.5 0.5 1], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
+                end
+            end
+            % Plot real data
+            plot(startS{a}, d2{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'Real data'); 
             ylabel('d2', 'Color', [0 0 1]); ylim('auto');
         end
         if analyzeMrBr
             yyaxis right; 
-            plot(startS{a}, mrBr{a}, '-', 'Color', [0 0 0], 'LineWidth', 2); 
+            % Plot permutation mean ± SEM if available
+            if ~isempty(mrBrPermutedMean{a}) && ~isempty(mrBrPermutedSEM{a}) && any(~isnan(mrBrPermutedMean{a}))
+                validIdx = ~isnan(mrBrPermutedMean{a}) & ~isnan(mrBrPermutedSEM{a});
+                if any(validIdx)
+                    xFill = startS{a}(validIdx);
+                    yMean = mrBrPermutedMean{a}(validIdx);
+                    ySEM = mrBrPermutedSEM{a}(validIdx);
+                    % Ensure row vectors for fill
+                    if iscolumn(xFill); xFill = xFill'; end
+                    if iscolumn(yMean); yMean = yMean'; end
+                    if iscolumn(ySEM); ySEM = ySEM'; end
+                    % Shaded region for SEM
+                    fill([xFill, fliplr(xFill)], ...
+                         [yMean + ySEM, fliplr(yMean - ySEM)], ...
+                         [0.8 0.8 0.8], 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'DisplayName', 'Permuted mean ± SEM');
+                    % Mean line
+                    plot(startS{a}(validIdx), mrBrPermutedMean{a}(validIdx), '-', 'Color', [0.5 0.5 0.5], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
+                end
+            end
+            % Plot real data
+            plot(startS{a}, mrBr{a}, '-', 'Color', [0 0 0], 'LineWidth', 2, 'DisplayName', 'Real data'); 
             yline(1, 'k:', 'LineWidth', 1.5); 
             ylabel('mrBr', 'Color', [0 0 0]); ylim('auto');
         end
