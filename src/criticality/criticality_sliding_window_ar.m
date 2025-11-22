@@ -819,22 +819,22 @@ ha = tight_subplot(numRows, 1, [0.05 0.04], [0.03 0.08], [0.08 0.04]);
             ylabel('mrBr', 'Color', [0 0 0]); ylim('auto');
         end
         
-    % Add normalized population activity
-        if ~isempty(popActNorm) && any(~isnan(popActNorm))
-            yyaxis left;
-            plot(startS{a}, popActNorm, '-', 'Color', [1 0 0], 'LineWidth', 1, 'LineStyle', ':'); 
-        end
-        
-    % Add full population activity (normalized) for comparison
-        if ~isempty(popActivity{a}) && any(~isnan(popActivity{a}))
-            timeIndices = (1:length(popActivity{a})) * optimalBinSize(a);
-            popActFullNorm = (popActivity{a} - min(popActivity{a}(~isnan(popActivity{a})))) / ...
-                           (max(popActivity{a}(~isnan(popActivity{a}))) - min(popActivity{a}(~isnan(popActivity{a}))));
-            popActFullNorm(isnan(popActivity{a})) = nan;
-            
-            yyaxis left;
-            plot(timeIndices, popActFullNorm, '-', 'Color', [0.8 0.4 0.4], 'LineWidth', 0.5, 'LineStyle', '-.'); 
-        end
+    % % Add normalized population activity
+    %     if ~isempty(popActNorm) && any(~isnan(popActNorm))
+    %         yyaxis left;
+    %         plot(startS{a}, popActNorm, '-', 'Color', [1 0 0], 'LineWidth', 1, 'LineStyle', ':'); 
+    %     end
+    % 
+    % % Add full population activity (normalized) for comparison
+    %     if ~isempty(popActivity{a}) && any(~isnan(popActivity{a}))
+    %         timeIndices = (1:length(popActivity{a})) * optimalBinSize(a);
+    %         popActFullNorm = (popActivity{a} - min(popActivity{a}(~isnan(popActivity{a})))) / ...
+    %                        (max(popActivity{a}(~isnan(popActivity{a}))) - min(popActivity{a}(~isnan(popActivity{a}))));
+    %         popActFullNorm(isnan(popActivity{a})) = nan;
+    % 
+    %         yyaxis left;
+    %         plot(timeIndices, popActFullNorm, '-', 'Color', [0.8 0.4 0.4], 'LineWidth', 0.5, 'LineStyle', '-.'); 
+    %     end
 
     % Add vertical lines at reach onsets (only for reach data)
     if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')

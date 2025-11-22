@@ -6,7 +6,7 @@
 %   matrices in cells: peri-onset neural data stacked across bouts (n time bins X p neurons X b bouts)
 
 % Clear variables to free up memory
-clear dataMat dataBhv eventMat eventMatZ 
+clear eventMat eventMatZ 
 
 %% get desired file paths
 paths = get_paths;
