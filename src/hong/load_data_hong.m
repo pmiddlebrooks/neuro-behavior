@@ -14,6 +14,7 @@ cg = readtable(fullfile(paths.dropPath, 'hong', 'cluster_group.tsv'), 'FileType'
 
 %%
 opts = neuro_behavior_options;
+opts.frameSize = .001;
 opts.collectStart = 0;
 opts.collectEnd = min(T.startTime_oe(end)+6, max(st));
 opts.minFiringRate = .1;

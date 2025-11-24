@@ -44,10 +44,21 @@ if ~isfield(data, 'spikeTimes') || ~isfield(data, 'spikeClusters') || ~isfield(d
 end
 
 % Extract data from struct
-spikeTimesSec = data.spikeTimes;
 spikeClusters = data.spikeClusters;
 spikeDepths = data.spikeDepths;
 cg = data.ci;
+
+% Get sampling frequency (default to 30000 Hz if not specified)
+if ~isfield(opts, 'fsSpike') || isempty(opts.fsSpike)
+    fsSpike = 30000;
+else
+    fsSpike = opts.fsSpike;
+end
+
+% Convert spike times from uint64 sample units to single precision seconds
+% This is memory-efficient: single precision uses half the memory of double
+% and provides sufficient precision for time values (millisecond precision up to ~3.4 days)
+spikeTimesSec = single(data.spikeTimes) / single(fsSpike);
 
 % Determine collection time window
 if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
@@ -61,8 +72,8 @@ if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
     if isfield(data, 'T') && isfield(data.T, 'endTime_oe')
         lastSecond = max(data.T.endTime_oe);
     else
-        % Estimate from last spike time
-        lastSecond = max(spikeTimesSec);
+        % Estimate from last spike time (now in seconds)
+        lastSecond = double(max(spikeTimesSec)); % Convert to double for scalar operations
     end
 else
     lastSecond = firstSecond + opts.collectEnd;
