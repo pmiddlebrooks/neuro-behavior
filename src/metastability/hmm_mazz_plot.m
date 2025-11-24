@@ -11,14 +11,63 @@ if strcmp(dataSource, 'load')
     
     % Parameters for loading saved model - CHANGE THESE AS NEEDED
     natOrReach = 'Nat'; % 'Nat' or 'Reach'
-    brainArea = 'M56';    % 'M23', 'M56', 'DS', 'VS'
+    brainArea = [];     % Optional: 'M23', 'M56', 'DS', 'VS'. If empty, loads all areas
+    
+    % Optional: specify binSize and minDur to load specific file
+    % If not specified, will load most recent file
+    binSize = []; % e.g., 0.01
+    minDur = [];  % e.g., 0.04
     
     % Load the saved model
-    [hmm_res] = hmm_load_saved_model(natOrReach, brainArea);
+    loadArgs = {};
+    if ~isempty(brainArea)
+        loadArgs = [loadArgs, {'brainArea'}, {brainArea}];
+    end
+    if ~isempty(binSize)
+        loadArgs = [loadArgs, {'binSize'}, {binSize}];
+    end
+    if ~isempty(minDur)
+        loadArgs = [loadArgs, {'minDur'}, {minDur}];
+    end
     
-
+    [hmm_res] = hmm_load_saved_model(natOrReach, loadArgs{:});
     
-    fprintf('Loaded model: %s data from %s area\n', natOrReach, brainArea);
+    % Extract binSize and minDur from loaded model for use in pie chart section
+    if isempty(brainArea)
+        % If all areas loaded, extract from first non-empty area
+        if isfield(hmm_res, 'hmm_results')
+            for a = 1:length(hmm_res.hmm_results)
+                if ~isempty(hmm_res.hmm_results{a}) && isfield(hmm_res.hmm_results{a}, 'HmmParam')
+                    if isfield(hmm_res.hmm_results{a}.HmmParam, 'BinSize')
+                        binSize = hmm_res.hmm_results{a}.HmmParam.BinSize;
+                    end
+                    if isfield(hmm_res.hmm_results{a}.HmmParam, 'MinDur')
+                        minDur = hmm_res.hmm_results{a}.HmmParam.MinDur;
+                    end
+                    break;
+                end
+            end
+        end
+    else
+        % Single area loaded
+        if isfield(hmm_res, 'HmmParam')
+            if isfield(hmm_res.HmmParam, 'BinSize')
+                binSize = hmm_res.HmmParam.BinSize;
+            end
+            if isfield(hmm_res.HmmParam, 'MinDur')
+                minDur = hmm_res.HmmParam.MinDur;
+            end
+        end
+    end
+    
+    if ~isempty(brainArea)
+        fprintf('Loaded model: %s data from %s area\n', natOrReach, brainArea);
+    else
+        fprintf('Loaded model: %s data from all areas\n', natOrReach);
+    end
+    if ~isempty(binSize) && ~isempty(minDur)
+        fprintf('  binSize: %.3f, minDur: %.3f\n', binSize, minDur);
+    end
     
 elseif strcmp(dataSource, 'workspace')
     fprintf('Using existing HMM results from workspace.\n');
@@ -37,30 +86,55 @@ else
     error('Invalid dataSource. Must be ''workspace'' or ''load''');
 end
 
+% Handle both single area and all areas loaded
+if isfield(hmm_res, 'hmm_results') && iscell(hmm_res.hmm_results)
+    % All areas loaded - use first area for initial plots, or specify which area
+    if isempty(brainArea)
+        % Use first available area
+        areaIdx = 1;
+        while areaIdx <= length(hmm_res.hmm_results) && isempty(hmm_res.hmm_results{areaIdx})
+            areaIdx = areaIdx + 1;
+        end
+        if areaIdx > length(hmm_res.hmm_results)
+            error('No HMM results found in loaded data');
+        end
+        hmm_res_single = hmm_res.hmm_results{areaIdx};
+        fprintf('Using area %s for initial plots\n', hmm_res.areas{areaIdx});
+    else
+        % Extract specific area
+        areaMap = containers.Map({'M23', 'M56', 'DS', 'VS'}, {1, 2, 3, 4});
+        areaIdx = areaMap(brainArea);
+        hmm_res_single = hmm_res.hmm_results{areaIdx};
+    end
+else
+    % Single area loaded
+    hmm_res_single = hmm_res;
+end
+
 % Extract HMM parameters
-HmmParam = hmm_res.HmmParam;
+HmmParam = hmm_res_single.HmmParam;
 if isfield(HmmParam, 'VarStates')
-    if isfield(hmm_res, 'best_model') && isfield(hmm_res.best_model, 'best_state_index')
-        bestStateIdx = hmm_res.best_model.best_state_index;
+    if isfield(hmm_res_single, 'best_model') && isfield(hmm_res_single.best_model, 'best_state_index')
+        bestStateIdx = hmm_res_single.best_model.best_state_index;
         if isscalar(HmmParam.VarStates)
             HmmParam.VarStates = HmmParam.VarStates;
         else
             HmmParam.VarStates = HmmParam.VarStates(bestStateIdx);
         end
-    elseif isfield(hmm_res, 'best_model') && isfield(hmm_res.best_model, 'num_states')
-        HmmParam.VarStates = hmm_res.best_model.num_states;
+    elseif isfield(hmm_res_single, 'best_model') && isfield(hmm_res_single.best_model, 'num_states')
+        HmmParam.VarStates = hmm_res_single.best_model.num_states;
     elseif isscalar(HmmParam.VarStates)
         HmmParam.VarStates = HmmParam.VarStates;
     else
         HmmParam.VarStates = HmmParam.VarStates(1); % Use first if no best index
     end
-elseif isfield(hmm_res, 'best_model') && isfield(hmm_res.best_model, 'num_states')
-    HmmParam.VarStates = hmm_res.best_model.num_states;
+elseif isfield(hmm_res_single, 'best_model') && isfield(hmm_res_single.best_model, 'num_states')
+    HmmParam.VarStates = hmm_res_single.best_model.num_states;
 end
 
 % Extract HMM results
-hmm_results = hmm_res.hmm_results;
-hmm_postfit = hmm_res.hmm_postfit;
+hmm_results = hmm_res_single.hmm_results;
+hmm_postfit = hmm_res_single.hmm_postfit;
 
 % Create distinguishable colors for states
 numStates = HmmParam.VarStates;
@@ -70,13 +144,13 @@ colors = distinguishable_colors(max(numStates, 4));
 figure;
 [ha, ~] = tight_subplot(1, 2, 0.05, [0.08 0.06], [0.06 0.03]);
 axes(ha(1));
-imagesc(hmm_res.best_model.transition_matrix);
+imagesc(hmm_res_single.best_model.transition_matrix);
 colorbar;
 title('Transition Probability Matrix');
 xlabel('State'); ylabel('State');
 
 axes(ha(2));
-imagesc(hmm_res.best_model.emission_matrix(:, 1:end-1)); % Exclude silence column
+imagesc(hmm_res_single.best_model.emission_matrix(:, 1:end-1)); % Exclude silence column
 colorbar;
 title('Emission Probability Matrix');
 xlabel('Neuron'); ylabel('State');
@@ -88,8 +162,8 @@ xlabel('Neuron'); ylabel('State');
 %% Plot full sequence
 figure(8); clf;
 hold on;
-sequence = hmm_res.continuous_results.sequence;
-probabilities = hmm_res.continuous_results.pStates;
+sequence = hmm_res_single.continuous_results.sequence;
+probabilities = hmm_res_single.continuous_results.pStates;
 
 x = (1:length(sequence)) * HmmParam.BinSize;
 numStates = size(probabilities, 2); % Number of states from probability matrix
@@ -145,11 +219,34 @@ try
     pieColors = {};
     pieAreaNames = {};
 
+    % Load all areas at once if available from main section, otherwise load them
+    if exist('hmm_res', 'var') && isfield(hmm_res, 'hmm_results') && iscell(hmm_res.hmm_results)
+        % Use already loaded all-areas data
+        fprintf('Using already loaded all-areas data for pie charts\n');
+        all_areas_loaded = true;
+    else
+        % Load all areas now
+        loadArgs = {};
+        if exist('binSize', 'var') && ~isempty(binSize)
+            loadArgs = [loadArgs, {'binSize'}, {binSize}];
+        end
+        if exist('minDur', 'var') && ~isempty(minDur)
+            loadArgs = [loadArgs, {'minDur'}, {minDur}];
+        end
+        hmm_res = hmm_load_saved_model(natOrReach, loadArgs{:});
+        all_areas_loaded = true;
+    end
+    
     for ai = areasToPlot
         thisArea = areas{ai};
-
-        % Load saved model for this area
-        hmm_res_area = hmm_load_saved_model(natOrReach, thisArea);
+        
+        % Extract area from loaded data
+        if all_areas_loaded
+            areaMap = containers.Map({'M23', 'M56', 'DS', 'VS'}, {1, 2, 3, 4});
+            areaIdx = areaMap(thisArea);
+            hmm_res_area = hmm_res.hmm_results{areaIdx};
+        end
+        
         if isempty(hmm_res_area) || ~isfield(hmm_res_area, 'continuous_results')
             fprintf('Warning: No continuous results for area %s, skipping.\n', thisArea);
             continue
