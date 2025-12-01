@@ -1,47 +1,50 @@
-function [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(dataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow)
+function [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(firingRate, minSpikesPerBin, minBinsPerWindow)
 
 % FIND_OPTIMAL_BIN_AND_WINDOW  Find optimal bin/frame and window size for population activity analysis
 %
-%   [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(dataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow)
+%   [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(firingRate, minSpikesPerBin, minBinsPerWindow)
 %
-%   This function searches for the optimal bin (frame) size and window size for population activity analysis.
-%   The optimal parameters are those that yield a mean spike count per bin within the specified range and
-%   a minimum number of bins per window.
+%   This function calculates the optimal bin (frame) size and window size for population activity analysis
+%   based on a given firing rate. The bin size is chosen to guarantee an average of at least minSpikesPerBin
+%   spikes per bin, rounded to the nearest 10 ms. The window size is then calculated to contain at least
+%   minBinsPerWindow bins.
 %
 %   Inputs:
-%       dataMat             - [time x neurons] matrix of spike counts
-%       candidateFrameSizes - array of candidate bin/frame sizes (in seconds)
-%       candidateWindowSizes- array of candidate window sizes (in seconds)
-%       minSpikesPerBin     - minimum mean spikes per bin
-%       maxSpikesPerBin     - maximum mean spikes per bin
-%       minBinsPerWindow    - minimum number of bins per window
+%       firingRate          - Firing rate in spikes per second
+%       minSpikesPerBin     - Minimum average number of spikes per bin required
+%       minBinsPerWindow    - Minimum number of bins per window
 %
 %   Outputs:
-%       optimalBinSize      - optimal bin/frame size (in seconds)
-%       optimalWindowSize   - optimal window size (in seconds)
+%       optimalBinSize      - Optimal bin/frame size (in seconds), rounded to nearest 10 ms
+%       optimalWindowSize   - Optimal window size (in seconds), rounded to nearest 10 ms
 %
-%   The function returns 0 for both outputs if no suitable parameters are found.
+%   Algorithm:
+%       - Calculates minimum bin size: minBinSize = minSpikesPerBin / firingRate
+%       - Rounds up to nearest 10 ms: optimalBinSize = ceil(minBinSize / 0.01) * 0.01
+%       - Calculates window size: optimalWindowSize = optimalBinSize * minBinsPerWindow
+%       - Rounds window size to nearest 10 ms
 
-    optimalBinSize = 0;
-    optimalWindowSize = 0;
-    found = false;
-    for fs = candidateFrameSizes
-        aDataMatR = neural_matrix_ms_to_frames(dataMat, fs);
-        meanSpikesPerBin = mean(sum(aDataMatR, 2));
-        if meanSpikesPerBin < minSpikesPerBin || meanSpikesPerBin > maxSpikesPerBin
-            continue;
-        end
-        for ws = candidateWindowSizes
-            numBins = ws / fs;
-            if numBins >= minBinsPerWindow
-                optimalBinSize = fs;
-                optimalWindowSize = ws;
-                found = true;
-                break;
-            end
-        end
-        if found
-            break;
-        end
-    end
+% Calculate minimum bin size needed to guarantee minSpikesPerBin
+% Goal: firingRate * binSize >= minSpikesPerBin
+% Therefore: binSize >= minSpikesPerBin / firingRate
+minBinSize = minSpikesPerBin / firingRate;
+
+% Round up to nearest 10 ms (0.01 seconds)
+optimalBinSize = ceil(minBinSize / 0.01) * 0.01;
+
+% Ensure binSize is at least 0.01 seconds (10 ms)
+if optimalBinSize < 0.01
+    optimalBinSize = 0.01;
+end
+
+% Calculate window size based on minimum bins per window
+optimalWindowSize = optimalBinSize * minBinsPerWindow;
+
+% Round window size to nearest 10 ms
+optimalWindowSize = round(optimalWindowSize / 0.01) * 0.01;
+
+% Ensure window size is at least equal to bin size
+if optimalWindowSize < optimalBinSize
+    optimalWindowSize = optimalBinSize;
+end
 end

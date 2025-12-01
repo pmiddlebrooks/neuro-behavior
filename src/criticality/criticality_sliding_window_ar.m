@@ -7,7 +7,7 @@ paths = get_paths;
 
 % =============================    Configuration    =============================
 % Data type selection
-dataType = 'naturalistic';  % 'reach' or 'naturalistic'
+dataType = 'reach';  % 'reach' or 'naturalistic'
 
 % Sliding window size (seconds)
 slidingWindowSize = 20;
@@ -39,12 +39,20 @@ minSpikesPerBin = 3;
 maxSpikesPerBin = 50;
 minBinsPerWindow = 1000;
 
+% Bin/window size selection mode
+useOptimalBinWindowFunction = false;  % Set to true to use find_optimal_bin_and_window.m
+                                     % Set to false to manually define optimalBinSize and optimalWindowSize below
+% Manual bin/window size definitions (used only if useOptimalBinWindowFunction = false)
+% Define as arrays with one value per area: [M23, M56, DS, VS]
+optimalBinSize = repmat(.05, 1, 4);      % Bin sizes in seconds (e.g., 10 ms = 0.01 s)
+optimalWindowSize = repmat(slidingWindowSize, 1, 4);          % Window sizes in seconds
+
 % Areas to analyze
 areasToTest = 1:4;
 areasToPlot = areasToTest;
 
 % PCA options
-pcaFlag = 1;           % Set to 1 to use PCA
+pcaFlag = 0;           % Set to 1 to use PCA
 pcaFirstFlag = 1;      % Use first nDim dimensions if 1, last nDim if 0
 nDim = 4;              % Number of PCA dimensions to use
 
@@ -53,9 +61,6 @@ thresholdFlag = 1;     % Set to 1 to use threshold method
 thresholdPct = 0.75;   % Threshold as percentage of median
 
 % Optimal bin/window size search parameters
-candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15 .2];
-candidateWindowSizes = [30, 45, 60, 90, 120];
-windowSizes = repmat(slidingWindowSize, 1, 4);
 pOrder = 10;
 critType = 2;
 d2StepSize = .02;
@@ -63,6 +68,13 @@ d2StepSize = repmat(.2,1,4);
 
 % =============================    Data Loading    =============================
 fprintf('\n=== Loading %s data ===\n', dataType);
+
+    opts = neuro_behavior_options;
+    opts.frameSize = .001;
+    opts.firingRateCheckTime = 5 * 60;
+    opts.collectStart = 0;
+    opts.minFiringRate = .05;
+    opts.maxFiringRate = 100;
 
 % Create filename suffix based on PCA flag
 if pcaFlag
@@ -73,7 +85,16 @@ end
 
 if strcmp(dataType, 'reach')
     % Load reach data
-    reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+        sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
+        % sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh.mat';
+        % sessionName =  'AB2_11-May-2023 17_31_00_NeuroBeh.mat';
+        % sessionName =  'AB2_30-May-2023 12_49_52_NeuroBeh.mat';
+        % sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat';
+        % sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat';
+        % sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat';
+        % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat';
+        % sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
+    reachDataFile = fullfile(paths.reachDataPath, sessionName);
     % reachDataFile = fullfile(paths.reachDataPath, 'makeSpikes.mat');
     
     [~, dataBaseName, ~] = fileparts(reachDataFile);
@@ -84,13 +105,7 @@ if strcmp(dataType, 'reach')
     
     dataR = load(reachDataFile);
     
-    opts = neuro_behavior_options;
-    opts.frameSize = .001;
-    opts.firingRateCheckTime = 5 * 60;
-    opts.collectStart = 0;
     opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
-    opts.minFiringRate = .1;
-    opts.maxFiringRate = 70;
     
     [dataMat, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
     areas = {'M23', 'M56', 'DS', 'VS'};
@@ -112,10 +127,7 @@ if strcmp(dataType, 'reach')
 elseif strcmp(dataType, 'naturalistic')
     % Load naturalistic data
     getDataType = 'spikes';
-    opts.firingRateCheckTime = 5 * 60;
-    opts.collectStart = 0 * 60; % seconds
     opts.collectEnd = 45 * 60; % seconds
-    opts.minFiringRate = .05;
     get_standard_data
     
     areas = {'M23', 'M56', 'DS', 'VS'};
@@ -180,15 +192,25 @@ end
 
 % Step 3: Find optimal parameters using reconstructed data
 fprintf('\n--- Step 3: Finding optimal parameters ---\n');
-optimalBinSize = zeros(1, length(areas));
-optimalWindowSize = zeros(1, length(areas));
-
-% FIRST: Find optimal parameters for ALL neurons (original analysis)
-for a = areasToTest
-    thisDataMat = reconstructedDataMat{a};
-    [optimalBinSize(a), optimalWindowSize(a)] = ...
-        find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
-    fprintf('Area %s (all neurons): optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
+if useOptimalBinWindowFunction
+    % Calculate optimal parameters using function
+    optimalBinSize = zeros(1, length(areas));
+    optimalWindowSize = zeros(1, length(areas));
+    
+    % FIRST: Find optimal parameters for ALL neurons (original analysis)
+    for a = areasToTest
+        thisDataMat = reconstructedDataMat{a};
+        thisFiringRate = sum(thisDataMat(:) / (size(thisDataMat, 1)/1000));
+        [optimalBinSize(a), optimalWindowSize(a)] = ...
+            find_optimal_bin_and_window(thisFiringRate, minSpikesPerBin, minBinsPerWindow);
+        fprintf('Area %s (all neurons): optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
+    end
+else
+    % Use manually defined values
+    fprintf('Using manually defined bin and window sizes:\n');
+    for a = areasToTest
+        fprintf('Area %s: bin size = %.3f s, window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
+    end
 end
 
 % SECOND: If modulation analysis is enabled, find optimal parameters for modulated and unmodulated separately
@@ -199,42 +221,57 @@ if analyzeModulation
     optimalWindowSizeModulated = zeros(1, length(areas));
     optimalWindowSizeUnmodulated = zeros(1, length(areas));
 
-    for a = areasToTest
-        thisDataMat = reconstructedDataMat{a};
+    if useOptimalBinWindowFunction
+        % Calculate optimal parameters using function
+        for a = areasToTest
+            thisDataMat = reconstructedDataMat{a};
 
-        if ~isempty(modulationResults{a})
-            % Get modulated and unmodulated neuron indices
-            modulatedNeurons = modulationResults{a}.neuronIds(modulationResults{a}.isModulated);
-            unmodulatedNeurons = modulationResults{a}.neuronIds(~modulationResults{a}.isModulated);
+            if ~isempty(modulationResults{a})
+                % Get modulated and unmodulated neuron indices
+                modulatedNeurons = modulationResults{a}.neuronIds(modulationResults{a}.isModulated);
+                unmodulatedNeurons = modulationResults{a}.neuronIds(~modulationResults{a}.isModulated);
 
-            % Find indices in the data matrix
-            modulatedIndices = ismember(idLabel{a}, modulatedNeurons);
-            unmodulatedIndices = ismember(idLabel{a}, unmodulatedNeurons);
+                % Find indices in the data matrix
+                modulatedIndices = ismember(idLabel{a}, modulatedNeurons);
+                unmodulatedIndices = ismember(idLabel{a}, unmodulatedNeurons);
 
-            % Analyze modulated neurons
-            if sum(modulatedIndices) >= 5 % Need minimum neurons
-                modulatedDataMat = thisDataMat(:, modulatedIndices);
-                [optimalBinSizeModulated(a), optimalWindowSizeModulated(a)] = ...
-                    find_optimal_bin_and_window(modulatedDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+                % Analyze modulated neurons
+                if sum(modulatedIndices) >= 5 % Need minimum neurons
+                    modulatedDataMat = thisDataMat(:, modulatedIndices);
+                    mFiringRate = sum(modulatedDataMat(:) / (size(modulatedDataMat, 1)/1000));
+                    [optimalBinSizeModulated(a), optimalWindowSizeModulated(a)] = ...
+                        find_optimal_bin_and_window(mFiringRate, minSpikesPerBin, minBinsPerWindow);
+                else
+                    optimalBinSizeModulated(a) = NaN;
+                    optimalWindowSizeModulated(a) = NaN;
+                end
+
+                % Analyze unmodulated neurons
+                if sum(unmodulatedIndices) >= 5 % Need minimum neurons
+                    unmodulatedDataMat = thisDataMat(:, unmodulatedIndices);
+                    uFiringRate = sum(unmodulatedDataMat(:) / (size(unmodulatedDataMat, 1)/1000));
+                    [optimalBinSizeUnmodulated(a), optimalWindowSizeUnmodulated(a)] = ...
+                        find_optimal_bin_and_window(uFiringRate, minSpikesPerBin, minBinsPerWindow);
+                else
+                    optimalBinSizeUnmodulated(a) = NaN;
+                    optimalWindowSizeUnmodulated(a) = NaN;
+                end
+
+                fprintf('Area %s (modulated): bin=%.3f, (unmodulated): bin=%.3f\n', areas{a}, ...
+                    optimalBinSizeModulated(a), optimalBinSizeUnmodulated(a));
             else
-                optimalBinSizeModulated(a) = NaN;
-                optimalWindowSizeModulated(a) = NaN;
+                fprintf('Area %s: No modulation data available\n', areas{a});
             end
-
-            % Analyze unmodulated neurons
-            if sum(unmodulatedIndices) >= 5 % Need minimum neurons
-                unmodulatedDataMat = thisDataMat(:, unmodulatedIndices);
-                [optimalBinSizeUnmodulated(a), optimalWindowSizeUnmodulated(a)] = ...
-                    find_optimal_bin_and_window(unmodulatedDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
-            else
-                optimalBinSizeUnmodulated(a) = NaN;
-                optimalWindowSizeUnmodulated(a) = NaN;
-            end
-
-            fprintf('Area %s (modulated): bin=%.3f, (unmodulated): bin=%.3f\n', areas{a}, ...
-                optimalBinSizeModulated(a), optimalBinSizeUnmodulated(a));
-        else
-            fprintf('Area %s: No modulation data available\n', areas{a});
+        end
+    else
+        % Use manually defined values for modulated/unmodulated (same as all neurons)
+        for a = areasToTest
+            optimalBinSizeModulated(a) = optimalBinSize(a);
+            optimalBinSizeUnmodulated(a) = optimalBinSize(a);
+            optimalWindowSizeModulated(a) = optimalWindowSize(a);
+            optimalWindowSizeUnmodulated(a) = optimalWindowSize(a);
+            fprintf('Area %s (modulated/unmodulated): using manual bin=%.3f, window=%.1f\n', areas{a}, ...
+                optimalBinSize(a), optimalWindowSize(a));
         end
     end
 end
@@ -242,9 +279,7 @@ end
 % Use optimal bin sizes for each area
 d2StepSizeData = d2StepSize; % optimalBinSize;
 warning('Change step size back to optimalBinSize')
-d2WindowSizeData = windowSizes;
-validMask = isfinite(optimalBinSize(areasToTest)) & (optimalBinSize(areasToTest) > 0);
-areasToTest = areasToTest(validMask);
+d2WindowSizeData = optimalWindowSize;
 
 % Initialize results
 [popActivity, mrBr, d2, startS, popActivityWindows, popActivityFull] = ...

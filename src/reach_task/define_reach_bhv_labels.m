@@ -60,8 +60,7 @@ reachStopSec = reachStop / 1000;
 
 % Create time bins for the entire session
 % First, find the maximum time (don't filter reaches yet)
-maxTime = max(reachStopSec) + 4; % Add buffer for post-reward period
-numBins = ceil(maxTime / frameSize);
+numBins = ceil(opts.collectEnd / frameSize);
 bhvID = 6 * ones(numBins, 1);  % Initialize all bins as intertrial (label 6)
 
 % For each reach, assign labels to bins within the specified time windows

@@ -22,7 +22,7 @@ areaIdx = 2; % Brain area: 1=M23, 2=M56, 3=DS, 4=VS
 slidingWindowSize = 20; % seconds
 
 % PCA flag (should match the one used in criticality_sliding_window_ar.m)
-usePCA = true;  % Set to true if PCA was used in the analysis
+usePCA = false;  % Set to true if PCA was used in the analysis
 
 % Setup paths
 paths = get_paths;
@@ -36,7 +36,16 @@ else
 end
 
 % Reach data file (should match the one used in criticality_sliding_window_ar.m)
-reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+        sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
+        % sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh.mat';
+        % sessionName =  'AB2_11-May-2023 17_31_00_NeuroBeh.mat';
+        % sessionName =  'AB2_30-May-2023 12_49_52_NeuroBeh.mat';
+        sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat';
+        % sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat';
+        % sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat';
+        % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat';
+        % sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
+reachDataFile = fullfile(paths.reachDataPath, sessionName);
 [~, dataBaseName, ~] = fileparts(reachDataFile);
 
 % Naturalistic data parameters (should match criticality_sliding_window_ar.m)
@@ -186,6 +195,54 @@ if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
 
+
+% ================================    Create d2 Time Series Figure
+fprintf('\n=== Creating d2 Time Series Figure ===\n');
+figure(713); clf;
+set(gcf, 'Units', 'pixels');
+monitorPositions = get(0, 'MonitorPositions');
+if size(monitorPositions, 1) >= 2
+    targetMonitor = monitorPositions(size(monitorPositions, 1), :);
+else
+    targetMonitor = monitorPositions(1, :);
+end
+set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)*.5]);
+
+hold on;
+
+% Plot reach d2
+if ~isempty(d2Reach) && ~all(isnan(d2Reach))
+    plot(startSReach, d2Reach, 'b-', 'LineWidth', 3, 'DisplayName', 'task d2');
+end
+
+% Plot naturalistic d2
+if ~isempty(d2Nat) && ~all(isnan(d2Nat))
+    plot(startSNat, d2Nat, 'r-', 'LineWidth', 3, 'DisplayName', 'spontaneous d2');
+end
+
+% Plot reach start markers (filled green circles)
+reachStartInRange = reachStart(reachStart >= timeStart & reachStart <= timeEnd);
+if ~isempty(reachStartInRange)
+    % Get d2 values at reach start times (interpolate if needed)
+    d2AtReach = interp1(startSReach, d2Reach, reachStartInRange, 'linear', 'extrap');
+    scatter(reachStartInRange, d2AtReach, 80, 'g', 'filled', 'o', ...
+        'DisplayName', 'task Start', 'MarkerEdgeColor', 'k', 'LineWidth', 1);
+end
+
+xlim([timeStart, timeEnd]);
+ylim([0 max([d2Reach(:); d2Nat(:)])]);
+xlabel('Time (s)', 'FontSize', 12);
+ylabel('d2', 'FontSize', 12);
+title(sprintf('%s - d2 Criticality Comparison', areas{areaIdx}), 'FontSize', 12);
+legend('Location', 'best');
+grid on;
+
+set(gca, 'FontSize', 18)
+% Save d2 time series figure
+saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_d2.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
+exportgraphics(gcf, saveFileD2, 'ContentType', 'vector');
+fprintf('Saved d2 time series figure to: %s\n', saveFileD2);
+
 %% ================================    Create Ethogram Figure
 fprintf('\n=== Creating Ethogram Figure ===\n');
 figure(711); clf;
@@ -258,53 +315,6 @@ grid on;
 saveFileEthogram = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_ethogram.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
 exportgraphics(gcf, saveFileEthogram, 'ContentType', 'vector');
 fprintf('Saved ethogram figure to: %s\n', saveFileEthogram);
-
-%% ================================    Create d2 Time Series Figure
-fprintf('\n=== Creating d2 Time Series Figure ===\n');
-figure(713); clf;
-set(gcf, 'Units', 'pixels');
-monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) >= 2
-    targetMonitor = monitorPositions(size(monitorPositions, 1), :);
-else
-    targetMonitor = monitorPositions(1, :);
-end
-set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)*.5]);
-
-hold on;
-
-% Plot reach d2
-if ~isempty(d2Reach) && ~all(isnan(d2Reach))
-    plot(startSReach, d2Reach, 'b-', 'LineWidth', 3, 'DisplayName', 'task d2');
-end
-
-% Plot naturalistic d2
-if ~isempty(d2Nat) && ~all(isnan(d2Nat))
-    plot(startSNat, d2Nat, 'r-', 'LineWidth', 3, 'DisplayName', 'spontaneous d2');
-end
-
-% Plot reach start markers (filled green circles)
-reachStartInRange = reachStart(reachStart >= timeStart & reachStart <= timeEnd);
-if ~isempty(reachStartInRange)
-    % Get d2 values at reach start times (interpolate if needed)
-    d2AtReach = interp1(startSReach, d2Reach, reachStartInRange, 'linear', 'extrap');
-    scatter(reachStartInRange, d2AtReach, 80, 'g', 'filled', 'o', ...
-        'DisplayName', 'task Start', 'MarkerEdgeColor', 'k', 'LineWidth', 1);
-end
-
-xlim([timeStart, timeEnd]);
-ylim([0 max([d2Reach(:); d2Nat(:)])]);
-xlabel('Time (s)', 'FontSize', 12);
-ylabel('d2', 'FontSize', 12);
-title(sprintf('%s - d2 Criticality Comparison', areas{areaIdx}), 'FontSize', 12);
-legend('Location', 'best');
-grid on;
-
-set(gca, 'FontSize', 18)
-% Save d2 time series figure
-saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_d2.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
-exportgraphics(gcf, saveFileD2, 'ContentType', 'vector');
-fprintf('Saved d2 time series figure to: %s\n', saveFileD2);
 
 %% ================================    Statistical Comparison Figure
 fprintf('\n=== Creating Statistical Comparison Figure ===\n');
