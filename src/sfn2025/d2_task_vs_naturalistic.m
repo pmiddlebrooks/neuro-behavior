@@ -36,15 +36,19 @@ else
 end
 
 % Reach data file (should match the one used in criticality_sliding_window_ar.m)
-        sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
+        % sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
         % sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh.mat';
         % sessionName =  'AB2_11-May-2023 17_31_00_NeuroBeh.mat';
         % sessionName =  'AB2_30-May-2023 12_49_52_NeuroBeh.mat';
-        sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat';
+        % sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat';
         % sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat';
         % sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat';
         % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat';
         % sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
+        % sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh.mat';
+        % sessionName =  'Y15_27-Aug-2025 14_02_21_NeuroBeh.mat';
+        % sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh.mat';
+        % sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh.mat';
 reachDataFile = fullfile(paths.reachDataPath, sessionName);
 [~, dataBaseName, ~] = fileparts(reachDataFile);
 
@@ -85,6 +89,8 @@ fprintf('Loaded naturalistic results for area %s\n', areas{areaIdx});
 fprintf('\n=== Loading Reach Data ===\n');
 dataR = load(reachDataFile);
 reachStart = dataR.R(:,1) / 1000; % Convert from ms to seconds
+    reachClass = dataR.Block(:,3);
+    startBlock2 = reachStart(find(ismember(reachClass, [3 4]), 1));
 
 % Get reach behavior labels
 opts = neuro_behavior_options;
@@ -210,15 +216,16 @@ set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targ
 
 hold on;
 
-% Plot reach d2
-if ~isempty(d2Reach) && ~all(isnan(d2Reach))
-    plot(startSReach, d2Reach, 'b-', 'LineWidth', 3, 'DisplayName', 'task d2');
-end
-
 % Plot naturalistic d2
 if ~isempty(d2Nat) && ~all(isnan(d2Nat))
     plot(startSNat, d2Nat, 'r-', 'LineWidth', 3, 'DisplayName', 'spontaneous d2');
 end
+
+% Plot reach d2
+if ~isempty(d2Reach) && ~all(isnan(d2Reach))
+    plot(startSReach, d2Reach, 'b-', 'LineWidth', 3, 'DisplayName', 'task d2');
+end
+                        xline(startBlock2, 'Color', [0 .8 .2], 'LineWidth', 3);
 
 % Plot reach start markers (filled green circles)
 reachStartInRange = reachStart(reachStart >= timeStart & reachStart <= timeEnd);
@@ -239,82 +246,84 @@ grid on;
 
 set(gca, 'FontSize', 18)
 % Save d2 time series figure
-saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_d2.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
-exportgraphics(gcf, saveFileD2, 'ContentType', 'vector');
+saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_d2_%s.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
+% exportgraphics(gcf, saveFileD2, 'ContentType', 'vector');
+saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_d2_%s.png', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
+    exportgraphics(gcf, saveFileD2, 'Resolution', 300);
 fprintf('Saved d2 time series figure to: %s\n', saveFileD2);
 
-%% ================================    Create Ethogram Figure
-fprintf('\n=== Creating Ethogram Figure ===\n');
-figure(711); clf;
-set(gcf, 'Units', 'pixels');
-monitorPositions = get(0, 'MonitorPositions');
-if size(monitorPositions, 1) >= 2
-    targetMonitor = monitorPositions(size(monitorPositions, 1), :);
-else
-    targetMonitor = monitorPositions(1, :);
-end
-set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)/3]);
-
-hold on;
-
-% Plot reach behavior ethogram
-for bhvCode = 1:6
-    bhvMask = (bhvIDReach == bhvCode);
-    if any(bhvMask)
-        % Create color blocks by finding contiguous regions
-        diffMask = diff([0; bhvMask; 0]);
-        starts = find(diffMask == 1);
-        ends = find(diffMask == -1) - 1;
-        
-        for b = 1:length(starts)
-            xStart = timeAxisReachBhv(starts(b));
-            xEnd = timeAxisReachBhv(ends(b));
-            fill([xStart, xEnd, xEnd, xStart], [0, 0, 1, 1], colorsReach(bhvCode, :), ...
-                'EdgeColor', 'none', 'DisplayName', behaviorsReach{bhvCode});
-        end
-    end
-end
-
-% Plot naturalistic behavior ethogram (offset vertically)
-for bhvCode = unique(bhvIDNat)'
-    if bhvCode >= 0 % Skip invalid labels
-        bhvMask = (bhvIDNat == bhvCode);
-        if any(bhvMask)
-            % Create color blocks by finding contiguous regions
-            diffMask = diff([0; bhvMask; 0]);
-            starts = find(diffMask == 1);
-            ends = find(diffMask == -1) - 1;
-            
-            % Find color index
-            colorIdx = find(codesNat == bhvCode, 1);
-            if ~isempty(colorIdx) && colorIdx <= size(colorsNat, 1)
-                plotColor = colorsNat(colorIdx, :);
-            else
-                plotColor = [0.5, 0.5, 0.5]; % Gray for unmapped
-            end
-            
-            for b = 1:length(starts)
-                xStart = timeAxisNatBhv(starts(b));
-                xEnd = timeAxisNatBhv(ends(b));
-                fill([xStart, xEnd, xEnd, xStart], [1, 1, 2, 2], plotColor, ...
-                    'EdgeColor', 'none');
-            end
-        end
-    end
-end
-
-xlim([timeStart, timeEnd]);
-ylim([0, 2]);
-ylabel('Behavior', 'FontSize', 12);
-title(sprintf('%s - Behavior Ethogram (Top: task, Bottom: spontaneous)', areas{areaIdx}), 'FontSize', 12);
-set(gca, 'YTick', [0.5, 1.5], 'YTickLabel', {'task', 'spontaneous'});
-xlabel('Time (s)', 'FontSize', 12);
-grid on;
-
-% Save ethogram figure
-saveFileEthogram = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_ethogram.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
-exportgraphics(gcf, saveFileEthogram, 'ContentType', 'vector');
-fprintf('Saved ethogram figure to: %s\n', saveFileEthogram);
+ %% ================================    Create Ethogram Figure
+% fprintf('\n=== Creating Ethogram Figure ===\n');
+% figure(711); clf;
+% set(gcf, 'Units', 'pixels');
+% monitorPositions = get(0, 'MonitorPositions');
+% if size(monitorPositions, 1) >= 2
+%     targetMonitor = monitorPositions(size(monitorPositions, 1), :);
+% else
+%     targetMonitor = monitorPositions(1, :);
+% end
+% set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targetMonitor(4)/3]);
+% 
+% hold on;
+% 
+% % Plot reach behavior ethogram
+% for bhvCode = 1:6
+%     bhvMask = (bhvIDReach == bhvCode);
+%     if any(bhvMask)
+%         % Create color blocks by finding contiguous regions
+%         diffMask = diff([0; bhvMask; 0]);
+%         starts = find(diffMask == 1);
+%         ends = find(diffMask == -1) - 1;
+% 
+%         for b = 1:length(starts)
+%             xStart = timeAxisReachBhv(starts(b));
+%             xEnd = timeAxisReachBhv(ends(b));
+%             fill([xStart, xEnd, xEnd, xStart], [0, 0, 1, 1], colorsReach(bhvCode, :), ...
+%                 'EdgeColor', 'none', 'DisplayName', behaviorsReach{bhvCode});
+%         end
+%     end
+% end
+% 
+% % Plot naturalistic behavior ethogram (offset vertically)
+% for bhvCode = unique(bhvIDNat)'
+%     if bhvCode >= 0 % Skip invalid labels
+%         bhvMask = (bhvIDNat == bhvCode);
+%         if any(bhvMask)
+%             % Create color blocks by finding contiguous regions
+%             diffMask = diff([0; bhvMask; 0]);
+%             starts = find(diffMask == 1);
+%             ends = find(diffMask == -1) - 1;
+% 
+%             % Find color index
+%             colorIdx = find(codesNat == bhvCode, 1);
+%             if ~isempty(colorIdx) && colorIdx <= size(colorsNat, 1)
+%                 plotColor = colorsNat(colorIdx, :);
+%             else
+%                 plotColor = [0.5, 0.5, 0.5]; % Gray for unmapped
+%             end
+% 
+%             for b = 1:length(starts)
+%                 xStart = timeAxisNatBhv(starts(b));
+%                 xEnd = timeAxisNatBhv(ends(b));
+%                 fill([xStart, xEnd, xEnd, xStart], [1, 1, 2, 2], plotColor, ...
+%                     'EdgeColor', 'none');
+%             end
+%         end
+%     end
+% end
+% 
+% xlim([timeStart, timeEnd]);
+% ylim([0, 2]);
+% ylabel('Behavior', 'FontSize', 12);
+% title(sprintf('%s - Behavior Ethogram (Top: task, Bottom: spontaneous)', areas{areaIdx}), 'FontSize', 12);
+% set(gca, 'YTick', [0.5, 1.5], 'YTickLabel', {'task', 'spontaneous'});
+% xlabel('Time (s)', 'FontSize', 12);
+% grid on;
+% 
+% % Save ethogram figure
+% saveFileEthogram = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_ethogram.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
+% exportgraphics(gcf, saveFileEthogram, 'ContentType', 'vector');
+% fprintf('Saved ethogram figure to: %s\n', saveFileEthogram);
 
 %% ================================    Statistical Comparison Figure
 fprintf('\n=== Creating Statistical Comparison Figure ===\n');
@@ -409,8 +418,10 @@ grid on;
 ylim([0, maxD2]);
 
 % Save comparison figure
-saveFileBar = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_bar.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
-exportgraphics(gcf, saveFileBar, 'ContentType', 'vector');
+saveFileBar = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_bar_%s.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
+% exportgraphics(gcf, saveFileBar, 'ContentType', 'vector');
+saveFileBar = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_bar_%s.png', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
+    exportgraphics(gcf, saveFileBar, 'Resolution', 300);
 fprintf('Saved comparison figure to: %s\n', saveFileBar);
 
 %% ================================    Summary Across All Areas
@@ -566,8 +577,10 @@ legend('Location', 'best');
 grid on;
 
 % Save summary figure
-saveFileSummary = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_summary%s_win%d.eps', filenameSuffix, slidingWindowSize));
-exportgraphics(gcf, saveFileSummary, 'ContentType', 'vector');
+saveFileSummary = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_summary%s_win%d_%s.eps', filenameSuffix, slidingWindowSize, sessionName));
+% exportgraphics(gcf, saveFileSummary, 'ContentType', 'vector');
+saveFileSummary = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_summary%s_win%d_%s.png', filenameSuffix, slidingWindowSize, sessionName));
+    exportgraphics(gcf, saveFileSummary, 'Resolution', 300);
 fprintf('Saved summary figure to: %s\n', saveFileSummary);
 
 fprintf('\n=== Complete ===\n');

@@ -85,7 +85,7 @@ end
 
 if strcmp(dataType, 'reach')
     % Load reach data
-        sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
+        % sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
         % sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh.mat';
         % sessionName =  'AB2_11-May-2023 17_31_00_NeuroBeh.mat';
         % sessionName =  'AB2_30-May-2023 12_49_52_NeuroBeh.mat';
@@ -94,6 +94,10 @@ if strcmp(dataType, 'reach')
         % sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat';
         % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat';
         % sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
+        % sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh.mat';
+        % sessionName =  'Y15_27-Aug-2025 14_02_21_NeuroBeh.mat';
+        % sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh.mat';
+        % sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh.mat';
     reachDataFile = fullfile(paths.reachDataPath, sessionName);
     % reachDataFile = fullfile(paths.reachDataPath, 'makeSpikes.mat');
     
@@ -101,10 +105,13 @@ if strcmp(dataType, 'reach')
     saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
     
-    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
+    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar%s_win%d_%s.mat', filenameSuffix, slidingWindowSize, sessionName));
     
     dataR = load(reachDataFile);
-    
+    reachClass = dataR.Block(:,3);
+    reachStart = dataR.R(:,1) / 1000; % Convert from ms to seconds
+    startBlock2 = reachStart(find(ismember(reachClass, [3 4]), 1));
+
     opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
     
     [dataMat, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
@@ -677,7 +684,7 @@ end
 save(resultsPath, 'results'); 
 fprintf('Saved %s d2/mrBr to %s\n', dataType, resultsPath);
 
-%% =============================    Plotting    =============================
+% =============================    Plotting    =============================
 if makePlots
     % Detect monitors and size figure to full screen (prefer second monitor if present)
     monitorPositions = get(0, 'MonitorPositions');
@@ -689,25 +696,227 @@ if makePlots
         targetPos = monitorOne;
     end
     
-    % Create all plots using functions
+    % Get reach onset times
     if strcmp(dataType, 'reach')
         reachOnsetTimes = dataR.R(:,1) / 1000; % Convert from ms to seconds
     else
         reachOnsetTimes = []; % No reach onsets for naturalistic data
     end
     
-    % Get permutation results if available
-    if enablePermutations && exist('d2PermutedMean', 'var') && ~isempty(d2PermutedMean{areasToTest(1)})
-        plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix, d2PermutedMean, d2PermutedSEM, mrBrPermutedMean, mrBrPermutedSEM);
-    else
-        plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix);
+    % ========== Plot 1: Time series of criticality measures ==========
+    figure(900); clf;
+    set(gcf, 'Units', 'pixels');
+    set(gcf, 'Position', targetPos);
+    numRows = length(areasToTest);
+    ha = tight_subplot(numRows, 1, [0.05 0.04], [0.03 0.08], [0.08 0.04]);
+
+    for idx = 1:length(areasToTest)
+        a = areasToTest(idx); 
+        axes(ha(idx)); hold on;
+        
+        % Normalize population activity to 0-1 range for plotting
+        if ~isempty(popActivityWindows{a}) && any(~isnan(popActivityWindows{a}))
+            popActNorm = (popActivityWindows{a} - min(popActivityWindows{a}(~isnan(popActivityWindows{a})))) / ...
+                        (max(popActivityWindows{a}(~isnan(popActivityWindows{a}))) - min(popActivityWindows{a}(~isnan(popActivityWindows{a}))));
+            popActNorm(isnan(popActivityWindows{a})) = nan;
+        else
+            popActNorm = nan(size(popActivityWindows{a}));
+        end
+        
+        if analyzeD2
+            yyaxis left; 
+            % Plot permutation mean ± SEM if available
+            if enablePermutations && exist('d2PermutedMean', 'var') && ~isempty(d2PermutedMean{a}) && ~isempty(d2PermutedSEM{a}) && any(~isnan(d2PermutedMean{a}))
+                validIdx = ~isnan(d2PermutedMean{a}) & ~isnan(d2PermutedSEM{a});
+                if any(validIdx)
+                    xFill = startS{a}(validIdx);
+                    yMean = d2PermutedMean{a}(validIdx);
+                    ySEM = d2PermutedSEM{a}(validIdx);
+                    % Ensure row vectors for fill
+                    if iscolumn(xFill); xFill = xFill'; end
+                    if iscolumn(yMean); yMean = yMean'; end
+                    if iscolumn(ySEM); ySEM = ySEM'; end
+                    % Shaded region for SEM
+                    fill([xFill, fliplr(xFill)], ...
+                         [yMean + ySEM, fliplr(yMean - ySEM)], ...
+                         [0.7 0.7 1], 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'DisplayName', 'Permuted mean ± SEM');
+                    % Mean line
+                    plot(startS{a}(validIdx), d2PermutedMean{a}(validIdx), '-', 'Color', [0.5 0.5 1], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
+                end
+            end
+            % Plot real data
+            plot(startS{a}, d2{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'Real data'); 
+            ylabel('d2', 'Color', [0 0 1]); ylim('auto');
+        end
+        if analyzeMrBr
+            yyaxis right; 
+            % Plot permutation mean ± SEM if available
+            if enablePermutations && exist('mrBrPermutedMean', 'var') && ~isempty(mrBrPermutedMean{a}) && ~isempty(mrBrPermutedSEM{a}) && any(~isnan(mrBrPermutedMean{a}))
+                validIdx = ~isnan(mrBrPermutedMean{a}) & ~isnan(mrBrPermutedSEM{a});
+                if any(validIdx)
+                    xFill = startS{a}(validIdx);
+                    yMean = mrBrPermutedMean{a}(validIdx);
+                    ySEM = mrBrPermutedSEM{a}(validIdx);
+                    % Ensure row vectors for fill
+                    if iscolumn(xFill); xFill = xFill'; end
+                    if iscolumn(yMean); yMean = yMean'; end
+                    if iscolumn(ySEM); ySEM = ySEM'; end
+                    % Shaded region for SEM
+                    fill([xFill, fliplr(xFill)], ...
+                         [yMean + ySEM, fliplr(yMean - ySEM)], ...
+                         [0.8 0.8 0.8], 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'DisplayName', 'Permuted mean ± SEM');
+                    % Mean line
+                    plot(startS{a}(validIdx), mrBrPermutedMean{a}(validIdx), '-', 'Color', [0.5 0.5 0.5], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
+                end
+            end
+            % Plot real data
+            plot(startS{a}, mrBr{a}, '-', 'Color', [0 0 0], 'LineWidth', 2, 'DisplayName', 'Real data'); 
+            yline(1, 'k:', 'LineWidth', 1.5); 
+            ylabel('mrBr', 'Color', [0 0 0]); ylim('auto');
+        end
+
+        % Add vertical lines at reach onsets (only for reach data)
+        if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
+            yyaxis left;
+            % Filter reach onsets to only show those within the current plot's time range
+            if ~isempty(startS{a})
+                plotTimeRange = [startS{a}(1), startS{a}(end)];
+                reachOnsetsInRange = reachOnsetTimes(reachOnsetTimes >= plotTimeRange(1) & reachOnsetTimes <= plotTimeRange(2));
+
+                if ~isempty(reachOnsetsInRange)
+                    for i = 1:length(reachOnsetsInRange)
+                        xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
+                    end
+                    if exist('startBlock2', 'var')
+                        xline(startBlock2, 'Color', [1 0 0], 'LineWidth', 3);
+                    end
+                end
+            end
+        end
+        
+        if ~isempty(startS{a})
+            xlim([startS{a}(1) startS{a}(end)])
+        end
+        title(sprintf('%s - d2 (blue), mrBr (black), PopActWin (red dotted), PopActFull (brown dash-dot)', areas{a})); 
+        xlabel('Time (s)'); grid on; set(gca, 'XTickLabelMode', 'auto'); set(gca, 'YTickLabelMode', 'auto');
     end
 
-    if plotCorrelations
-        plot_criticality_correlations(popActivityWindows, popActivityFull, d2, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, filenameSuffix);
+    if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
+        sgtitle(sprintf('%s d2 (blue, left) and mrBr (black, right) with reach onsets (gray dashed) - win=%gs', dataType, slidingWindowSize));
+    else
+        sgtitle(sprintf('%s d2 (blue, left) and mrBr (black, right) - win=%gs', dataType, slidingWindowSize));
     end
+    exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+
+    % ========== Plot 2: Correlation scatter plots ==========
+    if plotCorrelations
+        figure(901); clf;
+        set(gcf, 'Units', 'pixels');
+        set(gcf, 'Position', targetPos);
+        
+        numAreas = length(areasToPlot);
+        numRows = 2;
+        numCols = 4;
+        ha = tight_subplot(numRows, numCols, [0.05 0.04], [0.03 0.08], [0.08 0.04]);
+        
+        for idx = 1:numAreas
+            a = areasToPlot(idx);
+            
+            % Row 1: d2 vs popActivityFull
+            axes(ha(idx));
+            if ~isempty(popActivityFull{a}) && ~isempty(d2{a})
+                validIdx = ~isnan(popActivityFull{a}) & ~isnan(d2{a});
+                if sum(validIdx) > 5
+                    xData = popActivityFull{a}(validIdx);
+                    yData = d2{a}(validIdx);
+                    scatter(xData, yData, 20, 'filled', 'MarkerFaceAlpha', 0.6);
+                    [r, p] = corrcoef(xData, yData);
+                    title(sprintf('%s: d2 vs PopActFull\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
+                    
+                    % Add regression line
+                    hold on;
+                    p_fit = polyfit(xData, yData, 1);
+                    x_fit = linspace(min(xData), max(xData), 100);
+                    y_fit = polyval(p_fit, x_fit);
+                    plot(x_fit, y_fit, 'r-', 'LineWidth', 2);
+                else
+                    title(sprintf('%s: d2 vs PopActFull\nInsufficient data', areas{a}));
+                end
+            end
+            xlabel('PopActivity Full'); ylabel('d2');
+            grid on;
+            
+            % Row 2: d2 vs popActivityWindows
+            axes(ha(numAreas + idx));
+            if ~isempty(popActivityWindows{a}) && ~isempty(d2{a})
+                validIdx = ~isnan(popActivityWindows{a}) & ~isnan(d2{a});
+                if sum(validIdx) > 5
+                    xData = popActivityWindows{a}(validIdx);
+                    yData = d2{a}(validIdx);
+                    scatter(xData, yData, 20, 'filled', 'MarkerFaceAlpha', 0.6);
+                    [r, p] = corrcoef(xData, yData);
+                    title(sprintf('%s: d2 vs PopActWin\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
+                    
+                    % Add regression line
+                    hold on;
+                    p_fit = polyfit(xData, yData, 1);
+                    x_fit = linspace(min(xData), max(xData), 100);
+                    y_fit = polyval(p_fit, x_fit);
+                    plot(x_fit, y_fit, 'r-', 'LineWidth', 2);
+                else
+                    title(sprintf('%s: d2 vs PopActWin\nInsufficient data', areas{a}));
+                end
+            end
+            xlabel('PopActivity Windows'); ylabel('d2');
+            grid on;
+        end
+        
+        sgtitle(sprintf('%s Population Activity vs Criticality Correlations - win=%gs', dataType, slidingWindowSize));
+        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+        fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)));
+    end
+
+    % ========== Plot 3: Modulated vs unmodulated ==========
     if analyzeModulation
-        plot_modulated_vs_unmodulated(d2Modulated, d2Unmodulated, startSModulated, startSUnmodulated, popActivityWindowsModulated, popActivityWindowsUnmodulated, areasToTest, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, reachOnsetTimes, filenameSuffix);
+        % Time series comparison
+        figure(902); clf;
+        set(gcf, 'Units', 'pixels');
+        set(gcf, 'Position', targetPos);
+
+        numRows = length(areasToTest);
+        ha = tight_subplot(numRows, 1, [0.08 0.04], [0.03 0.08], [0.08 0.04]);
+
+        for idx = 1:length(areasToTest)
+            a = areasToTest(idx);
+            axes(ha(idx)); hold on;
+
+            if analyzeD2
+                % Plot modulated population
+                if ~isempty(d2Modulated{a}) && any(~isnan(d2Modulated{a}))
+                    plot(startSModulated{a}, d2Modulated{a}, '-', 'Color', [1 0 0], 'LineWidth', 2, 'DisplayName', 'Modulated');
+                end
+
+                % Plot unmodulated population
+                if ~isempty(d2Unmodulated{a}) && any(~isnan(d2Unmodulated{a}))
+                    plot(startSUnmodulated{a}, d2Unmodulated{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'Unmodulated');
+                end
+
+                ylabel('d2'); grid on;
+                legend({'Modulated', 'Unmodulated'}, 'Location', 'best', 'AutoUpdate', 'off');
+                % Add vertical lines at reach onsets (only for reach data)
+                if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
+                    for i = 1:length(reachOnsetTimes)
+                        xline(reachOnsetTimes(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
+                    end
+                end
+            end
+
+            title(sprintf('%s - Modulated (red) vs Unmodulated (blue) d2', areas{a}));
+            xlabel('Time (s)'); grid on; set(gca, 'XTickLabelMode', 'auto'); set(gca, 'YTickLabelMode', 'auto');
+        end
+
+        sgtitle(sprintf('%s Modulated neurons d2 win=%gs', dataType, slidingWindowSize));
+        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
     end
 end
 
@@ -772,314 +981,3 @@ for a = areasToTest
 end
 end
 
-function plot_criticality_timeseries(startS, d2, mrBr, popActivityWindows, popActivity, areasToTest, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, analyzeMrBr, optimalBinSize, reachOnsetTimes, filenameSuffix, d2PermutedMean, d2PermutedSEM, mrBrPermutedMean, mrBrPermutedSEM)
-% Plot time series of criticality measures
-% Optional inputs: d2PermutedMean, d2PermutedSEM, mrBrPermutedMean, mrBrPermutedSEM for permutation results
-
-% Handle optional permutation inputs
-if nargin < 16
-    d2PermutedMean = cell(1, length(areas));
-    d2PermutedSEM = cell(1, length(areas));
-    mrBrPermutedMean = cell(1, length(areas));
-    mrBrPermutedSEM = cell(1, length(areas));
-end
-    figure(900); clf;
-    set(gcf, 'Units', 'pixels');
-    set(gcf, 'Position', targetPos);
-    numRows = length(areasToTest);
-ha = tight_subplot(numRows, 1, [0.05 0.04], [0.03 0.08], [0.08 0.04]);
-
-    for idx = 1:length(areasToTest)
-        a = areasToTest(idx); 
-        axes(ha(idx)); hold on;
-        
-        % Normalize population activity to 0-1 range for plotting
-        if ~isempty(popActivityWindows{a}) && any(~isnan(popActivityWindows{a}))
-            popActNorm = (popActivityWindows{a} - min(popActivityWindows{a}(~isnan(popActivityWindows{a})))) / ...
-                        (max(popActivityWindows{a}(~isnan(popActivityWindows{a}))) - min(popActivityWindows{a}(~isnan(popActivityWindows{a}))));
-            popActNorm(isnan(popActivityWindows{a})) = nan;
-        else
-            popActNorm = nan(size(popActivityWindows{a}));
-        end
-        
-        if analyzeD2
-            yyaxis left; 
-            % Plot permutation mean ± SEM if available
-            if ~isempty(d2PermutedMean{a}) && ~isempty(d2PermutedSEM{a}) && any(~isnan(d2PermutedMean{a}))
-                validIdx = ~isnan(d2PermutedMean{a}) & ~isnan(d2PermutedSEM{a});
-                if any(validIdx)
-                    xFill = startS{a}(validIdx);
-                    yMean = d2PermutedMean{a}(validIdx);
-                    ySEM = d2PermutedSEM{a}(validIdx);
-                    % Ensure row vectors for fill
-                    if iscolumn(xFill); xFill = xFill'; end
-                    if iscolumn(yMean); yMean = yMean'; end
-                    if iscolumn(ySEM); ySEM = ySEM'; end
-                    % Shaded region for SEM
-                    fill([xFill, fliplr(xFill)], ...
-                         [yMean + ySEM, fliplr(yMean - ySEM)], ...
-                         [0.7 0.7 1], 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'DisplayName', 'Permuted mean ± SEM');
-                    % Mean line
-                    plot(startS{a}(validIdx), d2PermutedMean{a}(validIdx), '-', 'Color', [0.5 0.5 1], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
-                end
-            end
-            % Plot real data
-            plot(startS{a}, d2{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'Real data'); 
-            ylabel('d2', 'Color', [0 0 1]); ylim('auto');
-        end
-        if analyzeMrBr
-            yyaxis right; 
-            % Plot permutation mean ± SEM if available
-            if ~isempty(mrBrPermutedMean{a}) && ~isempty(mrBrPermutedSEM{a}) && any(~isnan(mrBrPermutedMean{a}))
-                validIdx = ~isnan(mrBrPermutedMean{a}) & ~isnan(mrBrPermutedSEM{a});
-                if any(validIdx)
-                    xFill = startS{a}(validIdx);
-                    yMean = mrBrPermutedMean{a}(validIdx);
-                    ySEM = mrBrPermutedSEM{a}(validIdx);
-                    % Ensure row vectors for fill
-                    if iscolumn(xFill); xFill = xFill'; end
-                    if iscolumn(yMean); yMean = yMean'; end
-                    if iscolumn(ySEM); ySEM = ySEM'; end
-                    % Shaded region for SEM
-                    fill([xFill, fliplr(xFill)], ...
-                         [yMean + ySEM, fliplr(yMean - ySEM)], ...
-                         [0.8 0.8 0.8], 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'DisplayName', 'Permuted mean ± SEM');
-                    % Mean line
-                    plot(startS{a}(validIdx), mrBrPermutedMean{a}(validIdx), '-', 'Color', [0.5 0.5 0.5], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
-                end
-            end
-            % Plot real data
-            plot(startS{a}, mrBr{a}, '-', 'Color', [0 0 0], 'LineWidth', 2, 'DisplayName', 'Real data'); 
-            yline(1, 'k:', 'LineWidth', 1.5); 
-            ylabel('mrBr', 'Color', [0 0 0]); ylim('auto');
-        end
-        
-    % % Add normalized population activity
-    %     if ~isempty(popActNorm) && any(~isnan(popActNorm))
-    %         yyaxis left;
-    %         plot(startS{a}, popActNorm, '-', 'Color', [1 0 0], 'LineWidth', 1, 'LineStyle', ':'); 
-    %     end
-    % 
-    % % Add full population activity (normalized) for comparison
-    %     if ~isempty(popActivity{a}) && any(~isnan(popActivity{a}))
-    %         timeIndices = (1:length(popActivity{a})) * optimalBinSize(a);
-    %         popActFullNorm = (popActivity{a} - min(popActivity{a}(~isnan(popActivity{a})))) / ...
-    %                        (max(popActivity{a}(~isnan(popActivity{a}))) - min(popActivity{a}(~isnan(popActivity{a}))));
-    %         popActFullNorm(isnan(popActivity{a})) = nan;
-    % 
-    %         yyaxis left;
-    %         plot(timeIndices, popActFullNorm, '-', 'Color', [0.8 0.4 0.4], 'LineWidth', 0.5, 'LineStyle', '-.'); 
-    %     end
-
-    % Add vertical lines at reach onsets (only for reach data)
-    if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
-        yyaxis left;
-        % Filter reach onsets to only show those within the current plot's time range
-        if ~isempty(startS{a})
-            plotTimeRange = [startS{a}(1), startS{a}(end)];
-            reachOnsetsInRange = reachOnsetTimes(reachOnsetTimes >= plotTimeRange(1) & reachOnsetTimes <= plotTimeRange(2));
-
-            if ~isempty(reachOnsetsInRange)
-                for i = 1:length(reachOnsetsInRange)
-                    xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
-                end
-            end
-        end
-    end
-        
-        if ~isempty(startS{a})
-        xlim([startS{a}(1) startS{a}(end)])
-        end
-        title(sprintf('%s - d2 (blue), mrBr (black), PopActWin (red dotted), PopActFull (brown dash-dot)', areas{a})); 
-        xlabel('Time (s)'); grid on; set(gca, 'XTickLabelMode', 'auto'); set(gca, 'YTickLabelMode', 'auto');
-    end
-
-if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
-    sgtitle(sprintf('%s d2 (blue, left) and mrBr (black, right) with reach onsets (gray dashed) - win=%gs', dataType, slidingWindowSize));
-else
-    sgtitle(sprintf('%s d2 (blue, left) and mrBr (black, right) - win=%gs', dataType, slidingWindowSize));
-end
-    exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
-end
-    
-function plot_criticality_correlations(popActivityWindows, popActivityFull, d2, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, filenameSuffix)
-% Plot correlation scatter plots
-    figure(901); clf;
-    set(gcf, 'Units', 'pixels');
-    set(gcf, 'Position', targetPos);
-    
-    numAreas = length(areasToPlot);
-    numRows = 2;
-    numCols = 4;
-ha = tight_subplot(numRows, numCols, [0.05 0.04], [0.03 0.08], [0.08 0.04]);
-    
-    for idx = 1:numAreas
-        a = areasToPlot(idx);
-        
-        % Row 1: d2 vs popActivityFull
-        axes(ha(idx));
-        if ~isempty(popActivityFull{a}) && ~isempty(d2{a})
-            validIdx = ~isnan(popActivityFull{a}) & ~isnan(d2{a});
-            if sum(validIdx) > 5
-                xData = popActivityFull{a}(validIdx);
-                yData = d2{a}(validIdx);
-                scatter(xData, yData, 20, 'filled', 'MarkerFaceAlpha', 0.6);
-                [r, p] = corrcoef(xData, yData);
-                title(sprintf('%s: d2 vs PopActFull\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
-                
-            % Add regression line
-                hold on;
-                p_fit = polyfit(xData, yData, 1);
-                x_fit = linspace(min(xData), max(xData), 100);
-                y_fit = polyval(p_fit, x_fit);
-                plot(x_fit, y_fit, 'r-', 'LineWidth', 2);
-            else
-                title(sprintf('%s: d2 vs PopActFull\nInsufficient data', areas{a}));
-            end
-        end
-        xlabel('PopActivity Full'); ylabel('d2');
-        grid on;
-        
-        % Row 2: d2 vs popActivityWindows
-        axes(ha(numAreas + idx));
-        if ~isempty(popActivityWindows{a}) && ~isempty(d2{a})
-            validIdx = ~isnan(popActivityWindows{a}) & ~isnan(d2{a});
-            if sum(validIdx) > 5
-                xData = popActivityWindows{a}(validIdx);
-                yData = d2{a}(validIdx);
-                scatter(xData, yData, 20, 'filled', 'MarkerFaceAlpha', 0.6);
-                [r, p] = corrcoef(xData, yData);
-                title(sprintf('%s: d2 vs PopActWin\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
-                
-            % Add regression line
-                hold on;
-                p_fit = polyfit(xData, yData, 1);
-                x_fit = linspace(min(xData), max(xData), 100);
-                y_fit = polyval(p_fit, x_fit);
-                plot(x_fit, y_fit, 'r-', 'LineWidth', 2);
-            else
-                title(sprintf('%s: d2 vs PopActWin\nInsufficient data', areas{a}));
-            end
-        end
-        xlabel('PopActivity Windows'); ylabel('d2');
-        grid on;
-    end
-    
-    sgtitle(sprintf('%s Population Activity vs Criticality Correlations - win=%gs', dataType, slidingWindowSize));
-    exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
-    fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)));
-end
-
-function plot_modulated_vs_unmodulated(d2Modulated, d2Unmodulated, startSModulated, startSUnmodulated, popActivityWindowsModulated, popActivityWindowsUnmodulated, areasToTest, areasToPlot, areas, dataType, slidingWindowSize, saveDir, targetPos, analyzeD2, reachOnsetTimes, filenameSuffix)
-% Plot modulated vs unmodulated comparisons
-plotCorrelations = false;
-
-% Time series comparison
-figure(902); clf;
-set(gcf, 'Units', 'pixels');
-set(gcf, 'Position', targetPos);
-
-numRows = length(areasToTest);
-ha = tight_subplot(numRows, 1, [0.08 0.04], [0.03 0.08], [0.08 0.04]);
-
-for idx = 1:length(areasToTest)
-    a = areasToTest(idx);
-    axes(ha(idx)); hold on;
-
-    if analyzeD2
-        % Plot modulated population
-        if ~isempty(d2Modulated{a}) && any(~isnan(d2Modulated{a}))
-            plot(startSModulated{a}, d2Modulated{a}, '-', 'Color', [1 0 0], 'LineWidth', 2, 'DisplayName', 'Modulated');
-        end
-
-        % Plot unmodulated population
-        if ~isempty(d2Unmodulated{a}) && any(~isnan(d2Unmodulated{a}))
-            plot(startSUnmodulated{a}, d2Unmodulated{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'Unmodulated');
-        end
-
-        ylabel('d2'); grid on;
-        legend({'Modulated', 'Unmodulated'}, 'Location', 'best', 'AutoUpdate', 'off');
-        % Add vertical lines at reach onsets (only for reach data)
-        if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
-                    for i = 1:length(reachOnsetTimes)
-                        xline(reachOnsetTimes(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
-                    end
-        end
-
-    end
-
-    title(sprintf('%s - Modulated (red) vs Unmodulated (blue) d2', areas{a}));
-    xlabel('Time (s)'); grid on; set(gca, 'XTickLabelMode', 'auto'); set(gca, 'YTickLabelMode', 'auto');
-end
-
-sgtitle(sprintf('%s Modulated neurons d2 win=%gs', dataType, slidingWindowSize));
-exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
-
-if plotCorrelations
-
-% Scatter plots comparing modulated vs unmodulated
-figure(903); clf;
-set(gcf, 'Units', 'pixels');
-set(gcf, 'Position', targetPos);
-
-numAreas = length(areasToPlot);
-numRows = 2;
-numCols = numAreas;
-ha = tight_subplot(numRows, numCols, [0.08 0.04], [0.08 0.1], [0.06 0.04]);
-
-for idx = 1:numAreas
-    a = areasToPlot(idx);
-
-    % Row 1: Modulated population scatter
-    axes(ha(idx));
-    if ~isempty(popActivityWindowsModulated{a}) && ~isempty(d2Modulated{a})
-        validIdx = ~isnan(popActivityWindowsModulated{a}) & ~isnan(d2Modulated{a});
-        if sum(validIdx) > 5
-            xData = popActivityWindowsModulated{a}(validIdx);
-            yData = d2Modulated{a}(validIdx);
-            scatter(xData, yData, 20, 'filled', 'MarkerFaceColor', [1 0 0], 'MarkerFaceAlpha', 0.6);
-            [r, p] = corrcoef(xData, yData);
-            title(sprintf('%s Modulated\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
-
-            % Add regression line
-            hold on;
-            p_fit = polyfit(xData, yData, 1);
-            x_fit = linspace(min(xData), max(xData), 100);
-            y_fit = polyval(p_fit, x_fit);
-            plot(x_fit, y_fit, 'r-', 'LineWidth', 2);
-        else
-            title(sprintf('%s Modulated\nInsufficient data', areas{a}));
-        end
-    end
-    xlabel('PopActivity'); ylabel('d2');
-    grid on;
-
-    % Row 2: Unmodulated population scatter
-    axes(ha(numAreas + idx));
-    if ~isempty(popActivityWindowsUnmodulated{a}) && ~isempty(d2Unmodulated{a})
-        validIdx = ~isnan(popActivityWindowsUnmodulated{a}) & ~isnan(d2Unmodulated{a});
-        if sum(validIdx) > 5
-            xData = popActivityWindowsUnmodulated{a}(validIdx);
-            yData = d2Unmodulated{a}(validIdx);
-            scatter(xData, yData, 20, 'filled', 'MarkerFaceColor', [0 0 1], 'MarkerFaceAlpha', 0.6);
-            [r, p] = corrcoef(xData, yData);
-            title(sprintf('%s Unmodulated\nr=%.3f, p=%.3f', areas{a}, r(1,2), p(1,2)));
-
-            % Add regression line
-            hold on;
-            p_fit = polyfit(xData, yData, 1);
-            x_fit = linspace(min(xData), max(xData), 100);
-            y_fit = polyval(p_fit, x_fit);
-            plot(x_fit, y_fit, 'b-', 'LineWidth', 2);
-        else
-            title(sprintf('%s Unmodulated\nInsufficient data', areas{a}));
-        end
-    end
-    xlabel('PopActivity'); ylabel('d2');
-    grid on;
-end
-
-sgtitle(sprintf('%s Modulated vs Unmodulated Population Activity vs Criticality', dataType));
-exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_unmodulated_scatter%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
-end
-end

@@ -79,6 +79,12 @@ nDim = 4;              % Number of PCA dimensions to use
 thresholdFlag = 1;     % Set to 1 to use threshold method
 thresholdPct = 0.75;   % Threshold as percentage of median
 
+% Plotting options
+loadResultsForPlotting = false;  % Set to true to load saved results for plotting
+                                  % Set to false to use variables from workspace
+resultsFileForPlotting = '';     % Path to results file (empty = auto-detect from saveDir)
+makePlots = true;                 % Set to true to generate plots
+
 %% =============================    Find Optimal Avalanche Window    =============================
 fprintf('\n=== Finding Optimal Avalanche Window ===\n');
 
@@ -591,7 +597,92 @@ save(resultsPath, 'results');
 fprintf('\nSaved results to: %s\n', resultsPath);
 
 %% =============================    Plotting    =============================
+% To plot from saved results without running analysis:
+%   1. Set loadResultsForPlotting = true
+%   2. Optionally specify resultsFileForPlotting (or leave empty for auto-detect)
+%   3. Set makePlots = true
+%   4. Run only the plotting section (or entire script)
+%
+% To plot from workspace variables (after running analysis):
+%   1. Set loadResultsForPlotting = false
+%   2. Set makePlots = true
+%   3. Run plotting section (variables should be in workspace)
+
+if ~makePlots
+    fprintf('\n=== Skipping plots (makePlots = false) ===\n');
+    return;
+end
+
 fprintf('\n=== Creating Summary Plots ===\n');
+
+% Load saved results if requested
+if loadResultsForPlotting
+    fprintf('Loading saved results for plotting...\n');
+    
+    % Determine results file path
+    if isempty(resultsFileForPlotting)
+        % Auto-detect: look for most recent results file in saveDir
+        if ~exist('saveDir', 'var') || isempty(saveDir)
+            error('saveDir not defined. Please specify resultsFileForPlotting or run data loading section first.');
+        end
+        resultsFiles = dir(fullfile(saveDir, 'criticality_reach_intertrial_av_win*.mat'));
+        if isempty(resultsFiles)
+            error('No results files found in %s. Run analysis first or specify resultsFileForPlotting.', saveDir);
+        end
+        % Sort by date (most recent first)
+        [~, idx] = sort([resultsFiles.datenum], 'descend');
+        resultsFileForPlotting = fullfile(saveDir, resultsFiles(idx(1)).name);
+    end
+    
+    if ~exist(resultsFileForPlotting, 'file')
+        error('Results file not found: %s', resultsFileForPlotting);
+    end
+    
+    fprintf('Loading from: %s\n', resultsFileForPlotting);
+    loadedResults = load(resultsFileForPlotting);
+    results = loadedResults.results;
+    
+    % Extract variables from results structure
+    areas = results.areas;
+    reachStart = results.reachStart;
+    intertrialMidpoints = results.intertrialMidpoints;
+    avalancheWindow = results.avalancheWindow;
+    windowBuffer = results.windowBuffer;
+    beforeAlign = results.beforeAlign;
+    afterAlign = results.afterAlign;
+    stepSize = results.stepSize;
+    slidingPositions = results.slidingPositions;
+    avalancheMetrics = results.avalancheMetrics;
+    binSize = results.binSize;
+    
+    % Determine saveDir from results file path if not already defined
+    if ~exist('saveDir', 'var') || isempty(saveDir)
+        [saveDir, ~, ~] = fileparts(resultsFileForPlotting);
+    end
+    
+    % Determine areasToTest from loaded data
+    areasToTest = 1:length(areas);
+    
+    fprintf('Loaded results: %d areas, %d sliding positions\n', length(areas), length(slidingPositions));
+else
+    fprintf('Using variables from workspace...\n');
+    % Variables should already be in workspace from analysis above
+    if ~exist('avalancheMetrics', 'var') || ~exist('slidingPositions', 'var')
+        error('Required variables not found in workspace. Set loadResultsForPlotting = true to load from saved results.');
+    end
+    % Ensure saveDir exists
+    if ~exist('saveDir', 'var') || isempty(saveDir)
+        error('saveDir not defined. Please run data loading section first.');
+    end
+    % Ensure areasToTest is defined
+    if ~exist('areasToTest', 'var') || isempty(areasToTest)
+        if exist('areas', 'var')
+            areasToTest = 1:length(areas);
+        else
+            error('areasToTest and areas not defined. Please run analysis section first or set loadResultsForPlotting = true.');
+        end
+    end
+end
 
 % Define metrics to plot
 metricNames = {'kappa', 'dcc', 'tau', 'alpha', 'paramSD', 'decades'};
