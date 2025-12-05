@@ -3,11 +3,11 @@
 % Unified script for analyzing both reach data and naturalistic data
 % Analyzes data using sliding window approach; saves results to data-specific folders
 
-paths = get_paths;
-
 % =============================    Configuration    =============================
-% Data type selection
-dataType = 'naturalistic';  % 'reach' or 'naturalistic'
+% Note: Data should be loaded by criticality_sliding_data_prep.m before running this script
+% Expected workspace variables: dataType, dataMat, areas, idMatIdx, idLabel, opts, saveDir, 
+%                                dataR (for reach), startBlock2 (for reach), reachStart (for reach), 
+%                                reachClass (for reach), sessionName (for reach), spikeData (if analyzeModulation)
 
 % Sliding window size (seconds)
 slidingWindowSize = 20;
@@ -66,15 +66,14 @@ critType = 2;
 d2StepSize = .02;
 d2StepSize = repmat(.2,1,4);
 
-% =============================    Data Loading    =============================
-fprintf('\n=== Loading %s data ===\n', dataType);
-
-    opts = neuro_behavior_options;
-    opts.frameSize = .001;
-    opts.firingRateCheckTime = 5 * 60;
-    opts.collectStart = 0;
-    opts.minFiringRate = .05;
-    opts.maxFiringRate = 100;
+% =============================    Data Validation    =============================
+% Verify that required variables are in workspace (loaded by criticality_sliding_data_prep.m)
+requiredVars = {'dataType', 'dataMat', 'areas', 'idMatIdx', 'idLabel', 'opts', 'saveDir'};
+for i = 1:length(requiredVars)
+    if ~exist(requiredVars{i}, 'var')
+        error('Required variable %s not found in workspace. Please run criticality_sliding_data_prep.m first.', requiredVars{i});
+    end
+end
 
 % Create filename suffix based on PCA flag
 if pcaFlag
@@ -83,81 +82,35 @@ else
     filenameSuffix = '';
 end
 
+% Create results path
 if strcmp(dataType, 'reach')
-    % Load reach data
-        % sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
-        % sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh.mat';
-        % sessionName =  'AB2_11-May-2023 17_31_00_NeuroBeh.mat';
-        % sessionName =  'AB2_30-May-2023 12_49_52_NeuroBeh.mat';
-        % sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat';
-        % sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat';
-        % sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat';
-        % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat';
-        % sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
-        % sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh.mat';
-        % sessionName =  'Y15_27-Aug-2025 14_02_21_NeuroBeh.mat';
-        % sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh.mat';
-        % sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh.mat';
-    reachDataFile = fullfile(paths.reachDataPath, sessionName);
-    % reachDataFile = fullfile(paths.reachDataPath, 'makeSpikes.mat');
-    
-    [~, dataBaseName, ~] = fileparts(reachDataFile);
-    saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
-    if ~exist(saveDir, 'dir'); mkdir(saveDir); end
-    
+    if ~exist('sessionName', 'var') || isempty(sessionName)
+        error('sessionName must be defined for reach data');
+    end
     resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar%s_win%d_%s.mat', filenameSuffix, slidingWindowSize, sessionName));
-    
-    dataR = load(reachDataFile);
-    reachClass = dataR.Block(:,3);
-    reachStart = dataR.R(:,1) / 1000; % Convert from ms to seconds
-    startBlock2 = reachStart(find(ismember(reachClass, [3 4]), 1));
-
-    opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
-    
-    [dataMat, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
-    areas = {'M23', 'M56', 'DS', 'VS'};
-    idM23 = find(strcmp(areaLabels, 'M23'));
-    idM56 = find(strcmp(areaLabels, 'M56'));
-    idDS = find(strcmp(areaLabels, 'DS'));
-    idVS = find(strcmp(areaLabels, 'VS'));
-    idMatIdx = {idM23, idM56, idDS, idVS};
-    idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
-
-    % NEW: Load spike data for modulation analysis
-    if analyzeModulation
-        fprintf('\n=== Loading spike data for modulation analysis ===\n');
-        % spikeData = spike_times_per_area_reach(opts);
-        spikeData = dataR.CSV(:,1:2);
-        fprintf('Loaded spike data: %d spikes from %d neurons\n', size(spikeData, 1), length(unique(spikeData(:,2))));
-    end
-    
-elseif strcmp(dataType, 'naturalistic')
-    % Load naturalistic data
-    getDataType = 'spikes';
-    opts.collectEnd = 45 * 60; % seconds
-    get_standard_data
-    
-    areas = {'M23', 'M56', 'DS', 'VS'};
-    idMatIdx = {idM23, idM56, idDS, idVS};
-    idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
-    
-    % Create save directory for naturalistic data
-    saveDir = fullfile(paths.dropPath, 'criticality/results');
-    if ~exist(saveDir, 'dir'); mkdir(saveDir); end
-    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
-    
-    % NEW: Load spike data for modulation analysis
-    if analyzeModulation
-        fprintf('\n=== Loading spike data for modulation analysis ===\n');
-        % spikeData = spike_times_per_area(opts);
-        spikeData = [spikeTimes, spikeClusters];
-        fprintf('Loaded spike data: %d spikes from %d neurons\n', size(spikeData, 1), length(unique(spikeData(:,2))));
-    end
-
 else
-    error('Invalid dataType. Must be ''reach'' or ''naturalistic''');
+    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
 end
-fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
+
+% Load spike data for modulation analysis if needed
+if analyzeModulation
+    if isempty(spikeData) || ~exist('spikeData', 'var')
+        fprintf('\n=== Loading spike data for modulation analysis ===\n');
+        if strcmp(dataType, 'reach')
+            if ~exist('dataR', 'var')
+                error('dataR must be available for reach data modulation analysis');
+            end
+            spikeData = dataR.CSV(:,1:2);
+        else
+            % For naturalistic, spikeData should have been loaded by get_standard_data
+            if ~exist('spikeTimes', 'var') || ~exist('spikeClusters', 'var')
+                error('spikeTimes and spikeClusters must be available for naturalistic data modulation analysis');
+            end
+            spikeData = [spikeTimes, spikeClusters];
+        end
+        fprintf('Loaded spike data: %d spikes from %d neurons\n', size(spikeData, 1), length(unique(spikeData(:,2))));
+    end
+end
 
 
 
@@ -881,7 +834,11 @@ if makePlots
     else
         sgtitle(sprintf('%s d2 (blue, left) and PopActivity Windows (red, right) - win=%gs', dataType, slidingWindowSize));
     end
-    exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+    if strcmp(dataType, 'reach') && exist('sessionName', 'var') && ~isempty(sessionName)
+        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+    else
+        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
+    end
 
     % ========== Plot 2: Correlation scatter plots ==========
     if plotCorrelations
@@ -947,7 +904,11 @@ if makePlots
         end
         
         sgtitle(sprintf('%s Population Activity vs Criticality Correlations - win=%gs', dataType, slidingWindowSize));
-        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+        if strcmp(dataType, 'reach') && exist('sessionName', 'var') && ~isempty(sessionName)
+            exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+        else
+            exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
+        end
         fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)));
     end
 
@@ -991,7 +952,11 @@ if makePlots
         end
 
         sgtitle(sprintf('%s Modulated neurons d2 win=%gs', dataType, slidingWindowSize));
-        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+        if strcmp(dataType, 'reach') && exist('sessionName', 'var') && ~isempty(sessionName)
+            exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+        else
+            exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
+        end
     end
 end
 

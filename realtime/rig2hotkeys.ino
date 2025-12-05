@@ -43,8 +43,17 @@ void writeState(const char* tag) { sprintf(buffer, "%lu S %s", millis(), tag); d
 void turnOnLED() { digitalWrite(LED_PORT, HIGH); ledOn = true; writeLEDOn(); }
 void turnOffLED() { digitalWrite(LED_PORT, LOW); ledOn = false; writeLEDOff(); }
 
-void openSolenoid() { digitalWrite(SOLENOID_PORT, HIGH); givingReward = true; rewardStartTime = millis(); writeRewardOn(); }
-void closeSolenoid() { digitalWrite(SOLENOID_PORT, LOW); givingReward = false; writeRewardOff(); }
+void openSolenoid() { 
+  digitalWrite(SOLENOID_PORT, HIGH); 
+  givingReward = true; 
+  rewardStartTime = millis(); 
+  writeRewardOn(); 
+}
+void closeSolenoid() { 
+  digitalWrite(SOLENOID_PORT, LOW); 
+  givingReward = false; 
+  writeRewardOff(); 
+}
 
 void setup() {
   pinMode(SOLENOID_PORT, OUTPUT);
@@ -87,21 +96,23 @@ void loop() {
   // Handle serial commands
   if (Serial.available() > 0) {
     char command = Serial.read();
+    // Flush any remaining characters (newline, carriage return, etc.)
+    while (Serial.available() > 0) {
+      Serial.read();
+    }
     
     switch (command) {
       case '1':
         // Manual solenoid click
-        if (!givingReward) {
-          // Ensure LED is off and cancel any pending wait before manual click
-          if (ledOn) {
-            turnOffLED();
-          }
-          if (waitingForBeam) {
-            waitingForBeam = false;
-          }
-          openSolenoid();
-          writeState("MANUAL_SOLENOID_CLICK");
+        // Ensure LED is off and cancel any pending wait before manual click
+        if (ledOn) {
+          turnOffLED();
         }
+        if (waitingForBeam) {
+          waitingForBeam = false;
+        }
+        openSolenoid();
+        writeState("MANUAL_SOLENOID_CLICK");
         break;
         
       case '2':
@@ -128,7 +139,7 @@ void loop() {
     }
   }
 
-  // Handle ongoing solenoid pulse
+  // Handle ongoing solenoid pulse - matches rig2interval.ino logic
   if (givingReward) {
     if (millis() - rewardStartTime >= SOLENOID_ON_TIME) {
       closeSolenoid();
