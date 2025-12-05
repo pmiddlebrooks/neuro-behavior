@@ -7,7 +7,7 @@ paths = get_paths;
 
 % =============================    Configuration    =============================
 % Data type selection
-dataType = 'reach';  % 'reach' or 'naturalistic'
+dataType = 'naturalistic';  % 'reach' or 'naturalistic'
 
 % Sliding window size (seconds)
 slidingWindowSize = 20;
@@ -742,7 +742,7 @@ if makePlots
                     plot(startS{a}, d2{a}, '-', 'Color', areaColors{a}, 'LineWidth', 2, 'DisplayName', areas{a});
                 end
             end
-            if exist('startBlock2', 'var')
+            if exist('startBlock2', 'var') && strcmp(dataType, 'reach')
                 xline(startBlock2, 'Color', [.8 0 0], 'LineWidth', 3);
             end
                      
@@ -755,6 +755,9 @@ if makePlots
             title('All Areas - d2');
             legend('Location', 'best');
             grid on;
+            % Ensure y-axis tick labels are visible
+            set(gca, 'YTickLabelMode', 'auto');
+            set(gca, 'YTickMode', 'auto');
         end
     end
 
@@ -768,6 +771,9 @@ if makePlots
             % Plot real data first (so permutation line appears on top)
             plot(startS{a}, d2{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'Real data'); 
             ylabel('d2', 'Color', [0 0 1]); ylim([0 0.5]);
+            % Ensure y-axis tick labels are visible
+            set(gca, 'YTickLabelMode', 'auto');
+            set(gca, 'YTickMode', 'auto');
             
             % Plot permutation overall mean ± std as horizontal line if available
             if enablePermutations && exist('d2Permuted', 'var') && ~isempty(d2Permuted{a})
@@ -801,6 +807,9 @@ if makePlots
             yyaxis right;
             plot(startS{a}, popActivityWindows{a}, '-', 'Color', [0 0 0], 'LineWidth', 2, 'DisplayName', 'PopActivity Windows');
             ylabel('PopActivity Windows', 'Color', [0 0 0]); ylim('auto');
+            % Ensure right y-axis tick labels are visible
+            set(gca, 'YTickLabelMode', 'auto');
+            set(gca, 'YTickMode', 'auto');
         end
         
         % COMMENTED OUT: mrBr plotting code (preserved for future use)
@@ -854,7 +863,17 @@ if makePlots
             xlim([startS{a}(1) startS{a}(end)])
         end
         title(sprintf('%s - d2 (blue, left) and PopActivity Windows (red, right)', areas{a})); 
-        xlabel('Time (s)'); grid on; set(gca, 'XTickLabelMode', 'auto'); set(gca, 'YTickLabelMode', 'auto');
+        xlabel('Time (s)'); grid on; 
+        set(gca, 'XTickLabelMode', 'auto'); 
+        % Ensure both left and right y-axes have visible tick labels
+        yyaxis left;
+        set(gca, 'YTickLabelMode', 'auto');
+        set(gca, 'YTickMode', 'auto');
+        if ~isempty(popActivityWindows{a}) && any(~isnan(popActivityWindows{a}))
+            yyaxis right;
+            set(gca, 'YTickLabelMode', 'auto');
+            set(gca, 'YTickMode', 'auto');
+        end
     end
 
     if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')

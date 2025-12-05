@@ -23,7 +23,7 @@ maxSpikesPerBin = 50;
 minBinsPerWindow = 1000;
 
 % Areas to analyze
-areasToTest = 1:4;
+areasToTest = 2;
 
 % PCA options
 pcaFlag = 0;           % Set to 1 to use PCA
@@ -33,6 +33,7 @@ nDim = 4;              % Number of PCA dimensions to use
 % Threshold options
 thresholdFlag = 1;     % Set to 1 to use threshold method
 thresholdPct = 0.75;   % Threshold as percentage of median
+thresholdPct = 1;   % Threshold as percentage of median
 
 % Optimal bin/window size search parameters
 candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15];
@@ -44,6 +45,7 @@ fprintf('\n=== Loading %s data ===\n', dataType);
 if strcmp(dataType, 'reach')
     % Load reach data
     reachDataFile = fullfile(paths.reachDataPath, 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
+    reachDataFile = fullfile(paths.reachDataPath, 'test/reach_test.mat');
     % reachDataFile = fullfile(paths.reachDataPath, 'makeSpikes.mat');
     
     [~, dataBaseName, ~] = fileparts(reachDataFile);
@@ -91,11 +93,11 @@ else
     error('Invalid dataType. Must be ''reach'' or ''naturalistic''');
 end
 
-% =============================    Analysis    =============================
+%% =============================    Analysis    =============================
 fprintf('\n=== %s Data Avalanche Analysis ===\n', dataType);
 
 % Adjust areasToTest based on which areas have data
-areasToTest = areasToTest(~cellfun(@isempty, idList));
+% areasToTest = areasToTest(~cellfun(@isempty, idList));
 
 % Step 1-2: Apply PCA to original data if requested
 fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');
@@ -120,8 +122,9 @@ optimalBinSize = zeros(1, length(areas));
 optimalWindowSize = zeros(1, length(areas));
 for a = areasToTest
     thisDataMat = reconstructedDataMat{a};
-    [optimalBinSize(a), optimalWindowSize(a)] = ...
-        find_optimal_bin_and_window(thisDataMat, candidateFrameSizes, candidateWindowSizes, minSpikesPerBin, maxSpikesPerBin, minBinsPerWindow);
+        thisFiringRate = sum(thisDataMat(:) / (size(thisDataMat, 1)/1000));
+        [optimalBinSize(a), optimalWindowSize(a)] = ...
+            find_optimal_bin_and_window(thisFiringRate, minSpikesPerBin, minBinsPerWindow);
     fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
 end
 
@@ -156,6 +159,7 @@ for a = areasToTest
     % Step 7: Apply thresholding if needed
     if thresholdFlag
         aDataMat_dcc = round(sum(aDataMat_dcc, 2));
+        % aDataMat_dcc = mean(aDataMat_dcc, 2);
         threshSpikes = thresholdPct * median(aDataMat_dcc);
         aDataMat_dcc(aDataMat_dcc < threshSpikes) = 0;
     else
