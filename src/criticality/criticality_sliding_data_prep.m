@@ -6,7 +6,7 @@
 
 % =============================    Configuration    =============================
 % Data type selection
-dataType = 'schall';  % 'reach' , 'naturalistic' , 'schall'
+dataType = 'schall';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
 
 % Initialize paths
 paths = get_paths;
@@ -61,7 +61,6 @@ if strcmp(dataType, 'naturalistic')
 
     saveDir = fullfile(paths.dropPath, 'criticality/results');
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
-    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_av_win%d_step%d.mat', slidingWindowSize, avStepSize));
 
 
     % Areas to analyze
@@ -120,7 +119,6 @@ elseif strcmp(dataType, 'reach')
     [~, dataBaseName, ~] = fileparts(reachDataFile);
     saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
-    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_av_win%d_step%d.mat', slidingWindowSize, avStepSize));
 
     % Areas to analyze
     areasToTest = 1:4;
@@ -132,8 +130,9 @@ elseif strcmp(dataType, 'reach')
 elseif strcmp(dataType, 'schall')
 
     % For reach data: specify session name (uncomment and set one)
-    sessionName =  'broca/bp240n02.mat';
-    % sessionName =  'joule/jp121n02.mat';
+    sessionName =  'broca/bp229n02-mm.mat';
+    % sessionName =  'broca/bp240n02.mat';
+    sessionName =  'joule/jp121n02.mat';
 
     % Validate sessionName is provided
     if ~exist('sessionName', 'var') || isempty(sessionName)
@@ -141,20 +140,23 @@ elseif strcmp(dataType, 'schall')
     end
 
     % Load reach data
-    reachDataFile = fullfile(paths.schallDataPath, sessionName);
+    schallDataFile = fullfile(paths.schallDataPath, sessionName);
 
-    [~, dataBaseName, ~] = fileparts(reachDataFile);
+    [~, dataBaseName, ~] = fileparts(schallDataFile);
     saveDir = fullfile(paths.dropPath, 'schall/results', dataBaseName);
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
 
-    dataS = load(reachDataFile);
+    dataS = load(schallDataFile);
 responseOnset = convert_to_session_time(dataS.responseOnset, dataS.trialOnset);
 responseOnset = responseOnset / 1000;
 responseOnset(responseOnset < opts.collectStart) = [];
 responseOnset(responseOnset > opts.collectEnd) = [];
 
 
-    opts.collectEnd = 45*60;
+    opts.collectStart = 60*60;
+    opts.collectEnd = 105*60;
+    % opts.collectStart = 0*60;
+    % opts.collectEnd = 45*60;
 
     [dataMat, idLabels, areaLabels] = neural_matrix_schall_fef(dataS, opts);
     areas = {'FEF'};
@@ -172,10 +174,45 @@ responseOnset(responseOnset > opts.collectEnd) = [];
     [~, dataBaseName, ~] = fileparts(reachDataFile);
     saveDir = fullfile(paths.dropPath, 'schall/results', dataBaseName);
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
-    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_av_win%d_step%d.mat', slidingWindowSize, avStepSize));
 
     % Areas to analyze
     areasToTest = 1;
+
+
+        % =============================    Kate Hong whisker/lick Data Loading    =============================
+elseif strcmp(dataType, 'hong')
+paths = get_paths;
+% sp: spike depths spikeDepths
+load(fullfile(paths.dropPath, 'hong/data', 'spikeData.mat'));
+
+% load T_allUnits: table of single units used
+load(fullfile(paths.dropPath, 'hong/data', 'T_allUnits2.mat'));
+
+% Load T: behavior table for the session
+load(fullfile(paths.dropPath, 'hong/data', 'behaviorTable.mat'));
+
+opts.collectEnd = min(T.startTime_oe(end)+max(diff(T.startTime_oe)), max(sp.st));
+
+data.sp = sp;
+data.ci = T_allUnits;
+
+[dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_hong(data, opts);
+
+    areas = {'S1', 'SC'};
+    idS1 = find(strcmp(areaLabels, 'S1'));
+    idSC = find(strcmp(areaLabels, 'SC'));
+    idMatIdx = {idS1, idSC};
+    idLabel = {idLabels(idS1), idLabels(idSC)};
+    % Print summary
+    fprintf('%d S1\n', length(idS1));
+    fprintf('%d SC\n', length(idSC));
+
+    saveDir = fullfile(paths.dropPath, 'hong/results');
+    if ~exist(saveDir, 'dir'); mkdir(saveDir); end
+
+    % Areas to analyze
+    areasToTest = 1:2;
+
 
 else
     error('Invalid dataType. Must be ''reach'' or ''naturalistic''');

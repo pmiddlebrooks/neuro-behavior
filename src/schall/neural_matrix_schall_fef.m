@@ -43,7 +43,7 @@ else
     firstSecond = 0;
 end
 if ~isempty(opts.collectEnd)
-    lastSecond = firstSecond + opts.collectEnd;
+    lastSecond = opts.collectEnd;
 else
     lastSecond = ceil(max(data.trialOnset(end) + data.trialDuration(end)));
 end
@@ -68,7 +68,7 @@ areaLabels(brainAreas == 1) = {'FEF'};
 
 % Preallocate data matrix
 if numFrames > 60 * 60 / 0.001
-    dataMat = int8(zeros(numFrames, length(idLabels)));
+    dataMat = single(zeros(numFrames, length(idLabels)));
 else
     dataMat = zeros(numFrames, length(idLabels));
 end

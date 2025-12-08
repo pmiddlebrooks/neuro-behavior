@@ -24,7 +24,7 @@ analyzeMrBr = false;   % compute mrBr
 
 % NEW: Permutation testing flags
 enablePermutations = true;  % Set to true to perform circular permutation testing
-nShuffles = 10;  % Number of circular permutations to perform
+nShuffles = 3;  % Number of circular permutations to perform
 
 % NEW: Modulation analysis flags
 analyzeModulation = false;  % Set to true to split into modulated/unmodulated
@@ -41,7 +41,7 @@ maxSpikesPerBin = 50;
 minBinsPerWindow = 1000;
 
 % Bin/window size selection mode
-useOptimalBinWindowFunction = false;  % Set to true to use find_optimal_bin_and_window.m
+useOptimalBinWindowFunction = true;  % Set to true to use find_optimal_bin_and_window.m
                                      % Set to false to manually define optimalBinSize and optimalWindowSize below
 % Manual bin/window size definitions (used only if useOptimalBinWindowFunction = false)
 % Define as arrays with one value per area: [M23, M56, DS, VS]
@@ -63,8 +63,8 @@ thresholdPct = 1;   % Threshold as percentage of median
 % Optimal bin/window size search parameters
 pOrder = 10;
 critType = 2;
-d2StepSize = .02;
-d2StepSize = repmat(.2,1,4);
+d2StepSize = .05;
+d2StepSize = repmat(.05,1,4);
 
 % =============================    Data Validation    =============================
 % Verify that required variables are in workspace (loaded by criticality_sliding_data_prep.m)
@@ -160,6 +160,7 @@ if useOptimalBinWindowFunction
         thisFiringRate = sum(thisDataMat(:) / (size(thisDataMat, 1)/1000));
         [optimalBinSize(a), optimalWindowSize(a)] = ...
             find_optimal_bin_and_window(thisFiringRate, minSpikesPerBin, minBinsPerWindow);
+        optimalBinSize(a) = max(optimalBinSize(a), .02);
         fprintf('Area %s (all neurons): optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
     end
 else
@@ -638,7 +639,7 @@ end
 save(resultsPath, 'results'); 
 fprintf('Saved %s d2/mrBr to %s\n', dataType, resultsPath);
 
-% =============================    Plotting    =============================
+%% =============================    Plotting    =============================
 if makePlots
     % Extract filename prefix for titles and filenames
     if exist('dataBaseName', 'var') && ~isempty(dataBaseName)
@@ -664,7 +665,7 @@ if makePlots
     
     
     % ========== Plot 1: Time series of criticality measures ==========
-    figure(908); clf;
+    figure(909); clf;
     set(gcf, 'Units', 'pixels');
     set(gcf, 'Position', targetPos);
     numRows = length(areasToTest) + 1;  % Add one row for combined d2 plot
@@ -832,6 +833,11 @@ if makePlots
                     end
                 end
             end
+        end
+        % Add a line depicting which trial type it is
+        if strcmp(dataType, 'hong')
+            yyaxis left;
+plot(T.startTime_oe, T.trialType/8, 'Color', [1 .3 .3], 'LineWidth', 2, 'LineStyle', '-')           
         end
         
         if ~isempty(startS{a})

@@ -25,6 +25,7 @@ function [spikeData] = spike_times_per_area_hong(opts)
 %   spikeData - N x 3 matrix: [spikeTimeSec, neuronId, areaNumeric]
 %       areaNumeric: 1=S1, 2=SC
 
+error('Update this to match neural_matrix_hong.m')
 % Check if required variables exist in workspace
 if ~exist('T', 'var') || ~exist('spikeDepths', 'var') || ~exist('sc', 'var') || ~exist('st', 'var') || ~exist('cg', 'var')
     error('Required variables (T, spikeDepths, sc, st, cg) not found in workspace. Run load_data_hong.m first.');

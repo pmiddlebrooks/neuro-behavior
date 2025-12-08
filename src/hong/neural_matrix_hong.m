@@ -34,19 +34,15 @@ function [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_hong(data, 
 %   rmvNeurons  - Logical vector indicating neurons removed based on firing rate criteria
 %
 % Variables:
-%   spikeTimesSec - Spike times in seconds
+%   spikeTimes - Spike times in seconds
 %   uniqueClusters - Unique cluster IDs that are 'good' or 'mua'
 %   clusterDepths - Mean depth for each cluster
 
-% Check if required fields exist in data struct
-if ~isfield(data, 'spikeTimes') || ~isfield(data, 'spikeClusters') || ~isfield(data, 'spikeDepths') || ~isfield(data, 'ci')
-    error('Required fields (spikeTimes, spikeClusters, spikeDepths, ci) not found in data struct.');
-end
 
 % Extract data from struct
-spikeClusters = data.spikeClusters;
-spikeDepths = data.spikeDepths;
-cg = data.ci;
+spikeClusters = data.sp.clu;
+spikeTimes = data.sp.st;
+spikeDepths = data.sp.spikeDepths;
 
 % Get sampling frequency (default to 30000 Hz if not specified)
 if ~isfield(opts, 'fsSpike') || isempty(opts.fsSpike)
@@ -55,11 +51,11 @@ else
     fsSpike = opts.fsSpike;
 end
 
-% Convert spike times from uint64 sample units to single precision seconds
-% This is memory-efficient: single precision uses half the memory of double
-% and provides sufficient precision for time values (millisecond precision up to ~3.4 days)
-spikeTimesSec = single(data.spikeTimes) / single(fsSpike);
-
+% % Convert spike times from uint64 sample units to single precision seconds
+% % This is memory-efficient: single precision uses half the memory of double
+% % and provides sufficient precision for time values (millisecond precision up to ~3.4 days)
+% spikeTimes = single(spikeTimes) / single(fsSpike);
+% 
 % Determine collection time window
 if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
     firstSecond = 0;
@@ -68,33 +64,17 @@ else
 end
 
 if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
-    % Use maximum trial end time if T is provided, otherwise use last spike time
-    if isfield(data, 'T') && isfield(data.T, 'endTime_oe')
-        lastSecond = max(data.T.endTime_oe);
-    else
-        % Estimate from last spike time (now in seconds)
-        lastSecond = double(max(spikeTimesSec)); % Convert to double for scalar operations
-    end
+        lastSecond = double(max(spikeTimes)); % Convert to double for scalar operations
 else
     lastSecond = firstSecond + opts.collectEnd;
 end
 
-% Filter spikes to collection window
-spikeMask = spikeTimesSec >= firstSecond & spikeTimesSec < lastSecond;
-spikeTimesSec = spikeTimesSec(spikeMask);
+% Filter spikes to collection window and valid clusters
+cluterIncludeIdx = ismember(spikeClusters, data.sp.cids);
+spikeMask = spikeTimes >= firstSecond & spikeTimes < lastSecond & cluterIncludeIdx;
+spikeTimes = spikeTimes(spikeMask);
 spikeClusters = spikeClusters(spikeMask);
 spikeDepthsFiltered = spikeDepths(spikeMask);
-
-% Get unique clusters that are 'good' or 'mua'
-validGroups = {'good', 'mua'};
-validClusterMask = ismember(cg.group, validGroups);
-validClusterIds = cg.cluster_id(validClusterMask);
-
-% Filter to only include spikes from valid clusters
-clusterMask = ismember(spikeClusters, validClusterIds);
-spikeTimesSec = spikeTimesSec(clusterMask);
-spikeClusters = spikeClusters(clusterMask);
-spikeDepthsFiltered = spikeDepthsFiltered(clusterMask);
 
 % Get unique cluster IDs that have spikes in the collection window
 uniqueClusters = unique(spikeClusters);
@@ -160,7 +140,7 @@ end
 % Loop through each cluster and bin spike counts
 for i = 1:nClusters
     clusterId = uniqueClusters(i);
-    iSpikeTime = spikeTimesSec(spikeClusters == clusterId);
+    iSpikeTime = spikeTimes(spikeClusters == clusterId);
     
     % Shift spike times relative to collection start
     iSpikeTime = iSpikeTime - firstSecond;

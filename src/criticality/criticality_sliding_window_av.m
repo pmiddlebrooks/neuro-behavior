@@ -7,8 +7,8 @@ paths = get_paths;
 
 % =============================    Configuration    =============================
 % Sliding window and step size (seconds)
-slidingWindowSize = 180;  % seconds - user specified
-avStepSize = 30;          % seconds - user specified
+slidingWindowSize = 120;  % seconds - user specified
+avStepSize = 10;          % seconds - user specified
 
 % Flags
 loadExistingResults = false;
@@ -16,7 +16,7 @@ makePlots = true;
 
 % Permutation testing flags
 enablePermutations = true;  % Set to true to perform circular permutation testing
-nShuffles = 10;  % Number of circular permutations to perform
+nShuffles = 3;  % Number of circular permutations to perform
 
 % Analysis parameters
 minNeurons = 10;
