@@ -771,17 +771,25 @@ zeroBins = find(wPopActivity == 0);
 if length(zeroBins) > 1 && any(diff(zeroBins)>1)
     try
         % Create avalanche data
-        asdfMat = rastertoasdf2(wPopActivity', binSize*1000, 'CBModel', 'Spikes', 'DS');
-        Av = avprops(asdfMat, 'ratio', 'fingerprint');
+        % asdfMat = rastertoasdf2(wPopActivity', binSize*1000, 'CBModel', 'Spikes', 'DS');
+        % Av = avprops(asdfMat, 'ratio', 'fingerprint');
+        % 
+        % % Calculate avalanche parameters
+        % [tau, pSz, tauC, pSzC, alpha, pDr, paramSD, decades] = avalanche_log(Av, 0);
         
-        % Calculate avalanche parameters
-        [tau, pSz, tauC, pSzC, alpha, pDr, paramSD, decades] = avalanche_log(Av, 0);
-        
+            % Woody's new code:
+[sizes, durs] = getAvalanches(wPopActivity', .5, 1);
+gof = .8;
+plotAv = 0;
+[tau, plrS, minavS, maxavS, ~, ~, ~] = plfit2023(sizes, gof, plotAv, 0);
+[alpha, plrD, minavD, maxavD, ~, ~, ~] = plfit2023(durs, gof, plotAv, 0);
+[paramSD, sigmaNuZInvStd, logCoeff] = size_given_duration(sizes, durs, 'durmin', minavD, 'durmax', maxavD)
+
         % dcc (distance to criticality from avalanche analysis)
         dcc = distance_to_criticality(tau, alpha, paramSD);
         
         % kappa (avalanche shape parameter)
-        kappa = compute_kappa(Av.size);
+        kappa = compute_kappa(sizes);
     catch
         % Leave as NaN if calculation fails
     end

@@ -2,12 +2,13 @@
 % Criticality Sliding Window Analysis Script (d2 + mrBr)
 % Unified script for analyzing both reach data and naturalistic data
 % Analyzes data using sliding window approach; saves results to data-specific folders
-
-% =============================    Configuration    =============================
+%
 % Note: Data should be loaded by criticality_sliding_data_prep.m before running this script
 % Expected workspace variables: dataType, dataMat, areas, idMatIdx, idLabel, opts, saveDir, 
 %                                dataR (for reach), startBlock2 (for reach), reachStart (for reach), 
 %                                reachClass (for reach), sessionName (for reach), spikeData (if analyzeModulation)
+
+% =============================    Configuration    =============================
 
 % Sliding window size (seconds)
 slidingWindowSize = 20;
@@ -48,7 +49,6 @@ optimalBinSize = repmat(.05, 1, 4);      % Bin sizes in seconds (e.g., 10 ms = 0
 optimalWindowSize = repmat(slidingWindowSize, 1, 4);          % Window sizes in seconds
 
 % Areas to analyze
-areasToTest = 1:4;
 areasToPlot = areasToTest;
 
 % PCA options
@@ -58,7 +58,7 @@ nDim = 4;              % Number of PCA dimensions to use
 
 % Threshold options
 thresholdFlag = 1;     % Set to 1 to use threshold method
-thresholdPct = 0.75;   % Threshold as percentage of median
+thresholdPct = 1;   % Threshold as percentage of median
 
 % Optimal bin/window size search parameters
 pOrder = 10;
@@ -92,7 +92,7 @@ else
     resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
 end
 
-% Load spike data for modulation analysis if needed
+% Load spike data for modulation analysis if needed (fallback if not loaded by prep script)
 if analyzeModulation
     if isempty(spikeData) || ~exist('spikeData', 'var')
         fprintf('\n=== Loading spike data for modulation analysis ===\n');
@@ -102,11 +102,8 @@ if analyzeModulation
             end
             spikeData = dataR.CSV(:,1:2);
         else
-            % For naturalistic, spikeData should have been loaded by get_standard_data
-            if ~exist('spikeTimes', 'var') || ~exist('spikeClusters', 'var')
-                error('spikeTimes and spikeClusters must be available for naturalistic data modulation analysis');
-            end
-            spikeData = [spikeTimes, spikeClusters];
+            % For naturalistic/schall, spikeData should have been loaded by prep script
+            error('spikeData must be loaded by criticality_sliding_data_prep.m for modulation analysis');
         end
         fprintf('Loaded spike data: %d spikes from %d neurons\n', size(spikeData, 1), length(unique(spikeData(:,2))));
     end
@@ -286,7 +283,8 @@ for a = areasToTest
         nDim = 1:forDim; 
         aDataMat = score(:,nDim) * coeff(:,nDim)' + mu;
     end
-    popActivity{a} = round(sum(aDataMat, 2));
+    % popActivity{a} = round(sum(aDataMat, 2));
+    popActivity{a} = mean(aDataMat, 2);
     [startS{a}, mrBr{a}, d2{a}, popActivityWindows{a}, popActivityFull{a}] = ...
         deal(nan(1, numWindows));
     for w = 1:numWindows
@@ -345,7 +343,8 @@ for a = areasToTest
             end
             
             % Calculate population activity for permuted data
-            permutedPopActivity = round(sum(permutedDataMat, 2));
+            % permutedPopActivity = round(sum(permutedDataMat, 2));
+            permutedPopActivity = mean(permutedDataMat, 2);
             
             % Run sliding window analysis on permuted data
             for w = 1:numWindows
@@ -384,7 +383,8 @@ for a = areasToTest
         % Analyze modulated neurons
         if sum(modulatedIndices) >= 5
             modulatedDataMat = aDataMat(:, modulatedIndices);
-            popActivityModulated{a} = round(sum(modulatedDataMat, 2));
+            % popActivityModulated{a} = round(sum(modulatedDataMat, 2));
+            popActivityModulated{a} = mean(modulatedDataMat, 2);
             [startSModulated{a}, mrBrModulated{a}, d2Modulated{a}, popActivityWindowsModulated{a}, popActivityFullModulated{a}] = ...
                 deal(nan(1, numWindows));
 
@@ -413,7 +413,8 @@ for a = areasToTest
         % Analyze unmodulated neurons
         if sum(unmodulatedIndices) >= 5
             unmodulatedDataMat = aDataMat(:, unmodulatedIndices);
-            popActivityUnmodulated{a} = round(sum(unmodulatedDataMat, 2));
+            % popActivityUnmodulated{a} = round(sum(unmodulatedDataMat, 2));
+            popActivityUnmodulated{a} = mean(unmodulatedDataMat, 2);
             [startSUnmodulated{a}, mrBrUnmodulated{a}, d2Unmodulated{a}, popActivityWindowsUnmodulated{a}, popActivityFullUnmodulated{a}] = ...
                 deal(nan(1, numWindows));
 
@@ -639,6 +640,18 @@ fprintf('Saved %s d2/mrBr to %s\n', dataType, resultsPath);
 
 % =============================    Plotting    =============================
 if makePlots
+    % Extract filename prefix for titles and filenames
+    if exist('dataBaseName', 'var') && ~isempty(dataBaseName)
+        filePrefix = dataBaseName(1:min(8, length(dataBaseName)));
+    elseif strcmp(dataType, 'reach') && exist('sessionName', 'var') && ~isempty(sessionName)
+        filePrefix = sessionName(1:min(8, length(sessionName)));
+    elseif exist('saveDir', 'var') && ~isempty(saveDir)
+        [~, dirName, ~] = fileparts(saveDir);
+        filePrefix = dirName(1:min(8, length(dirName)));
+    else
+        filePrefix = '';
+    end
+    
     % Detect monitors and size figure to full screen (prefer second monitor if present)
     monitorPositions = get(0, 'MonitorPositions');
     monitorOne = monitorPositions(1, :);
@@ -649,15 +662,9 @@ if makePlots
         targetPos = monitorOne;
     end
     
-    % Get reach onset times
-    if strcmp(dataType, 'reach')
-        reachOnsetTimes = dataR.R(:,1) / 1000; % Convert from ms to seconds
-    else
-        reachOnsetTimes = []; % No reach onsets for naturalistic data
-    end
     
     % ========== Plot 1: Time series of criticality measures ==========
-    figure(900); clf;
+    figure(908); clf;
     set(gcf, 'Units', 'pixels');
     set(gcf, 'Position', targetPos);
     numRows = length(areasToTest) + 1;  % Add one row for combined d2 plot
@@ -794,12 +801,12 @@ if makePlots
         % end
 
         % Add vertical lines at reach onsets (only for reach data)
-        if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
+        if ~isempty(reachStart) && strcmp(dataType, 'reach')
             yyaxis left;
             % Filter reach onsets to only show those within the current plot's time range
             if ~isempty(startS{a})
                 plotTimeRange = [startS{a}(1), startS{a}(end)];
-                reachOnsetsInRange = reachOnsetTimes(reachOnsetTimes >= plotTimeRange(1) & reachOnsetTimes <= plotTimeRange(2));
+                reachOnsetsInRange = reachStart(reachStart >= plotTimeRange(1) & reachStart <= plotTimeRange(2));
 
                 if ~isempty(reachOnsetsInRange)
                     for i = 1:length(reachOnsetsInRange)
@@ -807,6 +814,21 @@ if makePlots
                     end
                     if exist('startBlock2', 'var')
                         xline(startBlock2, 'Color', [1 0 0], 'LineWidth', 3);
+                    end
+                end
+            end
+        end
+        % Add vertical lines at reach onsets (only for choice countermanding data)
+        if strcmp(dataType, 'schall')
+            yyaxis left;
+            % Filter reach onsets to only show those within the current plot's time range
+            if ~isempty(startS{a})
+                plotTimeRange = [startS{a}(1), startS{a}(end)];
+                reachOnsetsInRange = responseOnset(responseOnset >= plotTimeRange(1) & responseOnset <= plotTimeRange(2));
+
+                if ~isempty(reachOnsetsInRange)
+                    for i = 1:length(reachOnsetsInRange)
+                        xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
                     end
                 end
             end
@@ -829,13 +851,28 @@ if makePlots
         end
     end
 
-    if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
-        sgtitle(sprintf('%s d2 (blue, left) and PopActivity Windows (red, right) with reach onsets (gray dashed) - win=%gs', dataType, slidingWindowSize));
-    else
-        sgtitle(sprintf('%s d2 (blue, left) and PopActivity Windows (red, right) - win=%gs', dataType, slidingWindowSize));
-    end
+    % Extract filename prefix for title
     if strcmp(dataType, 'reach') && exist('sessionName', 'var') && ~isempty(sessionName)
-        exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+        filePrefix = sessionName(1:min(8, length(sessionName)));
+    else
+        filePrefix = '';
+    end
+    
+    if ~isempty(reachStart) && strcmp(dataType, 'reach')
+        if ~isempty(filePrefix)
+            sgtitle(sprintf('[%s] %s d2 (blue, left) and PopActivity Windows (red, right) with reach onsets (gray dashed) - win=%gs', filePrefix, dataType, slidingWindowSize));
+        else
+            sgtitle(sprintf('%s d2 (blue, left) and PopActivity Windows (red, right) with reach onsets (gray dashed) - win=%gs', dataType, slidingWindowSize));
+        end
+    else
+        if ~isempty(filePrefix)
+            sgtitle(sprintf('[%s] %s d2 (blue, left) and PopActivity Windows (red, right) - win=%gs', filePrefix, dataType, slidingWindowSize));
+        else
+            sgtitle(sprintf('%s d2 (blue, left) and PopActivity Windows (red, right) - win=%gs', dataType, slidingWindowSize));
+        end
+    end
+    if ~isempty(filePrefix)
+        exportgraphics(gcf, fullfile(saveDir, sprintf('%s_criticality_%s_ar%s_win%d.png', filePrefix, dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
     else
         exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_ar%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
     end
@@ -903,13 +940,18 @@ if makePlots
             grid on;
         end
         
-        sgtitle(sprintf('%s Population Activity vs Criticality Correlations - win=%gs', dataType, slidingWindowSize));
-        if strcmp(dataType, 'reach') && exist('sessionName', 'var') && ~isempty(sessionName)
-            exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+        if ~isempty(filePrefix)
+            sgtitle(sprintf('[%s] %s Population Activity vs Criticality Correlations - win=%gs', filePrefix, dataType, slidingWindowSize));
+        else
+            sgtitle(sprintf('%s Population Activity vs Criticality Correlations - win=%gs', dataType, slidingWindowSize));
+        end
+        if ~isempty(filePrefix)
+            exportgraphics(gcf, fullfile(saveDir, sprintf('%s_criticality_%s_correlations%s_win%d.png', filePrefix, dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
+            fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('%s_criticality_%s_correlations%s_win%d.png', filePrefix, dataType, filenameSuffix, slidingWindowSize)));
         else
             exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
+            fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)));
         end
-        fprintf('Saved %s correlation scatter plots to: %s\n', dataType, fullfile(saveDir, sprintf('criticality_%s_correlations%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)));
     end
 
     % ========== Plot 3: Modulated vs unmodulated ==========
@@ -940,9 +982,9 @@ if makePlots
                 ylabel('d2'); grid on;
                 legend({'Modulated', 'Unmodulated'}, 'Location', 'best', 'AutoUpdate', 'off');
                 % Add vertical lines at reach onsets (only for reach data)
-                if ~isempty(reachOnsetTimes) && strcmp(dataType, 'reach')
-                    for i = 1:length(reachOnsetTimes)
-                        xline(reachOnsetTimes(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
+                if ~isempty(reachStart) && strcmp(dataType, 'reach')
+                    for i = 1:length(reachStart)
+                        xline(reachStart(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
                     end
                 end
             end
@@ -951,9 +993,13 @@ if makePlots
             xlabel('Time (s)'); grid on; set(gca, 'XTickLabelMode', 'auto'); set(gca, 'YTickLabelMode', 'auto');
         end
 
-        sgtitle(sprintf('%s Modulated neurons d2 win=%gs', dataType, slidingWindowSize));
-        if strcmp(dataType, 'reach') && exist('sessionName', 'var') && ~isempty(sessionName)
-            exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated%s_win%d_%s.png', dataType, filenameSuffix, slidingWindowSize, sessionName)), 'Resolution', 300);
+        if ~isempty(filePrefix)
+            sgtitle(sprintf('[%s] %s Modulated neurons d2 win=%gs', filePrefix, dataType, slidingWindowSize));
+        else
+            sgtitle(sprintf('%s Modulated neurons d2 win=%gs', dataType, slidingWindowSize));
+        end
+        if ~isempty(filePrefix)
+            exportgraphics(gcf, fullfile(saveDir, sprintf('%s_criticality_%s_modulated_vs_unmodulated%s_win%d.png', filePrefix, dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
         else
             exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_%s_modulated_vs_unmodulated%s_win%d.png', dataType, filenameSuffix, slidingWindowSize)), 'Resolution', 300);
         end

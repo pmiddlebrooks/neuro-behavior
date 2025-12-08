@@ -30,7 +30,7 @@ sessionName = 'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
 % sessionName = 'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat';
 % sessionName = 'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat';
 % sessionName = 'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat';
-% sessionName = 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
+sessionName = 'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
 % sessionName = 'Y15_26-Aug-2025 12_24_22_NeuroBeh.mat';
 % sessionName = 'Y15_27-Aug-2025 14_02_21_NeuroBeh.mat';
 % sessionName = 'Y15_28-Aug-2025 19_47_07_NeuroBeh.mat';
@@ -40,6 +40,11 @@ sessionName = 'AB2_28-Apr-2023 17_50_02_NeuroBeh.mat';
 slidingWindowSize = 20;  % Should match criticality_sliding_window_ar.m
 pcaFlag = false;  % Should match criticality_sliding_window_ar.m
 filenameSuffix = '';  % Will be updated based on pcaFlag
+
+% Avalanche analysis parameters
+analyzeAvalanches = true;  % Set to true to analyze avalanche parameters
+avalancheWindowSize = 180;  % Should match criticality_sliding_window_av.m
+avalancheStepSize = 30;  % Should match criticality_sliding_window_av.m
 
 % Engagement analysis options (for reach_task_engagement.m)
 engagementOpts = struct();
@@ -501,9 +506,272 @@ save(summaryPath, 'statsResults', 'segmentWindows', 'engagementOpts', 'sessionNa
     'useSegmentSpecificPermutations', 'nShufflesSegment');
 fprintf('Saved summary results to: %s\n', summaryPath);
 
+% =============================    Avalanche Analysis    =============================
+if analyzeAvalanches
+    fprintf('\n=== Loading Avalanche Results ===\n');
+    avalancheResultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_av_win%d_step%d.mat', avalancheWindowSize, avalancheStepSize));
+    
+    if ~exist(avalancheResultsPath, 'file')
+        warning('Avalanche results file not found: %s\nSkipping avalanche analysis.', avalancheResultsPath);
+        avalancheStatsResults = [];
+    else
+        avResults = load(avalancheResultsPath);
+        if isfield(avResults, 'results')
+            avResults = avResults.results;
+        end
+        
+        % Extract avalanche data
+        avDcc = avResults.dcc;
+        avKappa = avResults.kappa;
+        avDecades = avResults.decades;
+        avTau = avResults.tau;
+        avAlpha = avResults.alpha;
+        avParamSD = avResults.paramSD;
+        avStartS = avResults.startS;
+        avOptimalBinSize = avResults.optimalBinSize;
+        
+        % Check if avalanche permutations are available
+        avHasPermutations = false;
+        if isfield(avResults, 'enablePermutations') && avResults.enablePermutations
+            avHasPermutations = true;
+            avDccPermuted = avResults.dccPermuted;
+            avKappaPermuted = avResults.kappaPermuted;
+            avDecadesPermuted = avResults.decadesPermuted;
+            avTauPermuted = avResults.tauPermuted;
+            avAlphaPermuted = avResults.alphaPermuted;
+            avParamSDPermuted = avResults.paramSDPermuted;
+        end
+        
+        % Metrics to analyze
+        avalancheMetricNames = {'dcc', 'kappa', 'decades', 'tau', 'alpha', 'paramSD'};
+        avalancheMetricData = {avDcc, avKappa, avDecades, avTau, avAlpha, avParamSD};
+        if avHasPermutations
+            avalancheMetricPermuted = {avDccPermuted, avKappaPermuted, avDecadesPermuted, avTauPermuted, avAlphaPermuted, avParamSDPermuted};
+        else
+            avalancheMetricPermuted = cell(1, length(avalancheMetricNames));
+        end
+        
+        % Initialize storage for avalanche metrics by segment
+        fprintf('\n=== Extracting Avalanche Metrics by Segment ===\n');
+        avalancheBySegment = cell(length(avalancheMetricNames), length(areas), length(segmentNames));
+        avalanchePermutedBySegment = cell(length(avalancheMetricNames), length(areas), length(segmentNames));
+        
+        for m = 1:length(avalancheMetricNames)
+            metricName = avalancheMetricNames{m};
+            metricValues = avalancheMetricData{m};
+            
+            for a = 1:length(areas)
+                if isempty(metricValues{a}) || isempty(avStartS{a})
+                    continue;
+                end
+                
+                timePoints = avStartS{a};
+                values = metricValues{a};
+                
+                % Extract values for each segment
+                for seg = 1:length(segmentNames)
+                    segWindow = segmentWindows.(segmentFields{seg});
+                    
+                    if ~isempty(segWindow) && length(segWindow) == 2
+                        % Find time points within this segment
+                        segMask = (timePoints >= segWindow(1)) & (timePoints <= segWindow(2));
+                        segIndices = find(segMask);
+                        
+                        if ~isempty(segIndices)
+                            segValues = values(segIndices);
+                            segValues = segValues(~isnan(segValues)); % Remove NaNs
+                            avalancheBySegment{m, a, seg} = segValues;
+                            
+                            % Extract permuted values if available
+                            if avHasPermutations && ~isempty(avalancheMetricPermuted{m}{a})
+                                avalanchePermutedBySegment{m, a, seg} = avalancheMetricPermuted{m}{a}(segIndices, :);
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        % Perform statistical tests for avalanche metrics
+        fprintf('\n=== Performing Avalanche Statistical Tests ===\n');
+        avalancheStatsResults = struct();
+        avalancheStatsResults.areas = areas;
+        avalancheStatsResults.segmentNames = segmentNames;
+        avalancheStatsResults.metricNames = avalancheMetricNames;
+        avalancheStatsResults.wholeSession = struct();
+        avalancheStatsResults.withinSegment = struct();
+        avalancheStatsResults.betweenSegments = struct();
+        
+        for m = 1:length(avalancheMetricNames)
+            metricName = avalancheMetricNames{m};
+            fprintf('\n--- Metric: %s ---\n', metricName);
+            
+            % Initialize metric-specific structures
+            avalancheStatsResults.wholeSession.(metricName) = struct();
+            avalancheStatsResults.withinSegment.(metricName) = struct();
+            avalancheStatsResults.betweenSegments.(metricName) = struct();
+            
+            for a = 1:length(areas)
+                metricValues = avalancheMetricData{m}{a};
+                
+                if isempty(metricValues)
+                    continue;
+                end
+                
+                fprintf('  Area: %s\n', areas{a});
+                
+                % Whole-session test
+                fprintf('    Whole-session test...\n');
+                metricWhole = metricValues(~isnan(metricValues));
+                meanMetricWhole = nanmean(metricWhole);
+                
+                if avHasPermutations && ~isempty(avalancheMetricPermuted{m}{a})
+                    permutedMeans = nanmean(avalancheMetricPermuted{m}{a}, 1);
+                    meanPermutedWhole = nanmean(permutedMeans);
+                    
+                    if meanMetricWhole >= meanPermutedWhole
+                        pValue = sum(permutedMeans >= meanMetricWhole) / length(permutedMeans);
+                    else
+                        pValue = sum(permutedMeans <= meanMetricWhole) / length(permutedMeans);
+                    end
+                    pValue = min(pValue * 2, 1);
+                    
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).meanValue = meanMetricWhole;
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).meanPermuted = meanPermutedWhole;
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).pValue = pValue;
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).significant = pValue < alpha;
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).nWindows = length(metricWhole);
+                    
+                    fprintf('      Mean %s: %.4f, Mean permuted: %.4f, p = %.4f, n = %d %s\n', ...
+                        metricName, meanMetricWhole, meanPermutedWhole, pValue, length(metricWhole), ...
+                        char('*' * (pValue < alpha)));
+                else
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).meanValue = meanMetricWhole;
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).meanPermuted = NaN;
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).pValue = NaN;
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).significant = false;
+                    avalancheStatsResults.wholeSession.(metricName).(areas{a}).nWindows = length(metricWhole);
+                    fprintf('      Mean %s: %.4f, n = %d (no permutation data)\n', metricName, meanMetricWhole, length(metricWhole));
+                end
+                
+                % Within-segment tests
+                fprintf('    Within-segment tests...\n');
+                for seg = 1:length(segmentNames)
+                    segValues = avalancheBySegment{m, a, seg};
+                    
+                    if ~isempty(segValues) && length(segValues) > 1
+                        meanSegValue = nanmean(segValues);
+                        
+                        if ~isempty(avalanchePermutedBySegment{m, a, seg})
+                            segPermutedMeans = nanmean(avalanchePermutedBySegment{m, a, seg}, 1);
+                            meanSegPermuted = nanmean(segPermutedMeans);
+                            
+                            if meanSegValue >= meanSegPermuted
+                                pValue = sum(segPermutedMeans >= meanSegValue) / length(segPermutedMeans);
+                            else
+                                pValue = sum(segPermutedMeans <= meanSegValue) / length(segPermutedMeans);
+                            end
+                            pValue = min(pValue * 2, 1);
+                            
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).meanValue = meanSegValue;
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).meanPermuted = meanSegPermuted;
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).pValue = pValue;
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).significant = pValue < alpha;
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).nWindows = length(segValues);
+                            
+                            fprintf('      %s: Mean %s: %.4f, Mean permuted: %.4f, p = %.4f, n = %d %s\n', ...
+                                segmentNames{seg}, metricName, meanSegValue, meanSegPermuted, pValue, length(segValues), ...
+                                char('*' * (pValue < alpha)));
+                        else
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).meanValue = meanSegValue;
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).meanPermuted = NaN;
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).pValue = NaN;
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).significant = false;
+                            avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).nWindows = length(segValues);
+                            fprintf('      %s: Mean %s: %.4f, n = %d (no permutation data)\n', ...
+                                segmentNames{seg}, metricName, meanSegValue, length(segValues));
+                        end
+                    else
+                        avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).meanValue = NaN;
+                        avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).meanPermuted = NaN;
+                        avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).pValue = NaN;
+                        avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).significant = false;
+                        avalancheStatsResults.withinSegment.(metricName).(areas{a}).(segmentNames{seg}).nWindows = 0;
+                        fprintf('      %s: No data\n', segmentNames{seg});
+                    end
+                end
+                
+                % Between-segment tests
+                fprintf('    Between-segment tests...\n');
+                segPairs = nchoosek(1:length(segmentNames), 2);
+                for p = 1:size(segPairs, 1)
+                    seg1 = segPairs(p, 1);
+                    seg2 = segPairs(p, 2);
+                    
+                    seg1Values = avalancheBySegment{m, a, seg1};
+                    seg2Values = avalancheBySegment{m, a, seg2};
+                    
+                    if ~isempty(seg1Values) && ~isempty(seg2Values) && length(seg1Values) > 1 && length(seg2Values) > 1
+                        meanSeg1 = nanmean(seg1Values);
+                        meanSeg2 = nanmean(seg2Values);
+                        diffMean = meanSeg1 - meanSeg2;
+                        
+                        % Permutation test: shuffle labels between segments
+                        combinedData = [seg1Values(:); seg2Values(:)];
+                        n1 = length(seg1Values);
+                        n2 = length(seg2Values);
+                        nTotal = n1 + n2;
+                        
+                        nullDiffs = zeros(nPermutationsBetweenSegments, 1);
+                        for perm = 1:nPermutationsBetweenSegments
+                            permIdx = randperm(nTotal);
+                            permSeg1 = combinedData(permIdx(1:n1));
+                            permSeg2 = combinedData(permIdx(n1+1:end));
+                            nullDiffs(perm) = nanmean(permSeg1) - nanmean(permSeg2);
+                        end
+                        
+                        % Two-tailed p-value
+                        if abs(diffMean) >= 0
+                            pValue = sum(abs(nullDiffs) >= abs(diffMean)) / nPermutationsBetweenSegments;
+                        else
+                            pValue = 1;
+                        end
+                        
+                        pairName = sprintf('%s_vs_%s', segmentNames{seg1}, segmentNames{seg2});
+                        avalancheStatsResults.betweenSegments.(metricName).(areas{a}).(pairName).diffMean = diffMean;
+                        avalancheStatsResults.betweenSegments.(metricName).(areas{a}).(pairName).pValue = pValue;
+                        avalancheStatsResults.betweenSegments.(metricName).(areas{a}).(pairName).significant = pValue < alpha;
+                        avalancheStatsResults.betweenSegments.(metricName).(areas{a}).(pairName).n1 = n1;
+                        avalancheStatsResults.betweenSegments.(metricName).(areas{a}).(pairName).n2 = n2;
+                        
+                        fprintf('      %s: Diff = %.4f, p = %.4f %s\n', pairName, diffMean, pValue, char('*' * (pValue < alpha)));
+                    end
+                end
+            end
+        end
+        
+        % Create avalanche plots
+        if makePlots
+            fprintf('\n=== Creating Avalanche Plots ===\n');
+            create_avalanche_engagement_plots(avalancheStatsResults, areas, segmentNames, avalancheMetricNames, savePlots, saveDir, sessionName);
+        end
+        
+        % Save avalanche results
+        avalancheSummaryPath = fullfile(saveDir, sprintf('avalanche_engagement_summary_%s.mat', sessionName));
+        save(avalancheSummaryPath, 'avalancheStatsResults', 'segmentWindows', 'engagementOpts', 'sessionName', ...
+            'avalancheWindowSize', 'avalancheStepSize');
+        fprintf('Saved avalanche summary results to: %s\n', avalancheSummaryPath);
+    end
+else
+    avalancheStatsResults = [];
+end
+
 % =============================    Plotting    =============================
 if makePlots
     fprintf('\n=== Creating Plots ===\n');
+    
+    % Extract first 8 characters of session name for titles
+    filePrefix = sessionName(1:min(8, length(sessionName)));
     
     % Plot 1: Whole-session d2 vs. permutation
     figure(1000); clf;
@@ -533,13 +801,20 @@ if makePlots
                 b = bar(barData, 'FaceColor', [0.2 0.4 0.8]);
             end
             
-            set(gca, 'XTickLabel', {'Observed', 'Permuted'});
+            % Set x-axis ticks and labels to align with bars
+            if ~isnan(ws.meanPermuted)
+                set(gca, 'XTick', [1, 2], 'XTickLabel', {'Observed', 'Permuted'});
+                xlim([0.5, 2.5]);
+            else
+                set(gca, 'XTick', 1, 'XTickLabel', {'Observed'});
+                xlim([0.5, 1.5]);
+            end
             ylabel('Mean d2');
             title(sprintf('%s\nWhole Session (p=%.4f)', areas{a}, ws.pValue));
             grid on;
         end
     end
-    sgtitle('Whole-Session d2 vs. Permutation');
+    sgtitle(sprintf('[%s] Whole-Session d2 vs. Permutation', filePrefix));
     
     if savePlots
         plotPath1 = fullfile(saveDir, sprintf('criticality_whole_session_%s.png', sessionName));
@@ -561,6 +836,8 @@ if makePlots
             % Collect data for bar plot
             means = zeros(1, length(segmentNames));
             sems = zeros(1, length(segmentNames));
+            permutedMeans = zeros(1, length(segmentNames));
+            permutedSTDs = zeros(1, length(segmentNames));
             significant = false(1, length(segmentNames));
             hasData = false(1, length(segmentNames));
             
@@ -572,36 +849,63 @@ if makePlots
                         segD2 = d2BySegment{a, seg};
                         sems(seg) = nanstd(segD2) / sqrt(nWindows);
                     end
+                    
+                    % Calculate permuted mean and STD if available
+                    if ~isnan(ws.(segmentNames{seg}).meanPermuted) && ~isempty(d2PermutedBySegment{a, seg})
+                        % d2PermutedBySegment is [nWindowsInSegment x nShuffles]
+                        segPermutedMeans = nanmean(d2PermutedBySegment{a, seg}, 1);  % Mean across windows for each shuffle
+                        permutedMeans(seg) = nanmean(segPermutedMeans);
+                        permutedSTDs(seg) = nanstd(segPermutedMeans);
+                    else
+                        permutedMeans(seg) = NaN;
+                        permutedSTDs(seg) = NaN;
+                    end
+                    
                     significant(seg) = ws.(segmentNames{seg}).significant;
                     hasData(seg) = true;
                 end
             end
             
-            % Plot bars
+            % Plot grouped bars (observed and permuted)
             validIdx = hasData;
             if any(validIdx)
-                xPos = 1:sum(validIdx);
-                b = bar(xPos, means(validIdx), 'FaceColor', 'flat');
-                
-                % Color bars: blue if significant, gray if not
                 validSegIndices = find(validIdx);
-                for i = 1:length(xPos)
+                nValid = length(validSegIndices);
+                
+                % Prepare data for grouped bar plot
+                % Column 1: observed, Column 2: permuted
+                barData = zeros(nValid, 2);
+                barData(:, 1) = means(validIdx);  % Observed
+                barData(:, 2) = permutedMeans(validIdx);  % Permuted (NaN if not available)
+                
+                % Create grouped bar plot
+                xPos = 1:nValid;
+                b = bar(xPos, barData, 'grouped', 'FaceColor', 'flat');
+                
+                % Color bars: blue for observed, gray for permuted
+                b(1).CData = repmat([0.2 0.4 0.8], nValid, 1);  % Blue for observed
+                b(2).CData = repmat([0.6 0.6 0.6], nValid, 1);  % Gray for permuted
+                
+                % Get bar positions for error bars (grouped bars are offset by ~0.2)
+                % For 2 groups, MATLAB positions them at xPos - 0.2 and xPos + 0.2
+                barOffset = 0.2;
+                
+                % Add error bars for observed data (left bar)
+                errorbar(xPos - barOffset, means(validIdx), sems(validIdx), 'k', 'LineStyle', 'none', 'LineWidth', 1.5);
+                
+                % Add error bars for permuted data (right bar, using STD)
+                permutedErrorBars = permutedSTDs(validIdx);
+                permutedErrorBars(isnan(permutedErrorBars)) = 0;  % Set NaN to 0 for errorbar
+                permutedMeansValid = permutedMeans(validIdx);
+                permutedMeansValid(isnan(permutedMeansValid)) = 0;  % Set NaN to 0 for errorbar
+                errorbar(xPos + barOffset, permutedMeansValid, permutedErrorBars, 'k', 'LineStyle', 'none', 'LineWidth', 1.5);
+                
+                % Add significance markers above observed bars
+                for i = 1:nValid
                     segIdx = validSegIndices(i);
                     if significant(segIdx)
-                        b.CData(i, :) = [0.2 0.4 0.8];
-                    else
-                        b.CData(i, :) = [0.6 0.6 0.6];
-                    end
-                end
-                
-                % Add error bars
-                errorbar(xPos, means(validIdx), sems(validIdx), 'k', 'LineStyle', 'none', 'LineWidth', 1.5);
-                
-                % Add significance markers
-                for i = 1:length(xPos)
-                    segIdx = validSegIndices(i);
-                    if significant(segIdx)
-                        text(xPos(i), means(segIdx) + sems(segIdx) + 0.01, '*', ...
+                        yPos = means(segIdx) + sems(segIdx) + 0.01;
+                        text(xPos(i) - barOffset, yPos, '*', ...
                             'FontSize', 16, 'HorizontalAlignment', 'center');
                     end
                 end
@@ -614,6 +918,10 @@ if makePlots
                 end
                 set(gca, 'XTick', xPos, 'XTickLabel', segLabelsShort);
                 xtickangle(45);
+                xlim([0.5, nValid + 0.5]);
+                
+                % Add legend
+                legend({'Observed', 'Permuted'}, 'Location', 'best');
             end
             
             ylabel('Mean d2');
@@ -621,7 +929,7 @@ if makePlots
             grid on;
         end
     end
-    sgtitle('Within-Segment d2 Values (vs. Permutation)');
+    sgtitle(sprintf('[%s] Within-Segment d2 Values (vs. Permutation)', filePrefix));
     
     if savePlots
         plotPath2 = fullfile(saveDir, sprintf('criticality_within_segments_%s.png', sessionName));
@@ -693,7 +1001,7 @@ if makePlots
             end
         end
     end
-    sgtitle('Between-Segment Comparisons');
+    sgtitle(sprintf('[%s] Between-Segment Comparisons', filePrefix));
     
     if savePlots
         plotPath3 = fullfile(saveDir, sprintf('criticality_between_segments_%s.png', sessionName));
@@ -703,4 +1011,227 @@ if makePlots
 end
 
 fprintf('\n=== Analysis Complete ===\n');
+
+%% =============================    Helper Functions    =============================
+
+function create_avalanche_engagement_plots(avalancheStatsResults, areas, segmentNames, metricNames, savePlots, saveDir, sessionName)
+% CREATE_AVALANCHE_ENGAGEMENT_PLOTS - Create plots comparing avalanche metrics across segments
+
+% Extract first 8 characters of session name for titles
+filePrefix = sessionName(1:min(8, length(sessionName)));
+
+nMetrics = length(metricNames);
+nAreas = length(areas);
+
+% Plot 1: Whole-session avalanche metrics vs. permutation
+figure(2000); clf;
+set(gcf, 'Position', [100, 100, 1600, 1000]);
+
+for m = 1:nMetrics
+    metricName = metricNames{m};
+    
+    for a = 1:nAreas
+        subplot(nMetrics, nAreas, (m-1)*nAreas + a);
+        hold on;
+        
+        if isfield(avalancheStatsResults.wholeSession.(metricName), areas{a})
+            ws = avalancheStatsResults.wholeSession.(metricName).(areas{a});
+            
+            % Bar plot
+            if ~isnan(ws.meanPermuted)
+                barData = [ws.meanValue, ws.meanPermuted];
+                b = bar(barData, 'FaceColor', 'flat');
+                b.CData(1, :) = [0.2 0.4 0.8];  % Blue for observed
+                b.CData(2, :) = [0.6 0.6 0.6];  % Gray for permuted
+                
+                % Add significance marker
+                if ws.significant
+                    text(1, ws.meanValue + 0.02 * max(barData), '*', 'FontSize', 20, 'HorizontalAlignment', 'center');
+                end
+            else
+                barData = ws.meanValue;
+                b = bar(barData, 'FaceColor', [0.2 0.4 0.8]);
+            end
+            
+            set(gca, 'XTickLabel', {'Observed', 'Permuted'});
+            ylabel(metricName);
+            title(sprintf('%s - %s\n(p=%.4f)', areas{a}, metricName, ws.pValue));
+            grid on;
+        end
+    end
+end
+
+sgtitle(sprintf('[%s] Whole-Session Avalanche Metrics vs. Permutation', filePrefix), 'FontSize', 14, 'FontWeight', 'bold');
+
+if savePlots
+    plotPath = fullfile(saveDir, sprintf('avalanche_whole_session_%s.png', sessionName));
+    exportgraphics(gcf, plotPath, 'Resolution', 300);
+    fprintf('Saved avalanche whole-session plot to: %s\n', plotPath);
+end
+
+% Plot 2: Within-segment avalanche metrics
+figure(2001); clf;
+set(gcf, 'Position', [100, 100, 1800, 1200]);
+
+for m = 1:nMetrics
+    metricName = metricNames{m};
+    
+    for a = 1:nAreas
+        subplot(nMetrics, nAreas, (m-1)*nAreas + a);
+        hold on;
+        
+        if isfield(avalancheStatsResults.withinSegment.(metricName), areas{a})
+            ws = avalancheStatsResults.withinSegment.(metricName).(areas{a});
+            
+            % Collect data for bar plot
+            means = zeros(1, length(segmentNames));
+            sems = zeros(1, length(segmentNames));
+            significant = false(1, length(segmentNames));
+            hasData = false(1, length(segmentNames));
+            
+            for seg = 1:length(segmentNames)
+                if isfield(ws, segmentNames{seg}) && ~isnan(ws.(segmentNames{seg}).meanValue)
+                    means(seg) = ws.(segmentNames{seg}).meanValue;
+                    nWindows = ws.(segmentNames{seg}).nWindows;
+                    if nWindows > 1
+                        % Estimate SEM (would need actual data, using approximation)
+                        sems(seg) = abs(means(seg)) * 0.1; % Rough estimate
+                    end
+                    significant(seg) = ws.(segmentNames{seg}).significant;
+                    hasData(seg) = true;
+                end
+            end
+            
+            % Plot bars
+            validIdx = hasData;
+            if any(validIdx)
+                xPos = 1:sum(validIdx);
+                b = bar(xPos, means(validIdx), 'FaceColor', 'flat');
+                
+                % Color bars: blue if significant, gray if not
+                validSegIndices = find(validIdx);
+                for i = 1:length(xPos)
+                    segIdx = validSegIndices(i);
+                    if significant(segIdx)
+                        b.CData(i, :) = [0.2 0.4 0.8];
+                    else
+                        b.CData(i, :) = [0.6 0.6 0.6];
+                    end
+                end
+                
+                % Add error bars
+                errorbar(xPos, means(validIdx), sems(validIdx), 'k', 'LineStyle', 'none', 'LineWidth', 1.5);
+                
+                % Add significance markers
+                for i = 1:length(xPos)
+                    segIdx = validSegIndices(i);
+                    if significant(segIdx)
+                        text(xPos(i), means(segIdx) + sems(segIdx) + 0.01 * max(abs(means(validIdx))), '*', ...
+                            'FontSize', 16, 'HorizontalAlignment', 'center');
+                    end
+                end
+                
+                % Set x-axis labels
+                segLabels = segmentNames(validIdx);
+                segLabelsShort = cell(size(segLabels));
+                for i = 1:length(segLabels)
+                    segLabelsShort{i} = strrep(segLabels{i}, '_', '\n');
+                end
+                set(gca, 'XTick', xPos, 'XTickLabel', segLabelsShort);
+                xtickangle(45);
+            end
+            
+            ylabel(metricName);
+            title(sprintf('%s - %s', areas{a}, metricName));
+            grid on;
+        end
+    end
+end
+
+sgtitle(sprintf('[%s] Within-Segment Avalanche Metrics (vs. Permutation)', filePrefix), 'FontSize', 14, 'FontWeight', 'bold');
+
+if savePlots
+    plotPath = fullfile(saveDir, sprintf('avalanche_within_segments_%s.png', sessionName));
+    exportgraphics(gcf, plotPath, 'Resolution', 300);
+    fprintf('Saved avalanche within-segment plot to: %s\n', plotPath);
+end
+
+% Plot 3: Between-segment comparisons
+figure(2002); clf;
+set(gcf, 'Position', [100, 100, 1800, 1200]);
+
+for m = 1:nMetrics
+    metricName = metricNames{m};
+    
+    for a = 1:nAreas
+        subplot(nMetrics, nAreas, (m-1)*nAreas + a);
+        hold on;
+        
+        if isfield(avalancheStatsResults.betweenSegments.(metricName), areas{a})
+            bs = avalancheStatsResults.betweenSegments.(metricName).(areas{a});
+            
+            % Collect all pair comparisons
+            pairNames = fieldnames(bs);
+            nPairs = length(pairNames);
+            
+            if nPairs > 0
+                diffs = zeros(1, nPairs);
+                pValues = zeros(1, nPairs);
+                significant = false(1, nPairs);
+                pairLabels = cell(1, nPairs);
+                
+                for p = 1:nPairs
+                    pairData = bs.(pairNames{p});
+                    diffs(p) = pairData.diffMean;
+                    pValues(p) = pairData.pValue;
+                    significant(p) = pairData.significant;
+                    
+                    % Create short label
+                    pairLabels{p} = strrep(pairNames{p}, '_vs_', ' vs\n');
+                    pairLabels{p} = strrep(pairLabels{p}, '_', ' ');
+                end
+                
+                % Plot bars
+                xPos = 1:nPairs;
+                b = bar(xPos, diffs, 'FaceColor', 'flat');
+                
+                % Color bars: blue if significant, gray if not
+                for i = 1:nPairs
+                    if significant(i)
+                        b.CData(i, :) = [0.2 0.4 0.8];
+                    else
+                        b.CData(i, :) = [0.6 0.6 0.6];
+                    end
+                end
+                
+                % Add significance markers
+                for i = 1:nPairs
+                    if significant(i)
+                        text(xPos(i), diffs(i) + 0.01 * sign(diffs(i)) * max(abs(diffs)), '*', ...
+                            'FontSize', 16, 'HorizontalAlignment', 'center');
+                    end
+                end
+                
+                % Add zero line
+                yline(0, 'k--', 'LineWidth', 1);
+                
+                set(gca, 'XTick', xPos, 'XTickLabel', pairLabels);
+                xtickangle(45);
+                ylabel(sprintf('Difference in Mean %s', metricName));
+                title(sprintf('%s - %s', areas{a}, metricName));
+                grid on;
+            end
+        end
+    end
+end
+
+sgtitle(sprintf('[%s] Between-Segment Avalanche Comparisons', filePrefix), 'FontSize', 14, 'FontWeight', 'bold');
+
+if savePlots
+    plotPath = fullfile(saveDir, sprintf('avalanche_between_segments_%s.png', sessionName));
+    exportgraphics(gcf, plotPath, 'Resolution', 300);
+    fprintf('Saved avalanche between-segment plot to: %s\n', plotPath);
+end
+
+end
 

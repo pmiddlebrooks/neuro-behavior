@@ -1,4 +1,4 @@
-function [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(data, opts)
+function [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_schall_fef(data, opts)
 % NEURAL_MATRIX_MARK_DATA - Converts spike time data into a binned matrix representation
 %
 % This function takes in a data structure containing spike times, spike IDs,
@@ -45,8 +45,9 @@ end
 if ~isempty(opts.collectEnd)
     lastSecond = firstSecond + opts.collectEnd;
 else
-    lastSecond = ceil(max(data.CSV(:,1)));
+    lastSecond = ceil(max(data.trialOnset(end) + data.trialDuration(end)));
 end
+
 
 % Define time edges and number of frames based on method to avoid off-by-one
 if isfield(opts, 'method') && strcmp(opts.method, 'gaussian')
@@ -59,14 +60,11 @@ else
     numFrames = max(0, length(timeEdgesGlobal) - 1);
 end
 
-useNeurons = find(data.idchan(:,end) ~= 0 & ismember(data.idchan(:,4), [1 2])); % Keep everything that isn't corpus collosum
-idLabels = data.idchan(useNeurons, 1);
-brainAreas = data.idchan(useNeurons, end);
+idLabels = 1:length(data.SessionData.spikeUnitArray);
+brainAreas = ones(length(idLabels), 1);
 areaLabels = cell(size(brainAreas));
-areaLabels(brainAreas == 1) = {'M23'};
-areaLabels(brainAreas == 2) = {'M56'};
-areaLabels(brainAreas == 3) = {'DS'};
-areaLabels(brainAreas == 4) = {'VS'};
+areaLabels(brainAreas == 1) = {'FEF'};
+
 
 % Preallocate data matrix
 if numFrames > 60 * 60 / 0.001
@@ -99,7 +97,8 @@ end
 
 % Loop through each neuron and bin spike counts or rates
 for i = 1:length(idLabels)
-    iSpikeTime = data.CSV(data.CSV(:,2) == idLabels(i), 1);
+    iSpikeTimeCell = data.(data.SessionData.spikeUnitArray{i});
+    iSpikeTime = convert_to_session_time(iSpikeTimeCell, data.trialOnset) / 1000;
 
     switch opts.method
         case 'useOverlap'

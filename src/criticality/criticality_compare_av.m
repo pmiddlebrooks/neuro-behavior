@@ -209,21 +209,29 @@ if updateDccKappa
             % Find avalanches in the window
             zeroBins = find(wPopActivity == 0);
             if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-                % Create avalanche data
-                asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeNat(a)*1000, 'CBModel', 'Spikes', 'DS');
-                Av = avprops(asdfMat, 'ratio', 'fingerprint');
+                % % Create avalanche data
+                % asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeNat(a)*1000, 'CBModel', 'Spikes', 'DS');
+                % Av = avprops(asdfMat, 'ratio', 'fingerprint');
+                % 
+                % % Calculate avalanche parameters
+                % [tau, ~, tauC, ~, alpha, ~, paramSD, decades] = avalanche_log(Av, 0);
 
-                % Calculate avalanche parameters
-                [tau, ~, tauC, ~, alpha, ~, paramSD, decades] = avalanche_log(Av, 0);
+            % Woody's new code:
+[sizes, durs] = getAvalanches(wPopActivity', .5, 1);
+gof = .8;
+plotAv = 0;
+[tau, plrS, minavS, maxavS, ~, ~, ~] = plfit2023(sizes, gof, plotAv, 0);
+[alpha, plrD, minavD, maxavD, ~, ~, ~] = plfit2023(durs, gof, plotAv, 0);
+[paramSD, sigmaNuZInvStd, logCoeff] = size_given_duration(sizes, durs, 'durmin', minavD, 'durmax', maxavD);
 
-                % dcc (distance to criticality from avalanche analysis)
+% dcc (distance to criticality from avalanche analysis)
                 dccNat{a}(w) = distance_to_criticality(tau, alpha, paramSD);
 
                 % kappa (avalanche shape parameter)
-                kappaNat{a}(w) = compute_kappa(Av.size);
+                kappaNat{a}(w) = compute_kappa(sizes);
 
                 % decades (log10 of avalanche size range)
-                decadesNat{a}(w) = decades;
+                decadesNat{a}(w) = plrS;
             end
         end
 
@@ -332,20 +340,27 @@ if updateDccKappa
             zeroBins = find(wPopActivity == 0);
             if length(zeroBins) > 1 && any(diff(zeroBins)>1)
                 % Create avalanche data
-                asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeRea(a)*1000, 'CBModel', 'Spikes', 'DS');
-                Av = avprops(asdfMat, 'ratio', 'fingerprint');
+                % asdfMat = rastertoasdf2(wPopActivity', optimalBinSizeRea(a)*1000, 'CBModel', 'Spikes', 'DS');
+                % Av = avprops(asdfMat, 'ratio', 'fingerprint');
+                % 
+                % % Calculate avalanche parameters
+                % [tau, ~, tauC, ~, alpha, ~, paramSD, decades] = avalanche_log(Av, 0);
 
-                % Calculate avalanche parameters
-                [tau, ~, tauC, ~, alpha, ~, paramSD, decades] = avalanche_log(Av, 0);
-
+            % Woody's new code:
+[sizes, durs] = getAvalanches(wPopActivity', .5, 1);
+gof = .8;
+plotAv = 0;
+[tau, plrS, minavS, maxavS, ~, ~, ~] = plfit2023(sizes, gof, plotAv, 0);
+[alpha, plrD, minavD, maxavD, ~, ~, ~] = plfit2023(durs, gof, plotAv, 0);
+[paramSD, sigmaNuZInvStd, logCoeff] = size_given_duration(sizes, durs, 'durmin', minavD, 'durmax', maxavD);
                 % dcc (distance to criticality from avalanche analysis)
                 dccRea{a}(w) = distance_to_criticality(tau, alpha, paramSD);
 
                 % kappa (avalanche shape parameter)
-                kappaRea{a}(w) = compute_kappa(Av.size);
+                kappaRea{a}(w) = compute_kappa(sizes);
 
                 % decades (log10 of avalanche size range)
-                decadesRea{a}(w) = decades;
+                decadesRea{a}(w) = plrS;
             end
         end
 
