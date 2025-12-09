@@ -3,12 +3,11 @@
 % Unified script for analyzing both reach data and naturalistic data
 % Analyzes data using sliding window avalanche approach; saves results to data-specific folders
 
+% Note: Data should be loaded by criticality_sliding_data_prep.m before running this script
+
 paths = get_paths;
 
 % =============================    Configuration    =============================
-% Sliding window and step size (seconds)
-slidingWindowSize = 120;  % seconds - user specified
-avStepSize = 10;          % seconds - user specified
 
 % Flags
 loadExistingResults = false;
@@ -40,7 +39,33 @@ candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15];
 candidateWindowSizes = [30, 45, 60, 90, 120];
 
 
-%% =============================    Analysis    =============================
+% =============================    Data Validation    =============================
+% Verify that required variables are in workspace (loaded by criticality_sliding_data_prep.m)
+requiredVars = {'dataType', 'dataMat', 'areas', 'idMatIdx', 'idLabel', 'opts', 'saveDir'};
+for i = 1:length(requiredVars)
+    if ~exist(requiredVars{i}, 'var')
+        error('Required variable %s not found in workspace. Please run criticality_sliding_data_prep.m first.', requiredVars{i});
+    end
+end
+
+% Create filename suffix based on PCA flag
+if pcaFlag
+    filenameSuffix = '_pca';
+else
+    filenameSuffix = '';
+end
+
+% Create results path
+if strcmp(dataType, 'reach')
+    if ~exist('sessionName', 'var') || isempty(sessionName)
+        error('sessionName must be defined for reach data');
+    end
+    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_av%s_win%d_%s.mat', filenameSuffix, slidingWindowSize, sessionName));
+else
+    resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_av%s_win%d.mat', filenameSuffix, slidingWindowSize));
+end
+
+% =============================    Analysis    =============================
 fprintf('\n=== %s Data Avalanche Analysis ===\n', dataType);
 
 % Adjust areasToTest based on which areas have data
@@ -72,7 +97,7 @@ for a = areasToTest
         thisFiringRate = sum(thisDataMat(:)) / (size(thisDataMat, 1)/1000);
         [optimalBinSize(a), optimalWindowSize(a)] = ...
             find_optimal_bin_and_window(thisFiringRate, minSpikesPerBin, minBinsPerWindow);
-        optimalBinSize(a) = max(optimalBinSize(a), .02);
+        % optimalBinSize(a) = max(optimalBinSize(a), .02);
     fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
 end
 
@@ -122,11 +147,9 @@ for a = areasToTest
         aDataMat_dcc = score(:,nDim) * coeff(:,nDim)' + mu;
     end
 
-    % Step 7: Apply thresholding
-        aDataMat_dcc = mean(aDataMat_dcc, 2);
-        % aDataMat_dcc = sum(aDataMat_dcc, 2);
-        threshSpikes = median(aDataMat_dcc);
-        aDataMat_dcc(aDataMat_dcc < threshSpikes) = 0;
+    % Step 7: Calculate population activity (no global thresholding - threshold per window)
+    aDataMat_dcc = mean(aDataMat_dcc, 2);
+    % aDataMat_dcc = sum(aDataMat_dcc, 2);
 
     % Initialize arrays for dcc/kappa/decades/tau/alpha/paramSD (size by number of windows)
     dcc{a} = nan(1, numWindows_dcc);
@@ -145,6 +168,10 @@ for a = areasToTest
 
         % Calculate population activity for this window
         wPopActivity = aDataMat_dcc(startIdx:endIdx);
+        
+        % Apply thresholding using median of this window
+        threshSpikes = median(wPopActivity);
+        wPopActivity(wPopActivity < threshSpikes) = 0;
 
         % Avalanche analysis for dcc and kappa
         % Find avalanches in the window
@@ -193,7 +220,7 @@ plotAv = 0;
     
     % Perform circular permutations if enabled
     if enablePermutations
-        fprintf('  Running %d circular permutations for area %s...\n', nShuffles, areas{a});
+        fprintf('  Running %d circular permutations per window for area %s...\n', nShuffles, areas{a});
         ticPerm = tic;
         
         % Initialize storage for permutation results [nWindows x nShuffles]
@@ -204,40 +231,44 @@ plotAv = 0;
         alphaPermuted{a} = nan(numWindows_dcc, nShuffles);
         paramSDPermuted{a} = nan(numWindows_dcc, nShuffles);
         
-        % Get original data matrix (before PCA if applied)
+        % Get original binned data matrix (before PCA if applied)
         originalDataMat = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSize(a));
+        nNeurons = size(originalDataMat, 2);
         
-        for shuffle = 1:nShuffles
-            % Circularly permute each neuron independently
-            permutedDataMat = originalDataMat;
-            nNeurons = size(permutedDataMat, 2);
-            nSamples = size(permutedDataMat, 1);
+        % Permute each window independently (accounting for drift)
+        for w = 1:numWindows_dcc
+            startIdx = (w - 1) * stepSamples_dcc + 1; 
+            endIdx = startIdx + winSamples_dcc - 1;
             
-            for n = 1:nNeurons
-                % Random circular shift for this neuron
-                shiftAmount = randi([1, nSamples]);
-                permutedDataMat(:, n) = circshift(permutedDataMat(:, n), shiftAmount);
-            end
+            % Extract this window's data
+            windowData = originalDataMat(startIdx:endIdx, :);
+            winSamples = size(windowData, 1);
             
-            % Apply PCA if needed (compute PCA on permuted data separately)
-            if pcaFlag
-                [coeffPerm, scorePerm, ~, ~, explainedPerm, muPerm] = pca(permutedDataMat);
-                forDimPerm = find(cumsum(explainedPerm) > 30, 1); 
-                forDimPerm = max(3, min(6, forDimPerm));
-                nDimPerm = 1:forDimPerm; 
-                permutedDataMat = scorePerm(:,nDimPerm) * coeffPerm(:,nDimPerm)' + muPerm;
-            end
-            
-            % Apply thresholding if needed
-                permutedDataMat_dcc = mean(permutedDataMat, 2);
-                threshSpikes = median(permutedDataMat_dcc);
-                permutedDataMat_dcc(permutedDataMat_dcc < threshSpikes) = 0;
-            
-            % Run sliding window analysis on permuted data
-            for w = 1:numWindows_dcc
-                startIdx = (w - 1) * stepSamples_dcc + 1; 
-                endIdx = startIdx + winSamples_dcc - 1;
-                wPopActivityPerm = permutedDataMat_dcc(startIdx:endIdx);
+            % For each shuffle, permute this window's data independently
+            for shuffle = 1:nShuffles
+                % Circularly permute each neuron independently within this window
+                permutedWindowData = windowData;
+                for n = 1:nNeurons
+                    % Random circular shift for this neuron within this window
+                    shiftAmount = randi([1, winSamples]);
+                    permutedWindowData(:, n) = circshift(permutedWindowData(:, n), shiftAmount);
+                end
+                
+                % Apply PCA if needed (compute PCA on this permuted window separately)
+                if pcaFlag
+                    [coeffPerm, scorePerm, ~, ~, explainedPerm, muPerm] = pca(permutedWindowData);
+                    forDimPerm = find(cumsum(explainedPerm) > 30, 1); 
+                    forDimPerm = max(3, min(6, forDimPerm));
+                    nDimPerm = 1:forDimPerm; 
+                    permutedWindowData = scorePerm(:,nDimPerm) * coeffPerm(:,nDimPerm)' + muPerm;
+                end
+                
+                % Calculate population activity for this permuted window
+                wPopActivityPerm = mean(permutedWindowData, 2);
+                
+                % Apply thresholding using median of this window
+                threshSpikes = median(wPopActivityPerm);
+                wPopActivityPerm(wPopActivityPerm < threshSpikes) = 0;
                 
                 % Avalanche analysis for permuted data
                 zeroBins = find(wPopActivityPerm == 0);
@@ -259,8 +290,8 @@ plotAv = 0;
                 end
             end
             
-            if mod(shuffle, max(1, round(nShuffles/10))) == 0
-                fprintf('    Completed %d/%d permutations (%.1f min elapsed)\n', shuffle, nShuffles, toc(ticPerm)/60);
+            if mod(w, max(1, round(numWindows_dcc/10))) == 0
+                fprintf('    Completed %d/%d windows (%.1f min elapsed)\n', w, numWindows_dcc, toc(ticPerm)/60);
             end
         end
         fprintf('  Permutations completed in %.1f minutes\n', toc(ticPerm)/60);
@@ -390,10 +421,12 @@ if makePlots
         targetPos = monitorOne;
     end
     
-    % First, collect all data to determine axis limits
+    % First, collect all data to determine axis limits (including permuted data)
     allStartS = [];
     allDcc = [];
-    allKappa = [];
+    allTau = [];
+    allAlpha = [];
+    allParamSD = [];
     allDecades = [];
     
     for idx = 1:length(areasToTest)
@@ -404,11 +437,75 @@ if makePlots
         if ~isempty(dcc{a})
             allDcc = [allDcc, dcc{a}(~isnan(dcc{a}))];
         end
-        if ~isempty(kappa{a})
-            allKappa = [allKappa, kappa{a}(~isnan(kappa{a}))];
+        if ~isempty(tau{a})
+            allTau = [allTau, tau{a}(~isnan(tau{a}))];
+        end
+        if ~isempty(alpha{a})
+            allAlpha = [allAlpha, alpha{a}(~isnan(alpha{a}))];
+        end
+        if ~isempty(paramSD{a})
+            allParamSD = [allParamSD, paramSD{a}(~isnan(paramSD{a}))];
         end
         if ~isempty(decades{a})
             allDecades = [allDecades, decades{a}(~isnan(decades{a}))];
+        end
+        
+        % Include permuted data in axis limits if available
+        if enablePermutations
+            % dcc permuted data
+            if exist('dccPermuted', 'var') && ~isempty(dccPermuted{a})
+                permutedMean = nanmean(dccPermuted{a}, 2);
+                permutedStd = nanstd(dccPermuted{a}, 0, 2);
+                validIdx = ~isnan(permutedMean) & ~isnan(permutedStd);
+                if any(validIdx)
+                    permutedVals = [permutedMean(validIdx) + permutedStd(validIdx); permutedMean(validIdx) - permutedStd(validIdx)];
+                    allDcc = [allDcc(:); permutedVals(:)];
+                end
+            end
+            
+            % tau permuted data
+            if exist('tauPermuted', 'var') && ~isempty(tauPermuted{a})
+                permutedMean = nanmean(tauPermuted{a}, 2);
+                permutedStd = nanstd(tauPermuted{a}, 0, 2);
+                validIdx = ~isnan(permutedMean) & ~isnan(permutedStd);
+                if any(validIdx)
+                    permutedVals = [permutedMean(validIdx) + permutedStd(validIdx); permutedMean(validIdx) - permutedStd(validIdx)];
+                    allTau = [allTau(:); permutedVals(:)];
+                end
+            end
+            
+            % alpha permuted data
+            if exist('alphaPermuted', 'var') && ~isempty(alphaPermuted{a})
+                permutedMean = nanmean(alphaPermuted{a}, 2);
+                permutedStd = nanstd(alphaPermuted{a}, 0, 2);
+                validIdx = ~isnan(permutedMean) & ~isnan(permutedStd);
+                if any(validIdx)
+                    permutedVals = [permutedMean(validIdx) + permutedStd(validIdx); permutedMean(validIdx) - permutedStd(validIdx)];
+                    allAlpha = [allAlpha(:); permutedVals(:)];
+                end
+            end
+            
+            % paramSD permuted data
+            if exist('paramSDPermuted', 'var') && ~isempty(paramSDPermuted{a})
+                permutedMean = nanmean(paramSDPermuted{a}, 2);
+                permutedStd = nanstd(paramSDPermuted{a}, 0, 2);
+                validIdx = ~isnan(permutedMean) & ~isnan(permutedStd);
+                if any(validIdx)
+                    permutedVals = [permutedMean(validIdx) + permutedStd(validIdx); permutedMean(validIdx) - permutedStd(validIdx)];
+                    allParamSD = [allParamSD(:); permutedVals(:)];
+                end
+            end
+            
+            % decades permuted data
+            if exist('decadesPermuted', 'var') && ~isempty(decadesPermuted{a})
+                permutedMean = nanmean(decadesPermuted{a}, 2);
+                permutedStd = nanstd(decadesPermuted{a}, 0, 2);
+                validIdx = ~isnan(permutedMean) & ~isnan(permutedStd);
+                if any(validIdx)
+                    permutedVals = [permutedMean(validIdx) + permutedStd(validIdx); permutedMean(validIdx) - permutedStd(validIdx)];
+                    allDecades = [allDecades(:); permutedVals(:)];
+                end
+            end
         end
     end
     
@@ -421,28 +518,31 @@ if makePlots
         xMax = 1;
     end
     
+    % Set dcc y-limit max
+    dccMaxPlot = 1;
     if ~isempty(allDcc)
-        yMinDcc = min(allDcc);
-        yMaxDcc = max(allDcc);
+        yMinDcc = 0;
+        yMaxDcc = min(max(allDcc), dccMaxPlot);
         % Add small padding
         yRangeDcc = yMaxDcc - yMinDcc;
-        yMinDcc = yMinDcc - 0.05 * yRangeDcc;
-        yMaxDcc = yMaxDcc + 0.05 * yRangeDcc;
+        yMaxDcc = min(yMaxDcc + 0.05 * yRangeDcc, dccMaxPlot);
     else
         yMinDcc = 0;
-        yMaxDcc = 1;
+        yMaxDcc = dccMaxPlot;
     end
     
-    if ~isempty(allKappa)
-        yMinKappa = min(allKappa);
-        yMaxKappa = max(allKappa);
+    % Determine y-limits for tau, alpha, paramSD (all on same plot)
+    allParams = [allTau, allAlpha, allParamSD];
+    if ~isempty(allParams)
+        yMinParams = min(allParams(:));
+        yMaxParams = max(allParams(:));
         % Add small padding
-        yRangeKappa = yMaxKappa - yMinKappa;
-        yMinKappa = yMinKappa - 0.05 * yRangeKappa;
-        yMaxKappa = yMaxKappa + 0.05 * yRangeKappa;
+        yRangeParams = yMaxParams - yMinParams;
+        yMinParams = yMinParams - 0.05 * yRangeParams;
+        yMaxParams = yMaxParams + 0.05 * yRangeParams;
     else
-        yMinKappa = 0;
-        yMaxKappa = 1;
+        yMinParams = 0;
+        yMaxParams = 1;
     end
     
     if ~isempty(allDecades)
@@ -457,8 +557,8 @@ if makePlots
         yMaxDecades = 1;
     end
     
-    % Avalanche analysis plots: 3 rows (dcc, kappa, decades) x num areas (columns)
-    figure(902); clf; 
+    % Avalanche analysis plots: 3 rows (dcc, tau/alpha/paramSD, decades) x num areas (columns)
+    figure(903); clf; 
     set(gcf, 'Position', targetPos);
     
     for idx = 1:length(areasToTest)
@@ -468,24 +568,155 @@ if makePlots
         subplot(3, length(areasToTest), idx);
         hold on;
         plot(startS{a}, dcc{a}, '-', 'Color', [1 0 0], 'LineWidth', 2);
+        
+        % Plot permutation mean ± std per window if available
+        if enablePermutations && exist('dccPermuted', 'var') && ~isempty(dccPermuted{a})
+            % Calculate mean and std for each window across shuffles
+            permutedMean = nanmean(dccPermuted{a}, 2);  % Mean across shuffles for each window
+            permutedStd = nanstd(dccPermuted{a}, 0, 2);  % Std across shuffles for each window
+            
+            % Find valid indices (where we have data)
+            validIdx = ~isnan(permutedMean) & ~isnan(permutedStd) & ~isnan(startS{a}(:));
+            if any(validIdx)
+                xFill = startS{a}(validIdx);
+                yMean = permutedMean(validIdx);
+                yStd = permutedStd(validIdx);
+                
+                % Ensure row vectors for fill
+                if iscolumn(xFill); xFill = xFill'; end
+                if iscolumn(yMean); yMean = yMean'; end
+                if iscolumn(yStd); yStd = yStd'; end
+                
+                % Plot shaded region (mean ± std)
+                fill([xFill, fliplr(xFill)], ...
+                     [yMean + yStd, fliplr(yMean - yStd)], ...
+                     [0.7 0.7 1], 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'DisplayName', 'Permuted mean ± std');
+                
+                % Plot mean line
+                plot(startS{a}(validIdx), permutedMean(validIdx), '-', 'Color', [0.5 0.5 1], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
+            end
+        end
+        
         title(sprintf('%s - dcc', areas{a})); 
         xlabel('Time (s)'); ylabel('dcc'); grid on;
         xlim([xMin, xMax]);
-        ylim([yMinDcc, yMaxDcc]);
+        ylim([yMinDcc, dccMaxPlot]);
         
-        % kappa (middle row)
+        % tau, alpha, paramSD (middle row) - all on same subplot
         subplot(3, length(areasToTest), length(areasToTest) + idx);
         hold on;
-        plot(startS{a}, kappa{a}, '-', 'Color', [0 0.6 0], 'LineWidth', 2);
-        title(sprintf('%s - kappa', areas{a})); 
-        xlabel('Time (s)'); ylabel('kappa'); grid on;
+        
+        % Plot tau
+        if ~isempty(tau{a})
+            plot(startS{a}, tau{a}, '-', 'Color', [1 0.5 0], 'LineWidth', 2, 'DisplayName', 'tau');
+        end
+        
+        % Plot alpha
+        if ~isempty(alpha{a})
+            plot(startS{a}, alpha{a}, '-', 'Color', [0 0.8 0], 'LineWidth', 2, 'DisplayName', 'alpha');
+        end
+        
+        % Plot paramSD
+        if ~isempty(paramSD{a})
+            plot(startS{a}, paramSD{a}, '-', 'Color', [0 0 1], 'LineWidth', 2, 'DisplayName', 'paramSD');
+        end
+        
+        % Plot permutation mean ± std per window for tau if available
+        if enablePermutations && exist('tauPermuted', 'var') && ~isempty(tauPermuted{a})
+            permutedMean = nanmean(tauPermuted{a}, 2);
+            permutedStd = nanstd(tauPermuted{a}, 0, 2);
+            validIdx = ~isnan(permutedMean) & ~isnan(permutedStd) & ~isnan(startS{a}(:));
+            if any(validIdx)
+                xFill = startS{a}(validIdx);
+                yMean = permutedMean(validIdx);
+                yStd = permutedStd(validIdx);
+                if iscolumn(xFill); xFill = xFill'; end
+                if iscolumn(yMean); yMean = yMean'; end
+                if iscolumn(yStd); yStd = yStd'; end
+                fill([xFill, fliplr(xFill)], ...
+                     [yMean + yStd, fliplr(yMean - yStd)], ...
+                     [1 0.8 0.6], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'DisplayName', 'tau Permuted mean ± std');
+                plot(startS{a}(validIdx), permutedMean(validIdx), '-', 'Color', [1 0.7 0.3], 'LineWidth', 1, 'LineStyle', '--', 'DisplayName', 'tau Permuted mean');
+            end
+        end
+        
+        % Plot permutation mean ± std per window for alpha if available
+        if enablePermutations && exist('alphaPermuted', 'var') && ~isempty(alphaPermuted{a})
+            permutedMean = nanmean(alphaPermuted{a}, 2);
+            permutedStd = nanstd(alphaPermuted{a}, 0, 2);
+            validIdx = ~isnan(permutedMean) & ~isnan(permutedStd) & ~isnan(startS{a}(:));
+            if any(validIdx)
+                xFill = startS{a}(validIdx);
+                yMean = permutedMean(validIdx);
+                yStd = permutedStd(validIdx);
+                if iscolumn(xFill); xFill = xFill'; end
+                if iscolumn(yMean); yMean = yMean'; end
+                if iscolumn(yStd); yStd = yStd'; end
+                fill([xFill, fliplr(xFill)], ...
+                     [yMean + yStd, fliplr(yMean - yStd)], ...
+                     [0.6 0.9 0.6], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'DisplayName', 'alpha Permuted mean ± std');
+                plot(startS{a}(validIdx), permutedMean(validIdx), '-', 'Color', [0.3 0.7 0.3], 'LineWidth', 1, 'LineStyle', '--', 'DisplayName', 'alpha Permuted mean');
+            end
+        end
+        
+        % Plot permutation mean ± std per window for paramSD if available
+        if enablePermutations && exist('paramSDPermuted', 'var') && ~isempty(paramSDPermuted{a})
+            permutedMean = nanmean(paramSDPermuted{a}, 2);
+            permutedStd = nanstd(paramSDPermuted{a}, 0, 2);
+            validIdx = ~isnan(permutedMean) & ~isnan(permutedStd) & ~isnan(startS{a}(:));
+            if any(validIdx)
+                xFill = startS{a}(validIdx);
+                yMean = permutedMean(validIdx);
+                yStd = permutedStd(validIdx);
+                if iscolumn(xFill); xFill = xFill'; end
+                if iscolumn(yMean); yMean = yMean'; end
+                if iscolumn(yStd); yStd = yStd'; end
+                fill([xFill, fliplr(xFill)], ...
+                     [yMean + yStd, fliplr(yMean - yStd)], ...
+                     [0.6 0.6 0.9], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'DisplayName', 'paramSD Permuted mean ± std');
+                plot(startS{a}(validIdx), permutedMean(validIdx), '-', 'Color', [0.3 0.3 0.7], 'LineWidth', 1, 'LineStyle', '--', 'DisplayName', 'paramSD Permuted mean');
+            end
+        end
+        
+        title(sprintf('%s - tau (orange), alpha (green), paramSD (blue)', areas{a})); 
+        xlabel('Time (s)'); ylabel('Value'); grid on;
         xlim([xMin, xMax]);
-        ylim([yMinKappa, yMaxKappa]);
+        ylim([yMinParams, yMaxParams]);
+        legend('Location', 'best');
         
         % decades (bottom row)
         subplot(3, length(areasToTest), 2*length(areasToTest) + idx);
         hold on;
         plot(startS{a}, decades{a}, '-', 'Color', [0.6 0 0.6], 'LineWidth', 2);
+        
+        % Plot permutation mean ± std per window if available
+        if enablePermutations && exist('decadesPermuted', 'var') && ~isempty(decadesPermuted{a})
+            % Calculate mean and std for each window across shuffles
+            permutedMean = nanmean(decadesPermuted{a}, 2);  % Mean across shuffles for each window
+            permutedStd = nanstd(decadesPermuted{a}, 0, 2);  % Std across shuffles for each window
+            
+            % Find valid indices (where we have data)
+            validIdx = ~isnan(permutedMean) & ~isnan(permutedStd) & ~isnan(startS{a}(:));
+            if any(validIdx)
+                xFill = startS{a}(validIdx);
+                yMean = permutedMean(validIdx);
+                yStd = permutedStd(validIdx);
+                
+                % Ensure row vectors for fill
+                if iscolumn(xFill); xFill = xFill'; end
+                if iscolumn(yMean); yMean = yMean'; end
+                if iscolumn(yStd); yStd = yStd'; end
+                
+                % Plot shaded region (mean ± std)
+                fill([xFill, fliplr(xFill)], ...
+                     [yMean + yStd, fliplr(yMean - yStd)], ...
+                     [0.7 0.7 1], 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'DisplayName', 'Permuted mean ± std');
+                
+                % Plot mean line
+                plot(startS{a}(validIdx), permutedMean(validIdx), '-', 'Color', [0.5 0.5 1], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
+            end
+        end
+        
         title(sprintf('%s - decades', areas{a})); 
         xlabel('Time (s)'); ylabel('decades'); grid on;
         xlim([xMin, xMax]);
@@ -503,9 +734,9 @@ if makePlots
     end
     
     if ~isempty(filePrefix)
-        sgtitle(sprintf('[%s] %s dcc (top), kappa (mid), decades (bottom) - win=%gs, step=%gs', filePrefix, dataType, slidingWindowSize, avStepSize), 'interpreter', 'none');
+        sgtitle(sprintf('[%s] %s dcc (top), tau/alpha/paramSD (mid), decades (bottom) - win=%gs, step=%gs', filePrefix, dataType, slidingWindowSize, avStepSize), 'interpreter', 'none');
     else
-        sgtitle(sprintf('%s dcc (top), kappa (mid), decades (bottom) - win=%gs, step=%gs', dataType, slidingWindowSize, avStepSize), 'interpreter', 'none');
+        sgtitle(sprintf('%s dcc (top), tau/alpha/paramSD (mid), decades (bottom) - win=%gs, step=%gs', dataType, slidingWindowSize, avStepSize), 'interpreter', 'none');
     end
     if ~isempty(filePrefix)
         exportgraphics(gcf, fullfile(saveDir, sprintf('%s_criticality_%s_av_win%d_step%d.png', filePrefix, dataType, slidingWindowSize, avStepSize)), 'Resolution', 300);

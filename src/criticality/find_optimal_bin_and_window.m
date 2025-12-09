@@ -30,11 +30,13 @@ function [optimalBinSize, optimalWindowSize] = find_optimal_bin_and_window(firin
 minBinSize = minSpikesPerBin / firingRate;
 
 % Round up to nearest 10 ms (0.01 seconds)
-optimalBinSize = ceil(minBinSize / 0.01) * 0.01;
+if minBinSize < .01
+    optimalBinSize = ceil(minBinSize / 0.001) * 0.001;
+    optimalBinSize = max(optimalBinSize, .005);
+    optimalBinSize = max(optimalBinSize, .01);
+else
+    optimalBinSize = ceil(minBinSize / 0.01) * 0.01;
 
-% Ensure binSize is at least 0.01 seconds (10 ms)
-if optimalBinSize < 0.01
-    optimalBinSize = 0.01;
 end
 
 % Calculate window size based on minimum bins per window

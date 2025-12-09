@@ -10,8 +10,6 @@
 
 % =============================    Configuration    =============================
 
-% Sliding window size (seconds)
-slidingWindowSize = 20;
 
 % Flags
 loadExistingResults = false;
@@ -63,8 +61,6 @@ thresholdPct = 1;   % Threshold as percentage of median
 % Optimal bin/window size search parameters
 pOrder = 10;
 critType = 2;
-d2StepSize = .05;
-d2StepSize = repmat(.05,1,4);
 
 % =============================    Data Validation    =============================
 % Verify that required variables are in workspace (loaded by criticality_sliding_data_prep.m)
@@ -160,16 +156,16 @@ if useOptimalBinWindowFunction
         thisFiringRate = sum(thisDataMat(:) / (size(thisDataMat, 1)/1000));
         [optimalBinSize(a), optimalWindowSize(a)] = ...
             find_optimal_bin_and_window(thisFiringRate, minSpikesPerBin, minBinsPerWindow);
-        optimalBinSize(a) = max(optimalBinSize(a), .02);
-        fprintf('Area %s (all neurons): optimal bin size = %.3f s, optimal window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
+        % optimalBinSize(a) = max(optimalBinSize(a), .02);
     end
+d2StepSize = optimalBinSize * 2;
 else
     % Use manually defined values
     fprintf('Using manually defined bin and window sizes:\n');
-    for a = areasToTest
-        fprintf('Area %s: bin size = %.3f s, window size = %.1f s\n', areas{a}, optimalBinSize(a), optimalWindowSize(a));
-    end
 end
+    for a = areasToTest
+        fprintf('Area %s: bin size = %.3f s, window size = %.1f s, step size = %.3f\n', areas{a}, optimalBinSize(a), optimalWindowSize(a), d2StepSize(a));
+    end
 
 % SECOND: If modulation analysis is enabled, find optimal parameters for modulated and unmodulated separately
 if analyzeModulation
@@ -312,46 +308,47 @@ for a = areasToTest
     
     % NEW: Perform circular permutations if enabled
     if enablePermutations
-        fprintf('  Running %d circular permutations for area %s...\n', nShuffles, areas{a});
+        fprintf('  Running %d circular permutations per window for area %s...\n', nShuffles, areas{a});
         ticPerm = tic;
         
         % Initialize storage for permutation results [nWindows x nShuffles]
         d2Permuted{a} = nan(numWindows, nShuffles);
         mrBrPermuted{a} = nan(numWindows, nShuffles);
         
-        % Get original data matrix (before PCA if applied)
+        % Get original binned data matrix (before PCA if applied)
         originalDataMat = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSize(a));
+        nNeurons = size(originalDataMat, 2);
         
-        for shuffle = 1:nShuffles
-            % Circularly permute each neuron independently
-            permutedDataMat = originalDataMat;
-            nNeurons = size(permutedDataMat, 2);
-            nSamples = size(permutedDataMat, 1);
+        % Permute each window independently (accounting for drift)
+        for w = 1:numWindows
+            startIdx = (w - 1) * stepSamples + 1; 
+            endIdx = startIdx + winSamples - 1;
             
-            for n = 1:nNeurons
-                % Random circular shift for this neuron
-                shiftAmount = randi([1, nSamples]);
-                permutedDataMat(:, n) = circshift(permutedDataMat(:, n), shiftAmount);
-            end
+            % Extract this window's data
+            windowData = originalDataMat(startIdx:endIdx, :);
+            winSamples_window = size(windowData, 1);
             
-            % Apply PCA if needed (compute PCA on permuted data separately)
-            if pcaFlag
-                [coeffPerm, scorePerm, ~, ~, explainedPerm, muPerm] = pca(permutedDataMat);
-                forDimPerm = find(cumsum(explainedPerm) > 30, 1); 
-                forDimPerm = max(3, min(6, forDimPerm));
-                nDimPerm = 1:forDimPerm; 
-                permutedDataMat = scorePerm(:,nDimPerm) * coeffPerm(:,nDimPerm)' + muPerm;
-            end
-            
-            % Calculate population activity for permuted data
-            % permutedPopActivity = round(sum(permutedDataMat, 2));
-            permutedPopActivity = mean(permutedDataMat, 2);
-            
-            % Run sliding window analysis on permuted data
-            for w = 1:numWindows
-                startIdx = (w - 1) * stepSamples + 1; 
-                endIdx = startIdx + winSamples - 1;
-                wPopActivityPerm = permutedPopActivity(startIdx:endIdx);
+            % For each shuffle, permute this window's data independently
+            for shuffle = 1:nShuffles
+                % Circularly permute each neuron independently within this window
+                permutedWindowData = windowData;
+                for n = 1:nNeurons
+                    % Random circular shift for this neuron within this window
+                    shiftAmount = randi([1, winSamples_window]);
+                    permutedWindowData(:, n) = circshift(permutedWindowData(:, n), shiftAmount);
+                end
+                
+                % Apply PCA if needed (compute PCA on this permuted window separately)
+                if pcaFlag
+                    [coeffPerm, scorePerm, ~, ~, explainedPerm, muPerm] = pca(permutedWindowData);
+                    forDimPerm = find(cumsum(explainedPerm) > 30, 1); 
+                    forDimPerm = max(3, min(6, forDimPerm));
+                    nDimPerm = 1:forDimPerm; 
+                    permutedWindowData = scorePerm(:,nDimPerm) * coeffPerm(:,nDimPerm)' + muPerm;
+                end
+                
+                % Calculate population activity for this permuted window
+                wPopActivityPerm = mean(permutedWindowData, 2);
                 
                 if analyzeMrBr
                     resultPerm = branching_ratio_mr_estimation(wPopActivityPerm);
@@ -364,8 +361,8 @@ for a = areasToTest
                 end
             end
             
-            if mod(shuffle, max(1, round(nShuffles/10))) == 0
-                fprintf('    Completed %d/%d permutations (%.1f min elapsed)\n', shuffle, nShuffles, toc(ticPerm)/60);
+            if mod(w, max(1, round(numWindows/10))) == 0
+                fprintf('    Completed %d/%d windows (%.1f min elapsed)\n', w, numWindows, toc(ticPerm)/60);
             end
         end
         fprintf('  Permutations completed in %.1f minutes\n', toc(ticPerm)/60);
@@ -639,7 +636,7 @@ end
 save(resultsPath, 'results'); 
 fprintf('Saved %s d2/mrBr to %s\n', dataType, resultsPath);
 
-%% =============================    Plotting    =============================
+% =============================    Plotting    =============================
 if makePlots
     % Extract filename prefix for titles and filenames
     if exist('dataBaseName', 'var') && ~isempty(dataBaseName)
@@ -736,29 +733,31 @@ if makePlots
             set(gca, 'YTickLabelMode', 'auto');
             set(gca, 'YTickMode', 'auto');
             
-            % Plot permutation overall mean ± std as horizontal line if available
+            % Plot permutation mean ± std per window if available
             if enablePermutations && exist('d2Permuted', 'var') && ~isempty(d2Permuted{a})
-                % Calculate overall mean and std across all windows and shuffles
-                allPermutedData = d2Permuted{a}(:);
-                permutedOverallMean = nanmean(allPermutedData);
-                permutedOverallStd = nanstd(allPermutedData);
+                % Calculate mean and std for each window across shuffles
+                permutedMean = nanmean(d2Permuted{a}, 2);  % Mean across shuffles for each window
+                permutedStd = nanstd(d2Permuted{a}, 0, 2);  % Std across shuffles for each window
                 
-                if ~isnan(permutedOverallMean) && ~isnan(permutedOverallStd)
-                    % Get x-axis limits for horizontal line
-                    if ~isempty(startS{a})
-                        xLimits = [startS{a}(1), startS{a}(end)];
-                    else
-                        xLimits = xlim;
-                    end
+                % Find valid indices (where we have data)
+                validIdx = ~isnan(permutedMean) & ~isnan(permutedStd) & ~isnan(startS{a}(:));
+                if any(validIdx)
+                    xFill = startS{a}(validIdx);
+                    yMean = permutedMean(validIdx);
+                    yStd = permutedStd(validIdx);
                     
-                    % Plot horizontal shaded region (mean ± std)
-                    fill([xLimits(1), xLimits(2), xLimits(2), xLimits(1)], ...
-                         [permutedOverallMean + permutedOverallStd, permutedOverallMean + permutedOverallStd, ...
-                          permutedOverallMean - permutedOverallStd, permutedOverallMean - permutedOverallStd], ...
+                    % Ensure row vectors for fill
+                    if iscolumn(xFill); xFill = xFill'; end
+                    if iscolumn(yMean); yMean = yMean'; end
+                    if iscolumn(yStd); yStd = yStd'; end
+                    
+                    % Plot shaded region (mean ± std)
+                    fill([xFill, fliplr(xFill)], ...
+                         [yMean + yStd, fliplr(yMean - yStd)], ...
                          [0.7 0.7 1], 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'DisplayName', 'Permuted mean ± std');
                     
-                    % Plot horizontal mean line
-                    plot(xLimits, [permutedOverallMean, permutedOverallMean], '-', 'Color', [0.5 0.5 1], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
+                    % Plot mean line
+                    plot(startS{a}(validIdx), permutedMean(validIdx), '-', 'Color', [0.5 0.5 1], 'LineWidth', 1.5, 'LineStyle', '--', 'DisplayName', 'Permuted mean');
                 end
             end
         end
@@ -802,7 +801,7 @@ if makePlots
         % end
 
         % Add vertical lines at reach onsets (only for reach data)
-        if ~isempty(reachStart) && strcmp(dataType, 'reach')
+        if strcmp(dataType, 'reach')
             yyaxis left;
             % Filter reach onsets to only show those within the current plot's time range
             if ~isempty(startS{a})
@@ -864,7 +863,7 @@ plot(T.startTime_oe, T.trialType/8, 'Color', [1 .3 .3], 'LineWidth', 2, 'LineSty
         filePrefix = '';
     end
     
-    if ~isempty(reachStart) && strcmp(dataType, 'reach')
+    if strcmp(dataType, 'reach')
         if ~isempty(filePrefix)
             sgtitle(sprintf('[%s] %s d2 (blue, left) and PopActivity Windows (red, right) with reach onsets (gray dashed) - win=%gs', filePrefix, dataType, slidingWindowSize));
         else

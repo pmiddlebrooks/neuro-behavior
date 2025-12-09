@@ -133,6 +133,13 @@ elseif strcmp(dataType, 'schall')
     sessionName =  'broca/bp229n02-mm.mat';
     % sessionName =  'broca/bp240n02.mat';
     sessionName =  'joule/jp121n02.mat';
+    sessionName =  'joule/jp125n04.mat';
+    sessionName = fullfile('joule', goodSessionsCCM{1})
+
+    %     opts.collectStart = 60*60;
+    % opts.collectEnd = 105*60;
+    % % opts.collectStart = 0*60;
+    opts.collectEnd = 45*60;
 
     % Validate sessionName is provided
     if ~exist('sessionName', 'var') || isempty(sessionName)
@@ -153,10 +160,6 @@ responseOnset(responseOnset < opts.collectStart) = [];
 responseOnset(responseOnset > opts.collectEnd) = [];
 
 
-    opts.collectStart = 60*60;
-    opts.collectEnd = 105*60;
-    % opts.collectStart = 0*60;
-    % opts.collectEnd = 45*60;
 
     [dataMat, idLabels, areaLabels] = neural_matrix_schall_fef(dataS, opts);
     areas = {'FEF'};
@@ -171,7 +174,7 @@ responseOnset(responseOnset > opts.collectEnd) = [];
     fprintf('%d FEF\n', length(idFEF));
 
 
-    [~, dataBaseName, ~] = fileparts(reachDataFile);
+    [~, dataBaseName, ~] = fileparts(schallDataFile);
     saveDir = fullfile(paths.dropPath, 'schall/results', dataBaseName);
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
 
@@ -223,7 +226,15 @@ end
 
 %% =============================    Call Analysis Script    =============================
 % All data is now loaded into the workspace. Call the analysis script.
+
+% Sliding window size (seconds)
+slidingWindowSize = 2;
+
 criticality_sliding_window_ar
 %%
+% Sliding window and step size (seconds)
+slidingWindowSize = 180;  % seconds - user specified
+avStepSize = 20;          % seconds - user specified
+
 criticality_sliding_window_av
 

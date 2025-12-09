@@ -10,7 +10,7 @@
 
 % =============================    Configuration    =============================
 % User-provided directory to search
-subjectID = 'broca';
+subjectID = 'joule';  % joule  broca
 searchDir = fullfile(paths.dropPath, 'schall/data', subjectID);  % Set this to the directory path containing .mat files
 
 %% Find good sessions
