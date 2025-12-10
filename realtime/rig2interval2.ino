@@ -21,7 +21,7 @@ const int chipSelect = 53;
 File logFile;
 File dataFile;
 
-String csvFileName;
+char csvFileName[20]; // Use char array instead of String for better SD card compatibility
 
 // State
 bool ledOn = false;
@@ -116,9 +116,12 @@ void setup() {
     Serial.println("Warning: Could not open log.txt - continuing without log file.");
   }
   
+  // Add a small delay to ensure SD card is fully ready
+  delay(100);
+  
   // Generate random filename for CSV data file (exactly like JS_SD.ino line 81-82)
   unsigned long randomNum = random(100000, 999999); // 6-digit random number
-  csvFileName = String(randomNum) + "_data.csv";
+  sprintf(csvFileName, "%lu_data.csv", randomNum);
   
   Serial.print("CSV file will be: ");
   Serial.println(csvFileName);
@@ -127,6 +130,7 @@ void setup() {
   File testFile = SD.open("_test.txt", FILE_WRITE);
   if (testFile) {
     testFile.println("test");
+    testFile.flush();
     testFile.close();
     SD.remove("_test.txt");
     Serial.println("SD card write test: PASSED");
@@ -134,16 +138,34 @@ void setup() {
     Serial.println("WARNING: SD card write test FAILED!");
   }
   
+  // Check if file already exists and remove it (in case of previous failed run)
+  if (SD.exists(csvFileName)) {
+    Serial.print("File already exists, removing: ");
+    Serial.println(csvFileName);
+    SD.remove(csvFileName);
+    delay(50); // Give SD card time to process removal
+  }
+  
   // Create the CSV file by writing a test line (like JS_SD.ino creates file in loop)
-  dataFile = SD.open(csvFileName.c_str(), FILE_WRITE);
+  dataFile = SD.open(csvFileName, FILE_WRITE);
   if (dataFile) {
     // Write a test line to ensure file is created
     dataFile.println("0,INIT,0,SETUP_COMPLETE");
+    dataFile.flush(); // Ensure data is written immediately
     dataFile.close();
     Serial.println("CSV file created successfully.");
+    
+    // Verify file was created by checking if it exists
+    if (SD.exists(csvFileName)) {
+      Serial.println("CSV file verified on SD card.");
+    } else {
+      Serial.println("WARNING: CSV file created but not found on SD card!");
+    }
   } else {
     Serial.print("ERROR: Could not create CSV file: ");
     Serial.println(csvFileName);
+    Serial.print("Filename length: ");
+    Serial.println(strlen(csvFileName));
     Serial.println("Attempting to list files on SD card...");
     File root = SD.open("/");
     if (root) {
@@ -159,6 +181,8 @@ void setup() {
       root.close();
       Serial.print("Total files: ");
       Serial.println(fileCount);
+    } else {
+      Serial.println("ERROR: Could not open root directory!");
     }
   }
   
@@ -170,10 +194,11 @@ void setup() {
 }
 
 void logLine(const char* tag, int value) {
-  dataFile = SD.open(csvFileName.c_str(), FILE_WRITE);
+  dataFile = SD.open(csvFileName, FILE_WRITE);
   if (dataFile) {
     sprintf(buffer, "%lu,%s,%d,", millis(), tag, value);
     dataFile.println(buffer);
+    dataFile.flush();
     dataFile.close();
   } else {
     // Only print error once to avoid spam
@@ -194,10 +219,11 @@ void writeRewardOn() { logLine("R", 1); }
 void writeRewardOff() { logLine("R", 0); }
 void writeBeam(int state) { logLine("B", state); }
 void writeState(const char* tag) { 
-  dataFile = SD.open(csvFileName.c_str(), FILE_WRITE);
+  dataFile = SD.open(csvFileName, FILE_WRITE);
   if (dataFile) {
     sprintf(buffer, "%lu,S,0,%s", millis(), tag); 
     dataFile.println(buffer); 
+    dataFile.flush();
     dataFile.close();
   } else {
     // Only print error once to avoid spam

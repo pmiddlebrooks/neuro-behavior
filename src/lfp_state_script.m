@@ -14,8 +14,8 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
-opts.collectEnd = 60 * 60; % seconds
-opts.frameSize = .1;
+opts.collectEnd = 45 * 60; % seconds
+opts.frameSize = .001;
 
 getDataType = 'lfp';
 get_standard_data
@@ -48,36 +48,40 @@ lfpPerArea = double(flipud([...
     mmf.Data.x(40,:)...
     ])');
 
-zThresh = 5; % threshold in SD units
-zLfp = zscore(lfpPerArea);
+%% Clean LFP artifacts and spikes using comprehensive pipeline
+% The clean_lfp_artifacts function implements a robust multi-stage pipeline:
+% 1. Detrending to remove slow drifts (done first to prevent artifacts from affecting detrending)
+% 2. Hampel filter for robust outlier detection (more robust than simple z-score)
+% 3. Z-score based spike detection with spline interpolation (better than linear interpolation)
+% 4. Notch filtering for line noise (60, 120, 180 Hz) with proper frequency normalization
+% 5. Lowpass filtering at 300 Hz (after notch to avoid aliasing)
+% 6. Final median filter for smoothing any remaining small artifacts
+%
+% Improvements over previous approach:
+% - Uses robust statistics (median/MAD) instead of mean/std for spike detection
+% - Larger spike removal windows (50 vs 20 samples)
+% - Spline interpolation instead of linear for smoother reconstruction
+% - Proper filter ordering (detrend -> outlier removal -> spike removal -> notch -> lowpass)
+% - Hampel filter for additional robust outlier detection
+% - Correct frequency normalization for notch filters (uses fs/2, not hardcoded 2500/2)
 
-for aIdx = 1 : size(zLfp)
-spikeIdx = find(abs(zLfp(:,aIdx)) > zThresh);
+% To visualize the artifact removal process, set 'visualize' to true:
+% lfpPerArea = clean_lfp_artifacts(lfpPerArea, opts.fsLfp, ...
+%     'spikeThresh', 4, ...
+%     'spikeWinSize', 50, ...
+%     'visualize', true, ...             % Enable visualization
+%     'visualizeChannel', 1, ...         % Which channel to visualize
+%     'visualizeSamples', [1 10000]);    % Optional: specific sample range
 
-% For each spike, interpolate a window
-winSize = 20; % samples before and after
-lfpClean = lfpPerArea;
-for i = 1:length(spikeIdx)
-    idx = spikeIdx(i);
-    s = max(1, idx - winSize);
-    e = min(length(lfpPerArea(:,aIdx)), idx + winSize);
-    lfpClean(s:e, aIdx) = interp1([s e], [lfpPerArea(s, aIdx) lfpPerArea(e, aIdx)], s:e);
-end
-% Detrend the signals (remove linear trend)
-lfpPerArea(:,aIdx) = detrend(lfpClean(:,aIdx), 'linear');
-lfpMed(:,aIdx) = medfilt1(lfpPerArea(:,aIdx), 11); % window size in samples
-% lowpass the LFP at 300hz
-lfpPerArea(:,aIdx) = lowpass(lfpMed(:,aIdx), 300, opts.fsLfp);
-lfpClean(:,aIdx) = lfpPerArea(:,aIdx);
-notchFreqs = [60 120 180];
-for f0 = notchFreqs
-    wo = f0 / (2500 / 2);
-    bw = wo / 35;
-    [b, a] = iirnotch(wo, bw);
-    lfpClean(:,aIdx) = filtfilt(b, a, lfpClean(:,aIdx));
-end
-end
-lfpPerArea = lfpClean;
+lfpPerArea = clean_lfp_artifacts(lfpPerArea, opts.fsLfp, ...
+    'spikeThresh', 4, ...              % Z-score threshold for spike detection
+    'spikeWinSize', 50, ...             % Window around spikes to remove (samples)
+    'notchFreqs', [60 120 180], ...    % Line noise frequencies to notch
+    'lowpassFreq', 300, ...             % Lowpass cutoff (Hz)
+    'useHampel', true, ...              % Use Hampel filter for robust outlier detection
+    'hampelK', 5, ...                  % Hampel half-window size
+    'hampelNsigma', 3, ...              % Hampel threshold (standard deviations)
+    'detrendOrder', 'linear');          % Detrending order
 %%
 % - get one lfp from each brain area (4 lfps)
 % - Compute lfp power via wavelet
@@ -91,10 +95,10 @@ bands = {'alpha', [8 13]; ...
     'beta', [13 30]; ...
     'lowGamma', [30 50]; ...
     'highGamma', [50 80]};
-bands = {'theta', [4 8]; ...
-    'beta', [13 30]; ...
-    'lowGamma', [30 50]; ...
-    'highGamma', [50 80]};
+% bands = {'theta', [4 8]; ...
+%     'beta', [13 30]; ...
+%     'lowGamma', [30 50]; ...
+%     'highGamma', [50 80]};
 % bands = {'low alpha', [3 6]; ...
 %     'high alpha', [8 13]; ...
 %     'beta', [13 30]; ...
@@ -159,21 +163,22 @@ title('LFP Band Power Over Time');
 % bands = {'low', [.1 12]};
 numBands = size(bands, 1);
 
+opts.frameSize = .01;
 freqIdx = repmat(1:numBands, 1, 4);
 binnedBandPowers = [];
 binnedEnvelopes = [];
 method = 'stft';
 method = 'cwt';
 for iArea = 1 : 4
-    [iBinnedZPower, iBinnedEnvelopes, timeBins] = bin_bandpower_by_frames(lfpPerArea(:,iArea), opts.fsLfp, bands, opts.frameSize, method);
-    binnedBandPowers = [binnedBandPowers, iBinnedZPower'];
+    [iBinnedPower, iBinnedEnvelopes, timeBins] = lfp_bin_bandpower(lfpPerArea(:,iArea), opts.fsLfp, bands, opts.frameSize, method);
+    binnedBandPowers = [binnedBandPowers, iBinnedPower'];
     binnedEnvelopes = [binnedEnvelopes, iBinnedEnvelopes'];
 end
 
 %% plot results
 bandIdx = (1:4) + 4 * 1;
 plotRange = (1000:1060/opts.frameSize);
-figure(1232);
+figure(1233);
 subplot(2, 1, 1);
 
 imagesc(binnedBandPowers(plotRange,bandIdx)');
@@ -181,10 +186,10 @@ colormap('jet');
 colorbar;
 xlabel('Time (s)');
 ylabel('Frequency Bands');
-title('Binned Z-Scored Power');
+title('Binned Power');
 
 subplot(2, 1, 2);
-plot(plotRange, binnedEnvelopes(plotRange,bandIdx)');
+plot(timeBins(plotRange), binnedEnvelopes(plotRange,bandIdx)');
 legend(bands(:, 1));
 xlabel('Time (s)');
 ylabel('Envelope Amplitude');
@@ -670,7 +675,7 @@ for i = 1 : length(preIndLfp)
     powerSpectra = abs(cfs).^2;
 
     % Z-score the power at each frequency
-    zScoredPower = zscore(abs(cfs).^2, 0, 2);
+    power = abs(cfs).^2;
 
     % Step 2: Allocate matrices for band power and envelopes
     bandPowerSignals = zeros(numBands, length(signal));
@@ -685,7 +690,7 @@ for i = 1 : length(preIndLfp)
         freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
 
         % Average z-scored power within the band
-        bandPowerSignals(iBand, :) = mean(zScoredPower(freqIdx, :), 1);
+        bandPowerSignals(iBand, :) = mean(power(freqIdx, :), 1);
 
         % Compute the envelope using the Hilbert transform
         bandEnvelopes(iBand, :) = abs(hilbert(bandPowerSignals(iBand, :)));
@@ -742,130 +747,6 @@ for iArea = 1:4
     bandPowers = [bandPowers; areaPower];
 
 end
-
-
-
-
-
-
-
-function [binnedZPower, binnedEnvelopes, timeBins] = bin_bandpower_by_frames(signal, fs, bands, frameSize, method)
-% bin_bandpower_by_frames: Computes band powers and envelopes of LFP signals,
-% bins them by frames, and returns results.
-%
-% Inputs:
-%   - signal: LFP signal (1D array).
-%   - fs: Sampling rate (Hz).
-%   - bands: Cell array of frequency bands (e.g., {'alpha', [8 13]; 'beta', [13 30]}).
-%   - frameSize: Frame size in seconds for binning.
-%
-% Outputs:
-%   - binnedZPower: Z-scored band power binned by frames.
-%   - binnedEnvelopes: Band-specific envelopes binned by frames.
-%   - timeBins: Time vector for bin midpoints.
-
-if nargin < 5
-    method = 'cwt';
-end
-% Frame parameters
-frameSamples = round(frameSize * fs); % Samples per frame
-numFrames = floor(length(signal) / frameSamples);
-numBands = size(bands, 1);
-
-signal = zscore(signal, [], 1);
-% Preallocate binned outputs
-binnedZPower = zeros(numBands, numFrames);
-binnedEnvelopes = zeros(numBands, numFrames);
-
-
-% Step 1: Compute power
-% Calculate band powers using the selected method
-switch lower(method)
-    case 'stft'
-        % STFT parameters
-        stftWindowSize = round(0.8 * fs); % ~800 ms window
-        stftOverlap = round(0.7 * fs);    % ~700 ms overlap
-        fftLength = 2^nextpow2(stftWindowSize);     % FFT length
-
-        % Compute STFT
-        [cfs, frequencies, t] = stft(signal, fs, ...
-            'Window', hann(stftWindowSize, 'periodic'), ...
-            'OverlapLength', stftOverlap, ...
-            'FFTLength', fftLength);
-        powerSpectra = abs(cfs).^2; % Power spectrum
-
-        % Z-score the power at each frequency
-        zScoredPower = zscore(abs(cfs).^2, 0, 2);
-
-        % Interpolate STFT results to match 100ms bins
-        timeBins = linspace(0, length(signal) / fs, numFrames);
-        for i = 1:numBands
-            freqRange = bands{i, 2};
-            bandIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2); % Frequency indices for the band
-            bandPower = mean(zScoredPower(bandIdx, :), 1); % Average power across band
-
-            % Interpolate power to align with 100ms bins
-            binnedZPower(i, :) = interp1(t, bandPower, timeBins, 'linear', 0);
-
-            % Compute the envelope using the Hilbert transform
-            binnedEnvelopes(i, :) = abs(hilbert(binnedZPower(i, :)));
-        end
-
-    case 'cwt'
-        freqLimits = [min(cellfun(@(x) x(1), bands(:, 2))), max(cellfun(@(x) x(2), bands(:, 2)))];
-        % Use CWT
-        [cfs, frequencies] = cwt(signal, 'amor', fs, ...
-            'FrequencyLimits', freqLimits);
-        powerSpectra = abs(cfs).^2;
-
-        % Z-score the power at each frequency
-        zScoredPower = zscore(abs(cfs).^2, 0, 2);
-
-        % Step 2: Allocate matrices for band power and envelopes
-        bandPowerSignals = zeros(numBands, length(signal));
-        bandEnvelopes = zeros(numBands, length(signal));
-
-        % Step 3: Compute power and envelopes for each band
-        for i = 1:numBands
-            % Get the frequency range for the current band
-            freqRange = bands{i, 2};
-
-            % Identify indices corresponding to the band frequencies
-            freqIdx = frequencies >= freqRange(1) & frequencies <= freqRange(2);
-
-            % Average z-scored power within the band
-            bandPowerSignals(i, :) = mean(zScoredPower(freqIdx, :), 1);
-
-            % Compute the envelope using the Hilbert transform
-            bandEnvelopes(i, :) = abs(hilbert(bandPowerSignals(i, :)));
-        end
-
-        % Step 4: Bin power and envelopes by frames
-        % Preallocate binned outputs
-        timeBins = zeros(1, numFrames);
-
-        for frameIdx = 1:numFrames
-            % Frame indices
-            startIdx = (frameIdx - 1) * frameSamples + 1;
-            endIdx = startIdx + frameSamples - 1;
-
-            % Extract frame
-            frameZPower = bandPowerSignals(:, startIdx:endIdx);
-            frameEnvelope = bandEnvelopes(:, startIdx:endIdx);
-
-            % Average across the frame
-            binnedZPower(:, frameIdx) = mean(frameZPower, 2);
-            binnedEnvelopes(:, frameIdx) = mean(frameEnvelope, 2);
-
-            % Compute bin midpoint time
-            timeBins(frameIdx) = (startIdx + endIdx) / (2 * fs);
-        end
-
-end
-
-end
-
-
 
 
 
