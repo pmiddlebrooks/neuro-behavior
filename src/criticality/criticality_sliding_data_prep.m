@@ -134,7 +134,7 @@ elseif strcmp(dataType, 'schall')
     % sessionName =  'broca/bp240n02.mat';
     sessionName =  'joule/jp121n02.mat';
     sessionName =  'joule/jp125n04.mat';
-    sessionName = fullfile('joule', goodSessionsCCM{1})
+    sessionName = fullfile('joule', goodSessionsCCM{end})
 
     %     opts.collectStart = 60*60;
     % opts.collectEnd = 105*60;
