@@ -48,6 +48,17 @@ lfpPerArea = double(flipud([...
     mmf.Data.x(40,:)...
     ])');
 
+%% Schall data
+subjectID = 'joule';  % joule  broca
+searchDir = fullfile(paths.dropPath, 'schall/data', subjectID);  % Set this to the directory path containing .mat files
+% get good sessions (with lfp) from good_ccm_sessions.m
+disp(sessionsWithLfp')
+sessionName = sessionsWithLfp{end};
+    schallDataFile = fullfile(paths.schallDataPath, subjectID, sessionName);
+    dataL = load(schallDataFile);
+% Choose which lfp contact to use
+lfpPerArea = cell2mat(dataL.lfp16);
+
 %% Clean LFP artifacts and spikes using comprehensive pipeline
 % The clean_lfp_artifacts function implements a robust multi-stage pipeline:
 % 1. Detrending to remove slow drifts (done first to prevent artifacts from affecting detrending)
@@ -169,14 +180,14 @@ binnedBandPowers = [];
 binnedEnvelopes = [];
 method = 'stft';
 method = 'cwt';
-for iArea = 1 : 4
+for iArea = 1 %: 4
     [iBinnedPower, iBinnedEnvelopes, timeBins] = lfp_bin_bandpower(lfpPerArea(:,iArea), opts.fsLfp, bands, opts.frameSize, method);
     binnedBandPowers = [binnedBandPowers, iBinnedPower'];
     binnedEnvelopes = [binnedEnvelopes, iBinnedEnvelopes'];
 end
 
 %% plot results
-bandIdx = (1:4) + 4 * 1;
+bandIdx = (1:4) + 4 * 0;
 plotRange = (1000:1060/opts.frameSize);
 figure(1233);
 subplot(2, 1, 1);

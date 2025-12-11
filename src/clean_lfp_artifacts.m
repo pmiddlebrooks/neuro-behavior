@@ -164,20 +164,20 @@ for chIdx = 1:nChannels
         visSteps.robustZ = robustZ;
     end
     
-    % Step 4: Notch filtering to remove line noise and harmonics
-    % Apply notch filters in sequence (order matters for stability)
-    signalNotched = signal;
-    for f0 = notchFreqs
-        % Normalize frequency to Nyquist
-        wo = f0 / (fs / 2);
-        % Bandwidth: narrower for better selectivity
-        bw = wo / 50; % Narrower bandwidth than before
-        % Design notch filter
-        [b, a] = iirnotch(wo, bw);
-        % Apply with zero-phase filtering
-        signalNotched = filtfilt(b, a, signalNotched);
-    end
-    signal = signalNotched;
+    % % Step 4: Notch filtering to remove line noise and harmonics
+    % % Apply notch filters in sequence (order matters for stability)
+    % signalNotched = signal;
+    % for f0 = notchFreqs
+    %     % Normalize frequency to Nyquist
+    %     wo = f0 / (fs / 2);
+    %     % Bandwidth: narrower for better selectivity
+    %     bw = wo / 50; % Narrower bandwidth than before
+    %     % Design notch filter
+    %     [b, a] = iirnotch(wo, bw);
+    %     % Apply with zero-phase filtering
+    %     signalNotched = filtfilt(b, a, signalNotched);
+    % end
+    % signal = signalNotched;
     
     if visualize && chIdx == visualizeChannel
         visSteps.afterNotch = signal;

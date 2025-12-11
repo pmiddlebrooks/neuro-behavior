@@ -43,8 +43,8 @@ useOptimalBinWindowFunction = true;  % Set to true to use find_optimal_bin_and_w
                                      % Set to false to manually define optimalBinSize and optimalWindowSize below
 % Manual bin/window size definitions (used only if useOptimalBinWindowFunction = false)
 % Define as arrays with one value per area: [M23, M56, DS, VS]
-optimalBinSize = repmat(.05, 1, 4);      % Bin sizes in seconds (e.g., 10 ms = 0.01 s)
-optimalWindowSize = repmat(slidingWindowSize, 1, 4);          % Window sizes in seconds
+optimalBinSize = repmat(binSize, 1, length(areas));      % Bin sizes in seconds (e.g., 10 ms = 0.01 s)
+optimalWindowSize = repmat(slidingWindowSize, 1, length(areas));          % Window sizes in seconds
 
 % Areas to analyze
 areasToPlot = areasToTest;

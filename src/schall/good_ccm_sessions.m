@@ -128,6 +128,74 @@ fprintf('\n=== Done ===\n');
 
 
 %% Load good sessions
+subjectID = 'joule';  % joule  broca
+searchDir = fullfile(paths.dropPath, 'schall/data', subjectID);  % Set this to the directory path containing .mat files
 loadPath = fullfile(searchDir, 'goodSessionsCCM.mat');
 load(loadPath);
 disp(goodSessionsCCM')
+
+%% Check for LFP session files
+fprintf('\n=== Checking for LFP session files ===\n');
+
+% Get all .mat files in the directory
+matFiles = dir(fullfile(searchDir, '*.mat'));
+allFileNames = {matFiles.name};
+
+% Check each good session for corresponding LFP file
+sessionsWithLfp = {};
+sessionsWithoutLfp = {};
+
+for i = 1:length(goodSessionsCCM)
+    sessionName = goodSessionsCCM{i};
+    
+    % Look for files that contain the session name followed by "_lfp"
+    % Pattern: sessionName_lfp or sessionName_lfp_*
+    lfpPattern = [sessionName, '_lfp'];
+    
+    % Check if any file matches the pattern
+    hasLfp = false;
+    lfpFileName = '';
+    
+    for j = 1:length(allFileNames)
+        fileName = allFileNames{j};
+        % Check if filename contains the pattern (case-insensitive)
+        if contains(fileName, lfpPattern, 'IgnoreCase', true)
+            hasLfp = true;
+            lfpFileName = fileName;
+            break;
+        end
+    end
+    
+    if hasLfp
+        sessionsWithLfp{end+1} = lfpFileName;
+        fprintf('  ✓ %s -> Found LFP file: %s\n', sessionName, lfpFileName);
+    else
+        sessionsWithoutLfp{end+1} = lfpFileName;
+        fprintf('  ✗ %s -> No LFP file found\n', sessionName);
+    end
+end
+
+% Summary
+fprintf('\n=== LFP File Check Summary ===\n');
+fprintf('Total good sessions: %d\n', length(goodSessionsCCM));
+fprintf('Sessions with LFP files: %d\n', length(sessionsWithLfp));
+fprintf('Sessions without LFP files: %d\n', length(sessionsWithoutLfp));
+
+if ~isempty(sessionsWithLfp)
+    fprintf('\nSessions with LFP files:\n');
+    for i = 1:length(sessionsWithLfp)
+        fprintf('  %d. %s\n', i, sessionsWithLfp{i});
+    end
+end
+
+% if ~isempty(sessionsWithoutLfp)
+%     fprintf('\nSessions without LFP files:\n');
+%     for i = 1:length(sessionsWithoutLfp)
+%         fprintf('  %d. %s\n', i, sessionsWithoutLfp{i});
+%     end
+% end
+
+% % Store results in workspace
+% fprintf('\nVariables created:\n');
+% fprintf('  sessionsWithLfp - cell array of sessions with LFP files\n');
+% fprintf('  sessionsWithoutLfp - cell array of sessions without LFP files\n');
