@@ -30,8 +30,6 @@ if strcmp(dataSource, 'lfp')
         'lowGamma', [30 50]; ...
         'highGamma', [50 80]};
     
-    % LFP binning frame size (typically larger than spike frame size)
-    opts.frameSize = .01;  % 10 ms for LFP
     
     % LFP cleaning parameters
     lfpCleanParams = struct();
@@ -60,6 +58,7 @@ filenameSuffix = '';  % Will be updated based on pcaFlag in analysis script
     % =============================    Naturalistic Data Loading    =============================
 if strcmp(dataType, 'naturalistic')
     opts.collectEnd = 45 * 60; % seconds
+    opts.collectEnd = 5 * 60; % seconds
     
     if strcmp(dataSource, 'spikes')
         % Load naturalistic spike data
@@ -367,11 +366,7 @@ end
     criticality_sliding_window_av
     
 %% ===========================     LFP SCRIPTS
-if strcmp(dataSource, 'lfp')
-    % D2 sliding window
-    % Sliding window size (seconds)
-    slidingWindowSize = 5;     % Window size in seconds
-    binSize = .01;
+    binSize = .005;
     
     % Compute binned envelopes for each area (store as cell structure)
     % This is done here to avoid redundancy across data types
@@ -382,12 +377,12 @@ if strcmp(dataSource, 'lfp')
         % Schall: FEF is single area, but may have multiple channels
         if numAreas == 1
             % Single channel - use it directly
-            [~, iBinnedEnvelopes, ~] = lfp_bin_bandpower(lfpPerArea, opts.fsLfp, bands, binSize, 'cwt');
+            [~, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpPerArea, opts.fsLfp, bands, binSize, 'cwt');
             binnedEnvelopes = {iBinnedEnvelopes'};  % Cell with single area [nFrames x numBands]
         else
             % Multiple channels - average them
             lfpMean = mean(lfpPerArea, 2);
-            [~, iBinnedEnvelopes, ~] = lfp_bin_bandpower(lfpMean, opts.fsLfp, bands, binSize, 'cwt');
+            [~, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpMean, opts.fsLfp, bands, binSize, 'cwt');
             binnedEnvelopes = {iBinnedEnvelopes'};  % Cell with single area [nFrames x numBands]
         end
         fprintf('LFP data loaded: %d frames, %d bands\n', size(binnedEnvelopes{1}, 1), numBands);
@@ -395,14 +390,16 @@ if strcmp(dataSource, 'lfp')
         % Naturalistic and Reach: multiple areas
         binnedEnvelopes = cell(1, numAreas);
         for iArea = 1:numAreas
-            [~, iBinnedEnvelopes, ~] = lfp_bin_bandpower(lfpPerArea(:, iArea), opts.fsLfp, bands, binSize, 'cwt');
+            [~, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpPerArea(:, iArea), opts.fsLfp, bands, binSize, 'cwt');
             binnedEnvelopes{iArea} = iBinnedEnvelopes';  % [nFrames x numBands]
         end
         fprintf('LFP data loaded: %d frames, %d bands/area, %d areas\n', size(binnedEnvelopes{1}, 1), numBands, numAreas);
     end
-
+%%
+    % D2 sliding window
+    % Sliding window size (seconds)
+    slidingWindowSize = 20;     % Window size in seconds
     criticality_sliding_ar_lfp
-end
 
     %% Avalanche analyses
     % Sliding window and step size (seconds)

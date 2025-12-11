@@ -20,12 +20,12 @@ makePlots = true;
 analyzeD2 = true;      % compute d2
 
 % Permutation testing flags
-enablePermutations = true;  % Set to true to perform circular permutation testing
+enablePermutations = false;  % Set to true to perform circular permutation testing
 nShuffles = 3;  % Number of circular permutations to perform
 
 % Analysis parameters
 minSegmentLength = 50;
-d2StepSize = binSize * 2;  % Step size in seconds (how much to slide the window)
+d2StepSize = binSize * 4;  % Step size in seconds (how much to slide the window)
 
 % Optimal bin/window size selection mode
 useOptimalBinWindowFunction = false;  % For LFP, we use the frameSize from opts
@@ -114,7 +114,7 @@ fprintf('\n=== LFP Power Band d2 Analysis ===\n');
 fprintf('Number of bands: %d\n', numBands);
 fprintf('Number of areas: %d\n', numAreas);
 fprintf('Number of frames: %d\n', numFrames);
-fprintf('Frame size: %.3f s\n', opts.frameSize);
+fprintf('Frame size: %.3f s\n', binSize);
 
 % Initialize results
 % Structure: d2{area}{band} = [1 x numWindows]
@@ -249,7 +249,7 @@ results.params.slidingWindowSize = slidingWindowSize;
 results.params.analyzeD2 = analyzeD2;
 results.params.pOrder = pOrder;
 results.params.critType = critType;
-results.params.frameSize = opts.frameSize;
+results.params.binSize = binSize;
 
 % Save permutation results
 if enablePermutations
@@ -421,6 +421,9 @@ if makePlots
         ylabel('d2');
         xlim([xMin, xMax]);
         ylim([yMinD2, yMaxD2]);
+        % Ensure tick labels are visible
+        set(gca, 'XTickLabelMode', 'auto');
+        set(gca, 'YTickLabelMode', 'auto');
         legend('Location', 'best');
         grid on;
     end
