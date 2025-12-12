@@ -6,7 +6,7 @@
 
 % =============================    Configuration    =============================
 % Data type selection
-dataType = 'naturalistic';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
+dataType = 'reach';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
 
 % Data source selection
 dataSource = 'lfp';  % 'spikes' or 'lfp'
