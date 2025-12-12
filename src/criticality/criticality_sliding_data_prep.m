@@ -93,8 +93,11 @@ if strcmp(dataType, 'naturalistic')
             'useHampel', lfpCleanParams.useHampel, ...
             'hampelK', lfpCleanParams.hampelK, ...
             'hampelNsigma', lfpCleanParams.hampelNsigma, ...
-            'detrendOrder', lfpCleanParams.detrendOrder);
-        
+            'detrendOrder', lfpCleanParams.detrendOrder, ...
+'visualize', true, ...
+'visualizeChannel', 2, ...
+'visualizeSamples', 1:5000);
+
         areas = {'M23', 'M56', 'DS', 'VS'};
     end
 
@@ -377,27 +380,32 @@ end
         % Schall: FEF is single area, but may have multiple channels
         if numAreas == 1
             % Single channel - use it directly
-            [~, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpPerArea, opts.fsLfp, bands, binSize, 'cwt');
+            [iBinnedPower, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpPerArea, opts.fsLfp, bands, binSize, 'cwt');
             binnedEnvelopes = {iBinnedEnvelopes'};  % Cell with single area [nFrames x numBands]
+            binnedPower = {iBinnedPower'};  % [nFrames x numBands]
         else
             % Multiple channels - average them
             lfpMean = mean(lfpPerArea, 2);
-            [~, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpMean, opts.fsLfp, bands, binSize, 'cwt');
+            [iBinnedPower, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpMean, opts.fsLfp, bands, binSize, 'cwt');
             binnedEnvelopes = {iBinnedEnvelopes'};  % Cell with single area [nFrames x numBands]
+            binnedPower = {iBinnedPower}';  % [nFrames x numBands]
         end
         fprintf('LFP data loaded: %d frames, %d bands\n', size(binnedEnvelopes{1}, 1), numBands);
     else
         % Naturalistic and Reach: multiple areas
         binnedEnvelopes = cell(1, numAreas);
+        binnedPower = cell(1, numAreas);
         for iArea = 1:numAreas
-            [~, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpPerArea(:, iArea), opts.fsLfp, bands, binSize, 'cwt');
+            [iBinnedPower, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpPerArea(:, iArea), opts.fsLfp, bands, binSize, 'cwt');
             binnedEnvelopes{iArea} = iBinnedEnvelopes';  % [nFrames x numBands]
+            binnedPower{iArea} = iBinnedPower';  % [nFrames x numBands]
         end
         fprintf('LFP data loaded: %d frames, %d bands/area, %d areas\n', size(binnedEnvelopes{1}, 1), numBands, numAreas);
     end
 %%
     % D2 sliding window
     % Sliding window size (seconds)
+    binnedEnvelopes = binnedPower;
     slidingWindowSize = 20;     % Window size in seconds
     criticality_sliding_ar_lfp
 
