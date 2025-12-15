@@ -6,7 +6,7 @@
 
 % =============================    Configuration    =============================
 % Data type selection
-dataType = 'reach';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
+dataType = 'naturalistic';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
 
 % Data source selection
 dataSource = 'lfp';  % 'spikes' or 'lfp'
@@ -58,7 +58,7 @@ filenameSuffix = '';  % Will be updated based on pcaFlag in analysis script
 % =============================    Naturalistic Data Loading    =============================
 if strcmp(dataType, 'naturalistic')
     opts.collectEnd = 45 * 60; % seconds
-    % opts.collectEnd = 5 * 60; % seconds
+    opts.collectEnd = 5 * 60; % seconds
 
     if strcmp(dataSource, 'spikes')
         % Load naturalistic spike data

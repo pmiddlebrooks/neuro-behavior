@@ -51,6 +51,18 @@ totalReaches = length(reachStart);
 
 fprintf('Loaded %d reaches\n', totalReaches);
 
+% Define engagement segments for this session using reach_task_engagement
+segmentOpts = struct(); % use defaults unless overridden
+segmentWindowsEng = reach_task_engagement(reachDataFile, segmentOpts);
+segmentNames = {'B1Eng', 'B1Not', 'B2Eng', 'B2Not'};
+segmentWindowsList = {
+    segmentWindowsEng.block1EngagedWindow;
+    segmentWindowsEng.block1NotEngagedWindow;
+    segmentWindowsEng.block2EngagedWindow;
+    segmentWindowsEng.block2NotEngagedWindow;
+};
+nSegments = numel(segmentNames);
+
 % Calculate intertrial midpoints (halfway between consecutive reaches)
 intertrialMidpoints = nan(1, totalReaches - 1);
 for i = 1:totalReaches - 1
@@ -60,10 +72,10 @@ fprintf('Calculated %d intertrial midpoints\n', length(intertrialMidpoints));
 
 % Sliding window parameters
 beforeAlign = -2;  % Start sliding from this many seconds before alignment point
-afterAlign = 2;    % End sliding at this many seconds after alignment point
-binSize = .05;
-stepSize = .25;       % Step size for sliding window (seconds)
-windowBuffer = .5;   % Minimum distance from window edge to event/midpoint (seconds)
+afterAlign  =  2;  % End sliding at this many seconds after alignment point
+binSize     = .05;
+stepSize    = .25; % Step size for sliding window (seconds)
+windowBuffer = .5; % Minimum distance from window edge to event/midpoint (seconds)
 % Minimum avalanche window size (seconds)
 minAvalancheWindow = 8;
 
@@ -78,6 +90,7 @@ nDim = 4;              % Number of PCA dimensions to use
 % Threshold options
 thresholdFlag = 1;     % Set to 1 to use threshold method
 thresholdPct = 0.75;   % Threshold as percentage of median
+thresholdPct = 1;   % Threshold as percentage of median
 
 % Plotting options
 loadResultsForPlotting = false;  % Set to true to load saved results for plotting
@@ -275,42 +288,41 @@ end
 slidingPositions = beforeAlign:stepSize:afterAlign;
 numSlidingPositions = length(slidingPositions);
 
-% Initialize storage for avalanche metrics
+% Initialize storage for avalanche metrics (per sliding position, concatenated windows)
 % Structure: {area}{eventType}{metric}[slidingPosition]
 % eventType: 'reach' or 'intertrial'
 % metric: 'kappa', 'dcc', 'tau', 'alpha', 'paramSD', 'decades'
-% Note: Metrics are calculated on collective data across all events for each sliding position
 avalancheMetrics = struct();
 avalancheMetrics.reach = struct();
 avalancheMetrics.intertrial = struct();
 
 % Initialize as cell arrays indexed by area
-avalancheMetrics.reach.kappa = cell(1, length(areas));
-avalancheMetrics.reach.dcc = cell(1, length(areas));
-avalancheMetrics.reach.tau = cell(1, length(areas));
-avalancheMetrics.reach.alpha = cell(1, length(areas));
+avalancheMetrics.reach.kappa   = cell(1, length(areas));
+avalancheMetrics.reach.dcc     = cell(1, length(areas));
+avalancheMetrics.reach.tau     = cell(1, length(areas));
+avalancheMetrics.reach.alpha   = cell(1, length(areas));
 avalancheMetrics.reach.paramSD = cell(1, length(areas));
 avalancheMetrics.reach.decades = cell(1, length(areas));
 
-avalancheMetrics.intertrial.kappa = cell(1, length(areas));
-avalancheMetrics.intertrial.dcc = cell(1, length(areas));
-avalancheMetrics.intertrial.tau = cell(1, length(areas));
-avalancheMetrics.intertrial.alpha = cell(1, length(areas));
+avalancheMetrics.intertrial.kappa   = cell(1, length(areas));
+avalancheMetrics.intertrial.dcc     = cell(1, length(areas));
+avalancheMetrics.intertrial.tau     = cell(1, length(areas));
+avalancheMetrics.intertrial.alpha   = cell(1, length(areas));
 avalancheMetrics.intertrial.paramSD = cell(1, length(areas));
 avalancheMetrics.intertrial.decades = cell(1, length(areas));
 
 for a = areasToTest
-    avalancheMetrics.reach.kappa{a} = nan(1, numSlidingPositions);
-    avalancheMetrics.reach.dcc{a} = nan(1, numSlidingPositions);
-    avalancheMetrics.reach.tau{a} = nan(1, numSlidingPositions);
-    avalancheMetrics.reach.alpha{a} = nan(1, numSlidingPositions);
+    avalancheMetrics.reach.kappa{a}   = nan(1, numSlidingPositions);
+    avalancheMetrics.reach.dcc{a}     = nan(1, numSlidingPositions);
+    avalancheMetrics.reach.tau{a}     = nan(1, numSlidingPositions);
+    avalancheMetrics.reach.alpha{a}   = nan(1, numSlidingPositions);
     avalancheMetrics.reach.paramSD{a} = nan(1, numSlidingPositions);
     avalancheMetrics.reach.decades{a} = nan(1, numSlidingPositions);
     
-    avalancheMetrics.intertrial.kappa{a} = nan(1, numSlidingPositions);
-    avalancheMetrics.intertrial.dcc{a} = nan(1, numSlidingPositions);
-    avalancheMetrics.intertrial.tau{a} = nan(1, numSlidingPositions);
-    avalancheMetrics.intertrial.alpha{a} = nan(1, numSlidingPositions);
+    avalancheMetrics.intertrial.kappa{a}   = nan(1, numSlidingPositions);
+    avalancheMetrics.intertrial.dcc{a}     = nan(1, numSlidingPositions);
+    avalancheMetrics.intertrial.tau{a}     = nan(1, numSlidingPositions);
+    avalancheMetrics.intertrial.alpha{a}   = nan(1, numSlidingPositions);
     avalancheMetrics.intertrial.paramSD{a} = nan(1, numSlidingPositions);
     avalancheMetrics.intertrial.decades{a} = nan(1, numSlidingPositions);
 end
@@ -339,19 +351,19 @@ for a = areasToTest
 % Sum the spikes across neurons
     aDataMat = round(sum(aDataMat, 2));
     
-    % Convert window duration to samples
-    avalancheWindowSamples = round(avalancheWindow / binSize);
-    
-    % Initialize storage for collected windows
+    % Initialize storage for collected windows and their center times
     % For each sliding position, collect all valid windows
-    collectedReachWindows = cell(1, numSlidingPositions);
+    collectedReachWindows      = cell(1, numSlidingPositions);
     collectedIntertrialWindows = cell(1, numSlidingPositions);
+    collectedReachCenters      = cell(1, numSlidingPositions);
+    collectedIntertrialCenters = cell(1, numSlidingPositions);
     
     % Step 1: Collect all reach-aligned windows
     fprintf('  Collecting reach-aligned windows...\n');
     for posIdx = 1:numSlidingPositions
         offset = slidingPositions(posIdx);
         collectedReachWindows{posIdx} = [];
+        collectedReachCenters{posIdx} = [];
         
         for r = 1:totalReaches
             reachTime = reachStart(r);
@@ -406,8 +418,9 @@ for a = areasToTest
             
             if startIdx >= 1 && endIdx <= numTimePoints && endIdx > startIdx
                 wPopActivity = aDataMat(startIdx:endIdx);
-                % Store this window (as a row vector)
+                % Store this window (as a row vector) and its center time
                 collectedReachWindows{posIdx} = [collectedReachWindows{posIdx}; wPopActivity(:)'];
+                collectedReachCenters{posIdx} = [collectedReachCenters{posIdx}; windowCenter];
             end
         end
     end
@@ -417,6 +430,7 @@ for a = areasToTest
     for posIdx = 1:numSlidingPositions
         offset = slidingPositions(posIdx);
         collectedIntertrialWindows{posIdx} = [];
+        collectedIntertrialCenters{posIdx} = [];
         
         for idx = 1:length(intertrialMidpoints)
             midpointTime = intertrialMidpoints(idx);
@@ -455,34 +469,38 @@ for a = areasToTest
             
             if startIdx >= 1 && endIdx <= numTimePoints && endIdx > startIdx
                 wPopActivity = aDataMat(startIdx:endIdx);
-                % Store this window (as a row vector)
+                % Store this window (as a row vector) and its center time
                 collectedIntertrialWindows{posIdx} = [collectedIntertrialWindows{posIdx}; wPopActivity(:)'];
+                collectedIntertrialCenters{posIdx} = [collectedIntertrialCenters{posIdx}; windowCenter];
             end
         end
     end
     
     % Initialize storage for individual windows (after thresholding and trimming)
     if ~exist('storedReachWindows', 'var')
-        storedReachWindows = cell(length(areas), numSlidingPositions);
-        storedIntertrialWindows = cell(length(areas), numSlidingPositions);
+        storedReachWindows            = cell(length(areas), numSlidingPositions);
+        storedIntertrialWindows       = cell(length(areas), numSlidingPositions);
+        storedReachWindowCenters      = cell(length(areas), numSlidingPositions);
+        storedIntertrialWindowCenters = cell(length(areas), numSlidingPositions);
     end
     
-    % Step 3: Perform avalanche analysis on collected windows
-    fprintf('  Performing avalanche analysis on collected windows...\n');
+    % Step 3: Threshold and trim collected windows (avalanche analysis done later)
+    fprintf('  Preparing collected windows (threshold + trim)...\n');
     
     % Process reach-aligned windows
     for posIdx = 1:numSlidingPositions
         if ~isempty(collectedReachWindows{posIdx})
             % Calculate median across all reach windows for thresholding
-            allReachData = collectedReachWindows{posIdx};
+            allReachData    = collectedReachWindows{posIdx};
+            allReachCenters = collectedReachCenters{posIdx};
             if thresholdFlag
                 medianReachData = median(allReachData(:));
                 allReachData(allReachData < thresholdPct * medianReachData) = 0;
             end
             
-            % Prepare storage for individual trimmed windows
-            reachWindowsThisPos = {};
-            concatenatedReachData = [];
+            % Prepare storage for individual trimmed windows and centers
+            reachWindowsThisPos       = {};
+            reachWindowCentersThisPos = [];
             
             % For each window, trim so it begins and ends with a zero bin
             for w = 1:size(allReachData, 1)
@@ -493,28 +511,16 @@ for a = areasToTest
                     lastZero = zeroIdx(end);
                     if lastZero > firstZero
                         trimmedWindow = thisWindow(firstZero:lastZero);
-                        % Store individual window
-                        reachWindowsThisPos{end+1,1} = trimmedWindow(:); %#ok<AGROW>
-                        % Concatenate for avalanche analysis
-                        concatenatedReachData = [concatenatedReachData; trimmedWindow(:)]; %#ok<AGROW>
+                        % Store individual window and its center time
+                        reachWindowsThisPos{end+1,1}    = trimmedWindow(:); %#ok<AGROW>
+                        reachWindowCentersThisPos(end+1,1) = allReachCenters(w); %#ok<AGROW>
                     end
                 end
             end
             
-            % Store all individual windows for later analysis
-            storedReachWindows{a, posIdx} = reachWindowsThisPos;
-            
-            % Perform avalanche analysis on concatenated data (if any)
-            if ~isempty(concatenatedReachData)
-                [kappa, dcc, tau, alpha, paramSD, decades] = perform_avalanche_analysis(concatenatedReachData, binSize);
-                
-                avalancheMetrics.reach.kappa{a}(posIdx) = kappa;
-                avalancheMetrics.reach.dcc{a}(posIdx) = dcc;
-                avalancheMetrics.reach.tau{a}(posIdx) = tau;
-                avalancheMetrics.reach.alpha{a}(posIdx) = alpha;
-                avalancheMetrics.reach.paramSD{a}(posIdx) = paramSD;
-                avalancheMetrics.reach.decades{a}(posIdx) = decades;
-            end
+            % Store all individual windows and centers for later analysis
+            storedReachWindows{a, posIdx}       = reachWindowsThisPos;
+            storedReachWindowCenters{a, posIdx} = reachWindowCentersThisPos;
         end
     end
     
@@ -528,9 +534,9 @@ for a = areasToTest
                 allIntertrialData(allIntertrialData < thresholdPct * medianIntertrialData) = 0;
             end
             
-            % Prepare storage for individual trimmed windows
-            intertrialWindowsThisPos = {};
-            concatenatedIntertrialData = [];
+            % Prepare storage for individual trimmed windows and centers
+            intertrialWindowsThisPos       = {};
+            intertrialWindowCentersThisPos = [];
             
             % For each window, trim so it begins and ends with a zero bin
             for w = 1:size(allIntertrialData, 1)
@@ -541,32 +547,106 @@ for a = areasToTest
                     lastZero = zeroIdx(end);
                     if lastZero > firstZero
                         trimmedWindow = thisWindow(firstZero:lastZero);
-                        % Store individual window
-                        intertrialWindowsThisPos{end+1,1} = trimmedWindow(:); %#ok<AGROW>
-                        % Concatenate for avalanche analysis
-                        concatenatedIntertrialData = [concatenatedIntertrialData; trimmedWindow(:)]; %#ok<AGROW>
+                        % Store individual window and its center time
+                        intertrialWindowsThisPos{end+1,1}    = trimmedWindow(:); %#ok<AGROW>
+                        intertrialWindowCentersThisPos(end+1,1) = collectedIntertrialCenters{posIdx}(w); %#ok<AGROW>
                     end
                 end
             end
             
-            % Store all individual windows for later analysis
-            storedIntertrialWindows{a, posIdx} = intertrialWindowsThisPos;
-            
-            % Perform avalanche analysis on concatenated data (if any)
-            if ~isempty(concatenatedIntertrialData)
-                [kappa, dcc, tau, alpha, paramSD, decades] = perform_avalanche_analysis(concatenatedIntertrialData, binSize);
-                
-                avalancheMetrics.intertrial.kappa{a}(posIdx) = kappa;
-                avalancheMetrics.intertrial.dcc{a}(posIdx) = dcc;
-                avalancheMetrics.intertrial.tau{a}(posIdx) = tau;
-                avalancheMetrics.intertrial.alpha{a}(posIdx) = alpha;
-                avalancheMetrics.intertrial.paramSD{a}(posIdx) = paramSD;
-                avalancheMetrics.intertrial.decades{a}(posIdx) = decades;
-            end
+            % Store all individual windows and centers for later analysis
+            storedIntertrialWindows{a, posIdx}       = intertrialWindowsThisPos;
+            storedIntertrialWindowCenters{a, posIdx} = intertrialWindowCentersThisPos;
         end
     end
     
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+end
+
+%% =============================    Segment-level Avalanche Analysis    =============================
+fprintf('\n=== Segment-level Avalanche Analysis (Reach vs Intertrial) ===\n');
+
+segmentMetrics = struct();
+segmentMetrics.reach = struct();
+segmentMetrics.intertrial = struct();
+
+metricNamesSeg = {'kappa','dcc','tau','alpha','paramSD','decades'};
+numMetricsSeg = numel(metricNamesSeg);
+
+for a = areasToTest
+    for s = 1:nSegments
+        for m = 1:numMetricsSeg
+            metricName = metricNamesSeg{m};
+            segmentMetrics.reach.(metricName){a,s}      = nan;
+            segmentMetrics.intertrial.(metricName){a,s} = nan;
+        end
+    end
+end
+
+for a = areasToTest
+    fprintf('\nProcessing segments for area %s...\n', areas{a});
+    for s = 1:nSegments
+        segWin = segmentWindowsList{s};
+        if isempty(segWin) || any(isnan(segWin))
+            continue;
+        end
+        tStart = segWin(1);
+        tEnd   = segWin(2);
+
+        % Concatenate reach windows whose centers fall in this segment
+        concatReach = [];
+        for posIdx = 1:numSlidingPositions
+            if isempty(storedReachWindows{a,posIdx})
+                continue;
+            end
+            winCells   = storedReachWindows{a,posIdx};
+            winCenters = storedReachWindowCenters{a,posIdx};
+            for w = 1:numel(winCells)
+                cTime = winCenters(w);
+                if cTime >= tStart && cTime <= tEnd
+                    concatReach = [concatReach; winCells{w}(:)]; %#ok<AGROW>
+                end
+            end
+        end
+
+        % Concatenate intertrial windows whose centers fall in this segment
+        concatInter = [];
+        for posIdx = 1:numSlidingPositions
+            if isempty(storedIntertrialWindows{a,posIdx})
+                continue;
+            end
+            winCells   = storedIntertrialWindows{a,posIdx};
+            winCenters = storedIntertrialWindowCenters{a,posIdx};
+            for w = 1:numel(winCells)
+                cTime = winCenters(w);
+                if cTime >= tStart && cTime <= tEnd
+                    concatInter = [concatInter; winCells{w}(:)]; %#ok<AGROW>
+                end
+            end
+        end
+
+        % Avalanche analysis: reach
+        if ~isempty(concatReach)
+            [kappa,dcc,tau,alpha,paramSD,decades] = perform_avalanche_analysis(concatReach, binSize);
+            segmentMetrics.reach.kappa{a,s}   = kappa;
+            segmentMetrics.reach.dcc{a,s}     = dcc;
+            segmentMetrics.reach.tau{a,s}     = tau;
+            segmentMetrics.reach.alpha{a,s}   = alpha;
+            segmentMetrics.reach.paramSD{a,s} = paramSD;
+            segmentMetrics.reach.decades{a,s} = decades;
+        end
+
+        % Avalanche analysis: intertrial
+        if ~isempty(concatInter)
+            [kappa,dcc,tau,alpha,paramSD,decades] = perform_avalanche_analysis(concatInter, binSize);
+            segmentMetrics.intertrial.kappa{a,s}   = kappa;
+            segmentMetrics.intertrial.dcc{a,s}     = dcc;
+            segmentMetrics.intertrial.tau{a,s}     = tau;
+            segmentMetrics.intertrial.alpha{a,s}   = alpha;
+            segmentMetrics.intertrial.paramSD{a,s} = paramSD;
+            segmentMetrics.intertrial.decades{a,s} = decades;
+        end
+    end
 end
 
 % =============================    Save Results    =============================
@@ -581,6 +661,9 @@ results.afterAlign = afterAlign;
 results.stepSize = stepSize;
 results.slidingPositions = slidingPositions;
 results.avalancheMetrics = avalancheMetrics;
+results.segmentMetrics   = segmentMetrics;
+results.segmentNames     = segmentNames;
+results.segmentWindows   = segmentWindowsEng;
 if exist('storedReachWindows', 'var')
     results.windows.reach = storedReachWindows;
     results.windows.intertrial = storedIntertrialWindows;
@@ -615,7 +698,7 @@ end
 
 fprintf('\n=== Creating Summary Plots ===\n');
 
-% Load saved results if requested
+Load saved results if requested
 if loadResultsForPlotting
     fprintf('Loading saved results for plotting...\n');
     
@@ -653,6 +736,13 @@ if loadResultsForPlotting
     stepSize = results.stepSize;
     slidingPositions = results.slidingPositions;
     avalancheMetrics = results.avalancheMetrics;
+    if isfield(results, 'segmentMetrics')
+        segmentMetrics = results.segmentMetrics;
+        segmentNames   = results.segmentNames;
+        segmentWindowsEng = results.segmentWindows;
+    else
+        error('segmentMetrics not found in results; rerun analysis to generate segment-level metrics.');
+    end
     binSize = results.binSize;
     
     % Determine saveDir from results file path if not already defined
@@ -667,8 +757,8 @@ if loadResultsForPlotting
 else
     fprintf('Using variables from workspace...\n');
     % Variables should already be in workspace from analysis above
-    if ~exist('avalancheMetrics', 'var') || ~exist('slidingPositions', 'var')
-        error('Required variables not found in workspace. Set loadResultsForPlotting = true to load from saved results.');
+    if ~exist('segmentMetrics', 'var')
+        error('segmentMetrics not found in workspace. Run analysis section first or set loadResultsForPlotting = true.');
     end
     % Ensure saveDir exists
     if ~exist('saveDir', 'var') || isempty(saveDir)
@@ -684,7 +774,7 @@ else
     end
 end
 
-% Define metrics to plot
+% Define metrics to plot (segment-level)
 metricNames = {'kappa', 'dcc', 'tau', 'alpha', 'paramSD', 'decades'};
 numMetrics = length(metricNames);
 
@@ -698,7 +788,7 @@ else
     targetPos = monitorOne;
 end
 
-% Create summary plot for each area
+% Create segment-wise summary plot for each area
 for a = areasToTest
     figure(1000 + a); clf;
     set(gcf, 'Units', 'pixels');
@@ -712,36 +802,36 @@ for a = areasToTest
         axes(ha(m));
         hold on;
         
-        % Extract reach and intertrial data for this metric
-        reachData = avalancheMetrics.reach.(metricName){a};
-        intertrialData = avalancheMetrics.intertrial.(metricName){a};
-        
-        % Plot reach data
-        if ~isempty(reachData) && any(~isnan(reachData))
-            plot(slidingPositions, reachData, 'b-', 'LineWidth', 2, 'Marker', 'o', 'MarkerSize', 6, 'DisplayName', 'Reach');
+        % Extract reach and intertrial metrics for this metric across segments
+        nSeg = numel(segmentNames);
+        reachVals     = nan(1, nSeg);
+        intertrialVals= nan(1, nSeg);
+        for s = 1:nSeg
+            reachVals(s)      = segmentMetrics.reach.(metricName){a,s};
+            intertrialVals(s) = segmentMetrics.intertrial.(metricName){a,s};
         end
         
-        % Plot intertrial data
-        if ~isempty(intertrialData) && any(~isnan(intertrialData))
-            plot(slidingPositions, intertrialData, 'r-', 'LineWidth', 2, 'Marker', 's', 'MarkerSize', 6, 'DisplayName', 'Intertrial');
-        end
+        X = 1:nSeg;
+        barWidth = 0.35;
+        bar(X - barWidth/2, reachVals, barWidth, 'FaceColor', [0 0 1], 'DisplayName', 'Reach');
+        bar(X + barWidth/2, intertrialVals, barWidth, 'FaceColor', [1 0 0], 'DisplayName', 'Intertrial');
         
-        % Formatting
-        xlabel('Time relative to alignment (s)', 'FontSize', 10);
+        set(gca, 'XTick', 1:nSeg, 'XTickLabel', segmentNames);
+        xlabel('Segment', 'FontSize', 10);
         ylabel(metricName, 'FontSize', 10);
-        title(sprintf('%s - %s', areas{a}, metricName), 'FontSize', 12);
+        title(sprintf('%s - %s (segments)', areas{a}, metricName), 'FontSize', 12);
         grid on;
         legend('Location', 'best', 'FontSize', 8);
         set(gca, 'XTickLabelMode', 'auto');
         set(gca, 'YTickLabelMode', 'auto');
     end
     
-    sgtitle(sprintf('%s - Avalanche Metrics: Reach vs Intertrial (Window: %.1fs, Buffer: %.1fs)', areas{a}, avalancheWindow, windowBuffer), 'FontSize', 14);
+    sgtitle(sprintf('%s - Segment-wise Avalanche Metrics: Reach vs Intertrial (Window: %.1fs, Buffer: %.1fs)', areas{a}, avalancheWindow, windowBuffer), 'FontSize', 14);
     
     % Save figure
-    saveFile = fullfile(saveDir, sprintf('criticality_reach_intertrial_av_%s_summary_win%.1f_step%.1f.png', areas{a}, avalancheWindow, stepSize));
+    saveFile = fullfile(saveDir, sprintf('criticality_reach_intertrial_av_%s_segments_win%.1f_step%.1f.png', areas{a}, avalancheWindow, stepSize));
     exportgraphics(gcf, saveFile, 'Resolution', 300);
-    fprintf('Saved summary plot for %s to: %s\n', areas{a}, saveFile);
+    fprintf('Saved segment summary plot for %s to: %s\n', areas{a}, saveFile);
 end
 
 fprintf('\n=== Analysis Complete ===\n');
@@ -783,7 +873,7 @@ gof = .8;
 plotAv = 0;
 [tau, plrS, minavS, maxavS, ~, ~, ~] = plfit2023(sizes, gof, plotAv, 0);
 [alpha, plrD, minavD, maxavD, ~, ~, ~] = plfit2023(durs, gof, plotAv, 0);
-[paramSD, sigmaNuZInvStd, logCoeff] = size_given_duration(sizes, durs, 'durmin', minavD, 'durmax', maxavD)
+[paramSD, sigmaNuZInvStd, logCoeff] = size_given_duration(sizes, durs, 'durmin', minavD, 'durmax', maxavD);
 
         % dcc (distance to criticality from avalanche analysis)
         dcc = distance_to_criticality(tau, alpha, paramSD);
@@ -843,3 +933,4 @@ else
     paramSD = nan;
 end
 end
+
