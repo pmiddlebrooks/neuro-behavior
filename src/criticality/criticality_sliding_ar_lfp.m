@@ -25,11 +25,25 @@ nShuffles = 3;  % Number of circular permutations to perform
 
 % Analysis parameters
 minSegmentLength = 50;
-d2StepSize = binSize * 4;  % Step size in seconds (how much to slide the window)
+
+% Get binSizes from workspace (calculated in data prep script)
+% Use max bin size for d2StepSize to ensure consistent stepping across bands
+if exist('binSizes', 'var') && ~isempty(binSizes)
+    maxBinSize = max(binSizes);
+    d2StepSize = maxBinSize;  % Step size in seconds (how much to slide the window)
+    fprintf('Using frequency-dependent bin sizes. Max bin size: %.3f s, d2StepSize: %.3f s\n', maxBinSize, d2StepSize);
+else
+    % Fallback if binSizes not provided (backward compatibility)
+    if exist('binSize', 'var')
+        d2StepSize = binSize * 4;
+        maxBinSize = binSize;
+    else
+        error('Neither binSizes nor binSize found in workspace. Please run criticality_sliding_data_prep.m first.');
+    end
+end
 
 % Optimal bin/window size selection mode
-useOptimalBinWindowFunction = false;  % For LFP, we use the frameSize from opts
-optimalBinSize = binSize;  % Use the frame size from binnedEnvelopes
+useOptimalBinWindowFunction = false;  % For LFP, we use frequency-dependent bin sizes
 optimalWindowSize = slidingWindowSize;  % Window size in seconds
 
 % Areas to analyze
@@ -38,7 +52,7 @@ if ~exist('areas', 'var')
     areas = {'M23', 'M56', 'DS', 'VS'};
 end
 if ~exist('areasToTest', 'var')
-    areasToTest = 1:length(areas);
+    areasToTest = 1:length(areas);  
 end
 
 % Optimal bin/window size search parameters
@@ -48,11 +62,15 @@ critType = 2;
 
 % =============================    Data Validation    =============================
 % Verify that required variables are in workspace
-requiredVars = {'binnedEnvelopes', 'bands', 'opts'};
+requiredVars = {'binnedEnvelopes', 'bands'};
 for i = 1:length(requiredVars)
     if ~exist(requiredVars{i}, 'var')
         error('Required variable %s not found in workspace.', requiredVars{i});
     end
+end
+% opts is optional (for backward compatibility)
+if ~exist('opts', 'var')
+    opts = struct();
 end
 
 % Determine number of bands and areas
@@ -92,8 +110,15 @@ if numAreas ~= length(areas)
     end
 end
 
-% Get number of frames from first area (should be same for all)
-numFrames = size(binnedEnvelopes{1}, 1);
+% Get number of frames from first area, first band (will vary by band due to different bin sizes)
+% Note: Each band may have different number of frames due to different bin sizes
+if iscell(binnedEnvelopes{1}) && iscell(binnedEnvelopes{1}{1})
+    % New structure: binnedEnvelopes{area}{band} = [nFrames_b x 1]
+    numFrames = size(binnedEnvelopes{1}{1}, 1);  % Just for reference, will vary by band
+else
+    % Old structure: binnedEnvelopes{area} = [nFrames x numBands]
+    numFrames = size(binnedEnvelopes{1}, 1);
+end
 
 % Create results path
 if ~exist('saveDir', 'var') || isempty(saveDir)
@@ -113,8 +138,24 @@ end
 fprintf('\n=== LFP Power Band d2 Analysis ===\n');
 fprintf('Number of bands: %d\n', numBands);
 fprintf('Number of areas: %d\n', numAreas);
-fprintf('Number of frames: %d\n', numFrames);
-fprintf('Frame size: %.3f s\n', binSize);
+if exist('binSizes', 'var')
+    fprintf('Frequency-dependent bin sizes: ');
+    for b = 1:numBands
+        fprintf('%s: %.3f s (%.1f ms)', bands{b,1}, binSizes(b), binSizes(b)*1000);
+        if b < numBands
+            fprintf(', ');
+        end
+    end
+    fprintf('\n');
+    fprintf('d2StepSize (max bin size * 4): %.3f s (%.1f ms)\n', d2StepSize, d2StepSize*1000);
+else
+    if exist('numFrames', 'var')
+        fprintf('Number of frames: %d\n', numFrames);
+    end
+    if exist('binSize', 'var')
+        fprintf('Frame size: %.3f s\n', binSize);
+    end
+end
 
 % Initialize results
 % Structure: d2{area}{band} = [1 x numWindows]
@@ -137,26 +178,40 @@ for a = areasToTest
         fprintf('Skipping: No binned envelopes data for area %s...\n', areas{a});
         continue
     end
-    areaEnvelopes = binnedEnvelopes{a};  % [nFrames x numBands]
-    
-    % Calculate window parameters
-    stepSamples = round(d2StepSize / optimalBinSize);
-    winSamples = round(slidingWindowSize / optimalBinSize);
-    numWindows = floor((numFrames - winSamples) / stepSamples) + 1;
-    
-    % Skip this area if there aren't enough samples
-    if winSamples < minSegmentLength
-        fprintf('Skipping: Not enough data in %s...\n', areas{a});
-        continue
-    end
-    
+    areaEnvelopes = binnedEnvelopes{a};  % Either [nFrames x numBands] or {band} = [nFrames_b x 1]
+        
     % Process each band separately
     for b = 1:numBands
         fprintf('  Processing band %d (%s)...\n', b, bands{b, 1});
         tic;
         
-        % Extract this band's time series
-        bandSignal = areaEnvelopes(:, b);  % [nFrames x 1]
+        % Extract this band's time series, bin size, and time points
+            % New structure: areaEnvelopes{band} = [nFrames_b x 1]
+            bandSignal = areaEnvelopes{b};  % [nFrames_b x 1]
+            bandBinSize = binSizes(b);  % Use band-specific bin size
+            
+            % Get time points for this band if available
+            if exist('timePoints', 'var') && ~isempty(timePoints) && ...
+                    length(timePoints) >= a && ~isempty(timePoints{a}) && ...
+                    length(timePoints{a}) >= b && ~isempty(timePoints{a}{b})
+                bandTimePoints = timePoints{a}{b};  % [nFrames_b x 1]
+                useTimePoints = true;
+            else
+                useTimePoints = false;
+            end
+        
+        numFrames_b = length(bandSignal);
+        
+        % Calculate window parameters using band-specific bin size
+        stepSamples = round(d2StepSize / bandBinSize);
+        winSamples = round(slidingWindowSize / bandBinSize);
+        numWindows = floor((numFrames_b - winSamples) / stepSamples) + 1;
+        
+        % Skip this band if there aren't enough samples
+        if winSamples < minSegmentLength
+            fprintf('    Skipping: Not enough data in band %d (%s)...\n', b, bands{b, 1});
+            continue
+        end
         
         % Initialize arrays for this band
         d2{a}{b} = nan(1, numWindows);
@@ -168,11 +223,24 @@ for a = areasToTest
             endIdx = startIdx + winSamples - 1;
             
             % Ensure we don't exceed data bounds
-            if endIdx > numFrames
-                endIdx = numFrames;
+            if endIdx > numFrames_b
+                endIdx = numFrames_b;
             end
             
-            startS{a}{b}(w) = (startIdx + round(winSamples/2) - 1) * optimalBinSize;
+            % Calculate window center time
+            if useTimePoints
+                % Use actual time points from binned data (more accurate)
+                winCenterIdx = startIdx + round(winSamples/2) - 1;
+                if winCenterIdx <= length(bandTimePoints)
+                    startS{a}{b}(w) = bandTimePoints(winCenterIdx);
+                else
+                    % Fallback if index exceeds time points
+                    startS{a}{b}(w) = (startIdx + round(winSamples/2) - 1) * bandBinSize;
+                end
+            else
+                % Calculate from bin size (fallback for old structure)
+                startS{a}{b}(w) = (startIdx + round(winSamples/2) - 1) * bandBinSize;
+            end
             
             % Extract window data
             wSignal = bandSignal(startIdx:endIdx);
@@ -205,8 +273,8 @@ for a = areasToTest
                 endIdx = startIdx + winSamples - 1;
                 
                 % Ensure we don't exceed data bounds
-                if endIdx > numFrames
-                    endIdx = numFrames;
+                if endIdx > numFrames_b
+                    endIdx = numFrames_b;
                 end
                 
                 % Extract this window's data
@@ -241,7 +309,6 @@ results.areas = areas;
 results.bands = bands;
 results.d2 = d2;
 results.startS = startS;
-results.optimalBinSize = optimalBinSize;
 results.optimalWindowSize = optimalWindowSize;
 results.d2StepSize = d2StepSize;
 results.d2WindowSize = slidingWindowSize;
@@ -249,7 +316,12 @@ results.params.slidingWindowSize = slidingWindowSize;
 results.params.analyzeD2 = analyzeD2;
 results.params.pOrder = pOrder;
 results.params.critType = critType;
-results.params.binSize = binSize;
+if exist('binSizes', 'var')
+    results.binSizes = binSizes;  % Store frequency-dependent bin sizes
+    results.params.binSizes = binSizes;
+elseif exist('binSize', 'var')
+    results.params.binSize = binSize;
+end
 
 % Save permutation results
 if enablePermutations
@@ -416,6 +488,43 @@ if makePlots
             end
         end
         
+        % Add vertical lines at reach onsets (only for reach data)
+        % Note: HandleVisibility is set to 'off' to exclude from legend
+        if exist('dataType', 'var') && strcmp(dataType, 'reach')
+            % Filter reach onsets to only show those within the current plot's time range
+            if exist('reachStart', 'var') && ~isempty(reachStart)
+                reachOnsetsInRange = reachStart(reachStart >= xMin & reachStart <= xMax);
+                
+                if ~isempty(reachOnsetsInRange)
+                    for i = 1:length(reachOnsetsInRange)
+                        h = xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
+                        h.HandleVisibility = 'off';
+                    end
+                end
+            end
+            % Add block 2 start line if available
+            if exist('startBlock2', 'var') && ~isempty(startBlock2) && startBlock2 >= xMin && startBlock2 <= xMax
+                h = xline(startBlock2, 'Color', [1 0 0], 'LineWidth', 3);
+                h.HandleVisibility = 'off';
+            end
+        end
+        
+        % Add vertical lines at saccade/response onsets (only for schall data)
+        % Note: HandleVisibility is set to 'off' to exclude from legend
+        if exist('dataType', 'var') && strcmp(dataType, 'schall')
+            % Filter response onsets to only show those within the current plot's time range
+            if exist('responseOnset', 'var') && ~isempty(responseOnset)
+                responseOnsetsInRange = responseOnset(responseOnset >= xMin & responseOnset <= xMax);
+                
+                if ~isempty(responseOnsetsInRange)
+                    for i = 1:length(responseOnsetsInRange)
+                        h = xline(responseOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
+                        h.HandleVisibility = 'off';
+                    end
+                end
+            end
+        end
+        
         title(sprintf('%s - d2 for all power bands', areas{a}));
         xlabel('Time (s)');
         ylabel('d2');
@@ -429,10 +538,18 @@ if makePlots
     end
     
     % Add super title
-    if ~isempty(filePrefix)
-        sgtitle(sprintf('[%s] LFP Power Band d2 Analysis - win=%gs, step=%gs', filePrefix, slidingWindowSize, d2StepSize));
+    if exist('dataType', 'var') && strcmp(dataType, 'reach')
+        if ~isempty(filePrefix)
+            sgtitle(sprintf('[%s] LFP Power Band d2 Analysis with reach onsets (gray dashed) - win=%gs, step=%gs', filePrefix, slidingWindowSize, d2StepSize));
+        else
+            sgtitle(sprintf('LFP Power Band d2 Analysis with reach onsets (gray dashed) - win=%gs, step=%gs', slidingWindowSize, d2StepSize));
+        end
     else
-        sgtitle(sprintf('LFP Power Band d2 Analysis - win=%gs, step=%gs', slidingWindowSize, d2StepSize));
+        if ~isempty(filePrefix)
+            sgtitle(sprintf('[%s] LFP Power Band d2 Analysis - win=%gs, step=%gs', filePrefix, slidingWindowSize, d2StepSize));
+        else
+            sgtitle(sprintf('LFP Power Band d2 Analysis - win=%gs, step=%gs', slidingWindowSize, d2StepSize));
+        end
     end
     
     % Save figure

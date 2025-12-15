@@ -29,8 +29,8 @@ if strcmp(dataSource, 'lfp')
         'beta', [13 30]; ...
         'lowGamma', [30 50]; ...
         'highGamma', [50 80]};
-    
-    
+
+
     % LFP cleaning parameters
     lfpCleanParams = struct();
     lfpCleanParams.spikeThresh = 4;
@@ -55,11 +55,11 @@ fprintf('\n=== Loading %s %s data ===\n', dataType, dataSource);
 % This is a placeholder - actual value will be set in criticality_sliding_window_ar.m
 filenameSuffix = '';  % Will be updated based on pcaFlag in analysis script
 
-    % =============================    Naturalistic Data Loading    =============================
+% =============================    Naturalistic Data Loading    =============================
 if strcmp(dataType, 'naturalistic')
     opts.collectEnd = 45 * 60; % seconds
-    opts.collectEnd = 5 * 60; % seconds
-    
+    % opts.collectEnd = 5 * 60; % seconds
+
     if strcmp(dataSource, 'spikes')
         % Load naturalistic spike data
         getDataType = 'spikes';
@@ -68,22 +68,22 @@ if strcmp(dataType, 'naturalistic')
         areas = {'M23', 'M56', 'DS', 'VS'};
         idMatIdx = {idM23, idM56, idDS, idVS};
         idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
-        
+
         % Initialize spikeData (will be loaded in analysis script if analyzeModulation is true)
         spikeData = [];
-        
+
         % Print summary
         fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
-        
+
     elseif strcmp(dataSource, 'lfp')
         % Load naturalistic LFP data
         getDataType = 'lfp';
         opts.fsLfp = 1250;
         get_standard_data
-        
+
         % Lowpass filter LFP at 300 Hz
         lfpPerArea = lowpass(lfpPerArea, 300, opts.fsLfp);
-        
+
         % Clean LFP artifacts
         lfpPerArea = clean_lfp_artifacts(lfpPerArea, opts.fsLfp, ...
             'spikeThresh', lfpCleanParams.spikeThresh, ...
@@ -94,9 +94,9 @@ if strcmp(dataType, 'naturalistic')
             'hampelK', lfpCleanParams.hampelK, ...
             'hampelNsigma', lfpCleanParams.hampelNsigma, ...
             'detrendOrder', lfpCleanParams.detrendOrder, ...
-'visualize', true, ...
-'visualizeChannel', 2, ...
-'visualizeSamples', 1:5000);
+            'visualize', false, ...
+            'visualizeChannel', 2, ...
+            'visualizeSamples', 1:5000);
 
         areas = {'M23', 'M56', 'DS', 'VS'};
     end
@@ -164,22 +164,22 @@ elseif strcmp(dataType, 'reach')
 
         % Initialize spikeData (will be loaded in analysis script if analyzeModulation is true)
         spikeData = [];
-        
+
     elseif strcmp(dataSource, 'lfp')
         % Load reach LFP data
         % Extract base name for LFP file (assumes LFP file has same base name)
         [~, lfpBaseName, ~] = fileparts(sessionName);
         lfpBaseName = strrep(lfpBaseName, '_NeuroBeh', '');  % Remove _NeuroBeh suffix if present
-        
+
         % Try to find LFP file (common patterns)
         reachPath = paths.reachDataPath;
         lfpFile = fullfile(reachPath, [lfpBaseName, '_g0_t0.imec0.lf.bin']);
         metaFile = fullfile(reachPath, [lfpBaseName, '_g0_t0.imec0.lf.meta']);
-        
+
         if ~exist(lfpFile, 'file') || ~exist(metaFile, 'file')
             error('LFP files not found. Expected: %s and %s', lfpFile, metaFile);
         end
-        
+
         % Read metadata (ReadMeta is from SpikeGLX toolbox)
         if ~exist('ReadMeta', 'file')
             error('ReadMeta function not found. Please ensure SpikeGLX toolbox is in path.');
@@ -188,7 +188,7 @@ elseif strcmp(dataType, 'reach')
         opts.fsLfp = round(str2double(m.imSampRate));
         nChan = str2double(m.nSavedChans);
         nSamps = str2double(m.fileSizeBytes)/2/nChan;
-        
+
         % Read LFP data
         mmf = memmapfile(lfpFile, 'Format', {'int16', [nChan nSamps], 'x'});
         lfpPerArea = double(flipud([...
@@ -197,7 +197,7 @@ elseif strcmp(dataType, 'reach')
             mmf.Data.x(170,:);...
             mmf.Data.x(40,:)...
             ])');
-        
+
         % Clean LFP artifacts
         lfpPerArea = clean_lfp_artifacts(lfpPerArea, opts.fsLfp, ...
             'spikeThresh', lfpCleanParams.spikeThresh, ...
@@ -208,7 +208,7 @@ elseif strcmp(dataType, 'reach')
             'hampelK', lfpCleanParams.hampelK, ...
             'hampelNsigma', lfpCleanParams.hampelNsigma, ...
             'detrendOrder', lfpCleanParams.detrendOrder);
-        
+
         areas = {'M23', 'M56', 'DS', 'VS'};
     end
 
@@ -264,19 +264,19 @@ elseif strcmp(dataType, 'schall')
 
         % Print summary
         fprintf('%d FEF\n', length(idFEF));
-        
+
     elseif strcmp(dataSource, 'lfp')
-                        opts.fsLfp = 1000;  % Default fallback
+        opts.fsLfp = 1000;  % Default fallback
 
         % Load schall LFP data
-     sessionName =  'jp121n02_lfp.mat';
-       % Extract subject ID and session name
+        sessionName =  'jp121n02_lfp.mat';
+        % Extract subject ID and session name
         [subjectPath, lfpFileName, ~] = fileparts(sessionName);
         lfpDataFile = fullfile(paths.schallDataPath, subjectID, sessionName);
 
         % Load LFP data
         dataL = load(lfpDataFile);
-        
+
         % Choose which LFP contact to use (typically lfp16)
         if isfield(dataL, 'lfp16')
             lfpPerArea = cell2mat(dataL.lfp16);
@@ -285,12 +285,12 @@ elseif strcmp(dataType, 'schall')
         else
             error('LFP data not found in file. Expected fields: lfp16 or lfp');
         end
-        
+
         % Cut it off based on opts.collectStart/End
         startSample = max(1, round(opts.collectStart * opts.fsLfp) + 1);
         endSample = min(size(lfpPerArea, 1), round(opts.collectEnd * opts.fsLfp));
         lfpPerArea = lfpPerArea(startSample:endSample, :);
-        
+
         % Clean LFP artifacts
         lfpPerArea = clean_lfp_artifacts(lfpPerArea, opts.fsLfp, ...
             'spikeThresh', lfpCleanParams.spikeThresh, ...
@@ -301,7 +301,7 @@ elseif strcmp(dataType, 'schall')
             'hampelK', lfpCleanParams.hampelK, ...
             'hampelNsigma', lfpCleanParams.hampelNsigma, ...
             'detrendOrder', lfpCleanParams.detrendOrder);
-        
+
         areas = {'FEF'};
     end
 
@@ -309,24 +309,24 @@ elseif strcmp(dataType, 'schall')
     areasToTest = 1;
 
 
-        % =============================    Kate Hong whisker/lick Data Loading    =============================
+    % =============================    Kate Hong whisker/lick Data Loading    =============================
 elseif strcmp(dataType, 'hong')
-paths = get_paths;
-% sp: spike depths spikeDepths
-load(fullfile(paths.dropPath, 'hong/data', 'spikeData.mat'));
+    paths = get_paths;
+    % sp: spike depths spikeDepths
+    load(fullfile(paths.dropPath, 'hong/data', 'spikeData.mat'));
 
-% load T_allUnits: table of single units used
-load(fullfile(paths.dropPath, 'hong/data', 'T_allUnits2.mat'));
+    % load T_allUnits: table of single units used
+    load(fullfile(paths.dropPath, 'hong/data', 'T_allUnits2.mat'));
 
-% Load T: behavior table for the session
-load(fullfile(paths.dropPath, 'hong/data', 'behaviorTable.mat'));
+    % Load T: behavior table for the session
+    load(fullfile(paths.dropPath, 'hong/data', 'behaviorTable.mat'));
 
-opts.collectEnd = min(T.startTime_oe(end)+max(diff(T.startTime_oe)), max(sp.st));
+    opts.collectEnd = min(T.startTime_oe(end)+max(diff(T.startTime_oe)), max(sp.st));
 
-data.sp = sp;
-data.ci = T_allUnits;
+    data.sp = sp;
+    data.ci = T_allUnits;
 
-[dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_hong(data, opts);
+    [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_hong(data, opts);
 
     areas = {'S1', 'SC'};
     idS1 = find(strcmp(areaLabels, 'S1'));
@@ -357,58 +357,124 @@ end
 %% ===========================     SPIKING DATA SCRIPTS
 %%  D2 sliding window
 %  Sliding window size (seconds)
-    binSize = .01;
-    slidingWindowSize = 2;
+binSize = .01;
+slidingWindowSize = 2;
 
-    criticality_sliding_window_ar
-    %% Avalanche analyses
-    % Sliding window and step size (seconds)
-    slidingWindowSize = 180;  % seconds - user specified
-    avStepSize = 20;          % seconds - user specified
+criticality_sliding_window_ar
+%% Avalanche analyses
+% Sliding window and step size (seconds)
+slidingWindowSize = 180;  % seconds - user specified
+avStepSize = 20;          % seconds - user specified
 
-    criticality_sliding_window_av
-    
+criticality_sliding_window_av
+
+
+
+
+
+
 %% ===========================     LFP SCRIPTS
-    binSize = .005;
-    
-    % Compute binned envelopes for each area (store as cell structure)
-    % This is done here to avoid redundancy across data types
-    numBands = size(bands, 1);
-    numAreas = size(lfpPerArea, 2);
-    
-    if strcmp(dataType, 'schall')
-        % Schall: FEF is single area, but may have multiple channels
-        if numAreas == 1
-            % Single channel - use it directly
-            [iBinnedPower, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpPerArea, opts.fsLfp, bands, binSize, 'cwt');
-            binnedEnvelopes = {iBinnedEnvelopes'};  % Cell with single area [nFrames x numBands]
-            binnedPower = {iBinnedPower'};  % [nFrames x numBands]
-        else
-            % Multiple channels - average them
-            lfpMean = mean(lfpPerArea, 2);
-            [iBinnedPower, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpMean, opts.fsLfp, bands, binSize, 'cwt');
-            binnedEnvelopes = {iBinnedEnvelopes'};  % Cell with single area [nFrames x numBands]
-            binnedPower = {iBinnedPower}';  % [nFrames x numBands]
-        end
-        fprintf('LFP data loaded: %d frames, %d bands\n', size(binnedEnvelopes{1}, 1), numBands);
-    else
-        % Naturalistic and Reach: multiple areas
-        binnedEnvelopes = cell(1, numAreas);
-        binnedPower = cell(1, numAreas);
-        for iArea = 1:numAreas
-            [iBinnedPower, iBinnedEnvelopes, timePoints] = lfp_bin_bandpower(lfpPerArea(:, iArea), opts.fsLfp, bands, binSize, 'cwt');
-            binnedEnvelopes{iArea} = iBinnedEnvelopes';  % [nFrames x numBands]
-            binnedPower{iArea} = iBinnedPower';  % [nFrames x numBands]
-        end
-        fprintf('LFP data loaded: %d frames, %d bands/area, %d areas\n', size(binnedEnvelopes{1}, 1), numBands, numAreas);
-    end
-%%
-    % D2 sliding window
-    % Sliding window size (seconds)
-    binnedEnvelopes = binnedPower;
-    slidingWindowSize = 20;     % Window size in seconds
-    criticality_sliding_ar_lfp
+% Minimum bin size (for highest frequency band)
+minBinSize = .005;  % 5 ms
 
-    %% Avalanche analyses
-    % Sliding window and step size (seconds)
+% Compute frequency-dependent bin sizes for each band
+% Higher frequencies get smaller bins, lower frequencies get larger bins
+% This accounts for the fact that higher frequencies change faster
+numBands = size(bands, 1);
+bandAvgFreqs = zeros(1, numBands);
+for b = 1:numBands
+    bandAvgFreqs(b) = mean(bands{b, 2});  % Average of frequency range
+end
+
+% Find highest frequency band
+[~, highestFreqIdx] = max(bandAvgFreqs);
+highestFreqAvg = bandAvgFreqs(highestFreqIdx);
+
+% Calculate bin size for each band: proportional to frequency
+% Lower frequency bands get larger bin sizes
+binSizes = zeros(1, numBands);
+for b = 1:numBands
+    % Bin size is proportional to highest freq / current freq
+    % Rounded up (ceil) to nearest multiple of minBinSize
+    calculatedBinSize = minBinSize * (highestFreqAvg / bandAvgFreqs(b));
+    binSizes(b) = ceil(calculatedBinSize / minBinSize) * minBinSize;
+end
+
+fprintf('Frequency-dependent bin sizes:\n');
+for b = 1:numBands
+    fprintf('  %s (%.1f Hz avg): %.3f s (%.1f ms)\n', bands{b,1}, bandAvgFreqs(b), binSizes(b), binSizes(b)*1000);
+end
+fprintf('  Max bin size: %.3f s (%.1f ms)\n', max(binSizes), max(binSizes)*1000);
+
+% Compute binned envelopes for each area (store as cell structure)
+% Each band is binned separately with its own bin size
+numAreas = size(lfpPerArea, 2);
+
+if strcmp(dataType, 'schall')
+    % Schall: FEF is single area, but may have multiple channels
+    if numAreas == 1
+        % Single channel - use it directly
+        % Bin each band separately with its own bin size
+        binnedEnvelopes = {cell(1, numBands)};
+        binnedPower = {cell(1, numBands)};
+        timePoints = {cell(1, numBands)};
+        for b = 1:numBands
+            % Call lfp_bin_bandpower for just this band
+            % Pass bands(b, :) directly - it's already a 1x2 cell array {name, freqRange}
+            singleBand = bands(b, :);  % 1x2 cell array: {bandName, [freqRange]}
+            [iBinnedPower, iBinnedEnvelopes, iTimePoints] = lfp_bin_bandpower(lfpPerArea, opts.fsLfp, singleBand, binSizes(b), 'cwt');
+            binnedEnvelopes{1}{b} = iBinnedEnvelopes';  % [nFrames_b x 1]
+            binnedPower{1}{b} = iBinnedPower';  % [nFrames_b x 1]
+            timePoints{1}{b} = iTimePoints(:);  % [nFrames_b x 1]
+        end
+    else
+        % Multiple channels - average them
+        lfpMean = mean(lfpPerArea, 2);
+        % Bin each band separately with its own bin size
+        binnedEnvelopes = {cell(1, numBands)};
+        binnedPower = {cell(1, numBands)};
+        timePoints = {cell(1, numBands)};
+        for b = 1:numBands
+            % Pass bands(b, :) directly - it's already a 1x2 cell array {name, freqRange}
+            singleBand = bands(b, :);  % 1x2 cell array: {bandName, [freqRange]}
+            [iBinnedPower, iBinnedEnvelopes, iTimePoints] = lfp_bin_bandpower(lfpMean, opts.fsLfp, singleBand, binSizes(b), 'cwt');
+            binnedEnvelopes{1}{b} = iBinnedEnvelopes';  % [nFrames_b x 1]
+            binnedPower{1}{b} = iBinnedPower';  % [nFrames_b x 1]
+            timePoints{1}{b} = iTimePoints(:);  % [nFrames_b x 1]
+        end
+    end
+    fprintf('LFP data loaded: %d bands (each with different frame counts)\n', numBands);
+else
+    % Naturalistic and Reach: multiple areas
+    binnedEnvelopes = cell(1, numAreas);
+    binnedPower = cell(1, numAreas);
+    timePoints = cell(1, numAreas);
+    for iArea = 1:numAreas
+        binnedEnvelopes{iArea} = cell(1, numBands);
+        binnedPower{iArea} = cell(1, numBands);
+        timePoints{iArea} = cell(1, numBands);
+        % Bin each band separately with its own bin size
+        for b = 1:numBands
+            % Pass bands(b, :) directly - it's already a 1x2 cell array {name, freqRange}
+            singleBand = bands(b, :);  % 1x2 cell array: {bandName, [freqRange]}
+            [iBinnedPower, iBinnedEnvelopes, iTimePoints] = lfp_bin_bandpower(lfpPerArea(:, iArea), opts.fsLfp, singleBand, binSizes(b), 'cwt');
+            binnedEnvelopes{iArea}{b} = iBinnedEnvelopes';  % [nFrames_b x 1]
+            binnedPower{iArea}{b} = iBinnedPower';  % [nFrames_b x 1]
+            timePoints{iArea}{b} = iTimePoints(:);  % [nFrames_b x 1]
+        end
+    end
+    fprintf('LFP data loaded: %d areas, %d bands/area (each band with different frame counts)\n', numAreas, numBands);
+end
+
+% Store binSizes in workspace for use in analysis script
+% This will be used to determine d2StepSize
+%%
+% D2 sliding window
+% Sliding window size (seconds)
+% binnedEnvelopes = binnedPower;
+slidingWindowSize = 10;     % Window size in seconds
+criticality_sliding_ar_lfp
+
+%% Avalanche analyses
+% Sliding window and step size (seconds)
 
