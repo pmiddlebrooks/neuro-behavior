@@ -24,7 +24,7 @@ opts.minFiringRate = .1;
 opts.maxFiringRate = 70;
 opts.frameSize = frameSize;
 
-[dataMat, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
+[dataMat, idLabels, areaLabels] = reach_neural_matrix(dataR, opts);
 
 % Get behavior labels for reach task
 bhvOpts = opts;

@@ -32,9 +32,9 @@ sessionNrn = '112321';
 if strcmp(sessionBhv, '112321_1')
     sessionSave = '112321';
 end
-nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
-nrnDataPath = [nrnDataPath, 'recording1/'];
-opts.dataPath = nrnDataPath;
+freeDataPath = strcat(paths.freeDataPath, 'animal_',animal,'/', sessionNrn, '/');
+freeDataPath = [freeDataPath, 'recording1/'];
+opts.dataPath = freeDataPath;
 
 %%
 data = load_data(opts, getDataType);

@@ -35,7 +35,7 @@ opts.collectEnd = round(min(dataR.R(end,1) + 8000, max(dataR.CSV(:,1)*1000)) / 1
 opts.minFiringRate = .1;
 opts.maxFiringRate = 70;
 
-[dataMat, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
+[dataMat, idLabels, areaLabels] = reach_neural_matrix(dataR, opts);
 areas = {'M23', 'M56', 'DS', 'VS'};
 idM23 = find(strcmp(areaLabels, 'M23'));
 idM56 = find(strcmp(areaLabels, 'M56'));

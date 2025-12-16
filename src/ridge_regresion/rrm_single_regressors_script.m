@@ -225,9 +225,9 @@ end
 
 
 %% Get Neural matrix
-nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
-nrnDataPath = [nrnDataPath, 'recording1/'];
-opts.dataPath = nrnDataPath;
+freeDataPath = strcat(paths.freeDataPath, 'animal_',animal,'/', sessionNrn, '/');
+freeDataPath = [freeDataPath, 'recording1/'];
+opts.dataPath = freeDataPath;
 
 data = load_data(opts, 'neuron');
 data.bhvDur = dataBhv.Dur;

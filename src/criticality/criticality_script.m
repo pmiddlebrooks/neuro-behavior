@@ -42,7 +42,7 @@ get_standard_data
 %%
 % Mark's reach data
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
-[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+[dataMatR, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(dataR, opts);
 % Get data until 1 sec after the last reach ending.
 cutOff = (dataR.R(end,2) + 1000) / 1000 / opts.frameSize;
 dataMatR = dataMatR(1:cutOff,:);
@@ -440,9 +440,9 @@ getDataType = 'lfp';
 opts.frameSize = .001;
 animal = 'ag25290';
 sessionNrn = '112321';
-nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
-nrnDataPath = [nrnDataPath, 'recording1/'];
-opts.dataPath = nrnDataPath;
+freeDataPath = strcat(paths.freeDataPath, 'animal_',animal,'/', sessionNrn, '/');
+freeDataPath = [freeDataPath, 'recording1/'];
+opts.dataPath = freeDataPath;
 
 data = readmatrix([opts.dataPath, 'lfp.txt']);
 data = data(1 + (opts.collectStart * opts.fsLfp) : (opts.collectEnd) * opts.fsLfp, :);
@@ -893,7 +893,7 @@ opts.frameSize = .001;
 % Load Mark's reach data and make it a ms neural data matrix
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 eventTimes = load(fullfile(paths.dropPath, 'Y4_06-Oct-2023 14_14_53_NIBEH.mat'));
-[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+[dataMatR, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(dataR, opts);
 idM23R = find(strcmp(areaLabels, 'M23'));
 idM56R = find(strcmp(areaLabels, 'M56'));
 idDSR = find(strcmp(areaLabels, 'DS'));
@@ -1258,7 +1258,7 @@ idList = {idM23, idM56, idDS, idVS};
 %% ==============================================       Mark's
 % Load Mark's reach data and make it a ms neural data matrix
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
-[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+[dataMatR, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(dataR, opts);
 % Get data until 1 sec after the last reach ending.
 cutOff = (dataR.R(end,2) + 1000) / 1000 / opts.frameSize;
 dataMatR = dataMatR(1:cutOff,:);

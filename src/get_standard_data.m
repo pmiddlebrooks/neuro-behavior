@@ -192,9 +192,9 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'lfp')
     % vs = [2701 3840];
 
 % if strcmp(getDataType, 'all') || strcmp(getDataType, 'lfp')
-    nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
-    nrnDataPath = [nrnDataPath, 'recording1/'];
-    opts.dataPath = nrnDataPath;
+    freeDataPath = strcat(paths.freeDataPath, 'animal_',animal,'/', sessionNrn, '/');
+    freeDataPath = [freeDataPath, 'recording1/'];
+    opts.dataPath = freeDataPath;
 
 data = load_data(opts, 'lfp');
 data = fliplr(data); % flip data so first column (channel) is brain surface
@@ -241,9 +241,9 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if strcmp(getDataType, 'all') || strcmp(getDataType, 'spikes')
 
-    nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/');
-    nrnDataPath = [nrnDataPath, 'recording1/'];
-    opts.dataPath = nrnDataPath;
+    freeDataPath = strcat(paths.freeDataPath, 'animal_',animal,'/', sessionNrn, '/');
+    freeDataPath = [freeDataPath, 'recording1/'];
+    opts.dataPath = freeDataPath;
 
     data = load_data(opts, 'spikes');
     data.bhvDur = dataBhv.Dur;
@@ -256,9 +256,9 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'spikes')
 
     useMulti = 1;
     if ~useMulti
-    allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
+    allGood = strcmp(data.ci.group, 'good');
     else
-    allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | (strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua'));
+    allGood = strcmp(data.ci.group, 'good') | (strcmp(data.ci.group, 'mua'));
 warning('on','all');
 warning('Warning in get_standard_data: you are loading muas with the good spiking units.')
     end

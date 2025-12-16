@@ -64,7 +64,7 @@ idListNat = {idM23, idM56, idDS, idVS};
 % Mark's reach data
 % dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
 dataR = load(reachDataFile);
-[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+[dataMatR, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(dataR, opts);
 
 % Get data until 1 sec after the last reach ending.
 % cutOff = round((dataR.R(end,2) + 1000) / 1000 / opts.frameSize);

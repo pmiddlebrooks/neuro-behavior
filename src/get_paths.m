@@ -4,31 +4,31 @@ function paths = get_paths
 %   Detailed explanation goes here
 
 if exist('E:/Projects', 'dir')
-            homePath = 'E:/Projects';
-          figurePath = 'E:/Projects/neuro-behavior/docs/';
-            bhvDataPath = 'E:/Projects/neuro-behavior/data/processed_behavior/';
-            nrnDataPath = 'E:/Projects/neuro-behavior/data/raw_ephys/';
-            saveDataPath = 'E:/Projects/neuro-behavior/data/';
-            dropPath = 'E:/Dropbox/Data/';
+    homePath = 'E:/Projects';
+    figurePath = 'E:/Projects/neuro-behavior/docs/';
+    bhvDataPath = 'E:/Projects/neuro-behavior/data/processed_behavior/';
+    nrnDataPath = 'E:/Projects/neuro-behavior/data/raw_ephys/';
+    saveDataPath = 'E:/Projects/neuro-behavior/data/';
+    dropPath = 'E:/Dropbox/Data/';
 elseif exist('Z:/middlebrooks/', 'dir')
-            figurePath = 'Z:/middlebrooks/Projects/neuro-behavior/docs/';
-            bhvDataPath = 'Z:/middlebrooks/Projects/neuro-behavior/data/processed_behavior/';
-            nrnDataPath = 'Z:/middlebrooks/Projects/neuro-behavior/data/raw_ephys/';
-            saveDataPath = 'Z:/middlebrooks/Projects/neuro-behavior/data/';
+    figurePath = 'Z:/middlebrooks/Projects/neuro-behavior/docs/';
+    bhvDataPath = 'Z:/middlebrooks/Projects/neuro-behavior/data/processed_behavior/';
+    nrnDataPath = 'Z:/middlebrooks/Projects/neuro-behavior/data/raw_ephys/';
+    saveDataPath = 'Z:/middlebrooks/Projects/neuro-behavior/data/';
 elseif exist('/Users/paulmiddlebrooks/Projects/', 'dir')
-            homePath = '/Users/paulmiddlebrooks/Projects/';
-            figurePath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/docs/';
-            bhvDataPath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/data/processed_behavior/';
-            nrnDataPath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/data/raw_ephys/';
-            saveDataPath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/data/';
-            dropPath = '/Users/paulmiddlebrooks/Library/CloudStorage/Dropbox/Data/';            
+    homePath = '/Users/paulmiddlebrooks/Projects/';
+    figurePath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/docs/';
+    bhvDataPath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/data/processed_behavior/';
+    nrnDataPath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/data/raw_ephys/';
+    saveDataPath = '/Users/paulmiddlebrooks/Projects/neuro-behavior/data/';
+    dropPath = '/Users/paulmiddlebrooks/Library/CloudStorage/Dropbox/Data/';
 end
 
-
-            reachDataPath = fullfile(dropPath, 'reach_task/data');
-            reachResultsPath = fullfile(dropPath, 'reach_task/results');
-            schallDataPath = fullfile(dropPath, 'schall/data');
-            schallResultsPath = fullfile(dropPath, 'schall/results');
+freeDataPath = fullfile(dropPath, 'open_field/data')
+reachDataPath = fullfile(dropPath, 'reach_task/data');
+reachResultsPath = fullfile(dropPath, 'reach_task/results');
+schallDataPath = fullfile(dropPath, 'schall/data');
+schallResultsPath = fullfile(dropPath, 'schall/results');
 
 if ~exist(figurePath, 'dir')
     mkdir(figurePath);

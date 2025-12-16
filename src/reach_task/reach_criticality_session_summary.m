@@ -127,7 +127,7 @@ if useSegmentSpecificPermutations
     dataR = load(reachDataFile);
     opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
     
-    [dataMat, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
+    [dataMat, idLabels, areaLabels] = reach_neural_matrix(dataR, opts);
     areasData = {'M23', 'M56', 'DS', 'VS'};
     idM23 = find(strcmp(areaLabels, 'M23'));
     idM56 = find(strcmp(areaLabels, 'M56'));

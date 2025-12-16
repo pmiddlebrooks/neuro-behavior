@@ -52,7 +52,7 @@ opts.frameSize = .0075; % M56
 opts.minFiringRate = .1;
 
 data = load(fullfile(paths.saveDataPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
-[dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(data, opts);
+[dataMat, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(data, opts);
 
 idM23 = find(strcmp(areaLabels, 'M23'));
 idM56 = find(strcmp(areaLabels, 'M56'));
@@ -117,7 +117,7 @@ get_standard_data
 
 % Mark's reach data
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
-[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+[dataMatR, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(dataR, opts);
 % Ensure dataMatR is same size as dataMat
 dataMatR = dataMatR(1:size(dataMat, 1),:);
 idM23R = find(strcmp(areaLabels, 'M23'));
@@ -239,7 +239,7 @@ for b = 1 : length(binSizes)
 
 
         dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan.mat'));
-        dataMatR = neural_matrix_mark_data(dataR, opts);
+        dataMatR = reach_neural_matrix(dataR, opts);
         % Randomize a subsample of neurons
         idSelect = idVSR(randperm(length(idVSR), nSubsample));
 
@@ -599,7 +599,7 @@ opts.frameSize = .001;
 
 % Load Mark's reach data and make it a ms neural data matrix
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
-[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+[dataMatR, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(dataR, opts);
 idM23R = find(strcmp(areaLabels, 'M23'));
 idM56R = find(strcmp(areaLabels, 'M56'));
 idDSR = find(strcmp(areaLabels, 'DS'));

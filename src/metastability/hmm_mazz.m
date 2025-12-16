@@ -63,8 +63,8 @@ switch natOrReach
 animal = 'ag25290';
 sessionNrn = '112321';
 sessionName = [animal, '_', sessionNrn];
-    nrnDataPath = strcat(paths.nrnDataPath, 'animal_',animal,'/', sessionNrn, '/recording1/');
-    opts.dataPath = nrnDataPath;
+    freeDataPath = strcat(paths.freeDataPath, 'animal_',animal,'/', sessionNrn, '/recording1/');
+    opts.dataPath = freeDataPath;
 spikeData = spike_times_per_area(opts);
 
     case 'Reach'
@@ -88,7 +88,7 @@ opts.firingRateCheckTime = 5*60;
 opts.dataPath = reachDataFile;
 spikeData = spike_times_per_area_reach(opts);
 
-        % [dataMat, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+        % [dataMat, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(dataR, opts);
         % 
         % idM23 = find(strcmp(areaLabels, 'M23'));
         % idM56 = find(strcmp(areaLabels, 'M56'));

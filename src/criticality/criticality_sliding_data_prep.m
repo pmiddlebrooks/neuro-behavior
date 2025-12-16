@@ -153,7 +153,7 @@ elseif strcmp(dataType, 'reach')
 
     if strcmp(dataSource, 'spikes')
         % Load reach spike data
-        [dataMat, idLabels, areaLabels] = neural_matrix_mark_data(dataR, opts);
+        [dataMat, idLabels, areaLabels] = reach_neural_matrix(dataR, opts);
         areas = {'M23', 'M56', 'DS', 'VS'};
         idM23 = find(strcmp(areaLabels, 'M23'));
         idM56 = find(strcmp(areaLabels, 'M56'));

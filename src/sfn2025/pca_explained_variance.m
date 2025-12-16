@@ -77,8 +77,8 @@ opts.fileName = bhvFileName;
 dataBhv = load_data(opts, 'behavior');
 
 % Load spike data
-nrnDataPath = strcat(paths.nrnDataPath, 'animal_', animal, '/', sessionNrn, '/recording1/');
-opts.dataPath = nrnDataPath;
+freeDataPath = strcat(paths.freeDataPath, 'animal_', animal, '/', sessionNrn, '/recording1/');
+opts.dataPath = freeDataPath;
 spikeDataNat = spike_times_per_area(opts);
 
 %% Extract behavior onset times for natBhvID with additional filtering

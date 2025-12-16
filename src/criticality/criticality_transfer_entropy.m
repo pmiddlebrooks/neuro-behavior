@@ -36,7 +36,7 @@ idListNat = {idM23, idM56, idDS, idVS};
 
 % Load reach data (as in criticality_compare.m)
 dataR = load(fullfile(paths.dropPath, 'reach_data/Y4_100623_Spiketimes_idchan_BEH.mat'));
-[dataMatR, idLabels, areaLabels, rmvNeurons] = neural_matrix_mark_data(dataR, opts);
+[dataMatR, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(dataR, opts);
 idM23R = find(strcmp(areaLabels, 'M23'));
 idM56R = find(strcmp(areaLabels, 'M56'));
 idDSR = find(strcmp(areaLabels, 'DS'));
