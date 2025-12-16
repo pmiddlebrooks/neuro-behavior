@@ -563,6 +563,54 @@ for a = areasToTest
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
+%% =============================    Per-Sliding-Position Avalanche Analysis    =============================
+fprintf('\n=== Per-Sliding-Position Avalanche Analysis (Reach vs Intertrial) ===\n');
+
+% Compute avalanche metrics for each sliding position
+for a = areasToTest
+    fprintf('\nComputing avalanche metrics per sliding position for area %s...\n', areas{a});
+    
+    for posIdx = 1:numSlidingPositions
+        % Concatenate all reach windows at this sliding position
+        if ~isempty(storedReachWindows{a, posIdx})
+            concatReach = [];
+            for w = 1:numel(storedReachWindows{a, posIdx})
+                concatReach = [concatReach; storedReachWindows{a, posIdx}{w}(:)]; %#ok<AGROW>
+            end
+            
+            % Perform avalanche analysis on concatenated reach windows
+            if ~isempty(concatReach)
+                [kappa, dcc, tau, alpha, paramSD, decades] = perform_avalanche_analysis(concatReach, binSize);
+                avalancheMetrics.reach.kappa{a}(posIdx)   = kappa;
+                avalancheMetrics.reach.dcc{a}(posIdx)     = dcc;
+                avalancheMetrics.reach.tau{a}(posIdx)     = tau;
+                avalancheMetrics.reach.alpha{a}(posIdx)   = alpha;
+                avalancheMetrics.reach.paramSD{a}(posIdx) = paramSD;
+                avalancheMetrics.reach.decades{a}(posIdx) = decades;
+            end
+        end
+        
+        % Concatenate all intertrial windows at this sliding position
+        if ~isempty(storedIntertrialWindows{a, posIdx})
+            concatIntertrial = [];
+            for w = 1:numel(storedIntertrialWindows{a, posIdx})
+                concatIntertrial = [concatIntertrial; storedIntertrialWindows{a, posIdx}{w}(:)]; %#ok<AGROW>
+            end
+            
+            % Perform avalanche analysis on concatenated intertrial windows
+            if ~isempty(concatIntertrial)
+                [kappa, dcc, tau, alpha, paramSD, decades] = perform_avalanche_analysis(concatIntertrial, binSize);
+                avalancheMetrics.intertrial.kappa{a}(posIdx)   = kappa;
+                avalancheMetrics.intertrial.dcc{a}(posIdx)     = dcc;
+                avalancheMetrics.intertrial.tau{a}(posIdx)     = tau;
+                avalancheMetrics.intertrial.alpha{a}(posIdx)   = alpha;
+                avalancheMetrics.intertrial.paramSD{a}(posIdx) = paramSD;
+                avalancheMetrics.intertrial.decades{a}(posIdx) = decades;
+            end
+        end
+    end
+end
+
 %% =============================    Segment-level Avalanche Analysis    =============================
 fprintf('\n=== Segment-level Avalanche Analysis (Reach vs Intertrial) ===\n');
 
@@ -698,7 +746,7 @@ end
 
 fprintf('\n=== Creating Summary Plots ===\n');
 
-Load saved results if requested
+% Load saved results if requested
 if loadResultsForPlotting
     fprintf('Loading saved results for plotting...\n');
     
@@ -735,7 +783,25 @@ if loadResultsForPlotting
     afterAlign = results.afterAlign;
     stepSize = results.stepSize;
     slidingPositions = results.slidingPositions;
-    avalancheMetrics = results.avalancheMetrics;
+    if isfield(results, 'avalancheMetrics')
+        avalancheMetrics = results.avalancheMetrics;
+    else
+        warning('avalancheMetrics not found in results. Will need to recompute from stored windows or rerun analysis.');
+        % Initialize empty structure - will need to recompute or rerun
+        avalancheMetrics = struct();
+        avalancheMetrics.reach = struct();
+        avalancheMetrics.intertrial = struct();
+        metricNamesTemp = {'kappa', 'dcc', 'tau', 'alpha', 'paramSD', 'decades'};
+        for m = 1:length(metricNamesTemp)
+            metricName = metricNamesTemp{m};
+            avalancheMetrics.reach.(metricName) = cell(1, length(areas));
+            avalancheMetrics.intertrial.(metricName) = cell(1, length(areas));
+            for a = 1:length(areas)
+                avalancheMetrics.reach.(metricName){a} = nan(1, length(slidingPositions));
+                avalancheMetrics.intertrial.(metricName){a} = nan(1, length(slidingPositions));
+            end
+        end
+    end
     if isfield(results, 'segmentMetrics')
         segmentMetrics = results.segmentMetrics;
         segmentNames   = results.segmentNames;
@@ -757,6 +823,9 @@ if loadResultsForPlotting
 else
     fprintf('Using variables from workspace...\n');
     % Variables should already be in workspace from analysis above
+    if ~exist('avalancheMetrics', 'var')
+        error('avalancheMetrics not found in workspace. Run analysis section first or set loadResultsForPlotting = true.');
+    end
     if ~exist('segmentMetrics', 'var')
         error('segmentMetrics not found in workspace. Run analysis section first or set loadResultsForPlotting = true.');
     end
@@ -788,9 +857,51 @@ else
     targetPos = monitorOne;
 end
 
-% Create segment-wise summary plot for each area
+% Create sliding position plots for each area (line plots across sliding positions)
 for a = areasToTest
     figure(1000 + a); clf;
+    set(gcf, 'Units', 'pixels');
+    set(gcf, 'Position', targetPos);
+    
+    % Create subplots: 1 row x numMetrics columns
+    ha = tight_subplot(1, numMetrics, [0.08 0.04], [0.15 0.1], [0.08 0.04]);
+    
+    for m = 1:numMetrics
+        metricName = metricNames{m};
+        axes(ha(m));
+        hold on;
+        
+        % Extract reach and intertrial metrics for this metric across sliding positions
+        reachVals     = avalancheMetrics.reach.(metricName){a};
+        intertrialVals = avalancheMetrics.intertrial.(metricName){a};
+        
+        % Plot as lines
+        plot(slidingPositions, reachVals, '-o', 'Color', [0 0 1], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Reach');
+        plot(slidingPositions, intertrialVals, '-s', 'Color', [1 0 0], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Intertrial');
+        
+        xlabel('Sliding Position (s)', 'FontSize', 10);
+        ylabel(metricName, 'FontSize', 10);
+        title(sprintf('%s - %s', areas{a}, metricName), 'FontSize', 12);
+        grid on;
+        legend('Location', 'best', 'FontSize', 8);
+        set(gca, 'XTickLabelMode', 'auto');
+        set(gca, 'YTickLabelMode', 'auto');
+        
+        % Add vertical line at 0 (alignment point)
+        xline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
+    end
+    
+    sgtitle(sprintf('%s - Avalanche Metrics: Reach vs Intertrial across Sliding Positions (Window: %.1fs, Buffer: %.1fs)', areas{a}, avalancheWindow, windowBuffer), 'FontSize', 14);
+    
+    % Save figure
+    saveFile = fullfile(saveDir, sprintf('criticality_reach_intertrial_av_%s_sliding_win%.1f_step%.1f.png', areas{a}, avalancheWindow, stepSize));
+    exportgraphics(gcf, saveFile, 'Resolution', 300);
+    fprintf('Saved sliding position plot for %s to: %s\n', areas{a}, saveFile);
+end
+
+% Also create segment-wise summary plot (keep existing bar plots for segments)
+for a = areasToTest
+    figure(2000 + a); clf;
     set(gcf, 'Units', 'pixels');
     set(gcf, 'Position', targetPos);
     
@@ -874,7 +985,7 @@ plotAv = 0;
 [tau, plrS, minavS, maxavS, ~, ~, ~] = plfit2023(sizes, gof, plotAv, 0);
 [alpha, plrD, minavD, maxavD, ~, ~, ~] = plfit2023(durs, gof, plotAv, 0);
 [paramSD, sigmaNuZInvStd, logCoeff] = size_given_duration(sizes, durs, 'durmin', minavD, 'durmax', maxavD);
-
+decades = plrS;
         % dcc (distance to criticality from avalanche analysis)
         dcc = distance_to_criticality(tau, alpha, paramSD);
         
