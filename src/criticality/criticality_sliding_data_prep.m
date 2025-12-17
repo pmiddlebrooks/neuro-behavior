@@ -9,7 +9,7 @@
 dataType = 'naturalistic';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
 
 % Data source selection
-dataSource = 'lfp';  % 'spikes' or 'lfp'
+dataSource = 'spikes';  % 'spikes' or 'lfp'
 
 % Initialize paths
 paths = get_paths;

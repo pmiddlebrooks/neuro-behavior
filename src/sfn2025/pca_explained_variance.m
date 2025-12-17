@@ -59,6 +59,152 @@ reachOnsets = reachOnsets(reachOnsets >= opts.collectStart & reachOnsets <= opts
 
 fprintf('Loaded %d reaches\n', length(reachOnsets));
 
+%% ==================== REACH / INTERTRIAL WINDOW CONFIG (MODELED ON CRITICALITY SCRIPT) ====================
+% We will define windows around reach starts and intertrial midpoints and
+% later restrict the reach PCA to these windows (rather than whole session).
+
+% Extract reach start times in seconds (alias for clarity with criticality script)
+reachStart = reachOnsets;
+totalReaches = length(reachStart);
+
+% Calculate intertrial midpoints (halfway between consecutive reaches)
+intertrialMidpoints = nan(1, totalReaches - 1);
+for i = 1:totalReaches - 1
+    intertrialMidpoints(i) = (reachStart(i) + reachStart(i+1)) / 2;
+end
+
+fprintf('Calculated %d intertrial midpoints\n', length(intertrialMidpoints));
+
+% Window / buffer configuration (mirrors criticality_reach_intertrial_av.m)
+beforeAlign = -2;   % seconds (only used to cap maximum window length)
+afterAlign  =  2;   % seconds
+stepSize    =  0.25; %#ok<NASGU> % kept for reference; not used directly here
+windowBuffer = 0.5; % Minimum distance from window edge to neighboring event
+minAvalancheWindow = 8; % Minimum window duration (seconds)
+
+%% Find optimal common window duration that satisfies buffer constraints
+validReachIndices = [];
+maxWindowPerReach = nan(1, totalReaches);
+
+for r = 1:totalReaches
+    reachTime = reachStart(r);
+    
+    maxWindowForThisReach = inf;
+    
+    % Previous intertrial midpoint (between previous and current reach)
+    if r > 1
+        prevMidpoint = intertrialMidpoints(r-1);
+        maxWindowFromPrev = 2 * (reachTime - prevMidpoint - windowBuffer);
+        if maxWindowFromPrev < maxWindowForThisReach
+            maxWindowForThisReach = maxWindowFromPrev;
+        end
+    end
+    
+    % Next intertrial midpoint (between current and next reach)
+    if r <= length(intertrialMidpoints)
+        nextMidpoint = intertrialMidpoints(r);
+        maxWindowFromNext = 2 * (nextMidpoint - reachTime - windowBuffer);
+        if maxWindowFromNext < maxWindowForThisReach
+            maxWindowForThisReach = maxWindowFromNext;
+        end
+    end
+    
+    maxWindowPerReach(r) = maxWindowForThisReach;
+    
+    if maxWindowForThisReach >= minAvalancheWindow
+        validReachIndices = [validReachIndices, r]; %#ok<AGROW>
+    end
+end
+
+validIntertrialIndices = [];
+maxWindowPerIntertrial = nan(1, length(intertrialMidpoints));
+
+for i = 1:length(intertrialMidpoints)
+    midpointTime = intertrialMidpoints(i);
+    
+    % Intertrial midpoint i is between reach i and reach i+1
+    prevReach = reachStart(i);
+    nextReach = reachStart(i+1);
+    
+    maxWindowForThisIntertrial = inf;
+    
+    maxWindowFromPrev = 2 * (midpointTime - prevReach - windowBuffer);
+    if maxWindowFromPrev < maxWindowForThisIntertrial
+        maxWindowForThisIntertrial = maxWindowFromPrev;
+    end
+    
+    maxWindowFromNext = 2 * (nextReach - midpointTime - windowBuffer);
+    if maxWindowFromNext < maxWindowForThisIntertrial
+        maxWindowForThisIntertrial = maxWindowFromNext;
+    end
+    
+    maxWindowPerIntertrial(i) = maxWindowForThisIntertrial;
+    
+    if maxWindowForThisIntertrial >= minAvalancheWindow
+        validIntertrialIndices = [validIntertrialIndices, i]; %#ok<AGROW>
+    end
+end
+
+if isempty(validReachIndices) && isempty(validIntertrialIndices)
+    error('No valid reaches or intertrial midpoints with window >= %.1f s. Adjust windowBuffer or minAvalancheWindow.', minAvalancheWindow);
+end
+
+maxReachWindow = inf;
+if ~isempty(validReachIndices)
+    maxReachWindow = min(maxWindowPerReach(validReachIndices));
+end
+
+maxIntertrialWindow = inf;
+if ~isempty(validIntertrialIndices)
+    maxIntertrialWindow = min(maxWindowPerIntertrial(validIntertrialIndices));
+end
+
+% Use the smaller of the two and also respect the sliding-range cap
+avalancheWindow = min(maxReachWindow, maxIntertrialWindow);
+maxWindowFromSliding = abs(beforeAlign) + abs(afterAlign);
+avalancheWindow = min(avalancheWindow, maxWindowFromSliding);
+
+if avalancheWindow < minAvalancheWindow
+    avalancheWindow = minAvalancheWindow;
+end
+
+if avalancheWindow <= 0 || isnan(avalancheWindow) || isinf(avalancheWindow)
+    error('Cannot find valid window duration. Adjust windowBuffer or inter-reach intervals.');
+end
+
+% Keep original arrays for reference
+reachStartOriginal = reachStart;
+intertrialMidpointsOriginal = intertrialMidpoints; %#ok<NASGU>
+
+% Filter reachStart to only include indices that can support this window
+reachStart = reachStart(validReachIndices);
+totalReaches = length(reachStart);
+
+% Recompute intertrial midpoints consistent with filtered reaches and
+% ensure that only midpoints that passed the window test are retained.
+intertrialMidpointsFiltered = nan(1, totalReaches - 1);
+intertrialMidpointValid = false(1, totalReaches - 1);
+
+for i = 1:totalReaches - 1
+    midpointTime = (reachStart(i) + reachStart(i+1)) / 2;
+    
+    origReachIdx1 = validReachIndices(i);
+    origReachIdx2 = validReachIndices(i+1);
+    
+    if origReachIdx2 == origReachIdx1 + 1
+        if ismember(origReachIdx1, validIntertrialIndices)
+            intertrialMidpointsFiltered(i) = midpointTime;
+            intertrialMidpointValid(i) = true;
+        end
+    end
+end
+
+intertrialMidpoints = intertrialMidpointsFiltered(intertrialMidpointValid);
+
+fprintf('Windowed PCA config: window = %.2f s, buffer = %.2f s\n', avalancheWindow, windowBuffer);
+fprintf('  Valid reach windows: %d / %d\n', length(reachStart), length(reachStartOriginal));
+fprintf('  Valid intertrial windows: %d / %d\n', length(intertrialMidpoints), length(maxWindowPerIntertrial));
+
 % ==================== NATURALISTIC DATA ====================
 fprintf('\n=== Loading Naturalistic Data ===\n');
 
@@ -149,8 +295,10 @@ fprintf('\n=== Analysis 1: Whole Session PCA ===\n');
 
 % Initialize storage for whole session results
 cumVarReachWhole = cell(1, length(areas));
+cumVarIntertrialWhole = cell(1, length(areas));
 cumVarNatWhole = cell(1, length(areas));
 numComp50ReachWhole = zeros(1, length(areas));
+numComp50IntertrialWhole = zeros(1, length(areas));
 numComp50NatWhole = zeros(1, length(areas));
 
 for a = areasToTest
@@ -202,7 +350,7 @@ for a = areasToTest
         % Bin all spike data for this area
         timeEdges = opts.collectStart:binSize:opts.collectEnd;
         numBins = length(timeEdges) - 1;
-        dataMatReach = zeros(numBins, length(neuronIds));
+        dataMatReachFull = zeros(numBins, length(neuronIds));
         
         for n = 1:length(neuronIds)
             neuronId = neuronIds(n);
@@ -212,30 +360,70 @@ for a = areasToTest
             
             % Bin spikes
             spikeCounts = histcounts(spikeTimes, timeEdges);
-            dataMatReach(:, n) = spikeCounts';
+            dataMatReachFull(:, n) = spikeCounts';
         end
         
         % Remove neurons with no spikes
-        validNeurons = sum(dataMatReach, 1) > 0;
-        dataMatReach = dataMatReach(:, validNeurons);
+        validNeurons = sum(dataMatReachFull, 1) > 0;
+        dataMatReachFull = dataMatReachFull(:, validNeurons);
         
-        if size(dataMatReach, 2) > 0
-            % Run PCA
-            [coeff, score, ~, ~, explained] = pca(dataMatReach);
+        if size(dataMatReachFull, 2) > 0
+            % Build time-bin centers for window selection
+            binCenters = timeEdges(1:end-1) + diff(timeEdges)/2;
             
-            % Calculate cumulative explained variance
-            cumVarReachWhole{a} = cumsum(explained);
-            
-            % Find number of components for 50% variance
-            numComp50ReachWhole(a) = find(cumVarReachWhole{a} >= 50, 1);
-            if isempty(numComp50ReachWhole(a))
-                numComp50ReachWhole(a) = length(cumVarReachWhole{a});
+            % Select bins that fall within any reach window
+            reachBinMask = false(size(binCenters));
+            for r = 1:length(reachStart)
+                winStart = reachStart(r) - avalancheWindow/2;
+                winEnd   = reachStart(r) + avalancheWindow/2;
+                reachBinMask = reachBinMask | (binCenters >= winStart & binCenters <= winEnd);
             end
             
-            fprintf('  Reach: %d components needed for 50%% variance\n', numComp50ReachWhole(a));
+            % Select bins that fall within any intertrial window
+            intertrialBinMask = false(size(binCenters));
+            for iWin = 1:length(intertrialMidpoints)
+                winStart = intertrialMidpoints(iWin) - avalancheWindow/2;
+                winEnd   = intertrialMidpoints(iWin) + avalancheWindow/2;
+                intertrialBinMask = intertrialBinMask | (binCenters >= winStart & binCenters <= winEnd);
+            end
+            
+            dataMatReach = dataMatReachFull(reachBinMask, :);
+            dataMatIntertrial = dataMatReachFull(intertrialBinMask, :);
+            
+            % Run PCA for reach windows
+            if ~isempty(dataMatReach) && size(dataMatReach, 2) > 0
+                [coeffReach, scoreReach, ~, ~, explainedReach] = pca(dataMatReach); %#ok<ASGLU>
+                cumVarReachWhole{a} = cumsum(explainedReach);
+                numComp50ReachWhole(a) = find(cumVarReachWhole{a} >= 50, 1);
+                if isempty(numComp50ReachWhole(a))
+                    numComp50ReachWhole(a) = length(cumVarReachWhole{a});
+                end
+                fprintf('  Reach windows: %d components needed for 50%% variance\n', numComp50ReachWhole(a));
+            else
+                cumVarReachWhole{a} = [];
+                numComp50ReachWhole(a) = NaN;
+                fprintf('  Reach windows: no data for PCA\n');
+            end
+            
+            % Run PCA for intertrial windows
+            if ~isempty(dataMatIntertrial) && size(dataMatIntertrial, 2) > 0
+                [coeffInter, scoreInter, ~, ~, explainedInter] = pca(dataMatIntertrial); %#ok<ASGLU>
+                cumVarIntertrialWhole{a} = cumsum(explainedInter);
+                numComp50IntertrialWhole(a) = find(cumVarIntertrialWhole{a} >= 50, 1);
+                if isempty(numComp50IntertrialWhole(a))
+                    numComp50IntertrialWhole(a) = length(cumVarIntertrialWhole{a});
+                end
+                fprintf('  Intertrial windows: %d components needed for 50%% variance\n', numComp50IntertrialWhole(a));
+            else
+                cumVarIntertrialWhole{a} = [];
+                numComp50IntertrialWhole(a) = NaN;
+                fprintf('  Intertrial windows: no data for PCA\n');
+            end
         else
             cumVarReachWhole{a} = [];
+            cumVarIntertrialWhole{a} = [];
             numComp50ReachWhole(a) = NaN;
+            numComp50IntertrialWhole(a) = NaN;
         end
     end
     
@@ -276,7 +464,7 @@ for a = areasToTest
                 numComp50NatWhole(a) = length(cumVarNatWhole{a});
             end
             
-            fprintf('  Naturalistic: %d components needed for 50%% variance\n', numComp50NatWhole(a));
+            fprintf('  Naturalistic (whole session): %d components needed for 50%% variance\n', numComp50NatWhole(a));
         else
             cumVarNatWhole{a} = [];
             numComp50NatWhole(a) = NaN;
@@ -526,14 +714,19 @@ for a = 1:length(areas)
     subplot(1, 4, a);
     hold on;
     
-    % Plot reach data
+    % Plot reach-window data
     if ~isempty(cumVarReachWhole{a})
-        plot(1:length(cumVarReachWhole{a}), cumVarReachWhole{a}, 'b-', 'LineWidth', 4, 'DisplayName', sprintf('Reach (n=%d)', numComp50ReachWhole(a)));
+        plot(1:length(cumVarReachWhole{a}), cumVarReachWhole{a}, 'b-', 'LineWidth', 4, 'DisplayName', sprintf('Reach windows (n=%d)', numComp50ReachWhole(a)));
+    end
+    
+    % Plot intertrial-window data
+    if ~isempty(cumVarIntertrialWhole{a})
+        plot(1:length(cumVarIntertrialWhole{a}), cumVarIntertrialWhole{a}, 'g-', 'LineWidth', 4, 'DisplayName', sprintf('Intertrial windows (n=%d)', numComp50IntertrialWhole(a)));
     end
     
     % Plot naturalistic data
     if ~isempty(cumVarNatWhole{a})
-        plot(1:length(cumVarNatWhole{a}), cumVarNatWhole{a}, 'r-', 'LineWidth', 4, 'DisplayName', sprintf('Naturalistic (n=%d)', numComp50NatWhole(a)));
+        plot(1:length(cumVarNatWhole{a}), cumVarNatWhole{a}, 'r-', 'LineWidth', 4, 'DisplayName', sprintf('Naturalistic whole (n=%d)', numComp50NatWhole(a)));
     end
     
     % Add 50% line
@@ -541,13 +734,13 @@ for a = 1:length(areas)
     
     xlabel('PCA Component');
     ylabel('Explained Variance (%)');
-    title(sprintf('%s - Whole Session', areas{a}));
-    % legend('Location', 'best');
+    title(sprintf('%s - Reach vs Intertrial vs Naturalistic', areas{a}));
+    % legend('Location', 'best'); % legend suppressed for clarity across subplots
     grid on;
     ylim([0, 100]);
 end
 
-sgtitle('PCA Explained Variance - Whole Session', 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle('PCA Explained Variance - Reach Windows vs Intertrial Windows vs Naturalistic', 'FontSize', 14, 'FontWeight', 'bold');
 
 % Save whole session figure
 saveDir = fullfile(paths.dropPath, 'sfn2025', 'explained_variance');
@@ -604,10 +797,18 @@ fprintf('Saved event-aligned figure to: %s\n', saveFileEvent);
 %% ==================== SUMMARY REPORT ====================
 fprintf('\n=== SUMMARY: Components Needed for 50%% Variance ===\n');
 fprintf('\nWhole Session:\n');
-fprintf('  Reach:\n');
+fprintf('  Reach windows:\n');
 for a = 1:length(areas)
     if ~isnan(numComp50ReachWhole(a))
         fprintf('    %s: %d components\n', areas{a}, numComp50ReachWhole(a));
+    else
+        fprintf('    %s: No data\n', areas{a});
+    end
+end
+fprintf('  Intertrial windows:\n');
+for a = 1:length(areas)
+    if ~isnan(numComp50IntertrialWhole(a))
+        fprintf('    %s: %d components\n', areas{a}, numComp50IntertrialWhole(a));
     else
         fprintf('    %s: No data\n', areas{a});
     end
