@@ -11,12 +11,8 @@ clear eventMat eventMatZ
 %% get desired file paths
 paths = get_paths;
 
-animal = 'ag25290';
-sessionBhv = '112321_1';
-sessionNrn = '112321';
-if strcmp(sessionBhv, '112321_1')
-    sessionSave = '112321';
-end
+    opts.dataPath = paths.freeDataPath;
+    opts.sessionName = sessionName;
 
 %%
 
@@ -30,12 +26,7 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDa
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %                   Get behavior data
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
-    bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
 
-
-    opts.dataPath = bhvDataPath;
-    opts.fileName = bhvFileName;
 
     dataBhv = load_data(opts, 'behavior');
 
@@ -120,6 +111,8 @@ end
 
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if strcmp(getDataType, 'all') || strcmp(getDataType, 'kinematics')
+            warning('Adjust kinematics loading in load_data.m to get the path/filename correct')
+
     bhvDataPath = strcat(paths.bhvDataPath, 'animal_',animal,'/');
     % kinFileName = 'AdenKinematicsAligned.csv';
 kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000_kinematics.npy';
@@ -191,10 +184,6 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'lfp')
     % ds = [1541 2700];
     % vs = [2701 3840];
 
-% if strcmp(getDataType, 'all') || strcmp(getDataType, 'lfp')
-    freeDataPath = strcat(paths.freeDataPath, 'animal_',animal,'/', sessionNrn, '/');
-    freeDataPath = [freeDataPath, 'recording1/'];
-    opts.dataPath = freeDataPath;
 
 data = load_data(opts, 'lfp');
 data = fliplr(data); % flip data so first column (channel) is brain surface
@@ -240,10 +229,6 @@ end
 %                Get Neural matrix
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if strcmp(getDataType, 'all') || strcmp(getDataType, 'spikes')
-
-    freeDataPath = strcat(paths.freeDataPath, 'animal_',animal,'/', sessionNrn, '/');
-    freeDataPath = [freeDataPath, 'recording1/'];
-    opts.dataPath = freeDataPath;
 
     data = load_data(opts, 'spikes');
     data.bhvDur = dataBhv.Dur;

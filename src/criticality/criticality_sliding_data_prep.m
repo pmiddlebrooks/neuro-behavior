@@ -9,7 +9,7 @@
 dataType = 'naturalistic';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
 
 % Data source selection
-dataSource = 'spikes';  % 'spikes' or 'lfp'
+dataSource = 'lfp';  % 'spikes' or 'lfp'
 
 % Initialize paths
 paths = get_paths;
@@ -57,8 +57,15 @@ filenameSuffix = '';  % Will be updated based on pcaFlag in analysis script
 
 % =============================    Naturalistic Data Loading    =============================
 if strcmp(dataType, 'naturalistic')
-    opts.collectEnd = 45 * 60; % seconds
+
+        sessionName =  'ag/ag112321/recording1';
+        % sessionName =  'ag/ag112321/recording2';
+        % sessionName =  'ey/ey042822';
+        % sessionName =  'kw/kw092821';
+
+        opts.collectEnd = 45 * 60; % seconds
     opts.collectEnd = 5 * 60; % seconds
+
 
     if strcmp(dataSource, 'spikes')
         % Load naturalistic spike data
@@ -399,6 +406,7 @@ for b = 1:numBands
     calculatedBinSize = minBinSize * (highestFreqAvg / bandAvgFreqs(b));
     binSizes(b) = ceil(calculatedBinSize / minBinSize) * minBinSize;
 end
+binSizes = [.005 .01 .02 .035];
 
 fprintf('Frequency-dependent bin sizes:\n');
 for b = 1:numBands

@@ -18,6 +18,7 @@
 %% Parameters
 binSize = 0.05; % seconds
 eventWindow = [-.5, .5]; % seconds [before, after] relative to event onset for event-aligned analysis
+reachIntertrialWindow = [-1, 1]; % seconds [before, after] relative to event onset for event-aligned analysis
 natBhvID = [6:8]; % Behavior ID(s) for naturalistic event-aligned analysis (can be vector to collapse multiple behaviors)
 natBhvID = [15]; % Behavior ID(s) for naturalistic event-aligned analysis (can be vector to collapse multiple behaviors)
 
@@ -25,7 +26,8 @@ minBhvDur = 0.03; % Minimum behavior duration (seconds)
 minSeparation = 0.2; % Minimum time between same behaviors (seconds)
 
 areasToTest = 2:3;
-%% Brain areas: 1=M23, 2=M56, 3=DS, 4=VS
+%%                 ========================   LOAD DATA    ====================
+% Brain areas: 1=M23, 2=M56, 3=DS, 4=VS
 areas = {'M23', 'M56', 'DS', 'VS'};
 areaNumeric = [1, 2, 3, 4];
 
@@ -59,11 +61,11 @@ reachOnsets = reachOnsets(reachOnsets >= opts.collectStart & reachOnsets <= opts
 
 fprintf('Loaded %d reaches\n', length(reachOnsets));
 
-%% ==================== REACH / INTERTRIAL WINDOW CONFIG (MODELED ON CRITICALITY SCRIPT) ====================
-% We will define windows around reach starts and intertrial midpoints and
-% later restrict the reach PCA to these windows (rather than whole session).
+% ==================== REACH / INTERTRIAL WINDOW CONFIG ====================
+% Use reachIntertrialWindow for peri-aligned time windows around reach starts
+% and intertrial midpoints
 
-% Extract reach start times in seconds (alias for clarity with criticality script)
+% Extract reach start times in seconds
 reachStart = reachOnsets;
 totalReaches = length(reachStart);
 
@@ -73,158 +75,26 @@ for i = 1:totalReaches - 1
     intertrialMidpoints(i) = (reachStart(i) + reachStart(i+1)) / 2;
 end
 
-fprintf('Calculated %d intertrial midpoints\n', length(intertrialMidpoints));
+fprintf('Using reachIntertrialWindow = [%.2f, %.2f] s for peri-aligned time\n', ...
+    reachIntertrialWindow(1), reachIntertrialWindow(2));
+fprintf('  Reach starts: %d\n', totalReaches);
+fprintf('  Intertrial midpoints: %d\n', length(intertrialMidpoints));
 
-% Window / buffer configuration (mirrors criticality_reach_intertrial_av.m)
-beforeAlign = -2;   % seconds (only used to cap maximum window length)
-afterAlign  =  2;   % seconds
-stepSize    =  0.25; %#ok<NASGU> % kept for reference; not used directly here
-windowBuffer = 0.5; % Minimum distance from window edge to neighboring event
-minAvalancheWindow = 8; % Minimum window duration (seconds)
-
-%% Find optimal common window duration that satisfies buffer constraints
-validReachIndices = [];
-maxWindowPerReach = nan(1, totalReaches);
-
-for r = 1:totalReaches
-    reachTime = reachStart(r);
-    
-    maxWindowForThisReach = inf;
-    
-    % Previous intertrial midpoint (between previous and current reach)
-    if r > 1
-        prevMidpoint = intertrialMidpoints(r-1);
-        maxWindowFromPrev = 2 * (reachTime - prevMidpoint - windowBuffer);
-        if maxWindowFromPrev < maxWindowForThisReach
-            maxWindowForThisReach = maxWindowFromPrev;
-        end
-    end
-    
-    % Next intertrial midpoint (between current and next reach)
-    if r <= length(intertrialMidpoints)
-        nextMidpoint = intertrialMidpoints(r);
-        maxWindowFromNext = 2 * (nextMidpoint - reachTime - windowBuffer);
-        if maxWindowFromNext < maxWindowForThisReach
-            maxWindowForThisReach = maxWindowFromNext;
-        end
-    end
-    
-    maxWindowPerReach(r) = maxWindowForThisReach;
-    
-    if maxWindowForThisReach >= minAvalancheWindow
-        validReachIndices = [validReachIndices, r]; %#ok<AGROW>
-    end
-end
-
-validIntertrialIndices = [];
-maxWindowPerIntertrial = nan(1, length(intertrialMidpoints));
-
-for i = 1:length(intertrialMidpoints)
-    midpointTime = intertrialMidpoints(i);
-    
-    % Intertrial midpoint i is between reach i and reach i+1
-    prevReach = reachStart(i);
-    nextReach = reachStart(i+1);
-    
-    maxWindowForThisIntertrial = inf;
-    
-    maxWindowFromPrev = 2 * (midpointTime - prevReach - windowBuffer);
-    if maxWindowFromPrev < maxWindowForThisIntertrial
-        maxWindowForThisIntertrial = maxWindowFromPrev;
-    end
-    
-    maxWindowFromNext = 2 * (nextReach - midpointTime - windowBuffer);
-    if maxWindowFromNext < maxWindowForThisIntertrial
-        maxWindowForThisIntertrial = maxWindowFromNext;
-    end
-    
-    maxWindowPerIntertrial(i) = maxWindowForThisIntertrial;
-    
-    if maxWindowForThisIntertrial >= minAvalancheWindow
-        validIntertrialIndices = [validIntertrialIndices, i]; %#ok<AGROW>
-    end
-end
-
-if isempty(validReachIndices) && isempty(validIntertrialIndices)
-    error('No valid reaches or intertrial midpoints with window >= %.1f s. Adjust windowBuffer or minAvalancheWindow.', minAvalancheWindow);
-end
-
-maxReachWindow = inf;
-if ~isempty(validReachIndices)
-    maxReachWindow = min(maxWindowPerReach(validReachIndices));
-end
-
-maxIntertrialWindow = inf;
-if ~isempty(validIntertrialIndices)
-    maxIntertrialWindow = min(maxWindowPerIntertrial(validIntertrialIndices));
-end
-
-% Use the smaller of the two and also respect the sliding-range cap
-avalancheWindow = min(maxReachWindow, maxIntertrialWindow);
-maxWindowFromSliding = abs(beforeAlign) + abs(afterAlign);
-avalancheWindow = min(avalancheWindow, maxWindowFromSliding);
-
-if avalancheWindow < minAvalancheWindow
-    avalancheWindow = minAvalancheWindow;
-end
-
-if avalancheWindow <= 0 || isnan(avalancheWindow) || isinf(avalancheWindow)
-    error('Cannot find valid window duration. Adjust windowBuffer or inter-reach intervals.');
-end
-
-% Keep original arrays for reference
-reachStartOriginal = reachStart;
-intertrialMidpointsOriginal = intertrialMidpoints; %#ok<NASGU>
-
-% Filter reachStart to only include indices that can support this window
-reachStart = reachStart(validReachIndices);
-totalReaches = length(reachStart);
-
-% Recompute intertrial midpoints consistent with filtered reaches and
-% ensure that only midpoints that passed the window test are retained.
-intertrialMidpointsFiltered = nan(1, totalReaches - 1);
-intertrialMidpointValid = false(1, totalReaches - 1);
-
-for i = 1:totalReaches - 1
-    midpointTime = (reachStart(i) + reachStart(i+1)) / 2;
-    
-    origReachIdx1 = validReachIndices(i);
-    origReachIdx2 = validReachIndices(i+1);
-    
-    if origReachIdx2 == origReachIdx1 + 1
-        if ismember(origReachIdx1, validIntertrialIndices)
-            intertrialMidpointsFiltered(i) = midpointTime;
-            intertrialMidpointValid(i) = true;
-        end
-    end
-end
-
-intertrialMidpoints = intertrialMidpointsFiltered(intertrialMidpointValid);
-
-fprintf('Windowed PCA config: window = %.2f s, buffer = %.2f s\n', avalancheWindow, windowBuffer);
-fprintf('  Valid reach windows: %d / %d\n', length(reachStart), length(reachStartOriginal));
-fprintf('  Valid intertrial windows: %d / %d\n', length(intertrialMidpoints), length(maxWindowPerIntertrial));
-
-% ==================== NATURALISTIC DATA ====================
+%% ==================== NATURALISTIC DATA ====================
 fprintf('\n=== Loading Naturalistic Data ===\n');
 
 % Naturalistic data parameters
-animal = 'ag25290';
-sessionBhv = '112321_1';
-sessionNrn = '112321';
-opts.collectStart = 0 * 60 * 60; % seconds
+        sessionName =  'ag/ag112321/recording1';
+
+        opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectEnd = 45 * 60; % seconds
 
 % Load behavior data
-bhvDataPath = strcat(paths.bhvDataPath, 'animal_', animal, '/');
-bhvFileName = ['behavior_labels_', animal, '_', sessionBhv, '.csv'];
-opts.dataPath = bhvDataPath;
-opts.fileName = bhvFileName;
+opts.dataPath = paths.freeDataPath;
+opts.sessionName = sessionName;
 dataBhv = load_data(opts, 'behavior');
 
 % Load spike data
-freeDataPath = strcat(paths.freeDataPath, 'animal_', animal, '/', sessionNrn, '/recording1/');
-opts.dataPath = freeDataPath;
 spikeDataNat = spike_times_per_area(opts);
 
 %% Extract behavior onset times for natBhvID with additional filtering
@@ -371,19 +241,19 @@ for a = areasToTest
             % Build time-bin centers for window selection
             binCenters = timeEdges(1:end-1) + diff(timeEdges)/2;
             
-            % Select bins that fall within any reach window
+            % Select bins that fall within any reach window (peri-aligned time)
             reachBinMask = false(size(binCenters));
             for r = 1:length(reachStart)
-                winStart = reachStart(r) - avalancheWindow/2;
-                winEnd   = reachStart(r) + avalancheWindow/2;
+                winStart = reachStart(r) + reachIntertrialWindow(1);
+                winEnd   = reachStart(r) + reachIntertrialWindow(2);
                 reachBinMask = reachBinMask | (binCenters >= winStart & binCenters <= winEnd);
             end
             
-            % Select bins that fall within any intertrial window
+            % Select bins that fall within any intertrial window (peri-aligned time)
             intertrialBinMask = false(size(binCenters));
             for iWin = 1:length(intertrialMidpoints)
-                winStart = intertrialMidpoints(iWin) - avalancheWindow/2;
-                winEnd   = intertrialMidpoints(iWin) + avalancheWindow/2;
+                winStart = intertrialMidpoints(iWin) + reachIntertrialWindow(1);
+                winEnd   = intertrialMidpoints(iWin) + reachIntertrialWindow(2);
                 intertrialBinMask = intertrialBinMask | (binCenters >= winStart & binCenters <= winEnd);
             end
             

@@ -8,12 +8,23 @@ function data = load_data(opts, dataType)
 
 % dataType: neuron:
 %
+sessionFolder = fullfile(opts.dataPath, opts.sessionName);
+
 switch dataType
     case 'behavior'
         % Behavioral data is stored with an asigned B-SOiD label every frame.
-        % dataBhv = load([opts.dataPath ,opts.fileName]);
-
-        dataFull = readtable([opts.dataPath, opts.fileName]);
+        % Find any CSV file that begins with "behavior_labels"
+        searchPath = sessionFolder;
+        csvFiles = dir(fullfile(searchPath, 'behavior_labels*.csv'));
+        
+        if isempty(csvFiles)
+            error('No CSV file starting with "behavior_labels" found in %s', searchPath);
+        elseif length(csvFiles) > 1
+            warning('Multiple CSV files starting with "behavior_labels" found. Using first: %s', csvFiles(1).name);
+        end
+        
+        fileName = csvFiles(1).name;
+        dataFull = readtable(fullfile(searchPath, fileName));
 
 
         % Use a time window of recorded data
@@ -45,6 +56,7 @@ switch dataType
 
 
     case 'kinematics'
+        warning('Adjust kinematics loading in load_data.m to get the path/filename correct')
         % kinFileName = '2021-11-23_13-19-58DLC_resnet50_bottomup_clearSep21shuffle1_700000_kinematics.npy';
         % kinFileName = 'AdenKinematicsAligned.csv';
         % Define the path to your CSV file
@@ -67,8 +79,15 @@ switch dataType
 
 
     case 'spikes'
-        fileName = 'cluster_info.tsv';
-        ci = readtable([opts.dataPath, fileName], "FileType","text",'Delimiter', '\t');
+        % Find spike data files in session folder
+        searchPath = sessionFolder;
+        
+        % Check for cluster_info.tsv
+        clusterInfoPath = fullfile(searchPath, 'cluster_info.tsv');
+        if ~exist(clusterInfoPath, 'file')
+            error('cluster_info.tsv not found in %s', searchPath);
+        end
+        ci = readtable(clusterInfoPath, "FileType","text",'Delimiter', '\t');
 
         % some of the depth values aren't in order, so re-sort the data by
         % depth
@@ -104,9 +123,20 @@ switch dataType
 
         ci.area = area;
 
-        spikeTimes = readNPY([opts.dataPath, 'spike_times.npy']);
+        % Check for spike_times.npy
+        spikeTimesPath = fullfile(searchPath, 'spike_times.npy');
+        if ~exist(spikeTimesPath, 'file')
+            error('spike_times.npy not found in %s', searchPath);
+        end
+        spikeTimes = readNPY(spikeTimesPath);
         spikeTimes = double(spikeTimes) / opts.fsSpike;
-        spikeClusters = readNPY([opts.dataPath, 'spike_clusters.npy']);
+        
+        % Check for spike_clusters.npy
+        spikeClustersPath = fullfile(searchPath, 'spike_clusters.npy');
+        if ~exist(spikeClustersPath, 'file')
+            error('spike_clusters.npy not found in %s', searchPath);
+        end
+        spikeClusters = readNPY(spikeClustersPath);
 
         % Return the requested window of data, formatted  so start time is zero,
         dataWindow = spikeTimes >= opts.collectStart & spikeTimes < (opts.collectEnd);
@@ -119,7 +149,7 @@ switch dataType
         data.spikeClusters = spikeClusters;
 
     case 'lfp'
-        data = readmatrix([opts.dataPath, 'lfp.txt']);
+        data = readmatrix(fullfile(sessionFolder, 'lfp.txt'));
 
         data = data(1 + (opts.collectStart * opts.fsLfp) : (opts.collectEnd) * opts.fsLfp, :);
 
