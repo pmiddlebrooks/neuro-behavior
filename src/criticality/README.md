@@ -83,9 +83,9 @@ kappa = compute_kappa(avalancheSizes)
 **Detrended Fluctuation Analysis for long-range temporal correlations**
 
 ```matlab
-alpha = compute_DFA(dataMat, plotFlag)
+alpha = compute_DFA(signal, plotFlag)
 ```
-- **Input**: Spike count matrix (neurons × time bins)
+- **Input**: 1D time series vector (e.g., LFP, summed spikes, kinematics).
 - **Output**: DFA exponent α indicating long-range correlations
 - **Interpretation**:
   - α ≈ 0.5: No long-range correlations (random)

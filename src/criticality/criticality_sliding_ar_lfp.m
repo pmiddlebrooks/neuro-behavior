@@ -17,9 +17,11 @@ loadExistingResults = false;
 makePlots = true;
 plotBinnedEnvelopes = true;  % Plot results from binnedEnvelopes (power bands)
 plotRawLfp = false;           % Plot results from raw LFP
+plotDFA = true;              % Plot DFA results on right y-axis
 
 % Analysis flags
 analyzeD2 = true;      % compute d2
+analyzeDFA = true;     % compute DFA alpha
 
 % Permutation testing flags
 enablePermutations = false;  % Set to true to perform circular permutation testing
@@ -193,6 +195,7 @@ fprintf('Total windows for analysis: %d (aligned across all traces)\n', numWindo
 % Initialize results
 % Structure: d2{area}{band} = [1 x numWindows]
 d2 = cell(1, numAreas);
+dfa = cell(1, numAreas); % DFA alpha for power bands
 d2Permuted = cell(1, numAreas);
 startS = cell(1, numAreas);
 
@@ -200,6 +203,7 @@ startS = cell(1, numAreas);
 if exist('lfpBinSize', 'var') && ~isempty(lfpBinSize)
     numLfpBins = length(lfpBinSize);
     d2Lfp = cell(1, numAreas);
+    dfaLfp = cell(1, numAreas); % DFA alpha for raw LFP
     startSLfp = cell(1, numAreas);
 else
     numLfpBins = 0;
@@ -207,13 +211,23 @@ end
 
 for a = 1:numAreas
     d2{a} = cell(1, numBands);
+    dfa{a} = cell(1, numBands);
     d2Permuted{a} = cell(1, numBands);
     startS{a} = cell(1, numBands);
     if numLfpBins > 0
         d2Lfp{a} = cell(1, numLfpBins);
+        dfaLfp{a} = cell(1, numLfpBins);
         startSLfp{a} = cell(1, numLfpBins);
     end
 end
+
+% DFA analysis parameters
+dfaEnvBinSize = 0.02; % 50 Hz for power envelopes
+dfaEnvWinSamples_min = 1000;
+dfaEnvWinSize = max(dfaEnvWinSamples_min * dfaEnvBinSize, 30); % seconds
+
+dfaLfpWinSamples_min = 2000;
+% For LFP, we will use lfpBinSize from configuration (e.g., 0.005s or 200Hz)
 
 % Process each area
 for a = areasToTest
@@ -284,6 +298,34 @@ for a = areasToTest
                 catch ME
                     fprintf('    Warning: d2 calculation failed for window %d: %s\n', w, ME.message);
                     d2{a}{b}(w) = nan;
+                end
+            end
+
+            % Compute DFA alpha for power bands
+            if analyzeDFA
+                try
+                    % Define DFA window for power envelopes
+                    dfaWinSamples = round(dfaEnvWinSize / bandBinSize);
+                    % Center DFA window on current sliding window center
+                    dfaStartIdx = round(windowCenterTimesSeconds(w) / bandBinSize) - round(dfaWinSamples/2) + 1;
+                    dfaEndIdx = dfaStartIdx + dfaWinSamples - 1;
+                    
+                    if dfaStartIdx >= 1 && dfaEndIdx <= numFrames_b
+                        dfaSignal = bandSignal(dfaStartIdx:dfaEndIdx);
+                        
+                        % Downsample to 50 Hz (0.02s bins) if current binSize is smaller
+                        if bandBinSize < dfaEnvBinSize
+                            % Simple bin averaging for downsampling
+                            dsFactor = round(dfaEnvBinSize / bandBinSize);
+                            dfaSignal_ds = arrayfun(@(i) mean(dfaSignal(i:min(i+dsFactor-1, end))), 1:dsFactor:length(dfaSignal))';
+                        else
+                            dfaSignal_ds = dfaSignal;
+                        end
+                        
+                        dfa{a}{b}(w) = compute_DFA(dfaSignal_ds, false);
+                    end
+                catch
+                    dfa{a}{b}(w) = nan;
                 end
             end
         end
@@ -378,10 +420,32 @@ for a = areasToTest
                 % Extract window data and compute d2
                 wSignal = binnedSignal(startIdx:endIdx);
                 try
-                    [varphi, ~] = myYuleWalker3(wSignal, pOrder);
-                    d2Lfp{a}{lb}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+                    if analyzeD2
+                        [varphi, ~] = myYuleWalker3(wSignal, pOrder);
+                        d2Lfp{a}{lb}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+                    end
                 catch
                     d2Lfp{a}{lb}(w) = nan;
+                end
+
+                % Compute DFA alpha for raw LFP
+                if analyzeDFA
+                    try
+                        % Use lfpBinSize (targetBinSize) for DFA
+                        % make the window size the maximum size that either accomodates 2000 bins or spans 30 sec.
+                        dfaWinSamples = max(dfaLfpWinSamples_min, round(30 / targetBinSize));
+                        
+                        % Center DFA window on current sliding window center
+                        dfaStartIdx = round(windowCenterTimesSeconds(w) / targetBinSize) - round(dfaWinSamples/2) + 1;
+                        dfaEndIdx = dfaStartIdx + dfaWinSamples - 1;
+                        
+                        if dfaStartIdx >= 1 && dfaEndIdx <= numBins
+                            dfaSignal = binnedSignal(dfaStartIdx:dfaEndIdx);
+                            dfaLfp{a}{lb}(w) = compute_DFA(dfaSignal, false);
+                        end
+                    catch
+                        dfaLfp{a}{lb}(w) = nan;
+                    end
                 end
             end
             fprintf('    Raw LFP bin size %.3f s completed\n', targetBinSize);
@@ -394,10 +458,12 @@ results = struct();
 results.areas = areas;
 results.bands = bands;
 results.d2 = d2;
+results.dfa = dfa;
 results.startS = startS;
 results.optimalWindowSize = optimalWindowSize;
 if numLfpBins > 0
     results.d2Lfp = d2Lfp;
+    results.dfaLfp = dfaLfp;
     results.startSLfp = startSLfp;
     results.lfpBinSize = lfpBinSize;
 end
@@ -554,6 +620,7 @@ if makePlots
         
         % Plot raw LFP d2 for each bin size in grayscale (light to dark)
         if plotRawLfp && exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
+            yyaxis left;
             numLfpBins = length(d2Lfp{a});
             grayColors = repmat(linspace(0.8, 0, numLfpBins)', 1, 3);
             for lb = 1:numLfpBins
@@ -566,6 +633,7 @@ if makePlots
 
         % Plot d2 for each band on the same axis
         if plotBinnedEnvelopes
+            yyaxis left;
             for b = 1:numBands
                 if ~isempty(d2{a}{b}) && ~isempty(startS{a}{b})
                     if exist('binSizes', 'var')
@@ -616,6 +684,31 @@ if makePlots
             end
         end
         
+        % Plot DFA results on right y-axis if requested
+        if plotDFA
+            yyaxis right;
+            if plotRawLfp && exist('dfaLfp', 'var') && length(dfaLfp) >= a && ~isempty(dfaLfp{a})
+                for lb = 1:length(dfaLfp{a})
+                    if ~isempty(dfaLfp{a}{lb})
+                        plot(windowCenterTimesSeconds, dfaLfp{a}{lb}, ':', 'Color', grayColors(lb, :), 'LineWidth', 1.5, ...
+                            'DisplayName', sprintf('DFA Raw LFP (%.3fs bin)', lfpBinSize(lb)));
+                    end
+                end
+            end
+            
+            if plotBinnedEnvelopes && exist('dfa', 'var') && length(dfa) >= a && ~isempty(dfa{a})
+                for b = 1:numBands
+                    if ~isempty(dfa{a}{b})
+                        plot(windowCenterTimesSeconds, dfa{a}{b}, '--', 'Color', bandColors(b, :), 'LineWidth', 1.5, ...
+                            'DisplayName', sprintf('DFA %s', bands{b, 1}));
+                    end
+                end
+            end
+            ylabel('DFA \alpha');
+            ylim([0.3, 1.7]); % Standard range for DFA alpha
+            grid off; % Keep left axis grid
+        end
+        
         % Add vertical lines at reach onsets (only for reach data)
         % Note: HandleVisibility is set to 'off' to exclude from legend
         if exist('dataType', 'var') && strcmp(dataType, 'reach')
@@ -653,6 +746,7 @@ if makePlots
             end
         end
         
+        yyaxis left;
         title(sprintf('%s - d2 Analysis', areas{a}));
         xlabel('Time (s)');
         ylabel('d2');

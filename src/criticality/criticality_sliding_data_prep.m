@@ -473,7 +473,7 @@ else
     fprintf('LFP data loaded: %d areas, %d bands/area (each band with different frame counts)\n', numAreas, numBands);
 end
 
-lfpBinSize = [.001 .005 .01 .05];
+lfpBinSize = 0.005; % 200 Hz
 % Store binSizes in workspace for use in analysis script
 % This will be used to determine d2StepSize
 %%
