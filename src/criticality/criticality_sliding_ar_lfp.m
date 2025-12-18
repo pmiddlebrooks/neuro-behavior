@@ -15,6 +15,8 @@
 % Flags
 loadExistingResults = false;
 makePlots = true;
+plotBinnedEnvelopes = true;  % Plot results from binnedEnvelopes (power bands)
+plotRawLfp = true;           % Plot results from raw LFP
 
 % Analysis flags
 analyzeD2 = true;      % compute d2
@@ -459,28 +461,41 @@ if makePlots
     allD2 = [];
     
     for a = areasToTest
-        for b = 1:numBands
-            % Check if startS{a}{b} exists, is numeric, and is not empty
-            if length(startS) >= a && length(startS{a}) >= b && ...
-                    isnumeric(startS{a}{b}) && ~isempty(startS{a}{b})
-                allStartS = [allStartS(:); startS{a}{b}(~isnan(startS{a}{b}))'];
+        % Include binned envelope results if requested
+        if plotBinnedEnvelopes
+            for b = 1:numBands
+                % Check if startS{a}{b} exists, is numeric, and is not empty
+                if length(startS) >= a && length(startS{a}) >= b && ...
+                        isnumeric(startS{a}{b}) && ~isempty(startS{a}{b})
+                    allStartS = [allStartS(:); startS{a}{b}(~isnan(startS{a}{b}))'];
+                end
+                % Check if d2{a}{b} exists, is numeric, and is not empty
+                if length(d2) >= a && length(d2{a}) >= b && ...
+                        isnumeric(d2{a}{b}) && ~isempty(d2{a}{b})
+                    allD2 = [allD2(:); d2{a}{b}(~isnan(d2{a}{b}(:)))'];
+                end
+                
+                % Include permuted data in axis limits
+                if enablePermutations && exist('d2Permuted', 'var') && ...
+                        length(d2Permuted) >= a && length(d2Permuted{a}) >= b && ...
+                        isnumeric(d2Permuted{a}{b}) && ~isempty(d2Permuted{a}{b})
+                    permutedMean = nanmean(d2Permuted{a}{b}, 2);
+                    permutedStd = nanstd(d2Permuted{a}{b}, 0, 2);
+                    validIdx = ~isnan(permutedMean) & ~isnan(permutedStd);
+                    if any(validIdx)
+                        permutedVals = [permutedMean(validIdx) + permutedStd(validIdx); permutedMean(validIdx) - permutedStd(validIdx)];
+                        allD2 = [allD2(:); permutedVals(:)];
+                    end
+                end
             end
-            % Check if d2{a}{b} exists, is numeric, and is not empty
-            if length(d2) >= a && length(d2{a}) >= b && ...
-                    isnumeric(d2{a}{b}) && ~isempty(d2{a}{b})
-                allD2 = [allD2(:); d2{a}{b}(~isnan(d2{a}{b}(:)))'];
-            end
-            
-            % Include permuted data in axis limits
-            if enablePermutations && exist('d2Permuted', 'var') && ...
-                    length(d2Permuted) >= a && length(d2Permuted{a}) >= b && ...
-                    isnumeric(d2Permuted{a}{b}) && ~isempty(d2Permuted{a}{b})
-                permutedMean = nanmean(d2Permuted{a}{b}, 2);
-                permutedStd = nanstd(d2Permuted{a}{b}, 0, 2);
-                validIdx = ~isnan(permutedMean) & ~isnan(permutedStd);
-                if any(validIdx)
-                    permutedVals = [permutedMean(validIdx) + permutedStd(validIdx); permutedMean(validIdx) - permutedStd(validIdx)];
-                    allD2 = [allD2(:); permutedVals(:)];
+        end
+        
+        % Include raw LFP results if requested
+        if plotRawLfp && exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
+            for lb = 1:length(d2Lfp{a})
+                if ~isempty(d2Lfp{a}{lb}) && ~isempty(startSLfp{a}{lb})
+                    allStartS = [allStartS(:); startSLfp{a}{lb}(~isnan(startSLfp{a}{lb}))'];
+                    allD2 = [allD2(:); d2Lfp{a}{lb}(~isnan(d2Lfp{a}{lb}))'];
                 end
             end
         end
@@ -522,7 +537,7 @@ if makePlots
         axes(ha(idx)); hold on;
         
         % Plot raw LFP d2 for each bin size in grayscale (light to dark)
-        if exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
+        if plotRawLfp && exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
             numLfpBins = length(d2Lfp{a});
             grayColors = repmat(linspace(0.7, 0, numLfpBins)', 1, 3);
             for lb = 1:numLfpBins
@@ -534,51 +549,53 @@ if makePlots
         end
 
         % Plot d2 for each band on the same axis
-        for b = 1:numBands
-            if ~isempty(d2{a}{b}) && ~isempty(startS{a}{b})
-                if exist('binSizes', 'var')
-                    bandBinSize = binSizes(b);
-                else
-                    bandBinSize = binSize; % fallback
+        if plotBinnedEnvelopes
+            for b = 1:numBands
+                if ~isempty(d2{a}{b}) && ~isempty(startS{a}{b})
+                    if exist('binSizes', 'var')
+                        bandBinSize = binSizes(b);
+                    else
+                        bandBinSize = binSize; % fallback
+                    end
+                    plot(startS{a}{b}, d2{a}{b}, '-', 'Color', bandColors(b, :), 'LineWidth', 2, ...
+                        'DisplayName', sprintf('%s (%.3fs bin)', bands{b, 1}, bandBinSize));
                 end
-                plot(startS{a}{b}, d2{a}{b}, '-', 'Color', bandColors(b, :), 'LineWidth', 2, ...
-                    'DisplayName', sprintf('%s (%.3fs bin)', bands{b, 1}, bandBinSize));
-            end
-            
-            % Plot permutation mean ± std per window if available
-            if enablePermutations && exist('d2Permuted', 'var') && ~isempty(d2Permuted{a}{b})
-                if exist('binSizes', 'var')
-                    bandBinSize = binSizes(b);
-                else
-                    bandBinSize = binSize; % fallback
-                end
-                % Calculate mean and std for each window across shuffles
-                permutedMean = nanmean(d2Permuted{a}{b}, 2);
-                permutedStd = nanstd(d2Permuted{a}{b}, 0, 2);
                 
-                % Find valid indices (where we have data)
-                validIdx = ~isnan(permutedMean) & ~isnan(permutedStd) & ~isnan(startS{a}{b}(:));
-                if any(validIdx)
-                    xFill = startS{a}{b}(validIdx);
-                    yMean = permutedMean(validIdx);
-                    yStd = permutedStd(validIdx);
+                % Plot permutation mean ± std per window if available
+                if enablePermutations && exist('d2Permuted', 'var') && ~isempty(d2Permuted{a}{b})
+                    if exist('binSizes', 'var')
+                        bandBinSize = binSizes(b);
+                    else
+                        bandBinSize = binSize; % fallback
+                    end
+                    % Calculate mean and std for each window across shuffles
+                    permutedMean = nanmean(d2Permuted{a}{b}, 2);
+                    permutedStd = nanstd(d2Permuted{a}{b}, 0, 2);
                     
-                    % Ensure row vectors for fill
-                    if iscolumn(xFill); xFill = xFill'; end
-                    if iscolumn(yMean); yMean = yMean'; end
-                    if iscolumn(yStd); yStd = yStd'; end
-                    
-                    % Plot shaded region (mean ± std) with lighter color
-                    bandColorLight = bandColors(b, :) * 0.7 + 0.3;  % Lighten the color
-                    fill([xFill, fliplr(xFill)], ...
-                         [yMean + yStd, fliplr(yMean - yStd)], ...
-                         bandColorLight, 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-                         'DisplayName', sprintf('%s Permuted mean ± std (%.3fs bin)', bands{b, 1}, bandBinSize));
-                    
-                    % Plot mean line with dashed style
-                    plot(startS{a}{b}(validIdx), permutedMean(validIdx), '--', ...
-                        'Color', bandColors(b, :) * 0.8, 'LineWidth', 1, ...
-                        'DisplayName', sprintf('%s Permuted mean (%.3fs bin)', bands{b, 1}, bandBinSize));
+                    % Find valid indices (where we have data)
+                    validIdx = ~isnan(permutedMean) & ~isnan(permutedStd) & ~isnan(startS{a}{b}(:));
+                    if any(validIdx)
+                        xFill = startS{a}{b}(validIdx);
+                        yMean = permutedMean(validIdx);
+                        yStd = permutedStd(validIdx);
+                        
+                        % Ensure row vectors for fill
+                        if iscolumn(xFill); xFill = xFill'; end
+                        if iscolumn(yMean); yMean = yMean'; end
+                        if iscolumn(yStd); yStd = yStd'; end
+                        
+                        % Plot shaded region (mean ± std) with lighter color
+                        bandColorLight = bandColors(b, :) * 0.7 + 0.3;  % Lighten the color
+                        fill([xFill, fliplr(xFill)], ...
+                             [yMean + yStd, fliplr(yMean - yStd)], ...
+                             bandColorLight, 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
+                             'DisplayName', sprintf('%s Permuted mean ± std (%.3fs bin)', bands{b, 1}, bandBinSize));
+                        
+                        % Plot mean line with dashed style
+                        plot(startS{a}{b}(validIdx), permutedMean(validIdx), '--', ...
+                            'Color', bandColors(b, :) * 0.8, 'LineWidth', 1, ...
+                            'DisplayName', sprintf('%s Permuted mean (%.3fs bin)', bands{b, 1}, bandBinSize));
+                    end
                 end
             end
         end
@@ -620,7 +637,7 @@ if makePlots
             end
         end
         
-        title(sprintf('%s - d2 for all power bands', areas{a}));
+        title(sprintf('%s - d2 Analysis', areas{a}));
         xlabel('Time (s)');
         ylabel('d2');
         xlim([xMin, xMax]);
@@ -628,22 +645,24 @@ if makePlots
         % Ensure tick labels are visible
         set(gca, 'XTickLabelMode', 'auto');
         set(gca, 'YTickLabelMode', 'auto');
-        legend('Location', 'best');
+        if idx == 1
+            legend('Location', 'best');
+        end
         grid on;
     end
     
     % Add super title
     if exist('dataType', 'var') && strcmp(dataType, 'reach')
         if ~isempty(filePrefix)
-            sgtitle(sprintf('[%s] LFP Power Band d2 Analysis with reach onsets (gray dashed) - win=%gs, step=%gs', filePrefix, slidingWindowSize, d2StepSize));
+            sgtitle(sprintf('[%s] LFP d2 Analysis with reach onsets (gray dashed) - win=%gs, step=%gs', filePrefix, slidingWindowSize, d2StepSize));
         else
-            sgtitle(sprintf('LFP Power Band d2 Analysis with reach onsets (gray dashed) - win=%gs, step=%gs', slidingWindowSize, d2StepSize));
+            sgtitle(sprintf('LFP d2 Analysis with reach onsets (gray dashed) - win=%gs, step=%gs', slidingWindowSize, d2StepSize));
         end
     else
         if ~isempty(filePrefix)
-            sgtitle(sprintf('[%s] LFP Power Band d2 Analysis - win=%gs, step=%gs', filePrefix, slidingWindowSize, d2StepSize));
+            sgtitle(sprintf('[%s] LFP d2 Analysis - win=%gs, step=%gs', filePrefix, slidingWindowSize, d2StepSize));
         else
-            sgtitle(sprintf('LFP Power Band d2 Analysis - win=%gs, step=%gs', slidingWindowSize, d2StepSize));
+            sgtitle(sprintf('LFP d2 Analysis - win=%gs, step=%gs', slidingWindowSize, d2StepSize));
         end
     end
     

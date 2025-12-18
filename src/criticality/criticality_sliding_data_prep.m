@@ -396,7 +396,7 @@ end
 % Find highest frequency band
 [~, highestFreqIdx] = max(bandAvgFreqs);
 highestFreqAvg = bandAvgFreqs(highestFreqIdx);
-
+    
 % Calculate bin size for each band: proportional to frequency
 % Lower frequency bands get larger bin sizes
 binSizes = zeros(1, numBands);
