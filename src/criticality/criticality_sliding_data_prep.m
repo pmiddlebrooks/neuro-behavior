@@ -406,7 +406,6 @@ for b = 1:numBands
     calculatedBinSize = minBinSize * (highestFreqAvg / bandAvgFreqs(b));
     binSizes(b) = ceil(calculatedBinSize / minBinSize) * minBinSize;
 end
-binSizes = [.005 .01 .02 .035];
 
 fprintf('Frequency-dependent bin sizes:\n');
 for b = 1:numBands
@@ -474,6 +473,7 @@ else
     fprintf('LFP data loaded: %d areas, %d bands/area (each band with different frame counts)\n', numAreas, numBands);
 end
 
+lfpBinSize = [.001 .005 .01 .05];
 % Store binSizes in workspace for use in analysis script
 % This will be used to determine d2StepSize
 %%

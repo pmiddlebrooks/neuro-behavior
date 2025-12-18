@@ -163,10 +163,23 @@ d2 = cell(1, numAreas);
 d2Permuted = cell(1, numAreas);
 startS = cell(1, numAreas);
 
+% Initialize storage for raw LFP d2 results if lfpBinSize is provided
+if exist('lfpBinSize', 'var') && ~isempty(lfpBinSize)
+    numLfpBins = length(lfpBinSize);
+    d2Lfp = cell(1, numAreas);
+    startSLfp = cell(1, numAreas);
+else
+    numLfpBins = 0;
+end
+
 for a = 1:numAreas
     d2{a} = cell(1, numBands);
     d2Permuted{a} = cell(1, numBands);
     startS{a} = cell(1, numBands);
+    if numLfpBins > 0
+        d2Lfp{a} = cell(1, numLfpBins);
+        startSLfp{a} = cell(1, numLfpBins);
+    end
 end
 
 % Process each area
@@ -301,6 +314,61 @@ for a = areasToTest
             fprintf('    Permutations completed in %.1f minutes\n', toc(ticPerm)/60);
         end
     end
+
+    % Process raw LFP for this area for each specified bin size
+    if numLfpBins > 0 && exist('lfpPerArea', 'var') && ~isempty(lfpPerArea)
+        fprintf('  Processing raw LFP for area %s...\n', areas{a});
+        rawSignal = lfpPerArea(:, a);
+        fsRaw = opts.fsLfp;
+
+        for lb = 1:numLfpBins
+            targetBinSize = lfpBinSize(lb);
+            fprintf('    Binning raw LFP with size %.3f s...\n', targetBinSize);
+            
+            % Simple binning by averaging
+            samplesPerBin = round(targetBinSize * fsRaw);
+            numBins = floor(length(rawSignal) / samplesPerBin);
+            
+            if numBins < minSegmentLength
+                fprintf('      Skipping: Not enough bins for bin size %.3f s\n', targetBinSize);
+                continue;
+            end
+            
+            % Efficient binning using reshape and mean
+            binnedSignal = mean(reshape(rawSignal(1:numBins*samplesPerBin), samplesPerBin, numBins), 1)';
+            
+            % Sliding window analysis on binned raw LFP
+            stepSamples = round(d2StepSize / targetBinSize);
+            winSamples = round(slidingWindowSize / targetBinSize);
+            numWindows = floor((numBins - winSamples) / stepSamples) + 1;
+            
+            if numWindows < 1
+                fprintf('      Skipping: Not enough windows for bin size %.3f s\n', targetBinSize);
+                continue;
+            end
+            
+            d2Lfp{a}{lb} = nan(1, numWindows);
+            startSLfp{a}{lb} = nan(1, numWindows);
+            
+            for w = 1:numWindows
+                startIdx = (w - 1) * stepSamples + 1;
+                endIdx = startIdx + winSamples - 1;
+                
+                % Window center time
+                startSLfp{a}{lb}(w) = (startIdx + round(winSamples/2) - 1) * targetBinSize;
+                
+                % Extract window data and compute d2
+                wSignal = binnedSignal(startIdx:endIdx);
+                try
+                    [varphi, ~] = myYuleWalker3(wSignal, pOrder);
+                    d2Lfp{a}{lb}(w) = getFixedPointDistance2(pOrder, critType, varphi);
+                catch
+                    d2Lfp{a}{lb}(w) = nan;
+                end
+            end
+            fprintf('    Raw LFP bin size %.3f s completed\n', targetBinSize);
+        end
+    end
 end
 
 % =============================    Save Results    =============================
@@ -310,6 +378,11 @@ results.bands = bands;
 results.d2 = d2;
 results.startS = startS;
 results.optimalWindowSize = optimalWindowSize;
+if numLfpBins > 0
+    results.d2Lfp = d2Lfp;
+    results.startSLfp = startSLfp;
+    results.lfpBinSize = lfpBinSize;
+end
 results.d2StepSize = d2StepSize;
 results.d2WindowSize = slidingWindowSize;
 results.params.slidingWindowSize = slidingWindowSize;
@@ -448,15 +521,37 @@ if makePlots
         a = areasToTest(idx);
         axes(ha(idx)); hold on;
         
+        % Plot raw LFP d2 for each bin size in grayscale (light to dark)
+        if exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
+            numLfpBins = length(d2Lfp{a});
+            grayColors = repmat(linspace(0.7, 0, numLfpBins)', 1, 3);
+            for lb = 1:numLfpBins
+                if ~isempty(d2Lfp{a}{lb}) && ~isempty(startSLfp{a}{lb})
+                    plot(startSLfp{a}{lb}, d2Lfp{a}{lb}, '-', 'Color', grayColors(lb, :), 'LineWidth', 1.5, ...
+                        'DisplayName', sprintf('Raw LFP (%.3fs bin)', lfpBinSize(lb)));
+                end
+            end
+        end
+
         % Plot d2 for each band on the same axis
         for b = 1:numBands
             if ~isempty(d2{a}{b}) && ~isempty(startS{a}{b})
+                if exist('binSizes', 'var')
+                    bandBinSize = binSizes(b);
+                else
+                    bandBinSize = binSize; % fallback
+                end
                 plot(startS{a}{b}, d2{a}{b}, '-', 'Color', bandColors(b, :), 'LineWidth', 2, ...
-                    'DisplayName', sprintf('%s', bands{b, 1}));
+                    'DisplayName', sprintf('%s (%.3fs bin)', bands{b, 1}, bandBinSize));
             end
             
             % Plot permutation mean ± std per window if available
             if enablePermutations && exist('d2Permuted', 'var') && ~isempty(d2Permuted{a}{b})
+                if exist('binSizes', 'var')
+                    bandBinSize = binSizes(b);
+                else
+                    bandBinSize = binSize; % fallback
+                end
                 % Calculate mean and std for each window across shuffles
                 permutedMean = nanmean(d2Permuted{a}{b}, 2);
                 permutedStd = nanstd(d2Permuted{a}{b}, 0, 2);
@@ -478,12 +573,12 @@ if makePlots
                     fill([xFill, fliplr(xFill)], ...
                          [yMean + yStd, fliplr(yMean - yStd)], ...
                          bandColorLight, 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-                         'DisplayName', sprintf('%s Permuted mean ± std', bands{b, 1}));
+                         'DisplayName', sprintf('%s Permuted mean ± std (%.3fs bin)', bands{b, 1}, bandBinSize));
                     
                     % Plot mean line with dashed style
                     plot(startS{a}{b}(validIdx), permutedMean(validIdx), '--', ...
                         'Color', bandColors(b, :) * 0.8, 'LineWidth', 1, ...
-                        'DisplayName', sprintf('%s Permuted mean', bands{b, 1}));
+                        'DisplayName', sprintf('%s Permuted mean (%.3fs bin)', bands{b, 1}, bandBinSize));
                 end
             end
         end
