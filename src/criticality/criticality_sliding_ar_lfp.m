@@ -16,7 +16,7 @@
 loadExistingResults = false;
 makePlots = true;
 plotBinnedEnvelopes = true;  % Plot results from binnedEnvelopes (power bands)
-plotRawLfp = true;           % Plot results from raw LFP
+plotRawLfp = false;           % Plot results from raw LFP
 
 % Analysis flags
 analyzeD2 = true;      % compute d2
@@ -31,7 +31,7 @@ minSegmentLength = 50;
 % Get binSizes from workspace (calculated in data prep script)
 % Use max bin size for d2StepSize to ensure consistent stepping across bands
 if exist('binSizes', 'var') && ~isempty(binSizes)
-    maxBinSize = max(binSizes);
+    maxBinSize = max([binSizes(:); lfpBinSize(:)]);
     d2StepSize = maxBinSize;  % Step size in seconds (how much to slide the window)
     fprintf('Using frequency-dependent bin sizes. Max bin size: %.3f s, d2StepSize: %.3f s\n', maxBinSize, d2StepSize);
 else
@@ -137,9 +137,39 @@ else
 end
 
 % =============================    Analysis    =============================
-fprintf('\n=== LFP Power Band d2 Analysis ===\n');
+fprintf('\n=== LFP d2 Analysis ===\n');
 fprintf('Number of bands: %d\n', numBands);
 fprintf('Number of areas: %d\n', numAreas);
+
+% Determine total session duration in seconds to ensure time alignment
+if exist('lfpPerArea', 'var') && ~isempty(lfpPerArea)
+    totalSessionDuration = size(lfpPerArea, 1) / opts.fsLfp;
+else
+    % Fallback to binned envelopes if raw LFP not available
+    % (assuming first area/band represents session duration)
+    if iscell(binnedEnvelopes{1})
+        if exist('binSizes', 'var') && ~isempty(binSizes)
+            totalSessionDuration = length(binnedEnvelopes{1}{1}) * binSizes(1);
+        elseif exist('binSize', 'var')
+            totalSessionDuration = length(binnedEnvelopes{1}{1}) * binSize;
+        else
+            % Absolute fallback
+            totalSessionDuration = length(binnedEnvelopes{1}{1}) * 0.05; 
+        end
+    else
+        if exist('binSize', 'var')
+            totalSessionDuration = size(binnedEnvelopes{1}, 1) * binSize;
+        else
+            totalSessionDuration = size(binnedEnvelopes{1}, 1) * 0.05;
+        end
+    end
+end
+
+% Define fixed window start times in seconds to ensure all traces have same length and alignment
+windowStartTimesSeconds = 0 : d2StepSize : (totalSessionDuration - slidingWindowSize);
+numWindowsGlobal = length(windowStartTimesSeconds);
+windowCenterTimesSeconds = windowStartTimesSeconds + slidingWindowSize/2;
+
 if exist('binSizes', 'var')
     fprintf('Frequency-dependent bin sizes: ');
     for b = 1:numBands
@@ -149,7 +179,7 @@ if exist('binSizes', 'var')
         end
     end
     fprintf('\n');
-    fprintf('d2StepSize (max bin size * 4): %.3f s (%.1f ms)\n', d2StepSize, d2StepSize*1000);
+    fprintf('d2StepSize (max bin size): %.3f s (%.1f ms)\n', d2StepSize, d2StepSize*1000);
 else
     if exist('numFrames', 'var')
         fprintf('Number of frames: %d\n', numFrames);
@@ -158,6 +188,7 @@ else
         fprintf('Frame size: %.3f s\n', binSize);
     end
 end
+fprintf('Total windows for analysis: %d (aligned across all traces)\n', numWindowsGlobal);
 
 % Initialize results
 % Structure: d2{area}{band} = [1 x numWindows]
@@ -218,43 +249,28 @@ for a = areasToTest
         numFrames_b = length(bandSignal);
         
         % Calculate window parameters using band-specific bin size
-        stepSamples = round(d2StepSize / bandBinSize);
         winSamples = round(slidingWindowSize / bandBinSize);
-        numWindows = floor((numFrames_b - winSamples) / stepSamples) + 1;
         
-        % Skip this band if there aren't enough samples
+        % Skip this band if there aren't enough samples per window
         if winSamples < minSegmentLength
             fprintf('    Skipping: Not enough data in band %d (%s)...\n', b, bands{b, 1});
             continue
         end
         
         % Initialize arrays for this band
-        d2{a}{b} = nan(1, numWindows);
-        startS{a}{b} = nan(1, numWindows);
+        d2{a}{b} = nan(1, numWindowsGlobal);
+        startS{a}{b} = windowCenterTimesSeconds;
         
         % Sliding window analysis
-        for w = 1:numWindows
-            startIdx = (w - 1) * stepSamples + 1;
+        for w = 1:numWindowsGlobal
+            % Calculate start index based on global window start time
+            startIdx = round(windowStartTimesSeconds(w) / bandBinSize) + 1;
             endIdx = startIdx + winSamples - 1;
             
             % Ensure we don't exceed data bounds
             if endIdx > numFrames_b
-                endIdx = numFrames_b;
-            end
-            
-            % Calculate window center time
-            if useTimePoints
-                % Use actual time points from binned data (more accurate)
-                winCenterIdx = startIdx + round(winSamples/2) - 1;
-                if winCenterIdx <= length(bandTimePoints)
-                    startS{a}{b}(w) = bandTimePoints(winCenterIdx);
-                else
-                    % Fallback if index exceeds time points
-                    startS{a}{b}(w) = (startIdx + round(winSamples/2) - 1) * bandBinSize;
-                end
-            else
-                % Calculate from bin size (fallback for old structure)
-                startS{a}{b}(w) = (startIdx + round(winSamples/2) - 1) * bandBinSize;
+                % If we can't fit a full window, it will remain NaN
+                continue;
             end
             
             % Extract window data
@@ -279,22 +295,21 @@ for a = areasToTest
             fprintf('    Running %d phase-randomized permutations per window for band %d...\n', nShuffles, b);
             ticPerm = tic;
             
-            % Initialize storage for permutation results [nWindows x nShuffles]
-            d2Permuted{a}{b} = nan(numWindows, nShuffles);
+            % Initialize storage for permutation results [numWindowsGlobal x nShuffles]
+            d2Permuted{a}{b} = nan(numWindowsGlobal, nShuffles);
             
             % Permute each window independently
-            for w = 1:numWindows
-                startIdx = (w - 1) * stepSamples + 1;
-                endIdx = startIdx + winSamples - 1;
-                
-                % Ensure we don't exceed data bounds
-                if endIdx > numFrames_b
-                    endIdx = numFrames_b;
+            for w = 1:numWindowsGlobal
+                % Skip if main d2 calculation failed or was skipped
+                if isnan(d2{a}{b}(w))
+                    continue;
                 end
+                
+                startIdx = round(windowStartTimesSeconds(w) / bandBinSize) + 1;
+                endIdx = startIdx + winSamples - 1;
                 
                 % Extract this window's data
                 windowData = bandSignal(startIdx:endIdx);
-                winSamples_window = length(windowData);
                 
                 % For each shuffle, phase-randomize this window's data
                 for shuffle = 1:nShuffles
@@ -340,24 +355,25 @@ for a = areasToTest
             binnedSignal = mean(reshape(rawSignal(1:numBins*samplesPerBin), samplesPerBin, numBins), 1)';
             
             % Sliding window analysis on binned raw LFP
-            stepSamples = round(d2StepSize / targetBinSize);
             winSamples = round(slidingWindowSize / targetBinSize);
-            numWindows = floor((numBins - winSamples) / stepSamples) + 1;
             
-            if numWindows < 1
-                fprintf('      Skipping: Not enough windows for bin size %.3f s\n', targetBinSize);
+            if winSamples < minSegmentLength
+                fprintf('      Skipping: Not enough samples per window for bin size %.3f s\n', targetBinSize);
                 continue;
             end
             
-            d2Lfp{a}{lb} = nan(1, numWindows);
-            startSLfp{a}{lb} = nan(1, numWindows);
+            d2Lfp{a}{lb} = nan(1, numWindowsGlobal);
+            startSLfp{a}{lb} = windowCenterTimesSeconds;
             
-            for w = 1:numWindows
-                startIdx = (w - 1) * stepSamples + 1;
+            for w = 1:numWindowsGlobal
+                % Calculate start index based on global window start time
+                startIdx = round(windowStartTimesSeconds(w) / targetBinSize) + 1;
                 endIdx = startIdx + winSamples - 1;
                 
-                % Window center time
-                startSLfp{a}{lb}(w) = (startIdx + round(winSamples/2) - 1) * targetBinSize;
+                % Ensure we don't exceed data bounds
+                if endIdx > numBins
+                    continue;
+                end
                 
                 % Extract window data and compute d2
                 wSignal = binnedSignal(startIdx:endIdx);
@@ -539,10 +555,10 @@ if makePlots
         % Plot raw LFP d2 for each bin size in grayscale (light to dark)
         if plotRawLfp && exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
             numLfpBins = length(d2Lfp{a});
-            grayColors = repmat(linspace(0.7, 0, numLfpBins)', 1, 3);
+            grayColors = repmat(linspace(0.8, 0, numLfpBins)', 1, 3);
             for lb = 1:numLfpBins
                 if ~isempty(d2Lfp{a}{lb}) && ~isempty(startSLfp{a}{lb})
-                    plot(startSLfp{a}{lb}, d2Lfp{a}{lb}, '-', 'Color', grayColors(lb, :), 'LineWidth', 1.5, ...
+                    plot(startSLfp{a}{lb}, d2Lfp{a}{lb}, '-', 'Color', grayColors(lb, :), 'LineWidth', 2, ...
                         'DisplayName', sprintf('Raw LFP (%.3fs bin)', lfpBinSize(lb)));
                 end
             end

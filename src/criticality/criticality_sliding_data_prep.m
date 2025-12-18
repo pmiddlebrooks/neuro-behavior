@@ -406,7 +406,7 @@ for b = 1:numBands
     calculatedBinSize = minBinSize * (highestFreqAvg / bandAvgFreqs(b));
     binSizes(b) = ceil(calculatedBinSize / minBinSize) * minBinSize;
 end
-
+% binSizes = [.01 .01 .01 .01]
 fprintf('Frequency-dependent bin sizes:\n');
 for b = 1:numBands
     fprintf('  %s (%.1f Hz avg): %.3f s (%.1f ms)\n', bands{b,1}, bandAvgFreqs(b), binSizes(b), binSizes(b)*1000);
