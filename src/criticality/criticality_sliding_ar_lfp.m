@@ -15,12 +15,13 @@
 % Flags
 loadExistingResults = false;
 makePlots = true;
-plotBinnedEnvelopes = false;  % Plot results from binnedEnvelopes (power bands)
-plotRawLfp = false;           % Plot results from raw LFP
+plotBinnedEnvelopes = true;  % Plot results from binnedEnvelopes (power bands)
+plotRawLfp = true;           % Plot results from raw LFP
+plotD2 = true;              % Plot d2 results on left y-axis
 plotDFA = true;              % Plot DFA results on right y-axis
 
 % Analysis flags
-analyzeD2 = false;      % compute d2
+analyzeD2 = true;      % compute d2
 analyzeDFA = true;     % compute DFA alpha
 
 % Permutation testing flags
@@ -30,19 +31,19 @@ nShuffles = 3;  % Number of circular permutations to perform
 % Analysis parameters
 minSegmentLength = 50;
 
-% Get binSizes from workspace (calculated in data prep script)
+% Get bandBinSizes from workspace (calculated in data prep script)
 % Use max bin size for d2StepSize to ensure consistent stepping across bands
-if exist('binSizes', 'var') && ~isempty(binSizes)
-    maxBinSize = max([binSizes(:); lfpBinSize(:)]);
+if exist('bandBinSizes', 'var') && ~isempty(bandBinSizes)
+    maxBinSize = max([bandBinSizes(:); lfpBinSize(:)]);
     d2StepSize = maxBinSize;  % Step size in seconds (how much to slide the window)
     fprintf('Using frequency-dependent bin sizes. Max bin size: %.3f s, d2StepSize: %.3f s\n', maxBinSize, d2StepSize);
 else
-    % Fallback if binSizes not provided (backward compatibility)
+    % Fallback if bandBinSizes not provided (backward compatibility)
     if exist('binSize', 'var')
         d2StepSize = binSize * 4;
         maxBinSize = binSize;
     else
-        error('Neither binSizes nor binSize found in workspace. Please run criticality_sliding_data_prep.m first.');
+        error('Neither bandBinSizes nor binSize found in workspace. Please run criticality_sliding_data_prep.m first.');
     end
 end
 
@@ -150,8 +151,8 @@ else
     % Fallback to binned envelopes if raw LFP not available
     % (assuming first area/band represents session duration)
     if iscell(binnedEnvelopes{1})
-        if exist('binSizes', 'var') && ~isempty(binSizes)
-            totalSessionDuration = length(binnedEnvelopes{1}{1}) * binSizes(1);
+        if exist('bandBinSizes', 'var') && ~isempty(bandBinSizes)
+            totalSessionDuration = length(binnedEnvelopes{1}{1}) * bandBinSizes(1);
         elseif exist('binSize', 'var')
             totalSessionDuration = length(binnedEnvelopes{1}{1}) * binSize;
         else
@@ -172,10 +173,10 @@ windowStartTimesSeconds = 0 : d2StepSize : (totalSessionDuration - slidingWindow
 numWindowsGlobal = length(windowStartTimesSeconds);
 windowCenterTimesSeconds = windowStartTimesSeconds + slidingWindowSize/2;
 
-if exist('binSizes', 'var')
+if exist('bandBinSizes', 'var')
     fprintf('Frequency-dependent bin sizes: ');
     for b = 1:numBands
-        fprintf('%s: %.3f s (%.1f ms)', bands{b,1}, binSizes(b), binSizes(b)*1000);
+        fprintf('%s: %.3f s (%.1f ms)', bands{b,1}, bandBinSizes(b), bandBinSizes(b)*1000);
         if b < numBands
             fprintf(', ');
         end
@@ -198,6 +199,7 @@ d2 = cell(1, numAreas);
 dfa = cell(1, numAreas); % DFA alpha for power bands
 d2Permuted = cell(1, numAreas);
 startS = cell(1, numAreas);
+startSdfa = cell(1, numAreas); % Time points for DFA on power bands
 
 % Initialize storage for raw LFP d2 results if lfpBinSize is provided
 if exist('lfpBinSize', 'var') && ~isempty(lfpBinSize)
@@ -205,6 +207,7 @@ if exist('lfpBinSize', 'var') && ~isempty(lfpBinSize)
     d2Lfp = cell(1, numAreas);
     dfaLfp = cell(1, numAreas); % DFA alpha for raw LFP
     startSLfp = cell(1, numAreas);
+    startSLfpDfa = cell(1, numAreas); % Time points for DFA on raw LFP
 else
     numLfpBins = 0;
 end
@@ -214,15 +217,17 @@ for a = 1:numAreas
     dfa{a} = cell(1, numBands);
     d2Permuted{a} = cell(1, numBands);
     startS{a} = cell(1, numBands);
+    startSdfa{a} = cell(1, numBands);
     if numLfpBins > 0
         d2Lfp{a} = cell(1, numLfpBins);
         dfaLfp{a} = cell(1, numLfpBins);
         startSLfp{a} = cell(1, numLfpBins);
+        startSLfpDfa{a} = cell(1, numLfpBins);
     end
 end
 
 % DFA analysis parameters
-dfaEnvBinSize = 0.02; % 50 Hz for power envelopes
+dfaEnvBinSize = 0.02; % 50 Hz for power envelopes (20ms bins)
 dfaEnvWinSamples_min = 1000;
 dfaEnvWinSize = max(dfaEnvWinSamples_min * dfaEnvBinSize, 30); % seconds
 
@@ -248,7 +253,7 @@ for a = areasToTest
         % Extract this band's time series, bin size, and time points
             % New structure: areaEnvelopes{band} = [nFrames_b x 1]
             bandSignal = areaEnvelopes{b};  % [nFrames_b x 1]
-            bandBinSize = binSizes(b);  % Use band-specific bin size
+            bandBinSize = bandBinSizes(b);  % Use band-specific bin size
             
             % Get time points for this band if available
             if exist('timePoints', 'var') && ~isempty(timePoints) && ...
@@ -274,6 +279,12 @@ for a = areasToTest
         % Initialize arrays for this band
         d2{a}{b} = nan(1, numWindowsGlobal);
         startS{a}{b} = windowCenterTimesSeconds;
+        
+        % Initialize DFA arrays (will be populated with valid time points)
+        if analyzeDFA
+            dfa{a}{b} = [];
+            startSdfa{a}{b} = [];
+        end
         
         % Sliding window analysis
         for w = 1:numWindowsGlobal
@@ -322,10 +333,14 @@ for a = areasToTest
                             dfaSignal_ds = dfaSignal;
                         end
                         
-                        dfa{a}{b}(w) = compute_DFA(dfaSignal_ds, false);
+                        dfaAlpha = compute_DFA(dfaSignal_ds, false);
+                        if ~isnan(dfaAlpha)
+                            dfa{a}{b}(end+1) = dfaAlpha;
+                            startSdfa{a}{b}(end+1) = windowCenterTimesSeconds(w);
+                        end
                     end
                 catch
-                    dfa{a}{b}(w) = nan;
+                    % Skip this window for DFA
                 end
             end
         end
@@ -407,6 +422,12 @@ for a = areasToTest
             d2Lfp{a}{lb} = nan(1, numWindowsGlobal);
             startSLfp{a}{lb} = windowCenterTimesSeconds;
             
+            % Initialize DFA arrays for raw LFP (will be populated with valid time points)
+            if analyzeDFA
+                dfaLfp{a}{lb} = [];
+                startSLfpDfa{a}{lb} = [];
+            end
+            
             for w = 1:numWindowsGlobal
                 % Calculate start index based on global window start time
                 startIdx = round(windowStartTimesSeconds(w) / targetBinSize) + 1;
@@ -441,10 +462,14 @@ for a = areasToTest
                         
                         if dfaStartIdx >= 1 && dfaEndIdx <= numBins
                             dfaSignal = binnedSignal(dfaStartIdx:dfaEndIdx);
-                            dfaLfp{a}{lb}(w) = compute_DFA(dfaSignal, false);
+                            dfaAlpha = compute_DFA(dfaSignal, false);
+                            if ~isnan(dfaAlpha)
+                                dfaLfp{a}{lb}(end+1) = dfaAlpha;
+                                startSLfpDfa{a}{lb}(end+1) = windowCenterTimesSeconds(w);
+                            end
                         end
                     catch
-                        dfaLfp{a}{lb}(w) = nan;
+                        % Skip this window for DFA
                     end
                 end
             end
@@ -460,22 +485,26 @@ results.bands = bands;
 results.d2 = d2;
 results.dfa = dfa;
 results.startS = startS;
+results.startSdfa = startSdfa; % Time points for DFA on power bands
 results.optimalWindowSize = optimalWindowSize;
 if numLfpBins > 0
     results.d2Lfp = d2Lfp;
     results.dfaLfp = dfaLfp;
     results.startSLfp = startSLfp;
+    results.startSLfpDfa = startSLfpDfa; % Time points for DFA on raw LFP
     results.lfpBinSize = lfpBinSize;
 end
+results.dfaEnvWinSize = dfaEnvWinSize;
+results.dfaEnvBinSize = dfaEnvBinSize;
 results.d2StepSize = d2StepSize;
 results.d2WindowSize = slidingWindowSize;
 results.params.slidingWindowSize = slidingWindowSize;
 results.params.analyzeD2 = analyzeD2;
 results.params.pOrder = pOrder;
 results.params.critType = critType;
-if exist('binSizes', 'var')
-    results.binSizes = binSizes;  % Store frequency-dependent bin sizes
-    results.params.binSizes = binSizes;
+if exist('bandBinSizes', 'var')
+    results.bandBinSizes = bandBinSizes;  % Store frequency-dependent bin sizes
+    results.params.bandBinSizes = bandBinSizes;
 elseif exist('binSize', 'var')
     results.params.binSize = binSize;
 end
@@ -543,8 +572,8 @@ if makePlots
     allD2 = [];
     
     for a = areasToTest
-        % Include binned envelope results if requested
-        if plotBinnedEnvelopes
+        % Include binned envelope d2 results if requested
+        if plotD2 && plotBinnedEnvelopes
             for b = 1:numBands
                 % Check if startS{a}{b} exists, is numeric, and is not empty
                 if length(startS) >= a && length(startS{a}) >= b && ...
@@ -572,12 +601,30 @@ if makePlots
             end
         end
         
-        % Include raw LFP results if requested
-        if plotRawLfp && exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
+        % Include raw LFP d2 results if requested
+        if plotD2 && plotRawLfp && exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
             for lb = 1:length(d2Lfp{a})
                 if ~isempty(d2Lfp{a}{lb}) && ~isempty(startSLfp{a}{lb})
                     allStartS = [allStartS(:); startSLfp{a}{lb}(~isnan(startSLfp{a}{lb}))'];
                     allD2 = [allD2(:); d2Lfp{a}{lb}(~isnan(d2Lfp{a}{lb}))'];
+                end
+            end
+        end
+        
+        % Include DFA time points for power bands if requested
+        if plotDFA && analyzeDFA && plotBinnedEnvelopes && exist('startSdfa', 'var') && length(startSdfa) >= a && ~isempty(startSdfa{a})
+            for b = 1:numBands
+                if ~isempty(startSdfa{a}{b})
+                    allStartS = [allStartS(:); startSdfa{a}{b}(:)];
+                end
+            end
+        end
+        
+        % Include DFA time points for raw LFP if requested
+        if plotDFA && analyzeDFA && plotRawLfp && exist('startSLfpDfa', 'var') && length(startSLfpDfa) >= a && ~isempty(startSLfpDfa{a})
+            for lb = 1:length(startSLfpDfa{a})
+                if ~isempty(startSLfpDfa{a}{lb})
+                    allStartS = [allStartS(:); startSLfpDfa{a}{lb}(:)];
                 end
             end
         end
@@ -619,34 +666,44 @@ if makePlots
         axes(ha(idx)); hold on;
         
         % Plot raw LFP d2 for each bin size in grayscale (light to dark)
-        if plotRawLfp && exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
+        if plotD2 && plotRawLfp && exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
+            yyaxis left;
             numLfpBins = length(d2Lfp{a});
             grayColors = repmat(linspace(0.8, 0, numLfpBins)', 1, 3);
             for lb = 1:numLfpBins
                 if ~isempty(d2Lfp{a}{lb}) && ~isempty(startSLfp{a}{lb})
-                    plot(startSLfp{a}{lb}, d2Lfp{a}{lb}, '-', 'Color', grayColors(lb, :), 'LineWidth', 2, ...
-                        'DisplayName', sprintf('Raw LFP (%.3fs bin)', lfpBinSize(lb)));
+                    % Only plot non-NaN values with their corresponding time points
+                    validIdx = ~isnan(d2Lfp{a}{lb});
+                    if any(validIdx)
+                        plot(startSLfp{a}{lb}(validIdx), d2Lfp{a}{lb}(validIdx), '-', 'Color', grayColors(lb, :), 'LineWidth', 2, ...
+                            'DisplayName', sprintf('Raw LFP (%.3fs bin)', lfpBinSize(lb)));
+                    end
                 end
             end
         end
 
         % Plot d2 for each band on the same axis
-        if plotBinnedEnvelopes
+        if plotD2 && plotBinnedEnvelopes
+            yyaxis left;
             for b = 1:numBands
                 if ~isempty(d2{a}{b}) && ~isempty(startS{a}{b})
-                    if exist('binSizes', 'var')
-                        bandBinSize = binSizes(b);
+                    if exist('bandBinSizes', 'var')
+                        bandBinSize = bandBinSizes(b);
                     else
                         bandBinSize = binSize; % fallback
                     end
-                    plot(startS{a}{b}, d2{a}{b}, '-', 'Color', bandColors(b, :), 'LineWidth', 2, ...
-                        'DisplayName', sprintf('%s (%.3fs bin)', bands{b, 1}, bandBinSize));
+                    % Only plot non-NaN values with their corresponding time points
+                    validIdx = ~isnan(d2{a}{b});
+                    if any(validIdx)
+                        plot(startS{a}{b}(validIdx), d2{a}{b}(validIdx), '-', 'Color', bandColors(b, :), 'LineWidth', 2, ...
+                            'DisplayName', sprintf('%s (%.3fs bin)', bands{b, 1}, bandBinSize));
+                    end
                 end
                 
                 % Plot permutation mean ± std per window if available
                 if enablePermutations && exist('d2Permuted', 'var') && ~isempty(d2Permuted{a}{b})
-                    if exist('binSizes', 'var')
-                        bandBinSize = binSizes(b);
+                    if exist('bandBinSizes', 'var')
+                        bandBinSize = bandBinSizes(b);
                     else
                         bandBinSize = binSize; % fallback
                     end
@@ -719,11 +776,56 @@ if makePlots
             end
         end
         
-        title(sprintf('%s - d2 Analysis', areas{a}));
-        xlabel('Time (s)');
-        ylabel('d2');
+        % Set up axes and labels
+        % Always set up left axis first
+        yyaxis left;
         xlim([xMin, xMax]);
-        ylim([yMinD2, yMaxD2]);
+        if plotD2 && ~isempty(allD2)
+            ylim([yMinD2, yMaxD2]);
+            ylabel('d2');
+        elseif ~plotDFA || ~analyzeDFA
+            % If only d2 is being plotted (or nothing), keep left axis
+            if ~plotD2
+                ylabel('');
+            end
+        end
+        
+        % Plot DFA results on right y-axis if requested
+        if plotDFA && analyzeDFA
+            yyaxis right;
+            if plotRawLfp && exist('dfaLfp', 'var') && length(dfaLfp) >= a && ~isempty(dfaLfp{a})
+                for lb = 1:length(dfaLfp{a})
+                    if ~isempty(dfaLfp{a}{lb}) && ~isempty(startSLfpDfa{a}{lb})
+                        plot(startSLfpDfa{a}{lb}, dfaLfp{a}{lb}, ':', 'Color', grayColors(lb, :), 'LineWidth', 1.5, ...
+                            'DisplayName', sprintf('DFA Raw LFP (%.3fs bin)', lfpBinSize(lb)));
+                    end
+                end
+            end
+            
+            if plotBinnedEnvelopes && exist('dfa', 'var') && length(dfa) >= a && ~isempty(dfa{a})
+                for b = 1:numBands
+                    if ~isempty(dfa{a}{b}) && ~isempty(startSdfa{a}{b})
+                        plot(startSdfa{a}{b}, dfa{a}{b}, '--', 'Color', bandColors(b, :), 'LineWidth', 1.5, ...
+                            'DisplayName', sprintf('DFA %s', bands{b, 1}));
+                    end
+                end
+            end
+            ylabel('DFA \alpha');
+            ylim([0.3, 1.7]); % Standard range for DFA alpha
+        end
+        
+        % Set title based on what's being plotted
+        if plotD2 && plotDFA && analyzeDFA
+            title(sprintf('%s - d2 and DFA Analysis', areas{a}));
+        elseif plotD2
+            title(sprintf('%s - d2 Analysis', areas{a}));
+        elseif plotDFA && analyzeDFA
+            title(sprintf('%s - DFA Analysis', areas{a}));
+        else
+            title(sprintf('%s - Analysis', areas{a}));
+        end
+        
+        xlabel('Time (s)');
         % Ensure tick labels are visible
         set(gca, 'XTickLabelMode', 'auto');
         set(gca, 'YTickLabelMode', 'auto');

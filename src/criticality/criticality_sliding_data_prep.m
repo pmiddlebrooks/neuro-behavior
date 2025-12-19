@@ -399,19 +399,19 @@ highestFreqAvg = bandAvgFreqs(highestFreqIdx);
     
 % Calculate bin size for each band: proportional to frequency
 % Lower frequency bands get larger bin sizes
-binSizes = zeros(1, numBands);
+bandBinSizes = zeros(1, numBands);
 for b = 1:numBands
     % Bin size is proportional to highest freq / current freq
     % Rounded up (ceil) to nearest multiple of minBinSize
     calculatedBinSize = minBinSize * (highestFreqAvg / bandAvgFreqs(b));
-    binSizes(b) = ceil(calculatedBinSize / minBinSize) * minBinSize;
+    bandBinSizes(b) = ceil(calculatedBinSize / minBinSize) * minBinSize;
 end
-% binSizes = [.01 .01 .01 .01]
+% bandBinSizes = [.01 .01 .01 .01]
 fprintf('Frequency-dependent bin sizes:\n');
 for b = 1:numBands
-    fprintf('  %s (%.1f Hz avg): %.3f s (%.1f ms)\n', bands{b,1}, bandAvgFreqs(b), binSizes(b), binSizes(b)*1000);
+    fprintf('  %s (%.1f Hz avg): %.3f s (%.1f ms)\n', bands{b,1}, bandAvgFreqs(b), bandBinSizes(b), bandBinSizes(b)*1000);
 end
-fprintf('  Max bin size: %.3f s (%.1f ms)\n', max(binSizes), max(binSizes)*1000);
+fprintf('  Max bin size: %.3f s (%.1f ms)\n', max(bandBinSizes), max(bandBinSizes)*1000);
 
 % Compute binned envelopes for each area (store as cell structure)
 % Each band is binned separately with its own bin size
@@ -429,7 +429,7 @@ if strcmp(dataType, 'schall')
             % Call lfp_bin_bandpower for just this band
             % Pass bands(b, :) directly - it's already a 1x2 cell array {name, freqRange}
             singleBand = bands(b, :);  % 1x2 cell array: {bandName, [freqRange]}
-            [iBinnedPower, iBinnedEnvelopes, iTimePoints] = lfp_bin_bandpower(lfpPerArea, opts.fsLfp, singleBand, binSizes(b), 'cwt');
+            [iBinnedPower, iBinnedEnvelopes, iTimePoints] = lfp_bin_bandpower(lfpPerArea, opts.fsLfp, singleBand, bandBinSizes(b), 'cwt');
             binnedEnvelopes{1}{b} = iBinnedEnvelopes';  % [nFrames_b x 1]
             binnedPower{1}{b} = iBinnedPower';  % [nFrames_b x 1]
             timePoints{1}{b} = iTimePoints(:);  % [nFrames_b x 1]
@@ -444,7 +444,7 @@ if strcmp(dataType, 'schall')
         for b = 1:numBands
             % Pass bands(b, :) directly - it's already a 1x2 cell array {name, freqRange}
             singleBand = bands(b, :);  % 1x2 cell array: {bandName, [freqRange]}
-            [iBinnedPower, iBinnedEnvelopes, iTimePoints] = lfp_bin_bandpower(lfpMean, opts.fsLfp, singleBand, binSizes(b), 'cwt');
+            [iBinnedPower, iBinnedEnvelopes, iTimePoints] = lfp_bin_bandpower(lfpMean, opts.fsLfp, singleBand, bandBinSizes(b), 'cwt');
             binnedEnvelopes{1}{b} = iBinnedEnvelopes';  % [nFrames_b x 1]
             binnedPower{1}{b} = iBinnedPower';  % [nFrames_b x 1]
             timePoints{1}{b} = iTimePoints(:);  % [nFrames_b x 1]
@@ -464,7 +464,7 @@ else
         for b = 1:numBands
             % Pass bands(b, :) directly - it's already a 1x2 cell array {name, freqRange}
             singleBand = bands(b, :);  % 1x2 cell array: {bandName, [freqRange]}
-            [iBinnedPower, iBinnedEnvelopes, iTimePoints] = lfp_bin_bandpower(lfpPerArea(:, iArea), opts.fsLfp, singleBand, binSizes(b), 'cwt');
+            [iBinnedPower, iBinnedEnvelopes, iTimePoints] = lfp_bin_bandpower(lfpPerArea(:, iArea), opts.fsLfp, singleBand, bandBinSizes(b), 'cwt');
             binnedEnvelopes{iArea}{b} = iBinnedEnvelopes';  % [nFrames_b x 1]
             binnedPower{iArea}{b} = iBinnedPower';  % [nFrames_b x 1]
             timePoints{iArea}{b} = iTimePoints(:);  % [nFrames_b x 1]
@@ -474,7 +474,7 @@ else
 end
 
 lfpBinSize = 0.005; % 200 Hz
-% Store binSizes in workspace for use in analysis script
+% Store bandBinSizes in workspace for use in analysis script
 % This will be used to determine d2StepSize
 %%
 % D2 sliding window
