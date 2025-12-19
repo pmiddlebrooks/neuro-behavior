@@ -15,12 +15,12 @@
 % Flags
 loadExistingResults = false;
 makePlots = true;
-plotBinnedEnvelopes = true;  % Plot results from binnedEnvelopes (power bands)
+plotBinnedEnvelopes = false;  % Plot results from binnedEnvelopes (power bands)
 plotRawLfp = false;           % Plot results from raw LFP
 plotDFA = true;              % Plot DFA results on right y-axis
 
 % Analysis flags
-analyzeD2 = true;      % compute d2
+analyzeD2 = false;      % compute d2
 analyzeDFA = true;     % compute DFA alpha
 
 % Permutation testing flags
@@ -620,7 +620,6 @@ if makePlots
         
         % Plot raw LFP d2 for each bin size in grayscale (light to dark)
         if plotRawLfp && exist('d2Lfp', 'var') && length(d2Lfp) >= a && ~isempty(d2Lfp{a})
-            yyaxis left;
             numLfpBins = length(d2Lfp{a});
             grayColors = repmat(linspace(0.8, 0, numLfpBins)', 1, 3);
             for lb = 1:numLfpBins
@@ -633,7 +632,6 @@ if makePlots
 
         % Plot d2 for each band on the same axis
         if plotBinnedEnvelopes
-            yyaxis left;
             for b = 1:numBands
                 if ~isempty(d2{a}{b}) && ~isempty(startS{a}{b})
                     if exist('binSizes', 'var')
@@ -684,31 +682,6 @@ if makePlots
             end
         end
         
-        % Plot DFA results on right y-axis if requested
-        if plotDFA
-            yyaxis right;
-            if plotRawLfp && exist('dfaLfp', 'var') && length(dfaLfp) >= a && ~isempty(dfaLfp{a})
-                for lb = 1:length(dfaLfp{a})
-                    if ~isempty(dfaLfp{a}{lb})
-                        plot(windowCenterTimesSeconds, dfaLfp{a}{lb}, ':', 'Color', grayColors(lb, :), 'LineWidth', 1.5, ...
-                            'DisplayName', sprintf('DFA Raw LFP (%.3fs bin)', lfpBinSize(lb)));
-                    end
-                end
-            end
-            
-            if plotBinnedEnvelopes && exist('dfa', 'var') && length(dfa) >= a && ~isempty(dfa{a})
-                for b = 1:numBands
-                    if ~isempty(dfa{a}{b})
-                        plot(windowCenterTimesSeconds, dfa{a}{b}, '--', 'Color', bandColors(b, :), 'LineWidth', 1.5, ...
-                            'DisplayName', sprintf('DFA %s', bands{b, 1}));
-                    end
-                end
-            end
-            ylabel('DFA \alpha');
-            ylim([0.3, 1.7]); % Standard range for DFA alpha
-            grid off; % Keep left axis grid
-        end
-        
         % Add vertical lines at reach onsets (only for reach data)
         % Note: HandleVisibility is set to 'off' to exclude from legend
         if exist('dataType', 'var') && strcmp(dataType, 'reach')
@@ -746,7 +719,6 @@ if makePlots
             end
         end
         
-        yyaxis left;
         title(sprintf('%s - d2 Analysis', areas{a}));
         xlabel('Time (s)');
         ylabel('d2');
@@ -783,6 +755,145 @@ if makePlots
     else
         exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_lfp_ar_win%d.png', slidingWindowSize)), 'Resolution', 300);
         fprintf('Saved LFP d2 plots to: %s\n', fullfile(saveDir, sprintf('criticality_lfp_ar_win%d.png', slidingWindowSize)));
+    end
+    
+    % =============================    DFA Plotting (Separate Figure)    =============================
+    if plotDFA && analyzeDFA
+        % Collect DFA data to determine axis limits
+        allDFA = [];
+        
+        for a = areasToTest
+            % Include binned envelope DFA results if requested
+            if plotBinnedEnvelopes && exist('dfa', 'var') && length(dfa) >= a && ~isempty(dfa{a})
+                for b = 1:numBands
+                    if ~isempty(dfa{a}{b})
+                        allDFA = [allDFA(:); dfa{a}{b}(~isnan(dfa{a}{b}(:)))'];
+                    end
+                end
+            end
+            
+            % Include raw LFP DFA results if requested
+            if plotRawLfp && exist('dfaLfp', 'var') && length(dfaLfp) >= a && ~isempty(dfaLfp{a})
+                for lb = 1:length(dfaLfp{a})
+                    if ~isempty(dfaLfp{a}{lb})
+                        allDFA = [allDFA(:); dfaLfp{a}{lb}(~isnan(dfaLfp{a}{lb}(:)))'];
+                    end
+                end
+            end
+        end
+        
+        % Determine DFA y-axis limits
+        if ~isempty(allDFA)
+            yMinDFA = min(allDFA(:));
+            yMaxDFA = max(allDFA(:));
+            % Add small padding
+            yRangeDFA = yMaxDFA - yMinDFA;
+            yMinDFA = max(0.3, yMinDFA - 0.05 * yRangeDFA);
+            yMaxDFA = min(1.7, yMaxDFA + 0.05 * yRangeDFA);
+        else
+            yMinDFA = 0.3;
+            yMaxDFA = 1.7;
+        end
+        
+        % Create separate figure for DFA
+        figure(911); clf;
+        set(gcf, 'Position', targetPos);
+        numRows = length(areasToTest);
+        haDFA = tight_subplot(numRows, 1, [0.035 0.04], [0.03 0.08], [0.08 0.04]);
+        
+        % Plot each area
+        for idx = 1:length(areasToTest)
+            a = areasToTest(idx);
+            axes(haDFA(idx)); hold on;
+            
+            % Plot raw LFP DFA for each bin size in grayscale (light to dark)
+            if plotRawLfp && exist('dfaLfp', 'var') && length(dfaLfp) >= a && ~isempty(dfaLfp{a})
+                numLfpBins = length(dfaLfp{a});
+                grayColors = repmat(linspace(0.8, 0, numLfpBins)', 1, 3);
+                for lb = 1:numLfpBins
+                    if ~isempty(dfaLfp{a}{lb})
+                        plot(windowCenterTimesSeconds, dfaLfp{a}{lb}, ':', 'Color', grayColors(lb, :), 'LineWidth', 1.5, ...
+                            'DisplayName', sprintf('DFA Raw LFP (%.3fs bin)', lfpBinSize(lb)));
+                    end
+                end
+            end
+            
+            % Plot DFA for each band
+            if plotBinnedEnvelopes && exist('dfa', 'var') && length(dfa) >= a && ~isempty(dfa{a})
+                for b = 1:numBands
+                    if ~isempty(dfa{a}{b})
+                        plot(windowCenterTimesSeconds, dfa{a}{b}, '--', 'Color', bandColors(b, :), 'LineWidth', 1.5, ...
+                            'DisplayName', sprintf('DFA %s', bands{b, 1}));
+                    end
+                end
+            end
+            
+            % Add vertical lines at reach onsets (only for reach data)
+            if exist('dataType', 'var') && strcmp(dataType, 'reach')
+                if exist('reachStart', 'var') && ~isempty(reachStart)
+                    reachOnsetsInRange = reachStart(reachStart >= xMin & reachStart <= xMax);
+                    if ~isempty(reachOnsetsInRange)
+                        for i = 1:length(reachOnsetsInRange)
+                            h = xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
+                            h.HandleVisibility = 'off';
+                        end
+                    end
+                end
+                if exist('startBlock2', 'var') && ~isempty(startBlock2) && startBlock2 >= xMin && startBlock2 <= xMax
+                    h = xline(startBlock2, 'Color', [1 0 0], 'LineWidth', 3);
+                    h.HandleVisibility = 'off';
+                end
+            end
+            
+            % Add vertical lines at saccade/response onsets (only for schall data)
+            if exist('dataType', 'var') && strcmp(dataType, 'schall')
+                if exist('responseOnset', 'var') && ~isempty(responseOnset)
+                    responseOnsetsInRange = responseOnset(responseOnset >= xMin & responseOnset <= xMax);
+                    if ~isempty(responseOnsetsInRange)
+                        for i = 1:length(responseOnsetsInRange)
+                            h = xline(responseOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, 'LineStyle', '--', 'Alpha', 0.7);
+                            h.HandleVisibility = 'off';
+                        end
+                    end
+                end
+            end
+            
+            title(sprintf('%s - DFA Analysis', areas{a}));
+            xlabel('Time (s)');
+            ylabel('DFA \alpha');
+            xlim([xMin, xMax]);
+            ylim([yMinDFA, yMaxDFA]);
+            set(gca, 'XTickLabelMode', 'auto');
+            set(gca, 'YTickLabelMode', 'auto');
+            if idx == 1
+                legend('Location', 'best');
+            end
+            grid on;
+        end
+        
+        % Add super title for DFA figure
+        if exist('dataType', 'var') && strcmp(dataType, 'reach')
+            if ~isempty(filePrefix)
+                sgtitle(sprintf('[%s] LFP DFA Analysis with reach onsets (gray dashed) - win=%gs, step=%gs', filePrefix, slidingWindowSize, d2StepSize));
+            else
+                sgtitle(sprintf('LFP DFA Analysis with reach onsets (gray dashed) - win=%gs, step=%gs', slidingWindowSize, d2StepSize));
+            end
+        else
+            if ~isempty(filePrefix)
+                sgtitle(sprintf('[%s] LFP DFA Analysis - win=%gs, step=%gs', filePrefix, slidingWindowSize, d2StepSize));
+            else
+                sgtitle(sprintf('LFP DFA Analysis - win=%gs, step=%gs', slidingWindowSize, d2StepSize));
+            end
+        end
+        
+        % Save DFA figure
+        if ~isempty(filePrefix)
+            exportgraphics(gcf, fullfile(saveDir, sprintf('%s_criticality_lfp_dfa_win%d.png', filePrefix, slidingWindowSize)), 'Resolution', 300);
+            fprintf('Saved LFP DFA plots to: %s\n', fullfile(saveDir, sprintf('%s_criticality_lfp_dfa_win%d.png', filePrefix, slidingWindowSize)));
+        else
+            exportgraphics(gcf, fullfile(saveDir, sprintf('criticality_lfp_dfa_win%d.png', slidingWindowSize)), 'Resolution', 300);
+            fprintf('Saved LFP DFA plots to: %s\n', fullfile(saveDir, sprintf('criticality_lfp_dfa_win%d.png', slidingWindowSize)));
+        end
     end
 end
 
