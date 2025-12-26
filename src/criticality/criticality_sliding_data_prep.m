@@ -6,10 +6,10 @@
 
 % =============================    Configuration    =============================
 % Data type selection
-dataType = 'naturalistic';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
+dataType = 'schall';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
 
 % Data source selection
-dataSource = 'lfp';  % 'spikes' or 'lfp'
+dataSource = 'spikes';  % 'spikes' or 'lfp'
 
 % Initialize paths
 paths = get_paths;
@@ -59,12 +59,14 @@ filenameSuffix = '';  % Will be updated based on pcaFlag in analysis script
 if strcmp(dataType, 'naturalistic')
 
         sessionName =  'ag/ag112321/recording1';
-        % sessionName =  'ag/ag112321/recording2';
-        % sessionName =  'ey/ey042822';
-        % sessionName =  'kw/kw092821';
+        sessionName =  'ag/ag112321/recording1e';
+        sessionName =  'ag/ag112321/recording2';
+        sessionName =  'ey/ey042822';
+        sessionName =  'kw/kw092821';
+        sessionName =  'kw/kw092121';
 
         opts.collectEnd = 45 * 60; % seconds
-    opts.collectEnd = 5 * 60; % seconds
+    opts.collectEnd = 10 * 60; % seconds
 
 
     if strcmp(dataSource, 'spikes')
@@ -80,7 +82,7 @@ if strcmp(dataType, 'naturalistic')
         spikeData = [];
 
         % Print summary
-        fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
+        % fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
 
     elseif strcmp(dataSource, 'lfp')
         % Load naturalistic LFP data
@@ -130,15 +132,16 @@ elseif strcmp(dataType, 'reach')
     % sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh.mat';
     % sessionName =  'AB2_11-May-2023 17_31_00_NeuroBeh.mat';
     % sessionName =  'AB2_30-May-2023 12_49_52_NeuroBeh.mat';
-    sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat';
-    sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat';
-    sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat';
+    % sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh.mat';
+    % sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh.mat';
+    % sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh.mat';
     % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat';
     % sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh.mat';
     % sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh.mat';
-    % sessionName =  'Y15_27-Aug-2025 14_02_21_NeuroBeh.mat';
+    sessionName =  'Y15_27-Aug-2025 14_02_21_NeuroBeh.mat';
     % sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh.mat';
-    sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh.mat';
+    % sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh.mat';
+    % sessionName =  'test/reach_test.mat';
 
     % Validate sessionName is provided
     if ~exist('sessionName', 'var') || isempty(sessionName)
@@ -157,6 +160,7 @@ elseif strcmp(dataType, 'reach')
     reachStart = dataR.R(:,1) / 1000; % Convert from ms to seconds
     startBlock2 = reachStart(find(ismember(reachClass, [3 4]), 1));
     opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
+    opts.collectEnd = 8*60;
 
     if strcmp(dataSource, 'spikes')
         % Load reach spike data
@@ -169,6 +173,7 @@ elseif strcmp(dataType, 'reach')
         idMatIdx = {idM23, idM56, idDS, idVS};
         idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
 
+fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
         % Initialize spikeData (will be loaded in analysis script if analyzeModulation is true)
         spikeData = [];
 
@@ -233,12 +238,12 @@ elseif strcmp(dataType, 'schall')
     % sessionName =  'broca/bp240n02.mat';
     sessionName =  'joule/jp121n02.mat';
     sessionName =  'joule/jp125n04.mat';
-    sessionName = fullfile('joule', goodSessionsCCM{end});
+    % sessionName = fullfile('joule', goodSessionsCCM{end});
 
     %     opts.collectStart = 60*60;
     % opts.collectEnd = 105*60;
     % % opts.collectStart = 0*60;
-    opts.collectEnd = 45*60;
+    opts.collectEnd = 7*60;
 
     % Validate sessionName is provided
     if ~exist('sessionName', 'var') || isempty(sessionName)
@@ -481,8 +486,30 @@ lfpBinSize = 0.005; % 200 Hz
 % Sliding window size (seconds)
 % binnedEnvelopes = binnedPower;
 slidingWindowSize = 10;     % Window size in seconds
-criticality_sliding_ar_lfp
+% criticality_sliding_ar_lfp
+criticality_sliding_lfp
 
 %% Avalanche analyses
 % Sliding window and step size (seconds)
 
+
+
+
+
+
+
+
+
+
+
+%%   =======================    LZC    ==================
+% Check which binSize you want to use
+    [proportions, spikeCounts] = neural_pct_spike_count(dataMat, [.001 .002 .005 .01 .02], 8);
+%%
+    % Analysis parameters
+    slidingWindowSize = 60;  % Window size in seconds
+    stepSize = 45;  % Step size in seconds (for spikes, will be calculated from optimalBinSize)
+    
+    binSize = .02;
+    binSize = .002;
+complexity_sliding_window

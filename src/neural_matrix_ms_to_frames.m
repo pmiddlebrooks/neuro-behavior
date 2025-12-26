@@ -14,7 +14,7 @@ for i = 1 : durFrames
 
     iStartWin = 1 + (i-1) * dataIndPerFrame;
     iWind = round(iStartWin : iStartWin + dataIndPerFrame - 1);
-    dataMat(i,:) = sum(data(iWind, :));
+    dataMat(i,:) = sum(data(iWind, :), 1);
 
 end
 
