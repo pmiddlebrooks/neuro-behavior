@@ -7,6 +7,7 @@
 % and run this script, or use complexity_analysis() function directly.
 
 % Add paths
+addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'data_prep'));
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'analyses'));

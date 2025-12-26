@@ -59,4 +59,3 @@ function dataStruct = load_hong_data(dataStruct, dataSource, paths, opts, lfpCle
         error('LFP loading for hong data is not yet implemented');
     end
 end
-

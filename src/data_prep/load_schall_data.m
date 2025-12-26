@@ -67,4 +67,3 @@ function dataStruct = load_schall_data(dataStruct, dataSource, paths, sessionNam
     dataStruct.opts = opts;
     dataStruct.areasToTest = 1;
 end
-

@@ -6,9 +6,38 @@
 % the new modular functions.
 
 % Add paths
+addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'data_prep'));
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'analyses'));
+
+% Configure variables
+        opts = neuro_behavior_options;
+        opts.frameSize = .001;
+        opts.firingRateCheckTime = 5 * 60;
+        opts.collectStart = 0;
+        opts.collectEnd = 10*60;
+        opts.minFiringRate = .05;
+        opts.maxFiringRate = 200;
+
+
+
+    slidingWindowSize = 6;  % Default window size
+    binSize = 0.02;  % Default bin size
+
+analyzeD2 = true;
+
+analyzeMrBr = false;
+pcaFlag = 0;
+enablePermutations = true;
+nShuffles = 3;
+analyzeModulation = false;
+makePlots = true;
+useOptimalBinWindowFunction = true;
+
+pOrder = 10;
+critType = 2;
+
 
 % Check if data is already loaded (workspace variables)
 % If not, try to load using new function
@@ -17,7 +46,7 @@ if ~exist('dataMat', 'var')
     if exist('dataType', 'var') && exist('dataSource', 'var')
         fprintf('Loading data using load_sliding_window_data...\n');
         dataStruct = load_sliding_window_data(dataType, dataSource, ...
-            'sessionName', sessionName);
+            'sessionName', sessionName, 'opts', opts);
         
         % Convert structure to workspace variables for backward compatibility
         dataMat = dataStruct.dataMat;
@@ -53,7 +82,7 @@ if ~exist('slidingWindowSize', 'var')
     slidingWindowSize = 2;  % Default window size
 end
 if ~exist('binSize', 'var')
-    binSize = 0.01;  % Default bin size
+    binSize = 0.02;  % Default bin size
 end
 
 config = struct();
@@ -155,6 +184,7 @@ if exist('saveDir', 'var')
 end
 
 % Run analysis
+dataStruct.areasToTest = 2:3;
 results = criticality_ar_analysis(dataStruct, config);
 
 % Store results in workspace for backward compatibility

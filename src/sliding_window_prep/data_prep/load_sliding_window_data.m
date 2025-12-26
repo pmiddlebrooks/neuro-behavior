@@ -84,7 +84,11 @@ function dataStruct = load_sliding_window_data(dataType, dataSource, varargin)
     % Load data based on data type
     switch dataType
         case 'naturalistic'
-            dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts, lfpCleanParams, bands);
+            if isempty(sessionName)
+                error('sessionName must be provided for naturalistic data');
+            end
+            dataStruct.sessionName = sessionName;
+            dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands);
             
         case 'reach'
             if isempty(sessionName)
@@ -114,4 +118,3 @@ function dataStruct = load_sliding_window_data(dataType, dataSource, varargin)
     
     fprintf('Data loading complete. %d areas loaded.\n', length(dataStruct.areas));
 end
-

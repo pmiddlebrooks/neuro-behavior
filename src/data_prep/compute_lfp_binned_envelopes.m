@@ -104,4 +104,3 @@ function dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanPar
     dataStruct.timePoints = timePoints;
     dataStruct.lfpBinSize = 0.005;  % 200 Hz
 end
-

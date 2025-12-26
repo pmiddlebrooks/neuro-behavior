@@ -63,8 +63,13 @@ function results = criticality_ar_analysis(dataStruct, config)
         config.saveDir = dataStruct.saveDir;
     end
     
+    sessionNameForPath = '';
+    if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+        sessionNameForPath = dataStruct.sessionName;
+    end
+    
     resultsPath = create_results_path('criticality_ar', dataType, config.slidingWindowSize, ...
-        dataStruct.sessionName, config.saveDir, 'filenameSuffix', filenameSuffix);
+        sessionNameForPath, config.saveDir, 'filenameSuffix', filenameSuffix);
     
     % Load spike data for modulation analysis if needed
     if config.analyzeModulation
@@ -112,6 +117,22 @@ function results = criticality_ar_analysis(dataStruct, config)
         optimalWindowSizeModulated, optimalWindowSizeUnmodulated] = ...
         find_optimal_parameters(reconstructedDataMat, dataStruct, config, modulationResults, areasToTest);
     
+    % Initialize modulation parameters if not already set
+    if ~config.analyzeModulation
+        if ~exist('optimalBinSizeModulated', 'var') || isempty(optimalBinSizeModulated)
+            optimalBinSizeModulated = nan(1, numAreas);
+        end
+        if ~exist('optimalBinSizeUnmodulated', 'var') || isempty(optimalBinSizeUnmodulated)
+            optimalBinSizeUnmodulated = nan(1, numAreas);
+        end
+        if ~exist('optimalWindowSizeModulated', 'var') || isempty(optimalWindowSizeModulated)
+            optimalWindowSizeModulated = nan(1, numAreas);
+        end
+        if ~exist('optimalWindowSizeUnmodulated', 'var') || isempty(optimalWindowSizeUnmodulated)
+            optimalWindowSizeUnmodulated = nan(1, numAreas);
+        end
+    end
+    
     % Initialize results
     [popActivity, mrBr, d2, startS, popActivityWindows, popActivityFull] = ...
         deal(cell(1, numAreas));
@@ -130,6 +151,16 @@ function results = criticality_ar_analysis(dataStruct, config)
             popActivityWindowsModulated, popActivityFullModulated] = deal(cell(1, numAreas));
         [popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, ...
             popActivityWindowsUnmodulated, popActivityFullUnmodulated] = deal(cell(1, numAreas));
+    else
+        % Initialize empty even if not analyzing modulation
+        [popActivityModulated, mrBrModulated, d2Modulated, startSModulated, ...
+            popActivityWindowsModulated, popActivityFullModulated] = deal(cell(1, numAreas));
+        [popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, ...
+            popActivityWindowsUnmodulated, popActivityFullUnmodulated] = deal(cell(1, numAreas));
+        optimalBinSizeModulated = nan(1, numAreas);
+        optimalBinSizeUnmodulated = nan(1, numAreas);
+        optimalWindowSizeModulated = nan(1, numAreas);
+        optimalWindowSizeUnmodulated = nan(1, numAreas);
     end
     
     % Main analysis loop
@@ -192,6 +223,14 @@ function results = criticality_ar_analysis(dataStruct, config)
         if config.enablePermutations
             [d2Permuted{a}, mrBrPermuted{a}] = perform_circular_permutations(...
                 popActivity{a}, winSamples, stepSamples, optimalBinSize(a), config);
+        else
+            % Initialize empty if permutations disabled
+            if isempty(d2Permuted{a})
+                d2Permuted{a} = [];
+            end
+            if isempty(mrBrPermuted{a})
+                mrBrPermuted{a} = [];
+            end
         end
         
         fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
@@ -216,9 +255,15 @@ function results = criticality_ar_analysis(dataStruct, config)
     
     % Plotting
     if config.makePlots
-        plotConfig = setup_plotting(config.saveDir, 'sessionName', dataStruct.sessionName, ...
-            'dataBaseName', dataStruct.dataBaseName);
-        plot_criticality_ar_results(results, plotConfig, config, dataStruct, filenameSuffix);
+        plotArgs = {};
+        if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+            plotArgs = [plotArgs, {'sessionName', dataStruct.sessionName}];
+        end
+        if isfield(dataStruct, 'dataBaseName') && ~isempty(dataStruct.dataBaseName)
+            plotArgs = [plotArgs, {'dataBaseName', dataStruct.dataBaseName}];
+        end
+        plotConfig = setup_plotting(config.saveDir, plotArgs{:});
+        criticality_ar_plot(results, plotConfig, config, dataStruct, filenameSuffix);
     end
 end
 
@@ -398,6 +443,8 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.d2 = d2;
     results.startS = startS;
     results.popActivity = popActivity;
+    results.popActivityWindows = popActivityWindows;
+    results.popActivityFull = popActivityFull;
     results.optimalBinSize = optimalBinSize;
     results.optimalWindowSize = optimalWindowSize;
     results.d2StepSize = d2StepSize;
@@ -476,12 +523,4 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     end
 end
 
-function plot_criticality_ar_results(results, plotConfig, config, dataStruct, filenameSuffix)
-% PLOT_CRITICALITY_AR_RESULTS Create plots for criticality AR analysis
-    
-    % This is a simplified version - the full plotting code from the original script
-    % would need to be extracted and adapted here
-    fprintf('Plotting functionality to be implemented...\n');
-    % TODO: Extract plotting code from criticality_sliding_window_ar.m
-end
 

@@ -107,4 +107,3 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
     
     dataStruct.areasToTest = 1:4;
 end
-

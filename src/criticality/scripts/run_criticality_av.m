@@ -3,6 +3,7 @@
 % Backward-compatible wrapper that uses the new function-based architecture
 
 % Add paths
+addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'data_prep'));
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
 addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'analyses'));

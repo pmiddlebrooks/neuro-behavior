@@ -24,6 +24,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
 
     % Add paths
     addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
+    addpath(fullfile(fileparts(mfilename('fullpath')), '..'));
     
     % Validate inputs
     validate_workspace_vars({'binnedEnvelopes', 'bands', 'bandBinSizes'}, dataStruct, ...
@@ -50,7 +51,11 @@ function results = criticality_lfp_analysis(dataStruct, config)
         if ~isfield(dataStruct.opts, 'fsLfp')
             error('opts.fsLfp must be defined for raw LFP analysis.');
         end
-        numLfpBins = length(dataStruct.lfpBinSize);
+        if isscalar(dataStruct.lfpBinSize)
+            numLfpBins = 1;
+        else
+            numLfpBins = length(dataStruct.lfpBinSize);
+        end
     else
         numLfpBins = 0;
     end
@@ -97,7 +102,12 @@ function results = criticality_lfp_analysis(dataStruct, config)
     maxWindowSize = max(d2WindowSize, dfaEnvWinSize);
     if hasRawLfp
         for lb = 1:numLfpBins
-            dfaLfpWinSize = max(dfaLfpWinSamples_min * dataStruct.lfpBinSize(lb), 30);
+            if isscalar(dataStruct.lfpBinSize)
+                currentLfpBinSizeForMax = dataStruct.lfpBinSize;
+            else
+                currentLfpBinSizeForMax = dataStruct.lfpBinSize(lb);
+            end
+            dfaLfpWinSize = max(dfaLfpWinSamples_min * currentLfpBinSizeForMax, 30);
             maxWindowSize = max(maxWindowSize, dfaLfpWinSize);
         end
     end
@@ -188,7 +198,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
                         
                         if dfaEndBin > dfaStartBin
                             dfaSegment = bandSignal(dfaStartBin:dfaEndBin);
-                            dfa{a}{b}(w) = dfa_alpha(dfaSegment);
+                            dfa{a}{b}(w) = compute_DFA(dfaSegment, false);
                         end
                     end
                 end
@@ -203,17 +213,22 @@ function results = criticality_lfp_analysis(dataStruct, config)
             fsRaw = dataStruct.opts.fsLfp;
             
             for lb = 1:numLfpBins
-                fprintf('  Processing raw LFP bin size %.3f s...\n', dataStruct.lfpBinSize(lb));
+                if isscalar(dataStruct.lfpBinSize)
+                    currentLfpBinSize = dataStruct.lfpBinSize;
+                else
+                    currentLfpBinSize = dataStruct.lfpBinSize(lb);
+                end
+                fprintf('  Processing raw LFP bin size %.3f s...\n', currentLfpBinSize);
                 tic;
                 
                 % Bin raw LFP
-                binnedLfp = neural_matrix_ms_to_frames(rawSignal, dataStruct.lfpBinSize(lb));
+                binnedLfp = neural_matrix_ms_to_frames(rawSignal, currentLfpBinSize);
                 numFrames_lfp = size(binnedLfp, 1);
                 
                 % Calculate window sizes
-                d2WinSamples = round(d2WindowSize / dataStruct.lfpBinSize(lb));
-                dfaLfpWinSize = max(dfaLfpWinSamples_min * dataStruct.lfpBinSize(lb), 30);
-                dfaWinSamples = round(dfaLfpWinSize / dataStruct.lfpBinSize(lb));
+                d2WinSamples = round(d2WindowSize / currentLfpBinSize);
+                dfaLfpWinSize = max(dfaLfpWinSamples_min * currentLfpBinSize, 30);
+                dfaWinSamples = round(dfaLfpWinSize / currentLfpBinSize);
                 
                 if d2WinSamples < config.minSegmentLength
                     fprintf('    Skipping: Not enough samples for d2\n');
@@ -234,8 +249,8 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     if config.analyzeD2
                         d2StartTime = centerTime - d2WindowSize/2;
                         d2EndTime = centerTime + d2WindowSize/2;
-                        d2StartBin = max(1, round(d2StartTime / dataStruct.lfpBinSize(lb)) + 1);
-                        d2EndBin = min(numFrames_lfp, round(d2EndTime / dataStruct.lfpBinSize(lb)));
+                        d2StartBin = max(1, round(d2StartTime / currentLfpBinSize) + 1);
+                        d2EndBin = min(numFrames_lfp, round(d2EndTime / currentLfpBinSize));
                         
                         if d2EndBin > d2StartBin
                             d2Segment = binnedLfp(d2StartBin:d2EndBin);
@@ -248,17 +263,17 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     if config.analyzeDFA
                         dfaStartTime = centerTime - dfaLfpWinSize/2;
                         dfaEndTime = centerTime + dfaLfpWinSize/2;
-                        dfaStartBin = max(1, round(dfaStartTime / dataStruct.lfpBinSize(lb)) + 1);
-                        dfaEndBin = min(numFrames_lfp, round(dfaEndTime / dataStruct.lfpBinSize(lb)));
+                        dfaStartBin = max(1, round(dfaStartTime / currentLfpBinSize) + 1);
+                        dfaEndBin = min(numFrames_lfp, round(dfaEndTime / currentLfpBinSize));
                         
                         if dfaEndBin > dfaStartBin
                             dfaSegment = binnedLfp(dfaStartBin:dfaEndBin);
-                            dfaLfp{a}{lb}(w) = dfa_alpha(dfaSegment);
+                            dfaLfp{a}{lb}(w) = compute_DFA(dfaSegment, false);
                         end
                     end
                 end
                 
-                fprintf('    Raw LFP bin size %.3f s completed in %.1f minutes\n', dataStruct.lfpBinSize(lb), toc/60);
+                fprintf('    Raw LFP bin size %.3f s completed in %.1f minutes\n', currentLfpBinSize, toc/60);
             end
         end
     end
@@ -273,8 +288,13 @@ function results = criticality_lfp_analysis(dataStruct, config)
         config.saveDir = dataStruct.saveDir;
     end
     
+    sessionNameForPath = '';
+    if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+        sessionNameForPath = dataStruct.sessionName;
+    end
+    
     resultsPath = create_results_path('criticality_lfp', dataStruct.dataType, config.slidingWindowSize, ...
-        dataStruct.sessionName, config.saveDir);
+        sessionNameForPath, config.saveDir);
     
     % Save results
     save(resultsPath, 'results');
@@ -282,8 +302,14 @@ function results = criticality_lfp_analysis(dataStruct, config)
     
     % Plotting
     if config.makePlots
-        plotConfig = setup_plotting(config.saveDir, 'sessionName', dataStruct.sessionName, ...
-            'dataBaseName', dataStruct.dataBaseName);
+        plotArgs = {};
+        if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+            plotArgs = [plotArgs, {'sessionName', dataStruct.sessionName}];
+        end
+        if isfield(dataStruct, 'dataBaseName') && ~isempty(dataStruct.dataBaseName)
+            plotArgs = [plotArgs, {'dataBaseName', dataStruct.dataBaseName}];
+        end
+        plotConfig = setup_plotting(config.saveDir, plotArgs{:});
         plot_criticality_lfp_results(results, plotConfig, config, dataStruct);
     end
 end
@@ -348,9 +374,6 @@ end
 function plot_criticality_lfp_results(results, plotConfig, config, dataStruct)
 % PLOT_CRITICALITY_LFP_RESULTS Create plots for criticality LFP analysis
     
-    % This is a placeholder - the full plotting code from the original script
-    % would need to be extracted and adapted here
-    fprintf('Plotting functionality to be implemented...\n');
-    % TODO: Extract plotting code from criticality_sliding_lfp.m
+    criticality_lfp_plot(results, plotConfig, config, dataStruct);
 end
 

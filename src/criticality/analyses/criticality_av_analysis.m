@@ -62,8 +62,13 @@ function results = criticality_av_analysis(dataStruct, config)
         config.saveDir = dataStruct.saveDir;
     end
     
+    sessionNameForPath = '';
+    if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+        sessionNameForPath = dataStruct.sessionName;
+    end
+    
     resultsPath = create_results_path('criticality_av', dataType, config.slidingWindowSize, ...
-        dataStruct.sessionName, config.saveDir, 'filenameSuffix', filenameSuffix);
+        sessionNameForPath, config.saveDir, 'filenameSuffix', filenameSuffix);
     
     % Apply PCA to original data if requested
     fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');
@@ -88,6 +93,12 @@ function results = criticality_av_analysis(dataStruct, config)
         reconstructedDataMat, dataStruct, config, areasToTest);
     
     % Filter areas based on valid optimal bin sizes
+    if ~isfield(config, 'minNeurons')
+        config.minNeurons = 10;
+    end
+    if ~isfield(config, 'candidateFrameSizes')
+        config.candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15];
+    end
     validMask = arrayfun(@(a) length(dataStruct.idMatIdx{a}) >= config.minNeurons & ...
         optimalBinSize(a) <= max(config.candidateFrameSizes), areasToTest);
     areasToTest = areasToTest(validMask);
@@ -212,8 +223,14 @@ function results = criticality_av_analysis(dataStruct, config)
     
     % Plotting
     if config.makePlots
-        plotConfig = setup_plotting(config.saveDir, 'sessionName', dataStruct.sessionName, ...
-            'dataBaseName', dataStruct.dataBaseName);
+        plotArgs = {};
+        if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+            plotArgs = [plotArgs, {'sessionName', dataStruct.sessionName}];
+        end
+        if isfield(dataStruct, 'dataBaseName') && ~isempty(dataStruct.dataBaseName)
+            plotArgs = [plotArgs, {'dataBaseName', dataStruct.dataBaseName}];
+        end
+        plotConfig = setup_plotting(config.saveDir, plotArgs{:});
         plot_criticality_av_results(results, plotConfig, config, dataStruct, filenameSuffix);
     end
 end
@@ -468,9 +485,6 @@ end
 function plot_criticality_av_results(results, plotConfig, config, dataStruct, filenameSuffix)
 % PLOT_CRITICALITY_AV_RESULTS Create plots for criticality avalanche analysis
     
-    % This is a placeholder - the full plotting code from the original script
-    % would need to be extracted and adapted here
-    fprintf('Plotting functionality to be implemented...\n');
-    % TODO: Extract plotting code from criticality_sliding_window_av.m
+    criticality_av_plot(results, plotConfig, config, dataStruct, filenameSuffix);
 end
 
