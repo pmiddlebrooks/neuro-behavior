@@ -100,54 +100,54 @@ function [proportions, spikeCounts] = neural_pct_spike_count(dataMat, binSizes, 
             targetPos = monitorPositions(1, :);
         end
         
-        figure(figureNum); clf;
-        set(gcf, 'Position', targetPos);
-        
-        % Create subplot layout: one row, multiple columns (one per bin size)
-        numCols = min(numBinSizes, 4);  % Max 4 columns
-        numRows = ceil(numBinSizes / numCols);
-        
-        % Use tight_subplot if available, otherwise use subplot
-        if exist('tight_subplot', 'file')
-            ha = tight_subplot(numRows, numCols, [0.08 0.05], [0.1 0.08], [0.08 0.05]);
-        else
-            ha = zeros(numBinSizes, 1);
-        end
+        % figure(figureNum); clf;
+        % set(gcf, 'Position', targetPos);
+        % 
+        % % Create subplot layout: one row, multiple columns (one per bin size)
+        % numCols = min(numBinSizes, 4);  % Max 4 columns
+        % numRows = ceil(numBinSizes / numCols);
+        % 
+        % % Use tight_subplot if available, otherwise use subplot
+        % if exist('tight_subplot', 'file')
+        %     ha = tight_subplot(numRows, numCols, [0.08 0.05], [0.1 0.08], [0.08 0.05]);
+        % else
+        %     ha = zeros(numBinSizes, 1);
+        % end
         
         % Define colors for different bin sizes
         colors = lines(numBinSizes);
         
-        % Plot each bin size
-        for b = 1:numBinSizes
-            if exist('tight_subplot', 'file')
-                axes(ha(b));
-            else
-                subplot(numRows, numCols, b);
-            end
-            hold on;
-            
-            propArray = proportions{b};
-            spikeCountRange = 0:nSpikeMax;
-            
-            % Create bar plot
-            bar(spikeCountRange, propArray, 'FaceColor', colors(b, :), 'EdgeColor', 'none', 'FaceAlpha', 0.7);
-            
-            % Formatting
-            xlabel('Number of Spikes per Neuron-Time Bin');
-            ylabel('Proportion of Neuron-Time Bins');
-            title(sprintf('Bin Size: %.4f s', binSizes(b)));
-            grid on;
-            xlim([-0.5, nSpikeMax + 0.5]);
-            ylim([0, max(propArray) * 1.1]);
-            set(gca, 'XTick', 0:max(1, floor(nSpikeMax/10)):nSpikeMax);
-        end
-        
-        % Overall title
-        if exist('tight_subplot', 'file')
-            sgtitle(sprintf('Spike Count Distributions (0 to %d spikes)', nSpikeMax), 'FontSize', 14);
-        else
-            suptitle(sprintf('Spike Count Distributions (0 to %d spikes)', nSpikeMax));
-        end
+        % % Plot each bin size
+        % for b = 1:numBinSizes
+        %     if exist('tight_subplot', 'file')
+        %         axes(ha(b));
+        %     else
+        %         subplot(numRows, numCols, b);
+        %     end
+        %     hold on;
+        % 
+        %     propArray = proportions{b};
+        %     spikeCountRange = 0:nSpikeMax;
+        % 
+        %     % Create bar plot
+        %     bar(spikeCountRange, propArray, 'FaceColor', colors(b, :), 'EdgeColor', 'none', 'FaceAlpha', 0.7);
+        % 
+        %     % Formatting
+        %     xlabel('Number of Spikes per Neuron-Time Bin');
+        %     ylabel('Proportion of Neuron-Time Bins');
+        %     title(sprintf('Bin Size: %.4f s', binSizes(b)));
+        %     grid on;
+        %     xlim([-0.5, nSpikeMax + 0.5]);
+        %     ylim([0, max(propArray) * 1.1]);
+        %     set(gca, 'XTick', 0:max(1, floor(nSpikeMax/10)):nSpikeMax);
+        % end
+        % 
+        % % Overall title
+        % if exist('tight_subplot', 'file')
+        %     sgtitle(sprintf('Spike Count Distributions (0 to %d spikes)', nSpikeMax), 'FontSize', 14);
+        % else
+        %     suptitle(sprintf('Spike Count Distributions (0 to %d spikes)', nSpikeMax));
+        % end
         
         % Also create a comparison plot showing all bin sizes together
         figure(figureNum + 1); clf;

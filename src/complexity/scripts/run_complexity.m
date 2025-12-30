@@ -6,135 +6,84 @@
 % the new modular functions. You can still set variables in workspace
 % and run this script, or use complexity_analysis() function directly.
 
-% Add paths
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'data_prep'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'analyses'));
+% Set to 1 if you want to explore what binSize to use
+findBinSize = 0;
+
+% Add paths (check if directories exist first to avoid warnings)
+basePath = fileparts(mfilename('fullpath'));  % complexity/scripts
+srcPath = fullfile(basePath, '..', '..');     % src
+
+% Add sliding_window_prep paths
+swDataPrepPath = fullfile(srcPath, 'sliding_window_prep', 'data_prep');
+swUtilsPath = fullfile(srcPath, 'sliding_window_prep', 'utils');
+analysesPath = fullfile(basePath, '..', 'analyses');
+
+if exist(swDataPrepPath, 'dir')
+    addpath(swDataPrepPath);
+end
+if exist(swUtilsPath, 'dir')
+    addpath(swUtilsPath);
+end
+if exist(analysesPath, 'dir')
+    addpath(analysesPath);
+end
+
+
+% Configure variables
+opts = neuro_behavior_options;
+opts.frameSize = .001;
+opts.firingRateCheckTime = 3 * 60;
+opts.collectStart = 0*60; %10*60;
+opts.collectEnd = opts.collectStart + 30*60;
+opts.minFiringRate = .25;
+opts.maxFiringRate = 200;
+
+
 
 % Check if data is already loaded (workspace variables)
 % If not, try to load using new function
-if ~exist('dataMat', 'var') && ~exist('lfpPerArea', 'var')
-    % Try to load data using new function
-    if exist('dataType', 'var') && exist('dataSource', 'var')
-        fprintf('Loading data using load_sliding_window_data...\n');
-        dataStruct = load_sliding_window_data(dataType, dataSource, ...
-            'sessionName', sessionName);
-        
-        % Convert structure to workspace variables for backward compatibility
-        dataMat = dataStruct.dataMat;
-        areas = dataStruct.areas;
-        idMatIdx = dataStruct.idMatIdx;
-        idLabel = dataStruct.idLabel;
-        opts = dataStruct.opts;
-        saveDir = dataStruct.saveDir;
-        dataType = dataStruct.dataType;
-        dataSource = dataStruct.dataSource;
-        areasToTest = dataStruct.areasToTest;
-        
-        if isfield(dataStruct, 'lfpPerArea')
-            lfpPerArea = dataStruct.lfpPerArea;
+% Try to load data using new function
+if exist('sessionType', 'var') && exist('dataSource', 'var')
+    fprintf('Loading data using load_sliding_window_data...\n');
+    dataStruct = load_sliding_window_data(sessionType, dataSource, ...
+        'sessionName', sessionName, 'opts', opts);
+
+    if findBinSize
+        if strcmp(dataSource, 'spikes')
+            %%
+            idRun = dataStruct.idMatIdx{2};
+            [proportions, spikeCounts] = neural_pct_spike_count(dataStruct.dataMat(:,idRun), [.005 .01 .02], 4);
+        elseif strcmp(dataSource, 'lfp')
         end
-        if isfield(dataStruct, 'binnedEnvelopes')
-            binnedEnvelopes = dataStruct.binnedEnvelopes;
-            bands = dataStruct.bands;
-            bandBinSizes = dataStruct.bandBinSizes;
-        end
-        if isfield(dataStruct, 'sessionName')
-            sessionName = dataStruct.sessionName;
-        end
-        if isfield(dataStruct, 'dataR')
-            dataR = dataStruct.dataR;
-        end
-        if isfield(dataStruct, 'reachStart')
-            reachStart = dataStruct.reachStart;
-        end
-        if isfield(dataStruct, 'startBlock2')
-            startBlock2 = dataStruct.startBlock2;
-        end
-    else
-        error('dataType and dataSource must be defined, or data must be pre-loaded in workspace');
+        disp("Code didn't run b/c you were determine what bin size to use")
+        return
     end
+else
+    error('sessionType and dataSource must be defined, or data must be pre-loaded in workspace');
 end
 
 % Set up configuration
-if ~exist('slidingWindowSize', 'var')
-    slidingWindowSize = 20;  % Default window size
-end
-if ~exist('stepSize', 'var')
-    stepSize = 1;  % Default step size
-end
-if ~exist('nShuffles', 'var')
-    nShuffles = 3;  % Default number of shuffles
-end
+binSize = .02;  % Only used if useOptimalBinSize = false
 
 config = struct();
-config.slidingWindowSize = slidingWindowSize;
-config.stepSize = stepSize;
-config.nShuffles = nShuffles;
+config.slidingWindowSize = 60;
+config.minSlidingWindowSize = 5;
+config.maxSlidingWindowSize = 60;
+config.stepSize = 15;
+config.nShuffles = 3;
 config.makePlots = true;
+config.nMinNeurons = 15;
+config.minSpikesPerBin = 0.08;  % Minimum spikes per bin for optimal bin size calculation (we want about minSpikesPerPin proportion of bins with a spike)
+config.useOptimalBinSize = true;  % Set to true to automatically calculate optimal bin size per area
+config.minDataPoints = 2*10^5;
+config.useBernoulliControl = false;  % Set to false to skip Bernoulli normalization (faster computation)
 
 if strcmp(dataSource, 'spikes')
-    if ~exist('binSize', 'var')
-        error('binSize must be defined for spike data analysis');
-    end
     config.binSize = binSize;
 elseif strcmp(dataSource, 'lfp')
-    if ~exist('lfpLowpassFreq', 'var')
-        config.lfpLowpassFreq = 80;
-    else
-        config.lfpLowpassFreq = lfpLowpassFreq;
-    end
+    config.lfpLowpassFreq = 80;
 end
 
-if exist('saveDir', 'var')
-    config.saveDir = saveDir;
-end
-
-% Create data structure from workspace variables
-dataStruct = struct();
-dataStruct.dataType = dataType;
-dataStruct.dataSource = dataSource;
-dataStruct.areas = areas;
-dataStruct.opts = opts;
-if exist('dataMat', 'var')
-    dataStruct.dataMat = dataMat;
-end
-if exist('idMatIdx', 'var')
-    dataStruct.idMatIdx = idMatIdx;
-end
-if exist('idLabel', 'var')
-    dataStruct.idLabel = idLabel;
-end
-if exist('lfpPerArea', 'var')
-    dataStruct.lfpPerArea = lfpPerArea;
-end
-if exist('binnedEnvelopes', 'var')
-    dataStruct.binnedEnvelopes = binnedEnvelopes;
-    dataStruct.bands = bands;
-    dataStruct.bandBinSizes = bandBinSizes;
-end
-if exist('sessionName', 'var')
-    dataStruct.sessionName = sessionName;
-end
-if exist('dataBaseName', 'var')
-    dataStruct.dataBaseName = dataBaseName;
-end
-if exist('areasToTest', 'var')
-    dataStruct.areasToTest = areasToTest;
-end
-if exist('dataR', 'var')
-    dataStruct.dataR = dataR;
-end
-if exist('reachStart', 'var')
-    dataStruct.reachStart = reachStart;
-end
-if exist('startBlock2', 'var')
-    dataStruct.startBlock2 = startBlock2;
-end
-if exist('saveDir', 'var')
-    dataStruct.saveDir = saveDir;
-end
 
 % Run analysis
 results = complexity_analysis(dataStruct, config);

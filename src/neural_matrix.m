@@ -38,7 +38,7 @@ if opts.shiftAlignFactor ~= 0
 end
 
 % Determine total duration in frames
-numFrames = ceil(sum(data.bhvDur) / opts.frameSize);
+numFrames = (opts.collectEnd - opts.collectStart) / opts.frameSize;
 
 % Define neuron IDs
 if ismember('id', data.ci.Properties.VariableNames)
@@ -49,7 +49,7 @@ end
 
 % Preallocate data matrix
 if numFrames > 45 * 60 / 0.001
-    dataMat = int8(zeros(numFrames, length(opts.useNeurons)));
+    dataMat = single(zeros(numFrames, length(opts.useNeurons)));
 else
     dataMat = zeros(numFrames, length(opts.useNeurons));
 end

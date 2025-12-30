@@ -2,18 +2,31 @@
 % Criticality LFP Analysis - Wrapper Script
 % Backward-compatible wrapper that uses the new function-based architecture
 
-% Add paths
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'data_prep'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'analyses'));
+% Add paths (check if directories exist first to avoid warnings)
+basePath = fileparts(mfilename('fullpath'));  % criticality/scripts
+srcPath = fullfile(basePath, '..', '..');     % src
+
+% Add sliding_window_prep paths
+swDataPrepPath = fullfile(srcPath, 'sliding_window_prep', 'data_prep');
+swUtilsPath = fullfile(srcPath, 'sliding_window_prep', 'utils');
+analysesPath = fullfile(basePath, '..', 'analyses');
+
+if exist(swDataPrepPath, 'dir')
+    addpath(swDataPrepPath);
+end
+if exist(swUtilsPath, 'dir')
+    addpath(swUtilsPath);
+end
+if exist(analysesPath, 'dir')
+    addpath(analysesPath);
+end
 
 % Check if data is already loaded
 if ~exist('binnedEnvelopes', 'var')
     if exist('dataType', 'var') && exist('dataSource', 'var')
         fprintf('Loading data using load_sliding_window_data...\n');
         dataStruct = load_sliding_window_data(dataType, dataSource, ...
-            'sessionName', sessionName);
+            'sessionName', sessionName, 'opts', opts);
         
         % Convert structure to workspace variables
         binnedEnvelopes = dataStruct.binnedEnvelopes;

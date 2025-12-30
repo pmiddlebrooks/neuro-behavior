@@ -312,7 +312,7 @@ for a = areasToTest
     fprintf('  Area %s completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
-% =============================    Save Results    =============================
+%% =============================    Save Results    =============================
 results = struct();
 results.dataSource = dataSource;
 results.areas = areas;
@@ -499,29 +499,15 @@ if makePlots
     
     % Create title
     if strcmp(dataSource, 'spikes') && exist('dataType', 'var')
-        if ~isempty(filePrefix)
             sgtitle(sprintf('[%s] %s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d', ...
                 filePrefix, dataType, dataSource, slidingWindowSize, stepSize, nShuffles));
-        else
-            sgtitle(sprintf('%s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d', ...
-                dataType, dataSource, slidingWindowSize, stepSize, nShuffles));
-        end
     else
-        if ~isempty(filePrefix)
             sgtitle(sprintf('[%s] Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d', ...
                 filePrefix, dataSource, slidingWindowSize, stepSize, nShuffles));
-        else
-            sgtitle(sprintf('Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d', ...
-                dataSource, slidingWindowSize, stepSize, nShuffles));
-        end
     end
     
     % Save figure
-    if ~isempty(filePrefix)
-        exportgraphics(gcf, fullfile(saveDir, sprintf('%s_complexity_%s_win%.1f.png', filePrefix, dataSource, slidingWindowSize)), 'Resolution', 300);
-    else
         exportgraphics(gcf, fullfile(saveDir, sprintf('complexity_%s_win%.1f.png', dataSource, slidingWindowSize)), 'Resolution', 300);
-    end
 end
 
 fprintf('\n=== Analysis Complete ===\n');

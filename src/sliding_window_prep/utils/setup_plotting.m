@@ -38,16 +38,7 @@ function plotConfig = setup_plotting(saveDir, varargin)
     end
     
     % Extract filename prefix (priority: sessionName > dataBaseName > saveDir)
-    if ~isempty(sessionName)
-        filePrefix = sessionName(1:min(8, length(sessionName)));
-    elseif ~isempty(dataBaseName)
-        filePrefix = dataBaseName(1:min(8, length(dataBaseName)));
-    elseif ~isempty(saveDir)
-        [~, dirName, ~] = fileparts(saveDir);
-        filePrefix = dirName(1:min(8, length(dirName)));
-    else
-        filePrefix = '';
-    end
+        filePrefix = sessionName(1:min(15, length(sessionName)));
     
     % Create output structure
     plotConfig = struct();

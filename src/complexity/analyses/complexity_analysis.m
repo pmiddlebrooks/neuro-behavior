@@ -1,5 +1,8 @@
 function results = complexity_analysis(dataStruct, config)
 % COMPLEXITY_ANALYSIS Perform Lempel-Ziv complexity sliding window analysis
+% See: https://www.nature.com/articles/srep46421#Sec2
+%      Increased spontaneous MEG signal diversity for psychoactive doses of ketamine, LSD and psilocybin
+%      Schartner et al 2017 Sci Reports
 %
 % Variables:
 %   dataStruct - Data structure from load_sliding_window_data()
@@ -10,7 +13,9 @@ function results = complexity_analysis(dataStruct, config)
 %     .lfpLowpassFreq - Low-pass filter frequency for LFP (default: 80)
 %     .binSize - Bin size for spikes (required if dataSource == 'spikes')
 %     .makePlots - Whether to create plots (default: true)
-%     .saveDir - Save directory (optional, uses dataStruct.saveDir if not provided)
+%     .minDataPoints - Minimum data points per window for optimization (default: 100000)
+%     .useBernoulliControl - Whether to compute Bernoulli normalized metric (default: true)
+%     Note: saveDir is taken from dataStruct.saveDir (set by data loading functions)
 %
 % Goal:
 %   Compute Lempel-Ziv complexity in sliding windows for spike or LFP data.
@@ -27,25 +32,12 @@ function results = complexity_analysis(dataStruct, config)
     end
     
     % Validate inputs
-    validate_workspace_vars({'dataType', 'dataSource', 'areas'}, dataStruct, ...
+    validate_workspace_vars({'sessionType', 'dataSource', 'areas'}, dataStruct, ...
         'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
     
-    % Set defaults
-    if ~isfield(config, 'makePlots')
-        config.makePlots = true;
-    end
-    if ~isfield(config, 'nShuffles')
-        config.nShuffles = 3;
-    end
-    if ~isfield(config, 'lfpLowpassFreq')
-        config.lfpLowpassFreq = 80;
-    end
-    if ~isfield(config, 'saveDir') || isempty(config.saveDir)
-        config.saveDir = dataStruct.saveDir;
-    end
-    
+
     dataSource = dataStruct.dataSource;
-    dataType = dataStruct.dataType;
+    sessionType = dataStruct.sessionType;
     areas = dataStruct.areas;
     numAreas = length(areas);
     
@@ -66,14 +58,55 @@ function results = complexity_analysis(dataStruct, config)
         validate_workspace_vars({'dataMat', 'idMatIdx'}, dataStruct, ...
             'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
         
-        if ~isfield(config, 'binSize') || isempty(config.binSize)
-            error('binSize must be provided in config for spike data analysis');
+        % Calculate optimal bin size per area if requested
+        if config.useOptimalBinSize
+            fprintf('Calculating optimal bin size per area...\n');
+            config.optimalBinSize = zeros(1, numAreas);
+            
+            for a = areasToTest
+                aID = dataStruct.idMatIdx{a};
+                nNeurons = length(aID);
+                
+                if nNeurons < config.nMinNeurons
+                    % Skip this area, but still need to set a bin size
+                    config.optimalBinSize(a) = nan;
+                    continue;
+                end
+                
+                % Calculate overall spike rate (spikes per second) across all neurons
+                areaData = dataStruct.dataMat(:, aID);
+                totalSpikes = sum(areaData(:));
+                totalTime = size(areaData, 2) * size(areaData, 1) / 1000;  % Convert ms to seconds
+                spikeRate = totalSpikes / totalTime;  % Spikes per second
+                
+                % Calculate optimal bin size: binSize = minSpikesPerBin / spikeRate
+                % Round to nearest millisecond (0.001 s)
+                optimalBinSize = config.minSpikesPerBin / spikeRate;
+                config.optimalBinSize(a) = ceil(optimalBinSize / 0.001) * 0.001;  % Round to nearest ms
+                
+                fprintf('  Area %s: spike rate = %.2f spikes/s, optimal bin size = %.3f s (%.1f ms)\n', ...
+                    areas{a}, spikeRate, config.optimalBinSize(a), config.optimalBinSize(a) * 1000);
+            end
+        else
+            % Use user-specified bin size
+            if ~isfield(config, 'binSize') || isempty(config.binSize)
+                error('binSize must be provided in config for spike data analysis (or set useOptimalBinSize = true)');
+            end
+            config.optimalBinSize = repmat(config.binSize, 1, numAreas);
+            fprintf('Using user-specified bin size: %.3f s (%.1f ms)\n', ...
+                config.binSize, config.binSize * 1000);
         end
-        config.optimalBinSize = repmat(config.binSize, 1, numAreas);
         
         % Calculate step size if not provided
         if ~isfield(config, 'stepSize') || isempty(config.stepSize)
-            config.stepSize = config.binSize * 2;  % Default: 2x bin size
+            % Use minimum bin size across areas (excluding NaN)
+            validBinSizes = config.optimalBinSize(~isnan(config.optimalBinSize));
+            if ~isempty(validBinSizes)
+                minBinSize = min(validBinSizes);
+                config.stepSize = minBinSize * 2;  % Default: 2x bin size
+            else
+                error('No valid bin sizes found. Check nMinNeurons threshold.');
+            end
         end
         
     elseif strcmp(dataSource, 'lfp')
@@ -96,6 +129,92 @@ function results = complexity_analysis(dataStruct, config)
         error('Invalid dataSource. Must be ''spikes'' or ''lfp''.');
     end
     
+    % Calculate common centerTime values based on slidingWindowSize and stepSize
+    % This ensures all areas have aligned windows regardless of their bin sizes
+    if strcmp(dataSource, 'spikes')
+        % Total time from original data (in seconds, assuming 1000 Hz)
+        totalTime = size(dataStruct.dataMat, 1) / 1000;
+    elseif strcmp(dataSource, 'lfp')
+        % For LFP, we'll calculate from the first area's signal length
+        % (all areas should have same length)
+        rawSignal = dataStruct.lfpPerArea(:, areasToTest(1));
+        fsRaw = dataStruct.opts.fsLfp;
+        totalTime = length(rawSignal) / fsRaw;
+    end
+    
+    % Generate common centerTime values
+    % Start from slidingWindowSize/2, end at totalTime - slidingWindowSize/2
+    firstCenterTime = config.slidingWindowSize / 2;
+    lastCenterTime = totalTime - config.slidingWindowSize / 2;
+    commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
+    
+    if isempty(commonCenterTimes)
+        error('No valid windows found. Check slidingWindowSize and stepSize relative to total time.');
+    end
+    
+    numWindows = length(commonCenterTimes);
+    fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s\n', ...
+        numWindows, firstCenterTime, lastCenterTime);
+    
+    % Set default minDataPoints if not provided
+    if ~isfield(config, 'minDataPoints') || isempty(config.minDataPoints)
+        config.minDataPoints = 2*10^5;
+    end
+    
+    % Set default useBernoulliControl if not provided
+    if ~isfield(config, 'useBernoulliControl')
+        config.useBernoulliControl = true;  % Default to true for backward compatibility
+    end
+    
+    % Calculate optimal window size per area for computational efficiency
+    % Window size is optimized to have at least minDataPoints data points
+    % Constrained to be between 5s and 20s
+    fprintf('\n=== Calculating Optimal Window Sizes ===\n');
+    % Initialize all areas with original window size
+    optimalWindowSize = repmat(config.slidingWindowSize, 1, numAreas);
+    
+    for a = areasToTest
+        if strcmp(dataSource, 'spikes')
+            aID = dataStruct.idMatIdx{a};
+            nNeurons = length(aID);
+            
+            if nNeurons < config.nMinNeurons || isnan(config.optimalBinSize(a))
+                optimalWindowSize(a) = config.slidingWindowSize;  % Use original if area is skipped
+                continue;
+            end
+            
+            % Calculate minimum window size needed: totalDataPoints = nNeurons × (windowSize / binSize)
+            % We need: nNeurons × (windowSize / binSize) >= minDataPoints
+            % So: windowSize >= (minDataPoints × binSize) / nNeurons
+            minRequiredWindowSize = (config.minDataPoints * config.optimalBinSize(a)) / nNeurons;
+            
+            % Constrain to 5-20s range and use minimum that satisfies requirement
+            optimalWindowSize(a) = ceil(max(config.minSlidingWindowSize, min(config.maxSlidingWindowSize, minRequiredWindowSize)));
+            
+            % Calculate actual data points with this window size
+            actualDataPoints = nNeurons * (optimalWindowSize(a) / config.optimalBinSize(a));
+            
+            fprintf('  Area %s: %d neurons, binSize=%.3fs -> optimal window=%.2fs (%.0f data points)\n', ...
+                areas{a}, nNeurons, config.optimalBinSize(a), optimalWindowSize(a), actualDataPoints);
+            
+        elseif strcmp(dataSource, 'lfp')
+            % For LFP, data points = windowSize × samplingRate
+            % We need: windowSize × fsRaw >= minDataPoints
+            % So: windowSize >= minDataPoints / fsRaw
+            fsRaw = dataStruct.opts.fsLfp;
+            minRequiredWindowSize = config.minDataPoints / fsRaw;
+            
+            % Constrain to 5-20s range
+            optimalWindowSize(a) = ceil(max(config.minSlidingWindowSize, min(config.maxSlidingWindowSize, minRequiredWindowSize)));
+            
+            % Calculate actual data points
+            actualDataPoints = optimalWindowSize(a) * fsRaw;
+            
+            fprintf('  Area %s: fs=%.1fHz -> optimal window=%.2fs (%.0f data points)\n', ...
+                areas{a}, fsRaw, optimalWindowSize(a), actualDataPoints);
+        end
+    end
+    
     % Initialize results
     lzComplexity = cell(1, numAreas);
     lzComplexityNormalized = cell(1, numAreas);
@@ -107,27 +226,50 @@ function results = complexity_analysis(dataStruct, config)
     
     for a = areasToTest
         fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
+        
+        % Check minimum number of neurons for spike data
+        if strcmp(dataSource, 'spikes')
+            aID = dataStruct.idMatIdx{a};
+            nNeurons = length(aID);
+            if nNeurons < config.nMinNeurons
+                fprintf('  Skipping area %s: Only %d neurons (minimum required: %d)\n', ...
+                    areas{a}, nNeurons, config.nMinNeurons);
+                % Initialize with NaN values
+                lzComplexity{a} = [];
+                lzComplexityNormalized{a} = [];
+                lzComplexityNormalizedBernoulli{a} = [];
+                startS{a} = [];
+                continue;
+            end
+        end
+        
         tic;
         
         if strcmp(dataSource, 'spikes')
             % ========== Spike Data Analysis ==========
             aID = dataStruct.idMatIdx{a};
             
+            % Check if bin size is valid for this area
+            if isnan(config.optimalBinSize(a))
+                fprintf('  Skipping area %s: Invalid bin size (area skipped earlier)\n', areas{a});
+                continue;
+            end
+            
             % Bin data using optimal bin size for this area
             aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), config.optimalBinSize(a));
             numTimePoints = size(aDataMat, 1);
             
-            % Calculate window and step sizes in samples
-            winSamples = round(config.slidingWindowSize / config.optimalBinSize(a));
-            stepSamples = round(config.stepSize / config.optimalBinSize(a));
-            if stepSamples < 1
-                stepSamples = 1;
+            % Use area-specific optimal window size
+            areaWindowSize = optimalWindowSize(a);
+            
+            % Calculate window size in samples for this area
+            winSamples = round(areaWindowSize / config.optimalBinSize(a));
+            if winSamples < 1
+                winSamples = 1;
             end
             
-            % Calculate number of windows
-            numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
-            fprintf('  Time points: %d, Window samples: %d, Step samples: %d, Windows: %d\n', ...
-                numTimePoints, winSamples, stepSamples, numWindows);
+            fprintf('  Time points: %d, Window size: %.2fs, Window samples: %d, Bin size: %.3f s\n', ...
+                numTimePoints, areaWindowSize, winSamples, config.optimalBinSize(a));
             
             % Initialize arrays
             lzComplexity{a} = nan(1, numWindows);
@@ -135,11 +277,21 @@ function results = complexity_analysis(dataStruct, config)
             lzComplexityNormalizedBernoulli{a} = nan(1, numWindows);
             startS{a} = nan(1, numWindows);
             
-            % Process each window
+            % Process each window using common centerTime
             for w = 1:numWindows
-                [startIdx, endIdx, centerTime, ~] = calculate_window_indices(...
-                    w, numTimePoints, winSamples, stepSamples, config.optimalBinSize(a));
+                centerTime = commonCenterTimes(w);
                 startS{a}(w) = centerTime;
+                
+                % Convert centerTime to indices for this area's binning
+                % Use area-specific optimal window size
+                [startIdx, endIdx] = calculate_window_indices_from_center(...
+                    centerTime, optimalWindowSize(a), config.optimalBinSize(a), numTimePoints);
+                
+                % Check if window is valid (within bounds)
+                if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
+                    % Window is out of bounds for this area, skip
+                    continue;
+                end
                 
                 % Extract window data [nSamples x nNeurons]
                 wData = aDataMat(startIdx:endIdx, :);
@@ -155,7 +307,7 @@ function results = complexity_analysis(dataStruct, config)
                 % Calculate Lempel-Ziv complexity with controls
                 [lzComplexity{a}(w), lzComplexityNormalized{a}(w), ...
                     lzComplexityNormalizedBernoulli{a}(w)] = ...
-                    compute_lz_complexity_with_controls(binarySeq, config.nShuffles);
+                    compute_lz_complexity_with_controls(binarySeq, config.nShuffles, config.useBernoulliControl);
             end
             
         elseif strcmp(dataSource, 'lfp')
@@ -172,19 +324,19 @@ function results = complexity_analysis(dataStruct, config)
                 filteredSignal = rawSignal;
             end
             
-            % Calculate window and step sizes in samples
-            winSamples = round(config.slidingWindowSize * fsRaw);
-            stepSamples = round(config.stepSize * fsRaw);
-            if stepSamples < 1
-                stepSamples = 1;
-            end
-            
             numTimePoints = length(filteredSignal);
             
-            % Calculate number of windows
-            numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
-            fprintf('  Time points: %d, Window samples: %d, Step samples: %d, Windows: %d\n', ...
-                numTimePoints, winSamples, stepSamples, numWindows);
+            % Use area-specific optimal window size
+            areaWindowSize = optimalWindowSize(a);
+            
+            % Calculate window size in samples
+            winSamples = round(areaWindowSize * fsRaw);
+            if winSamples < 1
+                winSamples = 1;
+            end
+            
+            fprintf('  Time points: %d, Window size: %.2fs, Window samples: %d, Sampling rate: %.1f Hz\n', ...
+                numTimePoints, areaWindowSize, winSamples, fsRaw);
             
             % Initialize arrays
             lzComplexity{a} = nan(1, numWindows);
@@ -192,11 +344,21 @@ function results = complexity_analysis(dataStruct, config)
             lzComplexityNormalizedBernoulli{a} = nan(1, numWindows);
             startS{a} = nan(1, numWindows);
             
-            % Process each window
+            % Process each window using common centerTime
             for w = 1:numWindows
-                [startIdx, endIdx, centerTime, ~] = calculate_window_indices(...
-                    w, numTimePoints, winSamples, stepSamples, 1/fsRaw);
+                centerTime = commonCenterTimes(w);
                 startS{a}(w) = centerTime;
+                
+                % Convert centerTime to indices for LFP (sampling rate = fsRaw)
+                % Use area-specific optimal window size
+                [startIdx, endIdx] = calculate_window_indices_from_center(...
+                    centerTime, optimalWindowSize(a), 1/fsRaw, numTimePoints);
+                
+                % Check if window is valid (within bounds)
+                if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
+                    % Window is out of bounds for this area, skip
+                    continue;
+                end
                 
                 % Extract window signal
                 wSignal = filteredSignal(startIdx:endIdx);
@@ -208,7 +370,7 @@ function results = complexity_analysis(dataStruct, config)
                 % Calculate Lempel-Ziv complexity with controls
                 [lzComplexity{a}(w), lzComplexityNormalized{a}(w), ...
                     lzComplexityNormalizedBernoulli{a}(w)] = ...
-                    compute_lz_complexity_with_controls(binarySeq, config.nShuffles);
+                    compute_lz_complexity_with_controls(binarySeq, config.nShuffles, config.useBernoulliControl);
             end
         end
         
@@ -223,28 +385,66 @@ function results = complexity_analysis(dataStruct, config)
     results.lzComplexity = lzComplexity;
     results.lzComplexityNormalized = lzComplexityNormalized;
     results.lzComplexityNormalizedBernoulli = lzComplexityNormalizedBernoulli;
-    results.params.slidingWindowSize = config.slidingWindowSize;
+    results.params.slidingWindowSize = config.slidingWindowSize;  % Original requested size
+    results.params.optimalWindowSize = optimalWindowSize;  % Area-specific optimized sizes
     results.params.stepSize = config.stepSize;
     results.params.nShuffles = config.nShuffles;
+    results.params.minDataPoints = config.minDataPoints;
+    results.params.useBernoulliControl = config.useBernoulliControl;
     
     if strcmp(dataSource, 'spikes')
         results.params.optimalBinSize = config.optimalBinSize;
-        results.dataType = dataType;
+        results.sessionType = sessionType;
     elseif strcmp(dataSource, 'lfp')
         results.params.lfpLowpassFreq = config.lfpLowpassFreq;
         results.params.fsLfp = dataStruct.opts.fsLfp;
     end
     
     % Save results
+    % Get saveDir from dataStruct (set by data loading functions)
+    if ~isfield(dataStruct, 'saveDir') || isempty(dataStruct.saveDir)
+        error('dataStruct.saveDir must be set by data loading function');
+    end
+    
     sessionNameForPath = '';
     if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
         sessionNameForPath = dataStruct.sessionName;
     end
     
-    resultsPath = create_results_path('complexity', dataType, config.slidingWindowSize, ...
-        sessionNameForPath, config.saveDir, 'dataSource', dataSource);
+    % Handle sessionName with subdirectories (e.g., "kw/kw092821")
+    % Extract subdirectory and adjust saveDir if needed
+    actualSaveDir = dataStruct.saveDir;
+    if ~isempty(sessionNameForPath) && contains(sessionNameForPath, filesep)
+        % Session name contains path separators, extract first directory
+        pathParts = strsplit(sessionNameForPath, filesep);
+        if length(pathParts) > 1
+            % Create subdirectory in saveDir
+            actualSaveDir = fullfile(dataStruct.saveDir, pathParts{1});
+        end
+    end
+    
+    resultsPath = create_results_path('complexity', sessionType, config.slidingWindowSize, ...
+        sessionNameForPath, actualSaveDir, 'dataSource', dataSource);
+    
+    % Ensure directory exists before saving (including all parent directories)
+    resultsDir = fileparts(resultsPath);
+    if ~isempty(resultsDir)
+        % mkdir creates all parent directories automatically
+        [status, msg] = mkdir(resultsDir);
+        if ~status
+            error('Failed to create results directory %s: %s', resultsDir, msg);
+        end
+        % Double-check it was created
+        if ~exist(resultsDir, 'dir')
+            error('Results directory %s still does not exist after mkdir', resultsDir);
+        end
+    end
+    
     save(resultsPath, 'results');
     fprintf('\nSaved results to: %s\n', resultsPath);
+    
+    % Store resultsPath in results for plotting function
+    results.resultsPath = resultsPath;
     
     % Plotting
     if config.makePlots
@@ -255,13 +455,22 @@ function results = complexity_analysis(dataStruct, config)
         if isfield(dataStruct, 'dataBaseName') && ~isempty(dataStruct.dataBaseName)
             plotArgs = [plotArgs, {'dataBaseName', dataStruct.dataBaseName}];
         end
-        plotConfig = setup_plotting(config.saveDir, plotArgs{:});
+        plotConfig = setup_plotting(dataStruct.saveDir, plotArgs{:});
         complexity_plot(results, plotConfig, config, dataStruct);
     end
 end
 
-function [lzComplexity, lzNormalized, lzNormalizedBernoulli] = compute_lz_complexity_with_controls(binarySeq, nShuffles)
-% COMPUTE_LZ_COMPLEXITY_WITH_CONTROLS Compute LZ complexity with shuffle and Bernoulli controls
+function [lzComplexity, lzNormalized, lzNormalizedBernoulli] = compute_lz_complexity_with_controls(binarySeq, nShuffles, useBernoulliControl)
+% COMPUTE_LZ_COMPLEXITY_WITH_CONTROLS Compute LZ complexity with shuffle and optional Bernoulli controls
+%
+% Variables:
+%   binarySeq - Binary sequence
+%   nShuffles - Number of shuffles for normalization
+%   useBernoulliControl - Whether to compute Bernoulli normalized metric (default: true)
+    
+    if nargin < 3
+        useBernoulliControl = true;  % Default to true for backward compatibility
+    end
     
     try
         % Calculate original LZ complexity
@@ -281,19 +490,23 @@ function [lzComplexity, lzNormalized, lzNormalizedBernoulli] = compute_lz_comple
             lzNormalized = nan;
         end
         
-        % Normalize by rate-matched Bernoulli control
-        firingRate = mean(binarySeq);
-        bernoulliLZ = nan(1, nShuffles);
-        for s = 1:nShuffles
-            bernoulliSeq = double(rand(length(binarySeq), 1) < firingRate);
-            bernoulliLZ(s) = limpel_ziv_complexity(bernoulliSeq, 'method', 'binary');
-        end
-        
-        meanBernoulliLZ = nanmean(bernoulliLZ);
-        if meanBernoulliLZ > 0
-            lzNormalizedBernoulli = lzComplexity / meanBernoulliLZ;
+        % Normalize by rate-matched Bernoulli control (optional)
+        if useBernoulliControl
+            firingRate = mean(binarySeq);
+            bernoulliLZ = nan(1, nShuffles);
+            for s = 1:nShuffles
+                bernoulliSeq = double(rand(length(binarySeq), 1) < firingRate);
+                bernoulliLZ(s) = limpel_ziv_complexity(bernoulliSeq, 'method', 'binary');
+            end
+            
+            meanBernoulliLZ = nanmean(bernoulliLZ);
+            if meanBernoulliLZ > 0
+                lzNormalizedBernoulli = lzComplexity / meanBernoulliLZ;
+            else
+                lzNormalizedBernoulli = nan;
+            end
         else
-            lzNormalizedBernoulli = nan;
+            lzNormalizedBernoulli = nan;  % Not computed
         end
     catch ME
         fprintf('    Warning: Error computing LZ complexity: %s\n', ME.message);

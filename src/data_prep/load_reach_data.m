@@ -5,7 +5,7 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
 %   dataStruct - Data structure to populate
 %   dataSource - 'spikes' or 'lfp'
 %   paths - Paths structure from get_paths
-%   sessionName - Session name (e.g., 'Y15_27-Aug-2025 14_02_21_NeuroBeh.mat')
+%   sessionName - Session name without .mat extension (e.g., 'Y15_27-Aug-2025 14_02_21_NeuroBeh')
 %   opts - Options structure
 %   lfpCleanParams - LFP cleaning parameters (if dataSource == 'lfp')
 %   bands - Frequency bands (if dataSource == 'lfp')
@@ -16,10 +16,10 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
 % Returns:
 %   dataStruct - Updated data structure
 
-    % Load reach data file
-    reachDataFile = fullfile(paths.reachDataPath, sessionName);
+    % Load reach data file (sessionName no longer includes .mat extension)
+    reachDataFile = fullfile(paths.reachDataPath, [sessionName, '.mat']);
     
-    [~, dataBaseName, ~] = fileparts(reachDataFile);
+    [~, dataBaseName, ~] = fileparts(sessionName);
     dataStruct.dataBaseName = dataBaseName;
     dataStruct.saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
     if ~exist(dataStruct.saveDir, 'dir')
@@ -56,8 +56,8 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
         
     elseif strcmp(dataSource, 'lfp')
         % Load reach LFP data
-        [~, lfpBaseName, ~] = fileparts(sessionName);
-        lfpBaseName = strrep(lfpBaseName, '_NeuroBeh', '');
+        % sessionName no longer includes .mat extension
+        lfpBaseName = strrep(sessionName, '_NeuroBeh', '');
         
         reachPath = paths.reachDataPath;
         lfpFile = fullfile(reachPath, [lfpBaseName, '_g0_t0.imec0.lf.bin']);

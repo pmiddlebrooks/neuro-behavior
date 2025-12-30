@@ -5,7 +5,7 @@ function dataStruct = load_schall_data(dataStruct, dataSource, paths, sessionNam
 %   dataStruct - Data structure to populate
 %   dataSource - 'spikes' or 'lfp'
 %   paths - Paths structure from get_paths
-%   sessionName - Session name (e.g., 'joule/jp121n02.mat')
+%   sessionName - Session name without .mat extension (e.g., 'joule/jp121n02')
 %   opts - Options structure
 %   lfpCleanParams - LFP cleaning parameters (if dataSource == 'lfp')
 %   bands - Frequency bands (if dataSource == 'lfp')
@@ -21,10 +21,10 @@ function dataStruct = load_schall_data(dataStruct, dataSource, paths, sessionNam
         opts.collectEnd = 7*60;  % Default 7 minutes
     end
     
-    % Load schall data file
-    schallDataFile = fullfile(paths.schallDataPath, sessionName);
+    % Load schall data file (sessionName no longer includes .mat extension)
+    schallDataFile = fullfile(paths.schallDataPath, [sessionName, '.mat']);
     
-    [~, dataBaseName, ~] = fileparts(schallDataFile);
+    [~, dataBaseName, ~] = fileparts(sessionName);
     dataStruct.dataBaseName = dataBaseName;
     dataStruct.saveDir = fullfile(paths.dropPath, 'schall/results', dataBaseName);
     if ~exist(dataStruct.saveDir, 'dir')

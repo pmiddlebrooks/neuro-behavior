@@ -254,7 +254,7 @@ elseif strcmp(dataType, 'schall')
     schallDataFile = fullfile(paths.schallDataPath, sessionName);
 
     [~, dataBaseName, ~] = fileparts(schallDataFile);
-    saveDir = fullfile(paths.dropPath, 'schall/results', dataBaseName);
+    saveDir = fullfile(paths.dropPath, 'schall/results', sessionName(1:end-4));
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
 
     dataS = load(schallDataFile);

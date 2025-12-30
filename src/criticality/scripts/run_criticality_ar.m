@@ -5,11 +5,24 @@
 % This script maintains compatibility with the old workflow while using
 % the new modular functions.
 
-% Add paths
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'data_prep'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'analyses'));
+% Add paths (check if directories exist first to avoid warnings)
+basePath = fileparts(mfilename('fullpath'));  % criticality/scripts
+srcPath = fullfile(basePath, '..', '..');     % src
+
+% Add sliding_window_prep paths
+swDataPrepPath = fullfile(srcPath, 'sliding_window_prep', 'data_prep');
+swUtilsPath = fullfile(srcPath, 'sliding_window_prep', 'utils');
+analysesPath = fullfile(basePath, '..', 'analyses');
+
+if exist(swDataPrepPath, 'dir')
+    addpath(swDataPrepPath);
+end
+if exist(swUtilsPath, 'dir')
+    addpath(swUtilsPath);
+end
+if exist(analysesPath, 'dir')
+    addpath(analysesPath);
+end
 
 % Configure variables
         opts = neuro_behavior_options;
@@ -39,9 +52,6 @@ pOrder = 10;
 critType = 2;
 
 
-% Check if data is already loaded (workspace variables)
-% If not, try to load using new function
-if ~exist('dataMat', 'var')
     % Try to load data using new function
     if exist('dataType', 'var') && exist('dataSource', 'var')
         fprintf('Loading data using load_sliding_window_data...\n');
@@ -74,7 +84,6 @@ if ~exist('dataMat', 'var')
     else
         error('dataType and dataSource must be defined, or data must be pre-loaded in workspace');
     end
-end
 
 % Set up configuration from workspace variables
 % (These should be set before running this script)

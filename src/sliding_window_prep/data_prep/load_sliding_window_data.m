@@ -1,8 +1,8 @@
-function dataStruct = load_sliding_window_data(dataType, dataSource, varargin)
+function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin)
 % LOAD_SLIDING_WINDOW_DATA Load and prepare data for sliding window analyses
 %
 % Variables:
-%   dataType - Type of data: 'reach', 'naturalistic', 'schall', 'hong'
+%   sessionType - Type of data: 'reach', 'naturalistic', 'schall', 'hong'
 %   dataSource - Source of data: 'spikes' or 'lfp'
 %   varargin - Optional name-value pairs:
 %       'sessionName' - Session name (required for reach/schall data)
@@ -18,7 +18,7 @@ function dataStruct = load_sliding_window_data(dataType, dataSource, varargin)
 %
 % Returns:
 %   dataStruct - Structure with fields:
-%       .dataType, .dataSource, .areas, .saveDir, .opts
+%       .sessionType, .dataSource, .areas, .saveDir, .opts
 %       For spikes: .dataMat, .idMatIdx, .idLabel, .spikeData
 %       For LFP: .lfpPerArea, .binnedEnvelopes, .bands, .bandBinSizes, etc.
 %       Data-type specific: .dataR, .reachStart, .sessionName, etc.
@@ -75,14 +75,14 @@ function dataStruct = load_sliding_window_data(dataType, dataSource, varargin)
     
     % Initialize output structure
     dataStruct = struct();
-    dataStruct.dataType = dataType;
+    dataStruct.sessionType = sessionType;
     dataStruct.dataSource = dataSource;
     dataStruct.opts = opts;
     
-    fprintf('\n=== Loading %s %s data ===\n', dataType, dataSource);
+    fprintf('\n=== Loading %s %s data ===\n', sessionType, dataSource);
     
     % Load data based on data type
-    switch dataType
+    switch sessionType
         case 'naturalistic'
             if isempty(sessionName)
                 error('sessionName must be provided for naturalistic data');
@@ -108,7 +108,7 @@ function dataStruct = load_sliding_window_data(dataType, dataSource, varargin)
             dataStruct = load_hong_data(dataStruct, dataSource, paths, opts, lfpCleanParams, bands);
             
         otherwise
-            error('Invalid dataType: %s. Must be ''reach'', ''naturalistic'', ''schall'', or ''hong''', dataType);
+            error('Invalid sessionType: %s. Must be ''reach'', ''naturalistic'', ''schall'', or ''hong''', sessionType);
     end
     
     % Set default areasToTest if not set

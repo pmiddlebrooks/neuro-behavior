@@ -405,17 +405,24 @@ function criticality_av_plot(results, plotConfig, config, dataStruct, filenameSu
             dataType, slidingWindowSize, avStepSize), 'interpreter', 'none');
     end
     
+    % Ensure save directory exists (including any subdirectories)
+    if ~exist(config.saveDir, 'dir')
+        mkdir(config.saveDir);
+    end
+    
     % Save figure
     if ~isempty(plotConfig.filePrefix)
-        exportgraphics(gcf, fullfile(config.saveDir, ...
+        plotPath = fullfile(config.saveDir, ...
             sprintf('%s_criticality_%s_av%s_win%d_step%d.png', ...
-            plotConfig.filePrefix, dataType, filenameSuffix, slidingWindowSize, avStepSize)), ...
-            'Resolution', 300);
+            plotConfig.filePrefix, dataType, filenameSuffix, slidingWindowSize, avStepSize));
+        exportgraphics(gcf, plotPath, 'Resolution', 300);
+        fprintf('Saved plot to: %s\n', plotPath);
     else
-        exportgraphics(gcf, fullfile(config.saveDir, ...
+        plotPath = fullfile(config.saveDir, ...
             sprintf('criticality_%s_av%s_win%d_step%d.png', ...
-            dataType, filenameSuffix, slidingWindowSize, avStepSize)), ...
-            'Resolution', 300);
+            dataType, filenameSuffix, slidingWindowSize, avStepSize));
+        exportgraphics(gcf, plotPath, 'Resolution', 300);
+        fprintf('Saved plot to: %s\n', plotPath);
     end
     
     fprintf('Saved criticality AV plot to: %s\n', config.saveDir);

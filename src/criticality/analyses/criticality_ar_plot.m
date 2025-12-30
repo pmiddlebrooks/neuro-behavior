@@ -279,17 +279,24 @@ function criticality_ar_plot(results, plotConfig, config, dataStruct, filenameSu
         end
     end
     
+    % Ensure save directory exists (including any subdirectories)
+    if ~exist(config.saveDir, 'dir')
+        mkdir(config.saveDir);
+    end
+    
     % Save figure
     if ~isempty(plotConfig.filePrefix)
-        exportgraphics(gcf, fullfile(config.saveDir, ...
+        plotPath = fullfile(config.saveDir, ...
             sprintf('%s_criticality_%s_ar%s_win%d.png', ...
-            plotConfig.filePrefix, dataType, filenameSuffix, slidingWindowSize)), ...
-            'Resolution', 300);
+            plotConfig.filePrefix, dataType, filenameSuffix, slidingWindowSize));
+        exportgraphics(gcf, plotPath, 'Resolution', 300);
+        fprintf('Saved plot to: %s\n', plotPath);
     else
-        exportgraphics(gcf, fullfile(config.saveDir, ...
+        plotPath = fullfile(config.saveDir, ...
             sprintf('criticality_%s_ar%s_win%d.png', ...
-            dataType, filenameSuffix, slidingWindowSize)), ...
-            'Resolution', 300);
+            dataType, filenameSuffix, slidingWindowSize));
+        exportgraphics(gcf, plotPath, 'Resolution', 300);
+        fprintf('Saved plot to: %s\n', plotPath);
     end
     
     fprintf('Saved criticality AR plot to: %s\n', config.saveDir);

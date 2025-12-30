@@ -22,6 +22,10 @@ function complexity_plot(results, plotConfig, config, dataStruct)
         if ~isempty(results.lzComplexityNormalized{a})
             allLZNorm = [allLZNorm, results.lzComplexityNormalized{a}(~isnan(results.lzComplexityNormalized{a}))];
         end
+        % Also include Bernoulli normalized values for axis limits
+        if ~isempty(results.lzComplexityNormalizedBernoulli{a})
+            allLZNorm = [allLZNorm, results.lzComplexityNormalizedBernoulli{a}(~isnan(results.lzComplexityNormalizedBernoulli{a}))];
+        end
     end
     
     % Determine axis limits
@@ -75,9 +79,22 @@ function complexity_plot(results, plotConfig, config, dataStruct)
         if ~isempty(results.lzComplexityNormalized{a}) && ~isempty(results.startS{a})
             validIdx = ~isnan(results.lzComplexityNormalized{a});
             if any(validIdx)
+                areaColor = areaColors{min(a, length(areaColors))};
+                % Plot shuffle normalized LZ complexity (solid line)
                 plot(results.startS{a}(validIdx), results.lzComplexityNormalized{a}(validIdx), ...
-                    '-', 'Color', areaColors{min(a, length(areaColors))}, 'LineWidth', 2, ...
-                    'DisplayName', results.areas{a});
+                    '-', 'Color', areaColor, 'LineWidth', 2, ...
+                    'DisplayName', sprintf('%s (shuffle norm)', results.areas{a}));
+            end
+        end
+        
+        % Plot Bernoulli normalized LZ complexity (dashed line, same color)
+        if ~isempty(results.lzComplexityNormalizedBernoulli{a}) && ~isempty(results.startS{a})
+            validIdx = ~isnan(results.lzComplexityNormalizedBernoulli{a});
+            if any(validIdx)
+                areaColor = areaColors{min(a, length(areaColors))};
+                plot(results.startS{a}(validIdx), results.lzComplexityNormalizedBernoulli{a}(validIdx), ...
+                    '--', 'Color', areaColor, 'LineWidth', 2, ...
+                    'DisplayName', sprintf('%s (Bernoulli norm)', results.areas{a}));
             end
         end
         
@@ -111,40 +128,81 @@ function complexity_plot(results, plotConfig, config, dataStruct)
         else
             xlim([xMin, xMax]);
         end
-        ylim([yMinLZNorm, yMaxLZNorm]);
+        % ylim([yMinLZNorm, yMaxLZNorm]);
+        ylim([.85, 1.05]);
         set(gca, 'XTickLabelMode', 'auto');
         set(gca, 'YTickLabelMode', 'auto');
         grid on;
     end
     
-    % Create title
+    % Check if Bernoulli control was computed
+    useBernoulliControl = true;  % Default
+    if isfield(results.params, 'useBernoulliControl')
+        useBernoulliControl = results.params.useBernoulliControl;
+    end
+    
+    % Create title with conditional Bernoulli mention
+    if useBernoulliControl
+        normText = '(Solid: shuffle norm, Dashed: Bernoulli norm)';
+    else
+        normText = '(Shuffle normalized)';
+    end
+    
     if strcmp(results.dataSource, 'spikes') && isfield(results, 'dataType')
         if ~isempty(plotConfig.filePrefix)
-            sgtitle(sprintf('[%s] %s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d', ...
+            sgtitle(sprintf('[%s] %s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
                 plotConfig.filePrefix, results.dataType, results.dataSource, ...
-                config.slidingWindowSize, config.stepSize, config.nShuffles));
+                config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
         else
-            sgtitle(sprintf('%s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d', ...
-                results.dataType, results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles));
+            sgtitle(sprintf('%s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
+                results.dataType, results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
         end
     else
         if ~isempty(plotConfig.filePrefix)
-            sgtitle(sprintf('[%s] Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d', ...
-                plotConfig.filePrefix, results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles));
+            sgtitle(sprintf('[%s] Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
+                plotConfig.filePrefix, results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
         else
-            sgtitle(sprintf('Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d', ...
-                results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles));
+            sgtitle(sprintf('Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
+                results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
         end
     end
     
-    % Save figure
-    if ~isempty(plotConfig.filePrefix)
-        exportgraphics(gcf, fullfile(config.saveDir, sprintf('%s_complexity_%s_win%.1f.png', ...
-            plotConfig.filePrefix, results.dataSource, config.slidingWindowSize)), 'Resolution', 300);
+    % Use the same directory as the results file (session-specific if applicable)
+    % Extract directory from resultsPath if available, otherwise use config.saveDir
+    if isfield(results, 'resultsPath') && ~isempty(results.resultsPath)
+        plotSaveDir = fileparts(results.resultsPath);
     else
-        exportgraphics(gcf, fullfile(config.saveDir, sprintf('complexity_%s_win%.1f.png', ...
-            results.dataSource, config.slidingWindowSize)), 'Resolution', 300);
+        plotSaveDir = config.saveDir;
     end
     
-    fprintf('Saved complexity plot to: %s\n', config.saveDir);
+    % Build full plot path first
+    if ~isempty(plotConfig.filePrefix)
+        plotPath = fullfile(plotSaveDir, sprintf('%s_complexity_%s_win%.1f.png', ...
+            plotConfig.filePrefix, results.dataSource, config.slidingWindowSize));
+    else
+        plotPath = fullfile(plotSaveDir, sprintf('complexity_%s_win%.1f.png', ...
+            results.dataSource, config.slidingWindowSize));
+    end
+    
+    % Extract directory from plot path and create it (including all parent directories)
+    plotDir = fileparts(plotPath);
+    if ~isempty(plotDir) && ~exist(plotDir, 'dir')
+        % mkdir creates all parent directories automatically
+        [status, msg] = mkdir(plotDir);
+        if ~status
+            error('Failed to create directory %s: %s', plotDir, msg);
+        end
+        % Double-check it was created
+        if ~exist(plotDir, 'dir')
+            error('Directory %s still does not exist after mkdir', plotDir);
+        end
+    end
+    
+    % Now save the figure
+    try
+        exportgraphics(gcf, plotPath, 'Resolution', 300);
+        fprintf('Saved complexity plot to: %s\n', plotPath);
+    catch ME
+        error('Failed to save plot to %s: %s\nDirectory exists: %d', plotPath, ME.message, exist(plotDir, 'dir'));
+    end
 end

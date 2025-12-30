@@ -197,14 +197,23 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
             end
         end
         
+        % Ensure save directory exists (including any subdirectories)
+        if ~exist(config.saveDir, 'dir')
+            mkdir(config.saveDir);
+        end
+        
         % Save figure
         if ~isempty(plotConfig.filePrefix)
-            exportgraphics(gcf, fullfile(config.saveDir, ...
+            plotPath = fullfile(config.saveDir, ...
                 sprintf('%s_criticality_lfp_d2_win%.1f.png', ...
-                plotConfig.filePrefix, config.slidingWindowSize)), 'Resolution', 300);
+                plotConfig.filePrefix, config.slidingWindowSize));
+            exportgraphics(gcf, plotPath, 'Resolution', 300);
+            fprintf('Saved plot to: %s\n', plotPath);
         else
-            exportgraphics(gcf, fullfile(config.saveDir, ...
-                sprintf('criticality_lfp_d2_win%.1f.png', config.slidingWindowSize)), 'Resolution', 300);
+            plotPath = fullfile(config.saveDir, ...
+                sprintf('criticality_lfp_d2_win%.1f.png', config.slidingWindowSize));
+            exportgraphics(gcf, plotPath, 'Resolution', 300);
+            fprintf('Saved plot to: %s\n', plotPath);
         end
     end
     
@@ -287,14 +296,23 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
             sgtitle(sprintf('LFP DFA Analysis - step=%.3fs', stepSize));
         end
         
+        % Ensure save directory exists (including any subdirectories)
+        if ~exist(config.saveDir, 'dir')
+            mkdir(config.saveDir);
+        end
+        
         % Save figure
         if ~isempty(plotConfig.filePrefix)
-            exportgraphics(gcf, fullfile(config.saveDir, ...
+            plotPath = fullfile(config.saveDir, ...
                 sprintf('%s_criticality_lfp_dfa_win%.1f.png', ...
-                plotConfig.filePrefix, config.slidingWindowSize)), 'Resolution', 300);
+                plotConfig.filePrefix, config.slidingWindowSize));
+            exportgraphics(gcf, plotPath, 'Resolution', 300);
+            fprintf('Saved plot to: %s\n', plotPath);
         else
-            exportgraphics(gcf, fullfile(config.saveDir, ...
-                sprintf('criticality_lfp_dfa_win%.1f.png', config.slidingWindowSize)), 'Resolution', 300);
+            plotPath = fullfile(config.saveDir, ...
+                sprintf('criticality_lfp_dfa_win%.1f.png', config.slidingWindowSize));
+            exportgraphics(gcf, plotPath, 'Resolution', 300);
+            fprintf('Saved plot to: %s\n', plotPath);
         end
     end
     

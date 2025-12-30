@@ -31,9 +31,12 @@ function resultsPath = create_results_path(analysisType, dataType, slidingWindow
     dataSource = p.Results.dataSource;
     createDir = p.Results.createDir;
     
-    % Create directory if needed
+    % Create directory if needed (including any subdirectories)
     if createDir && ~exist(saveDir, 'dir')
-        mkdir(saveDir);
+        [status, msg] = mkdir(saveDir);
+        if ~status
+            warning('Failed to create directory %s: %s', saveDir, msg);
+        end
     end
     
     % Build filename based on analysis type
@@ -93,6 +96,27 @@ function resultsPath = create_results_path(analysisType, dataType, slidingWindow
                 end
             end
             
+        case 'rqa'
+            if ~isempty(dataSource)
+                if strcmp(dataType, 'reach') && ~isempty(sessionName)
+                    filename = sprintf('rqa_sliding_window_%s_win%.1f_%s.mat', ...
+                        dataSource, slidingWindowSize, sessionName);
+                elseif ~isempty(dataType)
+                    filename = sprintf('rqa_sliding_window_%s_win%.1f_%s.mat', ...
+                        dataSource, slidingWindowSize, dataType);
+                else
+                    filename = sprintf('rqa_sliding_window_%s_win%.1f.mat', ...
+                        dataSource, slidingWindowSize);
+                end
+            else
+                if strcmp(dataType, 'reach') && ~isempty(sessionName)
+                    filename = sprintf('rqa_sliding_window_win%.1f_%s.mat', ...
+                        slidingWindowSize, sessionName);
+                else
+                    filename = sprintf('rqa_sliding_window_win%.1f.mat', slidingWindowSize);
+                end
+            end
+            
         otherwise
             % Generic fallback
             if ~isempty(sessionName)
@@ -103,5 +127,14 @@ function resultsPath = create_results_path(analysisType, dataType, slidingWindow
     end
     
     resultsPath = fullfile(saveDir, filename);
+    
+    % Ensure the full directory path exists (in case filename includes subdirectories)
+    resultsDir = fileparts(resultsPath);
+    if createDir && ~isempty(resultsDir) && ~exist(resultsDir, 'dir')
+        [status, msg] = mkdir(resultsDir);
+        if ~status
+            warning('Failed to create results directory %s: %s', resultsDir, msg);
+        end
+    end
 end
 
