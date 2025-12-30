@@ -224,6 +224,9 @@ function results = complexity_analysis(dataStruct, config)
     % Analysis loop
     fprintf('\n=== Processing Areas ===\n');
     
+    % Track if any area was successfully processed
+    hasProcessedAreas = false;
+    
     for a = areasToTest
         fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
         
@@ -374,7 +377,46 @@ function results = complexity_analysis(dataStruct, config)
             end
         end
         
+        % Mark that at least one area was successfully processed
+        hasProcessedAreas = true;
+        
         fprintf('  Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+    end
+    
+    % Check if any areas were successfully processed
+    if ~hasProcessedAreas
+        fprintf('\n=== No Areas Processed ===\n');
+        if strcmp(dataSource, 'spikes')
+            fprintf('All areas were skipped due to insufficient neurons (minimum required: %d)\n', config.nMinNeurons);
+        else
+            fprintf('No areas were successfully processed\n');
+        end
+        fprintf('Skipping save and plot operations.\n');
+        
+        % Return empty results structure
+        results = struct();
+        results.dataSource = dataSource;
+        results.areas = areas;
+        results.startS = startS;
+        results.lzComplexity = lzComplexity;
+        results.lzComplexityNormalized = lzComplexityNormalized;
+        results.lzComplexityNormalizedBernoulli = lzComplexityNormalizedBernoulli;
+        results.params.slidingWindowSize = config.slidingWindowSize;
+        results.params.optimalWindowSize = optimalWindowSize;
+        results.params.stepSize = config.stepSize;
+        results.params.nShuffles = config.nShuffles;
+        results.params.minDataPoints = config.minDataPoints;
+        results.params.useBernoulliControl = config.useBernoulliControl;
+        
+        if strcmp(dataSource, 'spikes')
+            results.params.optimalBinSize = config.optimalBinSize;
+            results.sessionType = sessionType;
+        elseif strcmp(dataSource, 'lfp')
+            results.params.lfpLowpassFreq = config.lfpLowpassFreq;
+            results.params.fsLfp = dataStruct.opts.fsLfp;
+        end
+        
+        return;
     end
     
     % Build results structure

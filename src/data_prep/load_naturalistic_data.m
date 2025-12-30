@@ -22,7 +22,26 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
     end
     
     % Set up paths for naturalistic data (incorporating get_standard_data logic)
-    opts.dataPath = paths.freeDataPath;
+    % Determine subdirectory based on first two characters of sessionName
+    % Extract first path component or first two characters of sessionName
+    pathParts = strsplit(sessionName, filesep);
+    if ~isempty(pathParts{1}) && length(pathParts{1}) >= 2
+        % Use first two characters of first path component
+        subDir = pathParts{1}(1:2);
+    elseif length(sessionName) >= 2
+        % Fallback: use first two characters of sessionName itself
+        subDir = sessionName(1:2);
+    else
+        % Use sessionName as-is if too short
+        subDir = '';
+    end
+    
+    % Build data path with subdirectory
+    if ~isempty(subDir)
+        opts.dataPath = fullfile(paths.freeDataPath, subDir);
+    else
+        opts.dataPath = paths.freeDataPath;
+    end
     opts.sessionName = sessionName;
     
     if strcmp(dataSource, 'spikes')

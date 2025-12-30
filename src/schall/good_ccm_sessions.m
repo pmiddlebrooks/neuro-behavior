@@ -128,7 +128,7 @@ fprintf('\n=== Done ===\n');
 
 
 %% Load good sessions
-subjectID = 'joule';  % joule  broca
+subjectID = 'broca';  % joule  broca
 searchDir = fullfile(paths.dropPath, 'schall/data', subjectID);  % Set this to the directory path containing .mat files
 loadPath = fullfile(searchDir, 'goodSessionsCCM.mat');
 load(loadPath);

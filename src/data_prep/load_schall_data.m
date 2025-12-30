@@ -21,8 +21,32 @@ function dataStruct = load_schall_data(dataStruct, dataSource, paths, sessionNam
         opts.collectEnd = 7*60;  % Default 7 minutes
     end
     
-    % Load schall data file (sessionName no longer includes .mat extension)
-    schallDataFile = fullfile(paths.schallDataPath, [sessionName, '.mat']);
+    % Determine subdirectory based on session name prefix
+    % Extract just the filename part (in case sessionName includes subdirectory)
+    [~, sessionBaseName, ~] = fileparts(sessionName);
+    
+    % Determine subdirectory based on prefix (case-insensitive)
+    if length(sessionBaseName) >= 2 && strncmpi(sessionBaseName, 'bp', 2)
+        subDir = 'broca';
+    elseif length(sessionBaseName) >= 2 && strncmpi(sessionBaseName, 'jp', 2)
+        subDir = 'joule';
+    else
+        % Default: try to extract from sessionName if it includes a path
+        [parentDir, ~, ~] = fileparts(sessionName);
+        if ~isempty(parentDir)
+            subDir = parentDir;
+        else
+            % Fallback: use sessionName as-is
+            subDir = '';
+        end
+    end
+    
+    % Build file path
+    if ~isempty(subDir)
+        schallDataFile = fullfile(paths.schallDataPath, subDir, [sessionBaseName, '.mat']);
+    else
+        schallDataFile = fullfile(paths.schallDataPath, [sessionBaseName, '.mat']);
+    end
     
     [~, dataBaseName, ~] = fileparts(sessionName);
     dataStruct.dataBaseName = dataBaseName;

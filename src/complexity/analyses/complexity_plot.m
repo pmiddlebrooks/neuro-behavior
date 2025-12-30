@@ -120,7 +120,39 @@ function complexity_plot(results, plotConfig, config, dataStruct)
             end
         end
         
-        title(sprintf('%s - Normalized Lempel-Ziv Complexity', results.areas{a}));
+        % Add hong trial start times if applicable
+        if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'T') && ...
+                isfield(dataStruct.T, 'startTime_oe')
+            % Check sessionType from results or dataStruct
+            isHongSession = false;
+            if isfield(results, 'sessionType') && strcmp(results.sessionType, 'hong')
+                isHongSession = true;
+            elseif isfield(dataStruct, 'sessionType') && strcmp(dataStruct.sessionType, 'hong')
+                isHongSession = true;
+            end
+            
+            if isHongSession && ~isempty(results.startS{a}) && ~isempty(dataStruct.T.startTime_oe)
+                plotTimeRange = [results.startS{a}(1), results.startS{a}(end)];
+                trialStartsInRange = dataStruct.T.startTime_oe(...
+                    dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
+                
+                if ~isempty(trialStartsInRange)
+                    for i = 1:length(trialStartsInRange)
+                        xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
+                            'LineStyle', '--', 'Alpha', 0.7);
+                    end
+                end
+            end
+        end
+        
+        % Get neuron count for spike data
+        if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'idMatIdx') && ...
+                ~isempty(dataStruct.idMatIdx{a})
+            nNeurons = length(dataStruct.idMatIdx{a});
+            title(sprintf('%s - Normalized Lempel-Ziv Complexity (n=%d)', results.areas{a}, nNeurons));
+        else
+            title(sprintf('%s - Normalized Lempel-Ziv Complexity', results.areas{a}));
+        end
         xlabel('Time (s)');
         ylabel('Normalized LZ Complexity');
         if ~isempty(results.startS{a})

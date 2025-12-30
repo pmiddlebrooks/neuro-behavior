@@ -9,8 +9,9 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'open_field'
-batchSessionType = 'open_field';  % Change this to process different session types
+batchSessionType = 'schall';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
+paths = get_paths;
 % =========================
 
 % Add paths for session list functions
@@ -37,8 +38,13 @@ switch lower(batchSessionType)
         sessions = reach_session_list();
         sessionType = 'reach';
     case 'schall'
-        sessions = schall_session_list();
+        % sessions = schall_session_list();
         sessionType = 'schall';
+subjectID = 'broca';  % joule  broca
+searchDir = fullfile(paths.dropPath, 'schall/data', subjectID);  % Set this to the directory path containing .mat files
+loadPath = fullfile(searchDir, 'goodSessionsCCM.mat');
+load(loadPath);
+sessions = goodSessionsCCM;
     case 'open_field'
         sessions = open_field_session_list();
         sessionType = 'naturalistic';
