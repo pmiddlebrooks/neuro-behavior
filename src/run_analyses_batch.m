@@ -18,7 +18,7 @@ paths = get_paths;
 % Define which analyses to run (set to true to run, false to skip)
 % Add new analyses here as needed
 analysesToRun = struct();
-analysesToRun.complexity = true;  % Run complexity analysis
+analysesToRun.lzc = true;  % Run lzc analysis
 analysesToRun.rqa = true;         % Run RQA analysis
 analysesToRun.criticality_ar = false;  % Run criticality AR (d2/mrBr) analysis
 analysesToRun.criticality_av = false;  % Run criticality AV (avalanche) analysis
@@ -136,8 +136,8 @@ for s = 1:numSessions
             
             % Run the appropriate analysis script
             switch lower(analysisName)
-                case 'complexity'
-                    run_complexity;
+                case 'lzc'
+                    run_lzc_sliding;
                 case 'rqa'
                     run_rqa_sliding;
                 case 'criticality_ar'

@@ -1,8 +1,8 @@
-function complexity_plot(results, plotConfig, config, dataStruct)
-% complexity_plot - Create plots for complexity analysis results
+function lzc_sliding_plot(results, plotConfig, config, dataStruct)
+% lzc_sliding_plot - Create plots for Lempel-Ziv complexity analysis results
 %
 % Variables:
-%   results - Results structure from complexity_analysis()
+%   results - Results structure from lzc_sliding_analysis()
 %   plotConfig - Plotting configuration from setup_plotting()
 %   config - Configuration structure
 %   dataStruct - Data structure from load_sliding_window_data()
@@ -146,22 +146,24 @@ function complexity_plot(results, plotConfig, config, dataStruct)
             end
         end
         
-        % Add hong trial start times if applicable
-        if strcmp(results.dataSource, 'spikes') && strcmp(dataStruct.sessionType, 'hong')
-            if ~isempty(results.startS{a}) && isfield(dataStruct, 'T') && ...
-                    isfield(dataStruct.T, 'startTime_oe') && ~isempty(dataStruct.T.startTime_oe)
-                plotTimeRange = [results.startS{a}(1), results.startS{a}(end)];
-                trialStartsInRange = dataStruct.T.startTime_oe(...
-                    dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
-                
-                if ~isempty(trialStartsInRange)
-                    for i = 1:length(trialStartsInRange)
-                        xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                    end
-                end
-            end
+    % Add hong trial start times if applicable
+    if strcmp(dataStruct.sessionType, 'hong')
+        if isfield(dataStruct, 'T') && ~isempty(dataStruct.T.startTime_oe)
+            % trialStartsInRange = dataStruct.T.startTime_oe(...
+            %     dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
+            % 
+            % if ~isempty(trialStartsInRange)
+            %     for i = 1:length(trialStartsInRange)
+            %         xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 1, ...
+            %             'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
+            %     end
+            % end
+
+            % Add trial type
+            plot(dataStruct.T.startTime_oe, dataStruct.T.trialType/4 + .3, 'Color', [0.2 0.7 0.7], 'LineWidth', 2, ...
+                        'LineStyle', '-', 'HandleVisibility', 'off');
         end
+    end
         
         % Plot summed neural activity first (behind metrics) on right y-axis
         areaColor = areaColors{min(a, length(areaColors))};
@@ -266,10 +268,10 @@ function complexity_plot(results, plotConfig, config, dataStruct)
     
     % Build full plot path first
     if ~isempty(plotConfig.filePrefix)
-        plotPath = fullfile(plotSaveDir, sprintf('%s_complexity_%s.png', ...
+        plotPath = fullfile(plotSaveDir, sprintf('%s_lzc_sliding_window_%s.png', ...
             plotConfig.filePrefix, results.dataSource));
     else
-        plotPath = fullfile(plotSaveDir, sprintf('complexity_%s.png', ...
+        plotPath = fullfile(plotSaveDir, sprintf('lzc_sliding_window_%s.png', ...
             results.dataSource));
     end
     
@@ -290,7 +292,7 @@ function complexity_plot(results, plotConfig, config, dataStruct)
     % Now save the figure
     try
         exportgraphics(gcf, plotPath, 'Resolution', 300);
-        fprintf('Saved complexity plot to: %s\n', plotPath);
+        fprintf('Saved LZC plot to: %s\n', plotPath);
     catch ME
         error('Failed to save plot to %s: %s\nDirectory exists: %d', plotPath, ME.message, exist(plotDir, 'dir'));
     end

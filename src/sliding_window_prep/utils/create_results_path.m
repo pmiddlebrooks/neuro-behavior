@@ -71,18 +71,18 @@ function resultsPath = create_results_path(analysisType, sessionType, sessionNam
                 filename = sprintf('criticality_sliding_lfp.mat');
             end
             
-        case 'complexity'
+        case {'complexity', 'lzc'}
             if isempty(dataSource)
-                error('dataSource must be provided for complexity analysis');
+                error('dataSource must be provided for LZC analysis');
             end
             if strcmp(sessionType, 'reach') && ~isempty(sessionName)
-                filename = sprintf('complexity_sliding_window_%s_%s.mat', ...
+                filename = sprintf('lzc_sliding_window_%s_%s.mat', ...
                     dataSource, sessionName);
             elseif ~isempty(sessionType)
-                filename = sprintf('complexity_sliding_window_%s_%s.mat', ...
+                filename = sprintf('lzc_sliding_window_%s_%s.mat', ...
                     dataSource, sessionType);
             else
-                filename = sprintf('complexity_sliding_window_%s.mat', dataSource);
+                filename = sprintf('lzc_sliding_window_%s.mat', dataSource);
             end
             
         case 'rqa'

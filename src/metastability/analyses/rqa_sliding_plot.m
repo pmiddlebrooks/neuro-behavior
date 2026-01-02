@@ -211,22 +211,24 @@ function rqa_sliding_plot(results, plotConfig, config, dataStruct)
         end
         
         % Add hong trial start times if applicable
-        if strcmp(results.dataSource, 'spikes') && strcmp(dataStruct.sessionType, 'hong')
-                isHongSession = true;
-            
-            if isHongSession && ~isempty(results.startS{1}) && ~isempty(dataStruct.T.startTime_oe)
-                plotTimeRange = [results.startS{1}(1), results.startS{1}(end)];
-                trialStartsInRange = dataStruct.T.startTime_oe(...
-                    dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
-                
-                if ~isempty(trialStartsInRange)
-                    for i = 1:length(trialStartsInRange)
-                        xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                    end
-                end
-            end
+    % Add hong trial start times if applicable
+    if strcmp(dataStruct.sessionType, 'hong')
+        if isfield(dataStruct, 'T') && ~isempty(dataStruct.T.startTime_oe)
+            % trialStartsInRange = dataStruct.T.startTime_oe(...
+            %     dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
+            % 
+            % if ~isempty(trialStartsInRange)
+            %     for i = 1:length(trialStartsInRange)
+            %         xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 1, ...
+            %             'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
+            %     end
+            % end
+
+            % Add trial type
+            plot(dataStruct.T.startTime_oe, dataStruct.T.trialType/4 + .3, 'Color', [0.2 0.7 0.7], 'LineWidth', 2, ...
+                        'LineStyle', '-', 'HandleVisibility', 'off');
         end
+    end
         
         % Add schall response onsets if applicable
         if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'sessionType') && ...

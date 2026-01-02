@@ -6,6 +6,8 @@
 % the new modular functions. You can still set variables in workspace
 % and run this script, or use rqa_sliding_analysis() function directly.
 
+runParallel = 1;
+
 paths = get_paths;
 
 % Add paths (check if directories exist first to avoid warnings)
@@ -66,8 +68,18 @@ config.nMinNeurons = 15;  % Minimum number of neurons required (areas with fewer
 config.saveRecurrencePlots = false;  % Set to true to compute and store recurrence plots (uses a lot of memory)
 
 % Run analysis
-NumWorkers = length(dataStruct.areas);
-parpool('local', NumWorkers);
+if runParallel
+% Check if parpool is already running, start one if not
+currentPool = gcp('nocreate');
+if isempty(currentPool)
+    NumWorkers = length(dataStruct.areas);
+    parpool('local', NumWorkers);
+    fprintf('Started parallel pool with %d workers\n', NumWorkers);
+else
+    fprintf('Using existing parallel pool with %d workers\n', currentPool.NumWorkers);
+end
+end
+
 results = rqa_sliding_analysis(dataStruct, config);
 
 % Store results in workspace for backward compatibility

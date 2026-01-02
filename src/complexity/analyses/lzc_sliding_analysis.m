@@ -1,5 +1,5 @@
-function results = complexity_analysis(dataStruct, config)
-% COMPLEXITY_ANALYSIS Perform Lempel-Ziv complexity sliding window analysis
+function results = lzc_sliding_analysis(dataStruct, config)
+% LZC_SLIDING_ANALYSIS Perform Lempel-Ziv complexity sliding window analysis
 % See: https://www.nature.com/articles/srep46421#Sec2
 %      Increased spontaneous MEG signal diversity for psychoactive doses of ketamine, LSD and psilocybin
 %      Schartner et al 2017 Sci Reports
@@ -186,6 +186,21 @@ function results = complexity_analysis(dataStruct, config)
         config.useBernoulliControl = true;  % Default to true for backward compatibility
     end
     
+    % Set default useOptimalWindowSize if not provided
+    if ~isfield(config, 'useOptimalWindowSize')
+        config.useOptimalWindowSize = false;  % Default to false (use user-specified window size)
+    end
+    
+    % Set default minSlidingWindowSize and maxSlidingWindowSize if useOptimalWindowSize is true
+    if config.useOptimalWindowSize
+        if ~isfield(config, 'minSlidingWindowSize') || isempty(config.minSlidingWindowSize)
+            config.minSlidingWindowSize = 5;  % Default minimum window size (seconds)
+        end
+        if ~isfield(config, 'maxSlidingWindowSize') || isempty(config.maxSlidingWindowSize)
+            config.maxSlidingWindowSize = 60;  % Default maximum window size (seconds)
+        end
+    end
+    
     % Calculate window size per area (either optimal or user-specified)
     % Always store as slidingWindowSize vector (length numAreas)
     % Window size is optimized to have at least minDataPoints data points if useOptimalWindowSize is true
@@ -198,7 +213,8 @@ function results = complexity_analysis(dataStruct, config)
     end
     slidingWindowSize = config.slidingWindowSize;
     
-    for a = areasToTest
+    parfor a = areasToTest
+    % for a = areasToTest
         if strcmp(dataSource, 'spikes')
             aID = dataStruct.idMatIdx{a};
             nNeurons = length(aID);
@@ -503,7 +519,7 @@ function results = complexity_analysis(dataStruct, config)
         end
     end
     
-    resultsPath = create_results_path('complexity', sessionType, ...
+    resultsPath = create_results_path('lzc', sessionType, ...
         sessionNameForPath, actualSaveDir, 'dataSource', dataSource);
     
     % Ensure directory exists before saving (including all parent directories)
@@ -536,7 +552,7 @@ function results = complexity_analysis(dataStruct, config)
             plotArgs = [plotArgs, {'dataBaseName', dataStruct.dataBaseName}];
         end
         plotConfig = setup_plotting(dataStruct.saveDir, plotArgs{:});
-        complexity_plot(results, plotConfig, config, dataStruct);
+        lzc_sliding_plot(results, plotConfig, config, dataStruct);
     end
 end
 

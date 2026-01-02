@@ -463,6 +463,8 @@ function add_event_markers_ar(areaIdx)
             %             'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
             %     end
             % end
+
+            % Add trial type
             plot(dataStruct.T.startTime_oe, dataStruct.T.trialType/4 + .3, 'Color', [0.2 0.7 0.7], 'LineWidth', 2, ...
                         'LineStyle', '-', 'HandleVisibility', 'off');
         end

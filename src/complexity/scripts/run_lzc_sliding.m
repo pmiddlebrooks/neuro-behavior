@@ -1,12 +1,13 @@
 %%
-% Complexity Sliding Window Analysis - Wrapper Script
+% LZC Sliding Window Analysis - Wrapper Script
 % Backward-compatible wrapper that uses the new function-based architecture
 %
 % This script maintains compatibility with the old workflow while using
 % the new modular functions. You can still set variables in workspace
-% and run this script, or use complexity_analysis() function directly.
+% and run this script, or use lzc_sliding_analysis() function directly.
 
 % Set to 1 if you want to explore what binSize to use
+runParallel = 1;
 findBinSize = 0;
 
 % Add paths (check if directories exist first to avoid warnings)
@@ -66,6 +67,8 @@ end
 binSize = .02;  % Only used if useOptimalBinSize = false
 
 config = struct();
+config.useOptimalWindowSize = true;
+config.useOptimalBinSize = true;  % Set to true to automatically calculate optimal bin size per area
 config.slidingWindowSize = 60;
 config.minSlidingWindowSize = 5;
 config.maxSlidingWindowSize = 60;
@@ -74,7 +77,6 @@ config.nShuffles = 3;
 config.makePlots = true;
 config.nMinNeurons = 15;
 config.minSpikesPerBin = 0.08;  % Minimum spikes per bin for optimal bin size calculation (we want about minSpikesPerPin proportion of bins with a spike)
-config.useOptimalBinSize = true;  % Set to true to automatically calculate optimal bin size per area
 config.minDataPoints = 2*10^5;
 config.useBernoulliControl = false;  % Set to false to skip Bernoulli normalization (faster computation)
 
@@ -86,7 +88,19 @@ end
 
 
 % Run analysis
-results = complexity_analysis(dataStruct, config);
+% Check if parpool is already running, start one if not
+if runParallel
+    currentPool = gcp('nocreate');
+if isempty(currentPool)
+    NumWorkers = length(dataStruct.areas);
+    parpool('local', NumWorkers);
+    fprintf('Started parallel pool with %d workers\n', NumWorkers);
+else
+    fprintf('Using existing parallel pool with %d workers\n', currentPool.NumWorkers);
+end
+end
+
+results = lzc_sliding_analysis(dataStruct, config);
 
 % Store results in workspace for backward compatibility
 lzComplexity = results.lzComplexity;
