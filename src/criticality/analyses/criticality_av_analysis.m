@@ -67,7 +67,7 @@ function results = criticality_av_analysis(dataStruct, config)
         sessionNameForPath = dataStruct.sessionName;
     end
     
-    resultsPath = create_results_path('criticality_av', dataType, config.slidingWindowSize, ...
+    resultsPath = create_results_path('criticality_av', dataType, ...
         sessionNameForPath, config.saveDir, 'filenameSuffix', filenameSuffix);
     
     % Apply PCA to original data if requested
@@ -89,7 +89,7 @@ function results = criticality_av_analysis(dataStruct, config)
     
     % Find optimal parameters
     fprintf('\n--- Step 3: Finding optimal parameters ---\n');
-    [optimalBinSize, optimalWindowSize] = find_optimal_parameters_av(...
+    [binSize, slidingWindowSize] = find_optimal_parameters_av(...
         reconstructedDataMat, dataStruct, config, areasToTest);
     
     % Filter areas based on valid optimal bin sizes
@@ -100,8 +100,32 @@ function results = criticality_av_analysis(dataStruct, config)
         config.candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15];
     end
     validMask = arrayfun(@(a) length(dataStruct.idMatIdx{a}) >= config.minNeurons & ...
-        optimalBinSize(a) <= max(config.candidateFrameSizes), areasToTest);
+        binSize(a) <= max(config.candidateFrameSizes), areasToTest);
     areasToTest = areasToTest(validMask);
+    
+    % Validate avStepSize is provided
+    if ~isfield(config, 'avStepSize') || isempty(config.avStepSize)
+        error('avStepSize must be provided in config');
+    end
+    
+    % Calculate common centerTime values based on slidingWindowSize and avStepSize
+    % This ensures all areas have aligned windows regardless of their optimized window sizes
+    % Total time from original data (in seconds, assuming 1000 Hz)
+    totalTime = size(dataStruct.dataMat, 1) / 1000;
+    
+    % Generate common centerTime values
+    % Start from slidingWindowSize/2, end at totalTime - slidingWindowSize/2
+    firstCenterTime = config.slidingWindowSize / 2;
+    lastCenterTime = totalTime - config.slidingWindowSize / 2;
+    commonCenterTimes = firstCenterTime:config.avStepSize:lastCenterTime;
+    
+    if isempty(commonCenterTimes)
+        error('No valid windows found. Check slidingWindowSize and avStepSize relative to total time.');
+    end
+    
+    numWindows = length(commonCenterTimes);
+    fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s (stepSize=%.3f s)\n', ...
+        numWindows, firstCenterTime, lastCenterTime, config.avStepSize);
     
     % Initialize results
     [dcc, kappa, decades, startS, tau, alpha, paramSD] = deal(cell(1, numAreas));
@@ -132,11 +156,8 @@ function results = criticality_av_analysis(dataStruct, config)
         aID = dataStruct.idMatIdx{a};
         
         % Bin the original data for dcc/kappa analysis
-        aDataMat_dcc = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), optimalBinSize(a));
+        aDataMat_dcc = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(a));
         numTimePoints_dcc = size(aDataMat_dcc, 1);
-        stepSamples_dcc = round(config.avStepSize / optimalBinSize(a));
-        winSamples_dcc = round(config.slidingWindowSize / optimalBinSize(a));
-        numWindows_dcc = floor((numTimePoints_dcc - winSamples_dcc) / stepSamples_dcc) + 1;
         
         % Apply PCA to binned data if needed
         if config.pcaFlag
@@ -151,19 +172,29 @@ function results = criticality_av_analysis(dataStruct, config)
         aDataMat_dcc = mean(aDataMat_dcc, 2);
         
         % Initialize arrays
-        dcc{a} = nan(1, numWindows_dcc);
-        kappa{a} = nan(1, numWindows_dcc);
-        decades{a} = nan(1, numWindows_dcc);
-        tau{a} = nan(1, numWindows_dcc);
-        alpha{a} = nan(1, numWindows_dcc);
-        paramSD{a} = nan(1, numWindows_dcc);
-        startS{a} = nan(1, numWindows_dcc);
+        dcc{a} = nan(1, numWindows);
+        kappa{a} = nan(1, numWindows);
+        decades{a} = nan(1, numWindows);
+        tau{a} = nan(1, numWindows);
+        alpha{a} = nan(1, numWindows);
+        paramSD{a} = nan(1, numWindows);
+        startS{a} = nan(1, numWindows);
         
-        % Process each window
-        for w = 1:numWindows_dcc
-            [startIdx, endIdx, centerTime, ~] = calculate_window_indices(...
-                w, numTimePoints_dcc, winSamples_dcc, stepSamples_dcc, optimalBinSize(a));
+        % Process each window using common centerTime
+        for w = 1:numWindows
+            centerTime = commonCenterTimes(w);
             startS{a}(w) = centerTime;
+            
+            % Convert centerTime to indices for this area's binning
+            % Use area-specific optimal window size
+                [startIdx, endIdx] = calculate_window_indices_from_center(...
+                    centerTime, slidingWindowSize(a), binSize(a), numTimePoints_dcc);
+            
+            % Check if window is valid (within bounds)
+            if startIdx < 1 || endIdx > numTimePoints_dcc || startIdx > endIdx
+                % Window is out of bounds for this area, skip
+                continue;
+            end
             
             % Calculate population activity for this window
             wPopActivity = aDataMat_dcc(startIdx:endIdx);
@@ -205,15 +236,15 @@ function results = criticality_av_analysis(dataStruct, config)
         if config.enablePermutations
             [dccPermuted{a}, kappaPermuted{a}, decadesPermuted{a}, ...
                 tauPermuted{a}, alphaPermuted{a}, paramSDPermuted{a}] = ...
-                perform_circular_permutations_av(dataStruct, a, aID, optimalBinSize(a), ...
-                config, stepSamples_dcc, winSamples_dcc, numWindows_dcc);
+                perform_circular_permutations_av(dataStruct, a, aID, binSize(a), ...
+                slidingWindowSize(a), config, commonCenterTimes, numTimePoints_dcc);
         end
     end
     
     % Build results structure
     results = build_results_structure_av(dataStruct, config, areas, areasToTest, ...
         dcc, kappa, decades, startS, tau, alpha, paramSD, ...
-        optimalBinSize, optimalWindowSize, ...
+        binSize, slidingWindowSize, ...
         dccPermuted, kappaPermuted, decadesPermuted, ...
         tauPermuted, alphaPermuted, paramSDPermuted);
     
@@ -265,50 +296,62 @@ function config = set_config_defaults(config)
     end
 end
 
-function [optimalBinSize, optimalWindowSize] = find_optimal_parameters_av(...
+function [binSize, slidingWindowSize] = find_optimal_parameters_av(...
     reconstructedDataMat, dataStruct, config, areasToTest)
 % FIND_OPTIMAL_PARAMETERS_AV Find optimal bin and window sizes for avalanche analysis
     
     numAreas = length(dataStruct.areas);
-    optimalBinSize = zeros(1, numAreas);
-    optimalWindowSize = zeros(1, numAreas);
+    binSize = zeros(1, numAreas);
+    slidingWindowSize = zeros(1, numAreas);
     
     for a = areasToTest
         thisDataMat = reconstructedDataMat{a};
         thisFiringRate = sum(thisDataMat(:)) / (size(thisDataMat, 1)/1000);
-        [optimalBinSize(a), optimalWindowSize(a)] = ...
+        [binSize(a), slidingWindowSize(a)] = ...
             find_optimal_bin_and_window(thisFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
-        fprintf('Area %s: optimal bin size = %.3f s, optimal window size = %.1f s\n', ...
-            dataStruct.areas{a}, optimalBinSize(a), optimalWindowSize(a));
+        fprintf('Area %s: bin size = %.3f s, window size = %.1f s\n', ...
+            dataStruct.areas{a}, binSize(a), slidingWindowSize(a));
     end
 end
 
 function [dccPermuted, kappaPermuted, decadesPermuted, ...
     tauPermuted, alphaPermuted, paramSDPermuted] = ...
-    perform_circular_permutations_av(dataStruct, a, aID, optimalBinSize, ...
-    config, stepSamples_dcc, winSamples_dcc, numWindows_dcc)
+    perform_circular_permutations_av(dataStruct, a, aID, binSize, ...
+    slidingWindowSize, config, commonCenterTimes, numTimePoints)
 % PERFORM_CIRCULAR_PERMUTATIONS_AV Perform circular permutation testing for avalanche analysis
     
     fprintf('  Running %d circular permutations per window for area %s...\n', ...
         config.nShuffles, dataStruct.areas{a});
     ticPerm = tic;
     
+    numWindows = length(commonCenterTimes);
+    
     % Initialize storage
-    dccPermuted = nan(numWindows_dcc, config.nShuffles);
-    kappaPermuted = nan(numWindows_dcc, config.nShuffles);
-    decadesPermuted = nan(numWindows_dcc, config.nShuffles);
-    tauPermuted = nan(numWindows_dcc, config.nShuffles);
-    alphaPermuted = nan(numWindows_dcc, config.nShuffles);
-    paramSDPermuted = nan(numWindows_dcc, config.nShuffles);
+    dccPermuted = nan(numWindows, config.nShuffles);
+    kappaPermuted = nan(numWindows, config.nShuffles);
+    decadesPermuted = nan(numWindows, config.nShuffles);
+    tauPermuted = nan(numWindows, config.nShuffles);
+    alphaPermuted = nan(numWindows, config.nShuffles);
+    paramSDPermuted = nan(numWindows, config.nShuffles);
     
     % Get original binned data matrix
-    originalDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), optimalBinSize);
+    originalDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize);
     nNeurons = size(originalDataMat, 2);
     
     % Permute each window independently
-    for w = 1:numWindows_dcc
-        startIdx = (w - 1) * stepSamples_dcc + 1;
-        endIdx = startIdx + winSamples_dcc - 1;
+    for w = 1:numWindows
+        centerTime = commonCenterTimes(w);
+        
+        % Convert centerTime to indices for this area's binning
+        % Use area-specific optimal window size
+            [startIdx, endIdx] = calculate_window_indices_from_center(...
+                centerTime, slidingWindowSize, binSize, numTimePoints);
+        
+        % Check if window is valid (within bounds)
+        if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
+            % Window is out of bounds, skip
+            continue;
+        end
         
         % Extract this window's data
         windowData = originalDataMat(startIdx:endIdx, :);
@@ -360,8 +403,8 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
             end
         end
         
-        if mod(w, max(1, round(numWindows_dcc/10))) == 0
-            fprintf('    Completed %d/%d windows (%.1f min elapsed)\n', w, numWindows_dcc, toc(ticPerm)/60);
+        if mod(w, max(1, round(numWindows/10))) == 0
+            fprintf('    Completed %d/%d windows (%.1f min elapsed)\n', w, numWindows, toc(ticPerm)/60);
         end
     end
     
@@ -370,7 +413,7 @@ end
 
 function results = build_results_structure_av(dataStruct, config, areas, areasToTest, ...
     dcc, kappa, decades, startS, tau, alpha, paramSD, ...
-    optimalBinSize, optimalWindowSize, ...
+    binSize, slidingWindowSize, ...
     dccPermuted, kappaPermuted, decadesPermuted, ...
     tauPermuted, alphaPermuted, paramSDPermuted)
 % BUILD_RESULTS_STRUCTURE_AV Build results structure for avalanche analysis
@@ -385,8 +428,8 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
     results.alpha = alpha;
     results.paramSD = paramSD;
     results.startS = startS;
-    results.optimalBinSize = optimalBinSize;
-    results.optimalWindowSize = optimalWindowSize;
+    results.binSize = binSize;
+    results.slidingWindowSize = slidingWindowSize;
     results.params.slidingWindowSize = config.slidingWindowSize;
     results.params.avStepSize = config.avStepSize;
     results.params.pcaFlag = config.pcaFlag;

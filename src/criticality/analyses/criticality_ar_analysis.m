@@ -29,13 +29,13 @@ function results = criticality_ar_analysis(dataStruct, config)
     addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
     
     % Validate inputs
-    validate_workspace_vars({'dataType', 'dataMat', 'areas', 'idMatIdx'}, dataStruct, ...
+    validate_workspace_vars({'sessionType', 'dataMat', 'areas', 'idMatIdx'}, dataStruct, ...
         'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
     
     % Set defaults
     config = set_config_defaults(config);
     
-    dataType = dataStruct.dataType;
+    sessionType = dataStruct.sessionType;
     areas = dataStruct.areas;
     numAreas = length(areas);
     
@@ -46,7 +46,7 @@ function results = criticality_ar_analysis(dataStruct, config)
     end
     
     fprintf('\n=== Criticality AR Analysis Setup ===\n');
-    fprintf('Data type: %s\n', dataType);
+    fprintf('Data type: %s\n', sessionType);
     fprintf('Number of areas: %d\n', numAreas);
     fprintf('Window size: %.2f s\n', config.slidingWindowSize);
     fprintf('Analyze d2: %d, Analyze mrBr: %d\n', config.analyzeD2, config.analyzeMrBr);
@@ -68,14 +68,14 @@ function results = criticality_ar_analysis(dataStruct, config)
         sessionNameForPath = dataStruct.sessionName;
     end
     
-    resultsPath = create_results_path('criticality_ar', dataType, config.slidingWindowSize, ...
+    resultsPath = create_results_path('criticality_ar', sessionType, ...
         sessionNameForPath, config.saveDir, 'filenameSuffix', filenameSuffix);
     
     % Load spike data for modulation analysis if needed
     if config.analyzeModulation
         if ~isfield(dataStruct, 'spikeData') || isempty(dataStruct.spikeData)
             fprintf('\n=== Loading spike data for modulation analysis ===\n');
-            if strcmp(dataType, 'reach')
+            if strcmp(sessionType, 'reach')
                 if ~isfield(dataStruct, 'dataR')
                     error('dataR must be available for reach data modulation analysis');
                 end
@@ -110,31 +110,56 @@ function results = criticality_ar_analysis(dataStruct, config)
         end
     end
     
-    % Find optimal parameters
-    fprintf('\n--- Step 3: Finding optimal parameters ---\n');
-    [optimalBinSize, optimalWindowSize, d2StepSize, ...
-        optimalBinSizeModulated, optimalBinSizeUnmodulated, ...
-        optimalWindowSizeModulated, optimalWindowSizeUnmodulated] = ...
+    % Find bin and window sizes (either optimal or user-specified)
+    % Always store as binSize and slidingWindowSize vectors (length numAreas)
+    fprintf('\n--- Step 3: Finding bin and window sizes ---\n');
+    [binSize, slidingWindowSize, ...
+        binSizeModulated, binSizeUnmodulated, ...
+        slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
         find_optimal_parameters(reconstructedDataMat, dataStruct, config, modulationResults, areasToTest);
-    
+    slidingWindowSize(slidingWindowSize < 10) = 10;
     % Initialize modulation parameters if not already set
     if ~config.analyzeModulation
-        if ~exist('optimalBinSizeModulated', 'var') || isempty(optimalBinSizeModulated)
-            optimalBinSizeModulated = nan(1, numAreas);
+        if ~exist('binSizeModulated', 'var') || isempty(binSizeModulated)
+            binSizeModulated = nan(1, numAreas);
         end
-        if ~exist('optimalBinSizeUnmodulated', 'var') || isempty(optimalBinSizeUnmodulated)
-            optimalBinSizeUnmodulated = nan(1, numAreas);
+        if ~exist('binSizeUnmodulated', 'var') || isempty(binSizeUnmodulated)
+            binSizeUnmodulated = nan(1, numAreas);
         end
-        if ~exist('optimalWindowSizeModulated', 'var') || isempty(optimalWindowSizeModulated)
-            optimalWindowSizeModulated = nan(1, numAreas);
+        if ~exist('slidingWindowSizeModulated', 'var') || isempty(slidingWindowSizeModulated)
+            slidingWindowSizeModulated = nan(1, numAreas);
         end
-        if ~exist('optimalWindowSizeUnmodulated', 'var') || isempty(optimalWindowSizeUnmodulated)
-            optimalWindowSizeUnmodulated = nan(1, numAreas);
+        if ~exist('slidingWindowSizeUnmodulated', 'var') || isempty(slidingWindowSizeUnmodulated)
+            slidingWindowSizeUnmodulated = nan(1, numAreas);
         end
     end
     
+    % Validate stepSize is provided
+    if ~isfield(config, 'stepSize') || isempty(config.stepSize)
+        error('stepSize must be provided in config');
+    end
+    
+    % Calculate common centerTime values based on slidingWindowSize and stepSize
+    % This ensures all areas have aligned windows regardless of their optimized window sizes
+    % Total time from original data (in seconds, assuming 1000 Hz)
+    totalTime = size(dataStruct.dataMat, 1) / 1000;
+    
+    % Generate common centerTime values
+    % Start from slidingWindowSize/2, end at totalTime - slidingWindowSize/2
+    firstCenterTime = config.slidingWindowSize / 2;
+    lastCenterTime = totalTime - config.slidingWindowSize / 2;
+    commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
+    
+    if isempty(commonCenterTimes)
+        error('No valid windows found. Check slidingWindowSize and stepSize relative to total time.');
+    end
+    
+    numWindows = length(commonCenterTimes);
+    fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s (stepSize=%.3f s)\n', ...
+        numWindows, firstCenterTime, lastCenterTime, config.stepSize);
+    
     % Initialize results
-    [popActivity, mrBr, d2, startS, popActivityWindows, popActivityFull] = ...
+    [popActivity, mrBr, d2, d2Normalized, startS, popActivityWindows, popActivityFull] = ...
         deal(cell(1, numAreas));
     
     if config.enablePermutations
@@ -157,30 +182,25 @@ function results = criticality_ar_analysis(dataStruct, config)
             popActivityWindowsModulated, popActivityFullModulated] = deal(cell(1, numAreas));
         [popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, ...
             popActivityWindowsUnmodulated, popActivityFullUnmodulated] = deal(cell(1, numAreas));
-        optimalBinSizeModulated = nan(1, numAreas);
-        optimalBinSizeUnmodulated = nan(1, numAreas);
-        optimalWindowSizeModulated = nan(1, numAreas);
-        optimalWindowSizeUnmodulated = nan(1, numAreas);
+        binSizeModulated = nan(1, numAreas);
+        binSizeUnmodulated = nan(1, numAreas);
+        slidingWindowSizeModulated = nan(1, numAreas);
+        slidingWindowSizeUnmodulated = nan(1, numAreas);
     end
     
     % Main analysis loop
     fprintf('\n=== Processing Areas ===\n');
     for a = areasToTest
-        fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataType);
+        fprintf('\nProcessing area %s (%s)...\n', areas{a}, sessionType);
         tic;
         
         aID = dataStruct.idMatIdx{a};
-        stepSamples = round(d2StepSize(a) / optimalBinSize(a));
-        winSamples = round(optimalWindowSize(a) / optimalBinSize(a));
         
-        if winSamples < config.minSegmentLength
-            fprintf('Skipping: Not enough data in %s (%s)...\n', areas{a}, dataType);
-            continue
-        end
-        
-        aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), optimalBinSize(a));
+        % Calculate window size in samples for this area
+        winSamples = round(slidingWindowSize(a) / binSize(a));
+                
+        aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(a));
         numTimePoints = size(aDataMat, 1);
-        numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
         
         if config.pcaFlag
             [coeff, score, ~, ~, explained, mu] = pca(aDataMat);
@@ -191,14 +211,24 @@ function results = criticality_ar_analysis(dataStruct, config)
         end
         
         popActivity{a} = mean(aDataMat, 2);
-        [startS{a}, mrBr{a}, d2{a}, popActivityWindows{a}, popActivityFull{a}] = ...
+        [startS{a}, mrBr{a}, d2{a}, d2Normalized{a}, popActivityWindows{a}, popActivityFull{a}] = ...
             deal(nan(1, numWindows));
         
-        % Process each window
+        % Process each window using common centerTime
         for w = 1:numWindows
-            [startIdx, endIdx, centerTime, ~] = calculate_window_indices(...
-                w, numTimePoints, winSamples, stepSamples, optimalBinSize(a));
+            centerTime = commonCenterTimes(w);
             startS{a}(w) = centerTime;
+            
+            % Convert centerTime to indices for this area's binning
+            % Use area-specific optimal window size
+                [startIdx, endIdx] = calculate_window_indices_from_center(...
+                    centerTime, slidingWindowSize(a), binSize(a), numTimePoints);
+            
+            % Check if window is valid (within bounds)
+            if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
+                % Window is out of bounds for this area, skip
+                continue;
+            end
             
             wPopActivity = popActivity{a}(startIdx:endIdx);
             popActivityWindows{a}(w) = mean(wPopActivity);
@@ -221,8 +251,25 @@ function results = criticality_ar_analysis(dataStruct, config)
         
         % Perform circular permutations if enabled
         if config.enablePermutations
-            [d2Permuted{a}, mrBrPermuted{a}] = perform_circular_permutations(...
-                popActivity{a}, winSamples, stepSamples, optimalBinSize(a), config);
+                [d2Permuted{a}, mrBrPermuted{a}] = perform_circular_permutations(...
+                aDataMat, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config);
+            
+            % Normalize d2 by shuffled d2 values if requested
+            if config.normalizeD2 && config.analyzeD2 && ~isempty(d2Permuted{a})
+                % Calculate mean shuffled d2 for each window
+                d2PermutedMean = nanmean(d2Permuted{a}, 2);
+                % Normalize: d2Normalized = d2 / mean(shuffled_d2)
+                for w = 1:numWindows
+                    if ~isnan(d2{a}(w)) && ~isnan(d2PermutedMean(w)) && d2PermutedMean(w) > 0
+                        d2Normalized{a}(w) = d2{a}(w) / d2PermutedMean(w);
+                    else
+                        d2Normalized{a}(w) = nan;
+                    end
+                end
+            else
+                % If normalization disabled or no permutations, set to NaN
+                d2Normalized{a}(:) = nan;
+            end
         else
             % Initialize empty if permutations disabled
             if isempty(d2Permuted{a})
@@ -231,6 +278,8 @@ function results = criticality_ar_analysis(dataStruct, config)
             if isempty(mrBrPermuted{a})
                 mrBrPermuted{a} = [];
             end
+            % If no permutations, normalization not possible
+            d2Normalized{a}(:) = nan;
         end
         
         fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
@@ -238,20 +287,20 @@ function results = criticality_ar_analysis(dataStruct, config)
     
     % Build results structure
     results = build_results_structure(dataStruct, config, areas, areasToTest, ...
-        popActivity, mrBr, d2, startS, popActivityWindows, popActivityFull, ...
-        optimalBinSize, optimalWindowSize, d2StepSize, ...
+        popActivity, mrBr, d2, d2Normalized, startS, popActivityWindows, popActivityFull, ...
+        binSize, slidingWindowSize, ...
         d2Permuted, mrBrPermuted, ...
         modulationResults, ...
         popActivityModulated, mrBrModulated, d2Modulated, startSModulated, ...
         popActivityWindowsModulated, popActivityFullModulated, ...
         popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, ...
         popActivityWindowsUnmodulated, popActivityFullUnmodulated, ...
-        optimalBinSizeModulated, optimalBinSizeUnmodulated, ...
-        optimalWindowSizeModulated, optimalWindowSizeUnmodulated);
+        binSizeModulated, binSizeUnmodulated, ...
+        slidingWindowSizeModulated, slidingWindowSizeUnmodulated);
     
     % Save results
     save(resultsPath, 'results');
-    fprintf('Saved %s d2/mrBr to %s\n', dataType, resultsPath);
+    fprintf('Saved %s d2/mrBr to %s\n', sessionType, resultsPath);
     
     % Plotting
     if config.makePlots
@@ -281,7 +330,7 @@ function config = set_config_defaults(config)
     defaults.nShuffles = 3;
     defaults.analyzeModulation = false;
     defaults.makePlots = true;
-    defaults.minSegmentLength = 50;
+    defaults.normalizeD2 = true;  % Normalize d2 by shuffled d2 values
     defaults.minSpikesPerBin = 3;
     defaults.maxSpikesPerBin = 50;
     defaults.minBinsPerWindow = 1000;
@@ -312,46 +361,55 @@ function modulationResults = perform_modulation_analysis(dataStruct, config)
     % Uncomment when perform_modulation_analysis function is available:
     % modulationResults = perform_modulation_analysis(dataStruct.spikeData, ...
     %     dataStruct.areas, dataStruct.idLabel, dataStruct.areasToTest, ...
-    %     dataStruct.dataType, dataStruct.dataR, dataStruct.opts, ...
+    %     dataStruct.sessionType, dataStruct.dataR, dataStruct.opts, ...
     %     config.modulationBinSize, config.modulationBaseWindow, ...
     %     config.modulationEventWindow, config.modulationThreshold, ...
     %     config.modulationPlotFlag);
 end
 
-function [optimalBinSize, optimalWindowSize, d2StepSize, ...
-    optimalBinSizeModulated, optimalBinSizeUnmodulated, ...
-    optimalWindowSizeModulated, optimalWindowSizeUnmodulated] = ...
+function [binSize, slidingWindowSize, ...
+    binSizeModulated, binSizeUnmodulated, ...
+    slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
     find_optimal_parameters(reconstructedDataMat, dataStruct, config, modulationResults, areasToTest)
-% FIND_OPTIMAL_PARAMETERS Find optimal bin and window sizes
+% FIND_OPTIMAL_PARAMETERS Find bin and window sizes (either optimal or user-specified)
+% Returns binSize and slidingWindowSize as vectors (length numAreas)
     
     numAreas = length(dataStruct.areas);
-    optimalBinSize = zeros(1, numAreas);
-    optimalWindowSize = zeros(1, numAreas);
+    binSize = zeros(1, numAreas);
+    slidingWindowSize = zeros(1, numAreas);
     
     if config.useOptimalBinWindowFunction
         for a = areasToTest
             thisDataMat = reconstructedDataMat{a};
             thisFiringRate = sum(thisDataMat(:)) / (size(thisDataMat, 1)/1000);
-            [optimalBinSize(a), optimalWindowSize(a)] = ...
+            [binSize(a), slidingWindowSize(a)] = ...
                 find_optimal_bin_and_window(thisFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
         end
     else
         % Use manually defined values
         if isfield(config, 'binSize')
-            optimalBinSize = repmat(config.binSize, 1, numAreas);
+            % Convert scalar to vector if needed
+            if isscalar(config.binSize)
+                binSize = repmat(config.binSize, 1, numAreas);
+            else
+                binSize = config.binSize;
+            end
         else
             error('binSize must be provided if useOptimalBinWindowFunction is false');
         end
-        optimalWindowSize = repmat(config.slidingWindowSize, 1, numAreas);
+        % Convert scalar to vector if needed
+        if isscalar(config.slidingWindowSize)
+            slidingWindowSize = repmat(config.slidingWindowSize, 1, numAreas);
+        else
+            slidingWindowSize = config.slidingWindowSize;
+        end
     end
     
-    d2StepSize = optimalBinSize * 2;
-    
     % Initialize modulation parameters
-    optimalBinSizeModulated = nan(1, numAreas);
-    optimalBinSizeUnmodulated = nan(1, numAreas);
-    optimalWindowSizeModulated = nan(1, numAreas);
-    optimalWindowSizeUnmodulated = nan(1, numAreas);
+    binSizeModulated = nan(1, numAreas);
+    binSizeUnmodulated = nan(1, numAreas);
+    slidingWindowSizeModulated = nan(1, numAreas);
+    slidingWindowSizeUnmodulated = nan(1, numAreas);
     
     if config.analyzeModulation && config.useOptimalBinWindowFunction
         for a = areasToTest
@@ -366,49 +424,81 @@ function [optimalBinSize, optimalWindowSize, d2StepSize, ...
                 if sum(modulatedIndices) >= 5
                     modulatedDataMat = reconstructedDataMat{a}(:, modulatedIndices);
                     mFiringRate = sum(modulatedDataMat(:)) / (size(modulatedDataMat, 1)/1000);
-                    [optimalBinSizeModulated(a), optimalWindowSizeModulated(a)] = ...
+                    [binSizeModulated(a), slidingWindowSizeModulated(a)] = ...
                         find_optimal_bin_and_window(mFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
                 end
                 
                 if sum(unmodulatedIndices) >= 5
                     unmodulatedDataMat = reconstructedDataMat{a}(:, unmodulatedIndices);
                     uFiringRate = sum(unmodulatedDataMat(:)) / (size(unmodulatedDataMat, 1)/1000);
-                    [optimalBinSizeUnmodulated(a), optimalWindowSizeUnmodulated(a)] = ...
+                    [binSizeUnmodulated(a), slidingWindowSizeUnmodulated(a)] = ...
                         find_optimal_bin_and_window(uFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
                 end
             end
         end
     elseif config.analyzeModulation
-        optimalBinSizeModulated = optimalBinSize;
-        optimalBinSizeUnmodulated = optimalBinSize;
-        optimalWindowSizeModulated = optimalWindowSize;
-        optimalWindowSizeUnmodulated = optimalWindowSize;
+        binSizeModulated = binSize;
+        binSizeUnmodulated = binSize;
+        slidingWindowSizeModulated = slidingWindowSize;
+        slidingWindowSizeUnmodulated = slidingWindowSize;
     end
     
     for a = areasToTest
-        fprintf('Area %s: bin size = %.3f s, window size = %.1f s, step size = %.3f\n', ...
-            dataStruct.areas{a}, optimalBinSize(a), optimalWindowSize(a), d2StepSize(a));
+        fprintf('Area %s: bin size = %.3f s, window size = %.1f s\n', ...
+            dataStruct.areas{a}, binSize(a), slidingWindowSize(a));
     end
 end
 
-function [d2Permuted, mrBrPermuted] = perform_circular_permutations(popActivity, winSamples, stepSamples, binSize, config)
+function [d2Permuted, mrBrPermuted] = perform_circular_permutations(aDataMat, commonCenterTimes, slidingWindowSize, binSize, numTimePoints, config)
 % PERFORM_CIRCULAR_PERMUTATIONS Perform circular permutation testing
+%   Shuffles each neuron's activity independently using circular shifts,
+%   then computes population activity from the shuffled data.
+%
+% Variables:
+%   aDataMat - Binned spike matrix [time bins x neurons]
+%   commonCenterTimes - Vector of window center times
+%   slidingWindowSize - Window size in seconds
+%   binSize - Bin size in seconds
+%   numTimePoints - Number of time points in aDataMat
+%   config - Configuration structure
+%
+% Goal:
+%   For each shuffle, circularly shift each neuron's activity independently,
+%   then compute population activity and analyze d2/mrBr in sliding windows.
     
-    numTimePoints = length(popActivity);
-    numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
+    numWindows = length(commonCenterTimes);
+    numNeurons = size(aDataMat, 2);
     
     d2Permuted = nan(numWindows, config.nShuffles);
     mrBrPermuted = nan(numWindows, config.nShuffles);
     
     for s = 1:config.nShuffles
-        % Circular shift
-        shiftAmount = randi(numTimePoints);
-        permutedActivity = circshift(popActivity, shiftAmount);
+        % Circularly shift each neuron's activity independently
+        % aDataMat is [time bins x neurons]
+        permutedDataMat = zeros(size(aDataMat));
+        for n = 1:numNeurons
+            shiftAmount = randi(size(aDataMat, 1));
+            permutedDataMat(:, n) = circshift(aDataMat(:, n), shiftAmount);
+        end
+        
+        % Compute population activity from shuffled data
+        permutedPopActivity = mean(permutedDataMat, 2);
         
         for w = 1:numWindows
-            startIdx = (w - 1) * stepSamples + 1;
-            endIdx = startIdx + winSamples - 1;
-            wPopActivity = permutedActivity(startIdx:endIdx);
+            centerTime = commonCenterTimes(w);
+            
+            % Convert centerTime to indices for this area's binning
+            % Use area-specific window size
+            [startIdx, endIdx] = calculate_window_indices_from_center(...
+                centerTime, slidingWindowSize, binSize, numTimePoints);
+            
+            % Check if window is valid (within bounds)
+            if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
+                % Window is out of bounds, skip
+                continue;
+            end
+            
+            wPopActivity = permutedPopActivity(startIdx:endIdx);
             
             if config.analyzeMrBr
                 result = branching_ratio_mr_estimation(wPopActivity);
@@ -424,32 +514,33 @@ function [d2Permuted, mrBrPermuted] = perform_circular_permutations(popActivity,
 end
 
 function results = build_results_structure(dataStruct, config, areas, areasToTest, ...
-    popActivity, mrBr, d2, startS, popActivityWindows, popActivityFull, ...
-    optimalBinSize, optimalWindowSize, d2StepSize, ...
+    popActivity, mrBr, d2, d2Normalized, startS, popActivityWindows, popActivityFull, ...
+    binSize, slidingWindowSize, ...
     d2Permuted, mrBrPermuted, ...
     modulationResults, ...
     popActivityModulated, mrBrModulated, d2Modulated, startSModulated, ...
     popActivityWindowsModulated, popActivityFullModulated, ...
     popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, ...
     popActivityWindowsUnmodulated, popActivityFullUnmodulated, ...
-    optimalBinSizeModulated, optimalBinSizeUnmodulated, ...
-    optimalWindowSizeModulated, optimalWindowSizeUnmodulated)
+    binSizeModulated, binSizeUnmodulated, ...
+    slidingWindowSizeModulated, slidingWindowSizeUnmodulated)
 % BUILD_RESULTS_STRUCTURE Build results structure
     
     results = struct();
-    results.dataType = dataStruct.dataType;
+    results.sessionType = dataStruct.sessionType;
     results.areas = areas;
     results.mrBr = mrBr;
-    results.d2 = d2;
+    results.d2 = d2;  % Raw d2 values
+    results.d2Normalized = d2Normalized;  % Normalized d2 values (d2 / mean(shuffled_d2))
     results.startS = startS;
     results.popActivity = popActivity;
     results.popActivityWindows = popActivityWindows;
     results.popActivityFull = popActivityFull;
-    results.optimalBinSize = optimalBinSize;
-    results.optimalWindowSize = optimalWindowSize;
-    results.d2StepSize = d2StepSize;
-    results.d2WindowSize = optimalWindowSize;
+    results.binSize = binSize;
+    results.slidingWindowSize = slidingWindowSize;
+    results.d2WindowSize = slidingWindowSize;
     results.params.slidingWindowSize = config.slidingWindowSize;
+    results.params.stepSize = config.stepSize;
     results.params.analyzeD2 = config.analyzeD2;
     results.params.analyzeMrBr = config.analyzeMrBr;
     results.params.pcaFlag = config.pcaFlag;
@@ -457,6 +548,7 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.params.nDim = config.nDim;
     results.params.pOrder = config.pOrder;
     results.params.critType = config.critType;
+    results.params.normalizeD2 = config.normalizeD2;
     
     if config.enablePermutations
         results.enablePermutations = true;
@@ -514,10 +606,10 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
         results.d2Unmodulated = d2Unmodulated;
         results.startSUnmodulated = startSUnmodulated;
         results.popActivityFullUnmodulated = popActivityFullUnmodulated;
-        results.optimalBinSizeModulated = optimalBinSizeModulated;
-        results.optimalBinSizeUnmodulated = optimalBinSizeUnmodulated;
-        results.optimalWindowSizeModulated = optimalWindowSizeModulated;
-        results.optimalWindowSizeUnmodulated = optimalWindowSizeUnmodulated;
+        results.binSizeModulated = binSizeModulated;
+        results.binSizeUnmodulated = binSizeUnmodulated;
+        results.slidingWindowSizeModulated = slidingWindowSizeModulated;
+        results.slidingWindowSizeUnmodulated = slidingWindowSizeUnmodulated;
     else
         results.analyzeModulation = false;
     end

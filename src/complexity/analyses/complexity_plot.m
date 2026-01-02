@@ -52,7 +52,7 @@ function complexity_plot(results, plotConfig, config, dataStruct)
     figure(914); clf;
     set(gcf, 'Units', 'pixels');
     set(gcf, 'Position', plotConfig.targetPos);
-    numRows = length(results.areas);
+    numRows = max(length(results.areas), 4);
     
     % Use tight_subplot if available, otherwise use subplot
     useTightSubplot = exist('tight_subplot', 'file');
@@ -67,6 +67,55 @@ function complexity_plot(results, plotConfig, config, dataStruct)
     
     areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1]};
     
+    % Calculate windowed mean activity for each area (for right y-axis)
+    summedActivityWindowed = cell(1, length(results.areas));
+    if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'dataMat') && isfield(dataStruct, 'idMatIdx')
+        % Use binSize and slidingWindowSize (area-specific vectors)
+        if isfield(results.params, 'binSize')
+            binSize = results.params.binSize;
+        else
+            error('binSize not found in results.params');
+        end
+        if isfield(results.params, 'slidingWindowSize')
+            slidingWindowSize = results.params.slidingWindowSize;
+        else
+            error('slidingWindowSize not found in results.params');
+        end
+        for a = 1:length(results.areas)
+            aID = dataStruct.idMatIdx{a};
+            if ~isempty(aID) && ~isempty(results.startS{a}) && ~isnan(binSize(a))
+                % Bin data using the area-specific binSize
+                aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(a));
+                % Sum across neurons
+                summedActivity = sum(aDataMat, 2);
+                % Calculate time bins (center of each bin)
+                numBins = size(aDataMat, 1);
+                activityTimeBins = ((0:numBins-1) + 0.5) * binSize(a);
+                
+                % Calculate windowed mean activity for each window center
+                numWindows = length(results.startS{a});
+                summedActivityWindowed{a} = nan(1, numWindows);
+                for w = 1:numWindows
+                    centerTime = results.startS{a}(w);
+                    % Use area-specific window size
+                    winStart = centerTime - slidingWindowSize(a) / 2;
+                    winEnd = centerTime + slidingWindowSize(a) / 2;
+                    % Find bins within this window
+                    binMask = activityTimeBins >= winStart & activityTimeBins < winEnd;
+                    if any(binMask)
+                        summedActivityWindowed{a}(w) = mean(summedActivity(binMask));
+                    end
+                end
+            else
+                summedActivityWindowed{a} = [];
+            end
+        end
+    else
+        for a = 1:length(results.areas)
+            summedActivityWindowed{a} = [];
+        end
+    end
+    
     for idx = 1:length(results.areas)
         a = idx;
         if useTightSubplot
@@ -76,30 +125,7 @@ function complexity_plot(results, plotConfig, config, dataStruct)
         end
         hold on;
         
-        if ~isempty(results.lzComplexityNormalized{a}) && ~isempty(results.startS{a})
-            validIdx = ~isnan(results.lzComplexityNormalized{a});
-            if any(validIdx)
-                areaColor = areaColors{min(a, length(areaColors))};
-                % Plot shuffle normalized LZ complexity (solid line)
-                plot(results.startS{a}(validIdx), results.lzComplexityNormalized{a}(validIdx), ...
-                    '-', 'Color', areaColor, 'LineWidth', 2, ...
-                    'DisplayName', sprintf('%s (shuffle norm)', results.areas{a}));
-            end
-        end
-        
-        % Plot Bernoulli normalized LZ complexity (dashed line, same color)
-        if ~isempty(results.lzComplexityNormalizedBernoulli{a}) && ~isempty(results.startS{a})
-            validIdx = ~isnan(results.lzComplexityNormalizedBernoulli{a});
-            if any(validIdx)
-                areaColor = areaColors{min(a, length(areaColors))};
-                plot(results.startS{a}(validIdx), results.lzComplexityNormalizedBernoulli{a}(validIdx), ...
-                    '--', 'Color', areaColor, 'LineWidth', 2, ...
-                    'DisplayName', sprintf('%s (Bernoulli norm)', results.areas{a}));
-            end
-        end
-        
-        yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
-        
+        % Add event markers first (so they appear behind the data)
         % Add reach onsets if applicable
         if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'dataType') && ...
                 strcmp(dataStruct.dataType, 'reach') && isfield(dataStruct, 'reachStart')
@@ -121,17 +147,9 @@ function complexity_plot(results, plotConfig, config, dataStruct)
         end
         
         % Add hong trial start times if applicable
-        if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'T') && ...
-                isfield(dataStruct.T, 'startTime_oe')
-            % Check sessionType from results or dataStruct
-            isHongSession = false;
-            if isfield(results, 'sessionType') && strcmp(results.sessionType, 'hong')
-                isHongSession = true;
-            elseif isfield(dataStruct, 'sessionType') && strcmp(dataStruct.sessionType, 'hong')
-                isHongSession = true;
-            end
-            
-            if isHongSession && ~isempty(results.startS{a}) && ~isempty(dataStruct.T.startTime_oe)
+        if strcmp(results.dataSource, 'spikes') && strcmp(dataStruct.sessionType, 'hong')
+            if ~isempty(results.startS{a}) && isfield(dataStruct, 'T') && ...
+                    isfield(dataStruct.T, 'startTime_oe') && ~isempty(dataStruct.T.startTime_oe)
                 plotTimeRange = [results.startS{a}(1), results.startS{a}(end)];
                 trialStartsInRange = dataStruct.T.startTime_oe(...
                     dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
@@ -139,11 +157,50 @@ function complexity_plot(results, plotConfig, config, dataStruct)
                 if ~isempty(trialStartsInRange)
                     for i = 1:length(trialStartsInRange)
                         xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                            'LineStyle', '--', 'Alpha', 0.7);
+                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
                     end
                 end
             end
         end
+        
+        % Plot summed neural activity first (behind metrics) on right y-axis
+        areaColor = areaColors{min(a, length(areaColors))};
+        if strcmp(results.dataSource, 'spikes') && ~isempty(summedActivityWindowed{a}) && ~isempty(results.startS{a})
+            yyaxis right;
+            validIdx = ~isnan(summedActivityWindowed{a});
+            if any(validIdx)
+                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '--', ...
+                    'Color', areaColor, 'LineWidth', 2, ...
+                    'HandleVisibility', 'off');
+            end
+            ylabel('Summed Activity', 'Color', [0.5 0.5 0.5]);
+            set(gca, 'YTickLabelMode', 'auto');
+            yyaxis left;
+        end
+        
+        % Plot metrics on top
+        if ~isempty(results.lzComplexityNormalized{a}) && ~isempty(results.startS{a})
+            validIdx = ~isnan(results.lzComplexityNormalized{a});
+            if any(validIdx)
+                % Plot shuffle normalized LZ complexity (solid line)
+                plot(results.startS{a}(validIdx), results.lzComplexityNormalized{a}(validIdx), ...
+                    '-', 'Color', areaColor, 'LineWidth', 3, ...
+                    'DisplayName', sprintf('%s (shuffle norm)', results.areas{a}));
+            end
+        end
+        
+        % Plot Bernoulli normalized LZ complexity (dashed line, same color)
+        if ~isempty(results.lzComplexityNormalizedBernoulli{a}) && ~isempty(results.startS{a})
+            validIdx = ~isnan(results.lzComplexityNormalizedBernoulli{a});
+            if any(validIdx)
+                plot(results.startS{a}(validIdx), results.lzComplexityNormalizedBernoulli{a}(validIdx), ...
+                    '--', 'Color', areaColor, 'LineWidth', 3, ...
+                    'DisplayName', sprintf('%s (Bernoulli norm)', results.areas{a}));
+            end
+        end
+        
+        yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
+        
         
         % Get neuron count for spike data
         if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'idMatIdx') && ...
@@ -209,11 +266,11 @@ function complexity_plot(results, plotConfig, config, dataStruct)
     
     % Build full plot path first
     if ~isempty(plotConfig.filePrefix)
-        plotPath = fullfile(plotSaveDir, sprintf('%s_complexity_%s_win%.1f.png', ...
-            plotConfig.filePrefix, results.dataSource, config.slidingWindowSize));
+        plotPath = fullfile(plotSaveDir, sprintf('%s_complexity_%s.png', ...
+            plotConfig.filePrefix, results.dataSource));
     else
-        plotPath = fullfile(plotSaveDir, sprintf('complexity_%s_win%.1f.png', ...
-            results.dataSource, config.slidingWindowSize));
+        plotPath = fullfile(plotSaveDir, sprintf('complexity_%s.png', ...
+            results.dataSource));
     end
     
     % Extract directory from plot path and create it (including all parent directories)

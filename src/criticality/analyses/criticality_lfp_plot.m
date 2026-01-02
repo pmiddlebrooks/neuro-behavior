@@ -44,6 +44,55 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
     
     numBands = size(bands, 1);
     
+    % Calculate windowed mean LFP for plotting on right y-axis
+    lfpDataWindowed = cell(1, length(areas));
+    if isfield(dataStruct, 'lfpPerArea') && ~isempty(dataStruct.lfpPerArea)
+        % Get LFP sampling rate
+        if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'fsLfp')
+            fsLfp = dataStruct.opts.fsLfp;
+        else
+            fsLfp = 2500;  % Default LFP sampling rate
+        end
+        
+        % Determine window size from results
+        if isfield(results, 'd2WindowSize')
+            windowSize = results.d2WindowSize;
+        elseif isfield(results.params, 'slidingWindowSize')
+            windowSize = results.params.slidingWindowSize;
+        else
+            windowSize = 10;  % Default window size
+        end
+        
+        % Calculate windowed mean LFP for each area
+        for a = 1:length(areas)
+            if size(dataStruct.lfpPerArea, 2) >= a && ~isempty(startS{a})
+                lfpData = dataStruct.lfpPerArea(:, a);
+                numSamples = length(lfpData);
+                lfpTimeBins = (0:numSamples-1) / fsLfp;
+                
+                % Calculate windowed mean LFP for each window center
+                numWindows = length(startS{a});
+                lfpDataWindowed{a} = nan(1, numWindows);
+                for w = 1:numWindows
+                    centerTime = startS{a}(w);
+                    winStart = centerTime - windowSize / 2;
+                    winEnd = centerTime + windowSize / 2;
+                    % Find samples within this window
+                    sampleMask = lfpTimeBins >= winStart & lfpTimeBins < winEnd;
+                    if any(sampleMask)
+                        lfpDataWindowed{a}(w) = mean(lfpData(sampleMask));
+                    end
+                end
+            else
+                lfpDataWindowed{a} = [];
+            end
+        end
+    else
+        for a = 1:length(areas)
+            lfpDataWindowed{a} = [];
+        end
+    end
+    
     % Collect data for axis limits
     allStartS = startS(:);
     allD2 = [];
@@ -115,18 +164,94 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
         set(gcf, 'Position', plotConfig.targetPos);
         numRows = length(areasToTest);
         
-        % Use tight_subplot if available, otherwise use subplot
-        useTightSubplot = exist('tight_subplot', 'file');
-        if useTightSubplot
-            ha = tight_subplot(numRows, 1, [0.035 0.04], [0.03 0.08], [0.08 0.04]);
-        else
-            ha = zeros(numRows, 1);
-            for i = 1:numRows
-                ha(i) = subplot(numRows, 1, i);
+    % Use tight_subplot if available, otherwise use subplot
+    useTightSubplot = exist('tight_subplot', 'file');
+    if useTightSubplot
+        ha = tight_subplot(numRows, 1, [0.035 0.04], [0.03 0.08], [0.08 0.04]);
+    else
+        ha = zeros(numRows, 1);
+        for i = 1:numRows
+            ha(i) = subplot(numRows, 1, i);
+        end
+    end
+    
+    bandColors = lines(numBands);
+    
+    % Helper function to add event markers to current axes
+    function add_event_markers_lfp(areaIdx)
+        a = areasToTest(areaIdx);
+        % Add reach onsets and block 2 if applicable
+        if isfield(dataStruct, 'sessionType') && strcmp(dataStruct.sessionType, 'reach') && ...
+                isfield(dataStruct, 'reachStart') && ~isempty(startS{a})
+            if ~isempty(dataStruct.reachStart)
+                plotTimeRange = [startS{a}(1), startS{a}(end)];
+                reachOnsetsInRange = dataStruct.reachStart(...
+                    dataStruct.reachStart >= plotTimeRange(1) & dataStruct.reachStart <= plotTimeRange(2));
+                
+                if ~isempty(reachOnsetsInRange)
+                    for i = 1:length(reachOnsetsInRange)
+                        xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
+                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
+                    end
+                    if isfield(dataStruct, 'startBlock2') && ~isempty(dataStruct.startBlock2)
+                        xline(dataStruct.startBlock2, 'Color', [1 0 0], 'LineWidth', 3, ...
+                            'HandleVisibility', 'off');
+                    end
+                end
             end
         end
         
-        bandColors = lines(numBands);
+        % Add hong trial start times if applicable
+        if isfield(dataStruct, 'sessionType') && strcmp(dataStruct.sessionType, 'hong')
+            if ~isempty(startS{a}) && isfield(dataStruct, 'T') && ...
+                    isfield(dataStruct.T, 'startTime_oe') && ~isempty(dataStruct.T.startTime_oe)
+                plotTimeRange = [startS{a}(1), startS{a}(end)];
+                trialStartsInRange = dataStruct.T.startTime_oe(...
+                    dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
+                
+                if ~isempty(trialStartsInRange)
+                    for i = 1:length(trialStartsInRange)
+                        xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
+                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
+                    end
+                end
+            end
+        end
+        
+        % Add hong trial start times if applicable
+        if isfield(dataStruct, 'sessionType') && strcmp(dataStruct.sessionType, 'hong')
+            if ~isempty(startS{a}) && isfield(dataStruct, 'T') && ...
+                    isfield(dataStruct.T, 'startTime_oe') && ~isempty(dataStruct.T.startTime_oe)
+                plotTimeRange = [startS{a}(1), startS{a}(end)];
+                trialStartsInRange = dataStruct.T.startTime_oe(...
+                    dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
+                
+                if ~isempty(trialStartsInRange)
+                    for i = 1:length(trialStartsInRange)
+                        xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
+                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
+                    end
+                end
+            end
+        end
+        
+        % Add schall response onsets if applicable
+        if isfield(dataStruct, 'sessionType') && strcmp(dataStruct.sessionType, 'schall')
+            if ~isempty(startS{a}) && isfield(dataStruct, 'responseOnset') && ...
+                    ~isempty(dataStruct.responseOnset)
+                plotTimeRange = [startS{a}(1), startS{a}(end)];
+                responseOnsetsInRange = dataStruct.responseOnset(...
+                    dataStruct.responseOnset >= plotTimeRange(1) & dataStruct.responseOnset <= plotTimeRange(2));
+                
+                if ~isempty(responseOnsetsInRange)
+                    for i = 1:length(responseOnsetsInRange)
+                        xline(responseOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
+                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
+                    end
+                end
+            end
+        end
+    end
         
         for idx = 1:length(areasToTest)
             a = areasToTest(idx);
@@ -136,6 +261,9 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
                 subplot(numRows, 1, idx);
             end
             hold on;
+            
+            % Add event markers first (so they appear behind the data)
+            add_event_markers_lfp(idx);
             
             % Plot raw LFP d2
             if plotRawLfp && hasRawLfp
@@ -165,6 +293,20 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
                         end
                     end
                 end
+            end
+            
+            % Plot LFP signal first (behind metrics) on right y-axis
+            if ~isempty(lfpDataWindowed{a}) && ~isempty(startS{a})
+                yyaxis right;
+                validIdx = ~isnan(lfpDataWindowed{a});
+                if any(validIdx)
+                    plot(startS{a}(validIdx), lfpDataWindowed{a}(validIdx), '-', ...
+                        'Color', [.5 .5 .5], 'LineWidth', 2, ...
+                        'HandleVisibility', 'off');
+                end
+                ylabel('LFP (μV)', 'Color', [0.5 0.5 0.5]);
+                set(gca, 'YTickLabelMode', 'auto');
+                yyaxis left;
             end
             
             title(sprintf('%s - d2 Analysis', areas{a}));
@@ -205,13 +347,13 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
         % Save figure
         if ~isempty(plotConfig.filePrefix)
             plotPath = fullfile(config.saveDir, ...
-                sprintf('%s_criticality_lfp_d2_win%.1f.png', ...
-                plotConfig.filePrefix, config.slidingWindowSize));
+                sprintf('%s_criticality_lfp_d2.png', ...
+                plotConfig.filePrefix));
             exportgraphics(gcf, plotPath, 'Resolution', 300);
             fprintf('Saved plot to: %s\n', plotPath);
         else
             plotPath = fullfile(config.saveDir, ...
-                sprintf('criticality_lfp_d2_win%.1f.png', config.slidingWindowSize));
+                sprintf('criticality_lfp_d2.png'));
             exportgraphics(gcf, plotPath, 'Resolution', 300);
             fprintf('Saved plot to: %s\n', plotPath);
         end
@@ -246,6 +388,9 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
             end
             hold on;
             
+            % Add event markers first (so they appear behind the data)
+            add_event_markers_lfp(idx);
+            
             % Plot raw LFP DFA
             if plotRawLfp && hasRawLfp
                 numLfpBins = length(lfpBinSize);
@@ -276,6 +421,20 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
                 end
             end
             
+            % Plot LFP signal first (behind metrics) on right y-axis
+            if ~isempty(lfpDataWindowed{a}) && ~isempty(startS{a})
+                yyaxis right;
+                validIdx = ~isnan(lfpDataWindowed{a});
+                if any(validIdx)
+                    plot(startS{a}(validIdx), lfpDataWindowed{a}(validIdx), '-', ...
+                        'Color', [.5 .5 .5], 'LineWidth', 2, ...
+                        'HandleVisibility', 'off');
+                end
+                ylabel('LFP (μV)', 'Color', [0.5 0.5 0.5]);
+                set(gca, 'YTickLabelMode', 'auto');
+                yyaxis left;
+            end
+            
             title(sprintf('%s - DFA Analysis', areas{a}));
             xlabel('Time (s)');
             ylabel('DFA \\alpha');
@@ -304,13 +463,13 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
         % Save figure
         if ~isempty(plotConfig.filePrefix)
             plotPath = fullfile(config.saveDir, ...
-                sprintf('%s_criticality_lfp_dfa_win%.1f.png', ...
-                plotConfig.filePrefix, config.slidingWindowSize));
+                sprintf('%s_criticality_lfp_dfa.png', ...
+                plotConfig.filePrefix));
             exportgraphics(gcf, plotPath, 'Resolution', 300);
             fprintf('Saved plot to: %s\n', plotPath);
         else
             plotPath = fullfile(config.saveDir, ...
-                sprintf('criticality_lfp_dfa_win%.1f.png', config.slidingWindowSize));
+                sprintf('criticality_lfp_dfa.png'));
             exportgraphics(gcf, plotPath, 'Resolution', 300);
             fprintf('Saved plot to: %s\n', plotPath);
         end

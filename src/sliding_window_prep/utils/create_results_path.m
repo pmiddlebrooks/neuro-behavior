@@ -1,16 +1,15 @@
-function resultsPath = create_results_path(analysisType, dataType, slidingWindowSize, sessionName, saveDir, varargin)
+function resultsPath = create_results_path(analysisType, sessionType, sessionName, saveDir, varargin)
 % CREATE_RESULTS_PATH Create standardized results file path
 %
 % Variables:
 %   analysisType - Type of analysis: 'criticality_ar', 'criticality_av', 
 %                  'criticality_lfp', 'complexity', etc.
-%   dataType - Data type: 'reach', 'naturalistic', 'schall', 'hong'
-%   slidingWindowSize - Window size in seconds
+%   sessionType - Data type: 'reach', 'naturalistic', 'schall', 'hong'
 %   sessionName - Session name (optional, can be empty)
 %   saveDir - Base save directory
 %   varargin - Optional name-value pairs:
 %       'filenameSuffix' - Additional suffix (e.g., '_pca')
-%       'dataSource' - 'spikes' or 'lfp' (for complexity analysis)
+%       'dataSource' - 'spikes' or 'lfp' (required for complexity and rqa analyses)
 %       'createDir' - Create directory if it doesn't exist (default: true)
 %
 % Goal:
@@ -42,87 +41,70 @@ function resultsPath = create_results_path(analysisType, dataType, slidingWindow
     % Build filename based on analysis type
     switch analysisType
         case 'criticality_ar'
-            if strcmp(dataType, 'reach')
+            if strcmp(sessionType, 'reach')
                 if ~isempty(sessionName)
-                    filename = sprintf('criticality_sliding_window_ar%s_win%d_%s.mat', ...
-                        filenameSuffix, slidingWindowSize, sessionName);
+                    filename = sprintf('criticality_sliding_window_ar%s_%s.mat', ...
+                        filenameSuffix, sessionName);
                 else
                     error('sessionName must be provided for reach data criticality_ar analysis');
                 end
             else
-                filename = sprintf('criticality_sliding_window_ar%s_win%d.mat', ...
-                    filenameSuffix, slidingWindowSize);
+                filename = sprintf('criticality_sliding_window_ar%s.mat', filenameSuffix);
             end
             
         case 'criticality_av'
-            if strcmp(dataType, 'reach')
+            if strcmp(sessionType, 'reach')
                 if ~isempty(sessionName)
-                    filename = sprintf('criticality_sliding_window_av%s_win%d_%s.mat', ...
-                        filenameSuffix, slidingWindowSize, sessionName);
+                    filename = sprintf('criticality_sliding_window_av%s_%s.mat', ...
+                        filenameSuffix, sessionName);
                 else
                     error('sessionName must be provided for reach data criticality_av analysis');
                 end
             else
-                filename = sprintf('criticality_sliding_window_av%s_win%d.mat', ...
-                    filenameSuffix, slidingWindowSize);
+                filename = sprintf('criticality_sliding_window_av%s.mat', filenameSuffix);
             end
             
         case 'criticality_lfp'
             if ~isempty(sessionName)
-                filename = sprintf('criticality_sliding_lfp_win%.1f_%s.mat', ...
-                    slidingWindowSize, sessionName);
+                filename = sprintf('criticality_sliding_lfp_%s.mat', sessionName);
             else
-                filename = sprintf('criticality_sliding_lfp_win%.1f.mat', slidingWindowSize);
+                filename = sprintf('criticality_sliding_lfp.mat');
             end
             
         case 'complexity'
-            if ~isempty(dataSource)
-                if strcmp(dataType, 'reach') && ~isempty(sessionName)
-                    filename = sprintf('complexity_sliding_window_%s_win%.1f_%s.mat', ...
-                        dataSource, slidingWindowSize, sessionName);
-                elseif ~isempty(dataType)
-                    filename = sprintf('complexity_sliding_window_%s_win%.1f_%s.mat', ...
-                        dataSource, slidingWindowSize, dataType);
-                else
-                    filename = sprintf('complexity_sliding_window_%s_win%.1f.mat', ...
-                        dataSource, slidingWindowSize);
-                end
+            if isempty(dataSource)
+                error('dataSource must be provided for complexity analysis');
+            end
+            if strcmp(sessionType, 'reach') && ~isempty(sessionName)
+                filename = sprintf('complexity_sliding_window_%s_%s.mat', ...
+                    dataSource, sessionName);
+            elseif ~isempty(sessionType)
+                filename = sprintf('complexity_sliding_window_%s_%s.mat', ...
+                    dataSource, sessionType);
             else
-                if strcmp(dataType, 'reach') && ~isempty(sessionName)
-                    filename = sprintf('complexity_sliding_window_win%.1f_%s.mat', ...
-                        slidingWindowSize, sessionName);
-                else
-                    filename = sprintf('complexity_sliding_window_win%.1f.mat', slidingWindowSize);
-                end
+                filename = sprintf('complexity_sliding_window_%s.mat', dataSource);
             end
             
         case 'rqa'
-            if ~isempty(dataSource)
-                if strcmp(dataType, 'reach') && ~isempty(sessionName)
-                    filename = sprintf('rqa_sliding_window_%s_win%.1f_%s.mat', ...
-                        dataSource, slidingWindowSize, sessionName);
-                elseif ~isempty(dataType)
-                    filename = sprintf('rqa_sliding_window_%s_win%.1f_%s.mat', ...
-                        dataSource, slidingWindowSize, dataType);
-                else
-                    filename = sprintf('rqa_sliding_window_%s_win%.1f.mat', ...
-                        dataSource, slidingWindowSize);
-                end
+            if isempty(dataSource)
+                error('dataSource must be provided for rqa analysis');
+            end
+            if strcmp(sessionType, 'reach') && ~isempty(sessionName)
+                filename = sprintf('rqa_sliding_window_%s_%s.mat', ...
+                    dataSource, sessionName);
+            elseif ~isempty(sessionType)
+                filename = sprintf('rqa_sliding_window_%s_%s.mat', ...
+                    dataSource, sessionType);
             else
-                if strcmp(dataType, 'reach') && ~isempty(sessionName)
-                    filename = sprintf('rqa_sliding_window_win%.1f_%s.mat', ...
-                        slidingWindowSize, sessionName);
-                else
-                    filename = sprintf('rqa_sliding_window_win%.1f.mat', slidingWindowSize);
-                end
+                filename = sprintf('rqa_sliding_window_%s.mat', dataSource);
             end
             
         otherwise
             % Generic fallback
             if ~isempty(sessionName)
-                filename = sprintf('%s_win%.1f_%s.mat', analysisType, slidingWindowSize, sessionName);
+                filename = sprintf('%s_%s.mat', analysisType, sessionName);
             else
-                filename = sprintf('%s_win%.1f.mat', analysisType, slidingWindowSize);
+                filename = sprintf('%s.mat', analysisType);
             end
     end
     

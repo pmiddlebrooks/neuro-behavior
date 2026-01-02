@@ -6,6 +6,8 @@
 % the new modular functions. You can still set variables in workspace
 % and run this script, or use rqa_sliding_analysis() function directly.
 
+paths = get_paths;
+
 % Add paths (check if directories exist first to avoid warnings)
 basePath = fileparts(mfilename('fullpath'));  % metastability/scripts
 srcPath = fullfile(basePath, '..', '..');     % src
@@ -29,116 +31,43 @@ end
 opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.firingRateCheckTime = 3 * 60;
-opts.collectStart = 0;
-opts.collectEnd = 20 * 60;
+opts.collectStart = 0*60; %10*60;
+opts.collectEnd = opts.collectStart + 30*60;
 opts.minFiringRate = .25;
-opts.maxFiringRate = 200;
+opts.maxFiringRate = 100;
 
 % Check if data is already loaded (workspace variables)
 % If not, try to load using new function
-if ~exist('dataMat', 'var')
-    % Try to load data using new function
-    if exist('sessionType', 'var') && exist('dataSource', 'var')
-        fprintf('Loading data using load_sliding_window_data...\n');
-        dataStruct = load_sliding_window_data(sessionType, dataSource, ...
-            'sessionName', sessionName, 'opts', opts);
-        
-        % Convert structure to workspace variables for backward compatibility
-        dataMat = dataStruct.dataMat;
-        areas = dataStruct.areas;
-        idMatIdx = dataStruct.idMatIdx;
-        idLabel = dataStruct.idLabel;
-        opts = dataStruct.opts;
-        saveDir = dataStruct.saveDir;
-        sessionType = dataStruct.sessionType;
-        dataSource = dataStruct.dataSource;
-        areasToTest = dataStruct.areasToTest;
-        
-        if isfield(dataStruct, 'sessionName')
-            sessionName = dataStruct.sessionName;
-        end
-        if isfield(dataStruct, 'dataR')
-            dataR = dataStruct.dataR;
-        end
-        if isfield(dataStruct, 'reachStart')
-            reachStart = dataStruct.reachStart;
-        end
-        if isfield(dataStruct, 'startBlock2')
-            startBlock2 = dataStruct.startBlock2;
-        end
-    else
-        error('sessionType and dataSource must be defined, or data must be pre-loaded in workspace');
-    end
+% Try to load data using new function
+if exist('sessionType', 'var') && exist('dataSource', 'var')
+    fprintf('Loading data using load_sliding_window_data...\n');
+    dataStruct = load_sliding_window_data(sessionType, dataSource, ...
+        'sessionName', sessionName, 'opts', opts);
+else
+    error('sessionType and dataSource must be defined, or data must be pre-loaded in workspace');
 end
 
 % Set up configuration
-if ~exist('slidingWindowSize', 'var')
-    slidingWindowSize = 60;  % Default window size
-end
-if ~exist('binSize', 'var')
-    binSize = 0.015;  % Default bin size
-end
-if ~exist('stepSize', 'var')
-    stepSize = 30;  % Default step size
-end
-if ~exist('nShuffles', 'var')
-    nShuffles = 3;  % Default number of shuffles
-end
-if ~exist('nPCADim', 'var')
-    nPCADim = 3;  % Default number of PCA dimensions
-end
-
 config = struct();
-config.slidingWindowSize = slidingWindowSize;
-config.stepSize = stepSize;
-config.binSize = binSize;
-config.nShuffles = nShuffles;
-config.nPCADim = nPCADim;
-config.recurrenceThreshold = 'mean';  % Can be 'mean', 'median', or numeric
+% Use optimal bin size calculation (default)
+config.useOptimalBinSize = true;  % Set to true to calculate optimal bin size per area
+config.minSpikesPerBin = 3.5;  % Minimum spikes per bin for optimal bin size calculation
+config.minTimeBins = 10000;  % Minimum number of time bins per window (used to auto-calculate slidingWindowSize)
+% slidingWindowSize will be auto-calculated from binSize and minTimeBins in rqa_sliding_analysis.m
+% config.slidingWindowSize = 10*60;  % Optional: specify directly (overrides auto-calculation)
+config.stepSize = .5*60;
+config.nShuffles = 3;
 config.makePlots = true;
-
-if exist('saveDir', 'var')
-    config.saveDir = saveDir;
-end
-
-% Create data structure from workspace variables
-dataStruct = struct();
-dataStruct.sessionType = sessionType;
-dataStruct.dataSource = dataSource;
-dataStruct.areas = areas;
-dataStruct.opts = opts;
-if exist('dataMat', 'var')
-    dataStruct.dataMat = dataMat;
-end
-if exist('idMatIdx', 'var')
-    dataStruct.idMatIdx = idMatIdx;
-end
-if exist('idLabel', 'var')
-    dataStruct.idLabel = idLabel;
-end
-if exist('sessionName', 'var')
-    dataStruct.sessionName = sessionName;
-end
-if exist('dataBaseName', 'var')
-    dataStruct.dataBaseName = dataBaseName;
-end
-if exist('areasToTest', 'var')
-    dataStruct.areasToTest = areasToTest;
-end
-if exist('dataR', 'var')
-    dataStruct.dataR = dataR;
-end
-if exist('reachStart', 'var')
-    dataStruct.reachStart = reachStart;
-end
-if exist('startBlock2', 'var')
-    dataStruct.startBlock2 = startBlock2;
-end
-if exist('saveDir', 'var')
-    dataStruct.saveDir = saveDir;
-end
+config.useBernoulliControl = false;  % Set to false to skip Bernoulli normalization (faster computation)
+config.nPCADim = 8;
+config.recurrenceThreshold = 0.03;  % Target recurrence rate (0.02 = 2%, range: 0.01-0.05)
+config.distanceMetric = 'cosine';  % 'euclidean' or 'cosine' (cosine recommended for sparse spiking)
+config.nMinNeurons = 15;  % Minimum number of neurons required (areas with fewer will be skipped)
+config.saveRecurrencePlots = false;  % Set to true to compute and store recurrence plots (uses a lot of memory)
 
 % Run analysis
+NumWorkers = length(dataStruct.areas);
+parpool('local', NumWorkers);
 results = rqa_sliding_analysis(dataStruct, config);
 
 % Store results in workspace for backward compatibility
@@ -154,8 +83,13 @@ recurrenceRateNormalizedBernoulli = results.recurrenceRateNormalizedBernoulli;
 determinismNormalizedBernoulli = results.determinismNormalizedBernoulli;
 laminarityNormalizedBernoulli = results.laminarityNormalizedBernoulli;
 trappingTimeNormalizedBernoulli = results.trappingTimeNormalizedBernoulli;
-recurrencePlots = results.recurrencePlots;
+if isfield(results, 'recurrencePlots')
+    recurrencePlots = results.recurrencePlots;
+else
+    recurrencePlots = {};
+end
 startS = results.startS;
 
 fprintf('\n=== Analysis Complete ===\n');
+
 

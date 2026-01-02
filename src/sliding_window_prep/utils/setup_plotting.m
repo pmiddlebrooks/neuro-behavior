@@ -38,7 +38,20 @@ function plotConfig = setup_plotting(saveDir, varargin)
     end
     
     % Extract filename prefix (priority: sessionName > dataBaseName > saveDir)
-        filePrefix = sessionName(1:min(15, length(sessionName)));
+    if ~isempty(sessionName)
+        % Use sessionName, but sanitize it for filename use
+        % Remove path separators and replace with underscore
+        filePrefix = strrep(sessionName, filesep, '_');
+        % Limit length to 15 characters
+        filePrefix = filePrefix(1:min(15, length(filePrefix)));
+    elseif ~isempty(dataBaseName)
+        % Fallback to dataBaseName
+        filePrefix = dataBaseName(1:min(15, length(dataBaseName)));
+    else
+        % Fallback to extracting from saveDir
+        [~, dirName, ~] = fileparts(saveDir);
+        filePrefix = dirName(1:min(15, length(dirName)));
+    end
     
     % Create output structure
     plotConfig = struct();

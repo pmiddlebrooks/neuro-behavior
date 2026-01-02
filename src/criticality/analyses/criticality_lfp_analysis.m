@@ -65,9 +65,12 @@ function results = criticality_lfp_analysis(dataStruct, config)
     fprintf('Number of areas: %d\n', numAreas);
     fprintf('Has raw LFP: %d\n', hasRawLfp);
     
-    % Calculate common step size
-    maxBandBinSize = max(dataStruct.bandBinSizes);
-    stepSize = 20 * maxBandBinSize;
+    % Validate stepSize is provided
+    if ~isfield(config, 'stepSize') || isempty(config.stepSize)
+        error('stepSize must be provided in config');
+    end
+    
+    stepSize = config.stepSize;
     fprintf('Step size: %.3f s\n', stepSize);
     
     % Determine total session duration
@@ -112,11 +115,21 @@ function results = criticality_lfp_analysis(dataStruct, config)
         end
     end
     
-    % Calculate common time points (startS)
-    lastCenterTime = totalSessionDuration - maxWindowSize/2;
-    startS = (stepSize/2) : stepSize : lastCenterTime;
-    numWindows = length(startS);
-    fprintf('Common time points: %d windows\n', numWindows);
+    % Calculate common centerTime values based on maxWindowSize and stepSize
+    % This ensures all areas/bands have aligned windows regardless of their specific window sizes
+    % Generate common centerTime values
+    % Start from maxWindowSize/2, end at totalSessionDuration - maxWindowSize/2
+    firstCenterTime = maxWindowSize / 2;
+    lastCenterTime = totalSessionDuration - maxWindowSize / 2;
+    commonCenterTimes = firstCenterTime:stepSize:lastCenterTime;
+    
+    if isempty(commonCenterTimes)
+        error('No valid windows found. Check maxWindowSize and stepSize relative to total session duration.');
+    end
+    
+    numWindows = length(commonCenterTimes);
+    fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s (stepSize=%.3f s)\n', ...
+        numWindows, firstCenterTime, lastCenterTime, stepSize);
     
     % Initialize results
     d2 = cell(1, numAreas);
@@ -171,18 +184,18 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     dfa{a}{b} = nan(1, numWindows);
                 end
                 
-                % Process each time point
+                % Process each time point using common centerTime
                 for w = 1:numWindows
-                    centerTime = startS(w);
+                    centerTime = commonCenterTimes(w);
                     
                     % d2 analysis
                     if config.analyzeD2
-                        d2StartTime = centerTime - d2WindowSize/2;
-                        d2EndTime = centerTime + d2WindowSize/2;
-                        d2StartBin = max(1, round(d2StartTime / bandBinSize) + 1);
-                        d2EndBin = min(numFrames_b, round(d2EndTime / bandBinSize));
+                        % Convert centerTime to indices for this band's binning
+                        [d2StartBin, d2EndBin] = calculate_window_indices_from_center(...
+                            centerTime, d2WindowSize, bandBinSize, numFrames_b);
                         
-                        if d2EndBin > d2StartBin
+                        % Check if window is valid (within bounds)
+                        if d2StartBin >= 1 && d2EndBin <= numFrames_b && d2StartBin <= d2EndBin
                             d2Segment = bandSignal(d2StartBin:d2EndBin);
                             [varphi, ~] = myYuleWalker3(d2Segment, config.pOrder);
                             d2{a}{b}(w) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
@@ -191,12 +204,12 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     
                     % DFA analysis
                     if config.analyzeDFA
-                        dfaStartTime = centerTime - dfaEnvWinSize/2;
-                        dfaEndTime = centerTime + dfaEnvWinSize/2;
-                        dfaStartBin = max(1, round(dfaStartTime / bandBinSize) + 1);
-                        dfaEndBin = min(numFrames_b, round(dfaEndTime / bandBinSize));
+                        % Convert centerTime to indices for this band's binning
+                        [dfaStartBin, dfaEndBin] = calculate_window_indices_from_center(...
+                            centerTime, dfaEnvWinSize, bandBinSize, numFrames_b);
                         
-                        if dfaEndBin > dfaStartBin
+                        % Check if window is valid (within bounds)
+                        if dfaStartBin >= 1 && dfaEndBin <= numFrames_b && dfaStartBin <= dfaEndBin
                             dfaSegment = bandSignal(dfaStartBin:dfaEndBin);
                             dfa{a}{b}(w) = compute_DFA(dfaSegment, false);
                         end
@@ -241,18 +254,18 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     dfaLfp{a}{lb} = nan(1, numWindows);
                 end
                 
-                % Process each time point
+                % Process each time point using common centerTime
                 for w = 1:numWindows
-                    centerTime = startS(w);
+                    centerTime = commonCenterTimes(w);
                     
                     % d2 analysis
                     if config.analyzeD2
-                        d2StartTime = centerTime - d2WindowSize/2;
-                        d2EndTime = centerTime + d2WindowSize/2;
-                        d2StartBin = max(1, round(d2StartTime / currentLfpBinSize) + 1);
-                        d2EndBin = min(numFrames_lfp, round(d2EndTime / currentLfpBinSize));
+                        % Convert centerTime to indices for this LFP bin size
+                        [d2StartBin, d2EndBin] = calculate_window_indices_from_center(...
+                            centerTime, d2WindowSize, currentLfpBinSize, numFrames_lfp);
                         
-                        if d2EndBin > d2StartBin
+                        % Check if window is valid (within bounds)
+                        if d2StartBin >= 1 && d2EndBin <= numFrames_lfp && d2StartBin <= d2EndBin
                             d2Segment = binnedLfp(d2StartBin:d2EndBin);
                             [varphi, ~] = myYuleWalker3(d2Segment, config.pOrder);
                             d2Lfp{a}{lb}(w) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
@@ -261,12 +274,12 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     
                     % DFA analysis
                     if config.analyzeDFA
-                        dfaStartTime = centerTime - dfaLfpWinSize/2;
-                        dfaEndTime = centerTime + dfaLfpWinSize/2;
-                        dfaStartBin = max(1, round(dfaStartTime / currentLfpBinSize) + 1);
-                        dfaEndBin = min(numFrames_lfp, round(dfaEndTime / currentLfpBinSize));
+                        % Convert centerTime to indices for this LFP bin size
+                        [dfaStartBin, dfaEndBin] = calculate_window_indices_from_center(...
+                            centerTime, dfaLfpWinSize, currentLfpBinSize, numFrames_lfp);
                         
-                        if dfaEndBin > dfaStartBin
+                        % Check if window is valid (within bounds)
+                        if dfaStartBin >= 1 && dfaEndBin <= numFrames_lfp && dfaStartBin <= dfaEndBin
                             dfaSegment = binnedLfp(dfaStartBin:dfaEndBin);
                             dfaLfp{a}{lb}(w) = compute_DFA(dfaSegment, false);
                         end
@@ -279,6 +292,9 @@ function results = criticality_lfp_analysis(dataStruct, config)
     end
     
     % Build results structure
+    % Convert commonCenterTimes to startS for backward compatibility
+    startS = commonCenterTimes;
+    
     results = build_results_structure_lfp(dataStruct, config, areas, areasToTest, ...
         d2, dfa, startS, stepSize, d2WindowSize, dfaEnvWinSize, dfaLfpWinSamples_min, ...
         hasRawLfp, d2Lfp, dfaLfp, dataStruct.lfpBinSize);
@@ -293,7 +309,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
         sessionNameForPath = dataStruct.sessionName;
     end
     
-    resultsPath = create_results_path('criticality_lfp', dataStruct.dataType, config.slidingWindowSize, ...
+    resultsPath = create_results_path('criticality_lfp', dataStruct.dataType, ...
         sessionNameForPath, config.saveDir);
     
     % Save results
@@ -365,6 +381,7 @@ function results = build_results_structure_lfp(dataStruct, config, areas, areasT
     end
     
     results.params.slidingWindowSize = config.slidingWindowSize;
+    results.params.stepSize = config.stepSize;
     results.params.analyzeD2 = config.analyzeD2;
     results.params.analyzeDFA = config.analyzeDFA;
     results.params.pOrder = config.pOrder;

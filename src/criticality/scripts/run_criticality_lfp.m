@@ -60,9 +60,13 @@ end
 if ~exist('slidingWindowSize', 'var')
     slidingWindowSize = 10;
 end
+if ~exist('stepSize', 'var')
+    stepSize = 1.0;  % Default step size in seconds
+end
 
 config = struct();
 config.slidingWindowSize = slidingWindowSize;
+config.stepSize = stepSize;
 
 % Analysis flags
 if exist('analyzeD2', 'var')

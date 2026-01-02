@@ -129,8 +129,19 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
         dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanParams, bands);
     end
     
-    % Create save directory
-    dataStruct.saveDir = fullfile(paths.dropPath, 'criticality/results');
+    % Create save directory based on subjectID (similar to reach_task/results/{dataBaseName})
+    % Extract subjectID from sessionName
+    pathParts = strsplit(sessionName, filesep);
+    if length(pathParts) > 1
+        % Session name has path separator (e.g., 'ag112321/recording1e')
+        subjectID = fullfile(pathParts{1}, pathParts{2});
+    else
+        % Session name is just the subjectID (e.g., 'ey042822')
+        subjectID = sessionName;
+    end
+    
+    % Use dropPath/open_field/results/{subjectID}/ similar to reach_task/results/{dataBaseName}
+    dataStruct.saveDir = fullfile(paths.dropPath, 'open_field/results', subjectID);
     if ~exist(dataStruct.saveDir, 'dir')
         mkdir(dataStruct.saveDir);
     end

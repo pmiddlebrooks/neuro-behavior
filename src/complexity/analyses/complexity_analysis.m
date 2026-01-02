@@ -51,17 +51,23 @@ function results = complexity_analysis(dataStruct, config)
     fprintf('\n=== Complexity Sliding Window Analysis Setup ===\n');
     fprintf('Data source: %s\n', dataSource);
     fprintf('Number of areas: %d\n', numAreas);
-    fprintf('Window size: %.2f s\n', config.slidingWindowSize);
+    % Handle scalar or vector window size
+    if isscalar(config.slidingWindowSize)
+        fprintf('Window size: %.2f s\n', config.slidingWindowSize);
+    else
+        fprintf('Window size: %.2f s (area-specific)\n', config.slidingWindowSize(1));
+    end
     
     % Validate data source specific requirements
     if strcmp(dataSource, 'spikes')
         validate_workspace_vars({'dataMat', 'idMatIdx'}, dataStruct, ...
             'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
         
-        % Calculate optimal bin size per area if requested
+        % Calculate bin size per area (either optimal or user-specified)
+        % Always store as binSize vector (length numAreas)
         if config.useOptimalBinSize
             fprintf('Calculating optimal bin size per area...\n');
-            config.optimalBinSize = zeros(1, numAreas);
+            config.binSize = zeros(1, numAreas);
             
             for a = areasToTest
                 aID = dataStruct.idMatIdx{a};
@@ -69,7 +75,7 @@ function results = complexity_analysis(dataStruct, config)
                 
                 if nNeurons < config.nMinNeurons
                     % Skip this area, but still need to set a bin size
-                    config.optimalBinSize(a) = nan;
+                    config.binSize(a) = nan;
                     continue;
                 end
                 
@@ -82,25 +88,28 @@ function results = complexity_analysis(dataStruct, config)
                 % Calculate optimal bin size: binSize = minSpikesPerBin / spikeRate
                 % Round to nearest millisecond (0.001 s)
                 optimalBinSize = config.minSpikesPerBin / spikeRate;
-                config.optimalBinSize(a) = ceil(optimalBinSize / 0.001) * 0.001;  % Round to nearest ms
+                config.binSize(a) = ceil(optimalBinSize / 0.001) * 0.001;  % Round to nearest ms
                 
                 fprintf('  Area %s: spike rate = %.2f spikes/s, optimal bin size = %.3f s (%.1f ms)\n', ...
-                    areas{a}, spikeRate, config.optimalBinSize(a), config.optimalBinSize(a) * 1000);
+                    areas{a}, spikeRate, config.binSize(a), config.binSize(a) * 1000);
             end
         else
             % Use user-specified bin size
             if ~isfield(config, 'binSize') || isempty(config.binSize)
                 error('binSize must be provided in config for spike data analysis (or set useOptimalBinSize = true)');
             end
-            config.optimalBinSize = repmat(config.binSize, 1, numAreas);
+            % Convert scalar to vector if needed
+            if isscalar(config.binSize)
+                config.binSize = repmat(config.binSize, 1, numAreas);
+            end
             fprintf('Using user-specified bin size: %.3f s (%.1f ms)\n', ...
-                config.binSize, config.binSize * 1000);
+                config.binSize(1), config.binSize(1) * 1000);
         end
         
         % Calculate step size if not provided
         if ~isfield(config, 'stepSize') || isempty(config.stepSize)
             % Use minimum bin size across areas (excluding NaN)
-            validBinSizes = config.optimalBinSize(~isnan(config.optimalBinSize));
+            validBinSizes = config.binSize(~isnan(config.binSize));
             if ~isempty(validBinSizes)
                 minBinSize = min(validBinSizes);
                 config.stepSize = minBinSize * 2;  % Default: 2x bin size
@@ -122,7 +131,12 @@ function results = complexity_analysis(dataStruct, config)
         
         % Calculate step size if not provided
         if ~isfield(config, 'stepSize') || isempty(config.stepSize)
-            config.stepSize = config.slidingWindowSize / 10;  % Default: 10 steps per window
+            % Use minimum window size for step size calculation
+            if isscalar(config.slidingWindowSize)
+                config.stepSize = config.slidingWindowSize / 10;  % Default: 10 steps per window
+            else
+                config.stepSize = min(config.slidingWindowSize) / 10;
+            end
         end
         fprintf('Step size: %.3f s\n', config.stepSize);
     else
@@ -143,9 +157,15 @@ function results = complexity_analysis(dataStruct, config)
     end
     
     % Generate common centerTime values
-    % Start from slidingWindowSize/2, end at totalTime - slidingWindowSize/2
-    firstCenterTime = config.slidingWindowSize / 2;
-    lastCenterTime = totalTime - config.slidingWindowSize / 2;
+    % Use minimum window size for common alignment (before area-specific optimization)
+    % Convert scalar to vector if needed for calculation
+    if isscalar(config.slidingWindowSize)
+        minWindowSize = config.slidingWindowSize;
+    else
+        minWindowSize = min(config.slidingWindowSize);
+    end
+    firstCenterTime = minWindowSize / 2;
+    lastCenterTime = totalTime - minWindowSize / 2;
     commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
     
     if isempty(commonCenterTimes)
@@ -166,52 +186,70 @@ function results = complexity_analysis(dataStruct, config)
         config.useBernoulliControl = true;  % Default to true for backward compatibility
     end
     
-    % Calculate optimal window size per area for computational efficiency
-    % Window size is optimized to have at least minDataPoints data points
+    % Calculate window size per area (either optimal or user-specified)
+    % Always store as slidingWindowSize vector (length numAreas)
+    % Window size is optimized to have at least minDataPoints data points if useOptimalWindowSize is true
     % Constrained to be between 5s and 20s
-    fprintf('\n=== Calculating Optimal Window Sizes ===\n');
+    fprintf('\n=== Calculating Window Sizes ===\n');
     % Initialize all areas with original window size
-    optimalWindowSize = repmat(config.slidingWindowSize, 1, numAreas);
+    % Convert scalar to vector if needed
+    if isscalar(config.slidingWindowSize)
+        config.slidingWindowSize = repmat(config.slidingWindowSize, 1, numAreas);
+    end
+    slidingWindowSize = config.slidingWindowSize;
     
     for a = areasToTest
         if strcmp(dataSource, 'spikes')
             aID = dataStruct.idMatIdx{a};
             nNeurons = length(aID);
             
-            if nNeurons < config.nMinNeurons || isnan(config.optimalBinSize(a))
-                optimalWindowSize(a) = config.slidingWindowSize;  % Use original if area is skipped
+            if nNeurons < config.nMinNeurons || isnan(config.binSize(a))
+                slidingWindowSize(a) = config.slidingWindowSize(a);  % Use original if area is skipped
                 continue;
             end
             
-            % Calculate minimum window size needed: totalDataPoints = nNeurons × (windowSize / binSize)
-            % We need: nNeurons × (windowSize / binSize) >= minDataPoints
-            % So: windowSize >= (minDataPoints × binSize) / nNeurons
-            minRequiredWindowSize = (config.minDataPoints * config.optimalBinSize(a)) / nNeurons;
-            
-            % Constrain to 5-20s range and use minimum that satisfies requirement
-            optimalWindowSize(a) = ceil(max(config.minSlidingWindowSize, min(config.maxSlidingWindowSize, minRequiredWindowSize)));
-            
-            % Calculate actual data points with this window size
-            actualDataPoints = nNeurons * (optimalWindowSize(a) / config.optimalBinSize(a));
-            
-            fprintf('  Area %s: %d neurons, binSize=%.3fs -> optimal window=%.2fs (%.0f data points)\n', ...
-                areas{a}, nNeurons, config.optimalBinSize(a), optimalWindowSize(a), actualDataPoints);
+            if config.useOptimalWindowSize
+                % Calculate minimum window size needed: totalDataPoints = nNeurons × (windowSize / binSize)
+                % We need: nNeurons × (windowSize / binSize) >= minDataPoints
+                % So: windowSize >= (minDataPoints × binSize) / nNeurons
+                minRequiredWindowSize = (config.minDataPoints * config.binSize(a)) / nNeurons;
+                
+                % Constrain to 5-20s range and use minimum that satisfies requirement
+                slidingWindowSize(a) = ceil(max(config.minSlidingWindowSize, min(config.maxSlidingWindowSize, minRequiredWindowSize)));
+                
+                % Calculate actual data points with this window size
+                actualDataPoints = nNeurons * (slidingWindowSize(a) / config.binSize(a));
+                
+                fprintf('  Area %s: %d neurons, binSize=%.3fs -> window=%.2fs (%.0f data points)\n', ...
+                    areas{a}, nNeurons, config.binSize(a), slidingWindowSize(a), actualDataPoints);
+            else
+                % Use user-specified window size (already set)
+                fprintf('  Area %s: using user-specified window size: %.2fs\n', ...
+                    areas{a}, slidingWindowSize(a));
+            end
             
         elseif strcmp(dataSource, 'lfp')
-            % For LFP, data points = windowSize × samplingRate
-            % We need: windowSize × fsRaw >= minDataPoints
-            % So: windowSize >= minDataPoints / fsRaw
-            fsRaw = dataStruct.opts.fsLfp;
-            minRequiredWindowSize = config.minDataPoints / fsRaw;
-            
-            % Constrain to 5-20s range
-            optimalWindowSize(a) = ceil(max(config.minSlidingWindowSize, min(config.maxSlidingWindowSize, minRequiredWindowSize)));
-            
-            % Calculate actual data points
-            actualDataPoints = optimalWindowSize(a) * fsRaw;
-            
-            fprintf('  Area %s: fs=%.1fHz -> optimal window=%.2fs (%.0f data points)\n', ...
-                areas{a}, fsRaw, optimalWindowSize(a), actualDataPoints);
+            % For LFP, calculate window size based on sampling rate if optimizing
+            if config.useOptimalWindowSize
+                % For LFP, data points = windowSize × samplingRate
+                % We need: windowSize × fsRaw >= minDataPoints
+                % So: windowSize >= minDataPoints / fsRaw
+                fsRaw = dataStruct.opts.fsLfp;
+                minRequiredWindowSize = config.minDataPoints / fsRaw;
+                
+                % Constrain to 5-20s range
+                slidingWindowSize(a) = ceil(max(config.minSlidingWindowSize, min(config.maxSlidingWindowSize, minRequiredWindowSize)));
+                
+                % Calculate actual data points
+                actualDataPoints = slidingWindowSize(a) * fsRaw;
+                
+                fprintf('  Area %s: fs=%.1fHz -> window=%.2fs (%.0f data points)\n', ...
+                    areas{a}, fsRaw, slidingWindowSize(a), actualDataPoints);
+            else
+                % Use user-specified window size (already set)
+                fprintf('  Area %s: using user-specified window size: %.2fs\n', ...
+                    areas{a}, slidingWindowSize(a));
+            end
         end
     end
     
@@ -253,26 +291,26 @@ function results = complexity_analysis(dataStruct, config)
             aID = dataStruct.idMatIdx{a};
             
             % Check if bin size is valid for this area
-            if isnan(config.optimalBinSize(a))
+            if isnan(config.binSize(a))
                 fprintf('  Skipping area %s: Invalid bin size (area skipped earlier)\n', areas{a});
                 continue;
             end
             
-            % Bin data using optimal bin size for this area
-            aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), config.optimalBinSize(a));
+            % Bin data using bin size for this area
+            aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), config.binSize(a));
             numTimePoints = size(aDataMat, 1);
             
-            % Use area-specific optimal window size
-            areaWindowSize = optimalWindowSize(a);
+            % Use area-specific window size
+            areaWindowSize = slidingWindowSize(a);
             
             % Calculate window size in samples for this area
-            winSamples = round(areaWindowSize / config.optimalBinSize(a));
+            winSamples = round(areaWindowSize / config.binSize(a));
             if winSamples < 1
                 winSamples = 1;
             end
             
             fprintf('  Time points: %d, Window size: %.2fs, Window samples: %d, Bin size: %.3f s\n', ...
-                numTimePoints, areaWindowSize, winSamples, config.optimalBinSize(a));
+                numTimePoints, areaWindowSize, winSamples, config.binSize(a));
             
             % Initialize arrays
             lzComplexity{a} = nan(1, numWindows);
@@ -286,9 +324,9 @@ function results = complexity_analysis(dataStruct, config)
                 startS{a}(w) = centerTime;
                 
                 % Convert centerTime to indices for this area's binning
-                % Use area-specific optimal window size
+                % Use area-specific window size
                 [startIdx, endIdx] = calculate_window_indices_from_center(...
-                    centerTime, optimalWindowSize(a), config.optimalBinSize(a), numTimePoints);
+                    centerTime, slidingWindowSize(a), config.binSize(a), numTimePoints);
                 
                 % Check if window is valid (within bounds)
                 if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -329,8 +367,8 @@ function results = complexity_analysis(dataStruct, config)
             
             numTimePoints = length(filteredSignal);
             
-            % Use area-specific optimal window size
-            areaWindowSize = optimalWindowSize(a);
+            % Use area-specific window size
+            areaWindowSize = slidingWindowSize(a);
             
             % Calculate window size in samples
             winSamples = round(areaWindowSize * fsRaw);
@@ -353,9 +391,9 @@ function results = complexity_analysis(dataStruct, config)
                 startS{a}(w) = centerTime;
                 
                 % Convert centerTime to indices for LFP (sampling rate = fsRaw)
-                % Use area-specific optimal window size
+                % Use area-specific window size
                 [startIdx, endIdx] = calculate_window_indices_from_center(...
-                    centerTime, optimalWindowSize(a), 1/fsRaw, numTimePoints);
+                    centerTime, slidingWindowSize(a), 1/fsRaw, numTimePoints);
                 
                 % Check if window is valid (within bounds)
                 if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -401,15 +439,14 @@ function results = complexity_analysis(dataStruct, config)
         results.lzComplexity = lzComplexity;
         results.lzComplexityNormalized = lzComplexityNormalized;
         results.lzComplexityNormalizedBernoulli = lzComplexityNormalizedBernoulli;
-        results.params.slidingWindowSize = config.slidingWindowSize;
-        results.params.optimalWindowSize = optimalWindowSize;
         results.params.stepSize = config.stepSize;
         results.params.nShuffles = config.nShuffles;
         results.params.minDataPoints = config.minDataPoints;
         results.params.useBernoulliControl = config.useBernoulliControl;
         
         if strcmp(dataSource, 'spikes')
-            results.params.optimalBinSize = config.optimalBinSize;
+            results.params.binSize = config.binSize;
+            results.params.slidingWindowSize = slidingWindowSize;
             results.sessionType = sessionType;
         elseif strcmp(dataSource, 'lfp')
             results.params.lfpLowpassFreq = config.lfpLowpassFreq;
@@ -427,15 +464,14 @@ function results = complexity_analysis(dataStruct, config)
     results.lzComplexity = lzComplexity;
     results.lzComplexityNormalized = lzComplexityNormalized;
     results.lzComplexityNormalizedBernoulli = lzComplexityNormalizedBernoulli;
-    results.params.slidingWindowSize = config.slidingWindowSize;  % Original requested size
-    results.params.optimalWindowSize = optimalWindowSize;  % Area-specific optimized sizes
     results.params.stepSize = config.stepSize;
     results.params.nShuffles = config.nShuffles;
     results.params.minDataPoints = config.minDataPoints;
     results.params.useBernoulliControl = config.useBernoulliControl;
     
     if strcmp(dataSource, 'spikes')
-        results.params.optimalBinSize = config.optimalBinSize;
+        results.params.binSize = config.binSize;  % Area-specific bin sizes (vector)
+        results.params.slidingWindowSize = slidingWindowSize;  % Area-specific window sizes (vector)
         results.sessionType = sessionType;
     elseif strcmp(dataSource, 'lfp')
         results.params.lfpLowpassFreq = config.lfpLowpassFreq;
@@ -454,10 +490,12 @@ function results = complexity_analysis(dataStruct, config)
     end
     
     % Handle sessionName with subdirectories (e.g., "kw/kw092821")
-    % Extract subdirectory and adjust saveDir if needed
+    % For naturalistic sessions, saveDir already includes the full path (subjectID/recording),
+    % so we don't need to create additional subdirectories
     actualSaveDir = dataStruct.saveDir;
-    if ~isempty(sessionNameForPath) && contains(sessionNameForPath, filesep)
+    if ~strcmp(sessionType, 'naturalistic') && ~isempty(sessionNameForPath) && contains(sessionNameForPath, filesep)
         % Session name contains path separators, extract first directory
+        % Only do this for non-naturalistic sessions (naturalistic already has full path in saveDir)
         pathParts = strsplit(sessionNameForPath, filesep);
         if length(pathParts) > 1
             % Create subdirectory in saveDir
@@ -465,7 +503,7 @@ function results = complexity_analysis(dataStruct, config)
         end
     end
     
-    resultsPath = create_results_path('complexity', sessionType, config.slidingWindowSize, ...
+    resultsPath = create_results_path('complexity', sessionType, ...
         sessionNameForPath, actualSaveDir, 'dataSource', dataSource);
     
     % Ensure directory exists before saving (including all parent directories)
