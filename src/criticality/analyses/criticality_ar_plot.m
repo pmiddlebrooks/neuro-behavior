@@ -138,6 +138,20 @@ else
 end
 hold on;
 
+% Find first non-empty startS for plotting reference
+firstNonEmptyArea = [];
+for a = areasToTest
+    if ~isempty(startS{a})
+        firstNonEmptyArea = a;
+        break;
+    end
+end
+if isempty(firstNonEmptyArea)
+    % No areas have data, cannot plot
+    warning('No areas with valid startS data found. Skipping plot.');
+    return;
+end
+
 % Add event markers first (so they appear behind the data)
 add_event_markers_ar([]);  % Empty for combined plot
 
@@ -417,9 +431,9 @@ fprintf('Saved criticality AR plot to: %s\n', config.saveDir);
 % Helper function to add event markers to current axes
 function add_event_markers_ar(areaIdx)
     if isempty(areaIdx)
-        % For combined plot, use first area's time range
-        if length(areasToTest) > 0 && ~isempty(startS{areasToTest(1)})
-            plotTimeRange = [startS{areasToTest(1)}(1), startS{areasToTest(1)}(end)];
+        % For combined plot, use first non-empty area's time range
+        if ~isempty(firstNonEmptyArea) && ~isempty(startS{firstNonEmptyArea})
+            plotTimeRange = [startS{firstNonEmptyArea}(1), startS{firstNonEmptyArea}(end)];
         else
             return;
         end

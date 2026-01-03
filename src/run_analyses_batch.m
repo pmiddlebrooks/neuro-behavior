@@ -11,7 +11,7 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'open_field'
-batchSessionType = 'open_field';  % Change this to process different session types
+batchSessionType = 'reach';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 

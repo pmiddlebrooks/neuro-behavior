@@ -320,6 +320,14 @@ parfor a = areasToTest
         fprintf('  Time points: %d, Window size: %.2fs, Window samples: %d, Bin size: %.3f s\n', ...
             numTimePoints, areaWindowSize, winSamples, config.binSize(a));
 
+        % Perform PCA on entire session data for this area
+        fprintf('  Performing PCA on entire session data...\n');
+        [coeff, score, ~, ~, explained, mu] = pca(aDataMat);
+        % Use first actualPCADim dimensions
+        pcaDataFull = score(:, 1:actualPCADim);
+        fprintf('  PCA completed: using %d dimensions (explained variance: %.1f%%)\n', ...
+            actualPCADim, sum(explained(1:actualPCADim)));
+
         % Initialize arrays
         recurrenceRate{a} = nan(1, numWindows);
         determinism{a} = nan(1, numWindows);
@@ -356,13 +364,9 @@ parfor a = areasToTest
                 continue;
             end
 
-            % Extract window data [nSamples x nNeurons]
-            wData = aDataMat(startIdx:endIdx, :);
-
-            % Project to PCA space
-            [coeff, score, ~, ~, explained, mu] = pca(wData);
-            % Use first actualPCADim dimensions
-            pcaData = score(:, 1:actualPCADim);
+            % Extract window data from pre-computed PCA space
+            % Use the same PCA space computed for the entire session
+            pcaData = pcaDataFull(startIdx:endIdx, :);
 
             % Calculate RQA metrics
             if config.saveRecurrencePlots
@@ -376,17 +380,28 @@ parfor a = areasToTest
             end
 
             % Normalize by shuffled version
+            % Shuffle spiking data using neuron-by-neuron circular permutation before PCA
             shuffledRR = nan(1, config.nShuffles);
             shuffledDET = nan(1, config.nShuffles);
             shuffledLAM = nan(1, config.nShuffles);
             shuffledTT = nan(1, config.nShuffles);
 
             for s = 1:config.nShuffles
-                % Shuffle each dimension independently
-                shuffledPCA = pcaData;
-                for dim = 1:actualPCADim
-                    shuffledPCA(:, dim) = pcaData(randperm(size(pcaData, 1)), dim);
+                % Circularly shift each neuron's activity independently
+                % aDataMat is [time bins x neurons]
+                permutedDataMat = zeros(size(aDataMat));
+                for n = 1:nNeurons
+                    shiftAmount = randi(size(aDataMat, 1));
+                    permutedDataMat(:, n) = circshift(aDataMat(:, n), shiftAmount);
                 end
+                
+                % Perform PCA on shuffled entire session data
+                [~, scoreShuffled, ~, ~, ~, ~] = pca(permutedDataMat);
+                % Use first actualPCADim dimensions
+                shuffledPCAFull = scoreShuffled(:, 1:actualPCADim);
+                
+                % Extract window from shuffled PCA space
+                shuffledPCA = shuffledPCAFull(startIdx:endIdx, :);
 
                 [shuffledRR(s), shuffledDET(s), shuffledLAM(s), shuffledTT(s)] = ...
                     compute_rqa_metrics(shuffledPCA, config.recurrenceThreshold, config.distanceMetric);

@@ -127,8 +127,8 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
         
         % Add event markers first (so they appear behind the data)
         % Add reach onsets if applicable
-        if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'dataType') && ...
-                strcmp(dataStruct.dataType, 'reach') && isfield(dataStruct, 'reachStart')
+        if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'sessionType') && ...
+                strcmp(dataStruct.sessionType, 'reach') && isfield(dataStruct, 'reachStart')
             if ~isempty(results.startS{a}) && ~isempty(dataStruct.reachStart)
                 plotTimeRange = [results.startS{a}(1), results.startS{a}(end)];
                 reachOnsetsInRange = dataStruct.reachStart(...
@@ -239,14 +239,14 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
         normText = '(Shuffle normalized)';
     end
     
-    if strcmp(results.dataSource, 'spikes') && isfield(results, 'dataType')
+    if strcmp(results.dataSource, 'spikes') && isfield(results, 'sessionType')
         if ~isempty(plotConfig.filePrefix)
             sgtitle(sprintf('[%s] %s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
-                plotConfig.filePrefix, results.dataType, results.dataSource, ...
+                plotConfig.filePrefix, results.sessionType, results.dataSource, ...
                 config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
         else
             sgtitle(sprintf('%s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
-                results.dataType, results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
+                results.sessionType, results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
         end
     else
         if ~isempty(plotConfig.filePrefix)
@@ -291,6 +291,7 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
     
     % Now save the figure
     try
+                    pause(7)
         exportgraphics(gcf, plotPath, 'Resolution', 300);
         fprintf('Saved LZC plot to: %s\n', plotPath);
     catch ME
