@@ -11,7 +11,7 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'open_field'
-batchSessionType = 'open_field';  % Change this to process different session types
+batchSessionType = 'schall';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
@@ -66,7 +66,7 @@ switch lower(batchSessionType)
     case 'schall'
         % sessions = schall_session_list();
         sessionType = 'schall';
-        subjectID = 'broca';  % joule  broca
+        subjectID = 'joule';  % joule  broca
         searchDir = fullfile(paths.dropPath, 'schall/data', subjectID);  % Set this to the directory path containing .mat files
         loadPath = fullfile(searchDir, 'goodSessionsCCM.mat');
         load(loadPath);
@@ -117,7 +117,7 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
-for s = 1:numSessions
+for s = 19:numSessions
     sessionName = sessions{s};
     
     fprintf('\n');
