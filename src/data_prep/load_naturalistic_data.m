@@ -49,6 +49,31 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
         % First load behavior data (needed for neural_matrix)
         dataBhv = load_data(opts, 'behavior');
         
+        % Create bhvID vector using behavior sampling frequency (opts.fsBhv)
+        % This creates bhvID at behavior sampling rate, not neural data frame rate
+        if ~isfield(opts, 'fsBhv')
+            error('behavior needs a sampling frequency, opts.fsBhv, in the opts struct')
+        end
+        bhvBinSize = 1 / opts.fsBhv;  % Behavior bin size in seconds
+        nBhvBins = ceil(opts.collectEnd / bhvBinSize);
+        dataBhv.StartFrame = 1 + round(dataBhv.StartTime / bhvBinSize);
+        bhvID = zeros(nBhvBins, 1);
+        for i = 1:size(dataBhv, 1) - 1
+            iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
+            bhvID(iInd) = dataBhv.ID(i);
+        end
+        if ~isempty(dataBhv)
+            iInd = dataBhv.StartFrame(end):nBhvBins;
+            if ~isempty(iInd)
+                bhvID(iInd) = dataBhv.ID(end);
+            end
+        end
+        
+        % Store bhvID in dataStruct for behavior proportion calculations
+        dataStruct.bhvID = bhvID;
+        dataStruct.dataBhv = dataBhv;  % Also store full behavior data for reference
+        dataStruct.fsBhv = opts.fsBhv;  % Store behavior sampling frequency for window calculations
+        
         % Load spike data
         spikeData = load_data(opts, 'spikes');
         spikeData.bhvDur = dataBhv.Dur;

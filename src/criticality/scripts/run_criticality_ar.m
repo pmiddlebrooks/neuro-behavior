@@ -92,28 +92,6 @@ config.critType = 2;
 % Run analysis
 results = criticality_ar_analysis(dataStruct, config);
 
-% Store results in workspace for backward compatibility
-mrBr = results.mrBr;
-d2 = results.d2;
-startS = results.startS;
-popActivity = results.popActivity;
-optimalBinSize = results.optimalBinSize;
-optimalWindowSize = results.optimalWindowSize;
-d2WindowSize = results.d2WindowSize;
-
-if config.enablePermutations
-    d2Permuted = results.d2Permuted;
-    mrBrPermuted = results.mrBrPermuted;
-    d2PermutedMean = results.d2PermutedMean;
-    d2PermutedSEM = results.d2PermutedSEM;
-    mrBrPermutedMean = results.mrBrPermutedMean;
-    mrBrPermutedSEM = results.mrBrPermutedSEM;
-end
-
-% Store stepSize for backward compatibility
-if isfield(results.params, 'stepSize')
-    stepSize = results.params.stepSize;
-end
 
 fprintf('\n=== Analysis Complete ===\n');
 

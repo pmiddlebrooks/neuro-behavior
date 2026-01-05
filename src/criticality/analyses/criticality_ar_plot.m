@@ -12,6 +12,12 @@ function criticality_ar_plot(results, plotConfig, config, dataStruct, filenameSu
 %   Create time series plots of d2 and population activity with optional
 %   permutation shading and reach onset markers.
 
+% Add path to utility functions
+utilsPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils');
+if exist(utilsPath, 'dir')
+    addpath(utilsPath);
+end
+
 % Extract data from results
 areas = results.areas;
 d2 = results.d2;  % Raw d2 values
@@ -153,7 +159,7 @@ if isempty(firstNonEmptyArea)
 end
 
 % Add event markers first (so they appear behind the data)
-add_event_markers_ar([]);  % Empty for combined plot
+add_event_markers(dataStruct, startS, 'firstNonEmptyArea', firstNonEmptyArea);
 
 if analyzeD2
     % Find common time range across all areas
@@ -260,7 +266,9 @@ for idx = 1:length(areasToTest)
     hold on;  % +1 because first row is the combined plot
 
     % Add event markers first (so they appear behind the data)
-    add_event_markers_ar(idx);
+    % Map idx to actual area index
+    actualAreaIdx = areasToTest(idx);
+    add_event_markers(dataStruct, startS, 'areaIdx', actualAreaIdx);
 
     % Plot popActivityWindows on right y-axis (color-coded by area)
     if isfield(results, 'popActivityWindows') && ~isempty(popActivityWindows{a}) && ...
@@ -414,89 +422,18 @@ if ~isempty(plotConfig.filePrefix)
     plotPath = fullfile(config.saveDir, ...
         sprintf('%s_criticality_%s_ar%s.png', ...
         plotConfig.filePrefix, sessionType, filenameSuffix));
-    exportgraphics(gcf, plotPath, 'Resolution', 300);
-    fprintf('Saved plot to: %s\n', plotPath);
 else
     plotPath = fullfile(config.saveDir, ...
         sprintf('criticality_%s_ar%s.png', ...
         sessionType, filenameSuffix));
+end
+
+drawnow
     exportgraphics(gcf, plotPath, 'Resolution', 300);
     fprintf('Saved plot to: %s\n', plotPath);
-end
 
 fprintf('Saved criticality AR plot to: %s\n', config.saveDir);
 
 
 
-% Helper function to add event markers to current axes
-function add_event_markers_ar(areaIdx)
-    if isempty(areaIdx)
-        % For combined plot, use first non-empty area's time range
-        if ~isempty(firstNonEmptyArea) && ~isempty(startS{firstNonEmptyArea})
-            plotTimeRange = [startS{firstNonEmptyArea}(1), startS{firstNonEmptyArea}(end)];
-        else
-            return;
-        end
-    else
-        a = areasToTest(areaIdx);
-        if ~isempty(startS{a})
-            plotTimeRange = [startS{a}(1), startS{a}(end)];
-        else
-            return;
-        end
-    end
-    
-    % Add reach onsets and block 2 if applicable
-    if strcmp(sessionType, 'reach') && isfield(dataStruct, 'reachStart')
-        if ~isempty(dataStruct.reachStart)
-            reachOnsetsInRange = dataStruct.reachStart(...
-                dataStruct.reachStart >= plotTimeRange(1) & dataStruct.reachStart <= plotTimeRange(2));
-            
-            if ~isempty(reachOnsetsInRange)
-                for i = 1:length(reachOnsetsInRange)
-                    xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 1, ...
-                        'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                end
-                if isfield(dataStruct, 'startBlock2') && ~isempty(dataStruct.startBlock2)
-                    xline(dataStruct.startBlock2, 'Color', [1 0 0], 'LineWidth', 3, ...
-                        'HandleVisibility', 'off');
-                end
-            end
-        end
-    end
-    
-    % Add hong trial start times if applicable
-    if strcmp(sessionType, 'hong')
-        if isfield(dataStruct, 'T') && ~isempty(dataStruct.T.startTime_oe)
-            % trialStartsInRange = dataStruct.T.startTime_oe(...
-            %     dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
-            % 
-            % if ~isempty(trialStartsInRange)
-            %     for i = 1:length(trialStartsInRange)
-            %         xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 1, ...
-            %             'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-            %     end
-            % end
-
-            % Add trial type
-            plot(dataStruct.T.startTime_oe, dataStruct.T.trialType/4 + .3, 'Color', [0.2 0.7 0.7], 'LineWidth', 2, ...
-                        'LineStyle', '-', 'HandleVisibility', 'off');
-        end
-    end
-    
-    % Add schall response onsets if applicable
-    if strcmp(sessionType, 'schall') && isfield(dataStruct, 'responseOnset')
-        if ~isempty(dataStruct.responseOnset)
-            responseOnsetsInRange = dataStruct.responseOnset(...
-                dataStruct.responseOnset >= plotTimeRange(1) & dataStruct.responseOnset <= plotTimeRange(2));
-            
-            if ~isempty(responseOnsetsInRange)
-                for i = 1:length(responseOnsetsInRange)
-                    xline(responseOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                        'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                end
-            end
-        end
-    end
-end
 end

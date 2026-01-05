@@ -6,6 +6,7 @@
 % the new modular functions. You can still set variables in workspace
 % and run this script, or use rqa_sliding_analysis() function directly.
 
+
 runParallel = 1;
 
 paths = get_paths;
@@ -55,17 +56,24 @@ config = struct();
 config.useOptimalBinSize = true;  % Set to true to calculate optimal bin size per area
 config.minSpikesPerBin = 3.5;  % Minimum spikes per bin for optimal bin size calculation
 config.minTimeBins = 10000;  % Minimum number of time bins per window (used to auto-calculate slidingWindowSize)
+config.minWindowSize = 120;
 % slidingWindowSize will be auto-calculated from binSize and minTimeBins in rqa_sliding_analysis.m
 % config.slidingWindowSize = 10*60;  % Optional: specify directly (overrides auto-calculation)
 config.stepSize = .5*60;
 config.nShuffles = 3;
 config.makePlots = true;
 config.useBernoulliControl = false;  % Set to false to skip Bernoulli normalization (faster computation)
-config.nPCADim = 8;
+config.nPCADim = 4;
 config.recurrenceThreshold = 0.03;  % Target recurrence rate (0.02 = 2%, range: 0.01-0.05)
 config.distanceMetric = 'cosine';  % 'euclidean' or 'cosine' (cosine recommended for sparse spiking)
 config.nMinNeurons = 15;  % Minimum number of neurons required (areas with fewer will be skipped)
 config.saveRecurrencePlots = false;  % Set to true to compute and store recurrence plots (uses a lot of memory)
+config.usePerWindowPCA = false;  % Set to true to perform PCA on each window (addresses representational drift)
+
+if strcmp(sessionType, 'naturalistic')
+    config.behaviorNumeratorIDs = 5:10;
+    config.behaviorDenominatorIDs = [config.behaviorNumeratorIDs, 0:2, 15:17];
+end
 
 % Run analysis
 if runParallel
@@ -82,26 +90,6 @@ end
 
 results = rqa_sliding_analysis(dataStruct, config);
 
-% Store results in workspace for backward compatibility
-recurrenceRate = results.recurrenceRate;
-determinism = results.determinism;
-laminarity = results.laminarity;
-trappingTime = results.trappingTime;
-recurrenceRateNormalized = results.recurrenceRateNormalized;
-determinismNormalized = results.determinismNormalized;
-laminarityNormalized = results.laminarityNormalized;
-trappingTimeNormalized = results.trappingTimeNormalized;
-recurrenceRateNormalizedBernoulli = results.recurrenceRateNormalizedBernoulli;
-determinismNormalizedBernoulli = results.determinismNormalizedBernoulli;
-laminarityNormalizedBernoulli = results.laminarityNormalizedBernoulli;
-trappingTimeNormalizedBernoulli = results.trappingTimeNormalizedBernoulli;
-if isfield(results, 'recurrencePlots')
-    recurrencePlots = results.recurrencePlots;
-else
-    recurrencePlots = {};
-end
-startS = results.startS;
 
 fprintf('\n=== Analysis Complete ===\n');
-
 
