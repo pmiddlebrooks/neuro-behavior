@@ -11,7 +11,7 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'open_field'
-batchSessionType = 'schall';  % Change this to process different session types
+batchSessionType = 'open_field';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
@@ -100,7 +100,23 @@ fprintf('\n');
 fprintf('Total analyses per session: %d\n', numAnalyses);
 fprintf('\n');
 
-% Loop through each session
+% Initialize results struct array for parfor compatibility
+% First create a template struct with all analysis fields
+templateStruct = struct();
+for a = 1:length(activeAnalyses)
+    analysisName = activeAnalyses{a};
+    templateStruct.(analysisName) = false;
+end
+% Replicate the template to create the array
+sessionResults = repmat(templateStruct, numSessions, 1);
+
+% % Ensure parallel pool is available
+% if isempty(gcp('nocreate'))
+%     parpool('local', 4);
+% end
+
+% Loop through each session (parallel)
+% parfor s = 1:numSessions
 for s = 1:numSessions
     sessionName = sessions{s};
     
@@ -110,27 +126,13 @@ for s = 1:numSessions
     fprintf('%s\n', repmat('=', 1, 80));
     fprintf('\n');
     
-    % Clear previous session's workspace variables to avoid conflicts
-    % Keep only loop variables and configuration
-    varsToKeep = {'sessions', 'numSessions', 's', 'sessionType', 'dataSource', 'sessionName', ...
-        'analysesToRun', 'analysisNames', 'numAnalyses', 'activeAnalyses'};
-    allVars = who;
-    varsToClear = setdiff(allVars, varsToKeep);
-    if ~isempty(varsToClear)
-        clear(varsToClear{:});
-    end
-    
-    % Track which analyses succeeded/failed for this session
-    sessionResults = struct();
-    
     % Run each analysis
     for a = 1:length(activeAnalyses)
         analysisName = activeAnalyses{a};
         
-        fprintf('\n--- Running %s analysis ---\n', analysisName);
+        fprintf('\n--- Running %s analysis (session %d/%d) ---\n', analysisName, s, numSessions);
         
         try
-            
             % sessionName, sessionType, and dataSource are already set
             % These will be picked up by the analysis scripts
             
@@ -150,12 +152,12 @@ for s = 1:numSessions
                     error('Unknown analysis: %s', analysisName);
             end
             
-            sessionResults.(analysisName) = true;
+            sessionResults(s).(analysisName) = true;
             fprintf('\n✓ %s analysis completed successfully for session %d/%d: %s\n', ...
                 analysisName, s, numSessions, sessionName);
             
         catch ME
-            sessionResults.(analysisName) = false;
+            sessionResults(s).(analysisName) = false;
             fprintf('\n✗ Error running %s analysis for session %d/%d (%s): %s\n', ...
                 analysisName, s, numSessions, sessionName, ME.message);
             fprintf('  Stack trace:\n');
@@ -165,12 +167,22 @@ for s = 1:numSessions
             fprintf('  Continuing with next analysis...\n');
         end
     end
-    
-    % Summary for this session
+end
+
+% Print summaries for all sessions (after loop completes)
+fprintf('\n');
+fprintf('%s\n', repmat('=', 1, 80));
+fprintf('Batch processing complete: %d sessions processed\n', numSessions);
+fprintf('%s\n', repmat('=', 1, 80));
+fprintf('\n');
+
+% Print summary for each session
+for s = 1:numSessions
+    sessionName = sessions{s};
     fprintf('\n--- Session %d/%d Summary: %s ---\n', s, numSessions, sessionName);
     for a = 1:length(activeAnalyses)
         analysisName = activeAnalyses{a};
-        if sessionResults.(analysisName)
+        if sessionResults(s).(analysisName)
             fprintf('  ✓ %s: Success\n', analysisName);
         else
             fprintf('  ✗ %s: Failed\n', analysisName);
@@ -178,9 +190,5 @@ for s = 1:numSessions
     end
 end
 
-fprintf('\n');
-fprintf('%s\n', repmat('=', 1, 80));
-fprintf('Batch processing complete: %d sessions processed\n', numSessions);
-fprintf('%s\n', repmat('=', 1, 80));
 fprintf('\n');
 

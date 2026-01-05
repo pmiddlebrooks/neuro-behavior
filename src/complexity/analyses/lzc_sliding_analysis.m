@@ -274,6 +274,18 @@ function results = lzc_sliding_analysis(dataStruct, config)
     lzComplexityNormalizedBernoulli = cell(1, numAreas);
     startS = cell(1, numAreas);
     
+    % Initialize behavior proportion if enabled for naturalistic sessions
+    if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+            isfield(config, 'behaviorDenominatorIDs') && ...
+            ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+        behaviorProportion = cell(1, numAreas);
+    else
+        behaviorProportion = cell(1, numAreas);
+        for a = 1:numAreas
+            behaviorProportion{a} = [];
+        end
+    end
+    
     % Analysis loop
     fprintf('\n=== Processing Areas ===\n');
         
@@ -293,6 +305,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 lzComplexityNormalized{a} = [];
                 lzComplexityNormalizedBernoulli{a} = [];
                 startS{a} = [];
+                behaviorProportion{a} = [];
                 continue;
             end
         end
@@ -331,6 +344,15 @@ function results = lzc_sliding_analysis(dataStruct, config)
             lzComplexityNormalizedBernoulli{a} = nan(1, numWindows);
             startS{a} = nan(1, numWindows);
             
+            % Initialize behavior proportion array if enabled
+            if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+                    isfield(config, 'behaviorDenominatorIDs') && ...
+                    ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+                behaviorProportion{a} = nan(1, numWindows);
+            else
+                behaviorProportion{a} = [];
+            end
+            
             % Process each window using common centerTime
             for w = 1:numWindows
                 centerTime = commonCenterTimes(w);
@@ -362,6 +384,36 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 [lzComplexity{a}(w), lzComplexityNormalized{a}(w), ...
                     lzComplexityNormalizedBernoulli{a}(w)] = ...
                     compute_lz_complexity_with_controls(binarySeq, config.nShuffles, config.useBernoulliControl);
+                
+                % Calculate behavior proportion if enabled for naturalistic sessions
+                if strcmp(sessionType, 'naturalistic') && isfield(dataStruct, 'bhvID') && ...
+                        ~isempty(dataStruct.bhvID) && isfield(config, 'behaviorNumeratorIDs') && ...
+                        isfield(config, 'behaviorDenominatorIDs') && ...
+                        ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+                    % Convert window time range to bhvID indices (bhvID is at fsBhv sampling rate)
+                    if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+                        fsBhv = dataStruct.fsBhv;
+                        bhvBinSize = 1 / fsBhv;  % Behavior bin size in seconds
+                        winStartTime = centerTime - slidingWindowSize(a) / 2;
+                        winEndTime = centerTime + slidingWindowSize(a) / 2;
+                        bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
+                        bhvEndIdx = round(winEndTime / bhvBinSize);
+                        bhvStartIdx = max(1, bhvStartIdx);
+                        bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
+                        
+                        if bhvStartIdx <= bhvEndIdx
+                            % Calculate proportion inline
+                            windowBhvID = dataStruct.bhvID(bhvStartIdx:bhvEndIdx);
+                            numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
+                            denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
+                            if denominatorCount > 0
+                                behaviorProportion{a}(w) = numeratorCount / denominatorCount;
+                            else
+                                behaviorProportion{a}(w) = nan;
+                            end
+                        end
+                    end
+                end
             end
             
         elseif strcmp(dataSource, 'lfp')
@@ -398,6 +450,15 @@ function results = lzc_sliding_analysis(dataStruct, config)
             lzComplexityNormalizedBernoulli{a} = nan(1, numWindows);
             startS{a} = nan(1, numWindows);
             
+            % Initialize behavior proportion array if enabled
+            if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+                    isfield(config, 'behaviorDenominatorIDs') && ...
+                    ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+                behaviorProportion{a} = nan(1, numWindows);
+            else
+                behaviorProportion{a} = [];
+            end
+            
             % Process each window using common centerTime
             for w = 1:numWindows
                 centerTime = commonCenterTimes(w);
@@ -425,6 +486,36 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 [lzComplexity{a}(w), lzComplexityNormalized{a}(w), ...
                     lzComplexityNormalizedBernoulli{a}(w)] = ...
                     compute_lz_complexity_with_controls(binarySeq, config.nShuffles, config.useBernoulliControl);
+                
+                % Calculate behavior proportion if enabled for naturalistic sessions
+                if strcmp(sessionType, 'naturalistic') && isfield(dataStruct, 'bhvID') && ...
+                        ~isempty(dataStruct.bhvID) && isfield(config, 'behaviorNumeratorIDs') && ...
+                        isfield(config, 'behaviorDenominatorIDs') && ...
+                        ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+                    % Convert window time range to bhvID indices (bhvID is at fsBhv sampling rate)
+                    if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+                        fsBhv = dataStruct.fsBhv;
+                        bhvBinSize = 1 / fsBhv;  % Behavior bin size in seconds
+                        winStartTime = centerTime - slidingWindowSize(a) / 2;
+                        winEndTime = centerTime + slidingWindowSize(a) / 2;
+                        bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
+                        bhvEndIdx = round(winEndTime / bhvBinSize);
+                        bhvStartIdx = max(1, bhvStartIdx);
+                        bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
+                        
+                        if bhvStartIdx <= bhvEndIdx
+                            % Calculate proportion inline
+                            windowBhvID = dataStruct.bhvID(bhvStartIdx:bhvEndIdx);
+                            numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
+                            denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
+                            if denominatorCount > 0
+                                behaviorProportion{a}(w) = numeratorCount / denominatorCount;
+                            else
+                                behaviorProportion{a}(w) = nan;
+                            end
+                        end
+                    end
+                end
             end
         end
         
@@ -441,6 +532,21 @@ function results = lzc_sliding_analysis(dataStruct, config)
     results.lzComplexity = lzComplexity;
     results.lzComplexityNormalized = lzComplexityNormalized;
     results.lzComplexityNormalizedBernoulli = lzComplexityNormalizedBernoulli;
+    
+    % Store behavior proportion if calculated
+    if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+            isfield(config, 'behaviorDenominatorIDs') && ...
+            ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+        results.behaviorProportion = behaviorProportion;
+        results.params.behaviorNumeratorIDs = config.behaviorNumeratorIDs;
+        results.params.behaviorDenominatorIDs = config.behaviorDenominatorIDs;
+    else
+        results.behaviorProportion = cell(1, numAreas);
+        for a = 1:numAreas
+            results.behaviorProportion{a} = [];
+        end
+    end
+    
     results.params.stepSize = config.stepSize;
     results.params.nShuffles = config.nShuffles;
     results.params.minDataPoints = config.minDataPoints;

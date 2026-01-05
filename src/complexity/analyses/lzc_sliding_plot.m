@@ -11,10 +11,12 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
 %   Create time series plots of normalized Lempel-Ziv complexity with
 %   reference line at shuffled mean (1.0) and optional reach onset markers.
 
-    % Collect data for axis limits
+    % Collect data for axis limits and calculate metric means
     allStartS = [];
     allLZNorm = [];
     
+    % Calculate mean of normalized LZ complexity per area (for centering behavior proportion)
+    metricMeans = cell(1, length(results.areas));
     for a = 1:length(results.areas)
         if ~isempty(results.startS{a})
             allStartS = [allStartS, results.startS{a}];
@@ -26,6 +28,48 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
         if ~isempty(results.lzComplexityNormalizedBernoulli{a})
             allLZNorm = [allLZNorm, results.lzComplexityNormalizedBernoulli{a}(~isnan(results.lzComplexityNormalizedBernoulli{a}))];
         end
+        
+        % Calculate mean of normalized LZ complexity for this area
+        allMetricsForArea = [];
+        if ~isempty(results.lzComplexityNormalized{a})
+            allMetricsForArea = [allMetricsForArea, results.lzComplexityNormalized{a}(~isnan(results.lzComplexityNormalized{a}))];
+        end
+        if ~isempty(results.lzComplexityNormalizedBernoulli{a})
+            allMetricsForArea = [allMetricsForArea, results.lzComplexityNormalizedBernoulli{a}(~isnan(results.lzComplexityNormalizedBernoulli{a}))];
+        end
+        if ~isempty(allMetricsForArea)
+            metricMeans{a} = mean(allMetricsForArea);
+        else
+            metricMeans{a} = nan;
+        end
+    end
+    
+    % Extract behavior proportion if available and center on metric means
+    if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'naturalistic')
+        behaviorProportion = results.behaviorProportion;
+        % Center behavior proportion on the mean of normalized LZ complexity
+        behaviorProportionCentered = cell(1, length(results.areas));
+        for a = 1:length(results.areas)
+            if ~isempty(behaviorProportion{a}) && ~isnan(metricMeans{a})
+                validBhvVals = behaviorProportion{a}(~isnan(behaviorProportion{a}));
+                if ~isempty(validBhvVals)
+                    meanBhvVal = mean(validBhvVals);
+                    % Center: subtract behavior mean, add metric mean
+                    behaviorProportionCentered{a} = behaviorProportion{a} - meanBhvVal + metricMeans{a};
+                else
+                    behaviorProportionCentered{a} = [];
+                end
+            else
+                behaviorProportionCentered{a} = [];
+            end
+        end
+        plotBehaviorProportion = true;
+    else
+        behaviorProportionCentered = cell(1, length(results.areas));
+        for a = 1:length(results.areas)
+            behaviorProportionCentered{a} = [];
+        end
+        plotBehaviorProportion = false;
     end
     
     % Determine axis limits
@@ -116,6 +160,18 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
         end
     end
     
+    % Find first non-empty area for event markers
+    firstNonEmptyArea = find(~cellfun(@isempty, results.startS), 1);
+    if isempty(firstNonEmptyArea)
+        firstNonEmptyArea = [];
+    end
+    
+    % Add path to utility functions
+    utilsPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils');
+    if exist(utilsPath, 'dir')
+        addpath(utilsPath);
+    end
+    
     for idx = 1:length(results.areas)
         a = idx;
         if useTightSubplot
@@ -126,44 +182,11 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
         hold on;
         
         % Add event markers first (so they appear behind the data)
-        % Add reach onsets if applicable
-        if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'sessionType') && ...
-                strcmp(dataStruct.sessionType, 'reach') && isfield(dataStruct, 'reachStart')
-            if ~isempty(results.startS{a}) && ~isempty(dataStruct.reachStart)
-                plotTimeRange = [results.startS{a}(1), results.startS{a}(end)];
-                reachOnsetsInRange = dataStruct.reachStart(...
-                    dataStruct.reachStart >= plotTimeRange(1) & dataStruct.reachStart <= plotTimeRange(2));
-                
-                if ~isempty(reachOnsetsInRange)
-                    for i = 1:length(reachOnsetsInRange)
-                        xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                            'LineStyle', '--', 'Alpha', 0.7);
-                    end
-                    if isfield(dataStruct, 'startBlock2') && ~isempty(dataStruct.startBlock2)
-                        xline(dataStruct.startBlock2, 'Color', [1 0 0], 'LineWidth', 3);
-                    end
-                end
-            end
-        end
-        
-    % Add hong trial start times if applicable
-    if strcmp(dataStruct.sessionType, 'hong')
-        if isfield(dataStruct, 'T') && ~isempty(dataStruct.T.startTime_oe)
-            % trialStartsInRange = dataStruct.T.startTime_oe(...
-            %     dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
-            % 
-            % if ~isempty(trialStartsInRange)
-            %     for i = 1:length(trialStartsInRange)
-            %         xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 1, ...
-            %             'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-            %     end
-            % end
-
-            % Add trial type
-            plot(dataStruct.T.startTime_oe, dataStruct.T.trialType/4 + .3, 'Color', [0.2 0.7 0.7], 'LineWidth', 2, ...
-                        'LineStyle', '-', 'HandleVisibility', 'off');
-        end
-    end
+        add_event_markers(dataStruct, results.startS, ...
+            'firstNonEmptyArea', firstNonEmptyArea, ...
+            'areaIdx', a, ...
+            'dataSource', results.dataSource, ...
+            'numAreas', length(results.areas));
         
         % Plot summed neural activity first (behind metrics) on right y-axis
         areaColor = areaColors{min(a, length(areaColors))};
@@ -171,8 +194,8 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
             yyaxis right;
             validIdx = ~isnan(summedActivityWindowed{a});
             if any(validIdx)
-                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '--', ...
-                    'Color', areaColor, 'LineWidth', 2, ...
+                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '-', ...
+                    'Color', [0.2 0.2 0.2], 'LineWidth', 2, ...
                     'HandleVisibility', 'off');
             end
             ylabel('Summed Activity', 'Color', [0.5 0.5 0.5]);
@@ -201,8 +224,24 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
             end
         end
         
-        yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
-        
+        % Plot behavior proportion (centered on metric mean) if available
+        if plotBehaviorProportion && ~isempty(behaviorProportion{a}) && ~isempty(results.startS{a})
+            % Use metric mean for this area
+            if ~isnan(metricMeans{a})
+                validBhvVals = behaviorProportion{a}(~isnan(behaviorProportion{a}));
+                if ~isempty(validBhvVals)
+                    meanBhvVal = mean(validBhvVals);
+                    behaviorProportionCentered = .2*(behaviorProportion{a} - meanBhvVal) + metricMeans{a};
+                    validIdx = ~isnan(behaviorProportionCentered);
+                    if any(validIdx)
+                        plot(results.startS{a}(validIdx), behaviorProportionCentered(validIdx), ':', ...
+                            'Color', [.7 .7 .7], 'LineWidth', 2, ...
+                            'DisplayName', sprintf('%s (bhv prop)', results.areas{a}));
+                    end
+                end
+            end
+        end
+                
         
         % Get neuron count for spike data
         if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'idMatIdx') && ...
@@ -239,25 +278,10 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
         normText = '(Shuffle normalized)';
     end
     
-    if strcmp(results.dataSource, 'spikes') && isfield(results, 'sessionType')
-        if ~isempty(plotConfig.filePrefix)
-            sgtitle(sprintf('[%s] %s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
-                plotConfig.filePrefix, results.sessionType, results.dataSource, ...
-                config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
-        else
-            sgtitle(sprintf('%s Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
-                results.sessionType, results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
-        end
-    else
-        if ~isempty(plotConfig.filePrefix)
-            sgtitle(sprintf('[%s] Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
-                plotConfig.filePrefix, results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
-        else
-            sgtitle(sprintf('Normalized Lempel-Ziv Complexity - %s, win=%.2fs, step=%.3fs, nShuffles=%d\n%s', ...
-                results.dataSource, config.slidingWindowSize, config.stepSize, config.nShuffles, normText));
-        end
-    end
-    
+            sgtitle(sprintf('[%s] %s Normalized Lempel-Ziv Complexity - %s %s, nShuffles=%d', ...
+                plotConfig.filePrefix, results.sessionType, results.dataSource, results.dataSource, ...
+                config.nShuffles), 'interpreter', 'none');
+       
     % Use the same directory as the results file (session-specific if applicable)
     % Extract directory from resultsPath if available, otherwise use config.saveDir
     if isfield(results, 'resultsPath') && ~isempty(results.resultsPath)
@@ -291,7 +315,7 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
     
     % Now save the figure
     try
-                    pause(7)
+                    drawnow
         exportgraphics(gcf, plotPath, 'Resolution', 300);
         fprintf('Saved LZC plot to: %s\n', plotPath);
     catch ME

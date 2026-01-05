@@ -137,7 +137,7 @@ if strcmp(dataSource, 'spikes')
         config.slidingWindowSize = zeros(1, numAreas);
         for a = areasToTest
             if ~isnan(config.binSize(a))
-                config.slidingWindowSize(a) = max(60, config.binSize(a) * config.minTimeBins);
+                config.slidingWindowSize(a) = max(config.minWindowSize, config.binSize(a) * config.minTimeBins);
                 fprintf('  Area %s: auto-calculated window size: %.2f s (from binSize=%.3f s, minTimeBins=%d)\n', ...
                     areas{a}, config.slidingWindowSize(a), config.binSize(a), config.minTimeBins);
             else
@@ -217,6 +217,9 @@ end
 if ~isfield(config, 'saveRecurrencePlots')
     config.saveRecurrencePlots = false;  % Default: don't save recurrence plots (saves memory)
 end
+if ~isfield(config, 'usePerWindowPCA')
+    config.usePerWindowPCA = false;  % Default: perform PCA on entire session (original behavior)
+end
 
 % Validate distance metric
 if ~ismember(lower(config.distanceMetric), {'euclidean', 'cosine'})
@@ -250,11 +253,21 @@ trappingTimeNormalizedBernoulli = cell(1, numAreas);
 recurrencePlots = cell(1, numAreas);  % Store recurrence plots for each area
 startS = cell(1, numAreas);
 
+% Initialize behavior proportion if enabled for naturalistic sessions
+if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+        isfield(config, 'behaviorDenominatorIDs') && ...
+        ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+    behaviorProportion = cell(1, numAreas);
+else
+    behaviorProportion = cell(1, numAreas);
+    for a = 1:numAreas
+        behaviorProportion{a} = [];
+    end
+end
+
 % Analysis loop
 fprintf('\n=== Processing Areas ===\n');
 
-% Track if any area was successfully processed
-hasProcessedAreas = false;
 
 parfor a = areasToTest
 % for a = areasToTest
@@ -311,22 +324,28 @@ parfor a = areasToTest
         % Use area-specific window size
         areaWindowSize = config.slidingWindowSize(a);
 
-        % Calculate window size in samples
-        winSamples = round(areaWindowSize / config.binSize(a));
-        if winSamples < 1
-            winSamples = 1;
+        % % Calculate window size in samples
+        % winSamples = round(areaWindowSize / config.binSize(a));
+        % if winSamples < 1
+        %     winSamples = 1;
+        % end
+
+        % fprintf('  Time points: %d, Window size: %.2fs, Window samples: %d, Bin size: %.3f s\n', ...
+        %     numTimePoints, areaWindowSize, winSamples, config.binSize(a));
+
+        % Perform PCA based on config option
+        if config.usePerWindowPCA
+            fprintf('  Using per-window PCA (drift correction mode)...\n');
+            pcaDataFull = [];  % Not used in per-window mode
+        else
+            % Perform PCA on entire session data for this area
+            fprintf('  Performing PCA on entire session data...\n');
+            [coeff, score, ~, ~, explained, mu] = pca(aDataMat);
+            % Use first actualPCADim dimensions
+            pcaDataFull = score(:, 1:actualPCADim);
+            fprintf('  PCA completed %s: using %d dimensions (explained variance: %.1f%%)\n', ...
+                areas{a}, actualPCADim, sum(explained(1:actualPCADim)));
         end
-
-        fprintf('  Time points: %d, Window size: %.2fs, Window samples: %d, Bin size: %.3f s\n', ...
-            numTimePoints, areaWindowSize, winSamples, config.binSize(a));
-
-        % Perform PCA on entire session data for this area
-        fprintf('  Performing PCA on entire session data...\n');
-        [coeff, score, ~, ~, explained, mu] = pca(aDataMat);
-        % Use first actualPCADim dimensions
-        pcaDataFull = score(:, 1:actualPCADim);
-        fprintf('  PCA completed: using %d dimensions (explained variance: %.1f%%)\n', ...
-            actualPCADim, sum(explained(1:actualPCADim)));
 
         % Initialize arrays
         recurrenceRate{a} = nan(1, numWindows);
@@ -348,6 +367,15 @@ parfor a = areasToTest
         end
         startS{a} = nan(1, numWindows);
 
+        % Initialize behavior proportion array if enabled
+        if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+                isfield(config, 'behaviorDenominatorIDs') && ...
+                ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+            behaviorProportion{a} = nan(1, numWindows);
+        else
+            behaviorProportion{a} = [];
+        end
+
         % Process each window using common centerTime
         for w = 1:numWindows
             centerTime = commonCenterTimes(w);
@@ -364,9 +392,18 @@ parfor a = areasToTest
                 continue;
             end
 
-            % Extract window data from pre-computed PCA space
-            % Use the same PCA space computed for the entire session
-            pcaData = pcaDataFull(startIdx:endIdx, :);
+            % Extract window data and perform PCA based on config option
+            if config.usePerWindowPCA
+                % Perform PCA on this window's data only (drift correction)
+                windowData = aDataMat(startIdx:endIdx, :);
+                [~, scoreWindow, ~, ~, explainedWindow, ~] = pca(windowData);
+                % Use first actualPCADim dimensions
+                pcaData = scoreWindow(:, 1:actualPCADim);
+            else
+                % Extract window data from pre-computed PCA space
+                % Use the same PCA space computed for the entire session
+                pcaData = pcaDataFull(startIdx:endIdx, :);
+            end
 
             % Calculate RQA metrics
             if config.saveRecurrencePlots
@@ -394,14 +431,21 @@ parfor a = areasToTest
                     shiftAmount = randi(size(aDataMat, 1));
                     permutedDataMat(:, n) = circshift(aDataMat(:, n), shiftAmount);
                 end
-                
-                % Perform PCA on shuffled entire session data
-                [~, scoreShuffled, ~, ~, ~, ~] = pca(permutedDataMat);
-                % Use first actualPCADim dimensions
-                shuffledPCAFull = scoreShuffled(:, 1:actualPCADim);
-                
-                % Extract window from shuffled PCA space
-                shuffledPCA = shuffledPCAFull(startIdx:endIdx, :);
+
+                if config.usePerWindowPCA
+                    % Perform PCA on shuffled window data only (matching per-window approach)
+                    shuffledWindowData = permutedDataMat(startIdx:endIdx, :);
+                    [~, scoreShuffled, ~, ~, ~, ~] = pca(shuffledWindowData);
+                    % Use first actualPCADim dimensions
+                    shuffledPCA = scoreShuffled(:, 1:actualPCADim);
+                else
+                    % Perform PCA on shuffled entire session data
+                    [~, scoreShuffled, ~, ~, ~, ~] = pca(permutedDataMat);
+                    % Use first actualPCADim dimensions
+                    shuffledPCAFull = scoreShuffled(:, 1:actualPCADim);
+                    % Extract window from shuffled PCA space
+                    shuffledPCA = shuffledPCAFull(startIdx:endIdx, :);
+                end
 
                 [shuffledRR(s), shuffledDET(s), shuffledLAM(s), shuffledTT(s)] = ...
                     compute_rqa_metrics(shuffledPCA, config.recurrenceThreshold, config.distanceMetric);
@@ -445,10 +489,24 @@ parfor a = areasToTest
                 bernoulliTT = nan(1, config.nShuffles);
 
                 for s = 1:config.nShuffles
-                    % Generate random data with same mean and std as original
-                    bernoulliPCA = zeros(size(pcaData));
-                    for dim = 1:actualPCADim
-                        bernoulliPCA(:, dim) = randn(size(pcaData, 1), 1) * std(pcaData(:, dim)) + mean(pcaData(:, dim));
+                    if config.usePerWindowPCA
+                        % For per-window PCA, generate random window data and perform PCA
+                        % Generate random data matching the window's statistics
+                        windowData = aDataMat(startIdx:endIdx, :);
+                        bernoulliWindowData = zeros(size(windowData));
+                        for n = 1:nNeurons
+                            firingRate = mean(windowData(:, n));
+                            bernoulliWindowData(:, n) = double(rand(size(windowData, 1), 1) < firingRate);
+                        end
+                        % Perform PCA on Bernoulli window data
+                        [~, bernoulliScore, ~, ~, ~, ~] = pca(bernoulliWindowData);
+                        bernoulliPCA = bernoulliScore(:, 1:actualPCADim);
+                    else
+                        % Generate random data with same mean and std as original PCA space
+                        bernoulliPCA = zeros(size(pcaData));
+                        for dim = 1:actualPCADim
+                            bernoulliPCA(:, dim) = randn(size(pcaData, 1), 1) * std(pcaData(:, dim)) + mean(pcaData(:, dim));
+                        end
                     end
 
                     [bernoulliRR(s), bernoulliDET(s), bernoulliLAM(s), bernoulliTT(s)] = ...
@@ -489,10 +547,41 @@ parfor a = areasToTest
                 laminarityNormalizedBernoulli{a}(w) = nan;
                 trappingTimeNormalizedBernoulli{a}(w) = nan;
             end
+
+            % Calculate behavior proportion if enabled for naturalistic sessions
+            if strcmp(sessionType, 'naturalistic') && isfield(dataStruct, 'bhvID') && ...
+                    ~isempty(dataStruct.bhvID) && isfield(config, 'behaviorNumeratorIDs') && ...
+                    isfield(config, 'behaviorDenominatorIDs') && ...
+                    ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+                % Convert window time range to bhvID indices (bhvID is at fsBhv sampling rate)
+                if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+                    fsBhv = dataStruct.fsBhv;
+                    bhvBinSize = 1 / fsBhv;  % Behavior bin size in seconds
+                    winStartTime = centerTime - areaWindowSize / 2;
+                    winEndTime = centerTime + areaWindowSize / 2;
+                    bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
+                    bhvEndIdx = round(winEndTime / bhvBinSize);
+                    bhvStartIdx = max(1, bhvStartIdx);
+                    bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
+
+                    if bhvStartIdx <= bhvEndIdx
+                        % Calculate proportion inline
+                        windowBhvID = dataStruct.bhvID(bhvStartIdx:bhvEndIdx);
+                        numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
+                        denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
+                        if denominatorCount > 0
+                            behaviorProportion{a}(w) = numeratorCount / denominatorCount;
+                        else
+                            behaviorProportion{a}(w) = nan;
+                        end
+                    end
+                end
+            end
         end
 
-        fprintf('  Area %s completed in %.1f minutes\n', areas{a}, toc/60);
     end
+
+    fprintf('  Area %s completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
 
@@ -516,6 +605,21 @@ results.trappingTimeNormalizedBernoulli = trappingTimeNormalizedBernoulli;
 if config.saveRecurrencePlots
     results.recurrencePlots = recurrencePlots;
 end
+
+% Store behavior proportion if calculated
+if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+        isfield(config, 'behaviorDenominatorIDs') && ...
+        ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+    results.behaviorProportion = behaviorProportion;
+    results.params.behaviorNumeratorIDs = config.behaviorNumeratorIDs;
+    results.params.behaviorDenominatorIDs = config.behaviorDenominatorIDs;
+else
+    results.behaviorProportion = cell(1, numAreas);
+    for a = 1:numAreas
+        results.behaviorProportion{a} = [];
+    end
+end
+
 results.params.stepSize = config.stepSize;
 results.params.nShuffles = config.nShuffles;
 results.params.nPCADim = config.nPCADim;
@@ -529,6 +633,7 @@ results.params.nMinNeurons = config.nMinNeurons;
 results.params.saveRecurrencePlots = config.saveRecurrencePlots;
 results.params.useOptimalBinSize = config.useOptimalBinSize;
 results.params.minSpikesPerBin = config.minSpikesPerBin;
+results.params.usePerWindowPCA = config.usePerWindowPCA;
 results.sessionType = sessionType;
 
 % Save results
@@ -556,10 +661,15 @@ if ~strcmp(sessionType, 'naturalistic') && ~isempty(sessionNameForPath) && conta
     end
 end
 
-% create_results_path expects dataType, but we have sessionType
-% For RQA, use sessionType as dataType
+
+% Add filename suffix with PCA dimension and drift flag
+filenameSuffix = sprintf('_pca%d', config.nPCADim);
+if config.usePerWindowPCA
+    filenameSuffix = [filenameSuffix, '_drift'];
+end
 resultsPath = create_results_path('rqa', sessionType, ...
-    sessionNameForPath, actualSaveDir, 'dataSource', dataSource);
+    sessionNameForPath, actualSaveDir, 'dataSource', dataSource, ...
+    'filenameSuffix', filenameSuffix);
 
 % Ensure directory exists before saving (including all parent directories)
 resultsDir = fileparts(resultsPath);
@@ -581,8 +691,8 @@ resultsToSave = results;
 if isfield(resultsToSave, 'recurrencePlots')
     resultsToSave = rmfield(resultsToSave, 'recurrencePlots');
 end
-
-save(resultsPath, 'resultsToSave');
+results = resultsToSave;
+save(resultsPath, 'results');
 clear resultsToSave;
 
 fprintf('\nSaved results to: %s\n', resultsPath);

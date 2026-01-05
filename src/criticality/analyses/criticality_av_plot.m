@@ -12,6 +12,12 @@ function criticality_av_plot(results, plotConfig, config, dataStruct, filenameSu
 %   Create time series plots of avalanche metrics (dcc, tau, alpha, paramSD, decades)
 %   with optional permutation shading.
 
+% Add path to utility functions
+utilsPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils');
+if exist(utilsPath, 'dir')
+    addpath(utilsPath);
+end
+
     % Extract data from results
     areas = results.areas;
     dcc = results.dcc;
@@ -247,63 +253,6 @@ function criticality_av_plot(results, plotConfig, config, dataStruct, filenameSu
     % Define colors for each area
     areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1]};  % Red, Green, Blue, Magenta for M23, M56, DS, VS
     
-    % Helper function to add event markers to current axes
-    function add_event_markers_av(areaIdx)
-        a = areasToTest(areaIdx);
-        % Add reach onsets and block 2 if applicable
-        if strcmp(dataType, 'reach') && isfield(dataStruct, 'reachStart') && ~isempty(startS{a})
-            if ~isempty(dataStruct.reachStart)
-                plotTimeRange = [startS{a}(1), startS{a}(end)];
-                reachOnsetsInRange = dataStruct.reachStart(...
-                    dataStruct.reachStart >= plotTimeRange(1) & dataStruct.reachStart <= plotTimeRange(2));
-                
-                if ~isempty(reachOnsetsInRange)
-                    for i = 1:length(reachOnsetsInRange)
-                        xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                    end
-                    if isfield(dataStruct, 'startBlock2') && ~isempty(dataStruct.startBlock2)
-                        xline(dataStruct.startBlock2, 'Color', [1 0 0], 'LineWidth', 3, ...
-                            'HandleVisibility', 'off');
-                    end
-                end
-            end
-        end
-        
-        % Add hong trial start times if applicable
-        if strcmp(dataType, 'hong')
-            if ~isempty(startS{a}) && isfield(dataStruct, 'T') && ...
-                    isfield(dataStruct.T, 'startTime_oe') && ~isempty(dataStruct.T.startTime_oe)
-                plotTimeRange = [startS{a}(1), startS{a}(end)];
-                trialStartsInRange = dataStruct.T.startTime_oe(...
-                    dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
-                
-                if ~isempty(trialStartsInRange)
-                    for i = 1:length(trialStartsInRange)
-                        xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                    end
-                end
-            end
-        end
-        
-        % Add schall response onsets if applicable
-        if strcmp(dataType, 'schall')
-            if ~isempty(startS{a}) && isfield(dataStruct, 'responseOnset') && ...
-                    ~isempty(dataStruct.responseOnset)
-                plotTimeRange = [startS{a}(1), startS{a}(end)];
-                responseOnsetsInRange = dataStruct.responseOnset(...
-                    dataStruct.responseOnset >= plotTimeRange(1) & dataStruct.responseOnset <= plotTimeRange(2));
-                
-                if ~isempty(responseOnsetsInRange)
-                    for i = 1:length(responseOnsetsInRange)
-                        xline(responseOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                    end
-                end
-            end
-        end
-    end
     
     % Avalanche analysis plots: 3 rows (dcc, tau/alpha/paramSD, decades) x num areas (columns)
     for idx = 1:length(areasToTest)
@@ -379,7 +328,8 @@ function criticality_av_plot(results, plotConfig, config, dataStruct, filenameSu
         hold on;
         
         % Add event markers first (so they appear behind the data)
-        add_event_markers_av(idx);
+        actualAreaIdx = areasToTest(idx);
+        add_event_markers(dataStruct, startS, 'areaIdx', actualAreaIdx);
         
         % Plot tau
         if ~isempty(tau{a}) && ~isempty(startS{a})

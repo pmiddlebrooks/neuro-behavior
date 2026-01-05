@@ -6,8 +6,12 @@
 % the new modular functions. You can still set variables in workspace
 % and run this script, or use lzc_sliding_analysis() function directly.
 
-% Set to 1 if you want to explore what binSize to use
+
+% Want to parallelize the area-wise analysis?
 runParallel = 1;
+
+
+% Set to 1 if you want to explore what binSize to use
 findBinSize = 0;
 
 % Add paths (check if directories exist first to avoid warnings)
@@ -86,6 +90,11 @@ elseif strcmp(dataSource, 'lfp')
     config.lfpLowpassFreq = 80;
 end
 
+if strcmp(sessionType, 'naturalistic')
+    config.behaviorNumeratorIDs = 5:10;
+    config.behaviorDenominatorIDs = [config.behaviorNumeratorIDs, 0:2, 15:17];
+end
+
 
 % Run analysis
 % Check if parpool is already running, start one if not
@@ -101,12 +110,6 @@ end
 end
 
 results = lzc_sliding_analysis(dataStruct, config);
-
-% Store results in workspace for backward compatibility
-lzComplexity = results.lzComplexity;
-lzComplexityNormalized = results.lzComplexityNormalized;
-lzComplexityNormalizedBernoulli = results.lzComplexityNormalizedBernoulli;
-startS = results.startS;
 
 fprintf('\n=== Analysis Complete ===\n');
 

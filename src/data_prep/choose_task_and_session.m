@@ -51,9 +51,8 @@ filenameSuffix = '';  % Will be updated based on pcaFlag in analysis script
 % Data type selection
 sessionType = 'naturalistic';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
 
-sessionName =  'ag112321/recording1';
-% sessionName =  'ag112321/recording1e';
-% sessionName =  'ag112321/recording2';
+sessionName =  'ag112321_1';
+% sessionName =  'ag112321_2';
 % sessionName =  'ey042822';  % Good M56, Bad DS
 % sessionName =  'kw092821';  % Bad M56, Good DS
 % sessionName =  'kw092121';  % Ok... few M56
@@ -86,9 +85,10 @@ sessionType = 'schall';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
 
 % For schall data: specify session name (uncomment and set one)
 sessionName =  'bp229n02-mm';
+sessionName =  'bp200n02';
 % sessionName =  'bp240n02';
 % sessionName =  'jp121n02';
-sessionName =  'jp125n04';
+% sessionName =  'jp125n04';
 % sessionName = goodSessionsCCM{end};
 
 

@@ -198,7 +198,7 @@ function results = criticality_ar_analysis(dataStruct, config)
         
         % Calculate window size in samples for this area
         winSamples = round(slidingWindowSize(a) / binSize(a));
-                
+        
         aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(a));
         numTimePoints = size(aDataMat, 1);
         
@@ -251,7 +251,7 @@ function results = criticality_ar_analysis(dataStruct, config)
         
         % Perform circular permutations if enabled
         if config.enablePermutations
-                [d2Permuted{a}, mrBrPermuted{a}] = perform_circular_permutations(...
+            [d2Permuted{a}, mrBrPermuted{a}] = perform_circular_permutations(...
                 aDataMat, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config);
             
             % Normalize d2 by shuffled d2 values if requested

@@ -49,6 +49,18 @@ for a = 1:length(results.areas)
     end
 end
 
+% Extract behavior proportion if available (will be centered per subplot)
+if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'naturalistic')
+    behaviorProportion = results.behaviorProportion;
+    plotBehaviorProportion = true;
+else
+    behaviorProportion = cell(1, length(results.areas));
+    for a = 1:length(results.areas)
+        behaviorProportion{a} = [];
+    end
+    plotBehaviorProportion = false;
+end
+
 % Determine axis limits
 if ~isempty(allStartS)
     xMin = min(allStartS);
@@ -195,67 +207,11 @@ if isempty(firstNonEmptyArea)
     return;
 end
 
-% Helper function to add event markers to current axes
-    function add_event_markers()
-        % Add reach onsets and block 2 if applicable
-        % Use first non-empty area for time range
-        if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'sessionType') && ...
-                strcmp(dataStruct.sessionType, 'reach') && isfield(dataStruct, 'reachStart') && numAreas > 0
-            if ~isempty(results.startS{firstNonEmptyArea}) && ~isempty(dataStruct.reachStart)
-                plotTimeRange = [results.startS{firstNonEmptyArea}(1), results.startS{firstNonEmptyArea}(end)];
-                reachOnsetsInRange = dataStruct.reachStart(...
-                    dataStruct.reachStart >= plotTimeRange(1) & dataStruct.reachStart <= plotTimeRange(2));
-
-                if ~isempty(reachOnsetsInRange)
-                    for i = 1:length(reachOnsetsInRange)
-                        xline(reachOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                    end
-                    if isfield(dataStruct, 'startBlock2') && ~isempty(dataStruct.startBlock2)
-                        xline(dataStruct.startBlock2, 'Color', [1 0 0], 'LineWidth', 3, ...
-                            'HandleVisibility', 'off');
-                    end
-                end
-            end
-        end
-
-        % Add hong trial start times if applicable
-        % Add hong trial start times if applicable
-        if strcmp(dataStruct.sessionType, 'hong')
-            if isfield(dataStruct, 'T') && ~isempty(dataStruct.T.startTime_oe)
-                % trialStartsInRange = dataStruct.T.startTime_oe(...
-                %     dataStruct.T.startTime_oe >= plotTimeRange(1) & dataStruct.T.startTime_oe <= plotTimeRange(2));
-                %
-                % if ~isempty(trialStartsInRange)
-                %     for i = 1:length(trialStartsInRange)
-                %         xline(trialStartsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 1, ...
-                %             'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                %     end
-                % end
-
-                % Add trial type
-                plot(dataStruct.T.startTime_oe, dataStruct.T.trialType/4 + .3, 'Color', [0.2 0.7 0.7], 'LineWidth', 2, ...
-                    'LineStyle', '-', 'HandleVisibility', 'off');
-            end
-        end
-
-        % Add schall response onsets if applicable
-        if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'sessionType') && ...
-                strcmp(dataStruct.sessionType, 'schall') && isfield(dataStruct, 'responseOnset') && numAreas > 0
-            if ~isempty(results.startS{firstNonEmptyArea}) && ~isempty(dataStruct.responseOnset)
-                plotTimeRange = [results.startS{firstNonEmptyArea}(1), results.startS{firstNonEmptyArea}(end)];
-                responseOnsetsInRange = dataStruct.responseOnset(...
-                    dataStruct.responseOnset >= plotTimeRange(1) & dataStruct.responseOnset <= plotTimeRange(2));
-
-                if ~isempty(responseOnsetsInRange)
-                    for i = 1:length(responseOnsetsInRange)
-                        xline(responseOnsetsInRange(i), 'Color', [0.5 0.5 0.5], 'LineWidth', 0.8, ...
-                            'LineStyle', '--', 'Alpha', 0.7, 'HandleVisibility', 'off');
-                    end
-                end
-            end
-        end
-    end
+% Add path to utility functions
+utilsPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils');
+if exist(utilsPath, 'dir')
+    addpath(utilsPath);
+end
 
 % Plot 1: Recurrence Rate (row 1) - all areas
 if useTightSubplot
@@ -303,9 +259,30 @@ for a = 1:numAreas
                 '--', 'Color', areaColor, 'LineWidth', 3, 'DisplayName', sprintf('%s (Bernoulli norm)', results.areas{a}));
         end
     end
+    
+    % Plot behavior proportion (centered on metric mean) if available
+    if plotBehaviorProportion && ~isempty(behaviorProportion{a}) && ~isempty(results.startS{a})
+        % Calculate mean of RR for this subplot (across all areas)
+        rrMeanForSubplot = mean(allRR);
+        validBhvVals = behaviorProportion{a}(~isnan(behaviorProportion{a}));
+        if ~isempty(validBhvVals) && ~isnan(rrMeanForSubplot)
+            meanBhvVal = mean(validBhvVals);
+            behaviorProportionCentered = behaviorProportion{a} - meanBhvVal + rrMeanForSubplot;
+            validIdx = ~isnan(behaviorProportionCentered);
+            if any(validIdx)
+                plot(results.startS{a}(validIdx), behaviorProportionCentered(validIdx), ':', ...
+                    'Color', areaColor, 'LineWidth', 2, ...
+                    'DisplayName', sprintf('%s (bhv prop)', results.areas{a}));
+            end
+        end
+    end
 end
 
 yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
+if plotBehaviorProportion && ~isempty(allRR)
+    rrMeanForSubplot = mean(allRR);
+    yline(rrMeanForSubplot, 'k:', 'LineWidth', 1, 'Alpha', 0.3, 'HandleVisibility', 'off');
+end
 
 title('Recurrence Rate (Normalized)');
 ylabel('RR (norm)');
@@ -328,7 +305,10 @@ end
 hold on;
 
 % Add event markers first (so they appear behind the data)
-add_event_markers();
+add_event_markers(dataStruct, results.startS, ...
+    'firstNonEmptyArea', firstNonEmptyArea, ...
+    'dataSource', results.dataSource, ...
+    'numAreas', numAreas);
 
 % Plot summed neural activity first (behind metrics) on right y-axis
 if strcmp(results.dataSource, 'spikes') && ~isempty(summedActivityWindowed)
@@ -368,9 +348,29 @@ for a = 1:numAreas
                 '--', 'Color', areaColor, 'LineWidth', 3);
         end
     end
+    
+    % Plot behavior proportion (centered on metric mean) if available
+    if plotBehaviorProportion && ~isempty(behaviorProportion{a}) && ~isempty(results.startS{a})
+        % Calculate mean of DET for this subplot (across all areas)
+        detMeanForSubplot = mean(allDET);
+        validBhvVals = behaviorProportion{a}(~isnan(behaviorProportion{a}));
+        if ~isempty(validBhvVals) && ~isnan(detMeanForSubplot)
+            meanBhvVal = mean(validBhvVals);
+            behaviorProportionCentered = behaviorProportion{a} - meanBhvVal + detMeanForSubplot;
+            validIdx = ~isnan(behaviorProportionCentered);
+            if any(validIdx)
+                plot(results.startS{a}(validIdx), behaviorProportionCentered(validIdx), ':', ...
+                    'Color', areaColor, 'LineWidth', 2, 'HandleVisibility', 'off');
+            end
+        end
+    end
 end
 
 yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5);
+if plotBehaviorProportion && ~isempty(allDET)
+    detMeanForSubplot = mean(allDET);
+    yline(detMeanForSubplot, 'k:', 'LineWidth', 1, 'Alpha', 0.3, 'HandleVisibility', 'off');
+end
 
 title('Determinism (Normalized)');
 ylabel('DET (norm)');
@@ -392,7 +392,10 @@ end
 hold on;
 
 % Add event markers first (so they appear behind the data)
-add_event_markers();
+add_event_markers(dataStruct, results.startS, ...
+    'firstNonEmptyArea', firstNonEmptyArea, ...
+    'dataSource', results.dataSource, ...
+    'numAreas', numAreas);
 
 % Plot summed neural activity first (behind metrics) on right y-axis
 if strcmp(results.dataSource, 'spikes') && ~isempty(summedActivityWindowed)
@@ -432,9 +435,29 @@ for a = 1:numAreas
                 '--', 'Color', areaColor, 'LineWidth', 3);
         end
     end
+    
+    % Plot behavior proportion (centered on metric mean) if available
+    if plotBehaviorProportion && ~isempty(behaviorProportion{a}) && ~isempty(results.startS{a})
+        % Calculate mean of LAM for this subplot (across all areas)
+        lamMeanForSubplot = mean(allLAM);
+        validBhvVals = behaviorProportion{a}(~isnan(behaviorProportion{a}));
+        if ~isempty(validBhvVals) && ~isnan(lamMeanForSubplot)
+            meanBhvVal = mean(validBhvVals);
+            behaviorProportionCentered = behaviorProportion{a} - meanBhvVal + lamMeanForSubplot;
+            validIdx = ~isnan(behaviorProportionCentered);
+            if any(validIdx)
+                plot(results.startS{a}(validIdx), behaviorProportionCentered(validIdx), ':', ...
+                    'Color', areaColor, 'LineWidth', 2, 'HandleVisibility', 'off');
+            end
+        end
+    end
 end
 
 yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5);
+if plotBehaviorProportion && ~isempty(allLAM)
+    lamMeanForSubplot = mean(allLAM);
+    yline(lamMeanForSubplot, 'k:', 'LineWidth', 1, 'Alpha', 0.3, 'HandleVisibility', 'off');
+end
 
 title('Laminarity (Normalized)');
 ylabel('LAM (norm)');
@@ -456,7 +479,10 @@ end
 hold on;
 
 % Add event markers first (so they appear behind the data)
-add_event_markers();
+add_event_markers(dataStruct, results.startS, ...
+    'firstNonEmptyArea', firstNonEmptyArea, ...
+    'dataSource', results.dataSource, ...
+    'numAreas', numAreas);
 
 % Plot summed neural activity first (behind metrics) on right y-axis
 if strcmp(results.dataSource, 'spikes') && ~isempty(summedActivityWindowed)
@@ -496,9 +522,29 @@ for a = 1:numAreas
                 '--', 'Color', areaColor, 'LineWidth', 3);
         end
     end
+    
+    % Plot behavior proportion (centered on metric mean) if available
+    if plotBehaviorProportion && ~isempty(behaviorProportion{a}) && ~isempty(results.startS{a})
+        % Calculate mean of TT for this subplot (across all areas)
+        ttMeanForSubplot = mean(allTT);
+        validBhvVals = behaviorProportion{a}(~isnan(behaviorProportion{a}));
+        if ~isempty(validBhvVals) && ~isnan(ttMeanForSubplot)
+            meanBhvVal = mean(validBhvVals);
+            behaviorProportionCentered = behaviorProportion{a} - meanBhvVal + ttMeanForSubplot;
+            validIdx = ~isnan(behaviorProportionCentered);
+            if any(validIdx)
+                plot(results.startS{a}(validIdx), behaviorProportionCentered(validIdx), ':', ...
+                    'Color', areaColor, 'LineWidth', 2, 'HandleVisibility', 'off');
+            end
+        end
+    end
 end
 
 yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5);
+if plotBehaviorProportion && ~isempty(allTT)
+    ttMeanForSubplot = mean(allTT);
+    yline(ttMeanForSubplot, 'k:', 'LineWidth', 1, 'Alpha', 0.3, 'HandleVisibility', 'off');
+end
 
 title('Trapping Time (Normalized)');
 ylabel('TT (norm)');
@@ -524,13 +570,19 @@ else
     normText = '(Shuffle normalized)';
 end
 
+% Add drift indicator to title if using per-window PCA
+driftText = '';
+if isfield(results.params, 'usePerWindowPCA') && results.params.usePerWindowPCA
+    driftText = ' [per-window PCA]';
+end
+
 if strcmp(results.dataSource, 'spikes') && isfield(results, 'sessionType')
 
-        sgtitle(sprintf('%s RQA Analysis - %s, nShuffles=%d, nPCA=%d\n%s', ...
-            results.sessionType, results.dataSource, config.nShuffles, config.nPCADim, normText));
+        sgtitle(sprintf('[%s] %s RQA Analysis - %s, nShuffles=%d, nPCA=%d%s\n%s', ...
+            plotConfig.filePrefix, results.sessionType, results.dataSource, config.nShuffles, config.nPCADim, driftText, normText), 'interpreter', 'none');
 else
-        sgtitle(sprintf('RQA Analysis - %s, nShuffles=%d, nPCA=%d\n%s', ...
-            results.dataSource, config.nShuffles, config.nPCADim, normText));
+        sgtitle(sprintf('[%s] RQA Analysis - %s, nShuffles=%d, nPCA=%d%s\n%s', ...
+            plotConfig.filePrefix, results.dataSource, config.nShuffles, config.nPCADim, driftText, normText), 'interpreter', 'none');
 end
 
 % Use the same directory as the results file (session-specific if applicable)
@@ -541,13 +593,17 @@ else
     plotSaveDir = config.saveDir;
 end
 
-% Build full plot path first
+% Build full plot path first (append _drift if using per-window PCA)
+driftSuffix = '';
+if isfield(results.params, 'usePerWindowPCA') && results.params.usePerWindowPCA
+    driftSuffix = '_drift';
+end
 if ~isempty(plotConfig.filePrefix)
-    plotPath = fullfile(plotSaveDir, sprintf('%s_rqa_%s.png', ...
-        plotConfig.filePrefix, results.dataSource));
+    plotPath = fullfile(plotSaveDir, sprintf('%s_rqa_%s%s.png', ...
+        plotConfig.filePrefix, results.dataSource, driftSuffix));
 else
-    plotPath = fullfile(plotSaveDir, sprintf('rqa_%s.png', ...
-        results.dataSource));
+    plotPath = fullfile(plotSaveDir, sprintf('rqa_%s%s.png', ...
+        results.dataSource, driftSuffix));
 end
 
 % Extract directory from plot path and create it (including all parent directories)
@@ -684,13 +740,17 @@ if saveRecurrencePlots && isfield(results, 'recurrencePlots')
             end
         end
 
-        % Save recurrence plots figure
+        % Save recurrence plots figure (append _drift if using per-window PCA)
+        driftSuffix = '';
+        if isfield(results.params, 'usePerWindowPCA') && results.params.usePerWindowPCA
+            driftSuffix = '_drift';
+        end
         if ~isempty(plotConfig.filePrefix)
-            recurrencePlotPath = fullfile(plotSaveDir, sprintf('%s_rqa_recurrence_plots_%s.png', ...
-                plotConfig.filePrefix, results.dataSource));
+            recurrencePlotPath = fullfile(plotSaveDir, sprintf('%s_rqa_recurrence_plots_%s_nPCA=%d%s.png', ...
+                plotConfig.filePrefix, results.dataSource, config.nPCADim, driftSuffix));
         else
-            recurrencePlotPath = fullfile(plotSaveDir, sprintf('rqa_recurrence_plots_%s.png', ...
-                results.dataSource));
+            recurrencePlotPath = fullfile(plotSaveDir, sprintf('rqa_recurrence_plots_%s_nPCA=%d%s.png', ...
+                results.dataSource, config.nPCADim, driftSuffix));
         end
 
         % Extract directory from plot path and create it if needed
@@ -706,8 +766,8 @@ if saveRecurrencePlots && isfield(results, 'recurrencePlots')
         end
 
         try
-            pause(7)
-            exportgraphics(gcf, recurrencePlotPath, 'Resolution', 300);
+drawnow
+exportgraphics(gcf, recurrencePlotPath, 'Resolution', 300);
             fprintf('Saved RQA recurrence plots to: %s\n', recurrencePlotPath);
         catch ME
             error('Failed to save recurrence plots to %s: %s\nDirectory exists: %d', recurrencePlotPath, ME.message, exist(recurrencePlotDir, 'dir'));
