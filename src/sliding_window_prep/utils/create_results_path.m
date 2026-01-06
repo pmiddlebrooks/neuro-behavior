@@ -55,15 +55,28 @@ function resultsPath = create_results_path(analysisType, sessionType, sessionNam
             if isempty(dataSource)
                 error('dataSource must be provided for LZC analysis');
             end
+            % Only add dataSource to filename if it's 'lfp' (not 'spikes')
+            if strcmp(dataSource, 'lfp')
                 filename = sprintf('lzc_sliding_window_%s%s_%s.mat', ...
                     dataSource, filenameSuffix, sessionName);
+            else
+                filename = sprintf('lzc_sliding_window%s_%s.mat', ...
+                    filenameSuffix, sessionName);
+            end
             
         case 'rqa'
             if isempty(dataSource)
                 error('dataSource must be provided for rqa analysis');
             end
+            % Only add dataSource to filename if it's 'lfp' (not 'spikes')
+            % Note: PCA dimensions should be included in filenameSuffix by caller
+            if strcmp(dataSource, 'lfp')
                 filename = sprintf('rqa_sliding_window_%s%s_%s.mat', ...
                     dataSource, filenameSuffix, sessionName);
+            else
+                filename = sprintf('rqa_sliding_window%s_%s.mat', ...
+                    filenameSuffix, sessionName);
+            end
             
         otherwise
             % Generic fallback

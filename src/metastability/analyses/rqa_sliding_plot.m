@@ -594,16 +594,24 @@ else
 end
 
 % Build full plot path first (append _drift if using per-window PCA)
+% Always include PCA dimensions in RQA plot filenames
+% Only add dataSource if it's 'lfp' (not 'spikes')
 driftSuffix = '';
 if isfield(results.params, 'usePerWindowPCA') && results.params.usePerWindowPCA
     driftSuffix = '_drift';
 end
-if ~isempty(plotConfig.filePrefix)
-    plotPath = fullfile(plotSaveDir, sprintf('%s_rqa_%s%s.png', ...
-        plotConfig.filePrefix, results.dataSource, driftSuffix));
+pcaSuffix = sprintf('_pca%d', config.nPCADim);
+if strcmp(results.dataSource, 'lfp')
+    dataSourceStr = ['_', results.dataSource];
 else
-    plotPath = fullfile(plotSaveDir, sprintf('rqa_%s%s.png', ...
-        results.dataSource, driftSuffix));
+    dataSourceStr = '';
+end
+if ~isempty(plotConfig.filePrefix)
+    plotPath = fullfile(plotSaveDir, sprintf('%s_rqa%s%s%s.png', ...
+        plotConfig.filePrefix, dataSourceStr, pcaSuffix, driftSuffix));
+else
+    plotPath = fullfile(plotSaveDir, sprintf('rqa%s%s%s.png', ...
+        dataSourceStr, pcaSuffix, driftSuffix));
 end
 
 % Extract directory from plot path and create it (including all parent directories)
@@ -741,16 +749,22 @@ if saveRecurrencePlots && isfield(results, 'recurrencePlots')
         end
 
         % Save recurrence plots figure (append _drift if using per-window PCA)
+        % Always include PCA dimensions, only add dataSource if it's 'lfp'
         driftSuffix = '';
         if isfield(results.params, 'usePerWindowPCA') && results.params.usePerWindowPCA
             driftSuffix = '_drift';
         end
-        if ~isempty(plotConfig.filePrefix)
-            recurrencePlotPath = fullfile(plotSaveDir, sprintf('%s_rqa_recurrence_plots_%s_nPCA=%d%s.png', ...
-                plotConfig.filePrefix, results.dataSource, config.nPCADim, driftSuffix));
+        if strcmp(results.dataSource, 'lfp')
+            dataSourceStr = ['_', results.dataSource];
         else
-            recurrencePlotPath = fullfile(plotSaveDir, sprintf('rqa_recurrence_plots_%s_nPCA=%d%s.png', ...
-                results.dataSource, config.nPCADim, driftSuffix));
+            dataSourceStr = '';
+        end
+        if ~isempty(plotConfig.filePrefix)
+            recurrencePlotPath = fullfile(plotSaveDir, sprintf('%s_rqa_recurrence_plots%s_pca%d%s.png', ...
+                plotConfig.filePrefix, dataSourceStr, config.nPCADim, driftSuffix));
+        else
+            recurrencePlotPath = fullfile(plotSaveDir, sprintf('rqa_recurrence_plots%s_pca%d%s.png', ...
+                dataSourceStr, config.nPCADim, driftSuffix));
         end
 
         % Extract directory from plot path and create it if needed

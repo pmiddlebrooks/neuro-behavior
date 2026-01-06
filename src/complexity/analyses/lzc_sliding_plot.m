@@ -291,12 +291,18 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
     end
     
     % Build full plot path first
-    if ~isempty(plotConfig.filePrefix)
-        plotPath = fullfile(plotSaveDir, sprintf('%s_lzc_sliding_window_%s.png', ...
-            plotConfig.filePrefix, results.dataSource));
+    % Only add dataSource if it's 'lfp' (not 'spikes')
+    if strcmp(results.dataSource, 'lfp')
+        dataSourceStr = ['_', results.dataSource];
     else
-        plotPath = fullfile(plotSaveDir, sprintf('lzc_sliding_window_%s.png', ...
-            results.dataSource));
+        dataSourceStr = '';
+    end
+    if ~isempty(plotConfig.filePrefix)
+        plotPath = fullfile(plotSaveDir, sprintf('%s_lzc_sliding_window%s.png', ...
+            plotConfig.filePrefix, dataSourceStr));
+    else
+        plotPath = fullfile(plotSaveDir, sprintf('lzc_sliding_window%s.png', ...
+            dataSourceStr));
     end
     
     % Extract directory from plot path and create it (including all parent directories)

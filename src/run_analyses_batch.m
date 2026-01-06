@@ -11,14 +11,14 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'open_field'
-batchSessionType = 'schall';  % Change this to process different session types
+batchSessionType = 'reach';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
 % Define which analyses to run (set to true to run, false to skip)
 % Add new analyses here as needed
 analysesToRun = struct();
-analysesToRun.lzc = true;  % Run lzc analysis
+analysesToRun.lzc = false;  % Run lzc analysis
 analysesToRun.rqa = true;         % Run RQA analysis
 analysesToRun.criticality_ar = false;  % Run criticality AR (d2/mrBr) analysis
 analysesToRun.criticality_av = false;  % Run criticality AV (avalanche) analysis
@@ -117,7 +117,7 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
-for s = 19:numSessions
+for s = 1 :numSessions
     sessionName = sessions{s};
     
     fprintf('\n');

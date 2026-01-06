@@ -663,6 +663,7 @@ end
 
 
 % Add filename suffix with PCA dimension and drift flag
+% Always include PCA dimensions in RQA filenames
 filenameSuffix = sprintf('_pca%d', config.nPCADim);
 if config.usePerWindowPCA
     filenameSuffix = [filenameSuffix, '_drift'];

@@ -68,7 +68,7 @@ config.recurrenceThreshold = 0.03;  % Target recurrence rate (0.02 = 2%, range: 
 config.distanceMetric = 'cosine';  % 'euclidean' or 'cosine' (cosine recommended for sparse spiking)
 config.nMinNeurons = 15;  % Minimum number of neurons required (areas with fewer will be skipped)
 config.saveRecurrencePlots = false;  % Set to true to compute and store recurrence plots (uses a lot of memory)
-config.usePerWindowPCA = false;  % Set to true to perform PCA on each window (addresses representational drift)
+config.usePerWindowPCA = true;  % Set to true to perform PCA on each window (addresses representational drift)
 
 if strcmp(sessionType, 'naturalistic')
     config.behaviorNumeratorIDs = 5:10;
