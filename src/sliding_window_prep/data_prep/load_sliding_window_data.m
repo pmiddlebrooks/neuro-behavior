@@ -106,7 +106,7 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
             
         case 'hong'
             dataStruct = load_hong_data(dataStruct, dataSource, paths, opts, lfpCleanParams, bands);
-            
+            dataStruct.sessionName = sessionName;            
         otherwise
             error('Invalid sessionType: %s. Must be ''reach'', ''naturalistic'', ''schall'', or ''hong''', sessionType);
     end

@@ -11,14 +11,14 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'open_field'
-batchSessionType = 'reach';  % Change this to process different session types
+batchSessionType = 'schall';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
 % Define which analyses to run (set to true to run, false to skip)
 % Add new analyses here as needed
 analysesToRun = struct();
-analysesToRun.lzc = false;  % Run lzc analysis
+analysesToRun.lzc = true;  % Run lzc analysis
 analysesToRun.rqa = true;         % Run RQA analysis
 analysesToRun.criticality_ar = false;  % Run criticality AR (d2/mrBr) analysis
 analysesToRun.criticality_av = false;  % Run criticality AV (avalanche) analysis
@@ -66,7 +66,7 @@ switch lower(batchSessionType)
     case 'schall'
         % sessions = schall_session_list();
         sessionType = 'schall';
-        subjectID = 'joule';  % joule  broca
+        subjectID = 'broca';  % joule  broca
         searchDir = fullfile(paths.dropPath, 'schall/data', subjectID);  % Set this to the directory path containing .mat files
         loadPath = fullfile(searchDir, 'goodSessionsCCM.mat');
         load(loadPath);

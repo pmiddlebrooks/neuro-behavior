@@ -7,7 +7,7 @@
 % and run this script, or use rqa_sliding_analysis() function directly.
 
 
-runParallel = 1;
+runParallel = 0;
 
 paths = get_paths;
 

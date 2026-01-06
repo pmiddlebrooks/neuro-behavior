@@ -8,7 +8,10 @@
 
 
 % Want to parallelize the area-wise analysis?
-runParallel = 1;
+runParallel = 0;
+
+% Set to 1 to load and plot existing results instead of running analysis
+loadAndPlot = 0;
 
 
 % Set to 1 if you want to explore what binSize to use
@@ -43,9 +46,68 @@ opts.collectEnd = opts.collectStart + 30*60;
 opts.minFiringRate = .25;
 opts.maxFiringRate = 200;
 
+% Load and plot existing results if requested
+if loadAndPlot
+    % Require sessionType and dataSource to be defined
+    if ~exist('sessionType', 'var') || ~exist('dataSource', 'var')
+        error('sessionType and dataSource must be defined to load and plot results');
+    end
+    
+    % Load dataStruct (needed for plotting)
+    fprintf('Loading data using load_sliding_window_data...\n');
+    dataStruct = load_sliding_window_data(sessionType, dataSource, ...
+        'sessionName', sessionName, 'opts', opts);
+    
+    % Find results file
+    sessionNameForPath = '';
+    if exist('sessionName', 'var') && ~isempty(sessionName)
+        sessionNameForPath = sessionName;
+    end
+    
+    resultsPath = create_results_path('lzc', sessionType, sessionNameForPath, ...
+        dataStruct.saveDir, 'dataSource', dataSource, 'createDir', false);
+    
+    if ~exist(resultsPath, 'file')
+        error('Results file not found: %s', resultsPath);
+    end
+    
+    fprintf('Loading results from: %s\n', resultsPath);
+    load(resultsPath, 'results');
+    
+    % Reconstruct config from results.params
+    config = struct();
+    if isfield(results.params, 'slidingWindowSize')
+        config.slidingWindowSize = results.params.slidingWindowSize;
+    end
+    if isfield(results.params, 'stepSize')
+        config.stepSize = results.params.stepSize;
+    end
+    if isfield(results.params, 'nShuffles')
+        config.nShuffles = results.params.nShuffles;
+    end
+    if isfield(results.params, 'useBernoulliControl')
+        config.useBernoulliControl = results.params.useBernoulliControl;
+    end
+    
+    % Setup plotting
+    plotArgs = {};
+    if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+        plotArgs = [plotArgs, {'sessionName', dataStruct.sessionName}];
+    end
+    if isfield(dataStruct, 'dataBaseName') && ~isempty(dataStruct.dataBaseName)
+        plotArgs = [plotArgs, {'dataBaseName', dataStruct.dataBaseName}];
+    end
+    plotConfig = setup_plotting(dataStruct.saveDir, plotArgs{:});
+    
+    % Plot results
+    fprintf('Plotting results...\n');
+    lzc_sliding_plot(results, plotConfig, config, dataStruct);
+    
+    fprintf('\n=== Plotting Complete ===\n');
+    return;
+end
 
-
-% Check if data is already loaded (workspace variables)
+% Normal analysis flow - check if data is already loaded (workspace variables)
 % If not, try to load using new function
 % Try to load data using new function
 if exist('sessionType', 'var') && exist('dataSource', 'var')
@@ -94,7 +156,6 @@ if strcmp(sessionType, 'naturalistic')
     config.behaviorNumeratorIDs = 5:10;
     config.behaviorDenominatorIDs = [config.behaviorNumeratorIDs, 0:2, 15:17];
 end
-
 
 % Run analysis
 % Check if parpool is already running, start one if not

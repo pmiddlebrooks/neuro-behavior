@@ -116,7 +116,7 @@ function add_event_markers(dataStruct, startS, varargin)
         end
     end
     
-    % Add hong trial type fills if applicable
+    % Add hong trial type markers if applicable
     if strcmp(sessionType, 'hong')
         if isfield(dataStruct, 'T') && ~isempty(dataStruct.T.startTime_oe)            % Get unique trial types and assign colors
             uniqueTrialTypes = unique(dataStruct.T.trialType);
@@ -131,7 +131,7 @@ function add_event_markers(dataStruct, startS, varargin)
                 0.5 0 0.5;  % Purple
             ];
             
-            % Plot horizontal fills for each trial type
+            % Plot horizontal lines for each trial type
             yLevel = 1.03;
             startTimes = dataStruct.T.startTime_oe;
             trialTypes = dataStruct.T.trialType;
@@ -146,7 +146,7 @@ function add_event_markers(dataStruct, startS, varargin)
                 [sortedStartTimes, sortIdx] = sort(filteredStartTimes);
                 sortedTrialTypes = filteredTrialTypes(sortIdx);
                 
-                % Plot fills for each trial type segment
+                % Plot thick lines for each trial type segment
                 for i = 1:length(sortedStartTimes)
                     trialType = sortedTrialTypes(i);
                     trialStart = sortedStartTimes(i);
@@ -164,10 +164,9 @@ function add_event_markers(dataStruct, startS, varargin)
                         colorIdx = mod(typeIdx - 1, size(baseColors, 1)) + 1;
                         trialColor = baseColors(colorIdx, :);
                         
-                        % Plot horizontal fill
-                        fill([trialStart, trialEnd, trialEnd, trialStart], ...
-                            [yLevel, yLevel, yLevel + 0.01, yLevel + 0.01], ...
-                            trialColor, 'EdgeColor', 'none', 'FaceAlpha', 0.4, ...
+                        % Plot thick horizontal line
+                        plot([trialStart, trialEnd], [yLevel, yLevel], ...
+                            'Color', trialColor, 'LineWidth', 4, ...
                             'HandleVisibility', 'off');
                     end
                 end

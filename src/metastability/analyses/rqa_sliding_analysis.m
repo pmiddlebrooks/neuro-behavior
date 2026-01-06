@@ -269,8 +269,8 @@ end
 fprintf('\n=== Processing Areas ===\n');
 
 
-parfor a = areasToTest
-% for a = areasToTest
+% parfor a = areasToTest
+for a = areasToTest
     fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
 
     % Check minimum number of neurons for spike data
