@@ -7,7 +7,18 @@
 % and run this script, or use rqa_sliding_analysis() function directly.
 
 
-runParallel = 0;
+runParallel = 1;
+
+% Set to 1 to load and plot existing results instead of running analysis
+loadAndPlot = 1;
+config.nPCADim = 4;
+config.usePerWindowPCA = true;  % Set to true to perform PCA on each window (addresses representational drift)
+    % Optionally specify which areas to plot (default: all areas)
+    % Can be a vector of indices (e.g., [1, 2]) or cell array of area names (e.g., {'S1', 'SC'})
+    % Example: config.areasToPlot = [1, 2];  % Plot only first two areas
+    % Example: config.areasToPlot = {'S1', 'SC'};  % Plot areas by name
+    % If not specified or empty, all areas will be plotted
+config.areasToPlot = 2:3;
 
 paths = get_paths;
 
@@ -39,7 +50,104 @@ opts.collectEnd = opts.collectStart + 30*60;
 opts.minFiringRate = .25;
 opts.maxFiringRate = 100;
 
-% Check if data is already loaded (workspace variables)
+% Load and plot existing results if requested
+if loadAndPlot
+    % Require sessionType and dataSource to be defined
+    if ~exist('sessionType', 'var') || ~exist('dataSource', 'var')
+        error('sessionType and dataSource must be defined to load and plot results');
+    end
+    
+    % Require config variables needed to construct filename
+    % These should match what's used in rqa_sliding_analysis.m
+    if ~exist('config', 'var')
+        config = struct();
+    end
+    if ~isfield(config, 'nPCADim')
+        error('config.nPCADim must be defined to load RQA results (needed for filename)');
+    end
+    if ~isfield(config, 'usePerWindowPCA')
+        config.usePerWindowPCA = false;  % Default if not specified
+    end
+    
+    % Load dataStruct (needed for plotting)
+    fprintf('Loading data using load_sliding_window_data...\n');
+    dataStruct = load_sliding_window_data(sessionType, dataSource, ...
+        'sessionName', sessionName, 'opts', opts);
+    
+    % Find results file - construct filenameSuffix matching rqa_sliding_analysis.m
+    sessionNameForPath = '';
+    if exist('sessionName', 'var') && ~isempty(sessionName)
+        sessionNameForPath = sessionName;
+    end
+    
+    % Construct filenameSuffix exactly as in rqa_sliding_analysis.m
+    % Always include PCA dimensions in RQA filenames
+    filenameSuffix = sprintf('_pca%d', config.nPCADim);
+    if config.usePerWindowPCA
+        filenameSuffix = [filenameSuffix, '_drift'];
+    end
+    
+    resultsPath = create_results_path('rqa', sessionType, sessionNameForPath, ...
+        dataStruct.saveDir, 'dataSource', dataSource, ...
+        'filenameSuffix', filenameSuffix, 'createDir', false);
+    
+    if ~exist(resultsPath, 'file')
+        error('Results file not found: %s', resultsPath);
+    end
+    
+    fprintf('Loading results from: %s\n', resultsPath);
+    load(resultsPath, 'results');
+    
+    % Reconstruct config from results.params (overwrite with saved values)
+    if isfield(results.params, 'slidingWindowSize')
+        config.slidingWindowSize = results.params.slidingWindowSize;
+    end
+    if isfield(results.params, 'stepSize')
+        config.stepSize = results.params.stepSize;
+    end
+    if isfield(results.params, 'nShuffles')
+        config.nShuffles = results.params.nShuffles;
+    end
+    if isfield(results.params, 'useBernoulliControl')
+        config.useBernoulliControl = results.params.useBernoulliControl;
+    end
+    if isfield(results.params, 'nPCADim')
+        config.nPCADim = results.params.nPCADim;
+    end
+    if isfield(results.params, 'recurrenceThreshold')
+        config.recurrenceThreshold = results.params.recurrenceThreshold;
+    end
+    if isfield(results.params, 'distanceMetric')
+        config.distanceMetric = results.params.distanceMetric;
+    end
+    if isfield(results.params, 'usePerWindowPCA')
+        config.usePerWindowPCA = results.params.usePerWindowPCA;
+    end
+    
+    % Add saveDir from dataStruct (needed for plotting)
+    config.saveDir = dataStruct.saveDir;
+    
+
+    
+    % Setup plotting
+    plotArgs = {};
+    if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+        plotArgs = [plotArgs, {'sessionName', dataStruct.sessionName}];
+    end
+    if isfield(dataStruct, 'dataBaseName') && ~isempty(dataStruct.dataBaseName)
+        plotArgs = [plotArgs, {'dataBaseName', dataStruct.dataBaseName}];
+    end
+    plotConfig = setup_plotting(dataStruct.saveDir, plotArgs{:});
+    
+    % Plot results
+    fprintf('Plotting results...\n');
+    rqa_sliding_plot(results, plotConfig, config, dataStruct);
+    
+    fprintf('\n=== Plotting Complete ===\n');
+    return;
+end
+
+% Normal analysis flow - check if data is already loaded (workspace variables)
 % If not, try to load using new function
 % Try to load data using new function
 if exist('sessionType', 'var') && exist('dataSource', 'var')

@@ -23,6 +23,73 @@ function rqa_sliding_plot(results, plotConfig, config, dataStruct)
 %     shuffled.
 %   All normalized metrics have a reference line at 1.0 (shuffled mean). Values > 1.0
 %   indicate more structure than shuffled controls.
+%
+%   Optional config fields:
+%     .areasToPlot - Vector of area indices or cell array of area names to plot
+%                    (default: plot all areas)
+
+% Determine which areas to plot
+if isfield(config, 'areasToPlot') && ~isempty(config.areasToPlot)
+    % User specified areas to plot
+    if isnumeric(config.areasToPlot)
+        % Indices provided
+        areasToPlot = config.areasToPlot;
+        areasToPlot = areasToPlot(areasToPlot >= 1 & areasToPlot <= length(results.areas));
+    elseif iscell(config.areasToPlot)
+        % Area names provided - find matching indices
+        areasToPlot = [];
+        for i = 1:length(config.areasToPlot)
+            idx = find(strcmp(results.areas, config.areasToPlot{i}), 1);
+            if ~isempty(idx)
+                areasToPlot = [areasToPlot, idx];
+            end
+        end
+    else
+        error('config.areasToPlot must be a vector of indices or cell array of area names');
+    end
+    
+    if isempty(areasToPlot)
+        warning('No valid areas found in config.areasToPlot. Plotting all areas.');
+        areasToPlot = 1:length(results.areas);
+    end
+else
+    % Plot all areas by default
+    areasToPlot = 1:length(results.areas);
+end
+
+% Filter results to only include selected areas
+filteredAreas = results.areas(areasToPlot);
+filteredStartS = results.startS(areasToPlot);
+filteredRecurrenceRateNormalized = results.recurrenceRateNormalized(areasToPlot);
+filteredDeterminismNormalized = results.determinismNormalized(areasToPlot);
+filteredLaminarityNormalized = results.laminarityNormalized(areasToPlot);
+filteredTrappingTimeNormalized = results.trappingTimeNormalized(areasToPlot);
+filteredDeterminismNormalizedBernoulli = results.determinismNormalizedBernoulli(areasToPlot);
+filteredLaminarityNormalizedBernoulli = results.laminarityNormalizedBernoulli(areasToPlot);
+filteredTrappingTimeNormalizedBernoulli = results.trappingTimeNormalizedBernoulli(areasToPlot);
+
+if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'naturalistic')
+    filteredBehaviorProportion = results.behaviorProportion(areasToPlot);
+else
+    filteredBehaviorProportion = cell(1, length(areasToPlot));
+    for a = 1:length(areasToPlot)
+        filteredBehaviorProportion{a} = [];
+    end
+end
+
+% Use filtered data for rest of function
+results.areas = filteredAreas;
+results.startS = filteredStartS;
+results.recurrenceRateNormalized = filteredRecurrenceRateNormalized;
+results.determinismNormalized = filteredDeterminismNormalized;
+results.laminarityNormalized = filteredLaminarityNormalized;
+results.trappingTimeNormalized = filteredTrappingTimeNormalized;
+results.determinismNormalizedBernoulli = filteredDeterminismNormalizedBernoulli;
+results.laminarityNormalizedBernoulli = filteredLaminarityNormalizedBernoulli;
+results.trappingTimeNormalizedBernoulli = filteredTrappingTimeNormalizedBernoulli;
+if isfield(results, 'behaviorProportion')
+    results.behaviorProportion = filteredBehaviorProportion;
+end
 
 % Collect data for axis limits
 allStartS = [];
@@ -133,7 +200,7 @@ set(gcf, 'Position', plotConfig.targetPos);
 
 % 4x1 grid (one subplot per metric, showing all areas)
 numAreas = length(results.areas);
-numRows = 4;
+numRows = 3;
 numCols = 1;
 
 % Use tight_subplot if available
@@ -151,6 +218,7 @@ areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1]};
 
 % Calculate summed neural activity for each area (for right y-axis)
 % Calculate windowed mean activity for smoothing
+% Note: Use original area indices for dataStruct access
 summedActivityWindowed = cell(1, numAreas);
 if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'dataMat') && isfield(dataStruct, 'idMatIdx')
     % Use binSize and slidingWindowSize (area-specific vectors)
@@ -164,38 +232,39 @@ if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'dataMat') && isf
     else
         error('slidingWindowSize not found in results.params');
     end
-    for a = 1:numAreas
-        aID = dataStruct.idMatIdx{a};
-        if ~isempty(aID) && ~isempty(results.startS{a}) && ~isnan(binSize(a))
+    for plotIdx = 1:numAreas
+        origIdx = areasToPlot(plotIdx);  % Original area index
+        aID = dataStruct.idMatIdx{origIdx};
+        if ~isempty(aID) && ~isempty(results.startS{plotIdx}) && ~isnan(binSize(origIdx))
             % Bin data using the area-specific binSize
-            aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(a));
+            aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(origIdx));
             % Sum across neurons
             summedActivity = sum(aDataMat, 2);
             % Calculate time bins (center of each bin)
             numBins = size(aDataMat, 1);
-            activityTimeBins = ((0:numBins-1) + 0.5) * binSize(a);
+            activityTimeBins = ((0:numBins-1) + 0.5) * binSize(origIdx);
 
             % Calculate windowed mean activity for each window center
-            numWindows = length(results.startS{a});
-            summedActivityWindowed{a} = nan(1, numWindows);
+            numWindows = length(results.startS{plotIdx});
+            summedActivityWindowed{plotIdx} = nan(1, numWindows);
             for w = 1:numWindows
-                centerTime = results.startS{a}(w);
+                centerTime = results.startS{plotIdx}(w);
                 % Use area-specific window size
-                winStart = centerTime - slidingWindowSize(a) / 2;
-                winEnd = centerTime + slidingWindowSize(a) / 2;
+                winStart = centerTime - slidingWindowSize(origIdx) / 2;
+                winEnd = centerTime + slidingWindowSize(origIdx) / 2;
                 % Find bins within this window
                 binMask = activityTimeBins >= winStart & activityTimeBins < winEnd;
                 if any(binMask)
-                    summedActivityWindowed{a}(w) = mean(summedActivity(binMask));
+                    summedActivityWindowed{plotIdx}(w) = mean(summedActivity(binMask));
                 end
             end
         else
-            summedActivityWindowed{a} = [];
+            summedActivityWindowed{plotIdx} = [];
         end
     end
 else
-    for a = 1:numAreas
-        summedActivityWindowed{a} = [];
+    for plotIdx = 1:numAreas
+        summedActivityWindowed{plotIdx} = [];
     end
 end
 
@@ -213,92 +282,11 @@ if exist(utilsPath, 'dir')
     addpath(utilsPath);
 end
 
-% Plot 1: Recurrence Rate (row 1) - all areas
-if useTightSubplot
-    axes(ha(1));
-else
-    subplot(numRows, numCols, 1);
-end
-hold on;
 
-% Plot summed neural activity first (behind metrics) on right y-axis
-if strcmp(results.dataSource, 'spikes') && ~isempty(summedActivityWindowed)
-    yyaxis right;
-    for a = 1:numAreas
-        if ~isempty(summedActivityWindowed{a}) && ~isempty(results.startS{a})
-            validIdx = ~isnan(summedActivityWindowed{a});
-            if any(validIdx)
-                areaColor = areaColors{min(a, length(areaColors))};
-                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '--', ...
-                    'Color', areaColor, 'LineWidth', 2, ...
-                    'HandleVisibility', 'off');
-            end
-        end
-    end
-    ylabel('Summed Activity', 'Color', [0.5 0.5 0.5]);
-    set(gca, 'YTickLabelMode', 'auto');
-    yyaxis left;
-end
-
-% Plot metrics on top
-for a = 1:numAreas
-    areaColor = areaColors{min(a, length(areaColors))};
-
-    if ~isempty(results.recurrenceRateNormalized{a}) && ~isempty(results.startS{a})
-        validIdx = ~isnan(results.recurrenceRateNormalized{a});
-        if any(validIdx)
-            plot(results.startS{a}(validIdx), results.recurrenceRateNormalized{a}(validIdx), ...
-                '-', 'Color', areaColor, 'LineWidth', 3, 'DisplayName', sprintf('%s (shuffle norm)', results.areas{a}));
-        end
-    end
-
-    if ~isempty(results.recurrenceRateNormalizedBernoulli{a}) && ~isempty(results.startS{a})
-        validIdx = ~isnan(results.recurrenceRateNormalizedBernoulli{a});
-        if any(validIdx)
-            plot(results.startS{a}(validIdx), results.recurrenceRateNormalizedBernoulli{a}(validIdx), ...
-                '--', 'Color', areaColor, 'LineWidth', 3, 'DisplayName', sprintf('%s (Bernoulli norm)', results.areas{a}));
-        end
-    end
-    
-    % Plot behavior proportion (centered on metric mean) if available
-    if plotBehaviorProportion && ~isempty(behaviorProportion{a}) && ~isempty(results.startS{a})
-        % Calculate mean of RR for this subplot (across all areas)
-        rrMeanForSubplot = mean(allRR);
-        validBhvVals = behaviorProportion{a}(~isnan(behaviorProportion{a}));
-        if ~isempty(validBhvVals) && ~isnan(rrMeanForSubplot)
-            meanBhvVal = mean(validBhvVals);
-            behaviorProportionCentered = behaviorProportion{a} - meanBhvVal + rrMeanForSubplot;
-            validIdx = ~isnan(behaviorProportionCentered);
-            if any(validIdx)
-                plot(results.startS{a}(validIdx), behaviorProportionCentered(validIdx), ':', ...
-                    'Color', areaColor, 'LineWidth', 2, ...
-                    'DisplayName', sprintf('%s (bhv prop)', results.areas{a}));
-            end
-        end
-    end
-end
-
-yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
-if plotBehaviorProportion && ~isempty(allRR)
-    rrMeanForSubplot = mean(allRR);
-    yline(rrMeanForSubplot, 'k:', 'LineWidth', 1, 'Alpha', 0.3, 'HandleVisibility', 'off');
-end
-
-title('Recurrence Rate (Normalized)');
-ylabel('RR (norm)');
-xlabel('Time (s)');
-if numAreas > 0 && ~isempty(firstNonEmptyArea) && ~isempty(results.startS{firstNonEmptyArea})
-    xlim([results.startS{firstNonEmptyArea}(1), results.startS{firstNonEmptyArea}(end)]);
-end
-ylim([yMinRR, yMaxRR]);
-set(gca, 'YTickLabelMode', 'auto');
-set(gca, 'XTickLabelMode', 'auto');
-grid on;
-legend('Location', 'best');
 
 % Plot 2: Determinism (row 2) - all areas
 if useTightSubplot
-    axes(ha(2));
+    axes(ha(1));
 else
     subplot(numRows, numCols, 2);
 end
@@ -318,8 +306,8 @@ if strcmp(results.dataSource, 'spikes') && ~isempty(summedActivityWindowed)
             validIdx = ~isnan(summedActivityWindowed{a});
             if any(validIdx)
                 areaColor = areaColors{min(a, length(areaColors))};
-                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '--', ...
-                    'Color', areaColor, 'LineWidth', 2, ...
+                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '-', ...
+                    'Color', areaColor * .8, 'LineWidth', 1.5, ...
                     'HandleVisibility', 'off');
             end
         end
@@ -337,7 +325,8 @@ for a = 1:numAreas
         validIdx = ~isnan(results.determinismNormalized{a});
         if any(validIdx)
             plot(results.startS{a}(validIdx), results.determinismNormalized{a}(validIdx), ...
-                '-', 'Color', areaColor, 'LineWidth', 3);
+                '-', 'Color', areaColor, 'LineWidth', 3, ...
+                'DisplayName', results.areas{a});
         end
     end
 
@@ -345,7 +334,8 @@ for a = 1:numAreas
         validIdx = ~isnan(results.determinismNormalizedBernoulli{a});
         if any(validIdx)
             plot(results.startS{a}(validIdx), results.determinismNormalizedBernoulli{a}(validIdx), ...
-                '--', 'Color', areaColor, 'LineWidth', 3);
+                '--', 'Color', areaColor, 'LineWidth', 3, ...
+                'HandleVisibility', 'off');
         end
     end
     
@@ -366,7 +356,7 @@ for a = 1:numAreas
     end
 end
 
-yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5);
+yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
 if plotBehaviorProportion && ~isempty(allDET)
     detMeanForSubplot = mean(allDET);
     yline(detMeanForSubplot, 'k:', 'LineWidth', 1, 'Alpha', 0.3, 'HandleVisibility', 'off');
@@ -382,10 +372,13 @@ ylim([yMinDET, yMaxDET]);
 set(gca, 'YTickLabelMode', 'auto');
 set(gca, 'XTickLabelMode', 'auto');
 grid on;
+legend('Location', 'best');
+
+
 
 % Plot 3: Laminarity (row 3) - all areas
 if useTightSubplot
-    axes(ha(3));
+    axes(ha(2));
 else
     subplot(numRows, numCols, 3);
 end
@@ -405,8 +398,8 @@ if strcmp(results.dataSource, 'spikes') && ~isempty(summedActivityWindowed)
             validIdx = ~isnan(summedActivityWindowed{a});
             if any(validIdx)
                 areaColor = areaColors{min(a, length(areaColors))};
-                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '--', ...
-                    'Color', areaColor, 'LineWidth', 2, ...
+                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '-', ...
+                    'Color', areaColor * .8, 'LineWidth', 1.5, ...
                     'HandleVisibility', 'off');
             end
         end
@@ -424,7 +417,8 @@ for a = 1:numAreas
         validIdx = ~isnan(results.laminarityNormalized{a});
         if any(validIdx)
             plot(results.startS{a}(validIdx), results.laminarityNormalized{a}(validIdx), ...
-                '-', 'Color', areaColor, 'LineWidth', 3);
+                '-', 'Color', areaColor, 'LineWidth', 3, ...
+                'DisplayName', results.areas{a});
         end
     end
 
@@ -432,7 +426,8 @@ for a = 1:numAreas
         validIdx = ~isnan(results.laminarityNormalizedBernoulli{a});
         if any(validIdx)
             plot(results.startS{a}(validIdx), results.laminarityNormalizedBernoulli{a}(validIdx), ...
-                '--', 'Color', areaColor, 'LineWidth', 3);
+                '--', 'Color', areaColor, 'LineWidth', 3, ...
+                'HandleVisibility', 'off');
         end
     end
     
@@ -453,7 +448,7 @@ for a = 1:numAreas
     end
 end
 
-yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5);
+yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
 if plotBehaviorProportion && ~isempty(allLAM)
     lamMeanForSubplot = mean(allLAM);
     yline(lamMeanForSubplot, 'k:', 'LineWidth', 1, 'Alpha', 0.3, 'HandleVisibility', 'off');
@@ -472,7 +467,7 @@ grid on;
 
 % Plot 4: Trapping Time (row 4) - all areas
 if useTightSubplot
-    axes(ha(4));
+    axes(ha(3));
 else
     subplot(numRows, numCols, 4);
 end
@@ -492,8 +487,8 @@ if strcmp(results.dataSource, 'spikes') && ~isempty(summedActivityWindowed)
             validIdx = ~isnan(summedActivityWindowed{a});
             if any(validIdx)
                 areaColor = areaColors{min(a, length(areaColors))};
-                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '--', ...
-                    'Color', areaColor, 'LineWidth', 2, ...
+                plot(results.startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '-', ...
+                    'Color', areaColor * .8, 'LineWidth', 1.5, ...
                     'HandleVisibility', 'off');
             end
         end
@@ -511,7 +506,8 @@ for a = 1:numAreas
         validIdx = ~isnan(results.trappingTimeNormalized{a});
         if any(validIdx)
             plot(results.startS{a}(validIdx), results.trappingTimeNormalized{a}(validIdx), ...
-                '-', 'Color', areaColor, 'LineWidth', 3);
+                '-', 'Color', areaColor, 'LineWidth', 3, ...
+                'DisplayName', results.areas{a});
         end
     end
 
@@ -519,7 +515,8 @@ for a = 1:numAreas
         validIdx = ~isnan(results.trappingTimeNormalizedBernoulli{a});
         if any(validIdx)
             plot(results.startS{a}(validIdx), results.trappingTimeNormalizedBernoulli{a}(validIdx), ...
-                '--', 'Color', areaColor, 'LineWidth', 3);
+                '--', 'Color', areaColor, 'LineWidth', 3, ...
+                'HandleVisibility', 'off');
         end
     end
     
@@ -540,7 +537,7 @@ for a = 1:numAreas
     end
 end
 
-yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5);
+yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
 if plotBehaviorProportion && ~isempty(allTT)
     ttMeanForSubplot = mean(allTT);
     yline(ttMeanForSubplot, 'k:', 'LineWidth', 1, 'Alpha', 0.3, 'HandleVisibility', 'off');

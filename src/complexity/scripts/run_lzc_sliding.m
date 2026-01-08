@@ -75,6 +75,7 @@ if loadAndPlot
     load(resultsPath, 'results');
     
     % Reconstruct config from results.params
+    % Note: LZC doesn't use filenameSuffix, so no config variables needed for filename construction
     config = struct();
     if isfield(results.params, 'slidingWindowSize')
         config.slidingWindowSize = results.params.slidingWindowSize;
@@ -88,7 +89,18 @@ if loadAndPlot
     if isfield(results.params, 'useBernoulliControl')
         config.useBernoulliControl = results.params.useBernoulliControl;
     end
-    
+    if isfield(results.params, 'minDataPoints')
+        config.minDataPoints = results.params.minDataPoints;
+    end
+    if strcmp(dataSource, 'lfp')
+        if isfield(results.params, 'lfpLowpassFreq')
+            config.lfpLowpassFreq = results.params.lfpLowpassFreq;
+        end
+    end
+
+        % Add saveDir from dataStruct (needed for plotting)
+    config.saveDir = dataStruct.saveDir;
+
     % Setup plotting
     plotArgs = {};
     if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
