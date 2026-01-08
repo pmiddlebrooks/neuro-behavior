@@ -6,11 +6,11 @@
 % the new modular functions. You can still set variables in workspace
 % and run this script, or use rqa_sliding_analysis() function directly.
 
-
+% use parallel processing?
 runParallel = 1;
 
 % Set to 1 to load and plot existing results instead of running analysis
-loadAndPlot = 1;
+loadAndPlot = 0;
 config.nPCADim = 4;
 config.usePerWindowPCA = true;  % Set to true to perform PCA on each window (addresses representational drift)
     % Optionally specify which areas to plot (default: all areas)
@@ -47,7 +47,7 @@ opts.frameSize = .001;
 opts.firingRateCheckTime = 3 * 60;
 opts.collectStart = 0*60; %10*60;
 opts.collectEnd = opts.collectStart + 30*60;
-opts.minFiringRate = .25;
+opts.minFiringRate = .2;
 opts.maxFiringRate = 100;
 
 % Load and plot existing results if requested
@@ -176,7 +176,7 @@ config.recurrenceThreshold = 0.03;  % Target recurrence rate (0.02 = 2%, range: 
 config.distanceMetric = 'cosine';  % 'euclidean' or 'cosine' (cosine recommended for sparse spiking)
 config.nMinNeurons = 15;  % Minimum number of neurons required (areas with fewer will be skipped)
 config.saveRecurrencePlots = false;  % Set to true to compute and store recurrence plots (uses a lot of memory)
-config.usePerWindowPCA = true;  % Set to true to perform PCA on each window (addresses representational drift)
+config.usePerWindowPCA = false;  % Set to true to perform PCA on each window (addresses representational drift)
 
 if strcmp(sessionType, 'naturalistic')
     config.behaviorNumeratorIDs = 5:10;
