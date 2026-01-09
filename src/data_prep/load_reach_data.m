@@ -35,7 +35,6 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
     % Set collectEnd
     if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
         opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
-        opts.collectEnd = 8*60;  % Override to 8 minutes
     end
     dataStruct.opts = opts;
     

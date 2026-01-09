@@ -37,14 +37,13 @@ if ~exist('sessionName', 'var')
     error('sessionName must be defined. Run choose_task_and_session.m first or set sessionName in workspace.');
 end
 
-if ~exist('opts', 'var')
     opts = neuro_behavior_options;
     opts.frameSize = .001;
     opts.firingRateCheckTime = 5 * 60;
     opts.collectStart = 0;
+    opts.collectEnd = [];
     opts.minFiringRate = .1;
-    opts.maxFiringRate = 70;
-end
+    opts.maxFiringRate = 100;
 
 % Load data using load_sliding_window_data
 dataStruct = load_sliding_window_data(sessionType, 'spikes', ...
@@ -84,7 +83,7 @@ end
 if exist(reachDataFile, 'file')
     segmentOpts = struct(); % use defaults unless overridden
     segmentWindowsEng = reach_task_engagement(reachDataFile, segmentOpts);
-    segmentNames = {'B1Eng', 'B1Not', 'B2Eng', 'B2Not'};
+    segmentNames = {'Block1 Eng', 'Block1 Not', 'Block2 Eng', 'Block2 Not'};
     segmentWindowsList = {
         segmentWindowsEng.block1EngagedWindow;
         segmentWindowsEng.block1NotEngagedWindow;
@@ -106,14 +105,14 @@ for i = 1:totalReaches - 1
 end
 fprintf('Calculated %d intertrial midpoints\n', length(intertrialMidpoints));
 
-%% =============================    Configuration    =============================
+% =============================    Configuration    =============================
 % Sliding window parameters
 beforeAlign = -2;  % Start sliding from this many seconds before alignment point
 afterAlign  =  2;  % End sliding at this many seconds after alignment point
-slidingWindowSize = 2;  % Window size for d2 analysis (user-defined, same for all areas)
+slidingWindowSize = 5;  % Window size for d2 analysis (user-defined, same for all areas)
 stepSize    = .25; % Step size for sliding window (seconds)
 windowBuffer = .5; % Minimum distance from window edge to event/midpoint (seconds)
-minWindowSize = 1;  % Minimum window size required (seconds)
+minWindowSize = slidingWindowSize;  % Minimum window size required (seconds)
 
 % d2 analysis parameters
 pOrder = 10;        % AR model order for d2 calculation
@@ -140,12 +139,11 @@ if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
 
-%% =============================    Find Optimal Bin Sizes Per Area    =============================
+% =============================    Find Optimal Bin Sizes Per Area    =============================
 fprintf('\n=== Finding Optimal Bin Sizes Per Area ===\n');
 
 % Add path to criticality functions
 addpath(fullfile(fileparts(mfilename('fullpath')), '..'));
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
 
 % Apply PCA to original data if requested
 fprintf('\n--- PCA on original data if requested ---\n');
@@ -174,7 +172,7 @@ for a = areasToTest
         areas{a}, binSize(a), thisFiringRate);
 end
 
-%% =============================    Find Valid Reaches and Intertrial Midpoints    =============================
+% =============================    Find Valid Reaches and Intertrial Midpoints    =============================
 fprintf('\n=== Finding Valid Reaches and Intertrial Midpoints ===\n');
 
 % Find maximum possible window duration that satisfies buffer constraints
@@ -277,8 +275,8 @@ end
 maxAllowedWindow = min(maxReachWindow, maxIntertrialWindow);
 
 % Also need to consider the sliding range
-maxWindowFromSliding = abs(beforeAlign) + abs(afterAlign);
-maxAllowedWindow = min(maxAllowedWindow, maxWindowFromSliding);
+% maxWindowFromSliding = abs(beforeAlign) + abs(afterAlign);
+% maxAllowedWindow = min(maxAllowedWindow, maxWindowFromSliding);
 
 % Check if user-defined slidingWindowSize is valid
 if slidingWindowSize > maxAllowedWindow
@@ -393,13 +391,19 @@ for a = areasToTest
     % Initialize storage for collected windows and their center times
     % For each sliding position, collect all valid windows
     % Store as cell array indexed by area and position: collectedReachWindows{area, position}
-    % Also store the window data matrices for permutation analysis
+    % Also store the window data matrices for permutation analysis and window center times
     if a == areasToTest(1)
         % Initialize on first area
         collectedReachWindows = cell(numAreas, numSlidingPositions);
         collectedIntertrialWindows = cell(numAreas, numSlidingPositions);
         collectedReachWindowData = cell(numAreas, numSlidingPositions);  % Store [time x neurons] matrices
         collectedIntertrialWindowData = cell(numAreas, numSlidingPositions);  % Store [time x neurons] matrices
+        collectedReachWindowCenters = cell(numAreas, numSlidingPositions);  % Store window center times
+        collectedIntertrialWindowCenters = cell(numAreas, numSlidingPositions);  % Store window center times
+        collectedReachWindowCenterBins = cell(numAreas, numSlidingPositions);  % Store center bin values from each window
+        collectedIntertrialWindowCenterBins = cell(numAreas, numSlidingPositions);  % Store center bin values from each window
+        collectedReachWindowCenterBinsNormalized = cell(numAreas, numSlidingPositions);  % Store normalized center bin values
+        collectedIntertrialWindowCenterBinsNormalized = cell(numAreas, numSlidingPositions);  % Store normalized center bin values
     end
     
     % Step 1: Collect all reach-aligned windows
@@ -464,14 +468,57 @@ for a = areasToTest
                 wDataMat = aDataMat(startIdx:endIdx, :);
                 wPopActivity = mean(wDataMat, 2);  % Population activity for this window
                 
+                % Extract center bin(s) from this window
+                numBins = length(wPopActivity);
+                centerBinIdx = ceil(numBins / 2);  % Middle bin index
+                centerBinValue = wPopActivity(centerBinIdx);  % Single center bin value
+                
+                % Compute normalized center bin if requested
+                centerBinValueNormalized = centerBinValue;
+                if normalizeD2
+                    numNeurons = size(wDataMat, 2);
+                    numTimeBins = size(wDataMat, 1);
+                    shuffledCenterBins = nan(1, nShuffles);
+                    
+                    for s = 1:nShuffles
+                        % Circularly shift each neuron's activity independently
+                        permutedDataMat = zeros(size(wDataMat));
+                        for n = 1:numNeurons
+                            shiftAmount = randi(numTimeBins);
+                            permutedDataMat(:, n) = circshift(wDataMat(:, n), shiftAmount);
+                        end
+                        
+                        % Compute population activity from shuffled data
+                        permutedPopActivity = mean(permutedDataMat, 2);
+                        
+                        % Extract center bin from shuffled data
+                        shuffledCenterBins(s) = permutedPopActivity(centerBinIdx);
+                    end
+                    
+                    % Normalize center bin by mean of shuffled center bins
+                    meanShuffledCenterBin = nanmean(shuffledCenterBins);
+                    if ~isnan(meanShuffledCenterBin) && meanShuffledCenterBin ~= 0
+                        centerBinValueNormalized = centerBinValue / meanShuffledCenterBin;
+                    else
+                        centerBinValueNormalized = nan;
+                    end
+                end
+                
                 % Store this window's population activity (as a row vector)
                 % Store as: {area, position}(reachIndex, :)
+                % Also store window center time and center bin value (raw and normalized)
                 if isempty(collectedReachWindows{a, posIdx})
                     collectedReachWindows{a, posIdx} = wPopActivity(:)';
                     collectedReachWindowData{a, posIdx} = {wDataMat};
+                    collectedReachWindowCenters{a, posIdx} = windowCenter;
+                    collectedReachWindowCenterBins{a, posIdx} = centerBinValue;
+                    collectedReachWindowCenterBinsNormalized{a, posIdx} = centerBinValueNormalized;
                 else
                     collectedReachWindows{a, posIdx} = [collectedReachWindows{a, posIdx}; wPopActivity(:)'];
                     collectedReachWindowData{a, posIdx}{end+1} = wDataMat;
+                    collectedReachWindowCenters{a, posIdx} = [collectedReachWindowCenters{a, posIdx}, windowCenter];
+                    collectedReachWindowCenterBins{a, posIdx} = [collectedReachWindowCenterBins{a, posIdx}, centerBinValue];
+                    collectedReachWindowCenterBinsNormalized{a, posIdx} = [collectedReachWindowCenterBinsNormalized{a, posIdx}, centerBinValueNormalized];
                 end
             end
         end
@@ -523,14 +570,57 @@ for a = areasToTest
                 wDataMat = aDataMat(startIdx:endIdx, :);
                 wPopActivity = mean(wDataMat, 2);  % Population activity for this window
                 
+                % Extract center bin(s) from this window
+                numBins = length(wPopActivity);
+                centerBinIdx = ceil(numBins / 2);  % Middle bin index
+                centerBinValue = wPopActivity(centerBinIdx);  % Single center bin value
+                
+                % Compute normalized center bin if requested
+                centerBinValueNormalized = centerBinValue;
+                if normalizeD2
+                    numNeurons = size(wDataMat, 2);
+                    numTimeBins = size(wDataMat, 1);
+                    shuffledCenterBins = nan(1, nShuffles);
+                    
+                    for s = 1:nShuffles
+                        % Circularly shift each neuron's activity independently
+                        permutedDataMat = zeros(size(wDataMat));
+                        for n = 1:numNeurons
+                            shiftAmount = randi(numTimeBins);
+                            permutedDataMat(:, n) = circshift(wDataMat(:, n), shiftAmount);
+                        end
+                        
+                        % Compute population activity from shuffled data
+                        permutedPopActivity = mean(permutedDataMat, 2);
+                        
+                        % Extract center bin from shuffled data
+                        shuffledCenterBins(s) = permutedPopActivity(centerBinIdx);
+                    end
+                    
+                    % Normalize center bin by mean of shuffled center bins
+                    meanShuffledCenterBin = nanmean(shuffledCenterBins);
+                    if ~isnan(meanShuffledCenterBin) && meanShuffledCenterBin ~= 0
+                        centerBinValueNormalized = centerBinValue / meanShuffledCenterBin;
+                    else
+                        centerBinValueNormalized = nan;
+                    end
+                end
+                
                 % Store this window's population activity (as a row vector)
                 % Store as: {area, position}(intertrialIndex, :)
+                % Also store window center time and center bin value (raw and normalized)
                 if isempty(collectedIntertrialWindows{a, posIdx})
                     collectedIntertrialWindows{a, posIdx} = wPopActivity(:)';
                     collectedIntertrialWindowData{a, posIdx} = {wDataMat};
+                    collectedIntertrialWindowCenters{a, posIdx} = windowCenter;
+                    collectedIntertrialWindowCenterBins{a, posIdx} = centerBinValue;
+                    collectedIntertrialWindowCenterBinsNormalized{a, posIdx} = centerBinValueNormalized;
                 else
                     collectedIntertrialWindows{a, posIdx} = [collectedIntertrialWindows{a, posIdx}; wPopActivity(:)'];
                     collectedIntertrialWindowData{a, posIdx}{end+1} = wDataMat;
+                    collectedIntertrialWindowCenters{a, posIdx} = [collectedIntertrialWindowCenters{a, posIdx}, windowCenter];
+                    collectedIntertrialWindowCenterBins{a, posIdx} = [collectedIntertrialWindowCenterBins{a, posIdx}, centerBinValue];
+                    collectedIntertrialWindowCenterBinsNormalized{a, posIdx} = [collectedIntertrialWindowCenterBinsNormalized{a, posIdx}, centerBinValueNormalized];
                 end
             end
         end
@@ -539,50 +629,60 @@ for a = areasToTest
     fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
-%% =============================    Per-Sliding-Position d2 Analysis    =============================
+% =============================    Per-Sliding-Position d2 Analysis    =============================
 fprintf('\n=== Per-Sliding-Position d2 Analysis (Reach vs Intertrial) ===\n');
+
+% Initialize storage for per-window d2 values (for use in segment analysis)
+% Structure: {area}{eventType}{slidingPosition} = [d2 values] and corresponding center times
+perWindowD2 = struct();
+perWindowD2.reach = cell(1, numAreas);
+perWindowD2.intertrial = cell(1, numAreas);
+perWindowD2.reachNormalized = cell(1, numAreas);
+perWindowD2.intertrialNormalized = cell(1, numAreas);
+perWindowD2.reachCenters = cell(1, numAreas);
+perWindowD2.intertrialCenters = cell(1, numAreas);
+
+for a = areasToTest
+    perWindowD2.reach{a} = cell(1, numSlidingPositions);
+    perWindowD2.intertrial{a} = cell(1, numSlidingPositions);
+    perWindowD2.reachNormalized{a} = cell(1, numSlidingPositions);
+    perWindowD2.intertrialNormalized{a} = cell(1, numSlidingPositions);
+    perWindowD2.reachCenters{a} = cell(1, numSlidingPositions);
+    perWindowD2.intertrialCenters{a} = cell(1, numSlidingPositions);
+end
 
 % Compute d2 metrics for each sliding position
 for a = areasToTest
     fprintf('\nComputing d2 metrics per sliding position for area %s...\n', areas{a});
     
     for posIdx = 1:numSlidingPositions
-        % Process reach windows
+        % Process reach windows - compute d2 for each window individually
         if ~isempty(collectedReachWindows{a, posIdx})
-            % Concatenate all reach windows at this sliding position
-            concatReach = [];
-            winData = collectedReachWindows{a, posIdx};
-            if iscell(winData)
-                for w = 1:numel(winData)
-                    concatReach = [concatReach; winData{w}(:)];
-                end
-            else
-                % winData is a matrix where each row is a window
-                for w = 1:size(winData, 1)
-                    concatReach = [concatReach; winData(w, :)'];
-                end
-            end
+            windowDataList = collectedReachWindowData{a, posIdx};
+            windowCenters = collectedReachWindowCenters{a, posIdx};
+            numWindows = numel(windowDataList);
             
-            % Perform d2 analysis on concatenated reach windows
-            if ~isempty(concatReach)
-                try
-                    [varphi, ~] = myYuleWalker3(concatReach, pOrder);
-                    d2Metrics.reach{a}(posIdx) = getFixedPointDistance2(pOrder, critType, varphi);
-                catch
-                    d2Metrics.reach{a}(posIdx) = nan;
-                end
-            end
+            d2PerWindow = nan(1, numWindows);
+            d2ShuffledPerWindow = nan(numWindows, nShuffles);
             
-            % Perform circular permutations and normalize if requested
-            if normalizeD2 && ~isempty(collectedReachWindowData{a, posIdx})
-                d2Shuffled = nan(1, nShuffles);
-                windowDataList = collectedReachWindowData{a, posIdx};
+            % Compute d2 for each window
+            for w = 1:numWindows
+                wDataMat = windowDataList{w};  % [time bins x neurons]
+                wPopActivity = mean(wDataMat, 2);  % Population activity for this window
                 
-                for s = 1:nShuffles
-                    % For each shuffle, concatenate permuted windows
-                    concatPermuted = [];
-                    for w = 1:numel(windowDataList)
-                        wDataMat = windowDataList{w};  % [time bins x neurons]
+                % Compute d2 for this window
+                if ~isempty(wPopActivity)
+                    try
+                        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                        d2PerWindow(w) = getFixedPointDistance2(pOrder, critType, varphi);
+                    catch
+                        d2PerWindow(w) = nan;
+                    end
+                end
+                
+                % Compute shuffled d2 for normalization if requested
+                if normalizeD2
+                    for s = 1:nShuffles
                         numNeurons = size(wDataMat, 2);
                         numTimeBins = size(wDataMat, 1);
                         
@@ -595,68 +695,75 @@ for a = areasToTest
                         
                         % Compute population activity from shuffled data
                         permutedPopActivity = mean(permutedDataMat, 2);
-                        concatPermuted = [concatPermuted; permutedPopActivity];
-                    end
-                    
-                    % Compute d2 on concatenated permuted data
-                    if ~isempty(concatPermuted)
-                        try
-                            [varphiPerm, ~] = myYuleWalker3(concatPermuted, pOrder);
-                            d2Shuffled(s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
-                        catch
-                            d2Shuffled(s) = nan;
+                        
+                        % Compute d2 on permuted data
+                        if ~isempty(permutedPopActivity)
+                            try
+                                [varphiPerm, ~] = myYuleWalker3(permutedPopActivity, pOrder);
+                                d2ShuffledPerWindow(w, s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
+                            catch
+                                d2ShuffledPerWindow(w, s) = nan;
+                            end
                         end
                     end
                 end
-                
-                % Normalize d2 by mean of shuffled d2 values
-                meanShuffledD2 = nanmean(d2Shuffled);
-                if ~isnan(d2Metrics.reach{a}(posIdx)) && ~isnan(meanShuffledD2) && meanShuffledD2 > 0
-                    d2Metrics.reachNormalized{a}(posIdx) = d2Metrics.reach{a}(posIdx) / meanShuffledD2;
-                else
-                    d2Metrics.reachNormalized{a}(posIdx) = nan;
+            end
+            
+            % Average d2 values across windows at this sliding position
+            d2Metrics.reach{a}(posIdx) = nanmean(d2PerWindow);
+            
+            % Store per-window d2 values and centers for segment analysis
+            perWindowD2.reach{a}{posIdx} = d2PerWindow;
+            perWindowD2.reachCenters{a}{posIdx} = windowCenters;
+            
+            % Normalize if requested
+            if normalizeD2
+                % Normalize each window individually, then average
+                meanShuffledPerWindow = nanmean(d2ShuffledPerWindow, 2);  % Mean shuffled d2 per window
+                d2NormalizedPerWindow = nan(1, numWindows);
+                for w = 1:numWindows
+                    if ~isnan(d2PerWindow(w)) && ~isnan(meanShuffledPerWindow(w)) && meanShuffledPerWindow(w) > 0
+                        d2NormalizedPerWindow(w) = d2PerWindow(w) / meanShuffledPerWindow(w);
+                    end
                 end
+                
+                % Average normalized d2 values across windows
+                d2Metrics.reachNormalized{a}(posIdx) = nanmean(d2NormalizedPerWindow);
+                
+                % Store normalized per-window values for segment analysis
+                perWindowD2.reachNormalized{a}{posIdx} = d2NormalizedPerWindow;
             else
                 d2Metrics.reachNormalized{a}(posIdx) = nan;
             end
         end
         
-        % Process intertrial windows
+        % Process intertrial windows - compute d2 for each window individually
         if ~isempty(collectedIntertrialWindows{a, posIdx})
-            % Concatenate all intertrial windows at this sliding position
-            concatIntertrial = [];
-            winData = collectedIntertrialWindows{a, posIdx};
-            if iscell(winData)
-                for w = 1:numel(winData)
-                    concatIntertrial = [concatIntertrial; winData{w}(:)];
-                end
-            else
-                % winData is a matrix where each row is a window
-                for w = 1:size(winData, 1)
-                    concatIntertrial = [concatIntertrial; winData(w, :)'];
-                end
-            end
+            windowDataList = collectedIntertrialWindowData{a, posIdx};
+            windowCenters = collectedIntertrialWindowCenters{a, posIdx};
+            numWindows = numel(windowDataList);
             
-            % Perform d2 analysis on concatenated intertrial windows
-            if ~isempty(concatIntertrial)
-                try
-                    [varphi, ~] = myYuleWalker3(concatIntertrial, pOrder);
-                    d2Metrics.intertrial{a}(posIdx) = getFixedPointDistance2(pOrder, critType, varphi);
-                catch
-                    d2Metrics.intertrial{a}(posIdx) = nan;
-                end
-            end
+            d2PerWindow = nan(1, numWindows);
+            d2ShuffledPerWindow = nan(numWindows, nShuffles);
             
-            % Perform circular permutations and normalize if requested
-            if normalizeD2 && ~isempty(collectedIntertrialWindowData{a, posIdx})
-                d2Shuffled = nan(1, nShuffles);
-                windowDataList = collectedIntertrialWindowData{a, posIdx};
+            % Compute d2 for each window
+            for w = 1:numWindows
+                wDataMat = windowDataList{w};  % [time bins x neurons]
+                wPopActivity = mean(wDataMat, 2);  % Population activity for this window
                 
-                for s = 1:nShuffles
-                    % For each shuffle, concatenate permuted windows
-                    concatPermuted = [];
-                    for w = 1:numel(windowDataList)
-                        wDataMat = windowDataList{w};  % [time bins x neurons]
+                % Compute d2 for this window
+                if ~isempty(wPopActivity)
+                    try
+                        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                        d2PerWindow(w) = getFixedPointDistance2(pOrder, critType, varphi);
+                    catch
+                        d2PerWindow(w) = nan;
+                    end
+                end
+                
+                % Compute shuffled d2 for normalization if requested
+                if normalizeD2
+                    for s = 1:nShuffles
                         numNeurons = size(wDataMat, 2);
                         numTimeBins = size(wDataMat, 1);
                         
@@ -669,27 +776,43 @@ for a = areasToTest
                         
                         % Compute population activity from shuffled data
                         permutedPopActivity = mean(permutedDataMat, 2);
-                        concatPermuted = [concatPermuted; permutedPopActivity];
-                    end
-                    
-                    % Compute d2 on concatenated permuted data
-                    if ~isempty(concatPermuted)
-                        try
-                            [varphiPerm, ~] = myYuleWalker3(concatPermuted, pOrder);
-                            d2Shuffled(s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
-                        catch
-                            d2Shuffled(s) = nan;
+                        
+                        % Compute d2 on permuted data
+                        if ~isempty(permutedPopActivity)
+                            try
+                                [varphiPerm, ~] = myYuleWalker3(permutedPopActivity, pOrder);
+                                d2ShuffledPerWindow(w, s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
+                            catch
+                                d2ShuffledPerWindow(w, s) = nan;
+                            end
                         end
                     end
                 end
-                
-                % Normalize d2 by mean of shuffled d2 values
-                meanShuffledD2 = nanmean(d2Shuffled);
-                if ~isnan(d2Metrics.intertrial{a}(posIdx)) && ~isnan(meanShuffledD2) && meanShuffledD2 > 0
-                    d2Metrics.intertrialNormalized{a}(posIdx) = d2Metrics.intertrial{a}(posIdx) / meanShuffledD2;
-                else
-                    d2Metrics.intertrialNormalized{a}(posIdx) = nan;
+            end
+            
+            % Average d2 values across windows at this sliding position
+            d2Metrics.intertrial{a}(posIdx) = nanmean(d2PerWindow);
+            
+            % Store per-window d2 values and centers for segment analysis
+            perWindowD2.intertrial{a}{posIdx} = d2PerWindow;
+            perWindowD2.intertrialCenters{a}{posIdx} = windowCenters;
+            
+            % Normalize if requested
+            if normalizeD2
+                % Normalize each window individually, then average
+                meanShuffledPerWindow = nanmean(d2ShuffledPerWindow, 2);  % Mean shuffled d2 per window
+                d2NormalizedPerWindow = nan(1, numWindows);
+                for w = 1:numWindows
+                    if ~isnan(d2PerWindow(w)) && ~isnan(meanShuffledPerWindow(w)) && meanShuffledPerWindow(w) > 0
+                        d2NormalizedPerWindow(w) = d2PerWindow(w) / meanShuffledPerWindow(w);
+                    end
                 end
+                
+                % Average normalized d2 values across windows
+                d2Metrics.intertrialNormalized{a}(posIdx) = nanmean(d2NormalizedPerWindow);
+                
+                % Store normalized per-window values for segment analysis
+                perWindowD2.intertrialNormalized{a}{posIdx} = d2NormalizedPerWindow;
             else
                 d2Metrics.intertrialNormalized{a}(posIdx) = nan;
             end
@@ -697,7 +820,7 @@ for a = areasToTest
     end
 end
 
-%% =============================    Segment-level d2 Analysis    =============================
+% =============================   Engagement Segment-level d2 Analysis    =============================
 fprintf('\n=== Segment-level d2 Analysis (Reach vs Intertrial) ===\n');
 
 segmentMetrics = struct();
@@ -710,326 +833,129 @@ for a = areasToTest
     fprintf('\nProcessing segments for area %s...\n', areas{a});
     for s = 1:nSegments
         if isempty(segmentWindowsList) || s > length(segmentWindowsList) || isempty(segmentWindowsList{s}) || any(isnan(segmentWindowsList{s}))
+            % Initialize to nan if segment is invalid
+            segmentMetrics.reach{a, s} = nan;
+            segmentMetrics.intertrial{a, s} = nan;
+            segmentMetrics.reachNormalized{a, s} = nan;
+            segmentMetrics.intertrialNormalized{a, s} = nan;
             continue;
         end
         segWin = segmentWindowsList{s};
         tStart = segWin(1);
         tEnd   = segWin(2);
 
-        % Concatenate reach windows whose centers fall in this segment
-        concatReach = [];
-        reachWindowDataList = {};  % Store window data matrices for permutation
-        for posIdx = 1:numSlidingPositions
-            if isempty(collectedReachWindows{a, posIdx})
-                continue;
-            end
-            % For reach windows, we need to calculate center times
-            % Window center = reachTime + slidingPositions(posIdx)
-            winData = collectedReachWindows{a, posIdx};
-            numWindows = size(winData, 1);
+        % Find the sliding position index that corresponds to the alignment point (0)
+        alignPosIdx = find(abs(slidingPositions) < stepSize/2, 1);  % Find position closest to 0
+        if isempty(alignPosIdx)
+            % If no exact match, use the first position (shouldn't happen if 0 is in range)
+            alignPosIdx = 1;
+        end
+        
+        % Collect normalized d2 values from windows centered at alignment point (sliding position = 0)
+        % Only include windows whose event times (reach or intertrial midpoint) fall in this segment
+        reachD2NormalizedInSegment = [];
+        intertrialD2NormalizedInSegment = [];
+        
+        % Process reach windows - use normalized d2 values from windows at alignment point
+        if ~isempty(perWindowD2.reachNormalized{a}{alignPosIdx}) && ~isempty(perWindowD2.reachCenters{a}{alignPosIdx})
+            d2Vals = perWindowD2.reachNormalized{a}{alignPosIdx};
+            windowCenters = perWindowD2.reachCenters{a}{alignPosIdx};
             
-            % Track row index in collected windows (windows are collected in order of reaches)
-            rowIdx = 0;
-            for r = 1:totalReaches
-                reachTime = reachStart(r);
-                windowCenter = reachTime + slidingPositions(posIdx);
-                
-                % Check if this window center falls in the segment
-                if windowCenter >= tStart && windowCenter <= tEnd
-                    % Check if this window was actually collected
-                    % We need to re-check buffer constraints to see if it was collected
-                    origReachIdx = validReachIndices(r);
-                    prevMidpoint = [];
-                    nextMidpoint = [];
-                    if origReachIdx > 1
-                        prevOrigMidpointIdx = origReachIdx - 1;
-                        if prevOrigMidpointIdx <= length(intertrialMidpointsOriginal)
-                            prevMidpoint = intertrialMidpointsOriginal(prevOrigMidpointIdx);
-                        end
-                    end
-                    if origReachIdx <= length(intertrialMidpointsOriginal)
-                        nextOrigMidpointIdx = origReachIdx;
-                        if nextOrigMidpointIdx <= length(intertrialMidpointsOriginal)
-                            nextMidpoint = intertrialMidpointsOriginal(nextOrigMidpointIdx);
-                        end
-                    end
-                    
-                    winStart = windowCenter - slidingWindowSize / 2;
-                    winEnd = windowCenter + slidingWindowSize / 2;
-                    constraintViolated = false;
-                    if ~isempty(prevMidpoint) && winStart < prevMidpoint + windowBuffer
-                        constraintViolated = true;
-                    end
-                    if ~isempty(nextMidpoint) && winEnd > nextMidpoint - windowBuffer
-                        constraintViolated = true;
-                    end
-                    
-                    if ~constraintViolated
-                        % This window was collected, increment row index and collect it
-                        rowIdx = rowIdx + 1;
-                        if rowIdx <= numWindows
-                            if iscell(winData)
-                                if rowIdx <= numel(winData) && ~isempty(winData{rowIdx})
-                                    concatReach = [concatReach; winData{rowIdx}(:)];
-                                    if ~isempty(collectedReachWindowData{a, posIdx}) && rowIdx <= numel(collectedReachWindowData{a, posIdx})
-                                        reachWindowDataList{end+1} = collectedReachWindowData{a, posIdx}{rowIdx};
-                                    end
-                                end
-                            else
-                                if rowIdx <= size(winData, 1)
-                                    concatReach = [concatReach; winData(rowIdx, :)'];
-                                    if ~isempty(collectedReachWindowData{a, posIdx}) && rowIdx <= numel(collectedReachWindowData{a, posIdx})
-                                        reachWindowDataList{end+1} = collectedReachWindowData{a, posIdx}{rowIdx};
-                                    end
-                                end
-                            end
-                        end
-                    end
-                else
-                    % Window center not in segment, but might have been collected
-                    % Check if it was collected and skip it
-                    origReachIdx = validReachIndices(r);
-                    prevMidpoint = [];
-                    nextMidpoint = [];
-                    if origReachIdx > 1
-                        prevOrigMidpointIdx = origReachIdx - 1;
-                        if prevOrigMidpointIdx <= length(intertrialMidpointsOriginal)
-                            prevMidpoint = intertrialMidpointsOriginal(prevOrigMidpointIdx);
-                        end
-                    end
-                    if origReachIdx <= length(intertrialMidpointsOriginal)
-                        nextOrigMidpointIdx = origReachIdx;
-                        if nextOrigMidpointIdx <= length(intertrialMidpointsOriginal)
-                            nextMidpoint = intertrialMidpointsOriginal(nextOrigMidpointIdx);
-                        end
-                    end
-                    
-                    winStart = windowCenter - slidingWindowSize / 2;
-                    winEnd = windowCenter + slidingWindowSize / 2;
-                    constraintViolated = false;
-                    if ~isempty(prevMidpoint) && winStart < prevMidpoint + windowBuffer
-                        constraintViolated = true;
-                    end
-                    if ~isempty(nextMidpoint) && winEnd > nextMidpoint - windowBuffer
-                        constraintViolated = true;
-                    end
-                    
-                    if ~constraintViolated
-                        % This window was collected but not in segment, skip it
-                        rowIdx = rowIdx + 1;
-                    end
-                end
+            % Ensure windowCenters and d2Vals are row vectors for consistent indexing
+            if isscalar(windowCenters)
+                windowCenters = windowCenters(:)';
+            end
+            windowCenters = windowCenters(:)';  % Force row vector
+            if isscalar(d2Vals)
+                d2Vals = d2Vals(:)';
+            end
+            d2Vals = d2Vals(:)';  % Force row vector
+            
+            % Window centers at alignment point are the reach times
+            % Find reaches whose times fall in this segment
+            inSegment = (windowCenters >= tStart) & (windowCenters <= tEnd);
+            if any(inSegment)
+                reachD2NormalizedInSegment = [reachD2NormalizedInSegment, d2Vals(inSegment)];
+            end
+        end
+        
+        % Process intertrial windows - use normalized d2 values from windows at alignment point
+        if ~isempty(perWindowD2.intertrialNormalized{a}{alignPosIdx}) && ~isempty(perWindowD2.intertrialCenters{a}{alignPosIdx})
+            d2Vals = perWindowD2.intertrialNormalized{a}{alignPosIdx};
+            windowCenters = perWindowD2.intertrialCenters{a}{alignPosIdx};
+            
+            % Ensure windowCenters and d2Vals are row vectors for consistent indexing
+            if isscalar(windowCenters)
+                windowCenters = windowCenters(:)';
+            end
+            windowCenters = windowCenters(:)';  % Force row vector
+            if isscalar(d2Vals)
+                d2Vals = d2Vals(:)';
+            end
+            d2Vals = d2Vals(:)';  % Force row vector
+            
+            % Window centers at alignment point are the intertrial midpoint times
+            % Find intertrial midpoints whose times fall in this segment
+            inSegment = (windowCenters >= tStart) & (windowCenters <= tEnd);
+            if any(inSegment)
+                intertrialD2NormalizedInSegment = [intertrialD2NormalizedInSegment, d2Vals(inSegment)];
             end
         end
 
-        % Concatenate intertrial windows whose centers fall in this segment
-        concatInter = [];
-        intertrialWindowDataList = {};  % Store window data matrices for permutation
-        for posIdx = 1:numSlidingPositions
-            if isempty(collectedIntertrialWindows{a, posIdx})
-                continue;
-            end
-            % For intertrial windows, we need to calculate center times
-            winData = collectedIntertrialWindows{a, posIdx};
-            numWindows = size(winData, 1);
-            
-            % Track row index in collected windows (windows are collected in order)
-            rowIdx = 0;
-            for idx = 1:length(intertrialMidpoints)
-                midpointTime = intertrialMidpoints(idx);
-                windowCenter = midpointTime + slidingPositions(posIdx);
-                
-                % Check if this window center falls in the segment
-                if windowCenter >= tStart && windowCenter <= tEnd
-                    % Find the original intertrial midpoint index
-                    origIntertrialIdx = validIntertrialIndicesFiltered(idx);
-                    
-                    % Find previous and next reaches
-                    prevReach = [];
-                    nextReach = [];
-                    if origIntertrialIdx >= 1 && origIntertrialIdx <= length(reachStartOriginal)
-                        prevReach = reachStartOriginal(origIntertrialIdx);
-                    end
-                    if origIntertrialIdx + 1 <= length(reachStartOriginal)
-                        nextReach = reachStartOriginal(origIntertrialIdx + 1);
-                    end
-                    
-                    winStart = windowCenter - slidingWindowSize / 2;
-                    winEnd = windowCenter + slidingWindowSize / 2;
-                    constraintViolated = false;
-                    if ~isempty(prevReach) && winStart < prevReach + windowBuffer
-                        constraintViolated = true;
-                    end
-                    if ~isempty(nextReach) && winEnd > nextReach - windowBuffer
-                        constraintViolated = true;
-                    end
-                    
-                    if ~constraintViolated
-                        % This window was collected, increment row index and collect it
-                        rowIdx = rowIdx + 1;
-                        if rowIdx <= numWindows
-                            if iscell(winData)
-                                if rowIdx <= numel(winData) && ~isempty(winData{rowIdx})
-                                    concatInter = [concatInter; winData{rowIdx}(:)];
-                                    if ~isempty(collectedIntertrialWindowData{a, posIdx}) && rowIdx <= numel(collectedIntertrialWindowData{a, posIdx})
-                                        intertrialWindowDataList{end+1} = collectedIntertrialWindowData{a, posIdx}{rowIdx};
-                                    end
-                                end
-                            else
-                                if rowIdx <= size(winData, 1)
-                                    concatInter = [concatInter; winData(rowIdx, :)'];
-                                    if ~isempty(collectedIntertrialWindowData{a, posIdx}) && rowIdx <= numel(collectedIntertrialWindowData{a, posIdx})
-                                        intertrialWindowDataList{end+1} = collectedIntertrialWindowData{a, posIdx}{rowIdx};
-                                    end
-                                end
-                            end
-                        end
-                    end
-                else
-                    % Window center not in segment, but might have been collected
-                    % Check if it was collected and skip it
-                    origIntertrialIdx = validIntertrialIndicesFiltered(idx);
-                    prevReach = [];
-                    nextReach = [];
-                    if origIntertrialIdx >= 1 && origIntertrialIdx <= length(reachStartOriginal)
-                        prevReach = reachStartOriginal(origIntertrialIdx);
-                    end
-                    if origIntertrialIdx + 1 <= length(reachStartOriginal)
-                        nextReach = reachStartOriginal(origIntertrialIdx + 1);
-                    end
-                    
-                    winStart = windowCenter - slidingWindowSize / 2;
-                    winEnd = windowCenter + slidingWindowSize / 2;
-                    constraintViolated = false;
-                    if ~isempty(prevReach) && winStart < prevReach + windowBuffer
-                        constraintViolated = true;
-                    end
-                    if ~isempty(nextReach) && winEnd > nextReach - windowBuffer
-                        constraintViolated = true;
-                    end
-                    
-                    if ~constraintViolated
-                        % This window was collected but not in segment, skip it
-                        rowIdx = rowIdx + 1;
-                    end
-                end
-            end
+        % Average normalized d2 values for reach vs intertrial windows in this segment
+        if ~isempty(reachD2NormalizedInSegment)
+            segmentMetrics.reachNormalized{a, s} = nanmean(reachD2NormalizedInSegment);
+        else
+            segmentMetrics.reachNormalized{a, s} = nan;
         end
 
-        % d2 analysis: reach
-        if ~isempty(concatReach)
-            try
-                [varphi, ~] = myYuleWalker3(concatReach, pOrder);
-                segmentMetrics.reach{a, s} = getFixedPointDistance2(pOrder, critType, varphi);
-            catch
+        if ~isempty(intertrialD2NormalizedInSegment)
+            segmentMetrics.intertrialNormalized{a, s} = nanmean(intertrialD2NormalizedInSegment);
+        else
+            segmentMetrics.intertrialNormalized{a, s} = nan;
+        end
+        
+        % For compatibility, also store raw d2 values (from alignment point windows)
+        if ~isempty(perWindowD2.reach{a}{alignPosIdx}) && ~isempty(perWindowD2.reachCenters{a}{alignPosIdx})
+            d2ValsRaw = perWindowD2.reach{a}{alignPosIdx};
+            windowCenters = perWindowD2.reachCenters{a}{alignPosIdx};
+            if isscalar(windowCenters)
+                windowCenters = windowCenters(:)';
+            end
+            windowCenters = windowCenters(:)';
+            if isscalar(d2ValsRaw)
+                d2ValsRaw = d2ValsRaw(:)';
+            end
+            d2ValsRaw = d2ValsRaw(:)';
+            inSegment = (windowCenters >= tStart) & (windowCenters <= tEnd);
+            if any(inSegment)
+                segmentMetrics.reach{a, s} = nanmean(d2ValsRaw(inSegment));
+            else
                 segmentMetrics.reach{a, s} = nan;
             end
         else
             segmentMetrics.reach{a, s} = nan;
         end
-
-        % d2 analysis: intertrial
-        if ~isempty(concatInter)
-            try
-                [varphi, ~] = myYuleWalker3(concatInter, pOrder);
-                segmentMetrics.intertrial{a, s} = getFixedPointDistance2(pOrder, critType, varphi);
-            catch
+        
+        if ~isempty(perWindowD2.intertrial{a}{alignPosIdx}) && ~isempty(perWindowD2.intertrialCenters{a}{alignPosIdx})
+            d2ValsRaw = perWindowD2.intertrial{a}{alignPosIdx};
+            windowCenters = perWindowD2.intertrialCenters{a}{alignPosIdx};
+            if isscalar(windowCenters)
+                windowCenters = windowCenters(:)';
+            end
+            windowCenters = windowCenters(:)';
+            if isscalar(d2ValsRaw)
+                d2ValsRaw = d2ValsRaw(:)';
+            end
+            d2ValsRaw = d2ValsRaw(:)';
+            inSegment = (windowCenters >= tStart) & (windowCenters <= tEnd);
+            if any(inSegment)
+                segmentMetrics.intertrial{a, s} = nanmean(d2ValsRaw(inSegment));
+            else
                 segmentMetrics.intertrial{a, s} = nan;
             end
         else
             segmentMetrics.intertrial{a, s} = nan;
-        end
-        
-        % Normalize d2 values using circular permutations if requested
-        if normalizeD2
-            % Normalize reach d2
-            if ~isempty(reachWindowDataList) && ~isnan(segmentMetrics.reach{a, s})
-                d2Shuffled = nan(1, nShuffles);
-                for shuffle = 1:nShuffles
-                    concatPermuted = [];
-                    for w = 1:numel(reachWindowDataList)
-                        wDataMat = reachWindowDataList{w};  % [time bins x neurons]
-                        numNeurons = size(wDataMat, 2);
-                        numTimeBins = size(wDataMat, 1);
-                        
-                        % Circularly shift each neuron's activity independently
-                        permutedDataMat = zeros(size(wDataMat));
-                        for n = 1:numNeurons
-                            shiftAmount = randi(numTimeBins);
-                            permutedDataMat(:, n) = circshift(wDataMat(:, n), shiftAmount);
-                        end
-                        
-                        % Compute population activity from shuffled data
-                        permutedPopActivity = mean(permutedDataMat, 2);
-                        concatPermuted = [concatPermuted; permutedPopActivity];
-                    end
-                    
-                    % Compute d2 on concatenated permuted data
-                    if ~isempty(concatPermuted)
-                        try
-                            [varphiPerm, ~] = myYuleWalker3(concatPermuted, pOrder);
-                            d2Shuffled(shuffle) = getFixedPointDistance2(pOrder, critType, varphiPerm);
-                        catch
-                            d2Shuffled(shuffle) = nan;
-                        end
-                    end
-                end
-                
-                meanShuffledD2 = nanmean(d2Shuffled);
-                if ~isnan(segmentMetrics.reach{a, s}) && ~isnan(meanShuffledD2) && meanShuffledD2 > 0
-                    segmentMetrics.reachNormalized{a, s} = segmentMetrics.reach{a, s} / meanShuffledD2;
-                else
-                    segmentMetrics.reachNormalized{a, s} = nan;
-                end
-            else
-                segmentMetrics.reachNormalized{a, s} = nan;
-            end
-            
-            % Normalize intertrial d2
-            if ~isempty(intertrialWindowDataList) && ~isnan(segmentMetrics.intertrial{a, s})
-                d2Shuffled = nan(1, nShuffles);
-                for shuffle = 1:nShuffles
-                    concatPermuted = [];
-                    for w = 1:numel(intertrialWindowDataList)
-                        wDataMat = intertrialWindowDataList{w};  % [time bins x neurons]
-                        numNeurons = size(wDataMat, 2);
-                        numTimeBins = size(wDataMat, 1);
-                        
-                        % Circularly shift each neuron's activity independently
-                        permutedDataMat = zeros(size(wDataMat));
-                        for n = 1:numNeurons
-                            shiftAmount = randi(numTimeBins);
-                            permutedDataMat(:, n) = circshift(wDataMat(:, n), shiftAmount);
-                        end
-                        
-                        % Compute population activity from shuffled data
-                        permutedPopActivity = mean(permutedDataMat, 2);
-                        concatPermuted = [concatPermuted; permutedPopActivity];
-                    end
-                    
-                    % Compute d2 on concatenated permuted data
-                    if ~isempty(concatPermuted)
-                        try
-                            [varphiPerm, ~] = myYuleWalker3(concatPermuted, pOrder);
-                            d2Shuffled(shuffle) = getFixedPointDistance2(pOrder, critType, varphiPerm);
-                        catch
-                            d2Shuffled(shuffle) = nan;
-                        end
-                    end
-                end
-                
-                meanShuffledD2 = nanmean(d2Shuffled);
-                if ~isnan(segmentMetrics.intertrial{a, s}) && ~isnan(meanShuffledD2) && meanShuffledD2 > 0
-                    segmentMetrics.intertrialNormalized{a, s} = segmentMetrics.intertrial{a, s} / meanShuffledD2;
-                else
-                    segmentMetrics.intertrialNormalized{a, s} = nan;
-                end
-            else
-                segmentMetrics.intertrialNormalized{a, s} = nan;
-            end
-        else
-            segmentMetrics.reachNormalized{a, s} = nan;
-            segmentMetrics.intertrialNormalized{a, s} = nan;
         end
     end
 end
@@ -1048,6 +974,12 @@ results.slidingPositions = slidingPositions;
 results.d2Metrics = d2Metrics;
 results.segmentMetrics = segmentMetrics;
 results.segmentNames = segmentNames;
+if exist('sessionName', 'var')
+    results.sessionName = sessionName;
+end
+if exist('idMatIdx', 'var')
+    results.idMatIdx = idMatIdx;
+end
 if exist('segmentWindowsEng', 'var')
     results.segmentWindows = segmentWindowsEng;
 end
@@ -1126,6 +1058,12 @@ if loadResultsForPlotting
     segmentMetrics = results.segmentMetrics;
     segmentNames = results.segmentNames;
     binSize = results.binSize;
+    if isfield(results, 'sessionName')
+        sessionName = results.sessionName;
+    end
+    if isfield(results, 'idMatIdx')
+        idMatIdx = results.idMatIdx;
+    end
     
     % Determine saveDir from results file path if not already defined
     if ~exist('saveDir', 'var') || isempty(saveDir)
@@ -1169,71 +1107,188 @@ else
     targetPos = monitorOne;
 end
 
-% Create sliding position plots for each area (line plots across sliding positions)
+% First, collect all y-values to determine shared y-axis limits
+allYVals = [];
 for a = areasToTest
-    figure(1000 + a); clf;
-    set(gcf, 'Units', 'pixels');
-    set(gcf, 'Position', targetPos);
+    if normalizeD2
+        reachVals = d2Metrics.reachNormalized{a};
+        intertrialVals = d2Metrics.intertrialNormalized{a};
+    else
+        reachVals = d2Metrics.reach{a};
+        intertrialVals = d2Metrics.intertrial{a};
+    end
+    allYVals = [allYVals, reachVals(~isnan(reachVals)), intertrialVals(~isnan(intertrialVals))];
     
+    % Note: Segment values are now center bin means (different scale), so not included in yLimits
+end
+
+% Calculate shared y-axis limits with some padding
+if ~isempty(allYVals)
+    yMin = min(allYVals);
+    yMax = max(allYVals);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 1;  % Avoid zero range
+    end
+    yLimits = [yMin - 0.05*yRange, yMax + 0.05*yRange];
+else
+    yLimits = [0, 1];  % Default if no data
+end
+
+% Determine layout: 2 rows if segments exist, 1 row otherwise
+numAreasToPlot = length(areasToTest);
+if nSegments > 0
+    numRows = 2;
+    numCols = numAreasToPlot;
+else
+    numRows = 1;
+    numCols = numAreasToPlot;
+end
+
+% Create single figure with tight_subplot
+figure(1001); clf;
+set(gcf, 'Units', 'pixels');
+set(gcf, 'Position', targetPos);
+
+% Use tight_subplot if available, otherwise use subplot
+useTightSubplot = exist('tight_subplot', 'file');
+if useTightSubplot
+    ha = tight_subplot(numRows, numCols, [0.08 0.04], [0.1 0.1], [0.08 0.04]);
+else
+    % Fallback to regular subplot
+    ha = zeros(numRows * numCols, 1);
+    for i = 1:numRows * numCols
+        ha(i) = subplot(numRows, numCols, i);
+    end
+end
+
+% Create sliding position plots for each area (line plots across sliding positions)
+plotIdx = 0;
+for a = areasToTest
+    plotIdx = plotIdx + 1;
+    axes(ha(plotIdx));
     hold on;
     
     % Extract reach and intertrial d2 values across sliding positions
+    % Get number of neurons for this area
+    if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= length(idMatIdx) && ~isempty(idMatIdx{a})
+        numNeurons = length(idMatIdx{a});
+        neuronStr = sprintf(' (n=%d)', numNeurons);
+    else
+        neuronStr = '';
+    end
+    
     if normalizeD2
         reachVals = d2Metrics.reachNormalized{a};
         intertrialVals = d2Metrics.intertrialNormalized{a};
         yLabelStr = 'd2 (normalized)';
-        titleStr = sprintf('%s - d2 (normalized): Reach vs Intertrial across Sliding Positions', areas{a});
+        titleStr = sprintf('%s%s - Sliding Positions', areas{a}, neuronStr);
     else
         reachVals = d2Metrics.reach{a};
         intertrialVals = d2Metrics.intertrial{a};
         yLabelStr = 'd2';
-        titleStr = sprintf('%s - d2: Reach vs Intertrial across Sliding Positions', areas{a});
+        titleStr = sprintf('%s%s - Sliding Positions', areas{a}, neuronStr);
     end
     
     % Plot as lines
     plot(slidingPositions, reachVals, '-o', 'Color', [0 0 1], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Reach');
     plot(slidingPositions, intertrialVals, '-s', 'Color', [1 0 0], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Intertrial');
     
-    xlabel('Sliding Position (s)', 'FontSize', 12);
-    ylabel(yLabelStr, 'FontSize', 12);
-    title(titleStr, 'FontSize', 14);
+    xlabel('Sliding Position (s)', 'FontSize', 10);
+    if plotIdx == 1 || (nSegments == 0 && plotIdx <= numCols)
+        ylabel(yLabelStr, 'FontSize', 10);
+    end
+    title(titleStr, 'FontSize', 11);
     grid on;
-    legend('Location', 'best', 'FontSize', 10);
+    if plotIdx == 1
+        legend('Location', 'best', 'FontSize', 9);
+    end
     set(gca, 'XTickLabelMode', 'auto');
     set(gca, 'YTickLabelMode', 'auto');
+    ylim(yLimits);
     
     % Add vertical line at 0 (alignment point)
     xline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
     
-    sgtitle(sprintf('%s - d2: Reach vs Intertrial (Window: %.1fs, Buffer: %.1fs, Bin: %.3fs)', ...
-        areas{a}, slidingWindowSize, windowBuffer, binSize(a)), 'FontSize', 14);
-    
-    % Save figure
-    saveFile = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_%s_sliding_win%.1f_step%.1f.png', areas{a}, slidingWindowSize, stepSize));
-    exportgraphics(gcf, saveFile, 'Resolution', 300);
-    fprintf('Saved sliding position plot for %s to: %s\n', areas{a}, saveFile);
+    % Add horizontal line at y = 1
+    yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
 end
 
-% Also create segment-wise summary plot (bar plots for segments)
+% Create segment-wise summary plots (bar plots for segments) if they exist
 if nSegments > 0
+    % Calculate y-axis limits for segment plots (center bin means, normalized if applicable)
+    segmentYVals = [];
     for a = areasToTest
-        figure(2000 + a); clf;
-        set(gcf, 'Units', 'pixels');
-        set(gcf, 'Position', targetPos);
-        
+        nSeg = numel(segmentNames);
+        for s = 1:nSeg
+            if normalizeD2
+                % Use normalized values for y-axis limits
+                if ~isempty(segmentMetrics.reachNormalized{a, s}) && ~isnan(segmentMetrics.reachNormalized{a, s})
+                    segmentYVals = [segmentYVals, segmentMetrics.reachNormalized{a, s}];
+                end
+                if ~isempty(segmentMetrics.intertrialNormalized{a, s}) && ~isnan(segmentMetrics.intertrialNormalized{a, s})
+                    segmentYVals = [segmentYVals, segmentMetrics.intertrialNormalized{a, s}];
+                end
+            else
+                % Use raw values for y-axis limits
+                if ~isempty(segmentMetrics.reach{a, s}) && ~isnan(segmentMetrics.reach{a, s})
+                    segmentYVals = [segmentYVals, segmentMetrics.reach{a, s}];
+                end
+                if ~isempty(segmentMetrics.intertrial{a, s}) && ~isnan(segmentMetrics.intertrial{a, s})
+                    segmentYVals = [segmentYVals, segmentMetrics.intertrial{a, s}];
+                end
+            end
+        end
+    end
+    
+    % Calculate segment y-axis limits
+    if ~isempty(segmentYVals)
+        segYMin = min(segmentYVals);
+        segYMax = max(segmentYVals);
+        segYRange = segYMax - segYMin;
+        if segYRange == 0
+            segYRange = 1;  % Avoid zero range
+        end
+        segmentYLimits = [segYMin - 0.05*segYRange, segYMax + 0.05*segYRange];
+    else
+        segmentYLimits = [0, 1];  % Default if no data
+    end
+    
+    plotIdx = numAreasToPlot;  % Start from second row
+    for a = areasToTest
+        plotIdx = plotIdx + 1;
+        axes(ha(plotIdx));
         hold on;
         
-        % Extract reach and intertrial d2 values across segments
+        % Extract reach and intertrial center bin means across segments (normalized if applicable)
         nSeg = numel(segmentNames);
         reachVals = nan(1, nSeg);
         intertrialVals = nan(1, nSeg);
         for s = 1:nSeg
             if normalizeD2
-                reachVals(s) = segmentMetrics.reachNormalized{a, s};
-                intertrialVals(s) = segmentMetrics.intertrialNormalized{a, s};
+                % Use normalized values
+                if ~isempty(segmentMetrics.reachNormalized{a, s})
+                    reachVals(s) = segmentMetrics.reachNormalized{a, s};
+                else
+                    reachVals(s) = nan;
+                end
+                if ~isempty(segmentMetrics.intertrialNormalized{a, s})
+                    intertrialVals(s) = segmentMetrics.intertrialNormalized{a, s};
+                else
+                    intertrialVals(s) = nan;
+                end
             else
-                reachVals(s) = segmentMetrics.reach{a, s};
-                intertrialVals(s) = segmentMetrics.intertrial{a, s};
+                % Use raw values
+                if ~isempty(segmentMetrics.reach{a, s})
+                    reachVals(s) = segmentMetrics.reach{a, s};
+                else
+                    reachVals(s) = nan;
+                end
+                if ~isempty(segmentMetrics.intertrial{a, s})
+                    intertrialVals(s) = segmentMetrics.intertrial{a, s};
+                else
+                    intertrialVals(s) = nan;
+                end
             end
         end
         
@@ -1243,27 +1298,55 @@ if nSegments > 0
         bar(X + barWidth/2, intertrialVals, barWidth, 'FaceColor', [1 0 0], 'DisplayName', 'Intertrial');
         
         set(gca, 'XTick', 1:nSeg, 'XTickLabel', segmentNames);
-        xlabel('Segment', 'FontSize', 12);
-        if normalizeD2
-            ylabel('d2 (normalized)', 'FontSize', 12);
-            title(sprintf('%s - d2 (normalized): Reach vs Intertrial (segments)', areas{a}), 'FontSize', 14);
-        else
-            ylabel('d2', 'FontSize', 12);
-            title(sprintf('%s - d2: Reach vs Intertrial (segments)', areas{a}), 'FontSize', 14);
+        xtickangle(45);  % Rotate labels for readability
+        xlabel('Segment', 'FontSize', 10);
+        if plotIdx == numAreasToPlot + 1
+            if normalizeD2
+                ylabel('d2 (normalized)', 'FontSize', 10);
+            else
+                ylabel('d2', 'FontSize', 10);
+            end
         end
+        % Get number of neurons for this area
+        if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= length(idMatIdx) && ~isempty(idMatIdx{a})
+            numNeurons = length(idMatIdx{a});
+            neuronStr = sprintf(' (n=%d)', numNeurons);
+        else
+            neuronStr = '';
+        end
+        title(sprintf('%s%s - Segments', areas{a}, neuronStr), 'FontSize', 11);
         grid on;
-        legend('Location', 'best', 'FontSize', 10);
-        set(gca, 'XTickLabelMode', 'auto');
+        if plotIdx == numAreasToPlot + 1
+            legend('Location', 'best', 'FontSize', 9);
+        end
         set(gca, 'YTickLabelMode', 'auto');
+        ylim(segmentYLimits);
         
-        sgtitle(sprintf('%s - Segment-wise d2: Reach vs Intertrial (Window: %.1fs, Buffer: %.1fs, Bin: %.3fs)', ...
-            areas{a}, slidingWindowSize, windowBuffer, binSize(a)), 'FontSize', 14);
-        
-        % Save figure
-        saveFile = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_%s_segments_win%.1f_step%.1f.png', areas{a}, slidingWindowSize, stepSize));
-        exportgraphics(gcf, saveFile, 'Resolution', 300);
-        fprintf('Saved segment summary plot for %s to: %s\n', areas{a}, saveFile);
+        % Add horizontal line at y = 1 for normalized plots
+        if normalizeD2
+            yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
+        end
     end
 end
+
+% Add overall title
+if exist('sessionName', 'var') && ~isempty(sessionName)
+    sessionNameShort = sessionName(1:min(10, length(sessionName)));  % First 10 characters
+    titlePrefix = [sessionNameShort, ' - '];
+else
+    titlePrefix = '';
+end
+if normalizeD2
+    sgtitle(sprintf('%sd2 (normalized): Reach vs Intertrial (Window: %.1fs, Buffer: %.1fs)', ...
+        titlePrefix, slidingWindowSize, windowBuffer), 'FontSize', 14, 'interpreter', 'none');
+else
+    sgtitle(sprintf('%sd2: Reach vs Intertrial (Window: %.1fs, Buffer: %.1fs)', ...
+        titlePrefix, slidingWindowSize, windowBuffer), 'FontSize', 14, 'interpreter', 'none');
+end
+
+% Save figure
+saveFile = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_all_areas_win%.1f_step%.1f.png', slidingWindowSize, stepSize));
+exportgraphics(gcf, saveFile, 'Resolution', 300);
+fprintf('Saved combined plot to: %s\n', saveFile);
 
 fprintf('\n=== Analysis Complete ===\n');

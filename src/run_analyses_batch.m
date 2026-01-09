@@ -5,13 +5,13 @@
 % This script can process sessions from:
 %   - reach_session_list() for reach task sessions
 %   - schall_session_list() for Schall choice countermanding sessions
-%   - open_field_session_list() for open field sessions
+%   - open_field_session_list() for open field sessions 
 %
 % To add more analyses, add them to the analysesToRun cell array below
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'open_field'
-batchSessionType = 'reach';  % Change this to process different session types
+batchSessionType = 'open_field';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
