@@ -117,7 +117,7 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
-for s = 1 :numSessions
+for s = 1 %:numSessions
     sessionName = sessions{s};
     
     fprintf('\n');

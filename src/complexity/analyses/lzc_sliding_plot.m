@@ -109,7 +109,8 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
         end
     end
     
-    areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1]};
+    % Colors: M23 (pink), M56 (green), DS (blue), VS (magenta), M2356 (orange)
+    areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1], [1 0.5 0]};
     
     % Calculate windowed mean activity for each area (for right y-axis)
     summedActivityWindowed = cell(1, length(results.areas));

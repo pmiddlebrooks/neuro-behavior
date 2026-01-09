@@ -17,6 +17,7 @@ function results = criticality_av_analysis(dataStruct, config)
 %     .thresholdPct - Threshold as percentage of median (default: 1)
 %     .makePlots - Create plots (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
+%     .includeM2356 - Include combined M23+M56 area (default: false)
 %
 % Goal:
 %   Compute avalanche-based criticality measures (dcc, kappa) in sliding windows.
@@ -38,6 +39,29 @@ function results = criticality_av_analysis(dataStruct, config)
     dataType = dataStruct.dataType;
     areas = dataStruct.areas;
     numAreas = length(areas);
+    
+    % Add combined M2356 area if requested and M23 and M56 exist
+    if config.includeM2356
+        idxM23 = find(strcmp(areas, 'M23'));
+        idxM56 = find(strcmp(areas, 'M56'));
+        if ~isempty(idxM23) && ~isempty(idxM56) && ~any(strcmp(areas, 'M2356'))
+            % Create combined M2356 area
+            areas{end+1} = 'M2356';
+            dataStruct.areas = areas;  % Update dataStruct.areas
+            dataStruct.idMatIdx{end+1} = [dataStruct.idMatIdx{idxM23}, dataStruct.idMatIdx{idxM56}];
+            if isfield(dataStruct, 'idLabel')
+                dataStruct.idLabel{end+1} = [dataStruct.idLabel{idxM23}; dataStruct.idLabel{idxM56}];
+            end
+            numAreas = length(areas);
+            fprintf('\n=== Added combined M2356 area ===\n');
+            fprintf('M2356: %d neurons (M23: %d, M56: %d)\n', ...
+                length(dataStruct.idMatIdx{end}), ...
+                length(dataStruct.idMatIdx{idxM23}), ...
+                length(dataStruct.idMatIdx{idxM56}));
+        elseif isempty(idxM23) || isempty(idxM56)
+            fprintf('\n=== Warning: includeM2356 is true but M23 or M56 not found. Skipping M2356 creation. ===\n');
+        end
+    end
     
     if isfield(dataStruct, 'areasToTest')
         areasToTest = dataStruct.areasToTest;
@@ -286,6 +310,7 @@ function config = set_config_defaults(config)
     defaults.thresholdPct = 1;
     defaults.candidateFrameSizes = [.02 .03 .04 0.05, .075, 0.1 .15];
     defaults.candidateWindowSizes = [30, 45, 60, 90, 120];
+    defaults.includeM2356 = false;  % Include combined M23+M56 area (optional)
     
     % Apply defaults
     fields = fieldnames(defaults);

@@ -15,6 +15,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
 %     .makePlots - Whether to create plots (default: true)
 %     .minDataPoints - Minimum data points per window for optimization (default: 100000)
 %     .useBernoulliControl - Whether to compute Bernoulli normalized metric (default: true)
+%     .includeM2356 - Include combined M23+M56 area (default: false)
 %     Note: saveDir is taken from dataStruct.saveDir (set by data loading functions)
 %
 % Goal:
@@ -41,11 +42,48 @@ function results = lzc_sliding_analysis(dataStruct, config)
     areas = dataStruct.areas;
     numAreas = length(areas);
     
+    % Set default includeM2356 if not provided
+    if ~isfield(config, 'includeM2356')
+        config.includeM2356 = false;  % Default to false (opt-in)
+    end
+    
+    % Add combined M2356 area if requested and M23 and M56 exist
+    if config.includeM2356
+        idxM23 = find(strcmp(areas, 'M23'));
+        idxM56 = find(strcmp(areas, 'M56'));
+        if ~isempty(idxM23) && ~isempty(idxM56) && ~any(strcmp(areas, 'M2356'))
+            % Create combined M2356 area
+            areas{end+1} = 'M2356';
+            dataStruct.areas = areas;  % Update dataStruct.areas
+            dataStruct.idMatIdx{end+1} = [dataStruct.idMatIdx{idxM23}, dataStruct.idMatIdx{idxM56}];
+            if isfield(dataStruct, 'idLabel')
+                dataStruct.idLabel{end+1} = [dataStruct.idLabel{idxM23}; dataStruct.idLabel{idxM56}];
+            end
+            numAreas = length(areas);
+            fprintf('\n=== Added combined M2356 area ===\n');
+            fprintf('M2356: %d neurons (M23: %d, M56: %d)\n', ...
+                length(dataStruct.idMatIdx{end}), ...
+                length(dataStruct.idMatIdx{idxM23}), ...
+                length(dataStruct.idMatIdx{idxM56}));
+        elseif isempty(idxM23) || isempty(idxM56)
+            fprintf('\n=== Warning: includeM2356 is true but M23 or M56 not found. Skipping M2356 creation. ===\n');
+        end
+    end
+    
     % Get areasToTest
     if isfield(dataStruct, 'areasToTest')
         areasToTest = dataStruct.areasToTest;
     else
         areasToTest = 1:numAreas;
+    end
+    
+    % If M2356 was created, ensure it's included in areasToTest
+    if config.includeM2356 && any(strcmp(areas, 'M2356'))
+        m2356Idx = find(strcmp(areas, 'M2356'));
+        if ~ismember(m2356Idx, areasToTest)
+            areasToTest = [areasToTest, m2356Idx];
+            fprintf('Added M2356 (index %d) to areasToTest\n', m2356Idx);
+        end
     end
     
     fprintf('\n=== Complexity Sliding Window Analysis Setup ===\n');

@@ -157,6 +157,7 @@ config.nMinNeurons = 15;
 config.minSpikesPerBin = 0.08;  % Minimum spikes per bin for optimal bin size calculation (we want about minSpikesPerPin proportion of bins with a spike)
 config.minDataPoints = 2*10^5;
 config.useBernoulliControl = false;  % Set to false to skip Bernoulli normalization (faster computation)
+config.includeM2356 = true;  % Set to true to include combined M23+M56 area
 
 if strcmp(dataSource, 'spikes')
     config.binSize = binSize;
@@ -174,7 +175,7 @@ end
 if runParallel
     currentPool = gcp('nocreate');
 if isempty(currentPool)
-    NumWorkers = length(dataStruct.areas);
+    NumWorkers = min(4, length(dataStruct.areas));
     parpool('local', NumWorkers);
     fprintf('Started parallel pool with %d workers\n', NumWorkers);
 else

@@ -251,7 +251,8 @@ end
     set(gcf, 'Position', plotConfig.targetPos);
     
     % Define colors for each area
-    areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1]};  % Red, Green, Blue, Magenta for M23, M56, DS, VS
+    % Colors: M23 (pink), M56 (green), DS (blue), VS (magenta), M2356 (orange)
+    areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1], [1 0.5 0]};  % Red, Green, Blue, Magenta, Orange
     
     
     % Avalanche analysis plots: 3 rows (dcc, tau/alpha/paramSD, decades) x num areas (columns)

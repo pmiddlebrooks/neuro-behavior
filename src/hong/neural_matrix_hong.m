@@ -224,6 +224,14 @@ if isfield(opts, 'removeSome') && opts.removeSome
         checkTime = opts.firingRateCheckTime;
     end
     
+    % Calculate duration of dataMat
+    dataMatDuration = numFrames * opts.frameSize;
+    
+    % If firingRateCheckTime is greater than dataMat duration, use dataMat duration
+    if checkTime > dataMatDuration
+        checkTime = dataMatDuration;
+    end
+    
     checkFrames = floor(checkTime / opts.frameSize);
     checkFrames = min(checkFrames, numFrames);
     

@@ -177,6 +177,7 @@ config.distanceMetric = 'cosine';  % 'euclidean' or 'cosine' (cosine recommended
 config.nMinNeurons = 15;  % Minimum number of neurons required (areas with fewer will be skipped)
 config.saveRecurrencePlots = false;  % Set to true to compute and store recurrence plots (uses a lot of memory)
 config.usePerWindowPCA = false;  % Set to true to perform PCA on each window (addresses representational drift)
+config.includeM2356 = true;  % Set to true to include combined M23+M56 area
 
 if strcmp(sessionType, 'naturalistic')
     config.behaviorNumeratorIDs = 5:10;
@@ -188,7 +189,7 @@ if runParallel
 % Check if parpool is already running, start one if not
 currentPool = gcp('nocreate');
 if isempty(currentPool)
-    NumWorkers = length(dataStruct.areas);
+    NumWorkers = min(4, length(dataStruct.areas));
     parpool('local', NumWorkers);
     fprintf('Started parallel pool with %d workers\n', NumWorkers);
 else

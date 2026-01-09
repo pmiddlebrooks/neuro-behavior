@@ -110,11 +110,6 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
         otherwise
             error('Invalid sessionType: %s. Must be ''reach'', ''naturalistic'', ''schall'', or ''hong''', sessionType);
     end
-    
-    % Set default areasToTest if not set
-    if ~isfield(dataStruct, 'areasToTest') || isempty(dataStruct.areasToTest)
-        dataStruct.areasToTest = 1:length(dataStruct.areas);
-    end
-    
+        
     fprintf('Data loading complete. %d areas loaded.\n', length(dataStruct.areas));
 end

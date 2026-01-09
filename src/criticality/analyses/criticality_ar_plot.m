@@ -80,7 +80,8 @@ else
 end
 
 % Define colors for each area
-areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1]};  % Red, Green, Blue, Magenta for M23, M56, DS, VS
+% Colors: M23 (pink), M56 (green), DS (blue), VS (magenta), M2356 (orange)
+areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1], [1 0.5 0]};  % Red, Green, Blue, Magenta, Orange
 
 
 % Calculate windowed mean activity for each area (for right y-axis)
@@ -431,9 +432,6 @@ end
 drawnow
     exportgraphics(gcf, plotPath, 'Resolution', 300);
     fprintf('Saved plot to: %s\n', plotPath);
-
-fprintf('Saved criticality AR plot to: %s\n', config.saveDir);
-
 
 
 end

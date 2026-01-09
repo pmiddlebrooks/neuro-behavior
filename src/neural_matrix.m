@@ -153,6 +153,15 @@ end
 rmvNeurons = [];
 if opts.removeSome
     checkTime = opts.firingRateCheckTime;
+    
+    % Calculate duration of dataMat
+    dataMatDuration = numFrames * opts.frameSize;
+    
+    % If firingRateCheckTime is greater than dataMat duration, use dataMat duration
+    if checkTime > dataMatDuration
+        checkTime = dataMatDuration;
+    end
+    
     checkFrames = floor(checkTime / opts.frameSize);
     if ~strcmp(opts.method, 'standard')
         meanStart = mean(dataMat(1:checkFrames, :), 1);

@@ -179,5 +179,4 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
     dataStruct.startBlock2 = [];
     dataStruct.reachStart = [];
     dataStruct.reachClass = [];
-    dataStruct.areasToTest = 1:4;
 end

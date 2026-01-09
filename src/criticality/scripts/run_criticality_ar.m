@@ -153,6 +153,7 @@ config.useOptimalBinWindowFunction = true;
 % Additional parameters
 config.pOrder = 10;
 config.critType = 2;
+config.includeM2356 = true;  % Set to true to include combined M23+M56 area
 % saveDir will be obtained from dataStruct.saveDir in the analysis function
 % (set by load_sliding_window_data)
 

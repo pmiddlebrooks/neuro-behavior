@@ -91,6 +91,13 @@ if exist('saveDir', 'var')
     config.saveDir = saveDir;
 end
 
+% M2356 combined area option
+if exist('includeM2356', 'var')
+    config.includeM2356 = includeM2356;
+else
+    config.includeM2356 = false;  % Set to true to include combined M23+M56 area
+end
+
 % Create data structure
 dataStruct = struct();
 dataStruct.dataType = dataType;
