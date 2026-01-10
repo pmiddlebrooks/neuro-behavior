@@ -45,7 +45,6 @@ fprintf('\n=== Loading %s %s data ===\n', sessionType, dataSource);
 
 % Create filename suffix based on PCA flag (will be set in analysis script)
 % This is a placeholder - actual value will be set in criticality_sliding_window_ar.m
-filenameSuffix = '';  % Will be updated based on pcaFlag in analysis script
 
 %% =============================    Naturalistic Data Loading    =============================
 % Data type selection

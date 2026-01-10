@@ -11,14 +11,16 @@ runParallel = 1;
 
 % Set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
+if loadAndPlot
 config.nPCADim = 4;
-config.usePerWindowPCA = true;  % Set to true to perform PCA on each window (addresses representational drift)
+config.usePerWindowPCA = false;  % Set to true to perform PCA on each window (addresses representational drift)
     % Optionally specify which areas to plot (default: all areas)
     % Can be a vector of indices (e.g., [1, 2]) or cell array of area names (e.g., {'S1', 'SC'})
     % Example: config.areasToPlot = [1, 2];  % Plot only first two areas
     % Example: config.areasToPlot = {'S1', 'SC'};  % Plot areas by name
     % If not specified or empty, all areas will be plotted
 config.areasToPlot = 2:3;
+end
 
 paths = get_paths;
 

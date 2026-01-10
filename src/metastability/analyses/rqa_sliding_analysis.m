@@ -62,9 +62,9 @@ if config.includeM2356
         % Create combined M2356 area
         areas{end+1} = 'M2356';
         dataStruct.areas = areas;  % Update dataStruct.areas
-        dataStruct.idMatIdx{end+1} = [dataStruct.idMatIdx{idxM23}; dataStruct.idMatIdx{idxM56}];
+        dataStruct.idMatIdx{end+1} = [dataStruct.idMatIdx{idxM23}(:); dataStruct.idMatIdx{idxM56}(:)];
         if isfield(dataStruct, 'idLabel')
-            dataStruct.idLabel{end+1} = [dataStruct.idLabel{idxM23}; dataStruct.idLabel{idxM56}];
+            dataStruct.idLabel{end+1} = [dataStruct.idLabel{idxM23}(:); dataStruct.idLabel{idxM56}(:)];
         end
         numAreas = length(areas);
         fprintf('\n=== Added combined M2356 area ===\n');
