@@ -16,7 +16,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 
 %%           ==========================         WHICH DATA DO YOU WANT TO ANALYZE?        =================================
-% Naturalistic data
+% Spontaneous data
 getDataType = 'spikes';
 opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectEnd = 45 * 60; % seconds

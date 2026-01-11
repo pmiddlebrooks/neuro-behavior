@@ -11,7 +11,7 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'open_field'
-batchSessionType = 'open_field';  % Change this to process different session types
+batchSessionType = 'reach';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
@@ -73,7 +73,7 @@ switch lower(batchSessionType)
         sessions = goodSessionsCCM;
     case 'open_field'
         sessions = open_field_session_list();
-        sessionType = 'naturalistic';
+        sessionType = 'spontaneous';
     otherwise
         error('Invalid batchSessionType: %s. Must be ''reach'', ''schall'', or ''open_field''.', batchSessionType);
 end
@@ -117,7 +117,7 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
-for s = 1 %:numSessions
+for s = 6 :numSessions
     sessionName = sessions{s};
     
     fprintf('\n');

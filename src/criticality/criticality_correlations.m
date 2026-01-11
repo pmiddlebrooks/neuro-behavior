@@ -63,11 +63,11 @@ try
 
     % Extract key data
     areas = results.areas;
-    d2Nat = results.naturalistic.d2;
-    decodingAccuracyNat = results.naturalistic.decodingAccuracy;
-    startSNat = results.naturalistic.startS;
-    criticalityBinSize = results.naturalistic.criticalityBinSize;
-    criticalityWindowSize = results.naturalistic.criticalityWindowSize;
+    d2Nat = results.spontaneous.d2;
+    decodingAccuracyNat = results.spontaneous.decodingAccuracy;
+    startSNat = results.spontaneous.startS;
+    criticalityBinSize = results.spontaneous.criticalityBinSize;
+    criticalityWindowSize = results.spontaneous.criticalityWindowSize;
 
     % Extract parameters
     dimReductionMethod = results.dimReductionMethod;

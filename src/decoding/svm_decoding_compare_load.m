@@ -10,7 +10,7 @@ paths = get_paths;
 savePath = fullfile(paths.dropPath, 'decoding');
 
 % Identify which saved results to load
-dataType = 'naturalistic';  % 'naturalistic' or 'reach' (used only for colors/labels and filenames)
+dataType = 'spontaneous';  % 'spontaneous' or 'reach' (used only for colors/labels and filenames)
 kernelFunction = 'polynomial';
 transOrWithin = 'all';      % 'all' | 'trans' | 'transPost' | 'within'
 nDim = 8;                   % latent dimension used when saving
@@ -69,7 +69,7 @@ switch lower(dataType)
             colors(end,:) = [.85 .8 .75];
         end
     otherwise
-        % Naturalistic defaults
+        % Spontaneous defaults
         behaviors = {'investigate_1', 'investigate_2', 'investigate_3', ...
             'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
             'head_groom', 'contra_body_groom', 'ipsi_body groom', 'contra_itch', ...

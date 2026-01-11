@@ -1,5 +1,5 @@
 function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands)
-% load_naturalistic_data - Load naturalistic data for sliding window analysis
+% load_naturalistic_data - Load spontaneous data for sliding window analysis
 %
 % This function incorporates the functionality of get_standard_data.m
 % directly, removing the dependency on workspace variables.
@@ -21,7 +21,7 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
         opts.collectEnd = 10 * 60;  % Default 10 minutes
     end
     
-    % Set up paths for naturalistic data (incorporating get_standard_data logic)
+    % Set up paths for spontaneous data (incorporating get_standard_data logic)
     % Determine subdirectory based on first two characters of sessionName
     % Extract first path component or first two characters of sessionName
     pathParts = strsplit(sessionName, filesep);
@@ -45,7 +45,7 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
     opts.sessionName = sessionName;
     
     if strcmp(dataSource, 'spikes')
-        % Load naturalistic spike data
+        % Load spontaneous spike data
         % First load behavior data (needed for neural_matrix)
         dataBhv = load_data(opts, 'behavior');
         
@@ -116,7 +116,7 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
         fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
         
     elseif strcmp(dataSource, 'lfp')
-        % Load naturalistic LFP data
+        % Load spontaneous LFP data
         if ~isfield(opts, 'fsLfp')
             opts.fsLfp = 1250;
         end
@@ -174,7 +174,7 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
     % Store session name
     dataStruct.sessionName = sessionName;
     
-    % Initialize reach-specific variables as empty (not used for naturalistic)
+    % Initialize reach-specific variables as empty (not used for spontaneous)
     dataStruct.dataR = [];
     dataStruct.startBlock2 = [];
     dataStruct.reachStart = [];

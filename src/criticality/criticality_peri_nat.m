@@ -1,7 +1,7 @@
 %%
-% Peri-Behavior Criticality Analysis (Naturalistic Data)
+% Peri-Behavior Criticality Analysis (Spontaneous Data)
 % Loads results from criticality_compare.m and analyzes d2 criticality values
-% around behavior onset times for naturalistic data
+% around behavior onset times for spontaneous data
 %
 % Variables:
 %   results - loaded criticality analysis results
@@ -36,9 +36,9 @@ results = results.results;
 % Extract areas and parameters
 areas = results.areas;
 areasToTest = 2:4;
-optimalBinSize = results.naturalistic.optimalBinSize;
-d2Nat = results.naturalistic.d2;
-startS = results.naturalistic.startS;
+optimalBinSize = results.spontaneous.optimalBinSize;
+d2Nat = results.spontaneous.d2;
+startS = results.spontaneous.startS;
 
 
 %% User Input: Behavior Labels and Selector

@@ -7,7 +7,7 @@
 % This script automatically loads optimal step and window sizes from criticality_compare_results.mat
 % to ensure consistency with the criticality analysis. The parameters are:
 % - stepSize: from results.params.stepSize
-% - windowSize: from results.naturalistic.unifiedWindowSize or results.reach.unifiedWindowSize
+% - windowSize: from results.spontaneous.unifiedWindowSize or results.reach.unifiedWindowSize
 % depending on the data type being analyzed.
 
 %%    Load behavior IDs
@@ -64,8 +64,8 @@ try
     % Extract optimal parameters based on data type
     if strcmp(natOrReach, 'Nat')
         stepSize = results.params.stepSize;
-        windowSize = results.naturalistic.unifiedWindowSize;
-        fprintf('Using naturalistic data parameters:\n');
+        windowSize = results.spontaneous.unifiedWindowSize;
+        fprintf('Using spontaneous data parameters:\n');
         fprintf('  Step size: %.1f s\n', stepSize);
         fprintf('  Window size: %.1f s\n', windowSize);
     else

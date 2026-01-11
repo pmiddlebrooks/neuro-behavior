@@ -985,7 +985,7 @@ text(0.1, 0.9, 'Analysis Parameters:', 'FontSize', 12, 'FontWeight', 'bold');
 text(0.1, 0.8, sprintf('Max Motif Length: %d', 4), 'FontSize', 10);
 text(0.1, 0.7, sprintf('Shuffles: %d', 1000), 'FontSize', 10);
 text(0.1, 0.6, sprintf('Max Lag: %.3f s', 2.0), 'FontSize', 10);
-text(0.1, 0.5, sprintf('Data Type: %s', 'Naturalistic'), 'FontSize', 10);
+text(0.1, 0.5, sprintf('Data Type: %s', 'Spontaneous'), 'FontSize', 10);
 text(0.1, 0.4, sprintf('Brain Area: %s', 'M56'), 'FontSize', 10);
 
 axis off;

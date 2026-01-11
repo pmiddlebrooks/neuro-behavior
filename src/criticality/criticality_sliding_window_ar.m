@@ -1,6 +1,6 @@
 %%
 % Criticality Sliding Window Analysis Script (d2 + mrBr)
-% Unified script for analyzing both reach data and naturalistic data
+% Unified script for analyzing both reach data and spontaneous data
 % Analyzes data using sliding window approach; saves results to data-specific folders
 %
 % Note: Data should be loaded by criticality_sliding_data_prep.m before running this script
@@ -98,7 +98,7 @@ if analyzeModulation
             end
             spikeData = dataR.CSV(:,1:2);
         else
-            % For naturalistic/schall, spikeData should have been loaded by prep script
+            % For spontaneous/schall, spikeData should have been loaded by prep script
             error('spikeData must be loaded by criticality_sliding_data_prep.m for modulation analysis');
         end
         fprintf('Loaded spike data: %d spikes from %d neurons\n', size(spikeData, 1), length(unique(spikeData(:,2))));
@@ -1026,8 +1026,8 @@ if strcmp(dataType, 'reach')
     % Use reach start times as alignment points
     alignTimes = dataR.R(:,1) / 1000;
 else
-    % For naturalistic data, use regular intervals
-    disp('Code for what behaviors you want to align to for naturalistic')
+    % For spontaneous data, use regular intervals
+    disp('Code for what behaviors you want to align to for spontaneous')
     return
     totalTime = opts.collectEnd;
     alignTimes = (modulationEventWindow/2):(modulationEventWindow*2):(totalTime - modulationEventWindow/2);

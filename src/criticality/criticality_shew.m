@@ -36,7 +36,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 
 
-%% Naturalistic data
+%% Spontaneous data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
 opts.collectEnd = 45 * 60; % seconds
@@ -161,8 +161,8 @@ xlim([0 opts.collectEnd/60]);
 
 
 
-%%   ====================================     Naturalistic: Sliding window (mirrored from MR estimator)   ==============================================
-% Optimal bin/window size search for naturalistic data
+%%   ====================================     Spontaneous: Sliding window (mirrored from MR estimator)   ==============================================
+% Optimal bin/window size search for spontaneous data
 [candidateBinSizes, candidateWindowSizesNat] = deal(candidateFrameSizes, candidateWindowSizes);
 optimalBinSizeNat = zeros(1, length(areas));
 optimalWindowSizeNat = zeros(1, length(areas));
@@ -182,7 +182,7 @@ maxWindowSizeNat = max(optimalWindowSizeNat(areasWithMaxBin));
 
 fprintf('Using unified parameters for all areas: bin size = %.3f s, window size = %.1f s\n', maxBinSizeNat, maxWindowSizeNat);
 
-% Sliding window d2 analysis for naturalistic data
+% Sliding window d2 analysis for spontaneous data
 stepSize = 1; % seconds
 nShuffles = 10;
 d2Nat = cell(1, length(areas));
@@ -197,7 +197,7 @@ critType = 2;
 for a = 1:length(areas)
     aID = idList{a};
     tic
-    fprintf('Area %s (Naturalistic)\n', areas{a})
+    fprintf('Area %s (Spontaneous)\n', areas{a})
     stepSamples = round(stepSize / maxBinSizeNat);
     winSamples = round(maxWindowSizeNat / maxBinSizeNat);
     aDataMatNat = neural_matrix_ms_to_frames(dataMat(:, aID), maxBinSizeNat);
@@ -229,7 +229,7 @@ for a = 1:length(areas)
     toc
 end
 
-% Plotting for naturalistic d2
+% Plotting for spontaneous d2
 figure(161); clf; hold on;
 plot(startSNat{1}/60, d2Nat{1}, '-ok', 'lineWidth', 2);
 plot(startSNat{2}/60, d2Nat{2}, '-ob', 'lineWidth', 2);
@@ -241,7 +241,7 @@ plot(startSNat{3}/60, d2NatR{3}, '*r');
 % plot(startSNat{4}/60, d2NatR{4}, '*', 'color', [0 .75 0]);
 xlabel('Minutes'); ylabel('d2 estimate');
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest');
-title(['Naturalistic Data ', num2str(maxWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps']);
+title(['Spontaneous Data ', num2str(maxWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps']);
 xlim([0 opts.collectEnd/60]);
 
 
@@ -459,7 +459,7 @@ plot(1:4, d2N, 'ob', 'LineWidth', 2)
 plot(1:4, d21R, '*k')
 plot(1:4, d22R, '*r')
 plot(1:4, d2NR, '*b')
-legend({'Block 1', 'Block 2', 'Naturalistic', 'B1 Rand', 'B2 Rand', 'Nat Rand'})
+legend({'Block 1', 'Block 2', 'Spontaneous', 'B1 Rand', 'B2 Rand', 'Nat Rand'})
 xlim([.5 4.5])
 title('Distance to Criticality')
 xticks(1:4)
@@ -753,7 +753,7 @@ plot(mins, d2R(:,4), '*', 'color', [0 .75 0]);
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('Distance to criticality')
-title('Naturalistic')
+title('Spontaneous')
 
 
 

@@ -1,7 +1,7 @@
 %%
 % Criticality Avalanche Analysis Script
 % Analyzes dcc (distance to criticality from avalanche analysis) and kappa measures
-% Uses sliding window analysis on Mark's reach data and naturalistic data
+% Uses sliding window analysis on Mark's reach data and spontaneous data
 % Measures: dcc (distance to criticality from avalanche analysis), kappa
 %
 % Update controls:
@@ -56,7 +56,7 @@ end
 
 %% ==============================================     Data Loading     ==============================================
 
-% Naturalistic data
+% Spontaneous data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 0 * 60; % seconds
@@ -106,12 +106,12 @@ minBinsPerWindow = 1000;
 nShuffles = 5;
 
 
-%% ==============================================     Naturalistic Data Analysis     ==============================================
+%% ==============================================     Spontaneous Data Analysis     ==============================================
 
 areasToTest = 1:4;
 
 if updateDccKappa
-    fprintf('\n=== Naturalistic Data dcc/kappa Analysis ===\n');
+    fprintf('\n=== Spontaneous Data dcc/kappa Analysis ===\n');
     
     % Step 1-2: Apply PCA to original data to determine nDim and project back to neural space
     fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');
@@ -150,15 +150,15 @@ if updateDccKappa
     end
     
     for a = areasToTest
-        fprintf('\nProcessing dcc/kappa for area %s (Naturalistic)...\n', areas{a});
+        fprintf('\nProcessing dcc/kappa for area %s (Spontaneous)...\n', areas{a});
         tic;
 
         aID = idListNat{a};
 
         % Step 4: Bin the original data for dcc/kappa analysis
         % Ensure optimalBinSizeNat available when only dcc/kappa is updated
-        if ~exist('optimalBinSizeNat', 'var') && isfield(results, 'naturalistic') && isfield(results.naturalistic, 'optimalBinSize')
-            optimalBinSizeNat = results.naturalistic.optimalBinSize;
+        if ~exist('optimalBinSizeNat', 'var') && isfield(results, 'spontaneous') && isfield(results.spontaneous, 'optimalBinSize')
+            optimalBinSizeNat = results.spontaneous.optimalBinSize;
         end
         aDataMatNat_dcc = neural_matrix_ms_to_frames(dataMat(:, aID), optimalBinSizeNat(a));
         numTimePoints_dcc = size(aDataMatNat_dcc, 1);
@@ -287,8 +287,8 @@ if updateDccKappa
 
         % Step 4: Bin the original data for dcc/kappa analysis
         % Ensure optimalBinSizeRea available when only dcc/kappa is updated
-        if ~exist('optimalBinSizeRea', 'var') && isfield(results, 'naturalistic') && isfield(results.naturalistic, 'optimalBinSize')
-            optimalBinSizeRea = results.naturalistic.optimalBinSize;
+        if ~exist('optimalBinSizeRea', 'var') && isfield(results, 'spontaneous') && isfield(results.spontaneous, 'optimalBinSize')
+            optimalBinSizeRea = results.spontaneous.optimalBinSize;
         end
         aDataMatRea_dcc = neural_matrix_ms_to_frames(dataMatR(:, aID), optimalBinSizeRea(a));
         numTimePoints_dcc = size(aDataMatRea_dcc, 1);
@@ -382,30 +382,30 @@ if ~exist('measureNames', 'var')
 end
 results.measures = measures;
 results.measureNames = measureNames;
-results.naturalistic.collectStart = opts.collectStart;
-results.naturalistic.collectFor = opts.collectEnd;
+results.spontaneous.collectStart = opts.collectStart;
+results.spontaneous.collectFor = opts.collectEnd;
 
-% Naturalistic data results (conditional updates)
+% Spontaneous data results (conditional updates)
 if exist('optimalBinSizeNat', 'var')
-    results.naturalistic.optimalBinSize = optimalBinSizeNat;
+    results.spontaneous.optimalBinSize = optimalBinSizeNat;
 end
 if exist('optimalWindowSizeNat', 'var')
-    results.naturalistic.optimalWindowSize = optimalWindowSizeNat;
+    results.spontaneous.optimalWindowSize = optimalWindowSizeNat;
 end
 if exist('slidingWindowSize', 'var')
-    results.naturalistic.slidingWindowSize = slidingWindowSize;
+    results.spontaneous.slidingWindowSize = slidingWindowSize;
 end
 if updateDccKappa && exist('dccNat', 'var')
-    results.naturalistic.dcc = dccNat;
+    results.spontaneous.dcc = dccNat;
 end
 if updateDccKappa && exist('kappaNat', 'var')
-    results.naturalistic.kappa = kappaNat;
+    results.spontaneous.kappa = kappaNat;
 end
 if updateDccKappa && exist('decadesNat', 'var')
-    results.naturalistic.decades = decadesNat;
+    results.spontaneous.decades = decadesNat;
 end
 if updateDccKappa && exist('startSNat_dcc', 'var')
-    results.naturalistic.startS_dcc = startSNat_dcc;
+    results.spontaneous.startS_dcc = startSNat_dcc;
 end
 
 % Reach data results (conditional updates)
@@ -416,7 +416,7 @@ if exist('optimalWindowSizeRea', 'var')
     results.reach.optimalWindowSize = optimalWindowSizeRea;
 end
 if exist('slidingWindowSize', 'var')
-    results.naturalistic.slidingWindowSize = slidingWindowSize;
+    results.spontaneous.slidingWindowSize = slidingWindowSize;
 end
 if updateDccKappa && exist('dccRea', 'var')
     results.reach.dcc = dccRea;
@@ -433,7 +433,7 @@ end
 
 % Correlation matrices (conditional updates based on flags)
 if runCorrelation && exist('corrMatNat_dccKappaDecades', 'var')
-    results.naturalistic.corrMatDccKappaDecades = corrMatNat_dccKappaDecades;
+    results.spontaneous.corrMatDccKappaDecades = corrMatNat_dccKappaDecades;
 end
 if runCorrelation && exist('corrMatRea_dccKappaDecades', 'var')
     results.reach.corrMatDccKappaDecades = corrMatRea_dccKappaDecades;

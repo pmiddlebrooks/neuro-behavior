@@ -48,7 +48,7 @@ src/
 
 ### ✅ Data Loading
 - `load_sliding_window_data.m` - Main data loading function
-- Helper functions for each data type (naturalistic, reach, schall, hong)
+- Helper functions for each data type (spontaneous, reach, schall, hong)
 - `compute_lfp_binned_envelopes.m` - LFP envelope computation
 
 ### ✅ Analysis Functions

@@ -1,7 +1,7 @@
 %%
 % Criticality Comparison Script
 % Compares different measures of criticality within each brain area
-% Uses sliding window analysis on Mark's reach data and naturalistic data
+% Uses sliding window analysis on Mark's reach data and spontaneous data
 % Measures: mrBr (MR branching ratio), d2 (distance to criticality),
 %
 % Update controls:
@@ -49,7 +49,7 @@ end
 
 %% ==============================================     Data Loading     ==============================================
 
-% Naturalistic data
+% Spontaneous data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 0 * 60; % seconds
@@ -106,12 +106,12 @@ critType = 2;
 d2StepSize = .02;
 
 
- %% ==============================================     Naturalistic Data Analysis     ==============================================
+ %% ==============================================     Spontaneous Data Analysis     ==============================================
 
 areasToTest = 1:4;
 
 if updateD2MrBr
-    fprintf('\n=== Naturalistic Data d2/mrbr Analysis ===\n');
+    fprintf('\n=== Spontaneous Data d2/mrbr Analysis ===\n');
 
     % Step 1-2: Apply PCA to original data to determine nDim and project back to neural space
     fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');
@@ -162,7 +162,7 @@ if updateD2MrBr
             areas{a}, optimalBinSizeNat(a), optimalWindowSizeNat(a), d2StepSizeNat(a));
     end
 
-    % Initialize results for naturalistic data
+    % Initialize results for spontaneous data
     mrBrNat = cell(1, length(areas));
     d2Nat = cell(1, length(areas));
     dccNat = cell(1, length(areas));
@@ -170,7 +170,7 @@ if updateD2MrBr
     startSNat = cell(1, length(areas));
 
     for a = areasToTest %length(areas)
-        fprintf('\nProcessing area %s (Naturalistic)...\n', areas{a});
+        fprintf('\nProcessing area %s (Spontaneous)...\n', areas{a});
         tic;
 
         aID = idListNat{a};
@@ -387,30 +387,30 @@ if ~exist('measureNames', 'var')
 end
 results.measures = measures;
 results.measureNames = measureNames;
-results.naturalistic.collectStart = opts.collectStart;
-results.naturalistic.collectFor = opts.collectEnd;
+results.spontaneous.collectStart = opts.collectStart;
+results.spontaneous.collectFor = opts.collectEnd;
 
-% Naturalistic data results (conditional updates)
+% Spontaneous data results (conditional updates)
 if exist('optimalBinSizeNat', 'var')
-    results.naturalistic.optimalBinSize = optimalBinSizeNat;
+    results.spontaneous.optimalBinSize = optimalBinSizeNat;
 end
 if exist('d2StepSizeNat', 'var')
-    results.naturalistic.d2StepSize = d2StepSizeNat;
+    results.spontaneous.d2StepSize = d2StepSizeNat;
 end
 if exist('d2WindowSizeNat', 'var')
-    results.naturalistic.d2WindowSize = d2WindowSizeNat;
+    results.spontaneous.d2WindowSize = d2WindowSizeNat;
 end
 if exist('optimalWindowSizeNat', 'var')
-    results.naturalistic.optimalWindowSize = optimalWindowSizeNat;
+    results.spontaneous.optimalWindowSize = optimalWindowSizeNat;
 end
 if updateD2MrBr && exist('mrBrNat', 'var')
-    results.naturalistic.mrBr = mrBrNat;
+    results.spontaneous.mrBr = mrBrNat;
 end
 if updateD2MrBr && exist('d2Nat', 'var')
-    results.naturalistic.d2 = d2Nat;
+    results.spontaneous.d2 = d2Nat;
 end
 if updateD2MrBr && exist('startSNat', 'var')
-    results.naturalistic.startS = startSNat;
+    results.spontaneous.startS = startSNat;
 end
 
 % Reach data results (conditional updates)
@@ -438,7 +438,7 @@ end
 
 % Correlation matrices (conditional updates based on flags)
 if runCorrelation && exist('corrMatNat_d2mrBr', 'var')
-    results.naturalistic.corrMat = corrMatNat_d2mrBr;
+    results.spontaneous.corrMat = corrMatNat_d2mrBr;
 end
 if runCorrelation && exist('corrMatRea_d2mrBr', 'var')
     results.reach.corrMat = corrMatRea_d2mrBr;

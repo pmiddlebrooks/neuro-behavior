@@ -1,4 +1,4 @@
-%% HMM vs Behavior Analysis for Naturalistic Data
+%% HMM vs Behavior Analysis for Spontaneous Data
 % This script analyzes the relationship between HMM states and behavior
 % using contingency matrices, optimal assignment, and consistency metrics
 %
@@ -29,7 +29,7 @@ switch natOrReach
         getDataType = 'behavior';
         get_standard_data
         [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
-        bhvProbs = []; % Not available for naturalistic data
+        bhvProbs = []; % Not available for spontaneous data
     case 'Reach'
         % Load saved HMM results from get_reach_bhv_labels.m
         fprintf('Loading reach behavior data from saved HMM results...\n');
@@ -126,7 +126,7 @@ for i = 1:length(lags)
     if strcmp(natOrReach, 'Reach')
         valid_mask = (hmm_segment > 0) & (bhv_segment > 0); % For reach data, 0 = invalid
     else
-        valid_mask = (hmm_segment > 0) & (bhv_segment >= 0); % For naturalistic data, -1 = invalid
+        valid_mask = (hmm_segment > 0) & (bhv_segment >= 0); % For spontaneous data, -1 = invalid
     end
 
     n_valid_pairs(i) = sum(valid_mask);
@@ -186,7 +186,7 @@ hmmStates = unique(hmm_results.continuous_results.sequence(hmm_results.continuou
 if strcmp(natOrReach, 'Reach')
     bhvCategories = unique(bhvID(bhvID > 0)); % Exclude invalid behavior (0) for reach data
 else
-    bhvCategories = unique(bhvID(bhvID >= 0)); % Exclude invalid behavior (-1) for naturalistic data
+    bhvCategories = unique(bhvID(bhvID >= 0)); % Exclude invalid behavior (-1) for spontaneous data
 end
 
 nHmmStates = length(hmmStates);
@@ -222,7 +222,7 @@ for i = 1:totalTimeBins
                 end
             end
         else
-            if hmm_state > 0 && bhv_cat >= 0 % For naturalistic data, -1 = invalid
+            if hmm_state > 0 && bhv_cat >= 0 % For spontaneous data, -1 = invalid
                 hmm_idx = find(hmmStates == hmm_state);
                 bhv_idx = find(bhvCategories == bhv_cat);
 
@@ -342,7 +342,7 @@ end
 if strcmp(natOrReach, 'Reach')
     valid_idx = ~isnan(predicted_bhv) & (bhvID > 0); % For reach data, 0 = invalid
 else
-    valid_idx = ~isnan(predicted_bhv) & (bhvID >= 0); % For naturalistic data, -1 = invalid
+    valid_idx = ~isnan(predicted_bhv) & (bhvID >= 0); % For spontaneous data, -1 = invalid
 end
 if sum(valid_idx) > 0
     accuracy = sum(predicted_bhv(valid_idx) == bhvID(valid_idx)) / sum(valid_idx);
@@ -409,7 +409,7 @@ for i = 1:nHmmStates
                         bhv_distribution = [bhv_distribution; bhv_cat];
                     end
                 else
-                    if bhv_cat >= 0  % Only include valid behavior categories for naturalistic data
+                    if bhv_cat >= 0  % Only include valid behavior categories for spontaneous data
                         bhv_distribution = [bhv_distribution; bhv_cat];
                     end
                 end

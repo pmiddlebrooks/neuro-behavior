@@ -127,7 +127,7 @@ idVSR = find(strcmp(areaLabels, 'VS'));
 
 
 
-%%    Is naturalistic data closer to criticality than reach data?
+%%    Is spontaneous data closer to criticality than reach data?
 nIter = 1;
 nSubsample = 20;
 
@@ -155,7 +155,7 @@ for a = 1 : length(areas)
     for iter = 1:nIter
 
 
-        % Naturalistic data
+        % spontaneous data
         % --------------------
 
         % Randomize a subsample of neurons
@@ -201,7 +201,7 @@ fileName = fullfile(paths.dropPath, 'avalanche_analyses.mat');
 save(fileName, 'Av', 'brPeak', 'tau', 'alpha', 'sigmaNuZInvSD', 'optBinSize', 'areas', 'nSubsample', '-append')
 
 
-%%    Is naturalistic data closer to criticality than reach data?
+%%    Is spontaneous data closer to criticality than reach data?
 nIter = 10;
 nSubsample = 20;
 % binSizes = [.005, .01, .015, .02];
@@ -220,7 +220,7 @@ for b = 1 : length(binSizes)
 
         opts.frameSize = binSizes(b);
 
-        % Naturalistich data4
+        % Spontaneoush data4
         get_standard_data
 
         % Randomize a subsample of neurons

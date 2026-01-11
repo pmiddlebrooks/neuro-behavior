@@ -312,8 +312,8 @@ function results = lzc_sliding_analysis(dataStruct, config)
     lzComplexityNormalizedBernoulli = cell(1, numAreas);
     startS = cell(1, numAreas);
     
-    % Initialize behavior proportion if enabled for naturalistic sessions
-    if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+    % Initialize behavior proportion if enabled for spontaneous sessions
+    if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
             isfield(config, 'behaviorDenominatorIDs') && ...
             ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
         behaviorProportion = cell(1, numAreas);
@@ -383,7 +383,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
             startS{a} = nan(1, numWindows);
             
             % Initialize behavior proportion array if enabled
-            if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+            if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
                     isfield(config, 'behaviorDenominatorIDs') && ...
                     ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
                 behaviorProportion{a} = nan(1, numWindows);
@@ -423,8 +423,8 @@ function results = lzc_sliding_analysis(dataStruct, config)
                     lzComplexityNormalizedBernoulli{a}(w)] = ...
                     compute_lz_complexity_with_controls(binarySeq, config.nShuffles, config.useBernoulliControl);
                 
-                % Calculate behavior proportion if enabled for naturalistic sessions
-                if strcmp(sessionType, 'naturalistic') && isfield(dataStruct, 'bhvID') && ...
+                % Calculate behavior proportion if enabled for spontaneous sessions
+                if strcmp(sessionType, 'spontaneous') && isfield(dataStruct, 'bhvID') && ...
                         ~isempty(dataStruct.bhvID) && isfield(config, 'behaviorNumeratorIDs') && ...
                         isfield(config, 'behaviorDenominatorIDs') && ...
                         ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
@@ -489,7 +489,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
             startS{a} = nan(1, numWindows);
             
             % Initialize behavior proportion array if enabled
-            if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+            if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
                     isfield(config, 'behaviorDenominatorIDs') && ...
                     ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
                 behaviorProportion{a} = nan(1, numWindows);
@@ -525,8 +525,8 @@ function results = lzc_sliding_analysis(dataStruct, config)
                     lzComplexityNormalizedBernoulli{a}(w)] = ...
                     compute_lz_complexity_with_controls(binarySeq, config.nShuffles, config.useBernoulliControl);
                 
-                % Calculate behavior proportion if enabled for naturalistic sessions
-                if strcmp(sessionType, 'naturalistic') && isfield(dataStruct, 'bhvID') && ...
+                % Calculate behavior proportion if enabled for spontaneous sessions
+                if strcmp(sessionType, 'spontaneous') && isfield(dataStruct, 'bhvID') && ...
                         ~isempty(dataStruct.bhvID) && isfield(config, 'behaviorNumeratorIDs') && ...
                         isfield(config, 'behaviorDenominatorIDs') && ...
                         ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
@@ -572,7 +572,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
     results.lzComplexityNormalizedBernoulli = lzComplexityNormalizedBernoulli;
     
     % Store behavior proportion if calculated
-    if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+    if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
             isfield(config, 'behaviorDenominatorIDs') && ...
             ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
         results.behaviorProportion = behaviorProportion;
@@ -611,12 +611,12 @@ function results = lzc_sliding_analysis(dataStruct, config)
     end
     
     % Handle sessionName with subdirectories (e.g., "kw/kw092821")
-    % For naturalistic sessions, saveDir already includes the full path (subjectID/recording),
+    % For spontaneous sessions, saveDir already includes the full path (subjectID/recording),
     % so we don't need to create additional subdirectories
     actualSaveDir = dataStruct.saveDir;
-    if ~strcmp(sessionType, 'naturalistic') && ~isempty(sessionNameForPath) && contains(sessionNameForPath, filesep)
+    if ~strcmp(sessionType, 'spontaneous') && ~isempty(sessionNameForPath) && contains(sessionNameForPath, filesep)
         % Session name contains path separators, extract first directory
-        % Only do this for non-naturalistic sessions (naturalistic already has full path in saveDir)
+        % Only do this for non-spontaneous sessions (spontaneous already has full path in saveDir)
         pathParts = strsplit(sessionNameForPath, filesep);
         if length(pathParts) > 1
             % Create subdirectory in saveDir

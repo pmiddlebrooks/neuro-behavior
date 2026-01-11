@@ -1,7 +1,7 @@
-%%                     Test UMAP parameters on naturalistic data
+%%                     Test UMAP parameters on spontaneous data
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This script tests different UMAP parameters (min_dist, spread, n_neighbors)
-% to fit naturalistic data and visualize the results
+% to fit spontaneous data and visualize the results
 
 %% Specify main parameters
 paths = get_paths;
@@ -10,7 +10,7 @@ paths = get_paths;
 frameSize = .02;
 slidingWindowSec = .1; % Duration of sliding window for spike summation
 
-% Load naturalistic data
+% Load spontaneous data
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds
@@ -39,7 +39,7 @@ idVS = find(strcmp(areaLabels, 'VS'));
 
 
 %% Apply sliding window to sum spikes
-fprintf('Loaded naturalistic data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
+fprintf('Loaded spontaneous data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
 fprintf('Frame size: %.3f seconds\n', frameSize);
 fprintf('Sliding window: %.3f seconds\n', slidingWindowSec);
 

@@ -31,7 +31,7 @@ monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single m
 
 
 
-%%   ====================================       Naturalistic vs. Mark Task       ==============================================
+%%   ====================================       Spontaneous vs. Mark Task       ==============================================
 opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.minFiringRate = .05;
@@ -1246,7 +1246,7 @@ opts.minFiringRate = .05;
 opts.firingRateCheckTime = 5 * 60;
 
 
-%% ==============================================      Naturalistic
+%% ==============================================      Spontaneous
 getDataType = 'spikes';
 opts.collectStart = 0*60*60;
 opts.collectEnd = 45 * 60;  % Collect for 45 min to match Mark's data duration

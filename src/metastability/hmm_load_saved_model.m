@@ -6,7 +6,7 @@ function [hmm_results] = hmm_load_saved_model(natOrReach, varargin)
 %   hmm_results = hmm_load_saved_model(natOrReach, 'brainArea', 'M56', 'binSize', 0.01, 'minDur', 0.04)
 %
 %   INPUTS:
-%       natOrReach - String: 'Nat' for naturalistic data, 'Reach' for reach data
+%       natOrReach - String: 'Nat' for spontaneous data, 'Reach' for reach data
 %       brainArea  - (Optional) String: 'M23', 'M56', 'DS', 'VS'. If not specified, returns all areas
 %       fileIndex  - (Optional) Integer: Index of file to load (1 = most recent, 2 = second most recent, etc.)
 %       binSize    - (Optional) Numeric: Bin size in seconds to filter files (e.g., 0.01)
@@ -150,7 +150,7 @@ if ~isempty(binSize) && ~isempty(minDur)
         selectedFile = filename;
         
     else
-        % For Naturalistic data: construct filename directly
+        % For Spontaneous data: construct filename directly
         hmmdir = fullfile(paths.dropPath, 'metastability');
         if ~exist(hmmdir, 'dir')
             error('HMM directory not found: %s', hmmdir);
@@ -195,7 +195,7 @@ else
         end
         
     else
-        % For Naturalistic data: look in metastability folder
+        % For Spontaneous data: look in metastability folder
         hmmdir = fullfile(paths.dropPath, 'metastability');
         if ~exist(hmmdir, 'dir')
             error('HMM directory not found: %s', hmmdir);
@@ -284,7 +284,7 @@ end
 try
     loadedData = load(filePath);
     
-    % Both Reach and Naturalistic data now use 'results' struct
+    % Both Reach and Spontaneous data now use 'results' struct
     if ~isfield(loadedData, 'results')
         error('File does not contain expected ''results'' structure');
     end

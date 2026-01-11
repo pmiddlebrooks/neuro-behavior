@@ -1,7 +1,7 @@
 %%
 % Criticality Mutual Information Analysis
 % Calculates mutual information between brain areas for different criticality measures
-% Uses sliding window analysis on Mark's reach data and naturalistic data
+% Uses sliding window analysis on Mark's reach data and spontaneous data
 % Tests hypothesis that MI is maximal near criticality and minimal far from criticality
 
 
@@ -11,11 +11,11 @@ paths = get_paths;
 load(fullfile(paths.dropPath, 'criticality_compare_results.mat'), 'results');
 
 % Get optimal bin sizes and window/step sizes
-binSizeNat = results.naturalistic.unifiedBinSize;
+binSizeNat = results.spontaneous.unifiedBinSize;
 binSizeRea = results.reach.unifiedBinSize;
 % binSizeNat = .05;
 % binSizeRea = .05;
-windowSizeNat = results.naturalistic.unifiedWindowSize;
+windowSizeNat = results.spontaneous.unifiedWindowSize;
 windowSizeRea = results.reach.unifiedWindowSize;
 stepSize = results.params.stepSize;
 
@@ -26,7 +26,7 @@ areaPairs = areaPairs(areaPairs(:,1) ~= areaPairs(:,2), :); % remove self-pairs
 numPairs = size(areaPairs, 1);
 
 %% Optional Load original data
-% Load naturalistic data (as in criticality_compare.m)
+% Load spontaneous data (as in criticality_compare.m)
 getDataType = 'spikes';
 opts = neuro_behavior_options;
 opts.firingRateCheckTime = 5 * 60;
@@ -46,7 +46,7 @@ idListRea = {idM23R, idM56R, idDSR, idVSR};
 
 %% ==============================================     Binning Spiking Data     ==============================================
 
-% Bin naturalistic data for each area
+% Bin spontaneous data for each area
 binnedNat = cell(1, length(areas));
 for a = areasToTest
     aID = idListNat{a};
@@ -66,7 +66,7 @@ pcaFirstFlag = results.params.pcaFirstFlag;
 nDim = results.params.nDim;
 
 if pcaFlag
-    % Naturalistic
+    % Spontaneous
     for a = areasToTest
         X = binnedNat{a};
         [coeff, score, ~, ~, ~, mu] = pca(X);
@@ -128,7 +128,7 @@ if testBinMode
     for p = 1:numPairs
         a1 = areaPairs(p, 1);
         a2 = areaPairs(p, 2);
-        % Naturalistic
+        % Spontaneous
         X = binnedNat{a1};
         Y = binnedNat{a2};
         test_te_bins(X, Y, nTeBinsList, winSamplesNat, stepSamplesNat, nTestWindows, sprintf('Nat: %s→%s', areas{a1}, areas{a2}));
@@ -204,7 +204,7 @@ if plotTeFlag
     for p = 1:numPairs
         a1 = areaPairs(p, 1);
         a2 = areaPairs(p, 2);
-        % Naturalistic
+        % Spontaneous
         teMatNat = teValsNatAllLags{p};
         meanTeNat = nanmean(teMatNat, 2);
         figNat = figure(4000 + p); clf;
@@ -212,7 +212,7 @@ if plotTeFlag
         xlabel('Lag (bins)'); ylabel('Mean TE');
         title(sprintf('Nat: TE_{%s→%s} vs Lag', areas{a2}, areas{a1}));
         grid on;
-        % Save Naturalistic plot
+        % Save Spontaneous plot
         saveas(figNat, fullfile(paths.dropPath, sprintf('TE_Nat_%s_to_%s.png', areas{a2}, areas{a1})));
         % Reach
         teMatRea = teValsReaAllLags{p};
@@ -251,7 +251,7 @@ corrResultsRea = struct();
 
 for m = 1:length(measures)
     measure = measures{m};
-    critNat = results.naturalistic.(measure);
+    critNat = results.spontaneous.(measure);
     critRea = results.reach.(measure);
     
     % For each area (as target)
@@ -260,7 +260,7 @@ for m = 1:length(measures)
         % Find all pairs where this area is the target (first in pair)
         pairIdx = find(areaPairs(:,1) == a);
         for p = pairIdx'
-            % Naturalistic
+            % Spontaneous
             teVals = bestTEVecNat{p};
             critVals = critNat{a};
             critVals = critVals(~isnan(critVals));
@@ -313,8 +313,8 @@ for m = 1:length(measures)
     set(gcf, 'Position', monitorTwo);
     for p = 1:numPairs
         subplot(1, numPairs, p);
-        % Get time points for naturalistic data
-        timePointsNat = results.naturalistic.startS{areaPairs(p,1)};
+        % Get time points for spontaneous data
+        timePointsNat = results.spontaneous.startS{areaPairs(p,1)};
         validIdxNat = ~isnan(bestTEVecNat{p});
         plot(timePointsNat(validIdxNat)/60, bestTEVecNat{p}(validIdxNat), '-o', 'LineWidth', 2, 'MarkerSize', 4);
         hold on;
@@ -327,7 +327,7 @@ for m = 1:length(measures)
         xlabel('Time (minutes)');
         ylabel('Transfer Entropy');
         title(sprintf('%s: %s vs %s', measureNames{m}, areas{areaPairs(p,1)}, areas{areaPairs(p,2)}));
-        legend({'Naturalistic', 'Reach'}, 'Location', 'best');
+        legend({'Spontaneous', 'Reach'}, 'Location', 'best');
         grid on;
     end
     sgtitle(sprintf('Transfer Entropy Over Time (%s)', measureNames{m}));
@@ -339,7 +339,7 @@ end
 fprintf('\n=== Summary Statistics ===\n');
 
 % Print summary statistics for Transfer Entropy
-fprintf('\nNaturalistic Data:\n');
+fprintf('\nSpontaneous Data:\n');
 for m = 1:length(measures)
     measure = measures{m};
     teData = bestTEVecNat; % Use the vector of max TE values
@@ -367,7 +367,7 @@ teResults.measureNames = measureNames;
 teResults.areaPairs = areaPairs;
 
 % Transfer Entropy results
-teResults.naturalistic = bestTEVecNat; % Store the vectors of max TE values
+teResults.spontaneous = bestTEVecNat; % Store the vectors of max TE values
 teResults.reach = bestTEVecRea; % Store the vectors of max TE values
 
 % Analysis parameters
@@ -375,8 +375,8 @@ teResults.params.maxLag = maxLag;
 teResults.params.delayRange = delayRange;
 teResults.params.stepSize = stepSize;
 teResults.params.areasToTest = areasToTest;
-teResults.params.unifiedBinSizeNat = results.naturalistic.unifiedBinSize;
-teResults.params.unifiedWindowSizeNat = results.naturalistic.unifiedWindowSize;
+teResults.params.unifiedBinSizeNat = results.spontaneous.unifiedBinSize;
+teResults.params.unifiedWindowSizeNat = results.spontaneous.unifiedWindowSize;
 teResults.params.unifiedBinSizeRea = results.reach.unifiedBinSize;
 teResults.params.unifiedWindowSizeRea = results.reach.unifiedWindowSize;
 

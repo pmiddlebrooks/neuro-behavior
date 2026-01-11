@@ -46,9 +46,9 @@ fprintf('\n=== Loading %s %s data ===\n', sessionType, dataSource);
 % Create filename suffix based on PCA flag (will be set in analysis script)
 % This is a placeholder - actual value will be set in criticality_sliding_window_ar.m
 
-%% =============================    Naturalistic Data Loading    =============================
+%% =============================    Spontaneous Data Loading    =============================
 % Data type selection
-sessionType = 'naturalistic';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
+sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 
 sessionName =  'ag112321_1';
 % sessionName =  'ag112321_2';
@@ -58,7 +58,7 @@ sessionName =  'ag112321_1';
 
 
 %% =============================    Reach Data Loading    =============================
-sessionType = 'reach';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
+sessionType = 'reach';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 
 % For reach data: specify session name (uncomment and set one)
 % sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh';  % GOOD (only 4 m23)
@@ -80,7 +80,7 @@ sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh';  % GOOD (but only 23 M56)
 
 
 %% =============================    Schall Choice countermanding Data Loading    =============================
-sessionType = 'schall';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
+sessionType = 'schall';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 
 % For schall data: specify session name (uncomment and set one)
 sessionName =  'bp229n02-mm';
@@ -93,7 +93,7 @@ sessionName =  'jp124n04';
 
 
 %% =============================    Kate Hong whisker/lick Data Loading    =============================
-sessionType = 'hong';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
+sessionType = 'hong';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 paths = get_paths;
 
 sessionName = 'spikeData';
@@ -203,7 +203,7 @@ if strcmp(sessionType, 'schall')
     end
     fprintf('LFP data loaded: %d bands (each with different frame counts)\n', numBands);
 else
-    % Naturalistic and Reach: multiple areas
+    % Spontaneous and Reach: multiple areas
     binnedEnvelopes = cell(1, numAreas);
     binnedPower = cell(1, numAreas);
     timePoints = cell(1, numAreas);

@@ -1,6 +1,6 @@
 %%
 % Sliding Window Analyses Across Sessions
-% Compares metrics between naturalistic (open_field) and reach sessions
+% Compares metrics between spontaneous (open_field) and reach sessions
 %
 % Variables:
 %   analysisType - Type of analysis: 'criticality_ar', 'complexity', 'rqa', 
@@ -14,7 +14,7 @@
 %       and analysis type, regardless of window size.
 %
 % Goal:
-%   Load saved results from naturalistic and reach sessions, calculate median
+%   Load saved results from spontaneous and reach sessions, calculate median
 %   metric values per session per area, and create bar plots comparing the two groups.
 
 %% Configuration
@@ -39,7 +39,7 @@ reachSessions = reach_session_list();
 
 fprintf('\n=== Sliding Window Analysis Comparison ===\n');
 fprintf('Analysis type: %s\n', analysisType);
-fprintf('Naturalistic sessions: %d\n', length(naturalisticSessions));
+fprintf('Spontaneous sessions: %d\n', length(naturalisticSessions));
 fprintf('Reach sessions: %d\n', length(reachSessions));
 
 %% Determine default metric name if not provided
@@ -78,8 +78,8 @@ end
 
 fprintf('Metric: %s\n', metricName);
 
-%% Load results for naturalistic sessions
-fprintf('\n=== Loading Naturalistic Session Results ===\n');
+%% Load results for spontaneous sessions
+fprintf('\n=== Loading Spontaneous Session Results ===\n');
 naturalisticData = struct();
 naturalisticData.medians = {};  % Cell array: {areaIdx}{sessionIdx} = median value
 naturalisticData.sessionNames = {};
@@ -111,7 +111,7 @@ for s = 1:length(naturalisticSessions)
         dataSource = '';
     end
     
-    resultsPath = find_results_file(analysisType, 'naturalistic', sessionName, saveDir, filenameSuffix, dataSource);
+    resultsPath = find_results_file(analysisType, 'spontaneous', sessionName, saveDir, filenameSuffix, dataSource);
     
     % Load results
     if isempty(resultsPath) || ~exist(resultsPath, 'file')
@@ -255,7 +255,7 @@ end
 % Find common areas
 commonAreas = intersect(naturalisticData.areas, reachData.areas);
 if isempty(commonAreas)
-    error('No common areas found between naturalistic and reach sessions.');
+    error('No common areas found between spontaneous and reach sessions.');
 end
 
 fprintf('\n=== Common Areas Found ===\n');
@@ -279,7 +279,7 @@ set(gcf, 'Position', [100, 100, 1200, 300 * numAreasToPlot]);
 for a = 1:numAreasToPlot
     areaName = areasToPlot{a};
     
-    % Find area index in naturalistic and reach data
+    % Find area index in spontaneous and reach data
     natAreaIdx = find(strcmp(naturalisticData.areas, areaName));
     reachAreaIdx = find(strcmp(reachData.areas, areaName));
     
@@ -304,7 +304,7 @@ for a = 1:numAreasToPlot
     hold on;
     
     % Prepare data for bar plot
-    % Group 1: Naturalistic sessions
+    % Group 1: Spontaneous sessions
     % Group 2: Reach sessions
     allValues = [natMedians, reachMedians];
     groupLabels = [ones(1, length(natMedians)), 2*ones(1, length(reachMedians))];
@@ -314,7 +314,7 @@ for a = 1:numAreasToPlot
     numReach = length(reachMedians);
     
     % Plot individual bars for each session
-    % Naturalistic sessions: x positions 1 to numNat
+    % Spontaneous sessions: x positions 1 to numNat
     % Reach sessions: x positions (numNat + 1) to (numNat + numReach)
     xNat = 1:numNat;
     xReach = (numNat + 1):(numNat + numReach);
@@ -331,10 +331,10 @@ for a = 1:numAreasToPlot
     xlim([0.5, numNat + numReach + 0.5]);
     if numNat > 0 && numReach > 0
         xticks([mean(xNat), mean(xReach)]);
-        xticklabels({'Naturalistic', 'Reach'});
+        xticklabels({'Spontaneous', 'Reach'});
     elseif numNat > 0
         xticks(mean(xNat));
-        xticklabels({'Naturalistic'});
+        xticklabels({'Spontaneous'});
     elseif numReach > 0
         xticks(mean(xReach));
         xticklabels({'Reach'});
@@ -356,7 +356,7 @@ for a = 1:numAreasToPlot
 end
 
 % Add overall title
-sgtitle(sprintf('%s Comparison: Naturalistic vs Reach', ...
+sgtitle(sprintf('%s Comparison: Spontaneous vs Reach', ...
     analysisType), 'FontSize', 14, 'FontWeight', 'bold');
 
 %% Save figure
@@ -382,7 +382,7 @@ function resultsPath = find_results_file(analysisType, sessionType, sessionName,
             if strcmp(sessionType, 'reach')
                 pattern = sprintf('criticality_sliding_window_ar%s_win*_%s.mat', filenameSuffix, sessionName);
             else
-                % For naturalistic, session name might be in subdirectory or filename
+                % For spontaneous, session name might be in subdirectory or filename
                 pattern = sprintf('criticality_sliding_window_ar%s_win*.mat', filenameSuffix);
             end
             
@@ -405,7 +405,7 @@ function resultsPath = find_results_file(analysisType, sessionType, sessionName,
                 if strcmp(sessionType, 'reach')
                     pattern = sprintf('complexity_sliding_window_%s_win*_%s.mat', dataSource, sessionName);
                 else
-                    % For naturalistic, session name might be in filename
+                    % For spontaneous, session name might be in filename
                     pattern = sprintf('complexity_sliding_window_%s_win*.mat', dataSource);
                 end
             else
@@ -443,8 +443,8 @@ function resultsPath = find_results_file(analysisType, sessionType, sessionName,
     
     files = dir(fullfile(saveDir, pattern));
     
-    % For naturalistic sessions, also check subdirectories if sessionName has path separators
-    if strcmp(sessionType, 'naturalistic') && contains(sessionName, filesep)
+    % For spontaneous sessions, also check subdirectories if sessionName has path separators
+    if strcmp(sessionType, 'spontaneous') && contains(sessionName, filesep)
         pathParts = strsplit(sessionName, filesep);
         if length(pathParts) > 1
             subDir = fullfile(saveDir, pathParts{1});

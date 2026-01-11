@@ -10,7 +10,7 @@
 paths = get_paths;
 
 % Data type selection
-dataType = 'naturalistic';  % 'reach' or 'naturalistic'
+dataType = 'spontaneous';  % 'reach' or 'spontaneous'
 
 % Dimensionality for all methods
 dimToTest = [4 6 8];
@@ -154,8 +154,8 @@ kinData = [jsX(:), jsY(:)];
 
     fprintf('Loaded reach data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
 
-elseif strcmp(dataType, 'naturalistic')
-    % Load naturalistic data
+elseif strcmp(dataType, 'spontaneous')
+    % Load spontaneous data
     opts = neuro_behavior_options;
     opts.minActTime = .16;
     opts.collectStart = 0 * 60 * 60; % seconds
@@ -173,13 +173,13 @@ elseif strcmp(dataType, 'naturalistic')
     % Curate behavior labels
     [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
 
-    % Set up areas for naturalistic data
+    % Set up areas for spontaneous data
     areas = {'M23', 'M56', 'DS', 'VS'};
     idList = {idM23, idM56, idDS, idVS};
 
-    fprintf('Loaded naturalistic data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
+    fprintf('Loaded spontaneous data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
 else
-    error('Invalid dataType. Must be ''reach'' or ''naturalistic''');
+    error('Invalid dataType. Must be ''reach'' or ''spontaneous''');
 end
 
 
@@ -206,7 +206,7 @@ if strcmp(dataType, 'reach')
     colors(end,:) = [.85 .8 .75];
     colorsAdjust = 0;
 else
-    % For naturalistic data: use existing color system
+    % For spontaneous data: use existing color system
     colors = colors_for_behaviors(codes);
     colorsAdjust = 2; % Add 2 b/c color indices offset from bhvID values
     bhvLabels = {'investigate_1', 'investigate_2', 'investigate_3', ...
@@ -259,7 +259,7 @@ allResults.parameters.nShuffles = nShuffles;
 allResults.parameters.kernelFunction = kernelFunction;
 allResults.parameters.collectStart = opts.collectStart;
 allResults.parameters.collectFor = opts.collectEnd;
-if strcmp(dataType, 'naturalistic')
+if strcmp(dataType, 'spontaneous')
     allResults.parameters.minActTime = opts.minActTime;
 end
 allResults.parameters.dataSubset = dataSubset;
@@ -354,7 +354,7 @@ for areaIdx = areasToTest
                         spread = 1.2;
                         n_neighbors = 30;
                 end
-            case 'naturalistic'
+            case 'spontaneous'
                 switch areaIdx
                     case 1
                         min_dist = 0.1;
@@ -518,11 +518,11 @@ end
 %% =============================================================================
 % --------    CHOOSE WHICH DATA POINTS TO MODEL (PER AREA)
 % =============================================================================
-% Shift behavior labels if needed (for naturalistic data)
+% Shift behavior labels if needed (for spontaneous data)
 for areaIdx = areasToTest
     shiftSec = 0;
     shiftFrame = 0;
-    if shiftSec > 0 && strcmp(dataType, 'naturalistic')
+    if shiftSec > 0 && strcmp(dataType, 'spontaneous')
         shiftFrame = ceil(shiftSec / opts.frameSize);
         bhvIDShifted = double(bhvID(1+shiftFrame:end));
 
@@ -537,7 +537,7 @@ for areaIdx = areasToTest
 
     % Prepare behavior labels based on analysis type (per area)
     switch dataType
-        case 'naturalistic'
+        case 'spontaneous'
             % Find behavior transitions
             preIdx = find(diff(bhvIDShifted) ~= 0);
 
@@ -617,7 +617,7 @@ switch dataSubset
     case 'all'
         dataSubsetLabel = 'all';
     case 'trans'
-        if strcmp(dataType, 'naturalistic')
+        if strcmp(dataType, 'spontaneous')
             dataSubsetLabel = 'transitions: Pre';
         else
             dataSubsetLabel = 'peri-reach (-2s to +2s)';

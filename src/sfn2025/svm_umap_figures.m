@@ -1,6 +1,6 @@
-gc%% SVM_UMAP_FIGURES - Generate 3D UMAP projection figures for reach and naturalistic data
+gc%% SVM_UMAP_FIGURES - Generate 3D UMAP projection figures for reach and spontaneous data
 %
-% Projects full reach and naturalistic sessions into 3-D UMAP space using a
+% Projects full reach and spontaneous sessions into 3-D UMAP space using a
 % sliding window approach and creates three plots per brain area:
 %   1. First sampleMin minutes with all points black (open circles)
 %   2. Full session with all points black (open circles)
@@ -88,7 +88,7 @@ end
 fprintf('Loaded reach data: %d neurons, %d time points\n', size(dataMatReach, 2), size(dataMatReach, 1));
 
 %% ==================== NATURALISTIC DATA ====================
-fprintf('\n=== Loading Naturalistic Data ===\n');
+fprintf('\n=== Loading Spontaneous Data ===\n');
 
 optsNat = neuro_behavior_options;
 optsNat.minActTime = 0.16;
@@ -100,7 +100,7 @@ optsNat.frameSize = frameSize;
 getDataType = 'spikes';
 get_standard_data
 
-% Store naturalistic data in separate variables
+% Store spontaneous data in separate variables
 dataMatNat = dataMat;
 clear dataMat; % Clear to avoid confusion
 
@@ -111,7 +111,7 @@ bhvIDNat = bhvID;
 % Set up areas (variables created by get_standard_data)
 idListNat = {idM23, idM56, idDS, idVS};
 
-% Naturalistic behavior colors
+% Spontaneous behavior colors
 codesNat = unique(dataBhvNat.ID);
 try
     colorsNat = colors_for_behaviors(codesNat);
@@ -119,7 +119,7 @@ catch
     colorsNat = lines(max(codesNat) + 2);
 end
 
-fprintf('Loaded naturalistic data: %d neurons, %d time points\n', size(dataMatNat, 2), size(dataMatNat, 1));
+fprintf('Loaded spontaneous data: %d neurons, %d time points\n', size(dataMatNat, 2), size(dataMatNat, 1));
 
 
 %% Setup paths
@@ -154,7 +154,7 @@ set(0, 'DefaultAxesLineWidth', 3); % Default tick mark linewidth = 4
 % set(0, 'DefaultAxesYGrid', 'on');
 % set(0, 'DefaultAxesZGrid', 'on');
 
-dataTypes = {'reach', 'naturalistic'};
+dataTypes = {'reach', 'spontaneous'};
 % dataTypes = {'reach'};
 for dt = 1:length(dataTypes)
     dataType = dataTypes{dt};
@@ -179,7 +179,7 @@ for dt = 1:length(dataTypes)
         colors = colorsNat;
         colorsAdjust = 2;
         sessionName = 'ag25290_112321';
-        % Get behavior names for naturalistic
+        % Get behavior names for spontaneous
         behaviors = cell(1, max(codesNat) + colorsAdjust);
         for i = 1:length(codesNat)
             code = codesNat(i);
@@ -351,10 +351,10 @@ for dt = 1:length(dataTypes)
         axes;
         
         % Get unique behavior IDs (use sliding window indexed bhvID)
-        % For naturalistic: project all data but only plot behaviors where bhvID != -1
+        % For spontaneous: project all data but only plot behaviors where bhvID != -1
         % For reach: project and plot all behaviors where bhvID >= 0
         uniqueBhv = unique(bhvIDSliding);
-        if strcmp(dataType, 'naturalistic')
+        if strcmp(dataType, 'spontaneous')
             uniqueBhv = uniqueBhv(uniqueBhv ~= -1); % Only plot behaviors, exclude -1
         else
             uniqueBhv = uniqueBhv(uniqueBhv >= 0); % Remove invalid labels for reach

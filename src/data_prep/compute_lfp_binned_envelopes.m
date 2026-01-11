@@ -79,7 +79,7 @@ function dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanPar
         end
         fprintf('LFP data loaded: %d bands (each with different frame counts)\n', numBands);
     else
-        % Naturalistic and Reach: multiple areas
+        % Spontaneous and Reach: multiple areas
         binnedEnvelopes = cell(1, numAreas);
         binnedPower = cell(1, numAreas);
         timePoints = cell(1, numAreas);

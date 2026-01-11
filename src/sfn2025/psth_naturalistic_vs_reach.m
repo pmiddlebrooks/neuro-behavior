@@ -1,12 +1,12 @@
-%% PSTH_NATURALISTIC_VS_REACH - Compare PSTHs for reach and naturalistic data
+%% PSTH_NATURALISTIC_VS_REACH - Compare PSTHs for reach and spontaneous data
 %
 % Produces PSTHs of spikes around:
 %   - Reach onset (reach data)
-%   - Behavior onsets (naturalistic data)
+%   - Behavior onsets (spontaneous data)
 %
 % Plots are stacked by brain area (M23, M56, DS, VS) with:
 %   - Reach: single column (peri-reach)
-%   - Naturalistic: one column per behavior
+%   - Spontaneous: one column per behavior
 %
 % Variables:
 %   binSize - Bin size for PSTH (seconds)
@@ -14,11 +14,11 @@
 %   baselineWindow - Baseline window for z-scoring [start, end] relative to event (seconds)
 %   areas - Brain areas to analyze
 %   spikeDataReach - Spike data for reach [time, neuronId, areaNumeric]
-%   spikeDataNat - Spike data for naturalistic [time, neuronId, areaNumeric]
+%   spikeDataNat - Spike data for spontaneous [time, neuronId, areaNumeric]
 %   reachOnsets - Reach onset times (seconds)
 %   behaviorOnsets - Cell array of behavior onset times per behavior
 %   psthReach - PSTH data for reach [timeBins x areas]
-%   psthNat - PSTH data for naturalistic [timeBins x areas x behaviors]
+%   psthNat - PSTH data for spontaneous [timeBins x areas x behaviors]
 
 clear; close all;
 
@@ -82,9 +82,9 @@ reachOnsets = reachOnsets(reachOnsets >= opts.collectStart & reachOnsets <= opts
 fprintf('Loaded %d reaches\n', length(reachOnsets));
 
 %% ==================== NATURALISTIC DATA ====================
-fprintf('\n=== Loading Naturalistic Data ===\n');
+fprintf('\n=== Loading Spontaneous Data ===\n');
 
-% Naturalistic data parameters
+% Spontaneous data parameters
 animal = 'ag25290';
 sessionBhv = '112321_1';
 sessionNrn = '112321';
@@ -243,9 +243,9 @@ for a = 1:length(areas)
     fprintf('  Sorted %d neurons by mean z-score in sort window\n', length(neuronIds));
 end
 
-fprintf('\n=== Computing Naturalistic PSTHs ===\n');
+fprintf('\n=== Computing Spontaneous PSTHs ===\n');
 
-% Initialize PSTH storage for naturalistic
+% Initialize PSTH storage for spontaneous
 psthNat = cell(1, length(areas));
 
 for a = 1:length(areas)
@@ -457,7 +457,7 @@ end
 set(gca, 'YTick', [], 'XTick', [], 'XTickLabel', [], 'YTickLabel', []);
 sgtitle('Reach Data - Peri-Reach PSTH (sorted by mean z-score in [-0.4, 0.4]s)');
 
-% Create figure for naturalistic data - stack all areas in single plot per behavior
+% Create figure for spontaneous data - stack all areas in single plot per behavior
 % Filter behaviors to only plot those in natCodesToPlot
 plotBehaviorIndices = [];
 plotBehaviorCodes = [];
@@ -535,7 +535,7 @@ for plotIdx = 1:length(plotBehaviorCodes)
     
     set(gca, 'YTick', [], 'XTick', [], 'XTickLabel', [], 'YTickLabel', []);
 end
-sgtitle('Naturalistic Data - Peri-Behavior PSTH (sorted by mean z-score in [-0.4, 0.4]s)');
+sgtitle('Spontaneous Data - Peri-Behavior PSTH (sorted by mean z-score in [-0.4, 0.4]s)');
 
 %% Save figures as .eps files
 figuresDir = fullfile('/Users/paulmiddlebrooks/Projects/neuro-behavior/src/sfn2025/figures');
@@ -550,11 +550,11 @@ saveFileReach = fullfile(figuresDir, 'psth_reach.eps');
 print(gcf, '-depsc', '-painters', saveFileReach);
 fprintf('Saved reach figure to: %s\n', saveFileReach);
 
-% Save naturalistic figure
+% Save spontaneous figure
 figure(34);
 saveFileNat = fullfile(figuresDir, 'psth_naturalistic.eps');
 print(gcf, '-depsc', '-painters', saveFileNat);
-fprintf('Saved naturalistic figure to: %s\n', saveFileNat);
+fprintf('Saved spontaneous figure to: %s\n', saveFileNat);
 
 fprintf('\n=== Complete ===\n');
 

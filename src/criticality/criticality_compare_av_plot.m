@@ -75,11 +75,11 @@ if makePlots
         % Plot dcc
         axes(ha(1));
         hold on;
-        plot(results.naturalistic.startS_dcc{a}/60, results.naturalistic.dcc{a}, '-o', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
+        plot(results.spontaneous.startS_dcc{a}/60, results.spontaneous.dcc{a}, '-o', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
         plot(results.reach.startS_dcc{a}/60, results.reach.dcc{a}, '--s', 'Color', 'r', 'LineWidth', 2, 'MarkerSize', 4);
         ylabel('Distance to Criticality (dcc)', 'FontSize', 14);
         title(sprintf('%s - Distance to Criticality (dcc)', areas{a}), 'FontSize', 14);
-        legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
+        legend({'Spontaneous', 'Reach'}, 'Location', 'best', 'FontSize', 14);
         grid on;
         set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
         set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
@@ -88,11 +88,11 @@ if makePlots
         % Plot kappa
         axes(ha(2));
         hold on;
-        plot(results.naturalistic.startS_dcc{a}/60, results.naturalistic.kappa{a}, '-o', 'Color', [0 0.75 0], 'LineWidth', 2, 'MarkerSize', 4);
+        plot(results.spontaneous.startS_dcc{a}/60, results.spontaneous.kappa{a}, '-o', 'Color', [0 0.75 0], 'LineWidth', 2, 'MarkerSize', 4);
         plot(results.reach.startS_dcc{a}/60, results.reach.kappa{a}, '--s', 'Color', [0 0.75 0], 'LineWidth', 2, 'MarkerSize', 4);
         ylabel('Kappa', 'FontSize', 14);
         title(sprintf('%s - Kappa', areas{a}), 'FontSize', 14);
-        legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
+        legend({'Spontaneous', 'Reach'}, 'Location', 'best', 'FontSize', 14);
         grid on;
         set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
         set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
@@ -101,11 +101,11 @@ if makePlots
         % Plot decades
         axes(ha(3));
         hold on;
-        plot(results.naturalistic.startS_dcc{a}/60, results.naturalistic.decades{a}, '-o', 'Color', [0.5 0 0.5], 'LineWidth', 2, 'MarkerSize', 4);
+        plot(results.spontaneous.startS_dcc{a}/60, results.spontaneous.decades{a}, '-o', 'Color', [0.5 0 0.5], 'LineWidth', 2, 'MarkerSize', 4);
         plot(results.reach.startS_dcc{a}/60, results.reach.decades{a}, '--s', 'Color', [0.5 0 0.5], 'LineWidth', 2, 'MarkerSize', 4);
         ylabel('Decades', 'FontSize', 14);
         title(sprintf('%s - Decades', areas{a}), 'FontSize', 14);
-        legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
+        legend({'Spontaneous', 'Reach'}, 'Location', 'best', 'FontSize', 14);
         grid on;
         xlabel('Minutes', 'FontSize', 14); % Only add xlabel to bottom subplot
         set(gca, 'YTickLabelMode', 'auto', 'FontSize', 14);  % Enable Y-axis labels
@@ -132,8 +132,8 @@ if runCorrelation
     corrMatRea_dccKappaDecades = cell(1, length(areas));
 
     for a = areasToTest
-        % Naturalistic data
-        Xnat = [results.naturalistic.dcc{a}(:), results.naturalistic.kappa{a}(:), results.naturalistic.decades{a}(:)];
+        % Spontaneous data
+        Xnat = [results.spontaneous.dcc{a}(:), results.spontaneous.kappa{a}(:), results.spontaneous.decades{a}(:)];
         corrMatNat_dccKappaDecades{a} = corr(Xnat, 'Rows', 'pairwise');
 
         % Reach data

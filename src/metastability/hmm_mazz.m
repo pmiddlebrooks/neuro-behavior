@@ -1,5 +1,5 @@
-%% HMM Analysis for Naturalistic and Reach Data
-% Based on demo3_HMM_Full.m, adapted for naturalistic data format
+%% HMM Analysis for Spontaneous and Reach Data
+% Based on demo3_HMM_Full.m, adapted for spontaneous data format
 % https://github.com/mazzulab/contamineuro_2019_spiking_net/tree/master
 %
 % This script performs HMM analysis on neural data and automatically saves:
@@ -55,7 +55,7 @@ trialDur = 30; % "trial" duration in seconds
 
 switch natOrReach
     case 'Nat'
-        % Naturalistic data
+        % Spontaneous data
         getDataType = 'spikes';
         opts.collectStart = 0 * 60 * 60; % seconds
         opts.collectEnd = 45 * 60; % seconds
@@ -411,7 +411,7 @@ for areaIdx = areasToTest
 end % End of loop through brain areas
 
 
-% Save results (Reach: session-specific; Naturalistic: original location)
+% Save results (Reach: session-specific; Spontaneous: original location)
 if strcmpi(natOrReach, 'Reach')
     % Determine session folder name
     if exist('reachDataFile','var') && ~isempty(reachDataFile)
@@ -468,7 +468,7 @@ if strcmpi(natOrReach, 'Reach')
         fprintf('Summary saved to: \n%s\n', summary_filepath);
     end
 else
-    % Naturalistic save (matching reach style)
+    % Spontaneous save (matching reach style)
     hmmdir = fullfile(paths.dropPath, 'metastability');
     if ~exist(hmmdir, 'dir')
         mkdir(hmmdir);
@@ -485,7 +485,7 @@ else
     minDurSave = opts.HmmParam.MinDur;
     filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', binSizeSave, minDurSave);
     filepath = fullfile(hmmdir, filename);
-    fprintf('Saving Naturalistic HMM results to: \n%s\n', filepath);
+    fprintf('Saving Spontaneous HMM results to: \n%s\n', filepath);
     save(filepath, 'results', '-v7.3');
 
     summary_filename = sprintf('HMM_summary_%s.txt', natOrReach);

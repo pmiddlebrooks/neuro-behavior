@@ -10,7 +10,7 @@ end
 monitorOne = monitorPositions(1, :); % Just use single monitor if you don't have second one
 monitorTwo = monitorPositions(size(monitorPositions, 1), :); % Just use single monitor if you don't have second one
 
-%% Get LFP band powers - Naturalistic
+%% Get LFP band powers - Spontaneous
 opts = neuro_behavior_options;
 opts.minActTime = .16;
 opts.collectStart = 0 * 60 * 60; % seconds

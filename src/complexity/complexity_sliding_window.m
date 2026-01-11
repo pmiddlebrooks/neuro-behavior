@@ -8,7 +8,7 @@
 %
 % Expected workspace variables (loaded by criticality_sliding_data_prep.m):
 %   For spikes:
-%     - dataType: 'reach', 'naturalistic', 'schall', or 'hong'
+%     - dataType: 'reach', 'spontaneous', 'schall', or 'hong'
 %     - dataMat: Neural matrix [nTimePoints x nNeurons]
 %     - areas: Cell array of area names
 %     - idMatIdx: Cell array of neuron indices per area

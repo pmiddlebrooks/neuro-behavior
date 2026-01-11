@@ -1,6 +1,6 @@
 %%
 % Criticality Sliding Window Analysis Script using PSID Latents (d2 only)
-% Unified script for analyzing both reach data and naturalistic data
+% Unified script for analyzing both reach data and spontaneous data
 % Uses PSID to extract low-dimensional latents, projects back to neural space,
 % then calculates d2 criticality measures using sliding window approach
 %
@@ -16,7 +16,7 @@ paths = get_paths;
 
 % =============================    Configuration    =============================
 % Data type selection
-dataType = 'naturalistic';  % 'reach' or 'naturalistic'
+dataType = 'spontaneous';  % 'reach' or 'spontaneous'
 
 % Sliding window size (seconds)
 slidingWindowSize = 20;
@@ -114,8 +114,8 @@ if strcmp(dataType, 'reach')
         end
     end
     
-elseif strcmp(dataType, 'naturalistic')
-    % Load naturalistic data
+elseif strcmp(dataType, 'spontaneous')
+    % Load spontaneous data
     getDataType = 'spikes';
     opts.collectEnd = 45 * 60; % seconds
     get_standard_data
@@ -124,12 +124,12 @@ elseif strcmp(dataType, 'naturalistic')
     idMatIdx = {idM23, idM56, idDS, idVS};
     idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
     
-    % Create save directory for naturalistic data
+    % Create save directory for spontaneous data
     saveDir = fullfile(paths.dropPath, 'criticality/results');
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
     resultsPath = fullfile(saveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
     
-    % Get behavior labels for naturalistic data
+    % Get behavior labels for spontaneous data
     if strcmp(psidInputType, 'behavior')
         % Curate behavior labels
         [dataBhv, bhvID] = curate_behavior_labels(dataBhv, opts);
@@ -143,7 +143,7 @@ elseif strcmp(dataType, 'naturalistic')
     end
 
 else
-    error('Invalid dataType. Must be ''reach'' or ''naturalistic''');
+    error('Invalid dataType. Must be ''reach'' or ''spontaneous''');
 end
 fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 
@@ -239,7 +239,7 @@ for a = areasToTest
                 kinDataArea = kinData;
             end
         else
-            % Naturalistic - kinData should already match
+            % Spontaneous - kinData should already match
             kinDataArea = kinData(1:numTimePoints, :);
         end
         z = zscore(kinDataArea);

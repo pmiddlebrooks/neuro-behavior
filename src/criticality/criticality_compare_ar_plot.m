@@ -78,11 +78,11 @@ if makePlots
         % Plot d2
         axes(ha(1));
         hold on;
-        plot(results.naturalistic.startS{a}/60, results.naturalistic.d2{a}, '-', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
+        plot(results.spontaneous.startS{a}/60, results.spontaneous.d2{a}, '-', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
         plot(results.reach.startS{a}/60, results.reach.d2{a}, '--', 'Color', 'b', 'LineWidth', 2, 'MarkerSize', 4);
         ylabel('Distance to Criticality (d2)', 'FontSize', 14);
         title(sprintf('%s - Distance to Criticality (d2)', areas{a}), 'FontSize', 14);
-        legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
+        legend({'Spontaneous', 'Reach'}, 'Location', 'best', 'FontSize', 14);
         grid on;
         set(gca, 'XTickLabel', [], 'FontSize', 14); % Remove x-axis labels for all but bottom subplot
         set(gca, 'YTickLabelMode', 'auto');  % Enable Y-axis labels
@@ -91,11 +91,11 @@ if makePlots
         % Plot mrBr
         axes(ha(2));
         hold on;
-        plot(results.naturalistic.startS{a}/60, results.naturalistic.mrBr{a}, '-', 'Color', 'k', 'LineWidth', 2, 'MarkerSize', 4);
+        plot(results.spontaneous.startS{a}/60, results.spontaneous.mrBr{a}, '-', 'Color', 'k', 'LineWidth', 2, 'MarkerSize', 4);
         plot(results.reach.startS{a}/60, results.reach.mrBr{a}, '--', 'Color', 'k', 'LineWidth', 2, 'MarkerSize', 4);
         ylabel('MR Branching Ratio', 'FontSize', 14);
         title(sprintf('%s - MR Branching Ratio', areas{a}), 'FontSize', 14);
-        legend({'Naturalistic', 'Reach'}, 'Location', 'best', 'FontSize', 14);
+        legend({'Spontaneous', 'Reach'}, 'Location', 'best', 'FontSize', 14);
         grid on;
         xlabel('Minutes', 'FontSize', 14); % Only add xlabel to bottom subplot
         set(gca, 'YTickLabelMode', 'auto', 'FontSize', 14);  % Enable Y-axis labels
@@ -121,8 +121,8 @@ if runCorrelation
     corrMatRea_d2mrBr = cell(1, length(areas));
 
     for a = areasToTest
-        % Naturalistic data
-        Xnat = [results.naturalistic.d2{a}(:), results.naturalistic.mrBr{a}(:)];
+        % Spontaneous data
+        Xnat = [results.spontaneous.d2{a}(:), results.spontaneous.mrBr{a}(:)];
         corrMatNat_d2mrBr{a} = corr(Xnat, 'Rows', 'pairwise');
 
         % Reach data

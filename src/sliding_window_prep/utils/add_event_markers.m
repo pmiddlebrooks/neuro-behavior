@@ -3,7 +3,7 @@ function add_event_markers(dataStruct, startS, varargin)
 %
 % Variables:
 %   dataStruct - Data structure from load_sliding_window_data() with fields:
-%     .sessionType - 'reach', 'hong', 'schall', 'naturalistic'
+%     .sessionType - 'reach', 'hong', 'schall', 'spontaneous'
 %     .reachStart - Vector of reach onset times (for 'reach' sessions)
 %     .startBlock2 - Block 2 start time (for 'reach' sessions)
 %     .T - Table with startTime_oe and trialType fields (for 'hong' sessions)

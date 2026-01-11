@@ -1,19 +1,19 @@
-%% D2_TASK_VS_NATURALISTIC - Compare d2 criticality measures between reach task and naturalistic data
+%% D2_TASK_VS_NATURALISTIC - Compare d2 criticality measures between reach task and spontaneous data
 %
 % This script loads criticality analysis results for both reach task and
-% naturalistic data, then creates a comparison figure showing:
+% spontaneous data, then creates a comparison figure showing:
 %   1. Ethogram of behavior labels (top subplot)
 %   2. d2 time series for both conditions with reach start markers (bottom subplot)
 %
 % Variables:
 %   areaIdx - Brain area index (1=M23, 2=M56, 3=DS, 4=VS)
 %   resultsReach - Loaded results from reach task criticality analysis
-%   resultsNat - Loaded results from naturalistic criticality analysis
+%   resultsNat - Loaded results from spontaneous criticality analysis
 %   reachStart - Reach start times in seconds
 %   bhvIDReach - Behavior labels for reach data
-%   bhvIDNat - Behavior labels for naturalistic data
+%   bhvIDNat - Behavior labels for spontaneous data
 %   colorsReach - Color mapping for reach behaviors
-%   colorsNat - Color mapping for naturalistic behaviors
+%   colorsNat - Color mapping for spontaneous behaviors
 
 %% User-specified parameters
 areaIdx = 2; % Brain area: 1=M23, 2=M56, 3=DS, 4=VS
@@ -52,7 +52,7 @@ end
 reachDataFile = fullfile(paths.reachDataPath, sessionName);
 [~, dataBaseName, ~] = fileparts(reachDataFile);
 
-% Naturalistic data parameters (should match criticality_sliding_window_ar.m)
+% Spontaneous data parameters (should match criticality_sliding_window_ar.m)
 animal = 'ag25290';
 sessionBhv = '112321_1';
 
@@ -70,18 +70,18 @@ resultsReach = load(reachResultsPath);
 resultsReach = resultsReach.results;
 fprintf('Loaded reach results for area %s\n', areas{areaIdx});
 
-% Load naturalistic criticality results
-fprintf('\n=== Loading Naturalistic Criticality Results ===\n');
+% Load spontaneous criticality results
+fprintf('\n=== Loading Spontaneous Criticality Results ===\n');
 natSaveDir = fullfile(paths.dropPath, 'criticality/results');
 natResultsPath = fullfile(natSaveDir, sprintf('criticality_sliding_window_ar%s_win%d.mat', filenameSuffix, slidingWindowSize));
 
 if ~exist(natResultsPath, 'file')
-    error('Naturalistic results file not found: %s\nRun criticality_sliding_window_ar.m for naturalistic data first.', natResultsPath);
+    error('Spontaneous results file not found: %s\nRun criticality_sliding_window_ar.m for spontaneous data first.', natResultsPath);
 end
 
 resultsNat = load(natResultsPath);
 resultsNat = resultsNat.results;
-fprintf('Loaded naturalistic results for area %s\n', areas{areaIdx});
+fprintf('Loaded spontaneous results for area %s\n', areas{areaIdx});
 
 
 % ================================    Load  data
@@ -120,8 +120,8 @@ catch
     colorsReach(end,:) = [0 0 0];
 end
 
-% Load naturalistic behavior data
-fprintf('\n=== Loading Naturalistic Behavior Data ===\n');
+% Load spontaneous behavior data
+fprintf('\n=== Loading Spontaneous Behavior Data ===\n');
 optsNat = neuro_behavior_options;
 optsNat.collectStart = 0 * 60 * 60; % seconds
 optsNat.collectEnd = 45 * 60; % seconds
@@ -133,7 +133,7 @@ optsNat.dataPath = bhvDataPath;
 optsNat.fileName = bhvFileName;
 dataBhvNat = load_data(optsNat, 'behavior');
 
-% Create bhvID for naturalistic data (matching get_standard_data.m approach)
+% Create bhvID for spontaneous data (matching get_standard_data.m approach)
 nFrame = ceil(optsNat.collectEnd / optsNat.frameSize);
 dataBhvNat.StartFrame = 1 + round(dataBhvNat.StartTime / optsNat.frameSize);
 bhvIDNat = int8(zeros(nFrame, 1));
@@ -148,10 +148,10 @@ if ~isempty(dataBhvNat)
     end
 end
 
-% Create time axis for naturalistic behavior labels
+% Create time axis for spontaneous behavior labels
 timeAxisNatBhv = (0:length(bhvIDNat)-1) * optsNat.frameSize;
 
-% Naturalistic behavior colors (matching svm_umap_figures.m)
+% Spontaneous behavior colors (matching svm_umap_figures.m)
 codesNat = unique(dataBhvNat.ID);
 try
     colorsNat = colors_for_behaviors(codesNat);
@@ -173,7 +173,7 @@ for iArea = 1:length(areas)
         end
     end
     
-    % Extract d2 for naturalistic condition
+    % Extract d2 for spontaneous condition
     d2NatAll = resultsNat.d2{iArea};
     if ~isempty(d2NatAll) && ~all(isnan(d2NatAll))
         maxD2Nat = max(d2NatAll(~isnan(d2NatAll)));
@@ -216,7 +216,7 @@ set(gcf, 'Position', [targetMonitor(1), targetMonitor(2), targetMonitor(3), targ
 
 hold on;
 
-% Plot naturalistic d2
+% Plot spontaneous d2
 if ~isempty(d2Nat) && ~all(isnan(d2Nat))
     plot(startSNat, d2Nat, 'r-', 'LineWidth', 3, 'DisplayName', 'spontaneous d2');
 end
@@ -284,7 +284,7 @@ fprintf('Saved d2 time series figure to: %s\n', saveFileD2);
 %     end
 % end
 % 
-% % Plot naturalistic behavior ethogram (offset vertically)
+% % Plot spontaneous behavior ethogram (offset vertically)
 % for bhvCode = unique(bhvIDNat)'
 %     if bhvCode >= 0 % Skip invalid labels
 %         bhvMask = (bhvIDNat == bhvCode);
@@ -342,7 +342,7 @@ stdNat = std(d2NatValid);
 [pVal, ~, stats] = ranksum(d2ReachValid, d2NatValid);
 fprintf('Statistical test: Wilcoxon rank-sum test\n');
 fprintf('  Task (reach): mean=%.4f, std=%.4f, n=%d\n', meanReach, stdReach, length(d2ReachValid));
-fprintf('  Spontaneous (naturalistic): mean=%.4f, std=%.4f, n=%d\n', meanNat, stdNat, length(d2NatValid));
+fprintf('  Spontaneous (spontaneous): mean=%.4f, std=%.4f, n=%d\n', meanNat, stdNat, length(d2NatValid));
 fprintf('  p-value: %.4e\n', pVal);
 
 % Determine significance marker

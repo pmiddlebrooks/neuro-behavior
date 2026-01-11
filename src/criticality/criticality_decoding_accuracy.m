@@ -1,7 +1,7 @@
 %%
 % Criticality Decoding Accuracy Script
 % Combines criticality measurements (d2) with decoding accuracy analysis
-% Uses sliding window analysis on naturalistic data
+% Uses sliding window analysis on spontaneous data
 % Tests correlation between d2 and decoding accuracy for multiple methods
 % 
 % This script loads SVM decoding results from svm_decoding_compare.m based on
@@ -29,10 +29,10 @@ try
     fprintf('Loaded existing criticality results\n');
     
     % Extract d2 data and parameters
-    d2Nat = results.naturalistic.d2;
-    startSNat = results.naturalistic.startS;
-    criticalityBinSize = results.naturalistic.unifiedBinSize;
-    criticalityWindowSize = results.naturalistic.unifiedWindowSize;
+    d2Nat = results.spontaneous.d2;
+    startSNat = results.spontaneous.startS;
+    criticalityBinSize = results.spontaneous.unifiedBinSize;
+    criticalityWindowSize = results.spontaneous.unifiedWindowSize;
     stepSize = results.params.stepSize;
     
     fprintf('Criticality parameters: bin size = %.3f s, window size = %.1f s, step size = %.1f s\n', ...
@@ -44,8 +44,8 @@ catch
     return;
 end
 
-collectStart = results.naturalistic.collectStart;
-collectFor = results.naturalistic.collectFor;
+collectStart = results.spontaneous.collectStart;
+collectFor = results.spontaneous.collectFor;
 
 
 %% ==============================================     USER PARAMETERS     ==============================================
@@ -309,7 +309,7 @@ for a = loadedAreas
         % Ensure same length
         minLen = min(minLenNat, length(decodingAcc));
         
-        % Naturalistic data
+        % Spontaneous data
         Xnat = [d2Nat{a}(1:minLen); decodingAcc(1:minLen)]';
         validIdx = ~any(isnan(Xnat), 2);
         
@@ -483,14 +483,14 @@ results.nDim = nDim;
 results.transOrWithin = transOrWithin;
 results.svmAccuracy = svmAccuracy;
 
-% Naturalistic data results
-results.naturalistic.d2 = d2Nat;
-results.naturalistic.decodingAccuracy = decodingAccuracyNat;
-results.naturalistic.startS = startSNat;
-results.naturalistic.criticalityBinSize = criticalityBinSize;
-results.naturalistic.criticalityWindowSize = criticalityWindowSize;
-results.naturalistic.corrMat = corrMatNat_d2Decoding;
-results.naturalistic.corrResults = corrResults;
+% Spontaneous data results
+results.spontaneous.d2 = d2Nat;
+results.spontaneous.decodingAccuracy = decodingAccuracyNat;
+results.spontaneous.startS = startSNat;
+results.spontaneous.criticalityBinSize = criticalityBinSize;
+results.spontaneous.criticalityWindowSize = criticalityWindowSize;
+results.spontaneous.corrMat = corrMatNat_d2Decoding;
+results.spontaneous.corrResults = corrResults;
 
 % Analysis parameters
 results.params.stepSize = stepSize;

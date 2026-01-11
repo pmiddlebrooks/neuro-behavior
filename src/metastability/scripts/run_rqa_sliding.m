@@ -49,6 +49,9 @@ opts.frameSize = .001;
 opts.firingRateCheckTime = 3 * 60;
 opts.collectStart = 0*60; %10*60;
 opts.collectEnd = opts.collectStart + 30*60;
+if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
+opts.collectEnd = [];
+end
 opts.minFiringRate = .2;
 opts.maxFiringRate = 100;
 
@@ -170,7 +173,7 @@ config.minWindowSize = 120;
 % slidingWindowSize will be auto-calculated from binSize and minTimeBins in rqa_sliding_analysis.m
 % config.slidingWindowSize = 10*60;  % Optional: specify directly (overrides auto-calculation)
 config.stepSize = .5*60;
-config.nShuffles = 3;
+config.nShuffles = 5;
 config.makePlots = true;
 config.useBernoulliControl = false;  % Set to false to skip Bernoulli normalization (faster computation)
 config.nPCADim = 4;
@@ -181,7 +184,7 @@ config.saveRecurrencePlots = false;  % Set to true to compute and store recurren
 config.usePerWindowPCA = false;  % Set to true to perform PCA on each window (addresses representational drift)
 config.includeM2356 = true;  % Set to true to include combined M23+M56 area
 
-if strcmp(sessionType, 'naturalistic')
+if strcmp(sessionType, 'spontaneous')
     config.behaviorNumeratorIDs = 5:10;
     config.behaviorDenominatorIDs = [config.behaviorNumeratorIDs, 0:2, 15:17];
 end

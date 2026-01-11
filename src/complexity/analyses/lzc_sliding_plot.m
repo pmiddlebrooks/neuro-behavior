@@ -45,7 +45,7 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
     end
     
     % Extract behavior proportion if available and center on metric means
-    if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'naturalistic')
+    if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'spontaneous')
         behaviorProportion = results.behaviorProportion;
         % Center behavior proportion on the mean of normalized LZ complexity
         behaviorProportionCentered = cell(1, length(results.areas));

@@ -13,7 +13,7 @@ Criticality analysis examines whether neural systems operate at a critical point
 
 - **Purpose**: Main script for analyzing neural criticality across different brain areas and conditions
 - **Features**:
-  - Compares naturalistic vs. task-based neural activity
+  - Compares spontaneous vs. task-based neural activity
   - Analyzes avalanche distributions across different brain areas (M23, M56, DS, VS)
   - Tests multiple bin sizes and thresholds for optimal avalanche detection
   - Implements PCA preprocessing options
@@ -29,7 +29,7 @@ Criticality analysis examines whether neural systems operate at a critical point
   - Analyzes sliding windows across time series
   - Compares task blocks (correct vs. error trials)
   - Includes shuffled data controls
-  - Supports both naturalistic and task-based data
+  - Supports both spontaneous and task-based data
 - **Key Parameters**:
   - `kMax`: Maximum lag for regression (default: 10 seconds)
   - `windowSize`: Sliding window size (default: 45 seconds)
@@ -44,7 +44,7 @@ Criticality analysis examines whether neural systems operate at a critical point
   - Calculates distance to criticality using fixed point analysis
   - Compares different experimental blocks and conditions
   - Includes shuffled data controls
-  - Analyzes both naturalistic and task-based data
+  - Analyzes both spontaneous and task-based data
 - **Key Parameters**:
   - `pOrder`: AR model order (default: 10)
   - `isiMult`: ISI multiplier for bin size (default: 10)

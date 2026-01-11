@@ -6,7 +6,7 @@ This script combines criticality measurements (d2) with decoding accuracy analys
 
 The `criticality_decoding_accuracy.m` script performs the following analysis:
 
-1. **Data Loading**: Loads neural spike data and behavior labels from naturalistic recordings
+1. **Data Loading**: Loads neural spike data and behavior labels from spontaneous recordings
 2. **Sliding Window Analysis**: Uses the same sliding window approach as `criticality_compare.m`
 3. **Criticality Measurement**: Calculates d2 (distance to criticality) for each window
 4. **Decoding Analysis**: Performs SVM-based behavior decoding using PCA or UMAP dimensionality reduction
@@ -48,10 +48,10 @@ The `criticality_decoding_accuracy.m` script performs the following analysis:
 
 ### Results Structure
 The script saves a results structure containing:
-- `naturalistic.d2`: d2 values for each area and time window (loaded from criticality_compare.m or calculated)
-- `naturalistic.decodingAccuracy`: Decoding accuracy for each area and time window
-- `naturalistic.startS`: Time points for each measurement
-- `naturalistic.corrResults`: Correlation analysis results
+- `spontaneous.d2`: d2 values for each area and time window (loaded from criticality_compare.m or calculated)
+- `spontaneous.decodingAccuracy`: Decoding accuracy for each area and time window
+- `spontaneous.startS`: Time points for each measurement
+- `spontaneous.corrResults`: Correlation analysis results
 - `svmModels`: Pre-trained SVM models for each area
 - `svmBinSize`: Bin size used for SVM analysis
 - `params`: All analysis parameters

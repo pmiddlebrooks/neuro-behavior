@@ -291,8 +291,8 @@ trappingTimeNormalizedBernoulli = cell(1, numAreas);
 recurrencePlots = cell(1, numAreas);  % Store recurrence plots for each area
 startS = cell(1, numAreas);
 
-% Initialize behavior proportion if enabled for naturalistic sessions
-if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+% Initialize behavior proportion if enabled for spontaneous sessions
+if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
         isfield(config, 'behaviorDenominatorIDs') && ...
         ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
     behaviorProportion = cell(1, numAreas);
@@ -406,7 +406,7 @@ parfor a = areasToTest
         startS{a} = nan(1, numWindows);
 
         % Initialize behavior proportion array if enabled
-        if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+        if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
                 isfield(config, 'behaviorDenominatorIDs') && ...
                 ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
             behaviorProportion{a} = nan(1, numWindows);
@@ -586,8 +586,8 @@ parfor a = areasToTest
                 trappingTimeNormalizedBernoulli{a}(w) = nan;
             end
 
-            % Calculate behavior proportion if enabled for naturalistic sessions
-            if strcmp(sessionType, 'naturalistic') && isfield(dataStruct, 'bhvID') && ...
+            % Calculate behavior proportion if enabled for spontaneous sessions
+            if strcmp(sessionType, 'spontaneous') && isfield(dataStruct, 'bhvID') && ...
                     ~isempty(dataStruct.bhvID) && isfield(config, 'behaviorNumeratorIDs') && ...
                     isfield(config, 'behaviorDenominatorIDs') && ...
                     ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
@@ -645,7 +645,7 @@ if config.saveRecurrencePlots
 end
 
 % Store behavior proportion if calculated
-if strcmp(sessionType, 'naturalistic') && isfield(config, 'behaviorNumeratorIDs') && ...
+if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
         isfield(config, 'behaviorDenominatorIDs') && ...
         ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
     results.behaviorProportion = behaviorProportion;
@@ -686,12 +686,12 @@ if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
 end
 
 % Handle sessionName with subdirectories (e.g., "kw/kw092821")
-% For naturalistic sessions, saveDir already includes the full path (subjectID/recording),
+% For spontaneous sessions, saveDir already includes the full path (subjectID/recording),
 % so we don't need to create additional subdirectories
 actualSaveDir = dataStruct.saveDir;
-if ~strcmp(sessionType, 'naturalistic') && ~isempty(sessionNameForPath) && contains(sessionNameForPath, filesep)
+if ~strcmp(sessionType, 'spontaneous') && ~isempty(sessionNameForPath) && contains(sessionNameForPath, filesep)
     % Session name contains path separators, extract first directory
-    % Only do this for non-naturalistic sessions (naturalistic already has full path in saveDir)
+    % Only do this for non-spontaneous sessions (spontaneous already has full path in saveDir)
     pathParts = strsplit(sessionNameForPath, filesep);
     if length(pathParts) > 1
         % Create subdirectory in saveDir

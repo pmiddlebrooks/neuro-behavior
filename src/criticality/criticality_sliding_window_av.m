@@ -1,6 +1,6 @@
 %%
 % Criticality Sliding Window Avalanche Analysis Script (dcc + kappa)
-% Unified script for analyzing both reach data and naturalistic data
+% Unified script for analyzing both reach data and spontaneous data
 % Analyzes data using sliding window avalanche approach; saves results to data-specific folders
 
 % Note: Data should be loaded by criticality_sliding_data_prep.m before running this script

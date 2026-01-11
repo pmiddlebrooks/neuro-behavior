@@ -4,7 +4,7 @@ function resultsPath = create_results_path(analysisType, sessionType, sessionNam
 % Variables:
 %   analysisType - Type of analysis: 'criticality_ar', 'criticality_av', 
 %                  'criticality_lfp', 'complexity', etc.
-%   sessionType - Data type: 'reach', 'naturalistic', 'schall', 'hong'
+%   sessionType - Data type: 'reach', 'spontaneous', 'schall', 'hong'
 %   sessionName - Session name (optional, can be empty)
 %   saveDir - Base save directory
 %   varargin - Optional name-value pairs:

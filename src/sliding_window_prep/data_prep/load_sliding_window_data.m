@@ -2,7 +2,7 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
 % LOAD_SLIDING_WINDOW_DATA Load and prepare data for sliding window analyses
 %
 % Variables:
-%   sessionType - Type of data: 'reach', 'naturalistic', 'schall', 'hong'
+%   sessionType - Type of data: 'reach', 'spontaneous', 'schall', 'hong'
 %   dataSource - Source of data: 'spikes' or 'lfp'
 %   varargin - Optional name-value pairs:
 %       'sessionName' - Session name (required for reach/schall data)
@@ -83,9 +83,9 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
     
     % Load data based on data type
     switch sessionType
-        case 'naturalistic'
+        case 'spontaneous'
             if isempty(sessionName)
-                error('sessionName must be provided for naturalistic data');
+                error('sessionName must be provided for spontaneous data');
             end
             dataStruct.sessionName = sessionName;
             dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands);
@@ -108,7 +108,7 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
             dataStruct = load_hong_data(dataStruct, dataSource, paths, opts, lfpCleanParams, bands);
             dataStruct.sessionName = sessionName;            
         otherwise
-            error('Invalid sessionType: %s. Must be ''reach'', ''naturalistic'', ''schall'', or ''hong''', sessionType);
+            error('Invalid sessionType: %s. Must be ''reach'', ''spontaneous'', ''schall'', or ''hong''', sessionType);
     end
         
     fprintf('Data loading complete. %d areas loaded.\n', length(dataStruct.areas));

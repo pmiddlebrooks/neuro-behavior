@@ -228,7 +228,7 @@ xlim([0 opts.collectEnd/60])
 
 
 %%   ====================================     Natrualistic: Sliding window       ==============================================
-%% Naturalistic data
+%% Spontaneous data
 getDataType = 'spikes';
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 5 * 60; % seconds
@@ -274,7 +274,7 @@ startSNat = cell(1, length(areas));
 padded_brMrNat = cell(1, length(areas));
 
 for a = 1:length(areas)
-    fprintf('Area %s (Naturalistic)\n', areas{a})
+    fprintf('Area %s (Spontaneous)\n', areas{a})
     tic
     aID = idList{a};
 
@@ -316,7 +316,7 @@ for a = 1:length(areas)
     toc
 end
 
-%% Plotting for Naturalistic MR estimation
+%% Plotting for Spontaneous MR estimation
 figure(62); clf; hold on;
 plot(startSNat{1}/60, brMrNat{1}, '-k', 'lineWidth', 2);
 plot(startSNat{2}/60, brMrNat{2}, '-b', 'lineWidth', 2);
@@ -330,7 +330,7 @@ plot(startSNat{3}/60, brMrRNat{3}, '--r');
 legend({'M23', 'M56', 'DS', 'VS'}, 'Location','northwest')
 xlabel('Minutes')
 ylabel('MR estimate')
-title(['Naturalistic Data ', num2str(maxWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps'])
+title(['Spontaneous Data ', num2str(maxWindowSizeNat), ' sec window, ' num2str(stepSize), ' sec steps'])
 xlim([0 opts.collectEnd/60])
 
 
@@ -577,7 +577,7 @@ plot(1:4, d2N, 'ob', 'LineWidth', 2)
 plot(1:4, d21R, '*k')
 plot(1:4, d22R, '*r')
 plot(1:4, d2NR, '*b')
-legend({'Block 1', 'Block 2', 'Naturalistic', 'B1 Rand', 'B2 Rand', 'Nat Rand'})
+legend({'Block 1', 'Block 2', 'Spontaneous', 'B1 Rand', 'B2 Rand', 'Nat Rand'})
 xlim([.5 4.5])
 title('Distance to Criticality')
 xticks(1:4)

@@ -6,7 +6,7 @@
 
 % =============================    Configuration    =============================
 % Data type selection
-dataType = 'schall';  % 'reach' , 'naturalistic' , 'schall' , 'hong'
+dataType = 'schall';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 
 % Data source selection
 dataSource = 'spikes';  % 'spikes' or 'lfp'
@@ -55,8 +55,8 @@ fprintf('\n=== Loading %s %s data ===\n', dataType, dataSource);
 % This is a placeholder - actual value will be set in criticality_sliding_window_ar.m
 filenameSuffix = '';  % Will be updated based on pcaFlag in analysis script
 
-% =============================    Naturalistic Data Loading    =============================
-if strcmp(dataType, 'naturalistic')
+% =============================    Spontaneous Data Loading    =============================
+if strcmp(dataType, 'spontaneous')
 
         sessionName =  'ag/ag112321/recording1';
         sessionName =  'ag/ag112321/recording1e';
@@ -70,7 +70,7 @@ if strcmp(dataType, 'naturalistic')
 
 
     if strcmp(dataSource, 'spikes')
-        % Load naturalistic spike data
+        % Load spontaneous spike data
         getDataType = 'spikes';
         get_standard_data
 
@@ -85,7 +85,7 @@ if strcmp(dataType, 'naturalistic')
         % fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
 
     elseif strcmp(dataSource, 'lfp')
-        % Load naturalistic LFP data
+        % Load spontaneous LFP data
         getDataType = 'lfp';
         opts.fsLfp = 1250;
         get_standard_data
@@ -110,16 +110,16 @@ if strcmp(dataType, 'naturalistic')
         areas = {'M23', 'M56', 'DS', 'VS'};
     end
 
-    % Create save directory for naturalistic data
+    % Create save directory for spontaneous data
     saveDir = fullfile(paths.dropPath, 'criticality/results');
     if ~exist(saveDir, 'dir'); mkdir(saveDir); end
 
-    % Initialize reach-specific variables as empty for naturalistic data
+    % Initialize reach-specific variables as empty for spontaneous data
     dataR = [];
     startBlock2 = [];
     reachStart = [];
     reachClass = [];
-    sessionName = '';  % Not used for naturalistic data
+    sessionName = '';  % Not used for spontaneous data
 
     % Areas to analyze
     areasToTest = 1:4;
@@ -357,7 +357,7 @@ elseif strcmp(dataType, 'hong')
 
 
 else
-    error('Invalid dataType. Must be ''reach'' or ''naturalistic''');
+    error('Invalid dataType. Must be ''reach'' or ''spontaneous''');
 
 
 end
@@ -457,7 +457,7 @@ if strcmp(dataType, 'schall')
     end
     fprintf('LFP data loaded: %d bands (each with different frame counts)\n', numBands);
 else
-    % Naturalistic and Reach: multiple areas
+    % Spontaneous and Reach: multiple areas
     binnedEnvelopes = cell(1, numAreas);
     binnedPower = cell(1, numAreas);
     timePoints = cell(1, numAreas);

@@ -1,13 +1,13 @@
 %% PCA_EXPLAINED_VARIANCE - Assess explained variance of neural activity using PCA
 %
-% This script performs PCA analysis on reach and naturalistic neural data
+% This script performs PCA analysis on reach and spontaneous neural data
 % to assess how many components are needed to explain variance in each brain area.
 %
 % Two analyses:
 % 1. Whole session: All data without event alignment
 % 2. Event-aligned: Windows around events
 %    - Reach: All reach onsets
-%    - Naturalistic: Onsets of bhvID(s) specified in natBhvID (can be vector to collapse multiple behaviors)
+%    - Spontaneous: Onsets of bhvID(s) specified in natBhvID (can be vector to collapse multiple behaviors)
 %
 % Outputs:
 % - Cumulative explained variance plots (1x4 figure, one per area)
@@ -19,8 +19,8 @@
 binSize = 0.05; % seconds
 eventWindow = [-.5, .5]; % seconds [before, after] relative to event onset for event-aligned analysis
 reachIntertrialWindow = [-1, 1]; % seconds [before, after] relative to event onset for event-aligned analysis
-natBhvID = [6:8]; % Behavior ID(s) for naturalistic event-aligned analysis (can be vector to collapse multiple behaviors)
-natBhvID = [15]; % Behavior ID(s) for naturalistic event-aligned analysis (can be vector to collapse multiple behaviors)
+natBhvID = [6:8]; % Behavior ID(s) for spontaneous event-aligned analysis (can be vector to collapse multiple behaviors)
+natBhvID = [15]; % Behavior ID(s) for spontaneous event-aligned analysis (can be vector to collapse multiple behaviors)
 
 minBhvDur = 0.03; % Minimum behavior duration (seconds)
 minSeparation = 0.2; % Minimum time between same behaviors (seconds)
@@ -81,9 +81,9 @@ fprintf('  Reach starts: %d\n', totalReaches);
 fprintf('  Intertrial midpoints: %d\n', length(intertrialMidpoints));
 
 %% ==================== NATURALISTIC DATA ====================
-fprintf('\n=== Loading Naturalistic Data ===\n');
+fprintf('\n=== Loading Spontaneous Data ===\n');
 
-% Naturalistic data parameters
+% Spontaneous data parameters
         sessionName =  'ag/ag112321/recording1';
 
         opts.collectStart = 0 * 60 * 60; % seconds
@@ -178,7 +178,7 @@ for a = areasToTest
     areaMask = spikeDataReach(:,3) == areaNumeric(a);
     neuronIdsReach = unique(spikeDataReach(areaMask, 2));
     
-    %% Naturalistic data - whole session (get neuron count first for comparison)
+    %% Spontaneous data - whole session (get neuron count first for comparison)
     areaMask = spikeDataNat(:,3) == areaNumeric(a);
     neuronIdsNat = unique(spikeDataNat(areaMask, 2));
     
@@ -206,11 +206,11 @@ for a = areasToTest
     end
     
     if numNat > minNeurons
-        rng(43); % Different seed for naturalistic
+        rng(43); % Different seed for spontaneous
         neuronIdsNat = neuronIdsNat(randperm(numNat, minNeurons));
-        fprintf('  Naturalistic: downsampled from %d to %d neurons\n', numNat, minNeurons);
+        fprintf('  Spontaneous: downsampled from %d to %d neurons\n', numNat, minNeurons);
     else
-        fprintf('  Naturalistic: %d neurons\n', numNat);
+        fprintf('  Spontaneous: %d neurons\n', numNat);
     end
     
     %% Process reach data
@@ -297,7 +297,7 @@ for a = areasToTest
         end
     end
     
-    %% Process naturalistic data
+    %% Process spontaneous data
     if ~isempty(neuronIdsNat)
         neuronIds = neuronIdsNat;
         
@@ -334,7 +334,7 @@ for a = areasToTest
                 numComp50NatWhole(a) = length(cumVarNatWhole{a});
             end
             
-            fprintf('  Naturalistic (whole session): %d components needed for 50%% variance\n', numComp50NatWhole(a));
+            fprintf('  Spontaneous (whole session): %d components needed for 50%% variance\n', numComp50NatWhole(a));
         else
             cumVarNatWhole{a} = [];
             numComp50NatWhole(a) = NaN;
@@ -348,7 +348,7 @@ end
 % ==================== ANALYSIS 2: EVENT-ALIGNED ====================
 fprintf('\n=== Analysis 2: Event-Aligned PCA ===\n');
 
-% Subsample events to match minimum between reach and naturalistic
+% Subsample events to match minimum between reach and spontaneous
 numReachEvents = length(reachOnsets);
 numNatEvents = length(natEventOnsets);
 minEvents = min(numReachEvents, numNatEvents);
@@ -372,12 +372,12 @@ else
     end
     
     if numNatEvents > minEvents
-        rng(47); % Different seed for naturalistic
+        rng(47); % Different seed for spontaneous
         natEventOnsetsSub = natEventOnsets(randperm(numNatEvents, minEvents));
-        fprintf('Naturalistic events: downsampled from %d to %d events\n', numNatEvents, minEvents);
+        fprintf('Spontaneous events: downsampled from %d to %d events\n', numNatEvents, minEvents);
     else
         natEventOnsetsSub = natEventOnsets;
-        fprintf('Naturalistic events: %d events\n', numNatEvents);
+        fprintf('Spontaneous events: %d events\n', numNatEvents);
     end
     
     % Initialize storage for event-aligned results
@@ -393,7 +393,7 @@ else
     areaMask = spikeDataReach(:,3) == areaNumeric(a);
     neuronIdsReach = unique(spikeDataReach(areaMask, 2));
     
-    %% Naturalistic data - event-aligned (get neuron count first for comparison)
+    %% Spontaneous data - event-aligned (get neuron count first for comparison)
     areaMask = spikeDataNat(:,3) == areaNumeric(a);
     neuronIdsNat = unique(spikeDataNat(areaMask, 2));
     
@@ -421,11 +421,11 @@ else
     end
     
     if numNat > minNeurons
-        rng(45); % Different seed for naturalistic
+        rng(45); % Different seed for spontaneous
         neuronIdsNat = neuronIdsNat(randperm(numNat, minNeurons));
-        fprintf('  Naturalistic: downsampled from %d to %d neurons\n', numNat, minNeurons);
+        fprintf('  Spontaneous: downsampled from %d to %d neurons\n', numNat, minNeurons);
     else
-        fprintf('  Naturalistic: %d neurons\n', numNat);
+        fprintf('  Spontaneous: %d neurons\n', numNat);
     end
     
     %% Process reach data
@@ -496,7 +496,7 @@ else
         end
     end
     
-    %% Process naturalistic data
+    %% Process spontaneous data
     if ~isempty(neuronIdsNat)
         neuronIds = neuronIdsNat;
         
@@ -557,7 +557,7 @@ else
                 numComp50NatEvent(a) = length(cumVarNatEvent{a});
             end
             
-            fprintf('  Naturalistic: %d components needed for 50%% variance\n', numComp50NatEvent(a));
+            fprintf('  Spontaneous: %d components needed for 50%% variance\n', numComp50NatEvent(a));
         else
             cumVarNatEvent{a} = [];
             numComp50NatEvent(a) = NaN;
@@ -594,9 +594,9 @@ for a = 1:length(areas)
         plot(1:length(cumVarIntertrialWhole{a}), cumVarIntertrialWhole{a}, 'g-', 'LineWidth', 4, 'DisplayName', sprintf('Intertrial windows (n=%d)', numComp50IntertrialWhole(a)));
     end
     
-    % Plot naturalistic data
+    % Plot spontaneous data
     if ~isempty(cumVarNatWhole{a})
-        plot(1:length(cumVarNatWhole{a}), cumVarNatWhole{a}, 'r-', 'LineWidth', 4, 'DisplayName', sprintf('Naturalistic whole (n=%d)', numComp50NatWhole(a)));
+        plot(1:length(cumVarNatWhole{a}), cumVarNatWhole{a}, 'r-', 'LineWidth', 4, 'DisplayName', sprintf('Spontaneous whole (n=%d)', numComp50NatWhole(a)));
     end
     
     % Add 50% line
@@ -604,13 +604,13 @@ for a = 1:length(areas)
     
     xlabel('PCA Component');
     ylabel('Explained Variance (%)');
-    title(sprintf('%s - Reach vs Intertrial vs Naturalistic', areas{a}));
+    title(sprintf('%s - Reach vs Intertrial vs Spontaneous', areas{a}));
     % legend('Location', 'best'); % legend suppressed for clarity across subplots
     grid on;
     ylim([0, 100]);
 end
 
-sgtitle('PCA Explained Variance - Reach Windows vs Intertrial Windows vs Naturalistic', 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle('PCA Explained Variance - Reach Windows vs Intertrial Windows vs Spontaneous', 'FontSize', 14, 'FontWeight', 'bold');
 
 % Save whole session figure
 saveDir = fullfile(paths.dropPath, 'sfn2025', 'explained_variance');
@@ -635,9 +635,9 @@ for a = 1:length(areas)
         plot(1:length(cumVarReachEvent{a}), cumVarReachEvent{a}, 'b-', 'LineWidth', 4, 'DisplayName', sprintf('Reach (n=%d)', numComp50ReachEvent(a)));
     end
     
-    % Plot naturalistic data
+    % Plot spontaneous data
     if ~isempty(cumVarNatEvent{a})
-        plot(1:length(cumVarNatEvent{a}), cumVarNatEvent{a}, 'r-', 'LineWidth', 4, 'DisplayName', sprintf('Naturalistic (n=%d)', numComp50NatEvent(a)));
+        plot(1:length(cumVarNatEvent{a}), cumVarNatEvent{a}, 'r-', 'LineWidth', 4, 'DisplayName', sprintf('Spontaneous (n=%d)', numComp50NatEvent(a)));
     end
     
     % Add 50% line
@@ -652,10 +652,10 @@ for a = 1:length(areas)
 end
 
 if isscalar(natBhvID)
-    sgtitle(sprintf('PCA Explained Variance - Event-Aligned (Reach: all onsets, Naturalistic: bhvID=%d)', natBhvID), 'FontSize', 14, 'FontWeight', 'bold');
+    sgtitle(sprintf('PCA Explained Variance - Event-Aligned (Reach: all onsets, Spontaneous: bhvID=%d)', natBhvID), 'FontSize', 14, 'FontWeight', 'bold');
     bhvIDStr = sprintf('%d', natBhvID);
 else
-    sgtitle(sprintf('PCA Explained Variance - Event-Aligned (Reach: all onsets, Naturalistic: bhvID=[%s])', num2str(natBhvID)), 'FontSize', 14, 'FontWeight', 'bold');
+    sgtitle(sprintf('PCA Explained Variance - Event-Aligned (Reach: all onsets, Spontaneous: bhvID=[%s])', num2str(natBhvID)), 'FontSize', 14, 'FontWeight', 'bold');
     bhvIDStr = sprintf('%s', strrep(num2str(natBhvID), ' ', '_'));
 end
 
@@ -683,7 +683,7 @@ for a = 1:length(areas)
         fprintf('    %s: No data\n', areas{a});
     end
 end
-fprintf('  Naturalistic:\n');
+fprintf('  Spontaneous:\n');
 for a = 1:length(areas)
     if ~isnan(numComp50NatWhole(a))
         fprintf('    %s: %d components\n', areas{a}, numComp50NatWhole(a));
@@ -701,7 +701,7 @@ for a = 1:length(areas)
         fprintf('    %s: No data\n', areas{a});
     end
 end
-fprintf('  Naturalistic:\n');
+fprintf('  Spontaneous:\n');
 for a = 1:length(areas)
     if ~isnan(numComp50NatEvent(a))
         fprintf('    %s: %d components\n', areas{a}, numComp50NatEvent(a));

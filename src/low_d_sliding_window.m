@@ -11,12 +11,12 @@
 
 % Write a new script, low_d_sliding_window.m
 % The purpose of this analysis is to compare how average low-d representations change across a session.
-% This script projects the whole session of naturalistic or reach spiking
+% This script projects the whole session of spontaneous or reach spiking
 % data (with binSize opts.frameSize) into low-d representations (start with
 % PCA), and uses a slidingWindowSize and a stepSize to collect data across the session for analysis. 
 % Allow user to specify which bhvID labels to collect/analyze.
 % Allow user to specify which dataType to analyze:
-% Naturalistic:
+% Spontaneous:
 % - if user chooses trans
 %   - Within each window, for each of the first nDim components of the
 %   low-projection, collect the average component value algned in a
@@ -41,7 +41,7 @@ paths = get_paths;
 
 %% =============================    Configuration    =============================
 % Data type selection
-dataType = 'naturalistic';  % 'reach' or 'naturalistic'
+dataType = 'spontaneous';  % 'reach' or 'spontaneous'
 
 % Analysis type
 analysisType = 'trans';  % 'trans' or 'within'
@@ -115,8 +115,8 @@ if strcmp(dataType, 'reach')
     
     fprintf('Loaded reach data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
     
-elseif strcmp(dataType, 'naturalistic')
-    % Load naturalistic data
+elseif strcmp(dataType, 'spontaneous')
+    % Load spontaneous data
     opts.minActTime = 0.16;
     opts.collectEnd = 45 * 60; % seconds
     
@@ -133,15 +133,15 @@ elseif strcmp(dataType, 'naturalistic')
     idVS = find(strcmp(areaLabels, 'VS'));
     idList = {idM23, idM56, idDS, idVS};
     
-    % Behavior labels for naturalistic (from get_standard_data)
+    % Behavior labels for spontaneous (from get_standard_data)
     behaviors = {'investigate_1', 'investigate_2', 'investigate_3', ...
         'rear', 'dive_scrunch', 'paw_groom', 'face_groom_1', 'face_groom_2', ...
         'head_groom', 'contra_body_groom', 'ipsi_body_groom', 'contra_itch', ...
         'ipsi_itch_1', 'contra_orient', 'ipsi_orient', 'locomotion'};
     
-    fprintf('Loaded naturalistic data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
+    fprintf('Loaded spontaneous data: %d neurons, %d time points\n', size(dataMat, 2), size(dataMat, 1));
 else
-    error('Invalid dataType. Must be ''reach'' or ''naturalistic''');
+    error('Invalid dataType. Must be ''reach'' or ''spontaneous''');
 end
 
 % Determine which behavior IDs to analyze
@@ -187,8 +187,8 @@ bhvOnsets = cell(1, length(bhvIDsToAnalyze));
 for b = 1:length(bhvIDsToAnalyze)
     bhvIDVal = bhvIDsToAnalyze(b);
     
-    if strcmp(dataType, 'naturalistic')
-        % For naturalistic: use dataBhv.StartTime directly
+    if strcmp(dataType, 'spontaneous')
+        % For spontaneous: use dataBhv.StartTime directly
         if exist('dataBhv', 'var')
             bhvMask = (dataBhv.ID == bhvIDVal) & (dataBhv.Valid == 1);
             bhvOnsets{b} = dataBhv.StartTime(bhvMask);

@@ -9,7 +9,7 @@ This directory contains shared utilities for sliding window analyses across diff
 ```
 src/
 ├── data_prep/                              # General data loading functions (shared across all analyses)
-│   ├── load_naturalistic_data.m            # Naturalistic data loader
+│   ├── load_naturalistic_data.m            # Spontaneous data loader
 │   ├── load_reach_data.m                   # Reach task data loader
 │   ├── load_schall_data.m                  # Schall data loader
 │   ├── load_hong_data.m                    # Hong data loader
@@ -37,7 +37,7 @@ Instead of using `criticality_sliding_data_prep.m` which sets workspace variable
 dataStruct = load_sliding_window_data('reach', 'spikes', 'sessionName', 'Y15_27-Aug-2025 14_02_21_NeuroBeh.mat');
 
 % Or for LFP
-dataStruct = load_sliding_window_data('naturalistic', 'lfp', 'sessionName', 'ag/ag112321/recording1');
+dataStruct = load_sliding_window_data('spontaneous', 'lfp', 'sessionName', 'ag/ag112321/recording1');
 ```
 
 ### Running Analyses

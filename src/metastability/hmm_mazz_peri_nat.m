@@ -1,11 +1,11 @@
 %%
-% Peri-Behavior HMM State Analysis for Naturalistic Data
+% Peri-Behavior HMM State Analysis for Spontaneous Data
 % Loads results from hmm_mazz.m and analyzes HMM state sequences
 % around behavior onset times for each brain area
 %
 % Variables:
 %   results - loaded HMM analysis results
-%   dataBhv - naturalistic behavioral data
+%   dataBhv - spontaneous behavioral data
 %   areas - brain areas to analyze
 %   bhvStartIDs - behavior IDs to align on
 %   stateWindows - HMM state sequences in windows around each behavior onset
@@ -94,8 +94,8 @@ for a = 1:length(areas)
     end
 end
 
-% Load naturalistic behavioral data
-fprintf('Loading naturalistic behavioral data...\n');
+% Load spontaneous behavioral data
+fprintf('Loading spontaneous behavioral data...\n');
 opts = neuro_behavior_options;
 % Use first area's bin size for behavior data consistency
 opts.frameSize = binSizes(find(binSizes>0,1,'first'));

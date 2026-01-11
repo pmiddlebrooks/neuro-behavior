@@ -1,15 +1,15 @@
 %%
-% HMM State Assignment Comparison: Reach vs Naturalistic
+% HMM State Assignment Comparison: Reach vs Spontaneous
 % 
-% Loads HMM results for both reach and naturalistic data and compares
+% Loads HMM results for both reach and spontaneous data and compares
 % the proportion of time assigned to states (state ~= 0) across brain areas
 %
 % Variables:
 %   resultsReach - loaded reach HMM results
-%   resultsNat - loaded naturalistic HMM results
+%   resultsNat - loaded spontaneous HMM results
 %   areas - brain areas analyzed
 %   propAssignedReach - proportion of assigned states for reach data per area
-%   propAssignedNat - proportion of assigned states for naturalistic data per area
+%   propAssignedNat - proportion of assigned states for spontaneous data per area
 
 %% Setup
 paths = get_paths;
@@ -37,8 +37,8 @@ catch ME
     error('Failed to load reach HMM results: %s', ME.message);
 end
 
-% Load Naturalistic HMM Results
-fprintf('\n=== Loading Naturalistic HMM Results ===\n');
+% Load Spontaneous HMM Results
+fprintf('\n=== Loading Spontaneous HMM Results ===\n');
 try
     resultsNat = hmm_load_saved_model('Nat', 'binSize', binSize, 'minDur', minDur);
     if isfield(resultsNat, 'hmm_results')
@@ -46,11 +46,11 @@ try
         hmmResultsNat = resultsNat.hmm_results;
         areasNat = resultsNat.areas;
     else
-        error('Naturalistic results structure not in expected format');
+        error('Spontaneous results structure not in expected format');
     end
-    fprintf('Successfully loaded naturalistic HMM results\n');
+    fprintf('Successfully loaded spontaneous HMM results\n');
 catch ME
-    error('Failed to load naturalistic HMM results: %s', ME.message);
+    error('Failed to load spontaneous HMM results: %s', ME.message);
 end
 
 %% Calculate Proportion of Assigned States for Each Area
@@ -89,7 +89,7 @@ for a = 1:length(areas)
         fprintf('  Reach: No HMM results\n');
     end
     
-    % Naturalistic data
+    % Spontaneous data
     if areaIdx <= length(hmmResultsNat) && ~isempty(hmmResultsNat{areaIdx})
         hmmResNat = hmmResultsNat{areaIdx};
         if isfield(hmmResNat, 'continuous_results') && ...
@@ -98,15 +98,15 @@ for a = 1:length(areas)
             if ~isempty(seqNat)
                 % Calculate proportion where state ~= 0 (assigned states)
                 propAssignedNat(a) = sum(seqNat ~= 0) / length(seqNat);
-                fprintf('  Naturalistic: %.3f assigned (%.1f%%)\n', propAssignedNat(a), propAssignedNat(a)*100);
+                fprintf('  Spontaneous: %.3f assigned (%.1f%%)\n', propAssignedNat(a), propAssignedNat(a)*100);
             else
-                fprintf('  Naturalistic: No sequence data\n');
+                fprintf('  Spontaneous: No sequence data\n');
             end
         else
-            fprintf('  Naturalistic: No continuous results\n');
+            fprintf('  Spontaneous: No continuous results\n');
         end
     else
-        fprintf('  Naturalistic: No HMM results\n');
+        fprintf('  Spontaneous: No HMM results\n');
     end
 end
 
@@ -124,17 +124,17 @@ b = bar(barData, 'grouped');
 
 % Set colors
 b(1).FaceColor = [0.8500 0.3250 0.0980]; % Orange-red for Reach
-b(2).FaceColor = [0 0.4470 0.7410];     % Blue for Naturalistic
+b(2).FaceColor = [0 0.4470 0.7410];     % Blue for Spontaneous
 
 % Customize axes
 xticks(1:length(areas))
 set(gca, 'XTickLabel', areas);
 xlabel('Brain Area', 'FontSize', 12);
 ylabel('Proportion of Assigned States', 'FontSize', 12);
-title(sprintf('HMM State Assignment: Reach vs Naturalistic\n(binSize=%.3f, minDur=%.3f)', binSize, minDur), 'FontSize', 14);
+title(sprintf('HMM State Assignment: Reach vs Spontaneous\n(binSize=%.3f, minDur=%.3f)', binSize, minDur), 'FontSize', 14);
 
 % Add legend
-legend({'Reach', 'Naturalistic'}, 'Location', 'best', 'FontSize', 11);
+legend({'Reach', 'Spontaneous'}, 'Location', 'best', 'FontSize', 11);
 
 % Add grid
 grid on;
@@ -158,7 +158,7 @@ for a = 1:length(areas)
         text(a - 0.15, propAssignedReach(a) + 0.02, sprintf('%.2f', propAssignedReach(a)), ...
             'HorizontalAlignment', 'center', 'FontSize', 11, 'Color', [0.8500 0.3250 0.0980]);
     end
-    % Naturalistic bar
+    % Spontaneous bar
     if ~isnan(propAssignedNat(a))
         text(a + 0.15, propAssignedNat(a) + 0.02, sprintf('%.2f', propAssignedNat(a)), ...
             'HorizontalAlignment', 'center', 'FontSize', 11, 'Color', [0 0.4470 0.7410]);
@@ -239,7 +239,7 @@ for a = 1:length(areas)
         fprintf('  Reach: No HMM results\n');
     end
     
-    % Naturalistic data
+    % Spontaneous data
     if areaIdx <= length(hmmResultsNat) && ~isempty(hmmResultsNat{areaIdx})
         hmmResNat = hmmResultsNat{areaIdx};
         if isfield(hmmResNat, 'continuous_results') && ...
@@ -265,19 +265,19 @@ for a = 1:length(areas)
                 % Calculate transition rate (transitions per second)
                 if totalTime > 0
                     transitionRateNat(a) = numTransitions / totalTime;
-                    fprintf('  Naturalistic: %d transitions, %.2f s total time, %.3f transitions/s\n', ...
+                    fprintf('  Spontaneous: %d transitions, %.2f s total time, %.3f transitions/s\n', ...
                         numTransitions, totalTime, transitionRateNat(a));
                 else
-                    fprintf('  Naturalistic: No time data\n');
+                    fprintf('  Spontaneous: No time data\n');
                 end
             else
-                fprintf('  Naturalistic: No sequence data\n');
+                fprintf('  Spontaneous: No sequence data\n');
             end
         else
-            fprintf('  Naturalistic: No continuous results\n');
+            fprintf('  Spontaneous: No continuous results\n');
         end
     else
-        fprintf('  Naturalistic: No HMM results\n');
+        fprintf('  Spontaneous: No HMM results\n');
     end
 end
 
@@ -295,17 +295,17 @@ b = bar(barData, 'grouped');
 
 % Set colors
 b(1).FaceColor = [0.8500 0.3250 0.0980]; % Orange-red for Reach
-b(2).FaceColor = [0 0.4470 0.7410];     % Blue for Naturalistic
+b(2).FaceColor = [0 0.4470 0.7410];     % Blue for Spontaneous
 
 % Customize axes
 xticks(1:length(areas))
 set(gca, 'XTickLabel', areas);
 xlabel('Brain Area', 'FontSize', 12);
 ylabel('State Transitions per Second', 'FontSize', 12);
-title(sprintf('HMM State Transition Rate: Reach vs Naturalistic\n(binSize=%.3f, minDur=%.3f)', binSize, minDur), 'FontSize', 14);
+title(sprintf('HMM State Transition Rate: Reach vs Spontaneous\n(binSize=%.3f, minDur=%.3f)', binSize, minDur), 'FontSize', 14);
 
 % Add legend
-legend({'Reach', 'Naturalistic'}, 'Location', 'best', 'FontSize', 11);
+legend({'Reach', 'Spontaneous'}, 'Location', 'best', 'FontSize', 11);
 
 % Add grid
 grid on;
@@ -319,7 +319,7 @@ for a = 1:length(areas)
             sprintf('%.3f', transitionRateReach(a)), ...
             'HorizontalAlignment', 'center', 'FontSize', 11, 'Color', [0.8500 0.3250 0.0980]);
     end
-    % Naturalistic bar
+    % Spontaneous bar
     if ~isnan(transitionRateNat(a))
         text(a + 0.15, transitionRateNat(a) + max(max(transitionRateReach, transitionRateNat, 'omitnan')) * 0.02, ...
             sprintf('%.3f', transitionRateNat(a)), ...
@@ -396,7 +396,7 @@ for a = 1:length(areas)
         end
     end
     
-    % Naturalistic data
+    % Spontaneous data
     if areaIdx <= length(hmmResultsNat) && ~isempty(hmmResultsNat{areaIdx})
         hmmResNat = hmmResultsNat{areaIdx};
         if isfield(hmmResNat, 'continuous_results') && ...
@@ -421,11 +421,11 @@ for a = 1:length(areas)
                     % Calculate durations in seconds
                     durations = (stops - starts + 1) * binSizeNat;
                     unassignedDurationsNat{a} = durations;
-                    fprintf('  Naturalistic: %d unassigned stretches, mean duration: %.3f s\n', ...
+                    fprintf('  Spontaneous: %d unassigned stretches, mean duration: %.3f s\n', ...
                         length(durations), mean(durations));
                 else
                     unassignedDurationsNat{a} = [];
-                    fprintf('  Naturalistic: No unassigned stretches\n');
+                    fprintf('  Spontaneous: No unassigned stretches\n');
                 end
             end
         end
@@ -460,7 +460,7 @@ fprintf('Using common x-axis limit: [%.3f, %.3f] seconds\n', xlimCommon(1), xlim
 figure(2); clf;
 set(gcf, 'Position', [100, 100, 1600, 800]);
 
-% Use tight_subplot: 2 rows (Reach, Naturalistic) x 4 columns (areas)
+% Use tight_subplot: 2 rows (Reach, Spontaneous) x 4 columns (areas)
 [ha, ~] = tight_subplot(2, 4, [0.08 0.06], [0.06 0.1], [0.06 0.04]);
 
 % Plot Reach data (row 1: indices 1-4)
@@ -504,7 +504,7 @@ for a = 1:length(areas)
     end
 end
 
-% Plot Naturalistic data (row 2: indices 5-8)
+% Plot Spontaneous data (row 2: indices 5-8)
 for a = 1:length(areas)
     areaName = areas{a};
     plotIdx = 4 + a; % Row 2, column a
@@ -530,7 +530,7 @@ for a = 1:length(areas)
         % Formatting
         xlabel('Duration (seconds)', 'FontSize', 10);
         ylabel('Count', 'FontSize', 10);
-        title(sprintf('%s - Naturalistic\n(n=%d, max=%.3f s)', areaName, length(durations), maxDur), ...
+        title(sprintf('%s - Spontaneous\n(n=%d, max=%.3f s)', areaName, length(durations), maxDur), ...
             'FontSize', 11);
         grid on;
         set(gca, 'GridAlpha', 0.3);
@@ -542,7 +542,7 @@ for a = 1:length(areas)
             'FontSize', 11, 'Color', [0.5 0.5 0.5]);
         xlim(xlimCommon); % Set common xlim even for empty plots
         ylim([0, 1]);
-        title(sprintf('%s - Naturalistic\n(No Data)', areaName), 'FontSize', 11);
+        title(sprintf('%s - Spontaneous\n(No Data)', areaName), 'FontSize', 11);
     end
 end
 

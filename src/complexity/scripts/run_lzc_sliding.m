@@ -165,7 +165,7 @@ elseif strcmp(dataSource, 'lfp')
     config.lfpLowpassFreq = 80;
 end
 
-if strcmp(sessionType, 'naturalistic')
+if strcmp(sessionType, 'spontaneous')
     config.behaviorNumeratorIDs = 5:10;
     config.behaviorDenominatorIDs = [config.behaviorNumeratorIDs, 0:2, 15:17];
 end

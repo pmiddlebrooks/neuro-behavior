@@ -68,7 +68,7 @@ filteredDeterminismNormalizedBernoulli = results.determinismNormalizedBernoulli(
 filteredLaminarityNormalizedBernoulli = results.laminarityNormalizedBernoulli(areasToPlot);
 filteredTrappingTimeNormalizedBernoulli = results.trappingTimeNormalizedBernoulli(areasToPlot);
 
-if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'naturalistic')
+if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'spontaneous')
     filteredBehaviorProportion = results.behaviorProportion(areasToPlot);
 else
     filteredBehaviorProportion = cell(1, length(areasToPlot));
@@ -117,7 +117,7 @@ for a = 1:length(results.areas)
 end
 
 % Extract behavior proportion if available (will be centered per subplot)
-if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'naturalistic')
+if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'spontaneous')
     behaviorProportion = results.behaviorProportion;
     plotBehaviorProportion = true;
 else
