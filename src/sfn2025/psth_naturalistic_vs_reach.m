@@ -1,4 +1,4 @@
-%% PSTH_NATURALISTIC_VS_REACH - Compare PSTHs for reach and spontaneous data
+%% PSTH_SPONTANEOUS_VS_REACH - Compare PSTHs for reach and spontaneous data
 %
 % Produces PSTHs of spikes around:
 %   - Reach onset (reach data)
@@ -81,7 +81,7 @@ reachOnsets = reachOnsets(reachOnsets >= opts.collectStart & reachOnsets <= opts
 
 fprintf('Loaded %d reaches\n', length(reachOnsets));
 
-%% ==================== NATURALISTIC DATA ====================
+%% ==================== SPONTANEOUS DATA ====================
 fprintf('\n=== Loading Spontaneous Data ===\n');
 
 % Spontaneous data parameters
@@ -552,7 +552,7 @@ fprintf('Saved reach figure to: %s\n', saveFileReach);
 
 % Save spontaneous figure
 figure(34);
-saveFileNat = fullfile(figuresDir, 'psth_naturalistic.eps');
+saveFileNat = fullfile(figuresDir, 'psth_spontaneous.eps');
 print(gcf, '-depsc', '-painters', saveFileNat);
 fprintf('Saved spontaneous figure to: %s\n', saveFileNat);
 

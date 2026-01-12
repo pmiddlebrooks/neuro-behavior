@@ -48,11 +48,11 @@ else
 end
 
 % Preallocate data matrix
-if numFrames > 45 * 60 / 0.001
+% if numFrames > 45 * 60 / 0.001
     dataMat = single(zeros(numFrames, length(opts.useNeurons)));
-else
-    dataMat = zeros(numFrames, length(opts.useNeurons));
-end
+% else
+    % dataMat = zeros(numFrames, length(opts.useNeurons));
+% end
 
 areaLabels = {};
 

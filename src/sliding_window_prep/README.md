@@ -9,7 +9,7 @@ This directory contains shared utilities for sliding window analyses across diff
 ```
 src/
 ├── data_prep/                              # General data loading functions (shared across all analyses)
-│   ├── load_naturalistic_data.m            # Spontaneous data loader
+│   ├── load_spontaneous_data.m            # Spontaneous data loader
 │   ├── load_reach_data.m                   # Reach task data loader
 │   ├── load_schall_data.m                  # Schall data loader
 │   ├── load_hong_data.m                    # Hong data loader

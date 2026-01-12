@@ -9,7 +9,7 @@ gc%% SVM_UMAP_FIGURES - Generate 3D UMAP projection figures for reach and sponta
 % All plots use the same view/rotation for consistent presentation.
 %
 % Uses sliding window to sum spikes across time windows (similar to
-% umap_test_reach.m and umap_test_naturalistic.m).
+% umap_test_reach.m and umap_test_spontaneous.m).
 %
 % Variables:
 %   sampleMin - Number of minutes to plot in first figure
@@ -87,7 +87,7 @@ end
 
 fprintf('Loaded reach data: %d neurons, %d time points\n', size(dataMatReach, 2), size(dataMatReach, 1));
 
-%% ==================== NATURALISTIC DATA ====================
+%% ==================== SPONTANEOUS DATA ====================
 fprintf('\n=== Loading Spontaneous Data ===\n');
 
 optsNat = neuro_behavior_options;

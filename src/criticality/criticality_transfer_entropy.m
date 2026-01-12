@@ -141,7 +141,7 @@ end
 
 
 %%
-% NATURALISTIC
+% SPONTANEOUS
 for p = 1:numPairs
     a1 = areaPairs(p, 1);
     a2 = areaPairs(p, 2);

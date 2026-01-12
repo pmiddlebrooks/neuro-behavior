@@ -45,11 +45,7 @@ else
 end
 
 % Get areas to plot
-if isfield(dataStruct, 'areasToTest')
-    areasToTest = dataStruct.areasToTest;
-else
     areasToTest = 1:length(areas);
-end
 
 sessionType = results.sessionType;
 slidingWindowSize = results.params.slidingWindowSize;
@@ -82,60 +78,6 @@ end
 % Define colors for each area
 % Colors: M23 (pink), M56 (green), DS (blue), VS (magenta), M2356 (orange)
 areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1], [1 0.5 0]};  % Red, Green, Blue, Magenta, Orange
-
-
-% Calculate windowed mean activity for each area (for right y-axis)
-summedActivityWindowed = cell(1, length(areas));
-if strcmp(sessionType, 'reach') && isfield(dataStruct, 'dataMat') && isfield(dataStruct, 'idMatIdx')
-    % Use binSize and slidingWindowSize (area-specific vectors)
-    if isfield(results, 'binSize')
-        binSize = results.binSize;
-    elseif isfield(results.params, 'binSize')
-        binSize = results.params.binSize;
-    else
-        error('binSize not found in results');
-    end
-    if isfield(results, 'slidingWindowSize')
-        slidingWindowSize = results.slidingWindowSize;
-    elseif isfield(results.params, 'slidingWindowSize')
-        slidingWindowSize = results.params.slidingWindowSize;
-    else
-        error('slidingWindowSize not found in results');
-    end
-    for a = 1:length(areas)
-        aID = dataStruct.idMatIdx{a};
-        if ~isempty(aID) && ~isempty(startS{a}) && ~isnan(binSize(a))
-            % Bin data using the area-specific binSize
-            aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(a));
-            % Sum across neurons
-            summedActivity = sum(aDataMat, 2);
-            % Calculate time bins (center of each bin)
-            numBins = size(aDataMat, 1);
-            activityTimeBins = ((0:numBins-1) + 0.5) * binSize(a);
-            
-            % Calculate windowed mean activity for each window center
-            numWindows = length(startS{a});
-            summedActivityWindowed{a} = nan(1, numWindows);
-            for w = 1:numWindows
-                centerTime = startS{a}(w);
-                % Use area-specific window size
-                winStart = centerTime - slidingWindowSize(a) / 2;
-                winEnd = centerTime + slidingWindowSize(a) / 2;
-                % Find bins within this window
-                binMask = activityTimeBins >= winStart & activityTimeBins < winEnd;
-                if any(binMask)
-                    summedActivityWindowed{a}(w) = mean(summedActivity(binMask));
-                end
-            end
-        else
-            summedActivityWindowed{a} = [];
-        end
-    end
-else
-    for a = 1:length(areas)
-        summedActivityWindowed{a} = [];
-    end
-end
 
 % First row: Plot all d2 traces together
 if useTightSubplot
@@ -183,27 +125,7 @@ if analyzeD2
         end
 
 
-        % % Plot summed neural activity first (behind metrics) on right y-axis
-        % if strcmp(sessionType, 'reach') && ~isempty(summedActivityWindowed)
-        %     yyaxis right;
-        %     for idx = 1:length(areasToTest)
-        %         a = areasToTest(idx);
-        %         if ~isempty(summedActivityWindowed{a}) && ~isempty(startS{a})
-        %             validIdx = ~isnan(summedActivityWindowed{a});
-        %             if any(validIdx)
-        %                 areaColor = areaColors{min(a, length(areaColors))};
-        %                 plot(startS{a}(validIdx), summedActivityWindowed{a}(validIdx), '-', ...
-        %                     'Color', areaColor, 'LineWidth', 2, ...
-        %                     'HandleVisibility', 'off');
-        %             end
-        %         end
-        %     end
-        %     ylabel('Summed Activity', 'Color', [0.5 0.5 0.5]);
-        %     set(gca, 'YTickLabelMode', 'auto');
-        %     yyaxis left;
-        % end
-
-        % Plot d2 metrics on top
+        % Plot d2 metrics
         for idx = 1:length(areasToTest)
             a = areasToTest(idx);
             if ~isempty(d2ToPlot{a}) && ~isempty(startS{a})
@@ -368,12 +290,21 @@ for idx = 1:length(areasToTest)
     if ~isempty(startS{a})
         xlim([startS{a}(1) startS{a}(end)]);
     end
-    if normalizeD2
-        title(sprintf('%s - d2 (normalized, left) and PopActivity Windows (right)', areas{a}));
-    else
-        title(sprintf('%s - d2 (left) and PopActivity Windows (right)', areas{a}));
+    
+    % Get number of neurons for this area
+    nNeurons = 0;
+    if isfield(dataStruct, 'idMatIdx') && a <= length(dataStruct.idMatIdx) && ~isempty(dataStruct.idMatIdx{a})
+        nNeurons = length(dataStruct.idMatIdx{a});
     end
+    
+    if normalizeD2
+        title(sprintf('%s (n=%d) - d2 (normalized, left) and PopActivity Windows (right)', areas{a}, nNeurons));
+    else
+        title(sprintf('%s (n=%d) - d2 (left) and PopActivity Windows (right)', areas{a}, nNeurons));
+    end
+    if idx == length(areasToTest)
     xlabel('Time (s)');
+    end
     grid on;
     set(gca, 'XTickLabelMode', 'auto');
     % Ensure both left and right y-axes have visible tick labels
@@ -432,6 +363,20 @@ end
 drawnow
     exportgraphics(gcf, plotPath, 'Resolution', 300);
     fprintf('Saved plot to: %s\n', plotPath);
+    
+    % Also save as .eps
+    if ~isempty(plotConfig.filePrefix)
+        plotPathEps = fullfile(config.saveDir, ...
+            sprintf('%s_criticality_%s_ar%s.eps', ...
+            plotConfig.filePrefix, sessionType, filenameSuffix));
+    else
+        plotPathEps = fullfile(config.saveDir, ...
+            sprintf('criticality_%s_ar%s.eps', ...
+            sessionType, filenameSuffix));
+    end
+    
+    exportgraphics(gcf, plotPathEps, 'ContentType', 'vector');
+    fprintf('Saved plot to: %s\n', plotPathEps);
 
 
 end

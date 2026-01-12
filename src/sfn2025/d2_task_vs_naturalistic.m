@@ -1,4 +1,4 @@
-%% D2_TASK_VS_NATURALISTIC - Compare d2 criticality measures between reach task and spontaneous data
+%% D2_TASK_VS_SPONTANEOUS - Compare d2 criticality measures between reach task and spontaneous data
 %
 % This script loads criticality analysis results for both reach task and
 % spontaneous data, then creates a comparison figure showing:
@@ -246,9 +246,9 @@ grid on;
 
 set(gca, 'FontSize', 18)
 % Save d2 time series figure
-saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_d2_%s.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
+saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_spontaneous_%s%s_win%d_d2_%s.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
 % exportgraphics(gcf, saveFileD2, 'ContentType', 'vector');
-saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_d2_%s.png', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
+saveFileD2 = fullfile(saveDir, sprintf('d2_task_vs_spontaneous_%s%s_win%d_d2_%s.png', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
     exportgraphics(gcf, saveFileD2, 'Resolution', 300);
 fprintf('Saved d2 time series figure to: %s\n', saveFileD2);
 
@@ -321,7 +321,7 @@ fprintf('Saved d2 time series figure to: %s\n', saveFileD2);
 % grid on;
 % 
 % % Save ethogram figure
-% saveFileEthogram = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_ethogram.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
+% saveFileEthogram = fullfile(saveDir, sprintf('d2_task_vs_spontaneous_%s%s_win%d_ethogram.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize));
 % exportgraphics(gcf, saveFileEthogram, 'ContentType', 'vector');
 % fprintf('Saved ethogram figure to: %s\n', saveFileEthogram);
 
@@ -418,9 +418,9 @@ grid on;
 ylim([0, maxD2]);
 
 % Save comparison figure
-saveFileBar = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_bar_%s.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
+saveFileBar = fullfile(saveDir, sprintf('d2_task_vs_spontaneous_%s%s_win%d_bar_%s.eps', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
 % exportgraphics(gcf, saveFileBar, 'ContentType', 'vector');
-saveFileBar = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_%s%s_win%d_bar_%s.png', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
+saveFileBar = fullfile(saveDir, sprintf('d2_task_vs_spontaneous_%s%s_win%d_bar_%s.png', areas{areaIdx}, filenameSuffix, slidingWindowSize, sessionName));
     exportgraphics(gcf, saveFileBar, 'Resolution', 300);
 fprintf('Saved comparison figure to: %s\n', saveFileBar);
 
@@ -577,9 +577,9 @@ legend('Location', 'best');
 grid on;
 
 % Save summary figure
-saveFileSummary = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_summary%s_win%d_%s.eps', filenameSuffix, slidingWindowSize, sessionName));
+saveFileSummary = fullfile(saveDir, sprintf('d2_task_vs_spontaneous_summary%s_win%d_%s.eps', filenameSuffix, slidingWindowSize, sessionName));
 % exportgraphics(gcf, saveFileSummary, 'ContentType', 'vector');
-saveFileSummary = fullfile(saveDir, sprintf('d2_task_vs_naturalistic_summary%s_win%d_%s.png', filenameSuffix, slidingWindowSize, sessionName));
+saveFileSummary = fullfile(saveDir, sprintf('d2_task_vs_spontaneous_summary%s_win%d_%s.png', filenameSuffix, slidingWindowSize, sessionName));
     exportgraphics(gcf, saveFileSummary, 'Resolution', 300);
 fprintf('Saved summary figure to: %s\n', saveFileSummary);
 

@@ -28,17 +28,25 @@ function results = criticality_ar_analysis(dataStruct, config)
 
     % Add paths
     addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
+    addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
     
     % Validate inputs
-    validate_workspace_vars({'sessionType', 'dataMat', 'areas', 'idMatIdx'}, dataStruct, ...
+    validate_workspace_vars({'sessionType', 'spikeTimes', 'spikeClusters', 'areas', 'idMatIdx'}, dataStruct, ...
         'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
     
-    % Set defaults
+    % Set defaults only if config is not supplied or is empty
+    if nargin < 2 || isempty(config) || ~isstruct(config)
     config = set_config_defaults(config);
+    end
     
     sessionType = dataStruct.sessionType;
     areas = dataStruct.areas;
     numAreas = length(areas);
+    
+    % Set default includeM2356 if not provided
+    if ~isfield(config, 'includeM2356')
+        config.includeM2356 = false;  % Default to false (opt-in)
+    end
     
     % Add combined M2356 area if requested and M23 and M56 exist
     if config.includeM2356
@@ -48,9 +56,9 @@ function results = criticality_ar_analysis(dataStruct, config)
             % Create combined M2356 area
             areas{end+1} = 'M2356';
             dataStruct.areas = areas;  % Update dataStruct.areas
-            dataStruct.idMatIdx{end+1} = [dataStruct.idMatIdx{idxM23}, dataStruct.idMatIdx{idxM56}];
+            dataStruct.idMatIdx{end+1} = [dataStruct.idMatIdx{idxM23}(:); dataStruct.idMatIdx{idxM56}(:)];
             if isfield(dataStruct, 'idLabel')
-                dataStruct.idLabel{end+1} = [dataStruct.idLabel{idxM23}; dataStruct.idLabel{idxM56}];
+                dataStruct.idLabel{end+1} = [dataStruct.idLabel{idxM23}(:); dataStruct.idLabel{idxM56}(:)];
             end
             numAreas = length(areas);
             fprintf('\n=== Added combined M2356 area ===\n');
@@ -69,6 +77,15 @@ function results = criticality_ar_analysis(dataStruct, config)
         areasToTest = 1:numAreas;
     end
     
+    % If M2356 was created, ensure it's included in areasToTest
+    if config.includeM2356 && any(strcmp(areas, 'M2356'))
+        m2356Idx = find(strcmp(areas, 'M2356'));
+        if ~ismember(m2356Idx, areasToTest)
+            areasToTest = [areasToTest, m2356Idx];
+            fprintf('Added M2356 (index %d) to areasToTest\n', m2356Idx);
+        end
+    end
+    
     fprintf('\n=== Criticality AR Analysis Setup ===\n');
     fprintf('Data type: %s\n', sessionType);
     fprintf('Number of areas: %d\n', numAreas);
@@ -82,7 +99,11 @@ function results = criticality_ar_analysis(dataStruct, config)
         filenameSuffix = '';
     end
     
-    % Setup results path
+    % Setup results path (always create for potential plotting use)
+    if ~isfield(config, 'saveData')
+        config.saveData = true;  % Default to true if not set
+    end
+    
     if ~isfield(config, 'saveDir') || isempty(config.saveDir)
         config.saveDir = dataStruct.saveDir;
     end
@@ -117,21 +138,33 @@ function results = criticality_ar_analysis(dataStruct, config)
         modulationResults = cell(1, numAreas);
     end
     
-    % Apply PCA to original data if requested
-    fprintf('\n--- Step 1-2: PCA on original data if requested ---\n');
-    reconstructedDataMat = cell(1, numAreas);
-    for a = areasToTest
-        aID = dataStruct.idMatIdx{a};
-        thisDataMat = dataStruct.dataMat(:, aID);
-        if config.pcaFlag
+    % Calculate time range from spike data
+    fprintf('\n--- Using spike times for on-demand binning ---\n');
+    if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectStart')
+        timeRange = [dataStruct.spikeData.collectStart, dataStruct.spikeData.collectEnd];
+    else
+        timeRange = [0, max(dataStruct.spikeTimes)];
+    end
+    
+    % For PCA with spike times, we'll bin at a temporary bin size first
+    % Use a small bin size (1ms) for PCA calculation
+    if config.pcaFlag
+        fprintf('\n--- Step 1-2: PCA on original data (binned at 1ms for PCA) ---\n');
+        reconstructedDataMat = cell(1, numAreas);
+        tempBinSize = 0.001;  % 1ms for PCA calculation
+        for a = areasToTest
+            neuronIDs = dataStruct.idLabel{a};
+            % Bin at 1ms for PCA
+            thisDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                neuronIDs, timeRange, tempBinSize);
             [coeff, score, ~, ~, explained, mu] = pca(thisDataMat);
             forDim = find(cumsum(explained) > 30, 1);
             forDim = max(3, min(6, forDim));
             nDim = 1:forDim;
             reconstructedDataMat{a} = score(:,nDim) * coeff(:,nDim)' + mu;
-        else
-            reconstructedDataMat{a} = thisDataMat;
         end
+    else
+        reconstructedDataMat = [];  % Not needed if no PCA
     end
     
     % Find bin and window sizes (either optimal or user-specified)
@@ -140,7 +173,7 @@ function results = criticality_ar_analysis(dataStruct, config)
     [binSize, slidingWindowSize, ...
         binSizeModulated, binSizeUnmodulated, ...
         slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
-        find_optimal_parameters(reconstructedDataMat, dataStruct, config, modulationResults, areasToTest);
+        find_optimal_parameters_from_spikes(dataStruct, config, modulationResults, areasToTest, timeRange);
     slidingWindowSize(slidingWindowSize < 10) = 10;
     % Initialize modulation parameters if not already set
     if ~config.analyzeModulation
@@ -165,8 +198,8 @@ function results = criticality_ar_analysis(dataStruct, config)
     
     % Calculate common centerTime values based on slidingWindowSize and stepSize
     % This ensures all areas have aligned windows regardless of their optimized window sizes
-    % Total time from original data (in seconds, assuming 1000 Hz)
-    totalTime = size(dataStruct.dataMat, 1) / 1000;
+    % Total time from spike data
+    totalTime = timeRange(2) - timeRange(1);
     
     % Generate common centerTime values
     % Start from slidingWindowSize/2, end at totalTime - slidingWindowSize/2
@@ -212,9 +245,59 @@ function results = criticality_ar_analysis(dataStruct, config)
         slidingWindowSizeUnmodulated = nan(1, numAreas);
     end
     
+    % Filter areas to process: exclude areas with too few neurons or invalid bin sizes
+    fprintf('\n=== Filtering Areas to Process ===\n');
+    areasToProcess = [];
+    areasToSkip = [];
+    
+    for a = areasToTest
+        shouldSkip = false;
+        skipReason = '';
+        
+        aID = dataStruct.idMatIdx{a};
+        nNeurons = length(aID);
+        
+        % Check minimum number of neurons
+        if nNeurons < config.nMinNeurons
+            shouldSkip = true;
+            skipReason = sprintf('Only %d neurons (minimum required: %d)', nNeurons, config.nMinNeurons);
+        end
+        
+        % Check if bin size is valid
+        if ~shouldSkip && isnan(binSize(a))
+            shouldSkip = true;
+            skipReason = 'Invalid bin size (area skipped earlier)';
+        end
+        
+        if shouldSkip
+            areasToSkip = [areasToSkip, a];
+            fprintf('  Will skip area %s: %s\n', areas{a}, skipReason);
+            % Initialize with empty arrays
+            popActivity{a} = [];
+            mrBr{a} = [];
+            d2{a} = [];
+            d2Normalized{a} = [];
+            startS{a} = [];
+            popActivityWindows{a} = [];
+            popActivityFull{a} = [];
+            if config.enablePermutations
+                d2Permuted{a} = [];
+                mrBrPermuted{a} = [];
+            end
+        else
+            areasToProcess = [areasToProcess, a];
+        end
+    end
+    
+    if isempty(areasToProcess)
+        error('No valid areas to process. All areas were skipped due to insufficient neurons or invalid bin sizes.');
+    end
+    
+    fprintf('  Will process %d area(s): %s\n', length(areasToProcess), strjoin(areas(areasToProcess), ', '));
+    
     % Main analysis loop
     fprintf('\n=== Processing Areas ===\n');
-    for a = areasToTest
+    for a = areasToProcess
         fprintf('\nProcessing area %s (%s)...\n', areas{a}, sessionType);
         tic;
         
@@ -223,7 +306,11 @@ function results = criticality_ar_analysis(dataStruct, config)
         % Calculate window size in samples for this area
         winSamples = round(slidingWindowSize(a) / binSize(a));
         
-        aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(a));
+        % Get neuron IDs for this area
+        neuronIDs = dataStruct.idLabel{a};
+        % Bin spikes on-demand at area-specific bin size
+        aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+            neuronIDs, timeRange, binSize(a));
         numTimePoints = size(aDataMat, 1);
         
         if config.pcaFlag
@@ -322,9 +409,13 @@ function results = criticality_ar_analysis(dataStruct, config)
         binSizeModulated, binSizeUnmodulated, ...
         slidingWindowSizeModulated, slidingWindowSizeUnmodulated);
     
-    % Save results
-    save(resultsPath, 'results');
-    fprintf('Saved %s d2/mrBr to %s\n', sessionType, resultsPath);
+    % Save results if requested
+    if config.saveData
+        save(resultsPath, 'results');
+        fprintf('Saved %s d2/mrBr to %s\n', sessionType, resultsPath);
+    else
+        fprintf('Skipping save (config.saveData = false)\n');
+    end
     
     % Plotting
     if config.makePlots
@@ -354,6 +445,7 @@ function config = set_config_defaults(config)
     defaults.nShuffles = 3;
     defaults.analyzeModulation = false;
     defaults.makePlots = true;
+    defaults.saveData = true;  % Set to false to skip saving results
     defaults.normalizeD2 = true;  % Normalize d2 by shuffled d2 values
     defaults.minSpikesPerBin = 3;
     defaults.maxSpikesPerBin = 50;
@@ -366,6 +458,7 @@ function config = set_config_defaults(config)
     defaults.modulationEventWindow = [-0.2, 0.6];
     defaults.modulationPlotFlag = false;
     defaults.includeM2356 = false;  % Include combined M23+M56 area (optional)
+    defaults.nMinNeurons = 10;  % Minimum number of neurons required
     
     % Apply defaults
     fields = fieldnames(defaults);
@@ -395,9 +488,10 @@ end
 function [binSize, slidingWindowSize, ...
     binSizeModulated, binSizeUnmodulated, ...
     slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
-    find_optimal_parameters(reconstructedDataMat, dataStruct, config, modulationResults, areasToTest)
-% FIND_OPTIMAL_PARAMETERS Find bin and window sizes (either optimal or user-specified)
+    find_optimal_parameters_from_spikes(dataStruct, config, modulationResults, areasToTest, timeRange)
+% FIND_OPTIMAL_PARAMETERS_FROM_SPIKES Find bin and window sizes from spike times
 % Returns binSize and slidingWindowSize as vectors (length numAreas)
+% Uses spike times directly (new approach)
     
     numAreas = length(dataStruct.areas);
     binSize = zeros(1, numAreas);
@@ -405,8 +499,14 @@ function [binSize, slidingWindowSize, ...
     
     if config.useOptimalBinWindowFunction
         for a = areasToTest
-            thisDataMat = reconstructedDataMat{a};
-            thisFiringRate = sum(thisDataMat(:)) / (size(thisDataMat, 1)/1000);
+            % Get neuron IDs for this area
+            neuronIDs = dataStruct.idLabel{a};
+            
+            % Calculate firing rate from spike times
+            thisFiringRate = calculate_firing_rate_from_spikes(...
+                dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                neuronIDs, timeRange);
+            
             [binSize(a), slidingWindowSize(a)] = ...
                 find_optimal_bin_and_window(thisFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
         end
@@ -439,23 +539,22 @@ function [binSize, slidingWindowSize, ...
     if config.analyzeModulation && config.useOptimalBinWindowFunction
         for a = areasToTest
             if ~isempty(modulationResults{a})
-                % Get modulated and unmodulated neuron indices
+                % Get modulated and unmodulated neuron IDs
                 modulatedNeurons = modulationResults{a}.neuronIds(modulationResults{a}.isModulated);
                 unmodulatedNeurons = modulationResults{a}.neuronIds(~modulationResults{a}.isModulated);
                 
-                modulatedIndices = ismember(dataStruct.idLabel{a}, modulatedNeurons);
-                unmodulatedIndices = ismember(dataStruct.idLabel{a}, unmodulatedNeurons);
-                
-                if sum(modulatedIndices) >= 5
-                    modulatedDataMat = reconstructedDataMat{a}(:, modulatedIndices);
-                    mFiringRate = sum(modulatedDataMat(:)) / (size(modulatedDataMat, 1)/1000);
+                if length(modulatedNeurons) >= 5
+                    mFiringRate = calculate_firing_rate_from_spikes(...
+                        dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                        modulatedNeurons, timeRange);
                     [binSizeModulated(a), slidingWindowSizeModulated(a)] = ...
                         find_optimal_bin_and_window(mFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
                 end
                 
-                if sum(unmodulatedIndices) >= 5
-                    unmodulatedDataMat = reconstructedDataMat{a}(:, unmodulatedIndices);
-                    uFiringRate = sum(unmodulatedDataMat(:)) / (size(unmodulatedDataMat, 1)/1000);
+                if length(unmodulatedNeurons) >= 5
+                    uFiringRate = calculate_firing_rate_from_spikes(...
+                        dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                        unmodulatedNeurons, timeRange);
                     [binSizeUnmodulated(a), slidingWindowSizeUnmodulated(a)] = ...
                         find_optimal_bin_and_window(uFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
                 end

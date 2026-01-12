@@ -337,7 +337,7 @@ end
 % end
 
 %%
-fileName = fullfile(paths.dropPath, 'avalanches_criticality_naturalistic_vs_reaching_50ms_threshold.mat');
+fileName = fullfile(paths.dropPath, 'avalanches_criticality_spontaneous_vs_reaching_50ms_threshold.mat');
 save(fileName, 'README', 'Av', 'brHist', 'tau', 'tauC', 'alpha', 'paramSD', 'optBinSize', 'areas')
 
 %%

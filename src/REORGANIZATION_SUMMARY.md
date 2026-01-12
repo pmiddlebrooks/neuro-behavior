@@ -10,7 +10,7 @@ src/
 ├── sliding_window_prep/          # Shared utilities and data loading
 │   ├── data_prep/
 │   │   ├── load_sliding_window_data.m
-│   │   ├── load_naturalistic_data.m
+│   │   ├── load_spontaneous_data.m
 │   │   ├── load_reach_data.m
 │   │   ├── load_schall_data.m
 │   │   ├── load_hong_data.m

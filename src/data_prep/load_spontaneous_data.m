@@ -1,5 +1,5 @@
-function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands)
-% load_naturalistic_data - Load spontaneous data for sliding window analysis
+function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands)
+% load_spontaneous_data - Load spontaneous data for sliding window analysis
 %
 % This function incorporates the functionality of get_standard_data.m
 % directly, removing the dependency on workspace variables.
@@ -74,46 +74,96 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
         dataStruct.dataBhv = dataBhv;  % Also store full behavior data for reference
         dataStruct.fsBhv = opts.fsBhv;  % Store behavior sampling frequency for window calculations
         
-        % Load spike data
-        spikeData = load_data(opts, 'spikes');
-        spikeData.bhvDur = dataBhv.Dur;
-        
-        % Find the neuron clusters (ids) in each brain region
-        useMulti = 1;
-        if ~useMulti
-            allGood = strcmp(spikeData.ci.group, 'good');
-        else
-            allGood = strcmp(spikeData.ci.group, 'good') | (strcmp(spikeData.ci.group, 'mua'));
-            warning('Warning in load_naturalistic_data: you are loading muas with the good spiking units.');
+        % Check if we should use spike times approach (new) or dataMat (old)
+        % Default to spike times if not specified
+        if ~isfield(opts, 'useSpikeTimes') || isempty(opts.useSpikeTimes)
+            opts.useSpikeTimes = true;  % Default to new approach
         end
         
-        goodM23 = allGood & strcmp(spikeData.ci.area, 'M23');
-        goodM56 = allGood & strcmp(spikeData.ci.area, 'M56');
-        goodDS = allGood & strcmp(spikeData.ci.area, 'DS');
-        goodVS = allGood & strcmp(spikeData.ci.area, 'VS');
-        
-        % Which neurons to use in the neural matrix
-        opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
-        
-        % Create neural matrix
-        [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(spikeData, opts);
-        
-        % Extract area indices
-        idM23 = find(strcmp(areaLabels, 'M23'));
-        idM56 = find(strcmp(areaLabels, 'M56'));
-        idDS = find(strcmp(areaLabels, 'DS'));
-        idVS = find(strcmp(areaLabels, 'VS'));
-        
-        % Store in dataStruct
-        dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
-        dataStruct.idMatIdx = {idM23, idM56, idDS, idVS};
-        dataStruct.idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
-        dataStruct.dataMat = dataMat;
-        dataStruct.spikeData = [];  % Initialize empty, can be loaded later if needed
-        dataStruct.areaLabels = areaLabels;
-        dataStruct.removedNeurons = removedNeurons;
-        
-        fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
+        if opts.useSpikeTimes
+            % Load spike times using new approach
+            spikeData = load_spike_times('spontaneous', paths, sessionName, opts);
+            
+            % Extract area information
+            dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
+            idM23 = [];
+            idM56 = [];
+            idDS = [];
+            idVS = [];
+            
+            % Find neuron indices for each area
+            for i = 1:length(spikeData.neuronIDs)
+                areaName = spikeData.neuronAreas{i};
+                
+                switch areaName
+                    case 'M23'
+                        idM23 = [idM23, i];
+                    case 'M56'
+                        idM56 = [idM56, i];
+                    case 'DS'
+                        idDS = [idDS, i];
+                    case 'VS'
+                        idVS = [idVS, i];
+                end
+            end
+            
+            dataStruct.idMatIdx = {idM23, idM56, idDS, idVS};
+            dataStruct.idLabel = {spikeData.neuronIDs(idM23), spikeData.neuronIDs(idM56), ...
+                                 spikeData.neuronIDs(idDS), spikeData.neuronIDs(idVS)};
+            
+            % Store spike times for on-demand binning
+            dataStruct.spikeTimes = spikeData.spikeTimes;
+            dataStruct.spikeClusters = spikeData.spikeClusters;
+            dataStruct.spikeData = spikeData;  % Store full structure for reference
+            dataStruct.dataMat = [];  % Not used in new approach
+            dataStruct.areaLabels = spikeData.neuronAreas;
+            
+            fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
+        else
+            % Load using old approach (dataMat)
+            % Load spike data
+            spikeDataRaw = load_data(opts, 'spikes');
+            spikeDataRaw.bhvDur = dataBhv.Dur;
+            
+            % Find the neuron clusters (ids) in each brain region
+            useMulti = 1;
+            if ~useMulti
+                allGood = strcmp(spikeDataRaw.ci.group, 'good');
+            else
+                allGood = strcmp(spikeDataRaw.ci.group, 'good') | (strcmp(spikeDataRaw.ci.group, 'mua'));
+                warning('Warning in load_spontaneous_data: you are loading muas with the good spiking units.');
+            end
+            
+            goodM23 = allGood & strcmp(spikeDataRaw.ci.area, 'M23');
+            goodM56 = allGood & strcmp(spikeDataRaw.ci.area, 'M56');
+            goodDS = allGood & strcmp(spikeDataRaw.ci.area, 'DS');
+            goodVS = allGood & strcmp(spikeDataRaw.ci.area, 'VS');
+            
+            % Which neurons to use in the neural matrix
+            opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
+            
+            % Create neural matrix
+            [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(spikeDataRaw, opts);
+            
+            % Extract area indices
+            idM23 = find(strcmp(areaLabels, 'M23'));
+            idM56 = find(strcmp(areaLabels, 'M56'));
+            idDS = find(strcmp(areaLabels, 'DS'));
+            idVS = find(strcmp(areaLabels, 'VS'));
+            
+            % Store in dataStruct
+            dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
+            dataStruct.idMatIdx = {idM23, idM56, idDS, idVS};
+            dataStruct.idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
+            dataStruct.dataMat = dataMat;
+            dataStruct.spikeData = [];  % Initialize empty, can be loaded later if needed
+            dataStruct.spikeTimes = [];
+            dataStruct.spikeClusters = [];
+            dataStruct.areaLabels = areaLabels;
+            dataStruct.removedNeurons = removedNeurons;
+            
+            fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
+        end
         
     elseif strcmp(dataSource, 'lfp')
         % Load spontaneous LFP data
@@ -165,8 +215,8 @@ function dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts
         subjectID = sessionName;
     end
     
-    % Use dropPath/open_field/results/{subjectID}/ similar to reach_task/results/{dataBaseName}
-    dataStruct.saveDir = fullfile(paths.dropPath, 'open_field/results', subjectID);
+    % Use dropPath/spontaneous/results/{subjectID}/ similar to reach_task/results/{dataBaseName}
+    dataStruct.saveDir = fullfile(paths.dropPath, 'spontaneous/results', subjectID);
     if ~exist(dataStruct.saveDir, 'dir')
         mkdir(dataStruct.saveDir);
     end

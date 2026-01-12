@@ -1,4 +1,4 @@
-function sessions = open_field_session_list()
+function sessions = spontaneous_session_list()
 %%
 sessions = {'ag112321_1', ... % good
     'ag112321_2', ...  % Good

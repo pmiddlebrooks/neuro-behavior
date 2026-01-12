@@ -88,7 +88,7 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
                 error('sessionName must be provided for spontaneous data');
             end
             dataStruct.sessionName = sessionName;
-            dataStruct = load_naturalistic_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands);
+            dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands);
             
         case 'reach'
             if isempty(sessionName)

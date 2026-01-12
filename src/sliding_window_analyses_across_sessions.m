@@ -1,6 +1,6 @@
 %%
 % Sliding Window Analyses Across Sessions
-% Compares metrics between spontaneous (open_field) and reach sessions
+% Compares metrics between spontaneous (spontaneous) and reach sessions
 %
 % Variables:
 %   analysisType - Type of analysis: 'criticality_ar', 'complexity', 'rqa', 
@@ -22,6 +22,7 @@ analysisType = 'criticality_ar';  % Options: 'criticality_ar', 'complexity', 'rq
 metricName = '';  % If empty, uses default for analysis type
 useNormalized = true;  % Use normalized metric if available
 filenameSuffix = '';  % Optional suffix (e.g., '_pca')
+timeRange = [0, 1200];  % Time range in seconds to analyze [startTime, endTime]. Use [] to analyze all data.
 
 %% Add paths
 % Get paths structure
@@ -29,18 +30,23 @@ paths = get_paths;
 
 basePath = fullfile(paths.homePath, 'neuro-behavior/src/');  % src
 addpath(fullfile(basePath, 'sliding_window_prep', 'utils'));
-addpath(fullfile(basePath, 'open_field'));
+addpath(fullfile(basePath, 'spontaneous'));
 addpath(fullfile(basePath, 'reach_task'));
 
 
 %% Get session lists
-naturalisticSessions = open_field_session_list();
+spontaneousSessions = spontaneous_session_list();
 reachSessions = reach_session_list();
 
 fprintf('\n=== Sliding Window Analysis Comparison ===\n');
 fprintf('Analysis type: %s\n', analysisType);
-fprintf('Spontaneous sessions: %d\n', length(naturalisticSessions));
+fprintf('Spontaneous sessions: %d\n', length(spontaneousSessions));
 fprintf('Reach sessions: %d\n', length(reachSessions));
+if ~isempty(timeRange) && length(timeRange) == 2
+    fprintf('Time range: [%.1f, %.1f] s\n', timeRange(1), timeRange(2));
+else
+    fprintf('Time range: All data\n');
+end
 
 %% Determine default metric name if not provided
 if isempty(metricName)
@@ -80,17 +86,17 @@ fprintf('Metric: %s\n', metricName);
 
 %% Load results for spontaneous sessions
 fprintf('\n=== Loading Spontaneous Session Results ===\n');
-naturalisticData = struct();
-naturalisticData.medians = {};  % Cell array: {areaIdx}{sessionIdx} = median value
-naturalisticData.sessionNames = {};
-naturalisticData.areas = [];
+spontaneousData = struct();
+spontaneousData.medians = {};  % Cell array: {areaIdx}{sessionIdx} = median value
+spontaneousData.sessionNames = {};
+spontaneousData.areas = [];
 
-for s = 1:length(naturalisticSessions)
-    sessionName = naturalisticSessions{s};
-    fprintf('Loading session %d/%d: %s\n', s, length(naturalisticSessions), sessionName);
+for s = 1:length(spontaneousSessions)
+    sessionName = spontaneousSessions{s};
+    fprintf('Loading session %d/%d: %s\n', s, length(spontaneousSessions), sessionName);
     
     % Find results file by pattern matching
-    % Extract subjectID from sessionName (similar to how load_naturalistic_data does it)
+    % Extract subjectID from sessionName (similar to how load_spontaneous_data does it)
     pathParts = strsplit(sessionName, filesep);
     if length(pathParts) > 1
         % Session name has path separator (e.g., 'ag112321/recording1e')
@@ -101,8 +107,8 @@ for s = 1:length(naturalisticSessions)
         subjectID = sessionName;
     end
     
-    % Use dropPath/open_field/results/{subjectID}/ similar to reach_task/results/{dataBaseName}
-    saveDir = fullfile(paths.dropPath, 'open_field/results', subjectID);
+    % Use dropPath/spontaneous/results/{subjectID}/ similar to reach_task/results/{dataBaseName}
+    saveDir = fullfile(paths.dropPath, 'spontaneous/results', subjectID);
     
     % Determine dataSource for pattern matching
     if strcmp(analysisType, 'complexity') || strcmp(analysisType, 'rqa')
@@ -111,7 +117,15 @@ for s = 1:length(naturalisticSessions)
         dataSource = '';
     end
     
-    resultsPath = find_results_file(analysisType, 'spontaneous', sessionName, saveDir, filenameSuffix, dataSource);
+    % For RQA, filenameSuffix should include PCA dimensions (e.g., '_pca4')
+    % If not provided, try common values
+    actualFilenameSuffix = filenameSuffix;
+    if strcmp(analysisType, 'rqa') && isempty(filenameSuffix)
+        % Try common PCA dimensions
+        actualFilenameSuffix = '_pca4';  % Default, could be made configurable
+    end
+    
+    resultsPath = find_results_file(analysisType, 'spontaneous', sessionName, saveDir, actualFilenameSuffix, dataSource);
     
     % Load results
     if isempty(resultsPath) || ~exist(resultsPath, 'file')
@@ -127,12 +141,34 @@ for s = 1:length(naturalisticSessions)
     results = loaded.results;
     
     % Extract areas if not yet set
-    if isempty(naturalisticData.areas) && isfield(results, 'areas')
-        naturalisticData.areas = results.areas;
-        numAreas = length(naturalisticData.areas);
-        naturalisticData.medians = cell(1, numAreas);
+    if isempty(spontaneousData.areas) && isfield(results, 'areas')
+        spontaneousData.areas = results.areas;
+        numAreas = length(spontaneousData.areas);
+        spontaneousData.medians = cell(1, numAreas);
         for a = 1:numAreas
-            naturalisticData.medians{a} = [];
+            spontaneousData.medians{a} = [];
+        end
+    end
+    
+    % Filter results by time range if specified
+    if ~isempty(timeRange) && length(timeRange) == 2 && isfield(results, 'startS')
+        timeStart = timeRange(1);
+        timeEnd = timeRange(2);
+        numAreas = length(results.areas);
+        for a = 1:numAreas
+            if ~isempty(results.startS{a})
+                % Find indices within time range
+                timeMask = results.startS{a} >= timeStart & results.startS{a} <= timeEnd;
+                
+                % Filter startS
+                results.startS{a} = results.startS{a}(timeMask);
+                
+                % Filter metric data if it exists
+                if isfield(results, metricName) && iscell(results.(metricName)) && ...
+                        a <= length(results.(metricName)) && ~isempty(results.(metricName){a})
+                    results.(metricName){a} = results.(metricName){a}(timeMask);
+                end
+            end
         end
     end
     
@@ -142,14 +178,14 @@ for s = 1:length(naturalisticSessions)
         if iscell(metricData)
             % Cell array format (one cell per area)
             for a = 1:length(metricData)
-                if a <= length(naturalisticData.medians) && ~isempty(metricData{a})
+                if a <= length(spontaneousData.medians) && ~isempty(metricData{a})
                     values = metricData{a}(:);
                     values = values(~isnan(values));
                     if ~isempty(values)
                         medianVal = median(values);
-                        naturalisticData.medians{a} = [naturalisticData.medians{a}, medianVal];
+                        spontaneousData.medians{a} = [spontaneousData.medians{a}, medianVal];
                     else
-                        naturalisticData.medians{a} = [naturalisticData.medians{a}, nan];
+                        spontaneousData.medians{a} = [spontaneousData.medians{a}, nan];
                     end
                 end
             end
@@ -160,12 +196,12 @@ for s = 1:length(naturalisticSessions)
     else
         warning('Metric %s not found in results for session %s', metricName, sessionName);
         % Add NaN for all areas
-        for a = 1:length(naturalisticData.medians)
-            naturalisticData.medians{a} = [naturalisticData.medians{a}, nan];
+        for a = 1:length(spontaneousData.medians)
+            spontaneousData.medians{a} = [spontaneousData.medians{a}, nan];
         end
     end
     
-    naturalisticData.sessionNames{end+1} = sessionName;
+    spontaneousData.sessionNames{end+1} = sessionName;
 end
 
 %% Load results for reach sessions
@@ -190,7 +226,15 @@ for s = 1:length(reachSessions)
         dataSource = '';
     end
     
-    resultsPath = find_results_file(analysisType, 'reach', sessionName, saveDir, filenameSuffix, dataSource);
+    % For RQA, filenameSuffix should include PCA dimensions (e.g., '_pca4')
+    % If not provided, try common values
+    actualFilenameSuffix = filenameSuffix;
+    if strcmp(analysisType, 'rqa') && isempty(filenameSuffix)
+        % Try common PCA dimensions
+        actualFilenameSuffix = '_pca4';  % Default, could be made configurable
+    end
+    
+    resultsPath = find_results_file(analysisType, 'reach', sessionName, saveDir, actualFilenameSuffix, dataSource);
     
     % Load results
     if isempty(resultsPath) || ~exist(resultsPath, 'file')
@@ -212,6 +256,28 @@ for s = 1:length(reachSessions)
         reachData.medians = cell(1, numAreas);
         for a = 1:numAreas
             reachData.medians{a} = [];
+        end
+    end
+    
+    % Filter results by time range if specified
+    if ~isempty(timeRange) && length(timeRange) == 2 && isfield(results, 'startS')
+        timeStart = timeRange(1);
+        timeEnd = timeRange(2);
+        numAreas = length(results.areas);
+        for a = 1:numAreas
+            if ~isempty(results.startS{a})
+                % Find indices within time range
+                timeMask = results.startS{a} >= timeStart & results.startS{a} <= timeEnd;
+                
+                % Filter startS
+                results.startS{a} = results.startS{a}(timeMask);
+                
+                % Filter metric data if it exists
+                if isfield(results, metricName) && iscell(results.(metricName)) && ...
+                        a <= length(results.(metricName)) && ~isempty(results.(metricName){a})
+                    results.(metricName){a} = results.(metricName){a}(timeMask);
+                end
+            end
         end
     end
     
@@ -248,12 +314,12 @@ for s = 1:length(reachSessions)
 end
 
 %% Determine common areas
-if isempty(naturalisticData.areas) || isempty(reachData.areas)
+if isempty(spontaneousData.areas) || isempty(reachData.areas)
     error('No data loaded. Check that results files exist and contain the expected structure.');
 end
 
 % Find common areas
-commonAreas = intersect(naturalisticData.areas, reachData.areas);
+commonAreas = intersect(spontaneousData.areas, reachData.areas);
 if isempty(commonAreas)
     error('No common areas found between spontaneous and reach sessions.');
 end
@@ -280,7 +346,7 @@ for a = 1:numAreasToPlot
     areaName = areasToPlot{a};
     
     % Find area index in spontaneous and reach data
-    natAreaIdx = find(strcmp(naturalisticData.areas, areaName));
+    natAreaIdx = find(strcmp(spontaneousData.areas, areaName));
     reachAreaIdx = find(strcmp(reachData.areas, areaName));
     
     if isempty(natAreaIdx) || isempty(reachAreaIdx)
@@ -288,7 +354,7 @@ for a = 1:numAreasToPlot
     end
     
     % Get median values for this area
-    natMedians = naturalisticData.medians{natAreaIdx};
+    natMedians = spontaneousData.medians{natAreaIdx};
     reachMedians = reachData.medians{reachAreaIdx};
     
     % Remove NaN values
@@ -365,8 +431,14 @@ if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
 
-plotFilename = sprintf('%s_%s_nat_vs_reach%s.png', ...
-    analysisType, metricName, filenameSuffix);
+% Add time range to filename if specified
+timeRangeStr = '';
+if ~isempty(timeRange) && length(timeRange) == 2
+    timeRangeStr = sprintf('_t%.0f-%.0f', timeRange(1), timeRange(2));
+end
+
+plotFilename = sprintf('%s_%s_nat_vs_reach%s%s.png', ...
+    analysisType, metricName, filenameSuffix, timeRangeStr);
 plotPath = fullfile(saveDir, plotFilename);
 
 exportgraphics(gcf, plotPath, 'Resolution', 300);
@@ -377,57 +449,66 @@ fprintf('\n=== Analysis Complete ===\n');
 %% Helper function to find results file by pattern
 function resultsPath = find_results_file(analysisType, sessionType, sessionName, saveDir, filenameSuffix, dataSource)
     % Build search pattern based on analysis type
+    % Updated to match current naming convention from create_results_path
     switch analysisType
         case 'criticality_ar'
-            if strcmp(sessionType, 'reach')
-                pattern = sprintf('criticality_sliding_window_ar%s_win*_%s.mat', filenameSuffix, sessionName);
+            % Format: criticality_sliding_window_ar{filenameSuffix}_{sessionName}.mat
+            if ~isempty(sessionName)
+                pattern = sprintf('criticality_sliding_window_ar%s_%s.mat', filenameSuffix, sessionName);
             else
-                % For spontaneous, session name might be in subdirectory or filename
-                pattern = sprintf('criticality_sliding_window_ar%s_win*.mat', filenameSuffix);
+                pattern = sprintf('criticality_sliding_window_ar%s_*.mat', filenameSuffix);
             end
             
         case 'criticality_av'
-            if strcmp(sessionType, 'reach')
-                pattern = sprintf('criticality_sliding_window_av%s_win*_%s.mat', filenameSuffix, sessionName);
+            % Format: criticality_sliding_window_av{filenameSuffix}_{sessionName}.mat
+            if ~isempty(sessionName)
+                pattern = sprintf('criticality_sliding_window_av%s_%s.mat', filenameSuffix, sessionName);
             else
-                pattern = sprintf('criticality_sliding_window_av%s_win*.mat', filenameSuffix);
+                pattern = sprintf('criticality_sliding_window_av%s_*.mat', filenameSuffix);
             end
             
         case 'criticality_lfp'
-            if strcmp(sessionType, 'reach')
-                pattern = sprintf('criticality_sliding_lfp_win*_%s.mat', sessionName);
+            % Format: criticality_sliding_lfp{filenameSuffix}_{sessionName}.mat
+            if ~isempty(sessionName)
+                pattern = sprintf('criticality_sliding_lfp%s_%s.mat', filenameSuffix, sessionName);
             else
-                pattern = sprintf('criticality_sliding_lfp_win*.mat');
+                pattern = sprintf('criticality_sliding_lfp%s_*.mat', filenameSuffix);
             end
             
         case 'complexity'
-            if ~isempty(dataSource)
-                if strcmp(sessionType, 'reach')
-                    pattern = sprintf('complexity_sliding_window_%s_win*_%s.mat', dataSource, sessionName);
+            % Format: lzc_sliding_window{filenameSuffix}_{sessionName}.mat (for spikes)
+            %         lzc_sliding_window_{dataSource}{filenameSuffix}_{sessionName}.mat (for lfp)
+            if strcmp(dataSource, 'lfp')
+                if ~isempty(sessionName)
+                    pattern = sprintf('lzc_sliding_window_%s%s_%s.mat', dataSource, filenameSuffix, sessionName);
                 else
-                    % For spontaneous, session name might be in filename
-                    pattern = sprintf('complexity_sliding_window_%s_win*.mat', dataSource);
+                    pattern = sprintf('lzc_sliding_window_%s%s_*.mat', dataSource, filenameSuffix);
                 end
             else
-                if strcmp(sessionType, 'reach')
-                    pattern = sprintf('complexity_sliding_window_win*_%s.mat', sessionName);
+                % For spikes, dataSource is not in filename
+                if ~isempty(sessionName)
+                    pattern = sprintf('lzc_sliding_window%s_%s.mat', filenameSuffix, sessionName);
                 else
-                    pattern = sprintf('complexity_sliding_window_win*.mat');
+                    pattern = sprintf('lzc_sliding_window%s_*.mat', filenameSuffix);
                 end
             end
             
         case 'rqa'
-            if ~isempty(dataSource)
-                if strcmp(sessionType, 'reach')
-                    pattern = sprintf('rqa_sliding_window_%s_win*_%s.mat', dataSource, sessionName);
+            % Format: rqa_sliding_window{filenameSuffix}_{sessionName}.mat (for spikes)
+            %         rqa_sliding_window_{dataSource}{filenameSuffix}_{sessionName}.mat (for lfp)
+            % Note: filenameSuffix includes PCA dimensions (e.g., '_pca4')
+            if strcmp(dataSource, 'lfp')
+                if ~isempty(sessionName)
+                    pattern = sprintf('rqa_sliding_window_%s%s_%s.mat', dataSource, filenameSuffix, sessionName);
                 else
-                    pattern = sprintf('rqa_sliding_window_%s_win*.mat', dataSource);
+                    pattern = sprintf('rqa_sliding_window_%s%s_*.mat', dataSource, filenameSuffix);
                 end
             else
-                if strcmp(sessionType, 'reach')
-                    pattern = sprintf('rqa_sliding_window_win*_%s.mat', sessionName);
+                % For spikes, dataSource is not in filename
+                if ~isempty(sessionName)
+                    pattern = sprintf('rqa_sliding_window%s_%s.mat', filenameSuffix, sessionName);
                 else
-                    pattern = sprintf('rqa_sliding_window_win*.mat');
+                    pattern = sprintf('rqa_sliding_window%s_*.mat', filenameSuffix);
                 end
             end
             
@@ -441,15 +522,24 @@ function resultsPath = find_results_file(analysisType, sessionType, sessionName,
         return;
     end
     
+    % For sessionName with path separators, replace them with underscores in pattern
+    % (since filenames can't contain path separators)
+    if contains(sessionName, filesep)
+        sessionNameForPattern = strrep(sessionName, filesep, '_');
+        % Update pattern to use sessionNameForPattern
+        pattern = strrep(pattern, sessionName, sessionNameForPattern);
+    end
+    
     files = dir(fullfile(saveDir, pattern));
     
-    % For spontaneous sessions, also check subdirectories if sessionName has path separators
-    if strcmp(sessionType, 'spontaneous') && contains(sessionName, filesep)
-        pathParts = strsplit(sessionName, filesep);
-        if length(pathParts) > 1
-            subDir = fullfile(saveDir, pathParts{1});
-            if exist(subDir, 'dir')
-                subFiles = dir(fullfile(subDir, pattern));
+    % Also search in subdirectories if they exist (for backward compatibility)
+    if exist(saveDir, 'dir')
+        subDirs = dir(saveDir);
+        subDirs = subDirs([subDirs.isdir] & ~strncmp({subDirs.name}, '.', 1));
+        for d = 1:length(subDirs)
+            subDirPath = fullfile(saveDir, subDirs(d).name);
+            subFiles = dir(fullfile(subDirPath, pattern));
+            if ~isempty(subFiles)
                 files = [files; subFiles];
             end
         end

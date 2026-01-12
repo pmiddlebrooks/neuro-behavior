@@ -5,13 +5,13 @@
 % This script can process sessions from:
 %   - reach_session_list() for reach task sessions
 %   - schall_session_list() for Schall choice countermanding sessions
-%   - open_field_session_list() for open field sessions 
+%   - spontaneous_session_list() for open field sessions 
 %
 % To add more analyses, add them to the analysesToRun cell array below
 
 % ===== CONFIGURATION =====
-% Select which session type to process: 'reach', 'schall', or 'open_field'
-batchSessionType = 'reach';  % Change this to process different session types
+% Select which session type to process: 'reach', 'schall', or 'spontaneous'
+batchSessionType = 'spontaneous';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
@@ -19,8 +19,8 @@ paths = get_paths;
 % Add new analyses here as needed
 analysesToRun = struct();
 analysesToRun.lzc = false;  % Run lzc analysis
-analysesToRun.rqa = true;         % Run RQA analysis
-analysesToRun.criticality_ar = false;  % Run criticality AR (d2/mrBr) analysis
+analysesToRun.rqa = false;         % Run RQA analysis
+analysesToRun.criticality_ar = true;  % Run criticality AR (d2/mrBr) analysis
 analysesToRun.criticality_av = false;  % Run criticality AV (avalanche) analysis
 analysesToRun.criticality_lfp = false; % Run criticality LFP analysis
 % =========================
@@ -31,7 +31,7 @@ srcPath = basePath;
 
 reachPath = fullfile(srcPath, 'reach_task');
 schallPath = fullfile(srcPath, 'schall');
-openFieldPath = fullfile(srcPath, 'open_field');
+openFieldPath = fullfile(srcPath, 'spontaneous');
 
 if exist(reachPath, 'dir')
     addpath(reachPath);
@@ -71,11 +71,11 @@ switch lower(batchSessionType)
         loadPath = fullfile(searchDir, 'goodSessionsCCM.mat');
         load(loadPath);
         sessions = goodSessionsCCM;
-    case 'open_field'
-        sessions = open_field_session_list();
+    case 'spontaneous'
+        sessions = spontaneous_session_list();
         sessionType = 'spontaneous';
     otherwise
-        error('Invalid batchSessionType: %s. Must be ''reach'', ''schall'', or ''open_field''.', batchSessionType);
+        error('Invalid batchSessionType: %s. Must be ''reach'', ''schall'', or ''spontaneous''.', batchSessionType);
 end
 
 numSessions = length(sessions);
@@ -117,7 +117,7 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
-for s = 6 :numSessions
+for s = 1:numSessions
     sessionName = sessions{s};
     
     fprintf('\n');

@@ -39,19 +39,68 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
     dataStruct.opts = opts;
     
     if strcmp(dataSource, 'spikes')
-        % Load reach spike data
-        [dataMat, idLabels, areaLabels] = reach_neural_matrix(dataR, opts);
-        dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
-        idM23 = find(strcmp(areaLabels, 'M23'));
-        idM56 = find(strcmp(areaLabels, 'M56'));
-        idDS = find(strcmp(areaLabels, 'DS'));
-        idVS = find(strcmp(areaLabels, 'VS'));
-        dataStruct.idMatIdx = {idM23, idM56, idDS, idVS};
-        dataStruct.idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
-        dataStruct.dataMat = dataMat;
-        dataStruct.spikeData = [];  % Can be loaded later if needed
+        % Check if we should use spike times approach (new) or dataMat (old)
+        % Default to spike times if not specified
+        if ~isfield(opts, 'useSpikeTimes') || isempty(opts.useSpikeTimes)
+            opts.useSpikeTimes = true;  % Default to new approach
+        end
         
-        fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
+        if opts.useSpikeTimes
+            % Load spike times using new approach
+            spikeData = load_spike_times('reach', paths, sessionName, opts);
+            
+            % Extract area information
+            dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
+            idM23 = [];
+            idM56 = [];
+            idDS = [];
+            idVS = [];
+            
+            % Find neuron indices for each area
+            for i = 1:length(spikeData.neuronIDs)
+                areaName = spikeData.neuronAreas{i};
+                neuronID = spikeData.neuronIDs(i);
+                
+                switch areaName
+                    case 'M23'
+                        idM23 = [idM23, i];
+                    case 'M56'
+                        idM56 = [idM56, i];
+                    case 'DS'
+                        idDS = [idDS, i];
+                    case 'VS'
+                        idVS = [idVS, i];
+                end
+            end
+            
+            dataStruct.idMatIdx = {idM23, idM56, idDS, idVS};
+            dataStruct.idLabel = {spikeData.neuronIDs(idM23), spikeData.neuronIDs(idM56), ...
+                                 spikeData.neuronIDs(idDS), spikeData.neuronIDs(idVS)};
+            
+            % Store spike times for on-demand binning
+            dataStruct.spikeTimes = spikeData.spikeTimes;
+            dataStruct.spikeClusters = spikeData.spikeClusters;
+            dataStruct.spikeData = spikeData;  % Store full structure for reference
+            dataStruct.dataMat = [];  % Not used in new approach
+            
+            fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
+        else
+            % Load using old approach (dataMat)
+            [dataMat, idLabels, areaLabels] = reach_neural_matrix(dataR, opts);
+            dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
+            idM23 = find(strcmp(areaLabels, 'M23'));
+            idM56 = find(strcmp(areaLabels, 'M56'));
+            idDS = find(strcmp(areaLabels, 'DS'));
+            idVS = find(strcmp(areaLabels, 'VS'));
+            dataStruct.idMatIdx = {idM23, idM56, idDS, idVS};
+            dataStruct.idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
+            dataStruct.dataMat = dataMat;
+            dataStruct.spikeData = [];  % Can be loaded later if needed
+            dataStruct.spikeTimes = [];
+            dataStruct.spikeClusters = [];
+            
+            fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
+        end
         
     elseif strcmp(dataSource, 'lfp')
         % Load reach LFP data

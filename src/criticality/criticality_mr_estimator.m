@@ -539,7 +539,7 @@ end
 
 [d21 d21R d22 d22R]
 
-%% =================        NATURALISTIC DATA              ================
+%% =================        SPONTANEOUS DATA              ================
 isiMult = 10; % Multiple of mean ISI to determine minimum bin size
 pOrder = 10; % Order parameter for the autoregressor model
 critType = 2;

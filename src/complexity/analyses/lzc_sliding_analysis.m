@@ -229,6 +229,11 @@ function results = lzc_sliding_analysis(dataStruct, config)
         config.useOptimalWindowSize = false;  % Default to false (use user-specified window size)
     end
     
+    % Set default saveData if not provided
+    if ~isfield(config, 'saveData')
+        config.saveData = true;  % Default to true (save results)
+    end
+    
     % Set default minSlidingWindowSize and maxSlidingWindowSize if useOptimalWindowSize is true
     if config.useOptimalWindowSize
         if ~isfield(config, 'minSlidingWindowSize') || isempty(config.minSlidingWindowSize)
@@ -324,41 +329,64 @@ function results = lzc_sliding_analysis(dataStruct, config)
         end
     end
     
-    % Analysis loop
-    fprintf('\n=== Processing Areas ===\n');
-        
-    % parfor a = areasToTest
+    % Filter areas to process: exclude areas with too few neurons or invalid bin sizes
+    fprintf('\n=== Filtering Areas to Process ===\n');
+    areasToProcess = [];
+    areasToSkip = [];
+    
     for a = areasToTest
-        fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
+        shouldSkip = false;
+        skipReason = '';
         
-        % Check minimum number of neurons for spike data
         if strcmp(dataSource, 'spikes')
             aID = dataStruct.idMatIdx{a};
             nNeurons = length(aID);
+            
+            % Check minimum number of neurons
             if nNeurons < config.nMinNeurons
-                fprintf('  Skipping area %s: Only %d neurons (minimum required: %d)\n', ...
-                    areas{a}, nNeurons, config.nMinNeurons);
-                % Initialize with NaN values
-                lzComplexity{a} = [];
-                lzComplexityNormalized{a} = [];
-                lzComplexityNormalizedBernoulli{a} = [];
-                startS{a} = [];
-                behaviorProportion{a} = [];
-                continue;
+                shouldSkip = true;
+                skipReason = sprintf('Only %d neurons (minimum required: %d)', nNeurons, config.nMinNeurons);
+            end
+            
+            % Check if bin size is valid
+            if ~shouldSkip && isnan(config.binSize(a))
+                shouldSkip = true;
+                skipReason = 'Invalid bin size (area skipped earlier)';
             end
         end
+        
+        if shouldSkip
+            areasToSkip = [areasToSkip, a];
+            fprintf('  Will skip area %s: %s\n', areas{a}, skipReason);
+            % Initialize with empty values
+            lzComplexity{a} = [];
+            lzComplexityNormalized{a} = [];
+            lzComplexityNormalizedBernoulli{a} = [];
+            startS{a} = [];
+            behaviorProportion{a} = [];
+        else
+            areasToProcess = [areasToProcess, a];
+        end
+    end
+    
+    if isempty(areasToProcess)
+        error('No valid areas to process. All areas were skipped due to insufficient neurons or invalid bin sizes.');
+    end
+    
+    fprintf('  Will process %d area(s): %s\n', length(areasToProcess), strjoin(areas(areasToProcess), ', '));
+    
+    % Analysis loop
+    fprintf('\n=== Processing Areas ===\n');
+        
+    % parfor a = areasToProcess
+    for a = areasToProcess
+        fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
         
         tic;
         
         if strcmp(dataSource, 'spikes')
             % ========== Spike Data Analysis ==========
             aID = dataStruct.idMatIdx{a};
-            
-            % Check if bin size is valid for this area
-            if isnan(config.binSize(a))
-                fprintf('  Skipping area %s: Invalid bin size (area skipped earlier)\n', areas{a});
-                continue;
-            end
             
             % Bin data using bin size for this area
             aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), config.binSize(a));
@@ -599,7 +627,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
         results.params.fsLfp = dataStruct.opts.fsLfp;
     end
     
-    % Save results
+    % Setup results path (always create for potential plotting use)
     % Get saveDir from dataStruct (set by data loading functions)
     if ~isfield(dataStruct, 'saveDir') || isempty(dataStruct.saveDir)
         error('dataStruct.saveDir must be set by data loading function');
@@ -627,22 +655,27 @@ function results = lzc_sliding_analysis(dataStruct, config)
     resultsPath = create_results_path('lzc', sessionType, ...
         sessionNameForPath, actualSaveDir, 'dataSource', dataSource);
     
-    % Ensure directory exists before saving (including all parent directories)
-    resultsDir = fileparts(resultsPath);
-    if ~isempty(resultsDir)
-        % mkdir creates all parent directories automatically
-        [status, msg] = mkdir(resultsDir);
-        if ~status
-            error('Failed to create results directory %s: %s', resultsDir, msg);
+    % Save results if requested
+    if config.saveData
+        % Ensure directory exists before saving (including all parent directories)
+        resultsDir = fileparts(resultsPath);
+        if ~isempty(resultsDir)
+            % mkdir creates all parent directories automatically
+            [status, msg] = mkdir(resultsDir);
+            if ~status
+                error('Failed to create results directory %s: %s', resultsDir, msg);
+            end
+            % Double-check it was created
+            if ~exist(resultsDir, 'dir')
+                error('Results directory %s still does not exist after mkdir', resultsDir);
+            end
         end
-        % Double-check it was created
-        if ~exist(resultsDir, 'dir')
-            error('Results directory %s still does not exist after mkdir', resultsDir);
-        end
+        
+        save(resultsPath, 'results');
+        fprintf('\nSaved results to: %s\n', resultsPath);
+    else
+        fprintf('\nSkipping save (config.saveData = false)\n');
     end
-    
-    save(resultsPath, 'results');
-    fprintf('\nSaved results to: %s\n', resultsPath);
     
     % Store resultsPath in results for plotting function
     results.resultsPath = resultsPath;

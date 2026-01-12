@@ -80,7 +80,7 @@ fprintf('Using reachIntertrialWindow = [%.2f, %.2f] s for peri-aligned time\n', 
 fprintf('  Reach starts: %d\n', totalReaches);
 fprintf('  Intertrial midpoints: %d\n', length(intertrialMidpoints));
 
-%% ==================== NATURALISTIC DATA ====================
+%% ==================== SPONTANEOUS DATA ====================
 fprintf('\n=== Loading Spontaneous Data ===\n');
 
 % Spontaneous data parameters

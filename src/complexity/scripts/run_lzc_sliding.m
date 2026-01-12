@@ -12,6 +12,10 @@ runParallel = 0;
 
 % Set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
+% When loadAndPlot = 1, you can optionally specify a time range to plot:
+%   config.plotTimeRange = [startTime, endTime];  % in seconds
+%   Example: config.plotTimeRange = [100, 500];  % Plot from 100s to 500s
+%   If not specified or empty, all data will be plotted
 
 
 % Set to 1 if you want to explore what binSize to use
@@ -42,8 +46,11 @@ opts = neuro_behavior_options;
 opts.frameSize = .001;
 opts.firingRateCheckTime = 3 * 60;
 opts.collectStart = 0*60; %10*60;
-opts.collectEnd = opts.collectStart + 30*60;
-opts.minFiringRate = .25;
+opts.collectEnd = opts.collectStart + 45*60;
+if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
+opts.collectEnd = [];
+end
+opts.minFiringRate = .15;
 opts.maxFiringRate = 200;
 
 % Load and plot existing results if requested
@@ -100,6 +107,48 @@ if loadAndPlot
 
         % Add saveDir from dataStruct (needed for plotting)
     config.saveDir = dataStruct.saveDir;
+    
+    % Allow user to specify time range for plotting
+    % Example: config.plotTimeRange = [100, 500];  % Plot from 100s to 500s
+    if ~isfield(config, 'plotTimeRange') || isempty(config.plotTimeRange)
+        config.plotTimeRange = [];  % Empty means plot all data
+    end
+    
+    % Filter results by time range if specified
+    if ~isempty(config.plotTimeRange) && length(config.plotTimeRange) == 2
+        timeStart = config.plotTimeRange(1);
+        timeEnd = config.plotTimeRange(2);
+        fprintf('Filtering results to time range [%.1f, %.1f] s\n', timeStart, timeEnd);
+        
+        % Filter each area's data
+        numAreas = length(results.areas);
+        for a = 1:numAreas
+            if ~isempty(results.startS{a})
+                % Find indices within time range
+                timeMask = results.startS{a} >= timeStart & results.startS{a} <= timeEnd;
+                
+                % Filter all time-series data for this area
+                results.startS{a} = results.startS{a}(timeMask);
+                
+                if ~isempty(results.lzComplexity{a})
+                    results.lzComplexity{a} = results.lzComplexity{a}(timeMask);
+                end
+                
+                if ~isempty(results.lzComplexityNormalized{a})
+                    results.lzComplexityNormalized{a} = results.lzComplexityNormalized{a}(timeMask);
+                end
+                
+                if ~isempty(results.lzComplexityNormalizedBernoulli{a})
+                    results.lzComplexityNormalizedBernoulli{a} = results.lzComplexityNormalizedBernoulli{a}(timeMask);
+                end
+                
+                if isfield(results, 'behaviorProportion') && ~isempty(results.behaviorProportion{a})
+                    results.behaviorProportion{a} = results.behaviorProportion{a}(timeMask);
+                end
+            end
+        end
+        fprintf('Filtered results: %d areas processed\n', numAreas);
+    end
 
     % Setup plotting
     plotArgs = {};
@@ -153,6 +202,7 @@ config.maxSlidingWindowSize = 60;
 config.stepSize = 15;
 config.nShuffles = 3;
 config.makePlots = true;
+config.saveData = true;  % Set to false to skip saving results
 config.nMinNeurons = 15;
 config.minSpikesPerBin = 0.08;  % Minimum spikes per bin for optimal bin size calculation (we want about minSpikesPerPin proportion of bins with a spike)
 config.minDataPoints = 2*10^5;

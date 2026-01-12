@@ -40,6 +40,12 @@ if exist(criticalityPath, 'dir')
     addpath(criticalityPath);
 end
 
+% Add data_prep path for spike times functions
+dataPrepPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep');
+if exist(dataPrepPath, 'dir')
+    addpath(dataPrepPath);
+end
+
 % Validate inputs
 validate_workspace_vars({'sessionType', 'dataSource', 'areas'}, dataStruct, ...
     'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
@@ -101,8 +107,15 @@ fprintf('PCA dimensions: %d\n', config.nPCADim);
 
 % Validate data source specific requirements
 if strcmp(dataSource, 'spikes')
-    validate_workspace_vars({'dataMat', 'idMatIdx'}, dataStruct, ...
+    validate_workspace_vars({'spikeTimes', 'spikeClusters', 'idMatIdx'}, dataStruct, ...
         'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
+    
+    % Calculate time range from spike data
+    if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectStart')
+        timeRange = [dataStruct.spikeData.collectStart, dataStruct.spikeData.collectEnd];
+    else
+        timeRange = [0, max(dataStruct.spikeTimes)];
+    end
 
     % Set default useOptimalBinSize if not provided
     if ~isfield(config, 'useOptimalBinSize')
@@ -136,10 +149,10 @@ if strcmp(dataSource, 'spikes')
             end
 
             % Calculate overall spike rate (spikes per second) across all neurons
-            areaData = dataStruct.dataMat(:, aID);
-            totalSpikes = sum(areaData(:));
-            totalTime = size(areaData, 1) / 1000;  % Convert ms to seconds
-            spikeRate = totalSpikes / totalTime;  % Spikes per second
+            % Get neuron IDs for this area
+            neuronIDs = dataStruct.idLabel{a};
+            spikeRate = calculate_firing_rate_from_spikes(dataStruct.spikeTimes, ...
+                dataStruct.spikeClusters, neuronIDs, timeRange);
 
             % Calculate optimal bin size using find_optimal_bin_and_window
             % We only need bin size, so we'll use a dummy minBinsPerWindow
@@ -204,8 +217,8 @@ end
 % Calculate common centerTime values based on slidingWindowSize and stepSize
 % This ensures all areas have aligned windows regardless of their bin sizes
 if strcmp(dataSource, 'spikes')
-    % Total time from original data (in seconds, assuming 1000 Hz)
-    totalTime = size(dataStruct.dataMat, 1) / 1000;
+    % Total time from spike data
+    totalTime = timeRange(2) - timeRange(1);
 end
 
 % Generate common centerTime values
@@ -258,6 +271,9 @@ end
 if ~isfield(config, 'usePerWindowPCA')
     config.usePerWindowPCA = false;  % Default: perform PCA on entire session (original behavior)
 end
+if ~isfield(config, 'saveData')
+    config.saveData = true;  % Default to true (save results)
+end
 
 % Validate distance metric
 if ~ismember(lower(config.distanceMetric), {'euclidean', 'cosine'})
@@ -303,39 +319,68 @@ else
     end
 end
 
+% Filter areas to process: exclude areas with too few neurons or invalid bin sizes
+fprintf('\n=== Filtering Areas to Process ===\n');
+areasToProcess = [];
+areasToSkip = [];
+
+for a = areasToTest
+    shouldSkip = false;
+    skipReason = '';
+    
+    if strcmp(dataSource, 'spikes')
+        aID = dataStruct.idMatIdx{a};
+        nNeurons = length(aID);
+        
+        % Check minimum number of neurons
+        if nNeurons < config.nMinNeurons
+            shouldSkip = true;
+            skipReason = sprintf('Only %d neurons (minimum required: %d)', nNeurons, config.nMinNeurons);
+        end
+        
+        % Check if bin size is valid
+        if ~shouldSkip && isnan(config.binSize(a))
+            shouldSkip = true;
+            skipReason = 'Invalid bin size (area skipped earlier)';
+        end
+    end
+    
+    if shouldSkip
+        areasToSkip = [areasToSkip, a];
+        fprintf('  Will skip area %s: %s\n', areas{a}, skipReason);
+        % Initialize with empty arrays
+        recurrenceRate{a} = [];
+        determinism{a} = [];
+        laminarity{a} = [];
+        trappingTime{a} = [];
+        recurrenceRateNormalized{a} = [];
+        determinismNormalized{a} = [];
+        laminarityNormalized{a} = [];
+        trappingTimeNormalized{a} = [];
+        recurrenceRateNormalizedBernoulli{a} = [];
+        determinismNormalizedBernoulli{a} = [];
+        laminarityNormalizedBernoulli{a} = [];
+        trappingTimeNormalizedBernoulli{a} = [];
+        recurrencePlots{a} = {};
+        startS{a} = [];
+    else
+        areasToProcess = [areasToProcess, a];
+    end
+end
+
+if isempty(areasToProcess)
+    error('No valid areas to process. All areas were skipped due to insufficient neurons or invalid bin sizes.');
+end
+
+fprintf('  Will process %d area(s): %s\n', length(areasToProcess), strjoin(areas(areasToProcess), ', '));
+
 % Analysis loop
 fprintf('\n=== Processing Areas ===\n');
 
 
-parfor a = areasToTest
-% for a = areasToTest
+parfor a = areasToProcess
+% for a = areasToProcess
     fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
-
-    % Check minimum number of neurons for spike data
-    if strcmp(dataSource, 'spikes')
-        aID = dataStruct.idMatIdx{a};
-        nNeurons = length(aID);
-        if nNeurons < config.nMinNeurons
-            fprintf('  Skipping area %s: Only %d neurons (minimum required: %d)\n', ...
-                areas{a}, nNeurons, config.nMinNeurons);
-            % Initialize with empty arrays
-            recurrenceRate{a} = [];
-            determinism{a} = [];
-            laminarity{a} = [];
-            trappingTime{a} = [];
-            recurrenceRateNormalized{a} = [];
-            determinismNormalized{a} = [];
-            laminarityNormalized{a} = [];
-            trappingTimeNormalized{a} = [];
-            recurrenceRateNormalizedBernoulli{a} = [];
-            determinismNormalizedBernoulli{a} = [];
-            laminarityNormalizedBernoulli{a} = [];
-            trappingTimeNormalizedBernoulli{a} = [];
-            recurrencePlots{a} = {};
-            startS{a} = [];
-            continue;
-        end
-    end
 
     tic;
 
@@ -344,19 +389,17 @@ parfor a = areasToTest
         aID = dataStruct.idMatIdx{a};
         nNeurons = length(aID);
 
-        % Check if bin size is valid for this area
-        if isnan(config.binSize(a))
-            fprintf('  Skipping area %s: Invalid bin size (area skipped earlier)\n', areas{a});
-            continue;
-        end
-
         % Determine number of PCA dimensions to use
         actualPCADim = min(config.nPCADim, nNeurons);
         fprintf('  Using %d PCA dimensions (requested: %d, neurons: %d)\n', ...
             actualPCADim, config.nPCADim, nNeurons);
 
-        % Bin data using area-specific bin size
-        aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), config.binSize(a));
+        % Get neuron IDs for this area
+        neuronIDs = dataStruct.idLabel{a};
+        
+        % Bin data using area-specific bin size from spike times
+        aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+            neuronIDs, timeRange, config.binSize(a));
         numTimePoints = size(aDataMat, 1);
 
         % Use area-specific window size
@@ -674,7 +717,7 @@ results.params.minSpikesPerBin = config.minSpikesPerBin;
 results.params.usePerWindowPCA = config.usePerWindowPCA;
 results.sessionType = sessionType;
 
-% Save results
+% Setup results path (always create for potential plotting use)
 % Get saveDir from dataStruct (set by data loading functions)
 if ~isfield(dataStruct, 'saveDir') || isempty(dataStruct.saveDir)
     error('dataStruct.saveDir must be set by data loading function');
@@ -699,7 +742,6 @@ if ~strcmp(sessionType, 'spontaneous') && ~isempty(sessionNameForPath) && contai
     end
 end
 
-
 % Add filename suffix with PCA dimension and drift flag
 % Always include PCA dimensions in RQA filenames
 filenameSuffix = sprintf('_pca%d', config.nPCADim);
@@ -710,33 +752,39 @@ resultsPath = create_results_path('rqa', sessionType, ...
     sessionNameForPath, actualSaveDir, 'dataSource', dataSource, ...
     'filenameSuffix', filenameSuffix);
 
-% Ensure directory exists before saving (including all parent directories)
-resultsDir = fileparts(resultsPath);
-if ~isempty(resultsDir)
-    % mkdir creates all parent directories automatically
-    [status, msg] = mkdir(resultsDir);
-    if ~status
-        error('Failed to create results directory %s: %s', resultsDir, msg);
+% Save results if requested
+if config.saveData
+    % Ensure directory exists before saving (including all parent directories)
+    resultsDir = fileparts(resultsPath);
+    if ~isempty(resultsDir)
+        % mkdir creates all parent directories automatically
+        [status, msg] = mkdir(resultsDir);
+        if ~status
+            error('Failed to create results directory %s: %s', resultsDir, msg);
+        end
+        % Double-check it was created
+        if ~exist(resultsDir, 'dir')
+            error('Results directory %s still does not exist after mkdir', resultsDir);
+        end
     end
-    % Double-check it was created
-    if ~exist(resultsDir, 'dir')
-        error('Results directory %s still does not exist after mkdir', resultsDir);
+    
+    % Remove recurrence plots from saved results (too large)
+    % Keep them in memory for plotting only if saveRecurrencePlots is true
+    resultsToSave = results;
+    if isfield(resultsToSave, 'recurrencePlots')
+        resultsToSave = rmfield(resultsToSave, 'recurrencePlots');
     end
-end
-
-% Remove recurrence plots from saved results (too large)
-% Keep them in memory for plotting only if saveRecurrencePlots is true
-resultsToSave = results;
-if isfield(resultsToSave, 'recurrencePlots')
-    resultsToSave = rmfield(resultsToSave, 'recurrencePlots');
-end
-results = resultsToSave;
-save(resultsPath, 'results');
-clear resultsToSave;
-
-fprintf('\nSaved results to: %s\n', resultsPath);
-if config.saveRecurrencePlots
-    fprintf('Note: Recurrence plots computed but excluded from saved file (too large)\n');
+    save(resultsPath, 'resultsToSave');
+    % Remove recurrence plots from memory too (to save space)
+    results = resultsToSave;
+    clear resultsToSave;
+    
+    fprintf('\nSaved results to: %s\n', resultsPath);
+    if config.saveRecurrencePlots
+        fprintf('Note: Recurrence plots computed but excluded from saved file (too large)\n');
+    end
+else
+    fprintf('\nSkipping save (config.saveData = false)\n');
 end
 
 % Store resultsPath in results for plotting function
