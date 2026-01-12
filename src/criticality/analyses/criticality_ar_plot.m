@@ -102,7 +102,9 @@ if isempty(firstNonEmptyArea)
 end
 
 % Add event markers first (so they appear behind the data)
+if ~strcmp(dataStruct.sessionType, 'schall')
 add_event_markers(dataStruct, startS, 'firstNonEmptyArea', firstNonEmptyArea);
+end
 
 if analyzeD2
     % Find common time range across all areas

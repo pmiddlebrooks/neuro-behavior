@@ -36,6 +36,7 @@ opts = neuro_behavior_options;
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 0;
 opts.collectEnd = opts.collectStart + 2*60*60;
+opts.collectEnd = [];
 if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
 opts.collectEnd = [];
 end

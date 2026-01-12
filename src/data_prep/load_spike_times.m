@@ -183,41 +183,86 @@ end
 function spikeData = load_spike_times_schall(paths, sessionName, opts)
 % LOAD_SPIKE_TIMES_SCHALL - Load spike times for Schall data
     
-    % Load Schall data
-    schallDataFile = fullfile(paths.schallDataPath, [sessionName, '.mat']);
-    dataS = load(schallDataFile);
+    % Determine subdirectory based on session name prefix
+    % Extract just the filename part (in case sessionName includes subdirectory)
+    [~, sessionBaseName, ~] = fileparts(sessionName);
     
-    % Set collectEnd if not set
-    if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
-        opts.collectEnd = max(dataS.CSV(:,1)) / 1000;  % Convert from ms to seconds
+    % Determine subdirectory based on prefix (case-insensitive)
+    if length(sessionBaseName) >= 2 && strncmpi(sessionBaseName, 'bp', 2)
+        subDir = 'broca';
+    elseif length(sessionBaseName) >= 2 && strncmpi(sessionBaseName, 'jp', 2)
+        subDir = 'joule';
+    else
+        % Default: try to extract from sessionName if it includes a path
+        [parentDir, ~, ~] = fileparts(sessionName);
+        if ~isempty(parentDir)
+            subDir = parentDir;
+        else
+            % Fallback: use sessionName as-is
+            subDir = '';
+        end
     end
     
-    % Extract spike data
-    spikeTimes = dataS.CSV(:,1) / 1000;  % Convert from ms to seconds
-    spikeClusters = dataS.CSV(:,2);
+    % Build file path
+    if ~isempty(subDir)
+        schallDataFile = fullfile(paths.schallDataPath, subDir, [sessionBaseName, '.mat']);
+    else
+        schallDataFile = fullfile(paths.schallDataPath, [sessionBaseName, '.mat']);
+    end
     
-    % Get neuron information
-    useNeurons = find(dataS.idchan(:,end) ~= 0);
-    neuronIDs = dataS.idchan(useNeurons, 1);
-    neuronAreas = repmat({'FEF'}, length(neuronIDs), 1);  % Schall data is FEF
+    % Load Schall data
+    dataS = load(schallDataFile);
     
-    % Filter spikes
-    validSpikes = ismember(spikeClusters, neuronIDs) & ...
-                  spikeTimes >= opts.collectStart & ...
-                  spikeTimes <= opts.collectEnd;
-    spikeTimes = spikeTimes(validSpikes);
-    spikeClusters = spikeClusters(validSpikes);
+    % Set collectStart if not set
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        opts.collectStart = 0;
+    end
+    
+    
+    % Extract spike data using same approach as neural_matrix_schall_fef.m
+    % Get spike unit array from SessionData
+    if ~isfield(dataS, 'SessionData') || ~isfield(dataS.SessionData, 'spikeUnitArray')
+        error('SessionData.spikeUnitArray not found in Schall data file');
+    end
+    
+    spikeUnitArray = dataS.SessionData.spikeUnitArray;
+    nUnits = length(spikeUnitArray);
+    
+    % Collect all spike times and cluster IDs
+    allSpikeTimes = [];
+    allSpikeClusters = [];
+    
+    % Loop through each unit and extract spike times (matching neural_matrix_schall_fef.m)
+    for i = 1:nUnits
+        % Get spike times for this unit
+        iSpikeTimeCell = dataS.(spikeUnitArray{i});
+        
+        % Convert spike times to session time (matching neural_matrix_schall_fef.m line 101)
+        iSpikeTime = convert_to_session_time(iSpikeTimeCell, dataS.trialOnset) / 1000;  % Convert to seconds
+        
+        % Filter to collection window
+        validSpikes = iSpikeTime >= opts.collectStart & iSpikeTime <= opts.collectEnd;
+        iSpikeTime = iSpikeTime(validSpikes);
+        
+        % Append to arrays
+        allSpikeTimes = [allSpikeTimes; iSpikeTime(:)];
+        allSpikeClusters = [allSpikeClusters; repmat(i, length(iSpikeTime), 1)];
+    end
+    
+    % Create neuron IDs (matching neural_matrix_schall_fef.m line 63)
+    neuronIDs = 1:nUnits;
+    neuronAreas = repmat({'FEF'}, nUnits, 1);  % All Schall data is FEF
     
     % Apply firing rate filtering if requested
     if opts.removeSome
-        [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
-            filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
+        [allSpikeTimes, allSpikeClusters, neuronIDs, neuronAreas] = ...
+            filter_by_firing_rate(allSpikeTimes, allSpikeClusters, neuronIDs, neuronAreas, opts);
     end
     
     % Build output structure
     spikeData = struct();
-    spikeData.spikeTimes = spikeTimes;
-    spikeData.spikeClusters = spikeClusters;
+    spikeData.spikeTimes = allSpikeTimes;
+    spikeData.spikeClusters = allSpikeClusters;
     spikeData.neuronIDs = neuronIDs;
     spikeData.neuronAreas = neuronAreas;
     spikeData.idLabels = neuronIDs;
@@ -229,31 +274,64 @@ end
 
 function spikeData = load_spike_times_hong(paths, sessionName, opts)
 % LOAD_SPIKE_TIMES_HONG - Load spike times for Hong data
+%   Note: sessionName is not used for Hong data (loads from fixed file locations)
     
-    % Load Hong data
-    hongDataFile = fullfile(paths.hongDataPath, [sessionName, '.mat']);
-    dataH = load(hongDataFile);
+    % Load Hong data files (same structure as load_hong_data)
+    load(fullfile(paths.dropPath, 'hong/data', 'spikeData.mat'));
+    load(fullfile(paths.dropPath, 'hong/data', 'T_allUnits2.mat'));
     
-    % Set collectEnd if not set
-    if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
-        opts.collectEnd = max(dataH.CSV(:,1)) / 1000;  % Convert from ms to seconds
+    % Set collectStart if not set
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        opts.collectStart = 0;
     end
     
-    % Extract spike data
-    spikeTimes = dataH.CSV(:,1) / 1000;  % Convert from ms to seconds
-    spikeClusters = dataH.CSV(:,2);
+    % Set collectEnd if not set (same logic as load_hong_data, but as duration)
+    if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
+        load(fullfile(paths.dropPath, 'hong/data', 'behaviorTable.mat'));
+        % Calculate absolute end time, then convert to duration
+        absoluteEndTime = min(T.startTime_oe(end)+max(diff(T.startTime_oe)), max(sp.st));
+        opts.collectEnd = absoluteEndTime - opts.collectStart;
+    end
     
-    % Get neuron information
-    useNeurons = find(dataH.idchan(:,end) ~= 0);
-    neuronIDs = dataH.idchan(useNeurons, 1);
-    neuronAreas = repmat({'S1'}, length(neuronIDs), 1);  % Hong data is S1
+    % Extract spike data from sp structure (matching neural_matrix_hong.m)
+    spikeTimes = sp.st;  % Spike times in seconds
+    spikeClusters = sp.clu;  % Cluster IDs
+    spikeDepths = sp.spikeDepths;  % Spike depths for area determination
     
-    % Filter spikes
-    validSpikes = ismember(spikeClusters, neuronIDs) & ...
-                  spikeTimes >= opts.collectStart & ...
-                  spikeTimes <= opts.collectEnd;
-    spikeTimes = spikeTimes(validSpikes);
-    spikeClusters = spikeClusters(validSpikes);
+    % Determine collection time window (matching neural_matrix_hong.m)
+    firstSecond = opts.collectStart;
+    if isempty(opts.collectEnd)
+        lastSecond = double(max(spikeTimes));
+    else
+        lastSecond = firstSecond + opts.collectEnd;
+    end
+    
+    % Filter spikes to collection window and valid clusters (matching neural_matrix_hong.m)
+    clusterIncludeIdx = ismember(spikeClusters, sp.cids);
+    spikeMask = spikeTimes >= firstSecond & spikeTimes < lastSecond & clusterIncludeIdx;
+    spikeTimes = spikeTimes(spikeMask);
+    spikeClusters = spikeClusters(spikeMask);
+    spikeDepthsFiltered = spikeDepths(spikeMask);
+    
+    % Get unique cluster IDs that have spikes in the collection window
+    uniqueClusters = unique(spikeClusters);
+    nClusters = length(uniqueClusters);
+    
+    % Determine area for each cluster based on mean spike depth (matching neural_matrix_hong.m)
+    % S1: depth >= 2000, SC: depth < 2000
+    neuronIDs = uniqueClusters;
+    neuronAreas = cell(nClusters, 1);
+    for i = 1:nClusters
+        clusterId = uniqueClusters(i);
+        clusterDepthMask = (spikeClusters == clusterId);
+        meanDepth = mean(spikeDepthsFiltered(clusterDepthMask));
+        
+        if meanDepth >= 2000
+            neuronAreas{i} = 'S1';
+        else
+            neuronAreas{i} = 'SC';
+        end
+    end
     
     % Apply firing rate filtering if requested
     if opts.removeSome
@@ -262,16 +340,19 @@ function spikeData = load_spike_times_hong(paths, sessionName, opts)
     end
     
     % Build output structure
+    % Note: collectEnd is stored as absolute time for consistency with other session types
+    absoluteCollectEnd = opts.collectStart + opts.collectEnd;
+    
     spikeData = struct();
     spikeData.spikeTimes = spikeTimes;
     spikeData.spikeClusters = spikeClusters;
     spikeData.neuronIDs = neuronIDs;
     spikeData.neuronAreas = neuronAreas;
     spikeData.idLabels = neuronIDs;
-    spikeData.areaLabelsUnique = {'S1'};
-    spikeData.totalTime = opts.collectEnd - opts.collectStart;
+    spikeData.areaLabelsUnique = unique(neuronAreas);
+    spikeData.totalTime = opts.collectEnd;  % Duration
     spikeData.collectStart = opts.collectStart;
-    spikeData.collectEnd = opts.collectEnd;
+    spikeData.collectEnd = absoluteCollectEnd;  % Absolute time for consistency
 end
 
 function [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
