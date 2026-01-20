@@ -141,7 +141,8 @@ switch dataType
         % Return the requested window of data, formatted  so start time is zero,
         dataWindow = spikeTimes >= opts.collectStart & spikeTimes < (opts.collectEnd);
         spikeTimes = spikeTimes(dataWindow);
-        spikeTimes = spikeTimes - opts.collectStart;
+        warning('You changed load_data.m so spikes are not shifted to zero (they load at their actual time). This might affect many analyses that use get_standard_data.m')
+        % spikeTimes = spikeTimes - opts.collectStart;
         spikeClusters = spikeClusters(dataWindow);
 
         data.ci = ci;

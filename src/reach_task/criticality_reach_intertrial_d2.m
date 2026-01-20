@@ -139,34 +139,51 @@ if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
 
+% Add paths for utility functions
+addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'sliding_window_prep', 'utils'));
+
+% Calculate time range from spike data
+fprintf('\n--- Using spike times for on-demand binning ---\n');
+if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectStart')
+    timeRange = [dataStruct.spikeData.collectStart, dataStruct.spikeData.collectEnd];
+else
+    timeRange = [0, max(dataStruct.spikeTimes)];
+end
+
 % =============================    Find Optimal Bin Sizes Per Area    =============================
 fprintf('\n=== Finding Optimal Bin Sizes Per Area ===\n');
 
-% Add path to criticality functions
-addpath(fullfile(fileparts(mfilename('fullpath')), '..'));
-
-% Apply PCA to original data if requested
-fprintf('\n--- PCA on original data if requested ---\n');
-reconstructedDataMat = cell(1, numAreas);
-for a = areasToTest
-    aID = dataStruct.idMatIdx{a};
-    thisDataMat = dataStruct.dataMat(:, aID);
-    if pcaFlag
+% For PCA with spike times, we'll bin at a temporary bin size first
+% Use a small bin size (1ms) for PCA calculation
+if pcaFlag
+    fprintf('\n--- PCA on original data (binned at 1ms for PCA) ---\n');
+    reconstructedDataMat = cell(1, numAreas);
+    tempBinSize = 0.001;  % 1ms for PCA calculation
+    for a = areasToTest
+        neuronIDs = dataStruct.idLabel{a};
+        % Bin at 1ms for PCA
+        thisDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+            neuronIDs, timeRange, tempBinSize);
         [coeff, score, ~, ~, explained, mu] = pca(thisDataMat);
         forDim = find(cumsum(explained) > 30, 1);
         forDim = max(3, min(6, forDim));
         nDim = 1:forDim;
         reconstructedDataMat{a} = score(:,nDim) * coeff(:,nDim)' + mu;
-    else
-        reconstructedDataMat{a} = thisDataMat;
     end
+else
+    reconstructedDataMat = [];  % Not needed if no PCA
 end
 
-% Find optimal bin size per area
+% Find optimal bin size per area using spike times
 binSize = zeros(1, numAreas);
 for a = areasToTest
-    thisDataMat = reconstructedDataMat{a};
-    thisFiringRate = sum(thisDataMat(:)) / (size(thisDataMat, 1)/1000);
+    neuronIDs = dataStruct.idLabel{a};
+    
+    % Calculate firing rate from spike times
+    thisFiringRate = calculate_firing_rate_from_spikes(...
+        dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+        neuronIDs, timeRange);
+    
     [binSize(a), ~] = find_optimal_bin_and_window(thisFiringRate, minSpikesPerBin, minBinsPerWindow);
     fprintf('Area %s: bin size = %.3f s, firing rate = %.2f spikes/s\n', ...
         areas{a}, binSize(a), thisFiringRate);
@@ -369,11 +386,13 @@ for a = areasToTest
     tic;
     
     aID = dataStruct.idMatIdx{a};
+    neuronIDs = dataStruct.idLabel{a};
     
-    % Bin the data using area-specific optimal bin size
-    aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(a));
+    % Bin spikes on-demand at area-specific bin size for the full time range
+    % We'll bin the full range once, then extract windows as needed
+    aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+        neuronIDs, timeRange, binSize(a));
     numTimePoints = size(aDataMat, 1);
-    timePoints = (0:numTimePoints-1) * binSize(a); % Time axis in seconds
     
     % Apply PCA to binned data if requested
     if pcaFlag

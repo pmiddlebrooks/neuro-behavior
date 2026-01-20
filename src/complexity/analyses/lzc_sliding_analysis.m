@@ -11,11 +11,14 @@ function results = lzc_sliding_analysis(dataStruct, config)
 %     .stepSize - Step size in seconds (optional, calculated if not provided)
 %     .nShuffles - Number of shuffles for normalization (default: 3)
 %     .lfpLowpassFreq - Low-pass filter frequency for LFP (default: 80)
-%     .binSize - Bin size for spikes (required if dataSource == 'spikes')
+%     .binSize - Bin size for spikes (required if useOptimalBinSize == false)
+%     .useOptimalBinSize - Calculate optimal bin size automatically (default: true)
+%     .minSpikesPerBin - Minimum spikes per bin for optimization (default: 2.5)
 %     .makePlots - Whether to create plots (default: true)
 %     .minDataPoints - Minimum data points per window for optimization (default: 100000)
 %     .useBernoulliControl - Whether to compute Bernoulli normalized metric (default: true)
 %     .includeM2356 - Include combined M23+M56 area (default: false)
+%     .nMinNeurons - Minimum number of neurons required per area (default: 10)
 %     Note: saveDir is taken from dataStruct.saveDir (set by data loading functions)
 %
 % Goal:
@@ -30,6 +33,18 @@ function results = lzc_sliding_analysis(dataStruct, config)
     utilsPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils');
     if exist(utilsPath, 'dir')
         addpath(utilsPath);
+    end
+    
+    % Add criticality path for find_optimal_bin_and_window function
+    criticalityPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'criticality');
+    if exist(criticalityPath, 'dir')
+        addpath(criticalityPath);
+    end
+    
+    % Add data_prep path for spike times functions
+    dataPrepPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep');
+    if exist(dataPrepPath, 'dir')
+        addpath(dataPrepPath);
     end
     
     % Validate inputs
@@ -98,13 +113,35 @@ function results = lzc_sliding_analysis(dataStruct, config)
     
     % Validate data source specific requirements
     if strcmp(dataSource, 'spikes')
-        validate_workspace_vars({'dataMat', 'idMatIdx'}, dataStruct, ...
+        validate_workspace_vars({'spikeTimes', 'spikeClusters', 'idMatIdx'}, dataStruct, ...
             'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
+        
+        % Calculate time range from spike data
+        if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectStart')
+            timeRange = [dataStruct.spikeData.collectStart, dataStruct.spikeData.collectEnd];
+        else
+            timeRange = [0, max(dataStruct.spikeTimes)];
+        end
+        
+        % Set default useOptimalBinSize if not provided
+        if ~isfield(config, 'useOptimalBinSize')
+            config.useOptimalBinSize = true;  % Default to true
+        end
+        
+        % Set default minSpikesPerBin if not provided
+        if ~isfield(config, 'minSpikesPerBin')
+            config.minSpikesPerBin = 2.5;  % Default: 2.5 spikes per bin
+        end
+        
+        % Set default nMinNeurons if not provided
+        if ~isfield(config, 'nMinNeurons')
+            config.nMinNeurons = 10;  % Default: minimum 10 neurons required
+        end
         
         % Calculate bin size per area (either optimal or user-specified)
         % Always store as binSize vector (length numAreas)
         if config.useOptimalBinSize
-            fprintf('Calculating optimal bin size per area...\n');
+            fprintf('Calculating optimal bin size per area (minSpikesPerBin=%.1f)...\n', config.minSpikesPerBin);
             config.binSize = zeros(1, numAreas);
             
             for a = areasToTest
@@ -118,15 +155,15 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 end
                 
                 % Calculate overall spike rate (spikes per second) across all neurons
-                areaData = dataStruct.dataMat(:, aID);
-                totalSpikes = sum(areaData(:));
-                totalTime = size(areaData, 2) * size(areaData, 1) / 1000;  % Convert ms to seconds
-                spikeRate = totalSpikes / totalTime;  % Spikes per second
+                % Get neuron IDs for this area
+                neuronIDs = dataStruct.idLabel{a};
+                spikeRate = calculate_firing_rate_from_spikes(dataStruct.spikeTimes, ...
+                    dataStruct.spikeClusters, neuronIDs, timeRange);
                 
-                % Calculate optimal bin size: binSize = minSpikesPerBin / spikeRate
-                % Round to nearest millisecond (0.001 s)
-                optimalBinSize = config.minSpikesPerBin / spikeRate;
-                config.binSize(a) = ceil(optimalBinSize / 0.001) * 0.001;  % Round to nearest ms
+                % Calculate optimal bin size using find_optimal_bin_and_window
+                % We only need bin size, so we'll use a dummy minBinsPerWindow
+                % The actual window size will be calculated separately
+                [config.binSize(a), ~] = find_optimal_bin_and_window(spikeRate, config.minSpikesPerBin, 1);
                 
                 fprintf('  Area %s: spike rate = %.2f spikes/s, optimal bin size = %.3f s (%.1f ms)\n', ...
                     areas{a}, spikeRate, config.binSize(a), config.binSize(a) * 1000);
@@ -184,8 +221,8 @@ function results = lzc_sliding_analysis(dataStruct, config)
     % Calculate common centerTime values based on slidingWindowSize and stepSize
     % This ensures all areas have aligned windows regardless of their bin sizes
     if strcmp(dataSource, 'spikes')
-        % Total time from original data (in seconds, assuming 1000 Hz)
-        totalTime = size(dataStruct.dataMat, 1) / 1000;
+        % Total time from spike data
+        totalTime = timeRange(2) - timeRange(1);
     elseif strcmp(dataSource, 'lfp')
         % For LFP, we'll calculate from the first area's signal length
         % (all areas should have same length)
@@ -378,8 +415,8 @@ function results = lzc_sliding_analysis(dataStruct, config)
     % Analysis loop
     fprintf('\n=== Processing Areas ===\n');
         
-    % parfor a = areasToProcess
-    for a = areasToProcess
+    parfor a = areasToProcess
+    % for a = areasToProcess
         fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
         
         tic;
@@ -388,8 +425,12 @@ function results = lzc_sliding_analysis(dataStruct, config)
             % ========== Spike Data Analysis ==========
             aID = dataStruct.idMatIdx{a};
             
-            % Bin data using bin size for this area
-            aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), config.binSize(a));
+            % Get neuron IDs for this area
+            neuronIDs = dataStruct.idLabel{a};
+            
+            % Bin data using area-specific bin size from spike times
+            aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                neuronIDs, timeRange, config.binSize(a));
             numTimePoints = size(aDataMat, 1);
             
             % Use area-specific window size

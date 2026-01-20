@@ -18,7 +18,7 @@
 %   metric values per session per area, and create bar plots comparing the two groups.
 
 %% Configuration
-analysisType = 'criticality_ar';  % Options: 'criticality_ar', 'complexity', 'rqa', 'criticality_av', 'criticality_lfp'
+analysisType = 'rqa';  % Options: 'criticality_ar', 'complexity', 'rqa', 'criticality_av', 'criticality_lfp'
 metricName = '';  % If empty, uses default for analysis type
 useNormalized = true;  % Use normalized metric if available
 filenameSuffix = '';  % Optional suffix (e.g., '_pca')

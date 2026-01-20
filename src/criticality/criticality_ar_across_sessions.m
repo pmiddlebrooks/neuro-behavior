@@ -1,67 +1,43 @@
 %%
 % Criticality AR Analysis Across Sessions
-% Compares d2 values from a single large window between spontaneous and reach sessions
+% Compares d2 values from pre-analyzed results between spontaneous and reach sessions
 %
 % Variables:
-%   nMin - Window size in minutes (default: 20)
-%   windowStartTime - Start time for the window in seconds (default: 0)
+%   timeRange - Time range in seconds [startTime, endTime] (default: [0, 20*60])
 %   useNormalized - Whether to use normalized d2 values (default: true)
+%   filenameSuffix - Optional suffix for results files (e.g., '_pca', default: '')
+%   areasToPlot - Cell array of area names to plot (default: [] = all common areas)
+%                 Example: {'M1', 'PMd'} or [] for all areas
 %
 % Goal:
-%   Load data for each session, analyze a single large window, and compare
+%   Load pre-analyzed results for each session, filter by time range, and compare
 %   raw and normalized d2 values between spontaneous and reach sessions.
 
 %% Configuration
 paths = get_paths;
 
-nMin = 20;  % Window size in minutes
-windowStartTime = 0;  % Start time for the window in seconds (0 = start of recording)
+timeRange = [0, 20*60];  % Time range in seconds [startTime, endTime]
 useNormalized = true;  % Use normalized d2 if available
+filenameSuffix = '';  % Optional suffix for results files (e.g., '_pca')
+areasToPlot = {};  % Cell array of area names to plot (empty = all common areas)
+                   % Example: {'M1', 'PMd'} or [] for all areas
 
+% Calculate window parameters from timeRange
+windowStartTime = timeRange(1);
+windowEndTime = timeRange(2);
+windowDuration = windowEndTime - windowStartTime;  % Window duration in seconds
+nMin = windowDuration / 60;  % Window size in minutes (for display purposes)
 
 %% Get session lists
 fprintf('\n=== Criticality AR Analysis Across Sessions ===\n');
-fprintf('Window size: %d minutes\n', nMin);
-fprintf('Window start time: %.1f seconds\n', windowStartTime);
+fprintf('Time range: [%.1f, %.1f] seconds (%.1f minutes)\n', ...
+    windowStartTime, windowEndTime, nMin);
 
 spontaneousSessions = spontaneous_session_list();
 reachSessions = reach_session_list();
 
 fprintf('Spontaneous sessions: %d\n', length(spontaneousSessions));
 fprintf('Reach sessions: %d\n', length(reachSessions));
-
-%% Configure analysis options
-opts = neuro_behavior_options;
-opts.firingRateCheckTime = 5 * 60;
-opts.collectStart = windowStartTime;
-opts.collectEnd = windowStartTime + nMin * 60;  % nMin minutes
-opts.minFiringRate = .1;
-opts.maxFiringRate = 100;
-
-% Analysis config - use single large window
-config = struct();
-config.binSize = .03;
-config.slidingWindowSize = nMin * 60;  % Window size in seconds
-config.stepSize = nMin * 60 + 1;  % Larger than window size so only one window
-config.minSpikesPerBin = 2.5;
-config.minBinsPerWindow = 1000;
-config.analyzeD2 = true;
-config.analyzeMrBr = false;
-config.pcaFlag = 1;
-config.pcaFirstFlag = 1;
-config.nDim = 4;
-config.enablePermutations = true;
-config.nShuffles = 20;
-config.analyzeModulation = false;
-config.makePlots = false;  % Don't create individual plots
-config.saveData = false;  % Don't save individual session results
-config.useOptimalBinWindowFunction = false;
-config.pOrder = 10;
-config.critType = 2;
-config.normalizeD2 = true;
-config.maxSpikesPerBin = 50;
-config.nMinNeurons = 15;
-config.includeM2356 = true;
 
 %% Initialize results storage
 spontaneousData = struct();
@@ -77,18 +53,39 @@ reachData.sessionNames = {};
 reachData.areas = [];
 
 %% Process spontaneous sessions
-fprintf('\n=== Processing Spontaneous Sessions ===\n');
+fprintf('\n=== Loading Spontaneous Session Results ===\n');
 for s = 1:length(spontaneousSessions)
     sessionName = spontaneousSessions{s};
-    fprintf('\nProcessing session %d/%d: %s\n', s, length(spontaneousSessions), sessionName);
+    fprintf('\nLoading session %d/%d: %s\n', s, length(spontaneousSessions), sessionName);
     
     try
-        % Load data
-        dataStruct = load_sliding_window_data('spontaneous', 'spikes', ...
-            'sessionName', sessionName, 'opts', opts);
+        % Find results file
+        % Extract subjectID from sessionName (similar to how load_spontaneous_data does it)
+        pathParts = strsplit(sessionName, filesep);
+        if length(pathParts) > 1
+            subjectID = fullfile(pathParts{1}, pathParts{2});
+        else
+            subjectID = sessionName;
+        end
         
-        % Run analysis
-        results = criticality_ar_analysis(dataStruct, config);
+        % Use dropPath/spontaneous/results/{subjectID}/
+        saveDir = fullfile(paths.dropPath, 'spontaneous/results', subjectID);
+        
+        % Find results file
+        resultsPath = find_results_file('criticality_ar', 'spontaneous', sessionName, saveDir, filenameSuffix, '');
+        
+        % Load results
+        if isempty(resultsPath) || ~exist(resultsPath, 'file')
+            warning('Results file not found for session: %s\nSkipping session.', sessionName);
+            continue;
+        end
+        
+        loaded = load(resultsPath);
+        if ~isfield(loaded, 'results')
+            warning('Results structure not found in file: %s\nSkipping session.', resultsPath);
+            continue;
+        end
+        results = loaded.results;
         
         % Extract areas if not yet set
         if isempty(spontaneousData.areas) && isfield(results, 'areas')
@@ -102,35 +99,47 @@ for s = 1:length(spontaneousSessions)
             end
         end
         
-        % Extract d2 values per area (should be single value per area)
-        if isfield(results, 'd2') && isfield(results, 'd2Normalized')
+        % Filter results by time range and extract d2 values per area
+        if isfield(results, 'd2') && isfield(results, 'd2Normalized') && isfield(results, 'startS')
             for a = 1:length(results.areas)
-                if a <= length(results.d2) && ~isempty(results.d2{a})
-                    % Get the first (and only) value from the window
-                    d2Values = results.d2{a}(~isnan(results.d2{a}));
-                    if ~isempty(d2Values)
-                        spontaneousData.d2Raw{a} = [spontaneousData.d2Raw{a}, d2Values(1)];
+                % Find windows within time range
+                if ~isempty(results.startS{a})
+                    timeMask = results.startS{a} >= windowStartTime & results.startS{a} <= windowEndTime;
+                    
+                    % Extract d2 values within time range
+                    if a <= length(results.d2) && ~isempty(results.d2{a})
+                        d2Values = results.d2{a}(timeMask);
+                        d2Values = d2Values(~isnan(d2Values));
+                        if ~isempty(d2Values)
+                            % Use mean of values in time range (or first if single window)
+                            spontaneousData.d2Raw{a} = [spontaneousData.d2Raw{a}, mean(d2Values)];
+                        else
+                            spontaneousData.d2Raw{a} = [spontaneousData.d2Raw{a}, nan];
+                        end
                     else
                         spontaneousData.d2Raw{a} = [spontaneousData.d2Raw{a}, nan];
                     end
-                else
-                    spontaneousData.d2Raw{a} = [spontaneousData.d2Raw{a}, nan];
-                end
-                
-                if a <= length(results.d2Normalized) && ~isempty(results.d2Normalized{a})
-                    % Get the first (and only) value from the window
-                    d2NormValues = results.d2Normalized{a}(~isnan(results.d2Normalized{a}));
-                    if ~isempty(d2NormValues)
-                        spontaneousData.d2Normalized{a} = [spontaneousData.d2Normalized{a}, d2NormValues(1)];
+                    
+                    % Extract normalized d2 values within time range
+                    if a <= length(results.d2Normalized) && ~isempty(results.d2Normalized{a})
+                        d2NormValues = results.d2Normalized{a}(timeMask);
+                        d2NormValues = d2NormValues(~isnan(d2NormValues));
+                        if ~isempty(d2NormValues)
+                            % Use mean of values in time range (or first if single window)
+                            spontaneousData.d2Normalized{a} = [spontaneousData.d2Normalized{a}, mean(d2NormValues)];
+                        else
+                            spontaneousData.d2Normalized{a} = [spontaneousData.d2Normalized{a}, nan];
+                        end
                     else
                         spontaneousData.d2Normalized{a} = [spontaneousData.d2Normalized{a}, nan];
                     end
                 else
+                    spontaneousData.d2Raw{a} = [spontaneousData.d2Raw{a}, nan];
                     spontaneousData.d2Normalized{a} = [spontaneousData.d2Normalized{a}, nan];
                 end
             end
         else
-            warning('d2 or d2Normalized not found in results for session %s', sessionName);
+            warning('d2, d2Normalized, or startS not found in results for session %s', sessionName);
             % Add NaN for all areas
             for a = 1:length(spontaneousData.areas)
                 spontaneousData.d2Raw{a} = [spontaneousData.d2Raw{a}, nan];
@@ -139,10 +148,10 @@ for s = 1:length(spontaneousSessions)
         end
         
         spontaneousData.sessionNames{end+1} = sessionName;
-        fprintf('  ✓ Session completed successfully\n');
+        fprintf('  ✓ Session loaded successfully\n');
         
     catch ME
-        fprintf('  ✗ Error processing session: %s\n', ME.message);
+        fprintf('  ✗ Error loading session: %s\n', ME.message);
         % Add NaN for all areas
         if ~isempty(spontaneousData.areas)
             for a = 1:length(spontaneousData.areas)
@@ -155,23 +164,31 @@ for s = 1:length(spontaneousSessions)
 end
 
 %% Process reach sessions
-fprintf('\n=== Processing Reach Sessions ===\n');
-% For reach sessions, set window end time (collectEnd empty means use all data, but we want a specific window)
-% Reset opts for reach sessions
-opts.collectStart = windowStartTime;
-opts.collectEnd = windowStartTime + nMin * 60;  % nMin minutes from start time
-
+fprintf('\n=== Loading Reach Session Results ===\n');
 for s = 1:length(reachSessions)
     sessionName = reachSessions{s};
-    fprintf('\nProcessing session %d/%d: %s\n', s, length(reachSessions), sessionName);
+    fprintf('\nLoading session %d/%d: %s\n', s, length(reachSessions), sessionName);
     
     try
-        % Load data
-        dataStruct = load_sliding_window_data('reach', 'spikes', ...
-            'sessionName', sessionName, 'opts', opts);
+        % Find results file
+        [~, dataBaseName, ~] = fileparts(sessionName);
+        saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
         
-        % Run analysis
-        results = criticality_ar_analysis(dataStruct, config);
+        % Find results file
+        resultsPath = find_results_file('criticality_ar', 'reach', sessionName, saveDir, filenameSuffix, '');
+        
+        % Load results
+        if isempty(resultsPath) || ~exist(resultsPath, 'file')
+            warning('Results file not found for session: %s\nSkipping session.', sessionName);
+            continue;
+        end
+        
+        loaded = load(resultsPath);
+        if ~isfield(loaded, 'results')
+            warning('Results structure not found in file: %s\nSkipping session.', resultsPath);
+            continue;
+        end
+        results = loaded.results;
         
         % Extract areas if not yet set
         if isempty(reachData.areas) && isfield(results, 'areas')
@@ -185,35 +202,47 @@ for s = 1:length(reachSessions)
             end
         end
         
-        % Extract d2 values per area (should be single value per area)
-        if isfield(results, 'd2') && isfield(results, 'd2Normalized')
+        % Filter results by time range and extract d2 values per area
+        if isfield(results, 'd2') && isfield(results, 'd2Normalized') && isfield(results, 'startS')
             for a = 1:length(results.areas)
-                if a <= length(results.d2) && ~isempty(results.d2{a})
-                    % Get the first (and only) value from the window
-                    d2Values = results.d2{a}(~isnan(results.d2{a}));
-                    if ~isempty(d2Values)
-                        reachData.d2Raw{a} = [reachData.d2Raw{a}, d2Values(1)];
+                % Find windows within time range
+                if ~isempty(results.startS{a})
+                    timeMask = results.startS{a} >= windowStartTime & results.startS{a} <= windowEndTime;
+                    
+                    % Extract d2 values within time range
+                    if a <= length(results.d2) && ~isempty(results.d2{a})
+                        d2Values = results.d2{a}(timeMask);
+                        d2Values = d2Values(~isnan(d2Values));
+                        if ~isempty(d2Values)
+                            % Use mean of values in time range (or first if single window)
+                            reachData.d2Raw{a} = [reachData.d2Raw{a}, mean(d2Values)];
+                        else
+                            reachData.d2Raw{a} = [reachData.d2Raw{a}, nan];
+                        end
                     else
                         reachData.d2Raw{a} = [reachData.d2Raw{a}, nan];
                     end
-                else
-                    reachData.d2Raw{a} = [reachData.d2Raw{a}, nan];
-                end
-                
-                if a <= length(results.d2Normalized) && ~isempty(results.d2Normalized{a})
-                    % Get the first (and only) value from the window
-                    d2NormValues = results.d2Normalized{a}(~isnan(results.d2Normalized{a}));
-                    if ~isempty(d2NormValues)
-                        reachData.d2Normalized{a} = [reachData.d2Normalized{a}, d2NormValues(1)];
+                    
+                    % Extract normalized d2 values within time range
+                    if a <= length(results.d2Normalized) && ~isempty(results.d2Normalized{a})
+                        d2NormValues = results.d2Normalized{a}(timeMask);
+                        d2NormValues = d2NormValues(~isnan(d2NormValues));
+                        if ~isempty(d2NormValues)
+                            % Use mean of values in time range (or first if single window)
+                            reachData.d2Normalized{a} = [reachData.d2Normalized{a}, mean(d2NormValues)];
+                        else
+                            reachData.d2Normalized{a} = [reachData.d2Normalized{a}, nan];
+                        end
                     else
                         reachData.d2Normalized{a} = [reachData.d2Normalized{a}, nan];
                     end
                 else
+                    reachData.d2Raw{a} = [reachData.d2Raw{a}, nan];
                     reachData.d2Normalized{a} = [reachData.d2Normalized{a}, nan];
                 end
             end
         else
-            warning('d2 or d2Normalized not found in results for session %s', sessionName);
+            warning('d2, d2Normalized, or startS not found in results for session %s', sessionName);
             % Add NaN for all areas
             for a = 1:length(reachData.areas)
                 reachData.d2Raw{a} = [reachData.d2Raw{a}, nan];
@@ -222,10 +251,10 @@ for s = 1:length(reachSessions)
         end
         
         reachData.sessionNames{end+1} = sessionName;
-        fprintf('  ✓ Session completed successfully\n');
+        fprintf('  ✓ Session loaded successfully\n');
         
     catch ME
-        fprintf('  ✗ Error processing session: %s\n', ME.message);
+        fprintf('  ✗ Error loading session: %s\n', ME.message);
         % Add NaN for all areas
         if ~isempty(reachData.areas)
             for a = 1:length(reachData.areas)
@@ -255,9 +284,21 @@ end
 
 %% Create plots
 fprintf('\n=== Creating Plots ===\n');
-
-% Determine which areas to plot (use common areas)
-areasToPlot = commonAreas;
+areasToPlot = {'M56', 'DS'};
+natColor = [0 191 255] ./ 255;
+reachColor = [255 215 0] ./ 255;
+% Determine which areas to plot
+if isempty(areasToPlot)
+    % Use all common areas if not specified
+    areasToPlot = commonAreas;
+else
+    % Filter to only include areas that exist in common areas
+    areasToPlot = intersect(areasToPlot, commonAreas);
+    if isempty(areasToPlot)
+        error('None of the specified areas to plot are found in common areas.');
+    end
+    fprintf('Plotting specified areas: %s\n', strjoin(areasToPlot, ', '));
+end
 numAreasToPlot = length(areasToPlot);
 
 % Determine which metric to plot
@@ -267,6 +308,55 @@ if useNormalized
 else
     metricName = 'd2Raw';
     metricLabel = 'd2 Raw';
+end
+
+% First, collect all values to determine global y-axis limits
+allD2Raw = [];
+allD2Normalized = [];
+
+for a = 1:numAreasToPlot
+    areaName = areasToPlot{a};
+    
+    % Find area index in spontaneous and reach data
+    natAreaIdx = find(strcmp(spontaneousData.areas, areaName));
+    reachAreaIdx = find(strcmp(reachData.areas, areaName));
+    
+    if isempty(natAreaIdx) || isempty(reachAreaIdx)
+        continue;
+    end
+    
+    % Collect d2 raw values
+    natValues = spontaneousData.d2Raw{natAreaIdx};
+    reachValues = reachData.d2Raw{reachAreaIdx};
+    natValues = natValues(~isnan(natValues));
+    reachValues = reachValues(~isnan(reachValues));
+    allD2Raw = [allD2Raw, natValues, reachValues];
+    
+    % Collect d2 normalized values
+    natValuesNorm = spontaneousData.d2Normalized{natAreaIdx};
+    reachValuesNorm = reachData.d2Normalized{reachAreaIdx};
+    natValuesNorm = natValuesNorm(~isnan(natValuesNorm));
+    reachValuesNorm = reachValuesNorm(~isnan(reachValuesNorm));
+    allD2Normalized = [allD2Normalized, natValuesNorm, reachValuesNorm];
+end
+
+% Calculate global y-axis limits with some padding
+if ~isempty(allD2Raw)
+    ylimD2Raw = [0, min(.25, max(allD2Raw) * 1.05)];
+    if ylimD2Raw(1) == ylimD2Raw(2)
+        ylimD2Raw = ylimD2Raw(1) + [-0.1, 0.1];
+    end
+else
+    ylimD2Raw = [0, 1];
+end
+
+if ~isempty(allD2Normalized)
+    ylimD2Normalized = [0, max(allD2Normalized) * 1.05];
+    if ylimD2Normalized(1) == ylimD2Normalized(2)
+        ylimD2Normalized = ylimD2Normalized(1) + [-0.1, 0.1];
+    end
+else
+    ylimD2Normalized = [0, 1];
 end
 
 % Create figure with two subplots: raw and normalized
@@ -311,10 +401,10 @@ for a = 1:numAreasToPlot
     xReach = (numNat + 1):(numNat + numReach);
     
     if numNat > 0
-        bar(xNat, natValues, 'FaceColor', [0.3 0.6 0.9], 'EdgeColor', 'k', 'LineWidth', 1);
+        bar(xNat, natValues, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
     end
     if numReach > 0
-        bar(xReach, reachValues, 'FaceColor', [0.9 0.6 0.3], 'EdgeColor', 'k', 'LineWidth', 1);
+        bar(xReach, reachValues, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
     end
     
     % Add group labels
@@ -334,12 +424,15 @@ for a = 1:numAreasToPlot
     title(sprintf('%s - d2 Raw', areaName));
     grid on;
     
+    % Set consistent y-axis limits across all areas
+    ylim(ylimD2Raw);
+    
     % Add mean lines
     if ~isempty(natValues)
-        yline(mean(natValues), 'b--', 'LineWidth', 2);
+        yline(mean(natValues), '--', 'color', natColor, 'LineWidth', 2);
     end
     if ~isempty(reachValues)
-        yline(mean(reachValues), 'r--', 'LineWidth', 2);
+        yline(mean(reachValues), '--', 'color', reachColor, 'LineWidth', 2);
     end
     
     hold off;
@@ -364,10 +457,10 @@ for a = 1:numAreasToPlot
     xReach = (numNat + 1):(numNat + numReach);
     
     if numNat > 0
-        bar(xNat, natValuesNorm, 'FaceColor', [0.3 0.6 0.9], 'EdgeColor', 'k', 'LineWidth', 1);
+        bar(xNat, natValuesNorm, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
     end
     if numReach > 0
-        bar(xReach, reachValuesNorm, 'FaceColor', [0.9 0.6 0.3], 'EdgeColor', 'k', 'LineWidth', 1);
+        bar(xReach, reachValuesNorm, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
     end
     
     % Add group labels
@@ -387,20 +480,23 @@ for a = 1:numAreasToPlot
     title(sprintf('%s - d2 Normalized', areaName));
     grid on;
     
+    % Set consistent y-axis limits across all areas
+    ylim(ylimD2Normalized);
+    
     % Add mean lines
     if ~isempty(natValuesNorm)
-        yline(mean(natValuesNorm), 'b--', 'LineWidth', 2);
+        yline(mean(natValuesNorm), '--', 'color', natColor, 'LineWidth', 2);
     end
     if ~isempty(reachValuesNorm)
-        yline(mean(reachValuesNorm), 'r--', 'LineWidth', 2);
+        yline(mean(reachValuesNorm), '--', 'color', reachColor, 'LineWidth', 2);
     end
     
     hold off;
 end
 
 % Add overall title
-sgtitle(sprintf('Criticality AR Comparison: Spontaneous vs Reach (Window: %d min)', nMin), ...
-    'FontSize', 14, 'FontWeight', 'bold');
+sgtitle(sprintf('Criticality AR Comparison: Spontaneous vs Reach (Time Range: %.1f-%.1f s)', ...
+    windowStartTime, windowEndTime), 'FontSize', 14, 'FontWeight', 'bold');
 
 %% Save figure
 saveDir = fullfile(paths.dropPath, 'sliding_window_comparisons');
@@ -408,10 +504,87 @@ if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
 
-plotFilename = sprintf('criticality_ar_across_sessions_%dmin.png', nMin);
-plotPath = fullfile(saveDir, plotFilename);
+plotFilenamePng = sprintf('criticality_ar_across_sessions_%.0f-%.0fs.png', windowStartTime, windowEndTime);
+plotPathPng = fullfile(saveDir, plotFilenamePng);
 
-exportgraphics(gcf, plotPath, 'Resolution', 300);
-fprintf('\nSaved plot to: %s\n', plotPath);
+exportgraphics(gcf, plotPathPng, 'Resolution', 300);
+fprintf('\nSaved PNG plot to: %s\n', plotPathPng);
+
+plotFilenameEps = sprintf('criticality_ar_across_sessions_%.0f-%.0fs.eps', windowStartTime, windowEndTime);
+plotPathEps = fullfile(saveDir, plotFilenameEps);
+
+exportgraphics(gcf, plotPathEps, 'ContentType', 'vector');
+fprintf('Saved EPS plot to: %s\n', plotPathEps);
 
 fprintf('\n=== Analysis Complete ===\n');
+
+%% Helper function to find results file
+function resultsPath = find_results_file(analysisType, sessionType, sessionName, saveDir, filenameSuffix, dataSource)
+    % Build search pattern based on analysis type
+    switch analysisType
+        case 'criticality_ar'
+            % Format: criticality_sliding_window_ar{filenameSuffix}_{sessionName}.mat
+            if ~isempty(sessionName)
+                pattern = sprintf('criticality_sliding_window_ar%s_%s.mat', filenameSuffix, sessionName);
+            else
+                pattern = sprintf('criticality_sliding_window_ar%s_*.mat', filenameSuffix);
+            end
+            
+        case 'criticality_av'
+            % Format: criticality_sliding_window_av{filenameSuffix}_{sessionName}.mat
+            if ~isempty(sessionName)
+                pattern = sprintf('criticality_sliding_window_av%s_%s.mat', filenameSuffix, sessionName);
+            else
+                pattern = sprintf('criticality_sliding_window_av%s_*.mat', filenameSuffix);
+            end
+            
+        otherwise
+            error('Unknown analysis type: %s', analysisType);
+    end
+    
+    % Search for matching files
+    if ~exist(saveDir, 'dir')
+        resultsPath = '';
+        return;
+    end
+    
+    % For sessionName with path separators, replace them with underscores in pattern
+    if contains(sessionName, filesep)
+        sessionNameForPattern = strrep(sessionName, filesep, '_');
+        pattern = strrep(pattern, sessionName, sessionNameForPattern);
+    end
+    
+    files = dir(fullfile(saveDir, pattern));
+    
+    % Also search in subdirectories if they exist
+    if exist(saveDir, 'dir')
+        subDirs = dir(saveDir);
+        subDirs = subDirs([subDirs.isdir] & ~strncmp({subDirs.name}, '.', 1));
+        for d = 1:length(subDirs)
+            subDirPath = fullfile(saveDir, subDirs(d).name);
+            subFiles = dir(fullfile(subDirPath, pattern));
+            if ~isempty(subFiles)
+                files = [files; subFiles];
+            end
+        end
+    end
+    
+    if isempty(files)
+        resultsPath = '';
+        return;
+    end
+    
+    % Use the first matching file (or most recent if multiple)
+    if length(files) > 1
+        [~, idx] = sort([files.datenum], 'descend');
+        files = files(idx);
+        fprintf('  Found %d matching files, using most recent: %s\n', length(files), files(1).name);
+    end
+    
+    if files(1).isdir
+        resultsPath = '';
+        return;
+    end
+    
+    resultsPath = fullfile(files(1).folder, files(1).name);
+end

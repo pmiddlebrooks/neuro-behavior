@@ -315,7 +315,13 @@ end
             yyaxis left;
         end
         
-        title(sprintf('%s - dcc', areas{a}));
+        % Get number of neurons for this area
+        nNeurons = 0;
+        if isfield(dataStruct, 'idMatIdx') && a <= length(dataStruct.idMatIdx) && ~isempty(dataStruct.idMatIdx{a})
+            nNeurons = length(dataStruct.idMatIdx{a});
+        end
+        
+        title(sprintf('%s (n=%d) - dcc', areas{a}, nNeurons));
         xlabel('Time (s)');
         ylabel('dcc');
         grid on;
@@ -440,7 +446,7 @@ end
             yyaxis left;
         end
         
-        title(sprintf('%s - tau (orange), alpha (green), paramSD (blue)', areas{a}));
+        title(sprintf('%s (n=%d) - tau (orange), alpha (green), paramSD (blue)', areas{a}, nNeurons));
         xlabel('Time (s)');
         ylabel('Value');
         grid on;
@@ -492,7 +498,7 @@ end
             end
         end
         
-        title(sprintf('%s - decades', areas{a}));
+        title(sprintf('%s (n=%d) - decades', areas{a}, nNeurons));
         xlabel('Time (s)');
         ylabel('decades');
         grid on;

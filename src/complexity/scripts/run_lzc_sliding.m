@@ -205,7 +205,7 @@ config.makePlots = true;
 config.saveData = true;  % Set to false to skip saving results
 config.nMinNeurons = 15;
 config.minSpikesPerBin = 0.08;  % Minimum spikes per bin for optimal bin size calculation (we want about minSpikesPerPin proportion of bins with a spike)
-config.minDataPoints = 2*10^5;
+config.minDataPoints = 2e5;
 config.useBernoulliControl = false;  % Set to false to skip Bernoulli normalization (faster computation)
 config.includeM2356 = true;  % Set to true to include combined M23+M56 area
 
