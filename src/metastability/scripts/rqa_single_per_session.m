@@ -17,7 +17,7 @@
 %% Configuration
 paths = get_paths;
 
-timeRange = [0, 20*60];  % Time range in seconds [startTime, endTime]
+timeRange = [5*60, 15*60];  % Time range in seconds [startTime, endTime]
 areasToPlot = {};        % Cell array of area names to plot (empty = all common areas)
                          % Example: {'M23', 'M56'} or {} for all areas
 natColor = [0 191 255] ./ 255;   % Color for spontaneous sessions
@@ -55,8 +55,8 @@ config.stepSize = windowDuration + 1;          % Larger than window size so only
 config.nShuffles = 3;                          % Number of shuffles for normalization
 config.binSize = 0.03;                         % Bin size for spikes (seconds)
 config.minTimeBins = 10000;                    % Minimum bins per window (used in defaults)
-config.nPCADim = 3;                            % Number of PCA dimensions
-config.recurrenceThreshold = 0.02;             % Target recurrence rate (2%)
+config.nPCADim = 4;                            % Number of PCA dimensions
+config.recurrenceThreshold = 0.03;             % Target recurrence rate (2%)
 config.distanceMetric = 'euclidean';           % Distance metric
 config.nMinNeurons = 10;                       % Minimum neurons per area
 config.makePlots = false;                      % Don't create per-session plots
@@ -84,11 +84,38 @@ reachData.detNormalized = {};
 reachData.sessionNames = {};
 reachData.areas = [];
 
+%% Set up parallel pool if running parallel in lzc_sliding_analysis
+runParallel = 1;
+% Check if parpool is already running, start one if not
+if runParallel
+    currentPool = gcp('nocreate');
+if isempty(currentPool)
+    % NumWorkers = min(4, length(dataStruct.areas));
+    NumWorkers = 2;
+    parpool('local', NumWorkers);
+    fprintf('Started parallel pool with %d workers\n', NumWorkers);
+else
+    fprintf('Using existing parallel pool with %d workers\n', currentPool.NumWorkers);
+end
+end
 %% Process spontaneous sessions
 fprintf('\n=== Processing Spontaneous Sessions ===\n');
+% Pre-allocate results cell array for parfor compatibility
+spontaneousResults = cell(1, length(spontaneousSessions));
+
 for s = 1:length(spontaneousSessions)
     sessionName = spontaneousSessions{s};
     fprintf('\nProcessing session %d/%d: %s\n', s, length(spontaneousSessions), sessionName);
+    
+    % Initialize session result structure
+    sessionResult = struct();
+    sessionResult.sessionName = sessionName;
+    sessionResult.success = false;
+    sessionResult.areas = {};
+    sessionResult.rrRaw = {};
+    sessionResult.rrNormalized = {};
+    sessionResult.detRaw = {};
+    sessionResult.detNormalized = {};
     
     try
         % Load data
@@ -99,114 +126,176 @@ for s = 1:length(spontaneousSessions)
         fprintf('  Running RQA analysis...\n');
         results = rqa_sliding_analysis(dataStruct, config);
         
-        % Extract areas if not yet set
-        if isempty(spontaneousData.areas) && isfield(results, 'areas')
-            spontaneousData.areas = results.areas;
-            numAreas = length(spontaneousData.areas);
-            spontaneousData.rrRaw = cell(1, numAreas);
-            spontaneousData.rrNormalized = cell(1, numAreas);
-            spontaneousData.detRaw = cell(1, numAreas);
-            spontaneousData.detNormalized = cell(1, numAreas);
-            for a = 1:numAreas
-                spontaneousData.rrRaw{a} = [];
-                spontaneousData.rrNormalized{a} = [];
-                spontaneousData.detRaw{a} = [];
-                spontaneousData.detNormalized{a} = [];
+        % Extract areas from results
+        if isfield(results, 'areas')
+            sessionResult.areas = results.areas;
+            numAreas = length(results.areas);
+            
+            % Initialize metric arrays
+            sessionResult.rrRaw = cell(1, numAreas);
+            sessionResult.rrNormalized = cell(1, numAreas);
+            sessionResult.detRaw = cell(1, numAreas);
+            sessionResult.detNormalized = cell(1, numAreas);
+            
+            % Extract metrics per area (single value per area)
+            if isfield(results, 'recurrenceRate') && isfield(results, 'determinism')
+                for a = 1:numAreas
+                    % Recurrence rate raw
+                    if a <= length(results.recurrenceRate) && ~isempty(results.recurrenceRate{a})
+                        rrValues = results.recurrenceRate{a}(~isnan(results.recurrenceRate{a}));
+                        if ~isempty(rrValues)
+                            sessionResult.rrRaw{a} = rrValues(1);
+                        else
+                            sessionResult.rrRaw{a} = nan;
+                        end
+                    else
+                        sessionResult.rrRaw{a} = nan;
+                    end
+                    
+                    % Recurrence rate normalized
+                    if isfield(results, 'recurrenceRateNormalized') && ...
+                            a <= length(results.recurrenceRateNormalized) && ...
+                            ~isempty(results.recurrenceRateNormalized{a})
+                        rrNormValues = results.recurrenceRateNormalized{a}(~isnan(results.recurrenceRateNormalized{a}));
+                        if ~isempty(rrNormValues)
+                            sessionResult.rrNormalized{a} = rrNormValues(1);
+                        else
+                            sessionResult.rrNormalized{a} = nan;
+                        end
+                    else
+                        sessionResult.rrNormalized{a} = nan;
+                    end
+                    
+                    % Determinism raw
+                    if a <= length(results.determinism) && ~isempty(results.determinism{a})
+                        detValues = results.determinism{a}(~isnan(results.determinism{a}));
+                        if ~isempty(detValues)
+                            sessionResult.detRaw{a} = detValues(1);
+                        else
+                            sessionResult.detRaw{a} = nan;
+                        end
+                    else
+                        sessionResult.detRaw{a} = nan;
+                    end
+                    
+                    % Determinism normalized
+                    if isfield(results, 'determinismNormalized') && ...
+                            a <= length(results.determinismNormalized) && ...
+                            ~isempty(results.determinismNormalized{a})
+                        detNormValues = results.determinismNormalized{a}(~isnan(results.determinismNormalized{a}));
+                        if ~isempty(detNormValues)
+                            sessionResult.detNormalized{a} = detNormValues(1);
+                        else
+                            sessionResult.detNormalized{a} = nan;
+                        end
+                    else
+                        sessionResult.detNormalized{a} = nan;
+                    end
+                end
+            else
+                warning('RQA metrics not found in results for session %s', sessionName);
+                for a = 1:numAreas
+                    sessionResult.rrRaw{a} = nan;
+                    sessionResult.rrNormalized{a} = nan;
+                    sessionResult.detRaw{a} = nan;
+                    sessionResult.detNormalized{a} = nan;
+                end
             end
-        end
-        
-        % Extract metrics per area (single value per area)
-        if isfield(results, 'recurrenceRate') && isfield(results, 'determinism')
-            for a = 1:length(results.areas)
-                % Recurrence rate raw
-                if a <= length(results.recurrenceRate) && ~isempty(results.recurrenceRate{a})
-                    rrValues = results.recurrenceRate{a}(~isnan(results.recurrenceRate{a}));
-                    if ~isempty(rrValues)
-                        spontaneousData.rrRaw{a} = [spontaneousData.rrRaw{a}, rrValues(1)];
-                    else
-                        spontaneousData.rrRaw{a} = [spontaneousData.rrRaw{a}, nan];
-                    end
-                else
-                    spontaneousData.rrRaw{a} = [spontaneousData.rrRaw{a}, nan];
-                end
-                
-                % Recurrence rate normalized
-                if isfield(results, 'recurrenceRateNormalized') && ...
-                        a <= length(results.recurrenceRateNormalized) && ...
-                        ~isempty(results.recurrenceRateNormalized{a})
-                    rrNormValues = results.recurrenceRateNormalized{a}(~isnan(results.recurrenceRateNormalized{a}));
-                    if ~isempty(rrNormValues)
-                        spontaneousData.rrNormalized{a} = [spontaneousData.rrNormalized{a}, rrNormValues(1)];
-                    else
-                        spontaneousData.rrNormalized{a} = [spontaneousData.rrNormalized{a}, nan];
-                    end
-                else
-                    spontaneousData.rrNormalized{a} = [spontaneousData.rrNormalized{a}, nan];
-                end
-                
-                % Determinism raw
-                if a <= length(results.determinism) && ~isempty(results.determinism{a})
-                    detValues = results.determinism{a}(~isnan(results.determinism{a}));
-                    if ~isempty(detValues)
-                        spontaneousData.detRaw{a} = [spontaneousData.detRaw{a}, detValues(1)];
-                    else
-                        spontaneousData.detRaw{a} = [spontaneousData.detRaw{a}, nan];
-                    end
-                else
-                    spontaneousData.detRaw{a} = [spontaneousData.detRaw{a}, nan];
-                end
-                
-                % Determinism normalized
-                if isfield(results, 'determinismNormalized') && ...
-                        a <= length(results.determinismNormalized) && ...
-                        ~isempty(results.determinismNormalized{a})
-                    detNormValues = results.determinismNormalized{a}(~isnan(results.determinismNormalized{a}));
-                    if ~isempty(detNormValues)
-                        spontaneousData.detNormalized{a} = [spontaneousData.detNormalized{a}, detNormValues(1)];
-                    else
-                        spontaneousData.detNormalized{a} = [spontaneousData.detNormalized{a}, nan];
-                    end
-                else
-                    spontaneousData.detNormalized{a} = [spontaneousData.detNormalized{a}, nan];
-                end
-            end
+            
+            sessionResult.success = true;
+            fprintf('  ✓ Session completed successfully\n');
         else
-            warning('RQA metrics not found in results for session %s', sessionName);
-            for a = 1:length(spontaneousData.areas)
-                spontaneousData.rrRaw{a} = [spontaneousData.rrRaw{a}, nan];
-                spontaneousData.rrNormalized{a} = [spontaneousData.rrNormalized{a}, nan];
-                spontaneousData.detRaw{a} = [spontaneousData.detRaw{a}, nan];
-                spontaneousData.detNormalized{a} = [spontaneousData.detNormalized{a}, nan];
-            end
+            warning('Areas not found in results for session %s', sessionName);
         end
-        
-        spontaneousData.sessionNames{end+1} = sessionName;
-        fprintf('  ✓ Session completed successfully\n');
         
     catch ME
         fprintf('  ✗ Error processing session: %s\n', ME.message);
-        % Add NaN for all areas
-        if ~isempty(spontaneousData.areas)
-            for a = 1:length(spontaneousData.areas)
+        sessionResult.success = false;
+    end
+    
+    % Store result in cell array (parfor-compatible)
+    spontaneousResults{s} = sessionResult;
+end
+
+% Aggregate results from all sessions
+fprintf('\n=== Aggregating Spontaneous Session Results ===\n');
+for s = 1:length(spontaneousResults)
+    sessionResult = spontaneousResults{s};
+    
+    if isempty(sessionResult.areas)
+        continue;
+    end
+    
+    % Initialize areas on first valid session
+    if isempty(spontaneousData.areas) && ~isempty(sessionResult.areas)
+        spontaneousData.areas = sessionResult.areas;
+        numAreas = length(spontaneousData.areas);
+        spontaneousData.rrRaw = cell(1, numAreas);
+        spontaneousData.rrNormalized = cell(1, numAreas);
+        spontaneousData.detRaw = cell(1, numAreas);
+        spontaneousData.detNormalized = cell(1, numAreas);
+        for a = 1:numAreas
+            spontaneousData.rrRaw{a} = [];
+            spontaneousData.rrNormalized{a} = [];
+            spontaneousData.detRaw{a} = [];
+            spontaneousData.detNormalized{a} = [];
+        end
+    end
+    
+    % Append metrics for this session
+    if ~isempty(spontaneousData.areas) && length(sessionResult.areas) == length(spontaneousData.areas)
+        for a = 1:length(spontaneousData.areas)
+            if a <= length(sessionResult.rrRaw) && ~isempty(sessionResult.rrRaw{a})
+                spontaneousData.rrRaw{a} = [spontaneousData.rrRaw{a}, sessionResult.rrRaw{a}];
+            else
                 spontaneousData.rrRaw{a} = [spontaneousData.rrRaw{a}, nan];
+            end
+            
+            if a <= length(sessionResult.rrNormalized) && ~isempty(sessionResult.rrNormalized{a})
+                spontaneousData.rrNormalized{a} = [spontaneousData.rrNormalized{a}, sessionResult.rrNormalized{a}];
+            else
                 spontaneousData.rrNormalized{a} = [spontaneousData.rrNormalized{a}, nan];
+            end
+            
+            if a <= length(sessionResult.detRaw) && ~isempty(sessionResult.detRaw{a})
+                spontaneousData.detRaw{a} = [spontaneousData.detRaw{a}, sessionResult.detRaw{a}];
+            else
                 spontaneousData.detRaw{a} = [spontaneousData.detRaw{a}, nan];
+            end
+            
+            if a <= length(sessionResult.detNormalized) && ~isempty(sessionResult.detNormalized{a})
+                spontaneousData.detNormalized{a} = [spontaneousData.detNormalized{a}, sessionResult.detNormalized{a}];
+            else
                 spontaneousData.detNormalized{a} = [spontaneousData.detNormalized{a}, nan];
             end
         end
-        spontaneousData.sessionNames{end+1} = sessionName;
     end
+    
+    spontaneousData.sessionNames{end+1} = sessionResult.sessionName;
 end
 
-%% Process reach sessions
+% Process reach sessions
 fprintf('\n=== Processing Reach Sessions ===\n');
 % Reset opts for reach sessions
 opts.collectStart = windowStartTime;
 opts.collectEnd = windowEndTime;  % End time from timeRange
 
-for s = 1:length(reachSessions)
+% Pre-allocate results cell array for parfor compatibility
+reachResults = cell(1, length(reachSessions));
+
+parfor s = 1:length(reachSessions)
     sessionName = reachSessions{s};
     fprintf('\nProcessing session %d/%d: %s\n', s, length(reachSessions), sessionName);
+    
+    % Initialize session result structure
+    sessionResult = struct();
+    sessionResult.sessionName = sessionName;
+    sessionResult.success = false;
+    sessionResult.areas = {};
+    sessionResult.rrRaw = {};
+    sessionResult.rrNormalized = {};
+    sessionResult.detRaw = {};
+    sessionResult.detNormalized = {};
     
     try
         % Load data
@@ -217,106 +306,155 @@ for s = 1:length(reachSessions)
         fprintf('  Running RQA analysis...\n');
         results = rqa_sliding_analysis(dataStruct, config);
         
-        % Extract areas if not yet set
-        if isempty(reachData.areas) && isfield(results, 'areas')
-            reachData.areas = results.areas;
-            numAreas = length(reachData.areas);
-            reachData.rrRaw = cell(1, numAreas);
-            reachData.rrNormalized = cell(1, numAreas);
-            reachData.detRaw = cell(1, numAreas);
-            reachData.detNormalized = cell(1, numAreas);
-            for a = 1:numAreas
-                reachData.rrRaw{a} = [];
-                reachData.rrNormalized{a} = [];
-                reachData.detRaw{a} = [];
-                reachData.detNormalized{a} = [];
+        % Extract areas from results
+        if isfield(results, 'areas')
+            sessionResult.areas = results.areas;
+            numAreas = length(results.areas);
+            
+            % Initialize metric arrays
+            sessionResult.rrRaw = cell(1, numAreas);
+            sessionResult.rrNormalized = cell(1, numAreas);
+            sessionResult.detRaw = cell(1, numAreas);
+            sessionResult.detNormalized = cell(1, numAreas);
+            
+            % Extract metrics per area (single value per area)
+            if isfield(results, 'recurrenceRate') && isfield(results, 'determinism')
+                for a = 1:numAreas
+                    % Recurrence rate raw
+                    if a <= length(results.recurrenceRate) && ~isempty(results.recurrenceRate{a})
+                        rrValues = results.recurrenceRate{a}(~isnan(results.recurrenceRate{a}));
+                        if ~isempty(rrValues)
+                            sessionResult.rrRaw{a} = rrValues(1);
+                        else
+                            sessionResult.rrRaw{a} = nan;
+                        end
+                    else
+                        sessionResult.rrRaw{a} = nan;
+                    end
+                    
+                    % Recurrence rate normalized
+                    if isfield(results, 'recurrenceRateNormalized') && ...
+                            a <= length(results.recurrenceRateNormalized) && ...
+                            ~isempty(results.recurrenceRateNormalized{a})
+                        rrNormValues = results.recurrenceRateNormalized{a}(~isnan(results.recurrenceRateNormalized{a}));
+                        if ~isempty(rrNormValues)
+                            sessionResult.rrNormalized{a} = rrNormValues(1);
+                        else
+                            sessionResult.rrNormalized{a} = nan;
+                        end
+                    else
+                        sessionResult.rrNormalized{a} = nan;
+                    end
+                    
+                    % Determinism raw
+                    if a <= length(results.determinism) && ~isempty(results.determinism{a})
+                        detValues = results.determinism{a}(~isnan(results.determinism{a}));
+                        if ~isempty(detValues)
+                            sessionResult.detRaw{a} = detValues(1);
+                        else
+                            sessionResult.detRaw{a} = nan;
+                        end
+                    else
+                        sessionResult.detRaw{a} = nan;
+                    end
+                    
+                    % Determinism normalized
+                    if isfield(results, 'determinismNormalized') && ...
+                            a <= length(results.determinismNormalized) && ...
+                            ~isempty(results.determinismNormalized{a})
+                        detNormValues = results.determinismNormalized{a}(~isnan(results.determinismNormalized{a}));
+                        if ~isempty(detNormValues)
+                            sessionResult.detNormalized{a} = detNormValues(1);
+                        else
+                            sessionResult.detNormalized{a} = nan;
+                        end
+                    else
+                        sessionResult.detNormalized{a} = nan;
+                    end
+                end
+            else
+                warning('RQA metrics not found in results for session %s', sessionName);
+                for a = 1:numAreas
+                    sessionResult.rrRaw{a} = nan;
+                    sessionResult.rrNormalized{a} = nan;
+                    sessionResult.detRaw{a} = nan;
+                    sessionResult.detNormalized{a} = nan;
+                end
             end
-        end
-        
-        % Extract metrics per area (single value per area)
-        if isfield(results, 'recurrenceRate') && isfield(results, 'determinism')
-            for a = 1:length(results.areas)
-                % Recurrence rate raw
-                if a <= length(results.recurrenceRate) && ~isempty(results.recurrenceRate{a})
-                    rrValues = results.recurrenceRate{a}(~isnan(results.recurrenceRate{a}));
-                    if ~isempty(rrValues)
-                        reachData.rrRaw{a} = [reachData.rrRaw{a}, rrValues(1)];
-                    else
-                        reachData.rrRaw{a} = [reachData.rrRaw{a}, nan];
-                    end
-                else
-                    reachData.rrRaw{a} = [reachData.rrRaw{a}, nan];
-                end
-                
-                % Recurrence rate normalized
-                if isfield(results, 'recurrenceRateNormalized') && ...
-                        a <= length(results.recurrenceRateNormalized) && ...
-                        ~isempty(results.recurrenceRateNormalized{a})
-                    rrNormValues = results.recurrenceRateNormalized{a}(~isnan(results.recurrenceRateNormalized{a}));
-                    if ~isempty(rrNormValues)
-                        reachData.rrNormalized{a} = [reachData.rrNormalized{a}, rrNormValues(1)];
-                    else
-                        reachData.rrNormalized{a} = [reachData.rrNormalized{a}, nan];
-                    end
-                else
-                    reachData.rrNormalized{a} = [reachData.rrNormalized{a}, nan];
-                end
-                
-                % Determinism raw
-                if a <= length(results.determinism) && ~isempty(results.determinism{a})
-                    detValues = results.determinism{a}(~isnan(results.determinism{a}));
-                    if ~isempty(detValues)
-                        reachData.detRaw{a} = [reachData.detRaw{a}, detValues(1)];
-                    else
-                        reachData.detRaw{a} = [reachData.detRaw{a}, nan];
-                    end
-                else
-                    reachData.detRaw{a} = [reachData.detRaw{a}, nan];
-                end
-                
-                % Determinism normalized
-                if isfield(results, 'determinismNormalized') && ...
-                        a <= length(results.determinismNormalized) && ...
-                        ~isempty(results.determinismNormalized{a})
-                    detNormValues = results.determinismNormalized{a}(~isnan(results.determinismNormalized{a}));
-                    if ~isempty(detNormValues)
-                        reachData.detNormalized{a} = [reachData.detNormalized{a}, detNormValues(1)];
-                    else
-                        reachData.detNormalized{a} = [reachData.detNormalized{a}, nan];
-                    end
-                else
-                    reachData.detNormalized{a} = [reachData.detNormalized{a}, nan];
-                end
-            end
+            
+            sessionResult.success = true;
+            fprintf('  ✓ Session completed successfully\n');
         else
-            warning('RQA metrics not found in results for session %s', sessionName);
-            for a = 1:length(reachData.areas)
-                reachData.rrRaw{a} = [reachData.rrRaw{a}, nan];
-                reachData.rrNormalized{a} = [reachData.rrNormalized{a}, nan];
-                reachData.detRaw{a} = [reachData.detRaw{a}, nan];
-                reachData.detNormalized{a} = [reachData.detNormalized{a}, nan];
-            end
+            warning('Areas not found in results for session %s', sessionName);
         end
-        
-        reachData.sessionNames{end+1} = sessionName;
-        fprintf('  ✓ Session completed successfully\n');
         
     catch ME
         fprintf('  ✗ Error processing session: %s\n', ME.message);
-        % Add NaN for all areas
-        if ~isempty(reachData.areas)
-            for a = 1:length(reachData.areas)
+        sessionResult.success = false;
+    end
+    
+    % Store result in cell array (parfor-compatible)
+    reachResults{s} = sessionResult;
+end
+
+% Aggregate results from all sessions
+fprintf('\n=== Aggregating Reach Session Results ===\n');
+for s = 1:length(reachResults)
+    sessionResult = reachResults{s};
+    
+    if isempty(sessionResult.areas)
+        continue;
+    end
+    
+    % Initialize areas on first valid session
+    if isempty(reachData.areas) && ~isempty(sessionResult.areas)
+        reachData.areas = sessionResult.areas;
+        numAreas = length(reachData.areas);
+        reachData.rrRaw = cell(1, numAreas);
+        reachData.rrNormalized = cell(1, numAreas);
+        reachData.detRaw = cell(1, numAreas);
+        reachData.detNormalized = cell(1, numAreas);
+        for a = 1:numAreas
+            reachData.rrRaw{a} = [];
+            reachData.rrNormalized{a} = [];
+            reachData.detRaw{a} = [];
+            reachData.detNormalized{a} = [];
+        end
+    end
+    
+    % Append metrics for this session
+    if ~isempty(reachData.areas) && length(sessionResult.areas) == length(reachData.areas)
+        for a = 1:length(reachData.areas)
+            if a <= length(sessionResult.rrRaw) && ~isempty(sessionResult.rrRaw{a})
+                reachData.rrRaw{a} = [reachData.rrRaw{a}, sessionResult.rrRaw{a}];
+            else
                 reachData.rrRaw{a} = [reachData.rrRaw{a}, nan];
+            end
+            
+            if a <= length(sessionResult.rrNormalized) && ~isempty(sessionResult.rrNormalized{a})
+                reachData.rrNormalized{a} = [reachData.rrNormalized{a}, sessionResult.rrNormalized{a}];
+            else
                 reachData.rrNormalized{a} = [reachData.rrNormalized{a}, nan];
+            end
+            
+            if a <= length(sessionResult.detRaw) && ~isempty(sessionResult.detRaw{a})
+                reachData.detRaw{a} = [reachData.detRaw{a}, sessionResult.detRaw{a}];
+            else
                 reachData.detRaw{a} = [reachData.detRaw{a}, nan];
+            end
+            
+            if a <= length(sessionResult.detNormalized) && ~isempty(sessionResult.detNormalized{a})
+                reachData.detNormalized{a} = [reachData.detNormalized{a}, sessionResult.detNormalized{a}];
+            else
                 reachData.detNormalized{a} = [reachData.detNormalized{a}, nan];
             end
         end
-        reachData.sessionNames{end+1} = sessionName;
     end
+    
+    reachData.sessionNames{end+1} = sessionResult.sessionName;
 end
 
-%% Determine common areas
+% Determine common areas
 if isempty(spontaneousData.areas) || isempty(reachData.areas)
     error('No data loaded. Check that sessions were processed successfully.');
 end
@@ -332,7 +470,7 @@ for a = 1:length(commonAreas)
     fprintf('  %s\n', commonAreas{a});
 end
 
-%% Create plots
+% Create plots
 fprintf('\n=== Creating RQA Plots ===\n');
 
 % Determine which areas to plot
@@ -614,10 +752,10 @@ for a = 1:numAreasToPlot
 end
 
 % Add overall title
-sgtitle(sprintf('RQA Comparison: Spontaneous vs Reach (Time Range: %.1f-%.1f s)', ...
-    windowStartTime, windowEndTime), 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle(sprintf('RQA: Spontaneous vs Reach (Time Range: %.1f-%.1f s) PCA Dim 1-%d', ...
+    windowStartTime, windowEndTime, config.nPCADim), 'FontSize', 14, 'FontWeight', 'bold');
 
-%% Save figure
+% Save figure
 saveDir = fullfile(paths.dropPath, 'sliding_window_comparisons');
 if ~exist(saveDir, 'dir')
     mkdir(saveDir);
