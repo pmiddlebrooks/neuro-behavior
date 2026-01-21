@@ -40,8 +40,8 @@ function dataMat = bin_spikes(spikeTimes, spikeClusters, neuronIDs, timeRange, b
     % Calculate number of bins
     numBins = ceil((timeRange(2) - timeRange(1)) / binSize);
     
-    % Initialize output matrix
-    dataMat = zeros(numBins, length(neuronIDs));
+    % Initialize output matrix in single precision for memory efficiency
+    dataMat = zeros(numBins, length(neuronIDs), 'single');
     
     % Filter spikes to time range
     validSpikes = spikeTimes >= timeRange(1) & spikeTimes < timeRange(2);

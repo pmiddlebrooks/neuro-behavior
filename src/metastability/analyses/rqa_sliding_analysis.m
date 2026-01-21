@@ -400,6 +400,8 @@ parfor a = areasToProcess
         % Bin data using area-specific bin size from spike times
         aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
             neuronIDs, timeRange, config.binSize(a));
+        % Ensure single precision for memory efficiency
+        aDataMat = single(aDataMat);
         numTimePoints = size(aDataMat, 1);
 
         % Use area-specific window size
@@ -422,8 +424,8 @@ parfor a = areasToProcess
             % Perform PCA on entire session data for this area
             fprintf('  Performing PCA on entire session data...\n');
             [coeff, score, ~, ~, explained, mu] = pca(aDataMat);
-            % Use first actualPCADim dimensions
-            pcaDataFull = score(:, 1:actualPCADim);
+            % Use first actualPCADim dimensions, ensure single precision
+            pcaDataFull = single(score(:, 1:actualPCADim));
             fprintf('  PCA completed %s: using %d dimensions (explained variance: %.1f%%)\n', ...
                 areas{a}, actualPCADim, sum(explained(1:actualPCADim)));
         end
@@ -478,12 +480,12 @@ parfor a = areasToProcess
                 % Perform PCA on this window's data only (drift correction)
                 windowData = aDataMat(startIdx:endIdx, :);
                 [~, scoreWindow, ~, ~, explainedWindow, ~] = pca(windowData);
-                % Use first actualPCADim dimensions
-                pcaData = scoreWindow(:, 1:actualPCADim);
+                % Use first actualPCADim dimensions, ensure single precision
+                pcaData = single(scoreWindow(:, 1:actualPCADim));
             else
                 % Extract window data from pre-computed PCA space
                 % Use the same PCA space computed for the entire session
-                pcaData = pcaDataFull(startIdx:endIdx, :);
+                pcaData = single(pcaDataFull(startIdx:endIdx, :));
             end
 
             % Calculate RQA metrics
@@ -504,33 +506,36 @@ parfor a = areasToProcess
             shuffledLAM = nan(1, config.nShuffles);
             shuffledTT = nan(1, config.nShuffles);
 
+            % Pre-allocate permutedDataMat in single precision and reuse across shuffles
+            permutedDataMat = zeros(size(aDataMat), 'single');
+
             for s = 1:config.nShuffles
                 % Circularly shift each neuron's activity independently
-                % aDataMat is [time bins x neurons]
-                permutedDataMat = zeros(size(aDataMat));
+                % Reuse permutedDataMat (in-place operations)
                 for n = 1:nNeurons
                     shiftAmount = randi(size(aDataMat, 1));
                     permutedDataMat(:, n) = circshift(aDataMat(:, n), shiftAmount);
                 end
 
-                if config.usePerWindowPCA
-                    % Perform PCA on shuffled window data only (matching per-window approach)
-                    shuffledWindowData = permutedDataMat(startIdx:endIdx, :);
-                    [~, scoreShuffled, ~, ~, ~, ~] = pca(shuffledWindowData);
-                    % Use first actualPCADim dimensions
-                    shuffledPCA = scoreShuffled(:, 1:actualPCADim);
-                else
-                    % Perform PCA on shuffled entire session data
-                    [~, scoreShuffled, ~, ~, ~, ~] = pca(permutedDataMat);
-                    % Use first actualPCADim dimensions
-                    shuffledPCAFull = scoreShuffled(:, 1:actualPCADim);
-                    % Extract window from shuffled PCA space
-                    shuffledPCA = shuffledPCAFull(startIdx:endIdx, :);
-                end
+                % OPTIMIZATION: Always do PCA only on window data (not full session)
+                % This dramatically reduces memory usage, especially for large windows
+                shuffledWindowData = permutedDataMat(startIdx:endIdx, :);
+                [~, scoreShuffled, ~, ~, ~, ~] = pca(shuffledWindowData);
+                % Use first actualPCADim dimensions, ensure single precision
+                shuffledPCA = single(scoreShuffled(:, 1:actualPCADim));
+                
+                % Explicitly clear intermediate matrices to free memory immediately
+                % clear shuffledWindowData scoreShuffled;
 
                 [shuffledRR(s), shuffledDET(s), shuffledLAM(s), shuffledTT(s)] = ...
                     compute_rqa_metrics(shuffledPCA, config.recurrenceThreshold, config.distanceMetric);
+                
+                % Explicitly clear shuffledPCA to free memory immediately
+                % clear shuffledPCA;
             end
+            
+            % Clear permutedDataMat after all shuffles are done
+            % clear permutedDataMat;
 
             meanShuffledRR = nanmean(shuffledRR);
             meanShuffledDET = nanmean(shuffledDET);
@@ -574,24 +579,28 @@ parfor a = areasToProcess
                         % For per-window PCA, generate random window data and perform PCA
                         % Generate random data matching the window's statistics
                         windowData = aDataMat(startIdx:endIdx, :);
-                        bernoulliWindowData = zeros(size(windowData));
+                        bernoulliWindowData = zeros(size(windowData), 'single');
                         for n = 1:nNeurons
                             firingRate = mean(windowData(:, n));
-                            bernoulliWindowData(:, n) = double(rand(size(windowData, 1), 1) < firingRate);
+                            bernoulliWindowData(:, n) = single(rand(size(windowData, 1), 1) < firingRate);
                         end
                         % Perform PCA on Bernoulli window data
                         [~, bernoulliScore, ~, ~, ~, ~] = pca(bernoulliWindowData);
-                        bernoulliPCA = bernoulliScore(:, 1:actualPCADim);
+                        bernoulliPCA = single(bernoulliScore(:, 1:actualPCADim));
+                        % clear bernoulliWindowData bernoulliScore;  % Free memory
                     else
                         % Generate random data with same mean and std as original PCA space
-                        bernoulliPCA = zeros(size(pcaData));
+                        bernoulliPCA = zeros(size(pcaData), 'single');
                         for dim = 1:actualPCADim
-                            bernoulliPCA(:, dim) = randn(size(pcaData, 1), 1) * std(pcaData(:, dim)) + mean(pcaData(:, dim));
+                            bernoulliPCA(:, dim) = single(randn(size(pcaData, 1), 1)) * std(pcaData(:, dim)) + mean(pcaData(:, dim));
                         end
                     end
 
                     [bernoulliRR(s), bernoulliDET(s), bernoulliLAM(s), bernoulliTT(s)] = ...
                         compute_rqa_metrics(bernoulliPCA, config.recurrenceThreshold, config.distanceMetric);
+                    
+                    % Explicitly clear bernoulliPCA to free memory
+                    % clear bernoulliPCA;
                 end
 
                 meanBernoulliRR = nanmean(bernoulliRR);
@@ -826,8 +835,13 @@ if nPoints < 2
     DET = 0;
     LAM = 0;
     TT = 0;
-    recurrencePlot = zeros(nPoints, nPoints);
+    recurrencePlot = false(nPoints, nPoints);  % Use logical instead of zeros
     return;
+end
+
+% Ensure data is single precision for memory efficiency
+if ~isa(data, 'single')
+    data = single(data);
 end
 
 % Compute distance matrix based on specified metric
@@ -835,11 +849,12 @@ if strcmpi(distanceMetric, 'cosine')
     % Cosine distance: 1 - cosine similarity
     % Normalize data to unit vectors for cosine distance
     dataNorm = data ./ (sqrt(sum(data.^2, 2)) + eps);  % Add eps to avoid division by zero
-    distMatrix = 1 - (dataNorm * dataNorm');  % Cosine distance
+    distMatrix = 1 - (dataNorm * dataNorm');  % Cosine distance (will be single if data is single)
     % Ensure non-negative (numerical precision issues)
     distMatrix = max(distMatrix, 0);
+    clear dataNorm;  % Free memory
 else
-    % Euclidean distance (default)
+    % Euclidean distance (default) - pdist2 will return single if input is single
     distMatrix = pdist2(data, data);
 end
 
@@ -869,12 +884,18 @@ else
     thresholdValue = sortedDistances(round(targetRecurrencePoints));
 end
 
+% Clear intermediate arrays to free memory (but keep distMatrix for recurrence plot)
+clear offDiagDistances sortedDistances;
+
 % Create recurrence plot (binary matrix) using solved threshold
-recurrencePlot = double(distMatrix <= thresholdValue);
+% Use logical array for memory efficiency (1 byte per element vs 8 bytes for double)
+recurrencePlot = logical(distMatrix <= thresholdValue);
+
+% Clear distMatrix after creating recurrence plot to free memory
+clear distMatrix;
 
 % Remove main diagonal (self-recurrence)
-recurrencePlot = recurrencePlot - eye(nPoints);
-recurrencePlot(recurrencePlot < 0) = 0;
+recurrencePlot = recurrencePlot & ~eye(nPoints);  % Keep as logical
 
 % Recurrence Rate: density of recurrence points (excluding diagonal)
 totalPossible = nPoints * (nPoints - 1);
