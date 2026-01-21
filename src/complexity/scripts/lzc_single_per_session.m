@@ -367,9 +367,16 @@ else
 end
 
 if ~isempty(allLzNorm)
-    ylimLzNorm = [0, max(allLzNorm) * 1.05];
-    if ylimLzNorm(1) == ylimLzNorm(2)
-        ylimLzNorm = ylimLzNorm(1) + [-0.1, 0.1];
+    minLzNorm = min(allLzNorm);
+    maxLzNorm = max(allLzNorm);
+    rangeLzNorm = maxLzNorm - minLzNorm;
+    if rangeLzNorm == 0
+        % If all values are identical, create a small symmetric range
+        ylimLzNorm = minLzNorm + [-0.1, 0.1];
+    else
+        % Add a small buffer on both sides of the data range
+        bufferLzNorm = 0.05 * rangeLzNorm;
+        ylimLzNorm = [minLzNorm - bufferLzNorm, maxLzNorm + bufferLzNorm];
     end
 else
     ylimLzNorm = [0, 1];
