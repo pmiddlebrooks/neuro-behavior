@@ -17,9 +17,9 @@
 %% Configuration
 paths = get_paths;
 
-timeRange = [5*60, 15*60];  % Time range in seconds [startTime, endTime]
+timeRange = [0*60, 15*60];  % Time range in seconds [startTime, endTime]
 areasToPlot = {};        % Cell array of area names to plot (empty = all common areas)
-                         % Example: {'M23', 'M56'} or {} for all areas
+% Example: {'M23', 'M56'} or {} for all areas
 natColor = [0 191 255] ./ 255;   % Color for spontaneous sessions
 reachColor = [255 215 0] ./ 255; % Color for reach sessions
 
@@ -73,6 +73,10 @@ spontaneousData.rrRaw = {};              % Recurrence rate raw
 spontaneousData.rrNormalized = {};       % Recurrence rate normalized (shuffled)
 spontaneousData.detRaw = {};             % Determinism raw
 spontaneousData.detNormalized = {};      % Determinism normalized (shuffled)
+spontaneousData.lamRaw = {};             % Laminarity raw
+spontaneousData.lamNormalized = {};      % Laminarity normalized (shuffled)
+spontaneousData.ttRaw = {};              % Trapping time raw
+spontaneousData.ttNormalized = {};       % Trapping time normalized (shuffled)
 spontaneousData.sessionNames = {};
 spontaneousData.areas = [];
 
@@ -81,6 +85,10 @@ reachData.rrRaw = {};
 reachData.rrNormalized = {};
 reachData.detRaw = {};
 reachData.detNormalized = {};
+reachData.lamRaw = {};
+reachData.lamNormalized = {};
+reachData.ttRaw = {};
+reachData.ttNormalized = {};
 reachData.sessionNames = {};
 reachData.areas = [];
 
@@ -89,16 +97,18 @@ runParallel = 1;
 % Check if parpool is already running, start one if not
 if runParallel
     currentPool = gcp('nocreate');
-if isempty(currentPool)
-    % NumWorkers = min(4, length(dataStruct.areas));
-    NumWorkers = 2;
-    parpool('local', NumWorkers);
-    fprintf('Started parallel pool with %d workers\n', NumWorkers);
-else
-    fprintf('Using existing parallel pool with %d workers\n', currentPool.NumWorkers);
+    if isempty(currentPool)
+        % NumWorkers = min(4, length(dataStruct.areas));
+        NumWorkers = 3;
+        parpool('local', NumWorkers);
+        fprintf('Started parallel pool with %d workers\n', NumWorkers);
+    else
+        fprintf('Using existing parallel pool with %d workers\n', currentPool.NumWorkers);
+    end
 end
-end
+% ===========================================================================================
 %% Process spontaneous sessions
+tic;
 fprintf('\n=== Processing Spontaneous Sessions ===\n');
 % Pre-allocate results cell array for parfor compatibility
 spontaneousResults = cell(1, length(spontaneousSessions));
@@ -106,7 +116,7 @@ spontaneousResults = cell(1, length(spontaneousSessions));
 for s = 1:length(spontaneousSessions)
     sessionName = spontaneousSessions{s};
     fprintf('\nProcessing session %d/%d: %s\n', s, length(spontaneousSessions), sessionName);
-    
+
     % Initialize session result structure
     sessionResult = struct();
     sessionResult.sessionName = sessionName;
@@ -116,29 +126,47 @@ for s = 1:length(spontaneousSessions)
     sessionResult.rrNormalized = {};
     sessionResult.detRaw = {};
     sessionResult.detNormalized = {};
-    
+    % Laminarity and trapping time
+    sessionResult.lamRaw = {};
+    sessionResult.lamNormalized = {};
+    sessionResult.ttRaw = {};
+    sessionResult.ttNormalized = {};
+    sessionResult.lamRaw = {};
+    sessionResult.lamNormalized = {};
+    sessionResult.ttRaw = {};
+    sessionResult.ttNormalized = {};
+
     try
         % Load data
         dataStruct = load_sliding_window_data('spontaneous', 'spikes', ...
             'sessionName', sessionName, 'opts', opts);
-        
+
         % Run RQA analysis
         fprintf('  Running RQA analysis...\n');
         results = rqa_sliding_analysis(dataStruct, config);
-        
+
         % Extract areas from results
         if isfield(results, 'areas')
             sessionResult.areas = results.areas;
             numAreas = length(results.areas);
-            
+
             % Initialize metric arrays
             sessionResult.rrRaw = cell(1, numAreas);
             sessionResult.rrNormalized = cell(1, numAreas);
             sessionResult.detRaw = cell(1, numAreas);
             sessionResult.detNormalized = cell(1, numAreas);
-            
+            sessionResult.lamRaw = cell(1, numAreas);
+            sessionResult.lamNormalized = cell(1, numAreas);
+            sessionResult.ttRaw = cell(1, numAreas);
+            sessionResult.ttNormalized = cell(1, numAreas);
+            sessionResult.lamRaw = cell(1, numAreas);
+            sessionResult.lamNormalized = cell(1, numAreas);
+            sessionResult.ttRaw = cell(1, numAreas);
+            sessionResult.ttNormalized = cell(1, numAreas);
+
             % Extract metrics per area (single value per area)
-            if isfield(results, 'recurrenceRate') && isfield(results, 'determinism')
+            if isfield(results, 'recurrenceRate') && isfield(results, 'determinism') && ...
+                    isfield(results, 'laminarity') && isfield(results, 'trappingTime')
                 for a = 1:numAreas
                     % Recurrence rate raw
                     if a <= length(results.recurrenceRate) && ~isempty(results.recurrenceRate{a})
@@ -151,7 +179,7 @@ for s = 1:length(spontaneousSessions)
                     else
                         sessionResult.rrRaw{a} = nan;
                     end
-                    
+
                     % Recurrence rate normalized
                     if isfield(results, 'recurrenceRateNormalized') && ...
                             a <= length(results.recurrenceRateNormalized) && ...
@@ -165,7 +193,7 @@ for s = 1:length(spontaneousSessions)
                     else
                         sessionResult.rrNormalized{a} = nan;
                     end
-                    
+
                     % Determinism raw
                     if a <= length(results.determinism) && ~isempty(results.determinism{a})
                         detValues = results.determinism{a}(~isnan(results.determinism{a}));
@@ -177,7 +205,7 @@ for s = 1:length(spontaneousSessions)
                     else
                         sessionResult.detRaw{a} = nan;
                     end
-                    
+
                     % Determinism normalized
                     if isfield(results, 'determinismNormalized') && ...
                             a <= length(results.determinismNormalized) && ...
@@ -191,6 +219,58 @@ for s = 1:length(spontaneousSessions)
                     else
                         sessionResult.detNormalized{a} = nan;
                     end
+
+                    % Laminarity raw
+                    if a <= length(results.laminarity) && ~isempty(results.laminarity{a})
+                        lamValues = results.laminarity{a}(~isnan(results.laminarity{a}));
+                        if ~isempty(lamValues)
+                            sessionResult.lamRaw{a} = lamValues(1);
+                        else
+                            sessionResult.lamRaw{a} = nan;
+                        end
+                    else
+                        sessionResult.lamRaw{a} = nan;
+                    end
+
+                    % Laminarity normalized
+                    if isfield(results, 'laminarityNormalized') && ...
+                            a <= length(results.laminarityNormalized) && ...
+                            ~isempty(results.laminarityNormalized{a})
+                        lamNormValues = results.laminarityNormalized{a}(~isnan(results.laminarityNormalized{a}));
+                        if ~isempty(lamNormValues)
+                            sessionResult.lamNormalized{a} = lamNormValues(1);
+                        else
+                            sessionResult.lamNormalized{a} = nan;
+                        end
+                    else
+                        sessionResult.lamNormalized{a} = nan;
+                    end
+
+                    % Trapping time raw
+                    if a <= length(results.trappingTime) && ~isempty(results.trappingTime{a})
+                        ttValues = results.trappingTime{a}(~isnan(results.trappingTime{a}));
+                        if ~isempty(ttValues)
+                            sessionResult.ttRaw{a} = ttValues(1);
+                        else
+                            sessionResult.ttRaw{a} = nan;
+                        end
+                    else
+                        sessionResult.ttRaw{a} = nan;
+                    end
+
+                    % Trapping time normalized
+                    if isfield(results, 'trappingTimeNormalized') && ...
+                            a <= length(results.trappingTimeNormalized) && ...
+                            ~isempty(results.trappingTimeNormalized{a})
+                        ttNormValues = results.trappingTimeNormalized{a}(~isnan(results.trappingTimeNormalized{a}));
+                        if ~isempty(ttNormValues)
+                            sessionResult.ttNormalized{a} = ttNormValues(1);
+                        else
+                            sessionResult.ttNormalized{a} = nan;
+                        end
+                    else
+                        sessionResult.ttNormalized{a} = nan;
+                    end
                 end
             else
                 warning('RQA metrics not found in results for session %s', sessionName);
@@ -199,20 +279,24 @@ for s = 1:length(spontaneousSessions)
                     sessionResult.rrNormalized{a} = nan;
                     sessionResult.detRaw{a} = nan;
                     sessionResult.detNormalized{a} = nan;
+                    sessionResult.lamRaw{a} = nan;
+                    sessionResult.lamNormalized{a} = nan;
+                    sessionResult.ttRaw{a} = nan;
+                    sessionResult.ttNormalized{a} = nan;
                 end
             end
-            
+
             sessionResult.success = true;
             fprintf('  ✓ Session completed successfully\n');
         else
             warning('Areas not found in results for session %s', sessionName);
         end
-        
+
     catch ME
         fprintf('  ✗ Error processing session: %s\n', ME.message);
         sessionResult.success = false;
     end
-    
+
     % Store result in cell array (parfor-compatible)
     spontaneousResults{s} = sessionResult;
 end
@@ -221,11 +305,11 @@ end
 fprintf('\n=== Aggregating Spontaneous Session Results ===\n');
 for s = 1:length(spontaneousResults)
     sessionResult = spontaneousResults{s};
-    
+
     if isempty(sessionResult.areas)
         continue;
     end
-    
+
     % Initialize areas on first valid session
     if isempty(spontaneousData.areas) && ~isempty(sessionResult.areas)
         spontaneousData.areas = sessionResult.areas;
@@ -234,14 +318,22 @@ for s = 1:length(spontaneousResults)
         spontaneousData.rrNormalized = cell(1, numAreas);
         spontaneousData.detRaw = cell(1, numAreas);
         spontaneousData.detNormalized = cell(1, numAreas);
+        spontaneousData.lamRaw = cell(1, numAreas);
+        spontaneousData.lamNormalized = cell(1, numAreas);
+        spontaneousData.ttRaw = cell(1, numAreas);
+        spontaneousData.ttNormalized = cell(1, numAreas);
         for a = 1:numAreas
             spontaneousData.rrRaw{a} = [];
             spontaneousData.rrNormalized{a} = [];
             spontaneousData.detRaw{a} = [];
             spontaneousData.detNormalized{a} = [];
+            spontaneousData.lamRaw{a} = [];
+            spontaneousData.lamNormalized{a} = [];
+            spontaneousData.ttRaw{a} = [];
+            spontaneousData.ttNormalized{a} = [];
         end
     end
-    
+
     % Append metrics for this session
     if ~isempty(spontaneousData.areas) && length(sessionResult.areas) == length(spontaneousData.areas)
         for a = 1:length(spontaneousData.areas)
@@ -250,30 +342,55 @@ for s = 1:length(spontaneousResults)
             else
                 spontaneousData.rrRaw{a} = [spontaneousData.rrRaw{a}, nan];
             end
-            
+
             if a <= length(sessionResult.rrNormalized) && ~isempty(sessionResult.rrNormalized{a})
                 spontaneousData.rrNormalized{a} = [spontaneousData.rrNormalized{a}, sessionResult.rrNormalized{a}];
             else
                 spontaneousData.rrNormalized{a} = [spontaneousData.rrNormalized{a}, nan];
             end
-            
+
             if a <= length(sessionResult.detRaw) && ~isempty(sessionResult.detRaw{a})
                 spontaneousData.detRaw{a} = [spontaneousData.detRaw{a}, sessionResult.detRaw{a}];
             else
                 spontaneousData.detRaw{a} = [spontaneousData.detRaw{a}, nan];
             end
-            
+
             if a <= length(sessionResult.detNormalized) && ~isempty(sessionResult.detNormalized{a})
                 spontaneousData.detNormalized{a} = [spontaneousData.detNormalized{a}, sessionResult.detNormalized{a}];
             else
                 spontaneousData.detNormalized{a} = [spontaneousData.detNormalized{a}, nan];
             end
+
+            if a <= length(sessionResult.lamRaw) && ~isempty(sessionResult.lamRaw{a})
+                spontaneousData.lamRaw{a} = [spontaneousData.lamRaw{a}, sessionResult.lamRaw{a}];
+            else
+                spontaneousData.lamRaw{a} = [spontaneousData.lamRaw{a}, nan];
+            end
+
+            if a <= length(sessionResult.lamNormalized) && ~isempty(sessionResult.lamNormalized{a})
+                spontaneousData.lamNormalized{a} = [spontaneousData.lamNormalized{a}, sessionResult.lamNormalized{a}];
+            else
+                spontaneousData.lamNormalized{a} = [spontaneousData.lamNormalized{a}, nan];
+            end
+
+            if a <= length(sessionResult.ttRaw) && ~isempty(sessionResult.ttRaw{a})
+                spontaneousData.ttRaw{a} = [spontaneousData.ttRaw{a}, sessionResult.ttRaw{a}];
+            else
+                spontaneousData.ttRaw{a} = [spontaneousData.ttRaw{a}, nan];
+            end
+
+            if a <= length(sessionResult.ttNormalized) && ~isempty(sessionResult.ttNormalized{a})
+                spontaneousData.ttNormalized{a} = [spontaneousData.ttNormalized{a}, sessionResult.ttNormalized{a}];
+            else
+                spontaneousData.ttNormalized{a} = [spontaneousData.ttNormalized{a}, nan];
+            end
         end
     end
-    
+
     spontaneousData.sessionNames{end+1} = sessionResult.sessionName;
 end
 
+% ===========================================================================================
 % Process reach sessions
 fprintf('\n=== Processing Reach Sessions ===\n');
 % Reset opts for reach sessions
@@ -283,10 +400,10 @@ opts.collectEnd = windowEndTime;  % End time from timeRange
 % Pre-allocate results cell array for parfor compatibility
 reachResults = cell(1, length(reachSessions));
 
-parfor s = 1:length(reachSessions)
+for s = 1:length(reachSessions)
     sessionName = reachSessions{s};
     fprintf('\nProcessing session %d/%d: %s\n', s, length(reachSessions), sessionName);
-    
+
     % Initialize session result structure
     sessionResult = struct();
     sessionResult.sessionName = sessionName;
@@ -296,29 +413,39 @@ parfor s = 1:length(reachSessions)
     sessionResult.rrNormalized = {};
     sessionResult.detRaw = {};
     sessionResult.detNormalized = {};
-    
+    % Laminarity and trapping time
+    sessionResult.lamRaw = {};
+    sessionResult.lamNormalized = {};
+    sessionResult.ttRaw = {};
+    sessionResult.ttNormalized = {};
+
     try
         % Load data
         dataStruct = load_sliding_window_data('reach', 'spikes', ...
             'sessionName', sessionName, 'opts', opts);
-        
+
         % Run RQA analysis
         fprintf('  Running RQA analysis...\n');
         results = rqa_sliding_analysis(dataStruct, config);
-        
+
         % Extract areas from results
         if isfield(results, 'areas')
             sessionResult.areas = results.areas;
             numAreas = length(results.areas);
-            
+
             % Initialize metric arrays
             sessionResult.rrRaw = cell(1, numAreas);
             sessionResult.rrNormalized = cell(1, numAreas);
             sessionResult.detRaw = cell(1, numAreas);
             sessionResult.detNormalized = cell(1, numAreas);
-            
+            sessionResult.lamRaw = cell(1, numAreas);
+            sessionResult.lamNormalized = cell(1, numAreas);
+            sessionResult.ttRaw = cell(1, numAreas);
+            sessionResult.ttNormalized = cell(1, numAreas);
+
             % Extract metrics per area (single value per area)
-            if isfield(results, 'recurrenceRate') && isfield(results, 'determinism')
+            if isfield(results, 'recurrenceRate') && isfield(results, 'determinism') && ...
+                    isfield(results, 'laminarity') && isfield(results, 'trappingTime')
                 for a = 1:numAreas
                     % Recurrence rate raw
                     if a <= length(results.recurrenceRate) && ~isempty(results.recurrenceRate{a})
@@ -331,7 +458,7 @@ parfor s = 1:length(reachSessions)
                     else
                         sessionResult.rrRaw{a} = nan;
                     end
-                    
+
                     % Recurrence rate normalized
                     if isfield(results, 'recurrenceRateNormalized') && ...
                             a <= length(results.recurrenceRateNormalized) && ...
@@ -345,7 +472,7 @@ parfor s = 1:length(reachSessions)
                     else
                         sessionResult.rrNormalized{a} = nan;
                     end
-                    
+
                     % Determinism raw
                     if a <= length(results.determinism) && ~isempty(results.determinism{a})
                         detValues = results.determinism{a}(~isnan(results.determinism{a}));
@@ -357,7 +484,7 @@ parfor s = 1:length(reachSessions)
                     else
                         sessionResult.detRaw{a} = nan;
                     end
-                    
+
                     % Determinism normalized
                     if isfield(results, 'determinismNormalized') && ...
                             a <= length(results.determinismNormalized) && ...
@@ -371,6 +498,58 @@ parfor s = 1:length(reachSessions)
                     else
                         sessionResult.detNormalized{a} = nan;
                     end
+
+                    % Laminarity raw
+                    if a <= length(results.laminarity) && ~isempty(results.laminarity{a})
+                        lamValues = results.laminarity{a}(~isnan(results.laminarity{a}));
+                        if ~isempty(lamValues)
+                            sessionResult.lamRaw{a} = lamValues(1);
+                        else
+                            sessionResult.lamRaw{a} = nan;
+                        end
+                    else
+                        sessionResult.lamRaw{a} = nan;
+                    end
+
+                    % Laminarity normalized
+                    if isfield(results, 'laminarityNormalized') && ...
+                            a <= length(results.laminarityNormalized) && ...
+                            ~isempty(results.laminarityNormalized{a})
+                        lamNormValues = results.laminarityNormalized{a}(~isnan(results.laminarityNormalized{a}));
+                        if ~isempty(lamNormValues)
+                            sessionResult.lamNormalized{a} = lamNormValues(1);
+                        else
+                            sessionResult.lamNormalized{a} = nan;
+                        end
+                    else
+                        sessionResult.lamNormalized{a} = nan;
+                    end
+
+                    % Trapping time raw
+                    if a <= length(results.trappingTime) && ~isempty(results.trappingTime{a})
+                        ttValues = results.trappingTime{a}(~isnan(results.trappingTime{a}));
+                        if ~isempty(ttValues)
+                            sessionResult.ttRaw{a} = ttValues(1);
+                        else
+                            sessionResult.ttRaw{a} = nan;
+                        end
+                    else
+                        sessionResult.ttRaw{a} = nan;
+                    end
+
+                    % Trapping time normalized
+                    if isfield(results, 'trappingTimeNormalized') && ...
+                            a <= length(results.trappingTimeNormalized) && ...
+                            ~isempty(results.trappingTimeNormalized{a})
+                        ttNormValues = results.trappingTimeNormalized{a}(~isnan(results.trappingTimeNormalized{a}));
+                        if ~isempty(ttNormValues)
+                            sessionResult.ttNormalized{a} = ttNormValues(1);
+                        else
+                            sessionResult.ttNormalized{a} = nan;
+                        end
+                    else
+                        sessionResult.ttNormalized{a} = nan;
+                    end
                 end
             else
                 warning('RQA metrics not found in results for session %s', sessionName);
@@ -379,20 +558,24 @@ parfor s = 1:length(reachSessions)
                     sessionResult.rrNormalized{a} = nan;
                     sessionResult.detRaw{a} = nan;
                     sessionResult.detNormalized{a} = nan;
+                    sessionResult.lamRaw{a} = nan;
+                    sessionResult.lamNormalized{a} = nan;
+                    sessionResult.ttRaw{a} = nan;
+                    sessionResult.ttNormalized{a} = nan;
                 end
             end
-            
+
             sessionResult.success = true;
             fprintf('  ✓ Session completed successfully\n');
         else
             warning('Areas not found in results for session %s', sessionName);
         end
-        
+
     catch ME
         fprintf('  ✗ Error processing session: %s\n', ME.message);
         sessionResult.success = false;
     end
-    
+
     % Store result in cell array (parfor-compatible)
     reachResults{s} = sessionResult;
 end
@@ -401,11 +584,11 @@ end
 fprintf('\n=== Aggregating Reach Session Results ===\n');
 for s = 1:length(reachResults)
     sessionResult = reachResults{s};
-    
+
     if isempty(sessionResult.areas)
         continue;
     end
-    
+
     % Initialize areas on first valid session
     if isempty(reachData.areas) && ~isempty(sessionResult.areas)
         reachData.areas = sessionResult.areas;
@@ -414,14 +597,22 @@ for s = 1:length(reachResults)
         reachData.rrNormalized = cell(1, numAreas);
         reachData.detRaw = cell(1, numAreas);
         reachData.detNormalized = cell(1, numAreas);
+        reachData.lamRaw = cell(1, numAreas);
+        reachData.lamNormalized = cell(1, numAreas);
+        reachData.ttRaw = cell(1, numAreas);
+        reachData.ttNormalized = cell(1, numAreas);
         for a = 1:numAreas
             reachData.rrRaw{a} = [];
             reachData.rrNormalized{a} = [];
             reachData.detRaw{a} = [];
             reachData.detNormalized{a} = [];
+            reachData.lamRaw{a} = [];
+            reachData.lamNormalized{a} = [];
+            reachData.ttRaw{a} = [];
+            reachData.ttNormalized{a} = [];
         end
     end
-    
+
     % Append metrics for this session
     if ~isempty(reachData.areas) && length(sessionResult.areas) == length(reachData.areas)
         for a = 1:length(reachData.areas)
@@ -430,29 +621,55 @@ for s = 1:length(reachResults)
             else
                 reachData.rrRaw{a} = [reachData.rrRaw{a}, nan];
             end
-            
+
             if a <= length(sessionResult.rrNormalized) && ~isempty(sessionResult.rrNormalized{a})
                 reachData.rrNormalized{a} = [reachData.rrNormalized{a}, sessionResult.rrNormalized{a}];
             else
                 reachData.rrNormalized{a} = [reachData.rrNormalized{a}, nan];
             end
-            
+
             if a <= length(sessionResult.detRaw) && ~isempty(sessionResult.detRaw{a})
                 reachData.detRaw{a} = [reachData.detRaw{a}, sessionResult.detRaw{a}];
             else
                 reachData.detRaw{a} = [reachData.detRaw{a}, nan];
             end
-            
+
             if a <= length(sessionResult.detNormalized) && ~isempty(sessionResult.detNormalized{a})
                 reachData.detNormalized{a} = [reachData.detNormalized{a}, sessionResult.detNormalized{a}];
             else
                 reachData.detNormalized{a} = [reachData.detNormalized{a}, nan];
             end
+
+            if a <= length(sessionResult.lamRaw) && ~isempty(sessionResult.lamRaw{a})
+                reachData.lamRaw{a} = [reachData.lamRaw{a}, sessionResult.lamRaw{a}];
+            else
+                reachData.lamRaw{a} = [reachData.lamRaw{a}, nan];
+            end
+
+            if a <= length(sessionResult.lamNormalized) && ~isempty(sessionResult.lamNormalized{a})
+                reachData.lamNormalized{a} = [reachData.lamNormalized{a}, sessionResult.lamNormalized{a}];
+            else
+                reachData.lamNormalized{a} = [reachData.lamNormalized{a}, nan];
+            end
+
+            if a <= length(sessionResult.ttRaw) && ~isempty(sessionResult.ttRaw{a})
+                reachData.ttRaw{a} = [reachData.ttRaw{a}, sessionResult.ttRaw{a}];
+            else
+                reachData.ttRaw{a} = [reachData.ttRaw{a}, nan];
+            end
+
+            if a <= length(sessionResult.ttNormalized) && ~isempty(sessionResult.ttNormalized{a})
+                reachData.ttNormalized{a} = [reachData.ttNormalized{a}, sessionResult.ttNormalized{a}];
+            else
+                reachData.ttNormalized{a} = [reachData.ttNormalized{a}, nan];
+            end
         end
     end
-    
+
     reachData.sessionNames{end+1} = sessionResult.sessionName;
 end
+
+    fprintf('  All completed in %.1f hours\n', toc/60/60);
 
 % Determine common areas
 if isempty(spontaneousData.areas) || isempty(reachData.areas)
@@ -487,235 +704,108 @@ else
 end
 numAreasToPlot = length(areasToPlot);
 
-% Collect all values to determine global y-axis limits
-allRrRaw = [];
-allRrNorm = [];
-allDetRaw = [];
+% Collect all values (normalized metrics only) to determine global y-axis limits
 allDetNorm = [];
+allLamNorm = [];
+allTTNorm = [];
 
 for a = 1:numAreasToPlot
     areaName = areasToPlot{a};
-    
+
     % Find area index in spontaneous and reach data
     natAreaIdx = find(strcmp(spontaneousData.areas, areaName));
     reachAreaIdx = find(strcmp(reachData.areas, areaName));
-    
+
     if isempty(natAreaIdx) || isempty(reachAreaIdx)
         continue;
     end
-    
-    % Recurrence rate
-    natRr = spontaneousData.rrRaw{natAreaIdx};
-    reachRr = reachData.rrRaw{reachAreaIdx};
-    natRr = natRr(~isnan(natRr));
-    reachRr = reachRr(~isnan(reachRr));
-    allRrRaw = [allRrRaw, natRr, reachRr];
-    
-    natRrNorm = spontaneousData.rrNormalized{natAreaIdx};
-    reachRrNorm = reachData.rrNormalized{reachAreaIdx};
-    natRrNorm = natRrNorm(~isnan(natRrNorm));
-    reachRrNorm = reachRrNorm(~isnan(reachRrNorm));
-    allRrNorm = [allRrNorm, natRrNorm, reachRrNorm];
-    
+
     % Determinism
-    natDet = spontaneousData.detRaw{natAreaIdx};
-    reachDet = reachData.detRaw{reachAreaIdx};
-    natDet = natDet(~isnan(natDet));
-    reachDet = reachDet(~isnan(reachDet));
-    allDetRaw = [allDetRaw, natDet, reachDet];
-    
     natDetNorm = spontaneousData.detNormalized{natAreaIdx};
     reachDetNorm = reachData.detNormalized{reachAreaIdx};
     natDetNorm = natDetNorm(~isnan(natDetNorm));
     reachDetNorm = reachDetNorm(~isnan(reachDetNorm));
     allDetNorm = [allDetNorm, natDetNorm, reachDetNorm];
+
+    % Laminarity
+    natLamNorm = spontaneousData.lamNormalized{natAreaIdx};
+    reachLamNorm = reachData.lamNormalized{reachAreaIdx};
+    natLamNorm = natLamNorm(~isnan(natLamNorm));
+    reachLamNorm = reachLamNorm(~isnan(reachLamNorm));
+    allLamNorm = [allLamNorm, natLamNorm, reachLamNorm];
+
+    % Trapping time
+    natTTNorm = spontaneousData.ttNormalized{natAreaIdx};
+    reachTTNorm = reachData.ttNormalized{reachAreaIdx};
+    natTTNorm = natTTNorm(~isnan(natTTNorm));
+    reachTTNorm = reachTTNorm(~isnan(reachTTNorm));
+    allTTNorm = [allTTNorm, natTTNorm, reachTTNorm];
 end
 
-% Calculate global y-axis limits with some padding
-if ~isempty(allRrRaw)
-    ylimRrRaw = [0, max(allRrRaw) * 1.05];
-    if ylimRrRaw(1) == ylimRrRaw(2)
-        ylimRrRaw = ylimRrRaw(1) + [-0.1, 0.1];
-    end
-else
-    ylimRrRaw = [0, 1];
-end
-
-if ~isempty(allRrNorm)
-    ylimRrNorm = [0, max(allRrNorm) * 1.05];
-    if ylimRrNorm(1) == ylimRrNorm(2)
-        ylimRrNorm = ylimRrNorm(1) + [-0.1, 0.1];
-    end
-else
-    ylimRrNorm = [0, 1];
-end
-
-if ~isempty(allDetRaw)
-    ylimDetRaw = [0, max(allDetRaw) * 1.05];
-    if ylimDetRaw(1) == ylimDetRaw(2)
-        ylimDetRaw = ylimDetRaw(1) + [-0.1, 0.1];
-    end
-else
-    ylimDetRaw = [0, 1];
-end
-
+% Calculate global y-axis limits with some padding (normalized metrics)
 if ~isempty(allDetNorm)
     ylimDetNorm = [0, max(allDetNorm) * 1.05];
     if ylimDetNorm(1) == ylimDetNorm(2)
         ylimDetNorm = ylimDetNorm(1) + [-0.1, 0.1];
     end
 else
-    ylimDetNorm = [0, 1];
+    ylimDetNorm = [0, 2];
 end
 
-% Create figure with 4 columns: RR raw, RR normalized, DET raw, DET normalized
+if ~isempty(allLamNorm)
+    ylimLamNorm = [0, max(allLamNorm) * 1.05];
+    if ylimLamNorm(1) == ylimLamNorm(2)
+        ylimLamNorm = ylimLamNorm(1) + [-0.1, 0.1];
+    end
+else
+    ylimLamNorm = [0, 2];
+end
+
+if ~isempty(allTTNorm)
+    ylimTTNorm = [0, max(allTTNorm) * 1.05];
+    if ylimTTNorm(1) == ylimTTNorm(2)
+        ylimTTNorm = ylimTTNorm(1) + [-0.1, 0.1];
+    end
+else
+    ylimTTNorm = [0, 2];
+end
+
+% Create figure with 3 columns: DET norm, LAM norm, TT norm
 figure(3200); clf;
 set(gcf, 'Units', 'pixels');
-set(gcf, 'Position', [100, 100, 2200, 300 * numAreasToPlot]);
+set(gcf, 'Position', [100, 100, 1800, 300 * numAreasToPlot]);
 
 for a = 1:numAreasToPlot
     areaName = areasToPlot{a};
-    
+
     % Find area index in spontaneous and reach data
     natAreaIdx = find(strcmp(spontaneousData.areas, areaName));
     reachAreaIdx = find(strcmp(reachData.areas, areaName));
-    
+
     if isempty(natAreaIdx) || isempty(reachAreaIdx)
         continue;
     end
-    
-    % Recurrence rate
-    natRr = spontaneousData.rrRaw{natAreaIdx};
-    reachRr = reachData.rrRaw{reachAreaIdx};
-    natRr = natRr(~isnan(natRr));
-    reachRr = reachRr(~isnan(reachRr));
-    
-    natRrNorm = spontaneousData.rrNormalized{natAreaIdx};
-    reachRrNorm = reachData.rrNormalized{reachAreaIdx};
-    natRrNorm = natRrNorm(~isnan(natRrNorm));
-    reachRrNorm = reachRrNorm(~isnan(reachRrNorm));
-    
-    % Determinism
-    natDet = spontaneousData.detRaw{natAreaIdx};
-    reachDet = reachData.detRaw{reachAreaIdx};
-    natDet = natDet(~isnan(natDet));
-    reachDet = reachDet(~isnan(reachDet));
-    
+
+    % Determinism (normalized)
     natDetNorm = spontaneousData.detNormalized{natAreaIdx};
     reachDetNorm = reachData.detNormalized{reachAreaIdx};
     natDetNorm = natDetNorm(~isnan(natDetNorm));
     reachDetNorm = reachDetNorm(~isnan(reachDetNorm));
-    
-    % RR Raw
-    subplot(numAreasToPlot, 4, (a-1)*4 + 1);
-    hold on;
-    numNat = length(natRr);
-    numReach = length(reachRr);
-    xNat = 1:numNat;
-    xReach = (numNat + 1):(numNat + numReach);
-    if numNat > 0
-        bar(xNat, natRr, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
-    end
-    if numReach > 0
-        bar(xReach, reachRr, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
-    end
-    xlim([0.5, numNat + numReach + 0.5]);
-    if numNat > 0 && numReach > 0
-        xticks([mean(xNat), mean(xReach)]);
-        xticklabels({'Spontaneous', 'Reach'});
-    elseif numNat > 0
-        xticks(mean(xNat));
-        xticklabels({'Spontaneous'});
-    elseif numReach > 0
-        xticks(mean(xReach));
-        xticklabels({'Reach'});
-    end
-    ylabel('RR Raw');
-    title(sprintf('%s - RR Raw', areaName));
-    grid on;
-    ylim(ylimRrRaw);
-    if ~isempty(natRr)
-        yline(mean(natRr), '--', 'color', natColor, 'LineWidth', 2);
-    end
-    if ~isempty(reachRr)
-        yline(mean(reachRr), '--', 'color', reachColor, 'LineWidth', 2);
-    end
-    hold off;
-    
-    % RR Normalized
-    subplot(numAreasToPlot, 4, (a-1)*4 + 2);
-    hold on;
-    numNat = length(natRrNorm);
-    numReach = length(reachRrNorm);
-    xNat = 1:numNat;
-    xReach = (numNat + 1):(numNat + numReach);
-    if numNat > 0
-        bar(xNat, natRrNorm, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
-    end
-    if numReach > 0
-        bar(xReach, reachRrNorm, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
-    end
-    xlim([0.5, numNat + numReach + 0.5]);
-    if numNat > 0 && numReach > 0
-        xticks([mean(xNat), mean(xReach)]);
-        xticklabels({'Spontaneous', 'Reach'});
-    elseif numNat > 0
-        xticks(mean(xNat));
-        xticklabels({'Spontaneous'});
-    elseif numReach > 0
-        xticks(mean(xReach));
-        xticklabels({'Reach'});
-    end
-    ylabel('RR Normalized');
-    title(sprintf('%s - RR Normalized', areaName));
-    grid on;
-    ylim(ylimRrNorm);
-    if ~isempty(natRrNorm)
-        yline(mean(natRrNorm), '--', 'color', natColor, 'LineWidth', 2);
-    end
-    if ~isempty(reachRrNorm)
-        yline(mean(reachRrNorm), '--', 'color', reachColor, 'LineWidth', 2);
-    end
-    hold off;
-    
-    % DET Raw
-    subplot(numAreasToPlot, 4, (a-1)*4 + 3);
-    hold on;
-    numNat = length(natDet);
-    numReach = length(reachDet);
-    xNat = 1:numNat;
-    xReach = (numNat + 1):(numNat + numReach);
-    if numNat > 0
-        bar(xNat, natDet, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
-    end
-    if numReach > 0
-        bar(xReach, reachDet, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
-    end
-    xlim([0.5, numNat + numReach + 0.5]);
-    if numNat > 0 && numReach > 0
-        xticks([mean(xNat), mean(xReach)]);
-        xticklabels({'Spontaneous', 'Reach'});
-    elseif numNat > 0
-        xticks(mean(xNat));
-        xticklabels({'Spontaneous'});
-    elseif numReach > 0
-        xticks(mean(xReach));
-        xticklabels({'Reach'});
-    end
-    ylabel('DET Raw');
-    title(sprintf('%s - DET Raw', areaName));
-    grid on;
-    ylim(ylimDetRaw);
-    if ~isempty(natDet)
-        yline(mean(natDet), '--', 'color', natColor, 'LineWidth', 2);
-    end
-    if ~isempty(reachDet)
-        yline(mean(reachDet), '--', 'color', reachColor, 'LineWidth', 2);
-    end
-    hold off;
-    
+
+    % Laminarity (normalized)
+    natLamNorm = spontaneousData.lamNormalized{natAreaIdx};
+    reachLamNorm = reachData.lamNormalized{reachAreaIdx};
+    natLamNorm = natLamNorm(~isnan(natLamNorm));
+    reachLamNorm = reachLamNorm(~isnan(reachLamNorm));
+
+    % Trapping time (normalized)
+    natTTNorm = spontaneousData.ttNormalized{natAreaIdx};
+    reachTTNorm = reachData.ttNormalized{reachAreaIdx};
+    natTTNorm = natTTNorm(~isnan(natTTNorm));
+    reachTTNorm = reachTTNorm(~isnan(reachTTNorm));
+
     % DET Normalized
-    subplot(numAreasToPlot, 4, (a-1)*4 + 4);
+    subplot(numAreasToPlot, 3, (a-1)*3 + 1);
     hold on;
     numNat = length(natDetNorm);
     numReach = length(reachDetNorm);
@@ -738,8 +828,8 @@ for a = 1:numAreasToPlot
         xticks(mean(xReach));
         xticklabels({'Reach'});
     end
-    ylabel('DET Normalized');
-    title(sprintf('%s - DET Normalized', areaName));
+    ylabel('DET (norm)');
+    title(sprintf('%s - DET (Norm)', areaName));
     grid on;
     ylim(ylimDetNorm);
     if ~isempty(natDetNorm)
@@ -747,6 +837,78 @@ for a = 1:numAreasToPlot
     end
     if ~isempty(reachDetNorm)
         yline(mean(reachDetNorm), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+
+    % LAM Normalized
+    subplot(numAreasToPlot, 3, (a-1)*3 + 2);
+    hold on;
+    numNat = length(natLamNorm);
+    numReach = length(reachLamNorm);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natLamNorm, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachLamNorm, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('LAM (norm)');
+    title(sprintf('%s - LAM (Norm)', areaName));
+    grid on;
+    ylim(ylimLamNorm);
+    if ~isempty(natLamNorm)
+        yline(mean(natLamNorm), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachLamNorm)
+        yline(mean(reachLamNorm), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+
+    % TT Normalized
+    subplot(numAreasToPlot, 3, (a-1)*3 + 3);
+    hold on;
+    numNat = length(natTTNorm);
+    numReach = length(reachTTNorm);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natTTNorm, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachTTNorm, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('TT (norm)');
+    title(sprintf('%s - TT (Norm)', areaName));
+    grid on;
+    ylim(ylimTTNorm);
+    if ~isempty(natTTNorm)
+        yline(mean(natTTNorm), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachTTNorm)
+        yline(mean(reachTTNorm), '--', 'color', reachColor, 'LineWidth', 2);
     end
     hold off;
 end
