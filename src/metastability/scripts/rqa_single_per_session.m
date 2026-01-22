@@ -687,7 +687,7 @@ for a = 1:length(commonAreas)
     fprintf('  %s\n', commonAreas{a});
 end
 
-% Create plots
+%% Create plots
 fprintf('\n=== Creating RQA Plots ===\n');
 
 % Determine which areas to plot
@@ -743,29 +743,50 @@ for a = 1:numAreasToPlot
 end
 
 % Calculate global y-axis limits with some padding (normalized metrics)
+% Use minimum value minus buffer for lower limit, maximum value plus buffer for upper limit
+bufferPercent = 0.05;  % 5% buffer on each side
+
 if ~isempty(allDetNorm)
-    ylimDetNorm = [0, max(allDetNorm) * 1.05];
-    if ylimDetNorm(1) == ylimDetNorm(2)
-        ylimDetNorm = ylimDetNorm(1) + [-0.1, 0.1];
+    minDetNorm = min(allDetNorm);
+    maxDetNorm = max(allDetNorm);
+    rangeDetNorm = maxDetNorm - minDetNorm;
+    if rangeDetNorm == 0
+        rangeDetNorm = 0.1;  % Default range if all values are the same
     end
+    buffer = rangeDetNorm * bufferPercent;
+    ylimDetNorm = [minDetNorm - buffer, maxDetNorm + buffer];
+    % Ensure lower limit doesn't go below 0 for normalized metrics
+    ylimDetNorm(1) = max(0, ylimDetNorm(1));
 else
     ylimDetNorm = [0, 2];
 end
 
 if ~isempty(allLamNorm)
-    ylimLamNorm = [0, max(allLamNorm) * 1.05];
-    if ylimLamNorm(1) == ylimLamNorm(2)
-        ylimLamNorm = ylimLamNorm(1) + [-0.1, 0.1];
+    minLamNorm = min(allLamNorm);
+    maxLamNorm = max(allLamNorm);
+    rangeLamNorm = maxLamNorm - minLamNorm;
+    if rangeLamNorm == 0
+        rangeLamNorm = 0.1;  % Default range if all values are the same
     end
+    buffer = rangeLamNorm * bufferPercent;
+    ylimLamNorm = [minLamNorm - buffer, maxLamNorm + buffer];
+    % Ensure lower limit doesn't go below 0 for normalized metrics
+    ylimLamNorm(1) = max(0, ylimLamNorm(1));
 else
     ylimLamNorm = [0, 2];
 end
 
 if ~isempty(allTTNorm)
-    ylimTTNorm = [0, max(allTTNorm) * 1.05];
-    if ylimTTNorm(1) == ylimTTNorm(2)
-        ylimTTNorm = ylimTTNorm(1) + [-0.1, 0.1];
+    minTTNorm = min(allTTNorm);
+    maxTTNorm = max(allTTNorm);
+    rangeTTNorm = maxTTNorm - minTTNorm;
+    if rangeTTNorm == 0
+        rangeTTNorm = 0.1;  % Default range if all values are the same
     end
+    buffer = rangeTTNorm * bufferPercent;
+    ylimTTNorm = [minTTNorm - buffer, maxTTNorm + buffer];
+    % Ensure lower limit doesn't go below 0 for normalized metrics
+    ylimTTNorm(1) = max(0, ylimTTNorm(1));
 else
     ylimTTNorm = [0, 2];
 end
