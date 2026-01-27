@@ -61,13 +61,13 @@ configAR.analyzeD2 = true;
 configAR.analyzeMrBr = false;
 configAR.pcaFlag = 1;
 configAR.pcaFirstFlag = 1;
-configAR.nDim = 4;
+configAR.nDim = 5;
 configAR.enablePermutations = true;
 configAR.nShuffles = 20;
 configAR.analyzeModulation = false;
 configAR.makePlots = false;  % Don't create individual plots
 configAR.saveData = false;  % Don't save individual session results
-configAR.useOptimalBinWindowFunction = false;
+configAR.useOptimalBinWindowFunction = true;
 configAR.pOrder = 10;
 configAR.critType = 2;
 configAR.normalizeD2 = true;
@@ -106,6 +106,14 @@ spontaneousData.dcc = {};  % Cell array: {areaIdx}{sessionIdx} = dcc value
 spontaneousData.dccNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized dcc value
 spontaneousData.kappa = {};  % Cell array: {areaIdx}{sessionIdx} = kappa value
 spontaneousData.kappaNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized kappa value
+spontaneousData.decades = {};  % Cell array: {areaIdx}{sessionIdx} = decades value
+spontaneousData.decadesNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized decades value
+spontaneousData.tau = {};  % Cell array: {areaIdx}{sessionIdx} = tau value
+spontaneousData.tauNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized tau value
+spontaneousData.alpha = {};  % Cell array: {areaIdx}{sessionIdx} = alpha value
+spontaneousData.alphaNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized alpha value
+spontaneousData.paramSD = {};  % Cell array: {areaIdx}{sessionIdx} = paramSD value
+spontaneousData.paramSDNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized paramSD value
 spontaneousData.sessionNames = {};
 spontaneousData.areas = [];
 
@@ -116,6 +124,14 @@ reachData.dcc = {};  % Cell array: {areaIdx}{sessionIdx} = dcc value
 reachData.dccNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized dcc value
 reachData.kappa = {};  % Cell array: {areaIdx}{sessionIdx} = kappa value
 reachData.kappaNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized kappa value
+reachData.decades = {};  % Cell array: {areaIdx}{sessionIdx} = decades value
+reachData.decadesNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized decades value
+reachData.tau = {};  % Cell array: {areaIdx}{sessionIdx} = tau value
+reachData.tauNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized tau value
+reachData.alpha = {};  % Cell array: {areaIdx}{sessionIdx} = alpha value
+reachData.alphaNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized alpha value
+reachData.paramSD = {};  % Cell array: {areaIdx}{sessionIdx} = paramSD value
+reachData.paramSDNormalized = {};  % Cell array: {areaIdx}{sessionIdx} = normalized paramSD value
 reachData.sessionNames = {};
 reachData.areas = [];
 
@@ -148,6 +164,14 @@ for s = 1:length(spontaneousSessions)
             spontaneousData.dccNormalized = cell(1, numAreas);
             spontaneousData.kappa = cell(1, numAreas);
             spontaneousData.kappaNormalized = cell(1, numAreas);
+            spontaneousData.decades = cell(1, numAreas);
+            spontaneousData.decadesNormalized = cell(1, numAreas);
+            spontaneousData.tau = cell(1, numAreas);
+            spontaneousData.tauNormalized = cell(1, numAreas);
+            spontaneousData.alpha = cell(1, numAreas);
+            spontaneousData.alphaNormalized = cell(1, numAreas);
+            spontaneousData.paramSD = cell(1, numAreas);
+            spontaneousData.paramSDNormalized = cell(1, numAreas);
             for a = 1:numAreas
                 spontaneousData.d2Raw{a} = [];
                 spontaneousData.d2Normalized{a} = [];
@@ -155,6 +179,14 @@ for s = 1:length(spontaneousSessions)
                 spontaneousData.dccNormalized{a} = [];
                 spontaneousData.kappa{a} = [];
                 spontaneousData.kappaNormalized{a} = [];
+                spontaneousData.decades{a} = [];
+                spontaneousData.decadesNormalized{a} = [];
+                spontaneousData.tau{a} = [];
+                spontaneousData.tauNormalized{a} = [];
+                spontaneousData.alpha{a} = [];
+                spontaneousData.alphaNormalized{a} = [];
+                spontaneousData.paramSD{a} = [];
+                spontaneousData.paramSDNormalized{a} = [];
             end
         end
         
@@ -241,6 +273,102 @@ for s = 1:length(spontaneousSessions)
                 else
                     spontaneousData.kappaNormalized{a} = [spontaneousData.kappaNormalized{a}, nan];
                 end
+                
+                % Extract decades raw
+                if a <= length(resultsAV.decades) && ~isempty(resultsAV.decades{a})
+                    decadesValues = resultsAV.decades{a}(~isnan(resultsAV.decades{a}));
+                    if ~isempty(decadesValues)
+                        spontaneousData.decades{a} = [spontaneousData.decades{a}, decadesValues(1)];
+                    else
+                        spontaneousData.decades{a} = [spontaneousData.decades{a}, nan];
+                    end
+                else
+                    spontaneousData.decades{a} = [spontaneousData.decades{a}, nan];
+                end
+                
+                % Extract decades normalized
+                if a <= length(resultsAV.decadesNormalized) && ~isempty(resultsAV.decadesNormalized{a})
+                    decadesNormValues = resultsAV.decadesNormalized{a}(~isnan(resultsAV.decadesNormalized{a}));
+                    if ~isempty(decadesNormValues)
+                        spontaneousData.decadesNormalized{a} = [spontaneousData.decadesNormalized{a}, decadesNormValues(1)];
+                    else
+                        spontaneousData.decadesNormalized{a} = [spontaneousData.decadesNormalized{a}, nan];
+                    end
+                else
+                    spontaneousData.decadesNormalized{a} = [spontaneousData.decadesNormalized{a}, nan];
+                end
+                
+                % Extract tau raw
+                if a <= length(resultsAV.tau) && ~isempty(resultsAV.tau{a})
+                    tauValues = resultsAV.tau{a}(~isnan(resultsAV.tau{a}));
+                    if ~isempty(tauValues)
+                        spontaneousData.tau{a} = [spontaneousData.tau{a}, tauValues(1)];
+                    else
+                        spontaneousData.tau{a} = [spontaneousData.tau{a}, nan];
+                    end
+                else
+                    spontaneousData.tau{a} = [spontaneousData.tau{a}, nan];
+                end
+                
+                % Extract tau normalized
+                if a <= length(resultsAV.tauNormalized) && ~isempty(resultsAV.tauNormalized{a})
+                    tauNormValues = resultsAV.tauNormalized{a}(~isnan(resultsAV.tauNormalized{a}));
+                    if ~isempty(tauNormValues)
+                        spontaneousData.tauNormalized{a} = [spontaneousData.tauNormalized{a}, tauNormValues(1)];
+                    else
+                        spontaneousData.tauNormalized{a} = [spontaneousData.tauNormalized{a}, nan];
+                    end
+                else
+                    spontaneousData.tauNormalized{a} = [spontaneousData.tauNormalized{a}, nan];
+                end
+                
+                % Extract alpha raw
+                if a <= length(resultsAV.alpha) && ~isempty(resultsAV.alpha{a})
+                    alphaValues = resultsAV.alpha{a}(~isnan(resultsAV.alpha{a}));
+                    if ~isempty(alphaValues)
+                        spontaneousData.alpha{a} = [spontaneousData.alpha{a}, alphaValues(1)];
+                    else
+                        spontaneousData.alpha{a} = [spontaneousData.alpha{a}, nan];
+                    end
+                else
+                    spontaneousData.alpha{a} = [spontaneousData.alpha{a}, nan];
+                end
+                
+                % Extract alpha normalized
+                if a <= length(resultsAV.alphaNormalized) && ~isempty(resultsAV.alphaNormalized{a})
+                    alphaNormValues = resultsAV.alphaNormalized{a}(~isnan(resultsAV.alphaNormalized{a}));
+                    if ~isempty(alphaNormValues)
+                        spontaneousData.alphaNormalized{a} = [spontaneousData.alphaNormalized{a}, alphaNormValues(1)];
+                    else
+                        spontaneousData.alphaNormalized{a} = [spontaneousData.alphaNormalized{a}, nan];
+                    end
+                else
+                    spontaneousData.alphaNormalized{a} = [spontaneousData.alphaNormalized{a}, nan];
+                end
+                
+                % Extract paramSD raw
+                if a <= length(resultsAV.paramSD) && ~isempty(resultsAV.paramSD{a})
+                    paramSDValues = resultsAV.paramSD{a}(~isnan(resultsAV.paramSD{a}));
+                    if ~isempty(paramSDValues)
+                        spontaneousData.paramSD{a} = [spontaneousData.paramSD{a}, paramSDValues(1)];
+                    else
+                        spontaneousData.paramSD{a} = [spontaneousData.paramSD{a}, nan];
+                    end
+                else
+                    spontaneousData.paramSD{a} = [spontaneousData.paramSD{a}, nan];
+                end
+                
+                % Extract paramSD normalized
+                if a <= length(resultsAV.paramSDNormalized) && ~isempty(resultsAV.paramSDNormalized{a})
+                    paramSDNormValues = resultsAV.paramSDNormalized{a}(~isnan(resultsAV.paramSDNormalized{a}));
+                    if ~isempty(paramSDNormValues)
+                        spontaneousData.paramSDNormalized{a} = [spontaneousData.paramSDNormalized{a}, paramSDNormValues(1)];
+                    else
+                        spontaneousData.paramSDNormalized{a} = [spontaneousData.paramSDNormalized{a}, nan];
+                    end
+                else
+                    spontaneousData.paramSDNormalized{a} = [spontaneousData.paramSDNormalized{a}, nan];
+                end
             end
         else
             warning('dcc or kappa not found in AV results for session %s', sessionName);
@@ -249,6 +377,14 @@ for s = 1:length(spontaneousSessions)
                 spontaneousData.dccNormalized{a} = [spontaneousData.dccNormalized{a}, nan];
                 spontaneousData.kappa{a} = [spontaneousData.kappa{a}, nan];
                 spontaneousData.kappaNormalized{a} = [spontaneousData.kappaNormalized{a}, nan];
+                spontaneousData.decades{a} = [spontaneousData.decades{a}, nan];
+                spontaneousData.decadesNormalized{a} = [spontaneousData.decadesNormalized{a}, nan];
+                spontaneousData.tau{a} = [spontaneousData.tau{a}, nan];
+                spontaneousData.tauNormalized{a} = [spontaneousData.tauNormalized{a}, nan];
+                spontaneousData.alpha{a} = [spontaneousData.alpha{a}, nan];
+                spontaneousData.alphaNormalized{a} = [spontaneousData.alphaNormalized{a}, nan];
+                spontaneousData.paramSD{a} = [spontaneousData.paramSD{a}, nan];
+                spontaneousData.paramSDNormalized{a} = [spontaneousData.paramSDNormalized{a}, nan];
             end
         end
         
@@ -266,6 +402,14 @@ for s = 1:length(spontaneousSessions)
                 spontaneousData.dccNormalized{a} = [spontaneousData.dccNormalized{a}, nan];
                 spontaneousData.kappa{a} = [spontaneousData.kappa{a}, nan];
                 spontaneousData.kappaNormalized{a} = [spontaneousData.kappaNormalized{a}, nan];
+                spontaneousData.decades{a} = [spontaneousData.decades{a}, nan];
+                spontaneousData.decadesNormalized{a} = [spontaneousData.decadesNormalized{a}, nan];
+                spontaneousData.tau{a} = [spontaneousData.tau{a}, nan];
+                spontaneousData.tauNormalized{a} = [spontaneousData.tauNormalized{a}, nan];
+                spontaneousData.alpha{a} = [spontaneousData.alpha{a}, nan];
+                spontaneousData.alphaNormalized{a} = [spontaneousData.alphaNormalized{a}, nan];
+                spontaneousData.paramSD{a} = [spontaneousData.paramSD{a}, nan];
+                spontaneousData.paramSDNormalized{a} = [spontaneousData.paramSDNormalized{a}, nan];
             end
         end
         spontaneousData.sessionNames{end+1} = sessionName;
@@ -305,6 +449,14 @@ for s = 1:length(reachSessions)
             reachData.dccNormalized = cell(1, numAreas);
             reachData.kappa = cell(1, numAreas);
             reachData.kappaNormalized = cell(1, numAreas);
+            reachData.decades = cell(1, numAreas);
+            reachData.decadesNormalized = cell(1, numAreas);
+            reachData.tau = cell(1, numAreas);
+            reachData.tauNormalized = cell(1, numAreas);
+            reachData.alpha = cell(1, numAreas);
+            reachData.alphaNormalized = cell(1, numAreas);
+            reachData.paramSD = cell(1, numAreas);
+            reachData.paramSDNormalized = cell(1, numAreas);
             for a = 1:numAreas
                 reachData.d2Raw{a} = [];
                 reachData.d2Normalized{a} = [];
@@ -312,6 +464,14 @@ for s = 1:length(reachSessions)
                 reachData.dccNormalized{a} = [];
                 reachData.kappa{a} = [];
                 reachData.kappaNormalized{a} = [];
+                reachData.decades{a} = [];
+                reachData.decadesNormalized{a} = [];
+                reachData.tau{a} = [];
+                reachData.tauNormalized{a} = [];
+                reachData.alpha{a} = [];
+                reachData.alphaNormalized{a} = [];
+                reachData.paramSD{a} = [];
+                reachData.paramSDNormalized{a} = [];
             end
         end
         
@@ -398,6 +558,102 @@ for s = 1:length(reachSessions)
                 else
                     reachData.kappaNormalized{a} = [reachData.kappaNormalized{a}, nan];
                 end
+                
+                % Extract decades raw
+                if a <= length(resultsAV.decades) && ~isempty(resultsAV.decades{a})
+                    decadesValues = resultsAV.decades{a}(~isnan(resultsAV.decades{a}));
+                    if ~isempty(decadesValues)
+                        reachData.decades{a} = [reachData.decades{a}, decadesValues(1)];
+                    else
+                        reachData.decades{a} = [reachData.decades{a}, nan];
+                    end
+                else
+                    reachData.decades{a} = [reachData.decades{a}, nan];
+                end
+                
+                % Extract decades normalized
+                if a <= length(resultsAV.decadesNormalized) && ~isempty(resultsAV.decadesNormalized{a})
+                    decadesNormValues = resultsAV.decadesNormalized{a}(~isnan(resultsAV.decadesNormalized{a}));
+                    if ~isempty(decadesNormValues)
+                        reachData.decadesNormalized{a} = [reachData.decadesNormalized{a}, decadesNormValues(1)];
+                    else
+                        reachData.decadesNormalized{a} = [reachData.decadesNormalized{a}, nan];
+                    end
+                else
+                    reachData.decadesNormalized{a} = [reachData.decadesNormalized{a}, nan];
+                end
+                
+                % Extract tau raw
+                if a <= length(resultsAV.tau) && ~isempty(resultsAV.tau{a})
+                    tauValues = resultsAV.tau{a}(~isnan(resultsAV.tau{a}));
+                    if ~isempty(tauValues)
+                        reachData.tau{a} = [reachData.tau{a}, tauValues(1)];
+                    else
+                        reachData.tau{a} = [reachData.tau{a}, nan];
+                    end
+                else
+                    reachData.tau{a} = [reachData.tau{a}, nan];
+                end
+                
+                % Extract tau normalized
+                if a <= length(resultsAV.tauNormalized) && ~isempty(resultsAV.tauNormalized{a})
+                    tauNormValues = resultsAV.tauNormalized{a}(~isnan(resultsAV.tauNormalized{a}));
+                    if ~isempty(tauNormValues)
+                        reachData.tauNormalized{a} = [reachData.tauNormalized{a}, tauNormValues(1)];
+                    else
+                        reachData.tauNormalized{a} = [reachData.tauNormalized{a}, nan];
+                    end
+                else
+                    reachData.tauNormalized{a} = [reachData.tauNormalized{a}, nan];
+                end
+                
+                % Extract alpha raw
+                if a <= length(resultsAV.alpha) && ~isempty(resultsAV.alpha{a})
+                    alphaValues = resultsAV.alpha{a}(~isnan(resultsAV.alpha{a}));
+                    if ~isempty(alphaValues)
+                        reachData.alpha{a} = [reachData.alpha{a}, alphaValues(1)];
+                    else
+                        reachData.alpha{a} = [reachData.alpha{a}, nan];
+                    end
+                else
+                    reachData.alpha{a} = [reachData.alpha{a}, nan];
+                end
+                
+                % Extract alpha normalized
+                if a <= length(resultsAV.alphaNormalized) && ~isempty(resultsAV.alphaNormalized{a})
+                    alphaNormValues = resultsAV.alphaNormalized{a}(~isnan(resultsAV.alphaNormalized{a}));
+                    if ~isempty(alphaNormValues)
+                        reachData.alphaNormalized{a} = [reachData.alphaNormalized{a}, alphaNormValues(1)];
+                    else
+                        reachData.alphaNormalized{a} = [reachData.alphaNormalized{a}, nan];
+                    end
+                else
+                    reachData.alphaNormalized{a} = [reachData.alphaNormalized{a}, nan];
+                end
+                
+                % Extract paramSD raw
+                if a <= length(resultsAV.paramSD) && ~isempty(resultsAV.paramSD{a})
+                    paramSDValues = resultsAV.paramSD{a}(~isnan(resultsAV.paramSD{a}));
+                    if ~isempty(paramSDValues)
+                        reachData.paramSD{a} = [reachData.paramSD{a}, paramSDValues(1)];
+                    else
+                        reachData.paramSD{a} = [reachData.paramSD{a}, nan];
+                    end
+                else
+                    reachData.paramSD{a} = [reachData.paramSD{a}, nan];
+                end
+                
+                % Extract paramSD normalized
+                if a <= length(resultsAV.paramSDNormalized) && ~isempty(resultsAV.paramSDNormalized{a})
+                    paramSDNormValues = resultsAV.paramSDNormalized{a}(~isnan(resultsAV.paramSDNormalized{a}));
+                    if ~isempty(paramSDNormValues)
+                        reachData.paramSDNormalized{a} = [reachData.paramSDNormalized{a}, paramSDNormValues(1)];
+                    else
+                        reachData.paramSDNormalized{a} = [reachData.paramSDNormalized{a}, nan];
+                    end
+                else
+                    reachData.paramSDNormalized{a} = [reachData.paramSDNormalized{a}, nan];
+                end
             end
         else
             warning('dcc or kappa not found in AV results for session %s', sessionName);
@@ -406,6 +662,14 @@ for s = 1:length(reachSessions)
                 reachData.dccNormalized{a} = [reachData.dccNormalized{a}, nan];
                 reachData.kappa{a} = [reachData.kappa{a}, nan];
                 reachData.kappaNormalized{a} = [reachData.kappaNormalized{a}, nan];
+                reachData.decades{a} = [reachData.decades{a}, nan];
+                reachData.decadesNormalized{a} = [reachData.decadesNormalized{a}, nan];
+                reachData.tau{a} = [reachData.tau{a}, nan];
+                reachData.tauNormalized{a} = [reachData.tauNormalized{a}, nan];
+                reachData.alpha{a} = [reachData.alpha{a}, nan];
+                reachData.alphaNormalized{a} = [reachData.alphaNormalized{a}, nan];
+                reachData.paramSD{a} = [reachData.paramSD{a}, nan];
+                reachData.paramSDNormalized{a} = [reachData.paramSDNormalized{a}, nan];
             end
         end
         
@@ -423,6 +687,14 @@ for s = 1:length(reachSessions)
                 reachData.dccNormalized{a} = [reachData.dccNormalized{a}, nan];
                 reachData.kappa{a} = [reachData.kappa{a}, nan];
                 reachData.kappaNormalized{a} = [reachData.kappaNormalized{a}, nan];
+                reachData.decades{a} = [reachData.decades{a}, nan];
+                reachData.decadesNormalized{a} = [reachData.decadesNormalized{a}, nan];
+                reachData.tau{a} = [reachData.tau{a}, nan];
+                reachData.tauNormalized{a} = [reachData.tauNormalized{a}, nan];
+                reachData.alpha{a} = [reachData.alpha{a}, nan];
+                reachData.alphaNormalized{a} = [reachData.alphaNormalized{a}, nan];
+                reachData.paramSD{a} = [reachData.paramSD{a}, nan];
+                reachData.paramSDNormalized{a} = [reachData.paramSDNormalized{a}, nan];
             end
         end
         reachData.sessionNames{end+1} = sessionName;
@@ -522,64 +794,101 @@ for a = 1:numAreasToPlot
 end
 
 % Calculate global y-axis limits with some padding
+% Buffer is 5% of the range
+bufferPct = 0.05;  % 5% buffer
+
 if ~isempty(allD2Raw)
-    ylimD2Raw = [0, min(.25, max(allD2Raw) * 1.05)];
-    if ylimD2Raw(1) == ylimD2Raw(2)
-        ylimD2Raw = ylimD2Raw(1) + [-0.1, 0.1];
+    yMin = min(allD2Raw);
+    yMax = min(.25, max(allD2Raw));
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
     end
+    buffer = bufferPct * yRange;
+    ylimD2Raw = [yMin - buffer, yMax + buffer];
 else
     ylimD2Raw = [0, 1];
 end
 
 if ~isempty(allD2Normalized)
-    ylimD2Normalized = [0, max(allD2Normalized) * 1.05];
-    if ylimD2Normalized(1) == ylimD2Normalized(2)
-        ylimD2Normalized = ylimD2Normalized(1) + [-0.1, 0.1];
+    yMin = min(allD2Normalized);
+    yMax = max(allD2Normalized);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
     end
+    buffer = bufferPct * yRange;
+    ylimD2Normalized = [yMin - buffer, yMax + buffer];
 else
     ylimD2Normalized = [0, 1];
 end
 
 if ~isempty(allDccRaw)
-    ylimDccRaw = [0, max(allDccRaw) * 1.05];
-    if ylimDccRaw(1) == ylimDccRaw(2)
-        ylimDccRaw = ylimDccRaw(1) + [-0.1, 0.1];
+    yMin = min(allDccRaw);
+    yMax = max(allDccRaw);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
     end
+    buffer = bufferPct * yRange;
+    ylimDccRaw = [yMin - buffer, yMax + buffer];
 else
     ylimDccRaw = [0, 1];
 end
 
 if ~isempty(allDccNormalized)
-    ylimDccNormalized = [0, max(allDccNormalized) * 1.05];
-    if ylimDccNormalized(1) == ylimDccNormalized(2)
-        ylimDccNormalized = ylimDccNormalized(1) + [-0.1, 0.1];
+    yMin = min(allDccNormalized);
+    yMax = max(allDccNormalized);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
     end
+    buffer = bufferPct * yRange;
+    ylimDccNormalized = [yMin - buffer, yMax + buffer];
 else
     ylimDccNormalized = [0, 1];
 end
 
 if ~isempty(allKappaRaw)
-    ylimKappaRaw = [0, max(allKappaRaw) * 1.05];
-    if ylimKappaRaw(1) == ylimKappaRaw(2)
-        ylimKappaRaw = ylimKappaRaw(1) + [-0.1, 0.1];
+    yMin = min(allKappaRaw);
+    yMax = max(allKappaRaw);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
     end
+    buffer = bufferPct * yRange;
+    ylimKappaRaw = [yMin - buffer, yMax + buffer];
 else
     ylimKappaRaw = [0, 1];
 end
 
 if ~isempty(allKappaNormalized)
-    ylimKappaNormalized = [0, max(allKappaNormalized) * 1.05];
-    if ylimKappaNormalized(1) == ylimKappaNormalized(2)
-        ylimKappaNormalized = ylimKappaNormalized(1) + [-0.1, 0.1];
+    yMin = min(allKappaNormalized);
+    yMax = max(allKappaNormalized);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
     end
+    buffer = bufferPct * yRange;
+    ylimKappaNormalized = [yMin - buffer, yMax + buffer];
 else
     ylimKappaNormalized = [0, 1];
+end
+
+% Detect monitors and size figure to full screen (prefer second monitor if present)
+monitorPositions = get(0, 'MonitorPositions');
+monitorOne = monitorPositions(1, :);
+monitorTwo = monitorPositions(size(monitorPositions, 1), :);
+if size(monitorPositions, 1) >= 2
+    targetPos = monitorTwo;
+else
+    targetPos = monitorOne;
 end
 
 % Create figure with 6 columns: d2 raw, d2 normalized, dcc raw, dcc normalized, kappa raw, kappa normalized
 figure(3002); clf;
 set(gcf, 'Units', 'pixels');
-set(gcf, 'Position', [100, 100, 3000, 300 * numAreasToPlot]);
+set(gcf, 'Position', targetPos);
 
 % Create subplots for all metrics
 for a = 1:numAreasToPlot
@@ -843,25 +1152,605 @@ for a = 1:numAreasToPlot
 end
 
 % Add overall title
-sgtitle(sprintf('Criticality Comparison: Spontaneous vs Reach (Time Range: %.1f-%.1f s)', ...
-    windowStartTime, windowEndTime), 'FontSize', 14, 'FontWeight', 'bold');
+titleStr = sprintf('Criticality Comparison: Spontaneous vs Reach (Time Range: %.1f-%.1f s)', ...
+    windowStartTime, windowEndTime);
+if configAR.pcaFlag
+    titleStr = sprintf('%s [AR: PCA, nDim=%d]', titleStr, configAR.nDim);
+end
+if configAV.pcaFlag
+    titleStr = sprintf('%s [AV: PCA, nDim=%d]', titleStr, configAV.nDim);
+end
+sgtitle(titleStr, 'FontSize', 14, 'FontWeight', 'bold');
 
-%% Save figure
+%% Create second figure with decades, tau, alpha, and paramSD
+fprintf('\n=== Creating Second Figure (decades, tau, alpha, paramSD) ===\n');
+
+% Collect all values to determine global y-axis limits
+allDecadesRaw = [];
+allDecadesNormalized = [];
+allTauRaw = [];
+allTauNormalized = [];
+allAlphaRaw = [];
+allAlphaNormalized = [];
+allParamSDRaw = [];
+allParamSDNormalized = [];
+
+for a = 1:numAreasToPlot
+    areaName = areasToPlot{a};
+    
+    % Find area index in spontaneous and reach data
+    natAreaIdx = find(strcmp(spontaneousData.areas, areaName));
+    reachAreaIdx = find(strcmp(reachData.areas, areaName));
+    
+    if isempty(natAreaIdx) || isempty(reachAreaIdx)
+        continue;
+    end
+    
+    % Collect decades values
+    natDecades = spontaneousData.decades{natAreaIdx};
+    reachDecades = reachData.decades{reachAreaIdx};
+    natDecades = natDecades(~isnan(natDecades));
+    reachDecades = reachDecades(~isnan(reachDecades));
+    allDecadesRaw = [allDecadesRaw, natDecades, reachDecades];
+    
+    natDecadesNorm = spontaneousData.decadesNormalized{natAreaIdx};
+    reachDecadesNorm = reachData.decadesNormalized{reachAreaIdx};
+    natDecadesNorm = natDecadesNorm(~isnan(natDecadesNorm));
+    reachDecadesNorm = reachDecadesNorm(~isnan(reachDecadesNorm));
+    allDecadesNormalized = [allDecadesNormalized, natDecadesNorm, reachDecadesNorm];
+    
+    % Collect tau values
+    natTau = spontaneousData.tau{natAreaIdx};
+    reachTau = reachData.tau{reachAreaIdx};
+    natTau = natTau(~isnan(natTau));
+    reachTau = reachTau(~isnan(reachTau));
+    allTauRaw = [allTauRaw, natTau, reachTau];
+    
+    natTauNorm = spontaneousData.tauNormalized{natAreaIdx};
+    reachTauNorm = reachData.tauNormalized{reachAreaIdx};
+    natTauNorm = natTauNorm(~isnan(natTauNorm));
+    reachTauNorm = reachTauNorm(~isnan(reachTauNorm));
+    allTauNormalized = [allTauNormalized, natTauNorm, reachTauNorm];
+    
+    % Collect alpha values
+    natAlpha = spontaneousData.alpha{natAreaIdx};
+    reachAlpha = reachData.alpha{reachAreaIdx};
+    natAlpha = natAlpha(~isnan(natAlpha));
+    reachAlpha = reachAlpha(~isnan(reachAlpha));
+    allAlphaRaw = [allAlphaRaw, natAlpha, reachAlpha];
+    
+    natAlphaNorm = spontaneousData.alphaNormalized{natAreaIdx};
+    reachAlphaNorm = reachData.alphaNormalized{reachAreaIdx};
+    natAlphaNorm = natAlphaNorm(~isnan(natAlphaNorm));
+    reachAlphaNorm = reachAlphaNorm(~isnan(reachAlphaNorm));
+    allAlphaNormalized = [allAlphaNormalized, natAlphaNorm, reachAlphaNorm];
+    
+    % Collect paramSD values
+    natParamSD = spontaneousData.paramSD{natAreaIdx};
+    reachParamSD = reachData.paramSD{reachAreaIdx};
+    natParamSD = natParamSD(~isnan(natParamSD));
+    reachParamSD = reachParamSD(~isnan(reachParamSD));
+    allParamSDRaw = [allParamSDRaw, natParamSD, reachParamSD];
+    
+    natParamSDNorm = spontaneousData.paramSDNormalized{natAreaIdx};
+    reachParamSDNorm = reachData.paramSDNormalized{reachAreaIdx};
+    natParamSDNorm = natParamSDNorm(~isnan(natParamSDNorm));
+    reachParamSDNorm = reachParamSDNorm(~isnan(reachParamSDNorm));
+    allParamSDNormalized = [allParamSDNormalized, natParamSDNorm, reachParamSDNorm];
+end
+
+% Calculate global y-axis limits with some padding
+% Buffer is 5% of the range
+bufferPct = 0.05;  % 5% buffer
+
+if ~isempty(allDecadesRaw)
+    yMin = min(allDecadesRaw);
+    yMax = max(allDecadesRaw);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
+    end
+    buffer = bufferPct * yRange;
+    ylimDecadesRaw = [yMin - buffer, yMax + buffer];
+else
+    ylimDecadesRaw = [0, 1];
+end
+
+if ~isempty(allDecadesNormalized)
+    yMin = min(allDecadesNormalized);
+    yMax = max(allDecadesNormalized);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
+    end
+    buffer = bufferPct * yRange;
+    ylimDecadesNormalized = [yMin - buffer, yMax + buffer];
+else
+    ylimDecadesNormalized = [0, 1];
+end
+
+if ~isempty(allTauRaw)
+    yMin = min(allTauRaw);
+    yMax = max(allTauRaw);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
+    end
+    buffer = bufferPct * yRange;
+    ylimTauRaw = [yMin - buffer, yMax + buffer];
+else
+    ylimTauRaw = [0, 1];
+end
+
+if ~isempty(allTauNormalized)
+    yMin = min(allTauNormalized);
+    yMax = max(allTauNormalized);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
+    end
+    buffer = bufferPct * yRange;
+    ylimTauNormalized = [yMin - buffer, yMax + buffer];
+else
+    ylimTauNormalized = [0, 1];
+end
+
+if ~isempty(allAlphaRaw)
+    yMin = min(allAlphaRaw);
+    yMax = max(allAlphaRaw);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
+    end
+    buffer = bufferPct * yRange;
+    ylimAlphaRaw = [yMin - buffer, yMax + buffer];
+else
+    ylimAlphaRaw = [0, 1];
+end
+
+if ~isempty(allAlphaNormalized)
+    yMin = min(allAlphaNormalized);
+    yMax = max(allAlphaNormalized);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
+    end
+    buffer = bufferPct * yRange;
+    ylimAlphaNormalized = [yMin - buffer, yMax + buffer];
+else
+    ylimAlphaNormalized = [0, 1];
+end
+
+if ~isempty(allParamSDRaw)
+    yMin = min(allParamSDRaw);
+    yMax = max(allParamSDRaw);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
+    end
+    buffer = bufferPct * yRange;
+    ylimParamSDRaw = [yMin - buffer, yMax + buffer];
+else
+    ylimParamSDRaw = [0, 1];
+end
+
+if ~isempty(allParamSDNormalized)
+    yMin = min(allParamSDNormalized);
+    yMax = max(allParamSDNormalized);
+    yRange = yMax - yMin;
+    if yRange == 0
+        yRange = 0.1;  % Avoid zero range
+    end
+    buffer = bufferPct * yRange;
+    ylimParamSDNormalized = [yMin - buffer, yMax + buffer];
+else
+    ylimParamSDNormalized = [0, 1];
+end
+
+% Create figure with 8 columns: decades raw, decades normalized, tau raw, tau normalized, alpha raw, alpha normalized, paramSD raw, paramSD normalized
+figure(3003); clf;
+set(gcf, 'Units', 'pixels');
+set(gcf, 'Position', targetPos);
+
+% Create subplots for all metrics
+for a = 1:numAreasToPlot
+    areaName = areasToPlot{a};
+    
+    % Find area index in spontaneous and reach data
+    natAreaIdx = find(strcmp(spontaneousData.areas, areaName));
+    reachAreaIdx = find(strcmp(reachData.areas, areaName));
+    
+    if isempty(natAreaIdx) || isempty(reachAreaIdx)
+        continue;
+    end
+    
+    % Get values for this area
+    natDecades = spontaneousData.decades{natAreaIdx};
+    reachDecades = reachData.decades{reachAreaIdx};
+    natDecades = natDecades(~isnan(natDecades));
+    reachDecades = reachDecades(~isnan(reachDecades));
+    
+    natDecadesNorm = spontaneousData.decadesNormalized{natAreaIdx};
+    reachDecadesNorm = reachData.decadesNormalized{reachAreaIdx};
+    natDecadesNorm = natDecadesNorm(~isnan(natDecadesNorm));
+    reachDecadesNorm = reachDecadesNorm(~isnan(reachDecadesNorm));
+    
+    natTau = spontaneousData.tau{natAreaIdx};
+    reachTau = reachData.tau{reachAreaIdx};
+    natTau = natTau(~isnan(natTau));
+    reachTau = reachTau(~isnan(reachTau));
+    
+    natTauNorm = spontaneousData.tauNormalized{natAreaIdx};
+    reachTauNorm = reachData.tauNormalized{reachAreaIdx};
+    natTauNorm = natTauNorm(~isnan(natTauNorm));
+    reachTauNorm = reachTauNorm(~isnan(reachTauNorm));
+    
+    natAlpha = spontaneousData.alpha{natAreaIdx};
+    reachAlpha = reachData.alpha{reachAreaIdx};
+    natAlpha = natAlpha(~isnan(natAlpha));
+    reachAlpha = reachAlpha(~isnan(reachAlpha));
+    
+    natAlphaNorm = spontaneousData.alphaNormalized{natAreaIdx};
+    reachAlphaNorm = reachData.alphaNormalized{reachAreaIdx};
+    natAlphaNorm = natAlphaNorm(~isnan(natAlphaNorm));
+    reachAlphaNorm = reachAlphaNorm(~isnan(reachAlphaNorm));
+    
+    natParamSD = spontaneousData.paramSD{natAreaIdx};
+    reachParamSD = reachData.paramSD{reachAreaIdx};
+    natParamSD = natParamSD(~isnan(natParamSD));
+    reachParamSD = reachParamSD(~isnan(reachParamSD));
+    
+    natParamSDNorm = spontaneousData.paramSDNormalized{natAreaIdx};
+    reachParamSDNorm = reachData.paramSDNormalized{reachAreaIdx};
+    natParamSDNorm = natParamSDNorm(~isnan(natParamSDNorm));
+    reachParamSDNorm = reachParamSDNorm(~isnan(reachParamSDNorm));
+    
+    % Create all 8 subplots
+    % decades Raw
+    subplot(numAreasToPlot, 8, (a-1)*8 + 1);
+    hold on;
+    numNat = length(natDecades);
+    numReach = length(reachDecades);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natDecades, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachDecades, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('decades Raw');
+    title(sprintf('%s - decades Raw', areaName));
+    grid on;
+    ylim(ylimDecadesRaw);
+    if ~isempty(natDecades)
+        yline(mean(natDecades), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachDecades)
+        yline(mean(reachDecades), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+    
+    % decades Normalized
+    subplot(numAreasToPlot, 8, (a-1)*8 + 2);
+    hold on;
+    numNat = length(natDecadesNorm);
+    numReach = length(reachDecadesNorm);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natDecadesNorm, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachDecadesNorm, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('decades Normalized');
+    title(sprintf('%s - decades Normalized', areaName));
+    grid on;
+    ylim(ylimDecadesNormalized);
+    if ~isempty(natDecadesNorm)
+        yline(mean(natDecadesNorm), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachDecadesNorm)
+        yline(mean(reachDecadesNorm), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+    
+    % tau Raw
+    subplot(numAreasToPlot, 8, (a-1)*8 + 3);
+    hold on;
+    numNat = length(natTau);
+    numReach = length(reachTau);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natTau, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachTau, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('tau Raw');
+    title(sprintf('%s - tau Raw', areaName));
+    grid on;
+    ylim(ylimTauRaw);
+    if ~isempty(natTau)
+        yline(mean(natTau), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachTau)
+        yline(mean(reachTau), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+    
+    % tau Normalized
+    subplot(numAreasToPlot, 8, (a-1)*8 + 4);
+    hold on;
+    numNat = length(natTauNorm);
+    numReach = length(reachTauNorm);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natTauNorm, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachTauNorm, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('tau Normalized');
+    title(sprintf('%s - tau Normalized', areaName));
+    grid on;
+    ylim(ylimTauNormalized);
+    if ~isempty(natTauNorm)
+        yline(mean(natTauNorm), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachTauNorm)
+        yline(mean(reachTauNorm), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+    
+    % alpha Raw
+    subplot(numAreasToPlot, 8, (a-1)*8 + 5);
+    hold on;
+    numNat = length(natAlpha);
+    numReach = length(reachAlpha);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natAlpha, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachAlpha, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('alpha Raw');
+    title(sprintf('%s - alpha Raw', areaName));
+    grid on;
+    ylim(ylimAlphaRaw);
+    if ~isempty(natAlpha)
+        yline(mean(natAlpha), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachAlpha)
+        yline(mean(reachAlpha), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+    
+    % alpha Normalized
+    subplot(numAreasToPlot, 8, (a-1)*8 + 6);
+    hold on;
+    numNat = length(natAlphaNorm);
+    numReach = length(reachAlphaNorm);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natAlphaNorm, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachAlphaNorm, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('alpha Normalized');
+    title(sprintf('%s - alpha Normalized', areaName));
+    grid on;
+    ylim(ylimAlphaNormalized);
+    if ~isempty(natAlphaNorm)
+        yline(mean(natAlphaNorm), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachAlphaNorm)
+        yline(mean(reachAlphaNorm), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+    
+    % paramSD Raw
+    subplot(numAreasToPlot, 8, (a-1)*8 + 7);
+    hold on;
+    numNat = length(natParamSD);
+    numReach = length(reachParamSD);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natParamSD, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachParamSD, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('paramSD Raw');
+    title(sprintf('%s - paramSD Raw', areaName));
+    grid on;
+    ylim(ylimParamSDRaw);
+    if ~isempty(natParamSD)
+        yline(mean(natParamSD), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachParamSD)
+        yline(mean(reachParamSD), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+    
+    % paramSD Normalized
+    subplot(numAreasToPlot, 8, (a-1)*8 + 8);
+    hold on;
+    numNat = length(natParamSDNorm);
+    numReach = length(reachParamSDNorm);
+    xNat = 1:numNat;
+    xReach = (numNat + 1):(numNat + numReach);
+    if numNat > 0
+        bar(xNat, natParamSDNorm, 'FaceColor', natColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    if numReach > 0
+        bar(xReach, reachParamSDNorm, 'FaceColor', reachColor, 'EdgeColor', 'k', 'LineWidth', 1);
+    end
+    xlim([0.5, numNat + numReach + 0.5]);
+    if numNat > 0 && numReach > 0
+        xticks([mean(xNat), mean(xReach)]);
+        xticklabels({'Spontaneous', 'Reach'});
+    elseif numNat > 0
+        xticks(mean(xNat));
+        xticklabels({'Spontaneous'});
+    elseif numReach > 0
+        xticks(mean(xReach));
+        xticklabels({'Reach'});
+    end
+    ylabel('paramSD Normalized');
+    title(sprintf('%s - paramSD Normalized', areaName));
+    grid on;
+    ylim(ylimParamSDNormalized);
+    if ~isempty(natParamSDNorm)
+        yline(mean(natParamSDNorm), '--', 'color', natColor, 'LineWidth', 2);
+    end
+    if ~isempty(reachParamSDNorm)
+        yline(mean(reachParamSDNorm), '--', 'color', reachColor, 'LineWidth', 2);
+    end
+    hold off;
+end
+
+% Add overall title
+titleStr2 = sprintf('Criticality Comparison: Spontaneous vs Reach - decades, tau, alpha, paramSD (Time Range: %.1f-%.1f s)', ...
+    windowStartTime, windowEndTime);
+if configAR.pcaFlag
+    titleStr2 = sprintf('%s [AR: PCA, nDim=%d]', titleStr2, configAR.nDim);
+end
+if configAV.pcaFlag
+    titleStr2 = sprintf('%s [AV: PCA, nDim=%d]', titleStr2, configAV.nDim);
+end
+sgtitle(titleStr2, 'FontSize', 14, 'FontWeight', 'bold');
+
+%% Save figures
 saveDir = fullfile(paths.dropPath, 'sliding_window_comparisons');
 if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
 
-plotFilenamePng = sprintf('criticality_across_full_sessions_%.0f-%.0fs.png', windowStartTime, windowEndTime);
+% Create filename suffix based on PCA flags
+filenameSuffix = '';
+if configAR.pcaFlag
+    filenameSuffix = sprintf('%s_pca%d', filenameSuffix, configAR.nDim);
+end
+if configAV.pcaFlag
+    if isempty(filenameSuffix)
+        filenameSuffix = sprintf('_pca%d', configAV.nDim);
+    else
+        filenameSuffix = sprintf('%s_av_pca%d', filenameSuffix, configAV.nDim);
+    end
+end
+
+% Save first figure (d2, dcc, kappa)
+figure(3002);
+plotFilenamePng = sprintf('criticality_across_full_sessions_%.0f-%.0fs%s.png', windowStartTime, windowEndTime, filenameSuffix);
 plotPathPng = fullfile(saveDir, plotFilenamePng);
 
 exportgraphics(gcf, plotPathPng, 'Resolution', 300);
-fprintf('\nSaved PNG plot to: %s\n', plotPathPng);
+fprintf('\nSaved PNG plot (d2, dcc, kappa) to: %s\n', plotPathPng);
 
-plotFilenameEps = sprintf('criticality_across_full_sessions_%.0f-%.0fs.eps', windowStartTime, windowEndTime);
+plotFilenameEps = sprintf('criticality_across_full_sessions_%.0f-%.0fs%s.eps', windowStartTime, windowEndTime, filenameSuffix);
 plotPathEps = fullfile(saveDir, plotFilenameEps);
 
 exportgraphics(gcf, plotPathEps, 'ContentType', 'vector');
-fprintf('Saved EPS plot to: %s\n', plotPathEps);
+fprintf('Saved EPS plot (d2, dcc, kappa) to: %s\n', plotPathEps);
+
+% Save second figure (decades, tau, paramSD)
+figure(3003);
+plotFilenamePng2 = sprintf('criticality_across_full_sessions_decades_tau_paramSD_%.0f-%.0fs%s.png', windowStartTime, windowEndTime, filenameSuffix);
+plotPathPng2 = fullfile(saveDir, plotFilenamePng2);
+
+exportgraphics(gcf, plotPathPng2, 'Resolution', 300);
+fprintf('Saved PNG plot (decades, tau, paramSD) to: %s\n', plotPathPng2);
+
+plotFilenameEps2 = sprintf('criticality_across_full_sessions_decades_tau_paramSD_%.0f-%.0fs%s.eps', windowStartTime, windowEndTime, filenameSuffix);
+plotPathEps2 = fullfile(saveDir, plotFilenameEps2);
+
+exportgraphics(gcf, plotPathEps2, 'ContentType', 'vector');
+fprintf('Saved EPS plot (decades, tau, paramSD) to: %s\n', plotPathEps2);
 
 fprintf('\n=== Analysis Complete ===\n');

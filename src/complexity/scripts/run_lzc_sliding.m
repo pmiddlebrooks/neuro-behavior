@@ -8,7 +8,7 @@
 
 
 % Want to parallelize the area-wise analysis?
-runParallel = 0;
+runParallel = 1;
 
 % Set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
@@ -178,7 +178,6 @@ if exist('sessionType', 'var') && exist('dataSource', 'var')
 
     if findBinSize
         if strcmp(dataSource, 'spikes')
-            %%
             idRun = dataStruct.idMatIdx{2};
             [proportions, spikeCounts] = neural_pct_spike_count(dataStruct.dataMat(:,idRun), [.005 .01 .02], 4);
         elseif strcmp(dataSource, 'lfp')
@@ -196,16 +195,21 @@ binSize = .02;  % Only used if useOptimalBinSize = false
 config = struct();
 config.useOptimalWindowSize = true;
 config.useOptimalBinSize = true;  % Set to true to automatically calculate optimal bin size per area
+if strcmp(dataSource, 'schall')
+config.minBinSize = .005;
+else
+config.minBinSize = .01;
+end
 config.slidingWindowSize = 60;
-config.minSlidingWindowSize = 5;
+config.minSlidingWindowSize = 8;
 config.maxSlidingWindowSize = 60;
-config.stepSize = 15;
-config.nShuffles = 3;
+config.stepSize = 4;
+config.nShuffles = 5;
 config.makePlots = true;
 config.saveData = true;  % Set to false to skip saving results
-config.nMinNeurons = 15;
+config.nMinNeurons = 10;
 config.minSpikesPerBin = 0.08;  % Minimum spikes per bin for optimal bin size calculation (we want about minSpikesPerPin proportion of bins with a spike)
-config.minDataPoints = 2e5;
+config.minDataPoints = 2e4;
 config.useBernoulliControl = false;  % Set to false to skip Bernoulli normalization (faster computation)
 config.includeM2356 = true;  % Set to true to include combined M23+M56 area
 
@@ -225,7 +229,7 @@ end
 if runParallel
     currentPool = gcp('nocreate');
 if isempty(currentPool)
-    NumWorkers = min(4, length(dataStruct.areas));
+    NumWorkers = min(3, length(dataStruct.areas));
     parpool('local', NumWorkers);
     fprintf('Started parallel pool with %d workers\n', NumWorkers);
 else

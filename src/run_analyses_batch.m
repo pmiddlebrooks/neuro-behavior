@@ -11,16 +11,16 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'spontaneous'
-batchSessionType = 'schall';  % Change this to process different session types
+batchSessionType = 'reach';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
 % Define which analyses to run (set to true to run, false to skip)
 % Add new analyses here as needed
 analysesToRun = struct();
-analysesToRun.lzc = false;  % Run lzc analysis
+analysesToRun.lzc = true;  % Run lzc analysis
 analysesToRun.rqa = false;         % Run RQA analysis
-analysesToRun.criticality_ar = true;  % Run criticality AR (d2/mrBr) analysis
+analysesToRun.criticality_ar = false;  % Run criticality AR (d2/mrBr) analysis
 analysesToRun.criticality_av = false;  % Run criticality AV (avalanche) analysis
 analysesToRun.criticality_lfp = false; % Run criticality LFP analysis
 % =========================

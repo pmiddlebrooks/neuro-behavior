@@ -142,12 +142,20 @@ function results = criticality_av_analysis(dataStruct, config)
         end
     else
         reconstructedDataMat = [];  % Not needed if no PCA
+        tempBinSize = [];  % Not used if no PCA
     end
     
     % Find optimal parameters
     fprintf('\n--- Step 3: Finding optimal parameters ---\n');
-    [binSize, slidingWindowSize] = find_optimal_parameters_av(...
-        dataStruct, config, areasToTest, timeRange);
+    if config.pcaFlag
+        % Use PCA-reconstructed data for parameter optimization
+        [binSize, slidingWindowSize] = find_optimal_parameters_av_pca(...
+            reconstructedDataMat, config, areasToTest, timeRange, tempBinSize, areas);
+    else
+        % Use original spike times for parameter optimization
+        [binSize, slidingWindowSize] = find_optimal_parameters_av(...
+            dataStruct, config, areasToTest, timeRange);
+    end
     
     % Filter areas based on valid optimal bin sizes and minimum neurons
     if ~isfield(config, 'nMinNeurons')
@@ -273,22 +281,39 @@ function results = criticality_av_analysis(dataStruct, config)
         % Get neuron IDs for this area
         neuronIDs = dataStruct.idLabel{a};
         
-        % Bin spikes on-demand at area-specific bin size
-        aDataMat_dcc = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
-            neuronIDs, timeRange, binSize(a));
-        numTimePoints_dcc = size(aDataMat_dcc, 1);
-        
-        % Apply PCA to binned data if needed
+        % Bin data at area-specific bin size
         if config.pcaFlag
-            [coeff, score, ~, ~, explained, mu] = pca(aDataMat_dcc);
-            forDim = find(cumsum(explained) > 30, 1);
-            forDim = max(3, min(6, forDim));
-            nDim = 1:forDim;
-            aDataMat_dcc = score(:,nDim) * coeff(:,nDim)' + mu;
+            % Use PCA-reconstructed data: rebin from 1ms to optimal bin size
+            % reconstructedDataMat{a} is [timeBins_1ms x neurons]
+            % We need to downsample to binSize(a)
+            reconstructedMat_1ms = reconstructedDataMat{a};  % [timeBins_1ms x neurons]
+            
+            % Calculate number of bins at optimal bin size
+            totalTime = timeRange(2) - timeRange(1);
+            numBins_1ms = size(reconstructedMat_1ms, 1);
+            numBins_optimal = round(totalTime / binSize(a));
+            
+            % Downsample reconstructed data to optimal bin size
+            % Average across bins within each optimal bin
+            binsPerOptimalBin = binSize(a) / tempBinSize;
+            aDataMat_dcc = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
+            for b = 1:numBins_optimal
+                startIdx_1ms = round((b-1) * binsPerOptimalBin) + 1;
+                endIdx_1ms = min(round(b * binsPerOptimalBin), numBins_1ms);
+                if startIdx_1ms <= numBins_1ms
+                    aDataMat_dcc(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
+                end
+            end
+            numTimePoints_dcc = size(aDataMat_dcc, 1);
+        else
+            % Bin spikes on-demand at area-specific bin size
+            aDataMat_dcc = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                neuronIDs, timeRange, binSize(a));
+            numTimePoints_dcc = size(aDataMat_dcc, 1);
         end
         
         % Calculate population activity
-        aDataMat_dcc = mean(aDataMat_dcc, 2);
+        aDataMat_dcc = sum(aDataMat_dcc, 2);
         
         % Initialize arrays
         dcc{a} = nan(1, numWindows);
@@ -359,10 +384,19 @@ function results = criticality_av_analysis(dataStruct, config)
         
         % Perform circular permutations if enabled
         if config.enablePermutations
-            [dccPermuted{a}, kappaPermuted{a}, decadesPermuted{a}, ...
-                tauPermuted{a}, alphaPermuted{a}, paramSDPermuted{a}] = ...
-                perform_circular_permutations_av(dataStruct, a, neuronIDs, binSize(a), ...
-                slidingWindowSize(a), config, commonCenterTimes, numTimePoints_dcc, timeRange);
+            if config.pcaFlag
+                % Use PCA-reconstructed data for permutations
+                [dccPermuted{a}, kappaPermuted{a}, decadesPermuted{a}, ...
+                    tauPermuted{a}, alphaPermuted{a}, paramSDPermuted{a}] = ...
+                    perform_circular_permutations_av_pca(reconstructedDataMat{a}, a, binSize(a), ...
+                    slidingWindowSize(a), config, commonCenterTimes, numTimePoints_dcc, timeRange, tempBinSize);
+            else
+                % Use original spike times for permutations
+                [dccPermuted{a}, kappaPermuted{a}, decadesPermuted{a}, ...
+                    tauPermuted{a}, alphaPermuted{a}, paramSDPermuted{a}] = ...
+                    perform_circular_permutations_av(dataStruct, a, neuronIDs, binSize(a), ...
+                    slidingWindowSize(a), config, commonCenterTimes, numTimePoints_dcc, timeRange);
+            end
             
             % Normalize metrics by shuffled metric values if requested
             if config.normalizeMetrics && ~isempty(dccPermuted{a})
@@ -538,6 +572,46 @@ function [binSize, slidingWindowSize] = find_optimal_parameters_av(...
     end
 end
 
+function [binSize, slidingWindowSize] = find_optimal_parameters_av_pca(...
+    reconstructedDataMat, config, areasToTest, timeRange, tempBinSize, areas)
+% FIND_OPTIMAL_PARAMETERS_AV_PCA Find optimal bin and window sizes for avalanche analysis
+% Uses PCA-reconstructed data matrices (for when pcaFlag = 1)
+%
+% Variables:
+%   reconstructedDataMat - Cell array of PCA-reconstructed data matrices [timeBins x neurons] at tempBinSize
+%   config - Configuration structure
+%   areasToTest - Areas to process
+%   timeRange - [startTime, endTime] in seconds
+%   tempBinSize - Bin size used for PCA reconstruction (typically 0.001s = 1ms)
+%   areas - Cell array of area names
+%
+% Returns:
+%   binSize - Optimal bin sizes per area
+%   slidingWindowSize - Optimal window sizes per area
+    
+    numAreas = length(reconstructedDataMat);
+    binSize = zeros(1, numAreas);
+    slidingWindowSize = zeros(1, numAreas);
+    
+    totalTime = timeRange(2) - timeRange(1);
+    
+    for a = areasToTest
+        % Get PCA-reconstructed data for this area
+        % reconstructedDataMat{a} is [timeBins_1ms x neurons]
+        reconstructedMat = reconstructedDataMat{a};
+        
+        % Calculate firing rate from reconstructed data
+        % Sum across neurons and time, then divide by total time
+        totalSpikes = sum(reconstructedMat(:));  % Sum across all neurons and time bins
+        thisFiringRate = totalSpikes / totalTime;  % Firing rate in spikes per second
+        
+        [binSize(a), slidingWindowSize(a)] = ...
+            find_optimal_bin_and_window(thisFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
+        fprintf('Area %s: bin size = %.3f s, window size = %.1f s (from PCA-reconstructed data)\n', ...
+            areas{a}, binSize(a), slidingWindowSize(a));
+    end
+end
+
 function [dccPermuted, kappaPermuted, decadesPermuted, ...
     tauPermuted, alphaPermuted, paramSDPermuted] = ...
     perform_circular_permutations_av(dataStruct, a, neuronIDs, binSize, ...
@@ -603,7 +677,125 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
             end
             
             % Calculate population activity for this permuted window
-            wPopActivityPerm = mean(permutedWindowData, 2);
+            wPopActivityPerm = sum(permutedWindowData, 2);
+            
+            % Apply thresholding using median of this window
+            threshSpikes = median(wPopActivityPerm);
+            wPopActivityPerm(wPopActivityPerm < threshSpikes) = 0;
+            
+            % Avalanche analysis for permuted data
+            zeroBins = find(wPopActivityPerm == 0);
+            if length(zeroBins) > 1 && any(diff(zeroBins)>1)
+                [sizesPerm, dursPerm] = getAvalanches(wPopActivityPerm', .5, 1);
+                gof = .8;
+                plotAv = 0;
+                [tauPerm, plrSPerm, minavSPerm, maxavSPerm, ~, ~, ~] = plfit2023(sizesPerm, gof, plotAv, 0);
+                [alphaPerm, plrDPerm, minavDPerm, maxavDPerm, ~, ~, ~] = plfit2023(dursPerm, gof, plotAv, 0);
+                [paramSDPerm, sigmaNuZInvStdPerm, logCoeffPerm] = size_given_duration(sizesPerm, dursPerm, ...
+                    'durmin', minavDPerm, 'durmax', maxavDPerm);
+                
+                % Calculate metrics for permuted data
+                dccPermuted(w, shuffle) = distance_to_criticality(tauPerm, alphaPerm, paramSDPerm);
+                kappaPermuted(w, shuffle) = compute_kappa(sizesPerm);
+                decadesPermuted(w, shuffle) = plrSPerm;
+                tauPermuted(w, shuffle) = tauPerm;
+                alphaPermuted(w, shuffle) = alphaPerm;
+                paramSDPermuted(w, shuffle) = paramSDPerm;
+            end
+        end
+        
+        if mod(w, max(1, round(numWindows/10))) == 0
+            fprintf('    Completed %d/%d windows (%.1f min elapsed)\n', w, numWindows, toc(ticPerm)/60);
+        end
+    end
+    
+    fprintf('  Permutations completed in %.1f minutes\n', toc(ticPerm)/60);
+end
+
+function [dccPermuted, kappaPermuted, decadesPermuted, ...
+    tauPermuted, alphaPermuted, paramSDPermuted] = ...
+    perform_circular_permutations_av_pca(reconstructedMat_1ms, a, binSize, ...
+    slidingWindowSize, config, commonCenterTimes, numTimePoints, timeRange, tempBinSize)
+% PERFORM_CIRCULAR_PERMUTATIONS_AV_PCA Perform circular permutation testing for avalanche analysis
+%   Uses PCA-reconstructed data (for when pcaFlag = 1)
+%   Shuffles each neuron's activity independently using circular shifts,
+%   then computes population activity from the shuffled data.
+%
+% Variables:
+%   reconstructedMat_1ms - PCA-reconstructed data matrix [timeBins_1ms x neurons] at tempBinSize
+%   a - Area index
+%   binSize - Optimal bin size for this area
+%   slidingWindowSize - Optimal window size for this area
+%   config - Configuration structure
+%   commonCenterTimes - Window center times
+%   numTimePoints - Number of time points at optimal bin size
+%   timeRange - [startTime, endTime] in seconds
+%   tempBinSize - Bin size used for PCA (typically 0.001s = 1ms)
+    
+    fprintf('  Running %d circular permutations per window for area %d (using PCA-reconstructed data)...\n', ...
+        config.nShuffles, a);
+    ticPerm = tic;
+    
+    numWindows = length(commonCenterTimes);
+    
+    % Initialize storage
+    dccPermuted = nan(numWindows, config.nShuffles);
+    kappaPermuted = nan(numWindows, config.nShuffles);
+    decadesPermuted = nan(numWindows, config.nShuffles);
+    tauPermuted = nan(numWindows, config.nShuffles);
+    alphaPermuted = nan(numWindows, config.nShuffles);
+    paramSDPermuted = nan(numWindows, config.nShuffles);
+    
+    % Downsample reconstructed data from 1ms to optimal bin size for full time range
+    totalTime = timeRange(2) - timeRange(1);
+    numBins_1ms = size(reconstructedMat_1ms, 1);
+    numBins_optimal = round(totalTime / binSize);
+    binsPerOptimalBin = binSize / tempBinSize;
+    
+    % Create downsampled data matrix at optimal bin size
+    originalDataMat = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
+    for b = 1:numBins_optimal
+        startIdx_1ms = round((b-1) * binsPerOptimalBin) + 1;
+        endIdx_1ms = min(round(b * binsPerOptimalBin), numBins_1ms);
+        if startIdx_1ms <= numBins_1ms
+            originalDataMat(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
+        end
+    end
+    nNeurons = size(originalDataMat, 2);
+    
+    % Permute each window independently
+    for w = 1:numWindows
+        centerTime = commonCenterTimes(w);
+        
+        % Convert centerTime to indices for this area's binning
+        % Use area-specific optimal window size
+        [startIdx, endIdx] = calculate_window_indices_from_center(...
+            centerTime, slidingWindowSize, binSize, numTimePoints);
+        
+        % Check if window is valid (within bounds)
+        if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
+            % Window is out of bounds, skip
+            continue;
+        end
+        
+        % Extract this window's data
+        windowData = originalDataMat(startIdx:endIdx, :);
+        winSamples = size(windowData, 1);
+        
+        % For each shuffle, permute this window's data independently
+        for shuffle = 1:config.nShuffles
+            % Circularly permute each neuron independently within this window
+            permutedWindowData = windowData;
+            for n = 1:nNeurons
+                shiftAmount = randi([1, winSamples]);
+                permutedWindowData(:, n) = circshift(permutedWindowData(:, n), shiftAmount);
+            end
+            
+            % No need to re-apply PCA - data is already PCA-reconstructed
+            % Just use the permuted window data directly
+            
+            % Calculate population activity for this permuted window
+            wPopActivityPerm = sum(permutedWindowData, 2);
             
             % Apply thresholding using median of this window
             threshSpikes = median(wPopActivityPerm);
