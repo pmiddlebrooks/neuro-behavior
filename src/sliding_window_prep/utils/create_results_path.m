@@ -64,6 +64,9 @@ function resultsPath = create_results_path(analysisType, sessionType, sessionNam
                     filenameSuffix, sessionName);
             end
             
+        case 'participation_ratio'
+            filename = sprintf('participation_ratio_sliding_window_%s.mat', sessionName);
+
         case 'rqa'
             if isempty(dataSource)
                 error('dataSource must be provided for rqa analysis');

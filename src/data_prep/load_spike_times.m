@@ -110,20 +110,18 @@ function spikeData = load_spike_times_spontaneous(paths, sessionName, opts)
     end
     
     if ~isempty(subDir)
-        opts.dataPath = fullfile(paths.freeDataPath, subDir);
+        opts.dataPath = fullfile(paths.spontaneousDataPath, subDir);
     else
-        opts.dataPath = paths.freeDataPath;
+        opts.dataPath = paths.spontaneousDataPath;
     end
     opts.sessionName = sessionName;
     
-    % Set collectEnd if not set
-    if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
-        opts.collectEnd = 10 * 60;  % Default 10 minutes
-    end
     
     % Load spike data
     data = load_data(opts, 'spikes');
-    
+    % Set collectEnd if not set
+
+
     % Find qualifying neurons
     useMulti = 1;
     if ~useMulti
@@ -150,6 +148,10 @@ function spikeData = load_spike_times_spontaneous(paths, sessionName, opts)
     % Extract all spike times and clusters
     spikeTimes = data.spikeTimes;
     spikeClusters = data.spikeClusters;
+    
+        if isempty(opts.collectEnd)
+    opts.collectEnd = spikeTimes(end);
+end
     
     % Filter to qualifying neurons and time range
     validSpikes = ismember(spikeClusters, neuronIDs) & ...

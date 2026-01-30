@@ -1,4 +1,4 @@
-function data = load_data(opts, dataType)
+function data = spontaneous_load_data(opts, dataType)
 
 % Load a specific type of data (input: dataType) for analysis
 
@@ -25,10 +25,8 @@ switch dataType
         
         fileName = csvFiles(1).name;
         dataFull = readtable(fullfile(searchPath, fileName));
-if isempty(opts.collectEnd)
-    opts.collectEnd = dataFull.Time(end);
-end
 
+% if isempty(opts.collectEnd), opts.collectEnd = 
         % Use a time window of recorded data
         getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectEnd));
         dataWindow = dataFull(getWindow,:);
@@ -140,12 +138,8 @@ end
         end
         spikeClusters = readNPY(spikeClustersPath);
 
-        if isempty(opts.collectEnd)
-    opts.collectEnd = spikeTimes(end);
-end
-
         % Return the requested window of data, formatted  so start time is zero,
-        dataWindow = spikeTimes >= opts.collectStart & spikeTimes <= (opts.collectEnd);
+        dataWindow = spikeTimes >= opts.collectStart & spikeTimes < (opts.collectEnd);
         spikeTimes = spikeTimes(dataWindow);
         warning('You changed load_data.m so spikes are not shifted to zero (they load at their actual time). This might affect many analyses that use get_standard_data.m')
         % spikeTimes = spikeTimes - opts.collectStart;
