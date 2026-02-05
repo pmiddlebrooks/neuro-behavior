@@ -4,10 +4,13 @@
 %
 % Variables:
 %   analysisType - Type of analysis: 'criticality_ar', 'lzc', 'rqa', 
-%                  'criticality_av', 'criticality_lfp' (default: 'criticality_ar')
+%                  'criticality_av', 'criticality_lfp', 'participation_ratio' (default: 'criticality_ar')
 %   metricName - Name of metric to plot (e.g., 'd2', 'lzComplexity', 'recurrenceRate')
 %                 If empty, uses default for analysis type
 %   useNormalized - Whether to use normalized metric if available (default: true)
+%   prNormalizationType - For participation_ratio only: 'none' (raw PR),
+%                        'shuffle' (shuffle-normalized), 'neurons' (PR/nNeurons).
+%                        Default: 'shuffle'. Ignored for other analysis types.
 %   filenameSuffix - Optional suffix for results files (e.g., '_pca')
 %
 % Note: The script automatically finds results files by matching session name
@@ -18,16 +21,17 @@
 %   metric values per session per area, and create bar plots comparing the two groups.
 
 %% Configuration
-analysisType = 'lzc';  % Options: 'criticality_ar', 'lzc', 'rqa', 'criticality_av', 'criticality_lfp'
+analysisType = 'rqa';  % Options: 'criticality_ar', 'lzc', 'rqa', 'criticality_av', 'criticality_lfp', 'participation_ratio'
 metricName = '';  % If empty, uses default for analysis type
-useNormalized = true;  % Use normalized metric if available
+useNormalized = true;  % Use normalized metric if available (for non-PR analyses)
+prNormalizationType = 'neurons';  % For participation_ratio: 'none', 'shuffle', 'neurons'
 filenameSuffix = '';  % Optional suffix (e.g., '_pca')
 timeRange = [0, 1200];  % Time range in seconds to analyze [startTime, endTime]. Use [] to analyze all data.
 
 natColor = [0 191 255] ./ 255;   % Color for spontaneous sessions
 reachColor = [255 215 0] ./ 255; % Color for reach sessions
 
-%% Add paths
+% Add paths
 % Get paths structure
 paths = get_paths;
 
@@ -37,7 +41,7 @@ addpath(fullfile(basePath, 'spontaneous'));
 addpath(fullfile(basePath, 'reach_task'));
 
 
-%% Get session lists
+% Get session lists
 spontaneousSessions = spontaneous_session_list();
 reachSessions = reach_session_list();
 
@@ -51,7 +55,7 @@ else
     fprintf('Time range: All data\n');
 end
 
-%% Determine default metric name if not provided
+% Determine default metric name if not provided
 % For RQA, we plot multiple metrics (determinism, laminarity, trapping time)
 % so metricName is not used for RQA
 if strcmp(analysisType, 'rqa')
@@ -79,13 +83,50 @@ elseif isempty(metricName)
             else
                 metricName = 'd2';
             end
+        case 'participation_ratio'
+            switch prNormalizationType
+                case 'shuffle'
+                    metricName = 'participationRatioNormalized';
+                case {'none', 'neurons'}
+                    metricName = 'participationRatio';
+                otherwise
+                    error('Unknown prNormalizationType: %s. Use ''none'', ''shuffle'', or ''neurons''.', prNormalizationType);
+            end
         otherwise
             error('Unknown analysis type: %s', analysisType);
     end
     fprintf('Metric: %s\n', metricName);
+    if strcmp(analysisType, 'participation_ratio')
+        fprintf('PR normalization: %s\n', prNormalizationType);
+    end
 end
 
-%% Load results for spontaneous sessions
+% Display name for plot labels (PR uses human-readable names)
+if strcmp(analysisType, 'participation_ratio')
+    switch prNormalizationType
+        case 'none'
+            metricDisplayName = 'PR (raw)';
+        case 'shuffle'
+            metricDisplayName = 'PR (shuffle-norm)';
+        case 'neurons'
+            metricDisplayName = 'PR/nNeurons';
+        otherwise
+            metricDisplayName = metricName;
+    end
+else
+    metricDisplayName = metricName;
+end
+
+% Suffix for labels when using normalized values (PR display names already indicate normalization)
+isNormalizedForPlot = (strcmp(analysisType, 'rqa') && useNormalized) || ...
+    (ismember(analysisType, {'criticality_ar', 'lzc', 'criticality_lfp'}) && useNormalized);
+if isNormalizedForPlot
+    normalizedLabelSuffix = ' (normalized)';
+else
+    normalizedLabelSuffix = '';
+end
+
+% Load results for spontaneous sessions
 fprintf('\n=== Loading Spontaneous Session Results ===\n');
 spontaneousData = struct();
 spontaneousData.medians = {};  % Cell array: {areaIdx}{sessionIdx} = median value
@@ -118,7 +159,7 @@ for s = 1:length(spontaneousSessions)
     saveDir = fullfile(paths.dropPath, 'spontaneous/results', subjectID);
     
     % Determine dataSource for pattern matching
-    if strcmp(analysisType, 'lzc') || strcmp(analysisType, 'rqa')
+    if strcmp(analysisType, 'lzc') || strcmp(analysisType, 'rqa') || strcmp(analysisType, 'participation_ratio')
         dataSource = 'spikes';  % Default, could be made configurable
     else
         dataSource = '';
@@ -199,6 +240,12 @@ for s = 1:length(spontaneousSessions)
                         a <= length(results.(metricName)) && ~isempty(results.(metricName){a})
                     results.(metricName){a} = results.(metricName){a}(timeMask);
                 end
+                % Filter participationRatioOverNeurons when using PR/nNeurons
+                if strcmp(analysisType, 'participation_ratio') && strcmp(prNormalizationType, 'neurons') && ...
+                        isfield(results, 'participationRatioOverNeurons') && a <= length(results.participationRatioOverNeurons) && ...
+                        ~isempty(results.participationRatioOverNeurons{a})
+                    results.participationRatioOverNeurons{a} = results.participationRatioOverNeurons{a}(timeMask);
+                end
             end
         end
     end
@@ -241,6 +288,52 @@ for s = 1:length(spontaneousSessions)
                 end
             end
         end
+    elseif strcmp(analysisType, 'participation_ratio') && strcmp(prNormalizationType, 'neurons')
+        % PR normalized by neuron count: use saved participationRatioOverNeurons or compute from PR/idMatIdx
+        useSaved = isfield(results, 'participationRatioOverNeurons') && ...
+            any(cellfun(@(x) ~isempty(x) && any(~isnan(x)), results.participationRatioOverNeurons));
+        if useSaved
+            metricData = results.participationRatioOverNeurons;
+            for a = 1:length(metricData)
+                if a <= length(spontaneousData.medians)
+                    if ~isempty(metricData{a})
+                        values = metricData{a}(:);
+                        values = values(~isnan(values));
+                        if ~isempty(values)
+                            medianVal = median(values);
+                            spontaneousData.medians{a} = [spontaneousData.medians{a}, medianVal];
+                        else
+                            spontaneousData.medians{a} = [spontaneousData.medians{a}, nan];
+                        end
+                    else
+                        spontaneousData.medians{a} = [spontaneousData.medians{a}, nan];
+                    end
+                end
+            end
+        elseif isfield(results, 'participationRatio') && isfield(results, 'idMatIdx')
+            for a = 1:length(results.participationRatio)
+                if a <= length(spontaneousData.medians) && ~isempty(results.participationRatio{a})
+                    nNeurons = length(results.idMatIdx{a});
+                    if nNeurons > 0
+                        values = results.participationRatio{a}(:) / nNeurons;
+                        values = values(~isnan(values));
+                        if ~isempty(values)
+                            medianVal = median(values);
+                            spontaneousData.medians{a} = [spontaneousData.medians{a}, medianVal];
+                        else
+                            spontaneousData.medians{a} = [spontaneousData.medians{a}, nan];
+                        end
+                    else
+                        spontaneousData.medians{a} = [spontaneousData.medians{a}, nan];
+                    end
+                end
+            end
+        else
+            warning('participationRatioOverNeurons or (participationRatio and idMatIdx) not found for session %s', sessionName);
+            for a = 1:length(spontaneousData.medians)
+                spontaneousData.medians{a} = [spontaneousData.medians{a}, nan];
+            end
+        end
     elseif ~isempty(metricName) && isfield(results, metricName)
         metricData = results.(metricName);
         if iscell(metricData)
@@ -272,7 +365,7 @@ for s = 1:length(spontaneousSessions)
     spontaneousData.sessionNames{end+1} = sessionName;
 end
 
-%% Load results for reach sessions
+% Load results for reach sessions
 fprintf('\n=== Loading Reach Session Results ===\n');
 reachData = struct();
 reachData.medians = {};  % Cell array: {areaIdx}{sessionIdx} = median value
@@ -294,7 +387,7 @@ for s = 1:length(reachSessions)
     saveDir = fullfile(paths.dropPath, 'reach_task/results', dataBaseName);
     
     % Determine dataSource for pattern matching
-    if strcmp(analysisType, 'lzc') || strcmp(analysisType, 'rqa')
+    if strcmp(analysisType, 'lzc') || strcmp(analysisType, 'rqa') || strcmp(analysisType, 'participation_ratio')
         dataSource = 'spikes';  % Default, could be made configurable
     else
         dataSource = '';
@@ -374,6 +467,12 @@ for s = 1:length(reachSessions)
                         a <= length(results.(metricName)) && ~isempty(results.(metricName){a})
                     results.(metricName){a} = results.(metricName){a}(timeMask);
                 end
+                % Filter participationRatioOverNeurons when using PR/nNeurons
+                if strcmp(analysisType, 'participation_ratio') && strcmp(prNormalizationType, 'neurons') && ...
+                        isfield(results, 'participationRatioOverNeurons') && a <= length(results.participationRatioOverNeurons) && ...
+                        ~isempty(results.participationRatioOverNeurons{a})
+                    results.participationRatioOverNeurons{a} = results.participationRatioOverNeurons{a}(timeMask);
+                end
             end
         end
     end
@@ -416,6 +515,52 @@ for s = 1:length(reachSessions)
                 end
             end
         end
+    elseif strcmp(analysisType, 'participation_ratio') && strcmp(prNormalizationType, 'neurons')
+        % PR normalized by neuron count: use saved participationRatioOverNeurons or compute from PR/idMatIdx
+        useSaved = isfield(results, 'participationRatioOverNeurons') && ...
+            any(cellfun(@(x) ~isempty(x) && any(~isnan(x)), results.participationRatioOverNeurons));
+        if useSaved
+            metricData = results.participationRatioOverNeurons;
+            for a = 1:length(metricData)
+                if a <= length(reachData.medians)
+                    if ~isempty(metricData{a})
+                        values = metricData{a}(:);
+                        values = values(~isnan(values));
+                        if ~isempty(values)
+                            medianVal = median(values);
+                            reachData.medians{a} = [reachData.medians{a}, medianVal];
+                        else
+                            reachData.medians{a} = [reachData.medians{a}, nan];
+                        end
+                    else
+                        reachData.medians{a} = [reachData.medians{a}, nan];
+                    end
+                end
+            end
+        elseif isfield(results, 'participationRatio') && isfield(results, 'idMatIdx')
+            for a = 1:length(results.participationRatio)
+                if a <= length(reachData.medians) && ~isempty(results.participationRatio{a})
+                    nNeurons = length(results.idMatIdx{a});
+                    if nNeurons > 0
+                        values = results.participationRatio{a}(:) / nNeurons;
+                        values = values(~isnan(values));
+                        if ~isempty(values)
+                            medianVal = median(values);
+                            reachData.medians{a} = [reachData.medians{a}, medianVal];
+                        else
+                            reachData.medians{a} = [reachData.medians{a}, nan];
+                        end
+                    else
+                        reachData.medians{a} = [reachData.medians{a}, nan];
+                    end
+                end
+            end
+        else
+            warning('participationRatioOverNeurons or (participationRatio and idMatIdx) not found for session %s', sessionName);
+            for a = 1:length(reachData.medians)
+                reachData.medians{a} = [reachData.medians{a}, nan];
+            end
+        end
     elseif ~isempty(metricName) && isfield(results, metricName)
         metricData = results.(metricName);
         if iscell(metricData)
@@ -447,7 +592,7 @@ for s = 1:length(reachSessions)
     reachData.sessionNames{end+1} = sessionName;
 end
 
-%% Determine common areas
+% Determine common areas
 if isempty(spontaneousData.areas) || isempty(reachData.areas)
     error('No data loaded. Check that results files exist and contain the expected structure.');
 end
@@ -551,7 +696,8 @@ else
         buffer = rangeVal * bufferPercent;
         ylimSingle = [minVal - buffer, maxVal + buffer];
         % Ensure lower limit doesn't go below 0 for normalized metrics
-        if useNormalized
+        if useNormalized || (strcmp(analysisType, 'participation_ratio') && ...
+                (strcmp(prNormalizationType, 'neurons') || strcmp(prNormalizationType, 'shuffle')))
             ylimSingle(1) = max(0, ylimSingle(1));
         end
     else
@@ -632,25 +778,24 @@ for a = 1:numAreasToPlot
                 xticklabels({'Reach'});
             end
             
-            ylabel(sprintf('%s (median)', metricShortLabels{col}));
+            ylabel(sprintf('%s%s (median)', metricShortLabels{col}, normalizedLabelSuffix));
             if col == 1
-                title(sprintf('%s - %s', areaName, metricLabels{col}));
+                title(sprintf('%s - %s%s', areaName, metricLabels{col}, normalizedLabelSuffix));
             else
-                title(metricLabels{col});
+                title(sprintf('%s%s', metricLabels{col}, normalizedLabelSuffix));
             end
             grid on;
             
             % Apply global y-axis limits for this metric
             ylim(ylims{col});
             
-            % Add mean lines
+            % Add mean lines using natColor and reachColor
             if ~isempty(natMedians)
-                yline(mean(natMedians), 'b--', 'LineWidth', 2, 'DisplayName', sprintf('Nat mean: %.3f', mean(natMedians)));
+                yline(mean(natMedians), '--', 'Color', natColor, 'LineWidth', 2, 'DisplayName', sprintf('Nat mean: %.3f', mean(natMedians)));
             end
             if ~isempty(reachMedians)
-                yline(mean(reachMedians), 'r--', 'LineWidth', 2, 'DisplayName', sprintf('Reach mean: %.3f', mean(reachMedians)));
+                yline(mean(reachMedians), '--', 'Color', reachColor, 'LineWidth', 2, 'DisplayName', sprintf('Reach mean: %.3f', mean(reachMedians)));
             end
-            
             hold off;
         end
     else
@@ -700,8 +845,8 @@ for a = 1:numAreasToPlot
             xticklabels({'Reach'});
         end
         
-        ylabel(sprintf('%s (median)', metricName));
-        title(sprintf('%s - %s', areaName, metricName));
+        ylabel(sprintf('%s%s (median)', metricDisplayName, normalizedLabelSuffix));
+        title(sprintf('%s - %s%s', areaName, metricDisplayName, normalizedLabelSuffix));
         grid on;
         
         % Apply global y-axis limits
@@ -709,10 +854,10 @@ for a = 1:numAreasToPlot
         
         % Add mean lines
         if ~isempty(natMedians)
-            yline(mean(natMedians), 'b--', 'LineWidth', 2, 'DisplayName', sprintf('Nat mean: %.3f', mean(natMedians)));
+            yline(mean(natMedians), '--', 'LineWidth', 2, 'Color', natColor, 'DisplayName', sprintf('Nat mean: %.3f', mean(natMedians)));
         end
         if ~isempty(reachMedians)
-            yline(mean(reachMedians), 'r--', 'LineWidth', 2, 'DisplayName', sprintf('Reach mean: %.3f', mean(reachMedians)));
+            yline(mean(reachMedians), '--', 'LineWidth', 2, 'Color', reachColor, 'DisplayName', sprintf('Reach mean: %.3f', mean(reachMedians)));
         end
         
         hold off;
@@ -720,8 +865,13 @@ for a = 1:numAreasToPlot
 end
 
 % Add overall title
-sgtitle(sprintf('%s Comparison: Spontaneous vs Reach', ...
-    analysisType), 'FontSize', 14, 'FontWeight', 'bold');
+if strcmp(analysisType, 'participation_ratio')
+    sgtitle(sprintf('%s (%s%s) Comparison: Spontaneous vs Reach', ...
+        analysisType, metricDisplayName, normalizedLabelSuffix), 'FontSize', 14, 'FontWeight', 'bold', 'interpreter', 'none');
+else
+    sgtitle(sprintf('%s%s Comparison: Spontaneous vs Reach', ...
+        analysisType, normalizedLabelSuffix), 'FontSize', 14, 'FontWeight', 'bold', 'interpreter', 'none');
+end
 
 %% Save figure
 saveDir = fullfile(paths.dropPath, 'sliding_window_comparisons');
@@ -741,6 +891,11 @@ if strcmp(analysisType, 'rqa')
         analysisType, filenameSuffix, timeRangeStr);
     plotFilenameEps = sprintf('%s_det_lam_tt_nat_vs_reach%s%s.eps', ...
         analysisType, filenameSuffix, timeRangeStr);
+elseif strcmp(analysisType, 'participation_ratio')
+    plotFilenamePng = sprintf('%s_%s_nat_vs_reach%s%s.png', ...
+        analysisType, prNormalizationType, filenameSuffix, timeRangeStr);
+    plotFilenameEps = sprintf('%s_%s_nat_vs_reach%s%s.eps', ...
+        analysisType, prNormalizationType, filenameSuffix, timeRangeStr);
 else
     plotFilenamePng = sprintf('%s_%s_nat_vs_reach%s%s.png', ...
         analysisType, metricName, filenameSuffix, timeRangeStr);
@@ -824,6 +979,14 @@ function resultsPath = find_results_file(analysisType, sessionType, sessionName,
                 else
                     pattern = sprintf('rqa_sliding_window%s_*.mat', filenameSuffix);
                 end
+            end
+            
+        case 'participation_ratio'
+            % Format: participation_ratio_sliding_window_{sessionName}.mat
+            if ~isempty(sessionName)
+                pattern = sprintf('participation_ratio_sliding_window_%s.mat', sessionName);
+            else
+                pattern = 'participation_ratio_sliding_window_*.mat';
             end
             
         otherwise

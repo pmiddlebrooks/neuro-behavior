@@ -258,11 +258,11 @@ config.minTimeBins = 10000;  % Minimum number of time bins per window (used to a
 config.minWindowSize = 120;
 % slidingWindowSize will be auto-calculated from binSize and minTimeBins in rqa_sliding_analysis.m
 % config.slidingWindowSize = 10*60;  % Optional: specify directly (overrides auto-calculation)
-config.stepSize = 10;
-config.nShuffles = 5;
+config.stepSize = 30;
+config.nShuffles = 4;
 config.makePlots = true;
 config.useBernoulliControl = false;  % Set to false to skip Bernoulli normalization (faster computation)
-config.nPCADim = 4;
+config.nPCADim = 5;
 config.recurrenceThreshold = 0.03;  % Target recurrence rate (0.02 = 2%, range: 0.01-0.05)
 config.distanceMetric = 'cosine';  % 'euclidean' or 'cosine' (cosine recommended for sparse spiking)
 config.nMinNeurons = 15;  % Minimum number of neurons required (areas with fewer will be skipped)

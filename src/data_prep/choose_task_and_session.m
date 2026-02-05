@@ -52,7 +52,7 @@ sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 
 sessionName =  'ag112321_1';
 % sessionName =  'ag112321_2';
-% sessionName =  'ey042822';  % Good M56, Bad DS
+sessionName =  'ey042822';  % Good M56, Bad DS
 % sessionName =  'kw092821';  % Bad M56, Good DS
 % sessionName =  'kw092121';  % Ok... few M56
 
@@ -69,10 +69,10 @@ sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh';  % GOOD (only 4 m23)
 % sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh';    % BAD (few neurons)
 % sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh';   % Few M56 neurons (good DS)
 % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh';  % BAD (few neurons)
-% sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh';  % GOOD
-sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh';   % BAD (max is m56 with 19 neurons)
+sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh';  % GOOD
+% sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh';   % BAD (max is m56 with 19 neurons)
 % sessionName =  'Y15_27-Aug-2025 14_02_21_NeuroBeh';  % GOOD
-% sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh';  % GOOD
+sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh';  % GOOD
 sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh';  % GOOD (but only 23 M56)
 % sessionName =  'test/reach_test';
 

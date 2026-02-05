@@ -374,12 +374,29 @@ end
 
 fprintf('  Will process %d area(s): %s\n', length(areasToProcess), strjoin(areas(areasToProcess), ', '));
 
-% Analysis loop
+% Analysis loop (parfor requires consecutive loop var; store in temp{idx}, copy to result{a} after)
 fprintf('\n=== Processing Areas ===\n');
 
+% Pre-allocate temp arrays for parfor output (indexed by 1:length(areasToProcess))
+numToProcess = length(areasToProcess);
+recurrenceRateTemp = cell(1, numToProcess);
+determinismTemp = cell(1, numToProcess);
+laminarityTemp = cell(1, numToProcess);
+trappingTimeTemp = cell(1, numToProcess);
+recurrenceRateNormalizedTemp = cell(1, numToProcess);
+determinismNormalizedTemp = cell(1, numToProcess);
+laminarityNormalizedTemp = cell(1, numToProcess);
+trappingTimeNormalizedTemp = cell(1, numToProcess);
+recurrenceRateNormalizedBernoulliTemp = cell(1, numToProcess);
+determinismNormalizedBernoulliTemp = cell(1, numToProcess);
+laminarityNormalizedBernoulliTemp = cell(1, numToProcess);
+trappingTimeNormalizedBernoulliTemp = cell(1, numToProcess);
+recurrencePlotsTemp = cell(1, numToProcess);
+startSTemp = cell(1, numToProcess);
+behaviorProportionTemp = cell(1, numToProcess);
 
-parfor a = areasToProcess
-% for a = areasToProcess
+parfor idx = 1:numToProcess
+    a = areasToProcess(idx);  % Actual area index for data access
     fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
 
     tic;
@@ -431,38 +448,38 @@ parfor a = areasToProcess
         end
 
         % Initialize arrays
-        recurrenceRate{a} = nan(1, numWindows);
-        determinism{a} = nan(1, numWindows);
-        laminarity{a} = nan(1, numWindows);
-        trappingTime{a} = nan(1, numWindows);
-        recurrenceRateNormalized{a} = nan(1, numWindows);
-        determinismNormalized{a} = nan(1, numWindows);
-        laminarityNormalized{a} = nan(1, numWindows);
-        trappingTimeNormalized{a} = nan(1, numWindows);
-        recurrenceRateNormalizedBernoulli{a} = nan(1, numWindows);
-        determinismNormalizedBernoulli{a} = nan(1, numWindows);
-        laminarityNormalizedBernoulli{a} = nan(1, numWindows);
-        trappingTimeNormalizedBernoulli{a} = nan(1, numWindows);
+        recurrenceRateTemp{idx} = nan(1, numWindows);
+        determinismTemp{idx} = nan(1, numWindows);
+        laminarityTemp{idx} = nan(1, numWindows);
+        trappingTimeTemp{idx} = nan(1, numWindows);
+        recurrenceRateNormalizedTemp{idx} = nan(1, numWindows);
+        determinismNormalizedTemp{idx} = nan(1, numWindows);
+        laminarityNormalizedTemp{idx} = nan(1, numWindows);
+        trappingTimeNormalizedTemp{idx} = nan(1, numWindows);
+        recurrenceRateNormalizedBernoulliTemp{idx} = nan(1, numWindows);
+        determinismNormalizedBernoulliTemp{idx} = nan(1, numWindows);
+        laminarityNormalizedBernoulliTemp{idx} = nan(1, numWindows);
+        trappingTimeNormalizedBernoulliTemp{idx} = nan(1, numWindows);
         if config.saveRecurrencePlots
-            recurrencePlots{a} = cell(1, numWindows);  % Store recurrence plot for each window
+            recurrencePlotsTemp{idx} = cell(1, numWindows);  % Store recurrence plot for each window
         else
-            recurrencePlots{a} = {};  % Empty if not saving
+            recurrencePlotsTemp{idx} = {};  % Empty if not saving
         end
-        startS{a} = nan(1, numWindows);
+        startSTemp{idx} = nan(1, numWindows);
 
         % Initialize behavior proportion array if enabled
         if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
                 isfield(config, 'behaviorDenominatorIDs') && ...
                 ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
-            behaviorProportion{a} = nan(1, numWindows);
+            behaviorProportionTemp{idx} = nan(1, numWindows);
         else
-            behaviorProportion{a} = [];
+            behaviorProportionTemp{idx} = [];
         end
 
         % Process each window using common centerTime
         for w = 1:numWindows
             centerTime = commonCenterTimes(w);
-            startS{a}(w) = centerTime;
+            startSTemp{idx}(w) = centerTime;
 
             % Convert centerTime to indices for this area's binning
             % Use area-specific window size
@@ -490,12 +507,12 @@ parfor a = areasToProcess
 
             % Calculate RQA metrics
             if config.saveRecurrencePlots
-                [recurrenceRate{a}(w), determinism{a}(w), laminarity{a}(w), ...
-                    trappingTime{a}(w), recurrencePlots{a}{w}] = ...
+                [recurrenceRateTemp{idx}(w), determinismTemp{idx}(w), laminarityTemp{idx}(w), ...
+                    trappingTimeTemp{idx}(w), recurrencePlotsTemp{idx}{w}] = ...
                     compute_rqa_metrics(pcaData, config.recurrenceThreshold, config.distanceMetric);
             else
-                [recurrenceRate{a}(w), determinism{a}(w), laminarity{a}(w), ...
-                    trappingTime{a}(w), ~] = ...
+                [recurrenceRateTemp{idx}(w), determinismTemp{idx}(w), laminarityTemp{idx}(w), ...
+                    trappingTimeTemp{idx}(w), ~] = ...
                     compute_rqa_metrics(pcaData, config.recurrenceThreshold, config.distanceMetric);
             end
 
@@ -543,27 +560,27 @@ parfor a = areasToProcess
             meanShuffledTT = nanmean(shuffledTT);
 
             if meanShuffledRR > 0
-                recurrenceRateNormalized{a}(w) = recurrenceRate{a}(w) / meanShuffledRR;
+                recurrenceRateNormalizedTemp{idx}(w) = recurrenceRateTemp{idx}(w) / meanShuffledRR;
             else
-                recurrenceRateNormalized{a}(w) = nan;
+                recurrenceRateNormalizedTemp{idx}(w) = nan;
             end
 
             if meanShuffledDET > 0
-                determinismNormalized{a}(w) = determinism{a}(w) / meanShuffledDET;
+                determinismNormalizedTemp{idx}(w) = determinismTemp{idx}(w) / meanShuffledDET;
             else
-                determinismNormalized{a}(w) = nan;
+                determinismNormalizedTemp{idx}(w) = nan;
             end
 
             if meanShuffledLAM > 0
-                laminarityNormalized{a}(w) = laminarity{a}(w) / meanShuffledLAM;
+                laminarityNormalizedTemp{idx}(w) = laminarityTemp{idx}(w) / meanShuffledLAM;
             else
-                laminarityNormalized{a}(w) = nan;
+                laminarityNormalizedTemp{idx}(w) = nan;
             end
 
             if meanShuffledTT > 0
-                trappingTimeNormalized{a}(w) = trappingTime{a}(w) / meanShuffledTT;
+                trappingTimeNormalizedTemp{idx}(w) = trappingTimeTemp{idx}(w) / meanShuffledTT;
             else
-                trappingTimeNormalized{a}(w) = nan;
+                trappingTimeNormalizedTemp{idx}(w) = nan;
             end
 
             % Normalize by rate-matched Bernoulli control (optional)
@@ -609,33 +626,33 @@ parfor a = areasToProcess
                 meanBernoulliTT = nanmean(bernoulliTT);
 
                 if meanBernoulliRR > 0
-                    recurrenceRateNormalizedBernoulli{a}(w) = recurrenceRate{a}(w) / meanBernoulliRR;
+                    recurrenceRateNormalizedBernoulliTemp{idx}(w) = recurrenceRateTemp{idx}(w) / meanBernoulliRR;
                 else
-                    recurrenceRateNormalizedBernoulli{a}(w) = nan;
+                    recurrenceRateNormalizedBernoulliTemp{idx}(w) = nan;
                 end
 
                 if meanBernoulliDET > 0
-                    determinismNormalizedBernoulli{a}(w) = determinism{a}(w) / meanBernoulliDET;
+                    determinismNormalizedBernoulliTemp{idx}(w) = determinismTemp{idx}(w) / meanBernoulliDET;
                 else
-                    determinismNormalizedBernoulli{a}(w) = nan;
+                    determinismNormalizedBernoulliTemp{idx}(w) = nan;
                 end
 
                 if meanBernoulliLAM > 0
-                    laminarityNormalizedBernoulli{a}(w) = laminarity{a}(w) / meanBernoulliLAM;
+                    laminarityNormalizedBernoulliTemp{idx}(w) = laminarityTemp{idx}(w) / meanBernoulliLAM;
                 else
-                    laminarityNormalizedBernoulli{a}(w) = nan;
+                    laminarityNormalizedBernoulliTemp{idx}(w) = nan;
                 end
 
                 if meanBernoulliTT > 0
-                    trappingTimeNormalizedBernoulli{a}(w) = trappingTime{a}(w) / meanBernoulliTT;
+                    trappingTimeNormalizedBernoulliTemp{idx}(w) = trappingTimeTemp{idx}(w) / meanBernoulliTT;
                 else
-                    trappingTimeNormalizedBernoulli{a}(w) = nan;
+                    trappingTimeNormalizedBernoulliTemp{idx}(w) = nan;
                 end
             else
-                recurrenceRateNormalizedBernoulli{a}(w) = nan;  % Not computed
-                determinismNormalizedBernoulli{a}(w) = nan;
-                laminarityNormalizedBernoulli{a}(w) = nan;
-                trappingTimeNormalizedBernoulli{a}(w) = nan;
+                recurrenceRateNormalizedBernoulliTemp{idx}(w) = nan;  % Not computed
+                determinismNormalizedBernoulliTemp{idx}(w) = nan;
+                laminarityNormalizedBernoulliTemp{idx}(w) = nan;
+                trappingTimeNormalizedBernoulliTemp{idx}(w) = nan;
             end
 
             % Calculate behavior proportion if enabled for spontaneous sessions
@@ -660,9 +677,9 @@ parfor a = areasToProcess
                         numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
                         denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
                         if denominatorCount > 0
-                            behaviorProportion{a}(w) = numeratorCount / denominatorCount;
+                            behaviorProportionTemp{idx}(w) = numeratorCount / denominatorCount;
                         else
-                            behaviorProportion{a}(w) = nan;
+                            behaviorProportionTemp{idx}(w) = nan;
                         end
                     end
                 end
@@ -674,6 +691,25 @@ parfor a = areasToProcess
     fprintf('  Area %s completed in %.1f minutes\n', areas{a}, toc/60);
 end
 
+% Copy parfor output from temp{idx} to result{areasToProcess(idx)}
+for idx = 1:numToProcess
+    a = areasToProcess(idx);
+    recurrenceRate{a} = recurrenceRateTemp{idx};
+    determinism{a} = determinismTemp{idx};
+    laminarity{a} = laminarityTemp{idx};
+    trappingTime{a} = trappingTimeTemp{idx};
+    recurrenceRateNormalized{a} = recurrenceRateNormalizedTemp{idx};
+    determinismNormalized{a} = determinismNormalizedTemp{idx};
+    laminarityNormalized{a} = laminarityNormalizedTemp{idx};
+    trappingTimeNormalized{a} = trappingTimeNormalizedTemp{idx};
+    recurrenceRateNormalizedBernoulli{a} = recurrenceRateNormalizedBernoulliTemp{idx};
+    determinismNormalizedBernoulli{a} = determinismNormalizedBernoulliTemp{idx};
+    laminarityNormalizedBernoulli{a} = laminarityNormalizedBernoulliTemp{idx};
+    trappingTimeNormalizedBernoulli{a} = trappingTimeNormalizedBernoulliTemp{idx};
+    recurrencePlots{a} = recurrencePlotsTemp{idx};
+    startS{a} = startSTemp{idx};
+    behaviorProportion{a} = behaviorProportionTemp{idx};
+end
 
 % Build results structure
 results = struct();

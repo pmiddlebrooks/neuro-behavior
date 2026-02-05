@@ -692,7 +692,7 @@ for a = areasToTest
                 % Compute d2 for this window
                 if ~isempty(wPopActivity)
                     try
-                        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                        [varphi, ~] = myYuleWalker3(double(wPopActivity), pOrder);
                         d2PerWindow(w) = getFixedPointDistance2(pOrder, critType, varphi);
                     catch
                         d2PerWindow(w) = nan;
@@ -718,7 +718,7 @@ for a = areasToTest
                         % Compute d2 on permuted data
                         if ~isempty(permutedPopActivity)
                             try
-                                [varphiPerm, ~] = myYuleWalker3(permutedPopActivity, pOrder);
+                                [varphiPerm, ~] = myYuleWalker3(double(permutedPopActivity), pOrder);
                                 d2ShuffledPerWindow(w, s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
                             catch
                                 d2ShuffledPerWindow(w, s) = nan;
@@ -773,7 +773,7 @@ for a = areasToTest
                 % Compute d2 for this window
                 if ~isempty(wPopActivity)
                     try
-                        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                        [varphi, ~] = myYuleWalker3(double(wPopActivity), pOrder);
                         d2PerWindow(w) = getFixedPointDistance2(pOrder, critType, varphi);
                     catch
                         d2PerWindow(w) = nan;
@@ -799,7 +799,7 @@ for a = areasToTest
                         % Compute d2 on permuted data
                         if ~isempty(permutedPopActivity)
                             try
-                                [varphiPerm, ~] = myYuleWalker3(permutedPopActivity, pOrder);
+                                [varphiPerm, ~] = myYuleWalker3(double(permutedPopActivity), pOrder);
                                 d2ShuffledPerWindow(w, s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
                             catch
                                 d2ShuffledPerWindow(w, s) = nan;

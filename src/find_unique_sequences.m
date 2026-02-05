@@ -12,21 +12,26 @@ function [uniqueSequences, sequenceTimes, sequenceIdx] = find_unique_sequences(d
 %       includeBhv    - (Optional) Vector of behavior codes. Only sequences containing at
 %                       least one of these behaviors are valid. If empty, include all.
 %       includeIsFirst- (Optional) If true, valid sequences must begin with one of the
-%                       labels in includeBhv and must not be directly preceded by any
-%                       of the other labels in includeBhv (i.e. the prior run is not
-%                       in includeBhv). Only applied when includeBhv is non-empty.
-%                       Default false.
+%                       labels in includeBhv and the previous nPreBuffer bins must not
+%                       contain any label in includeBhv or in the pattern itself. Only
+%                       applied when includeBhv is non-empty. Default false.
+%       nPreBuffer     - (Optional) When includeIsFirst is true, number of preceding
+%                       uncompressed bins (frames in the original sequence) to check;
+%                       none may contain includeBhv or pattern labels (default 1).
 %       excludeBhv    - (Optional) Vector of behavior codes. Exclude any sequence that
 %                       contains any of these behaviors. If empty, exclude none.
+%       noRepeat      - (Optional) If true, only patterns with unique labels are valid
+%                       (no label appears more than once in the pattern). Default false.
 %
 % Goal:
 %   Compress the Code sequence into the behavior pattern (run-length sequence), e.g.
 %   [5 5 5 6 6 4] -> [5 6 4]. Then find all unique patterns of length patternLength in
 %   this compressed sequence, ranked by frequency. Only patterns with at least nMin
 %   occurrences are returned. Optionally filter by includeBhv (pattern must contain at
-%   least one), includeIsFirst (pattern must start with one of includeBhv and not be
-%   directly preceded by any other label in includeBhv), and excludeBhv (pattern must
-%   contain none). All frames are treated as valid.
+%   least one), includeIsFirst (pattern must start with one of includeBhv; previous
+%   nPreBuffer uncompressed bins must not contain includeBhv or pattern labels), excludeBhv (pattern must
+%   contain none), and noRepeat (pattern must have all unique labels). All frames are
+%   treated as valid.
 %
 % Returns:
 %   uniqueSequences - Cell array of unique patterns (each a 1 x patternLength numeric
@@ -67,6 +72,14 @@ function [uniqueSequences, sequenceTimes, sequenceIdx] = find_unique_sequences(d
     if isfield(opts, 'includeIsFirst') && ~isempty(opts.includeIsFirst)
         includeIsFirst = logical(opts.includeIsFirst(1));
     end
+    nPreBuffer = 1;
+    if isfield(opts, 'nPreBuffer') && ~isempty(opts.nPreBuffer)
+        nPreBuffer = max(0, round(opts.nPreBuffer(1)));
+    end
+    noRepeat = false;
+    if isfield(opts, 'noRepeat') && ~isempty(opts.noRepeat)
+        noRepeat = logical(opts.noRepeat(1));
+    end
     if isempty(dataFull) || ~istable(dataFull)
         error('find_unique_sequences:dataFull', 'dataFull must be a non-empty table with Time, Behavior, Code.');
     end
@@ -101,19 +114,34 @@ function [uniqueSequences, sequenceTimes, sequenceIdx] = find_unique_sequences(d
         if ~isempty(includeBhv) && ~any(ismember(currentPattern, includeBhv))
             continue;
         end
-        % includeIsFirst: pattern must begin with one of includeBhv and not be
-        % directly preceded by any other label in includeBhv
+        % includeIsFirst: pattern must begin with one of includeBhv; previous nPreBuffer
+        % uncompressed bins (frames) must not contain any label in includeBhv or in the pattern
         if includeIsFirst && ~isempty(includeBhv)
             if ~ismember(currentPattern(1), includeBhv)
                 continue;
             end
-            % Preceding run (if any) must not be in includeBhv
-            if i > 1 && ismember(compressedLabels(i - 1), includeBhv)
+            % Each of the previous nPreBuffer frames (uncompressed bins) must not be in includeBhv or in the pattern
+            firstFrameOfPattern = runStartFrameIdx(i);
+            numPreToCheck = min(nPreBuffer, firstFrameOfPattern - 1);
+            skipPattern = false;
+            for j = 1 : numPreToCheck
+                frameIdx = firstFrameOfPattern - j;
+                prevLabel = codeVec(frameIdx);
+                if ismember(prevLabel, includeBhv) || ismember(prevLabel, currentPattern)
+                    skipPattern = true;
+                    break;
+                end
+            end
+            if skipPattern
                 continue;
             end
         end
         % excludeBhv: pattern must not contain any of these behaviors
         if ~isempty(excludeBhv) && any(ismember(currentPattern, excludeBhv))
+            continue;
+        end
+        % noRepeat: pattern must contain only unique labels (no label repeated)
+        if noRepeat && numel(unique(currentPattern)) ~= patternLength
             continue;
         end
 

@@ -17,6 +17,7 @@
 %   stepSize      - Step size for sliding window (seconds)
 %   nShuffles     - Number of circular permutations for d2 normalization
 %   normalizeD2   - If true, normalize d2 by mean shuffled d2
+%   includeM2356   - If true, add combined M23+M56 area and include in analyses/plots (default: false)
 %
 % Uses load_sliding_window_data('spontaneous', 'spikes', ...) and
 % spontaneous_behavior_sequences() for event times. align1Name and align2Name
@@ -93,7 +94,7 @@ fprintf('Found %d and %d behavior sequences (align1/align2 times in seconds)\n',
 %% =============================    Configuration    =============================
 beforeAlign = -2;
 afterAlign  = 2;
-slidingWindowSize = 7;
+slidingWindowSize = 6;
 stepSize = 0.1;
 windowBuffer = 0.5;
 minWindowSize = slidingWindowSize;
@@ -112,6 +113,7 @@ nDim = 4;
 loadResultsForPlotting = false;
 resultsFileForPlotting = '';
 makePlots = true;
+includeM2356 = true;  % set true to add combined M23+M56 area (like criticality_ar_analysis)
 
 % Alignment names for plot legends, printing, and saved file names
 if ~exist('align1Name', 'var') || isempty(align1Name)
@@ -134,6 +136,34 @@ if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectSta
     timeRange = [dataStruct.spikeData.collectStart, dataStruct.spikeData.collectEnd];
 else
     timeRange = [0, max(dataStruct.spikeTimes)];
+end
+
+% Optional: add combined M23+M56 area (like criticality_ar_analysis)
+if includeM2356
+    idxM23 = find(strcmp(areas, 'M23'));
+    idxM56 = find(strcmp(areas, 'M56'));
+    if ~isempty(idxM23) && ~isempty(idxM56) && ~any(strcmp(areas, 'M2356'))
+        areas{end+1} = 'M2356';
+        dataStruct.areas = areas;
+        dataStruct.idMatIdx{end+1} = [dataStruct.idMatIdx{idxM23}(:); dataStruct.idMatIdx{idxM56}(:)];
+        if isfield(dataStruct, 'idLabel')
+            dataStruct.idLabel{end+1} = [dataStruct.idLabel{idxM23}(:); dataStruct.idLabel{idxM56}(:)];
+        end
+        numAreas = length(areas);
+        idMatIdx = dataStruct.idMatIdx;
+        fprintf('\n=== Added combined M2356 area ===\n');
+        fprintf('M2356: %d neurons (M23: %d, M56: %d)\n', ...
+            length(dataStruct.idMatIdx{end}), ...
+            length(dataStruct.idMatIdx{idxM23}), ...
+            length(dataStruct.idMatIdx{idxM56}));
+        m2356Idx = find(strcmp(areas, 'M2356'));
+        if ~ismember(m2356Idx, areasToTest)
+            areasToTest = [areasToTest, m2356Idx];
+            fprintf('Added M2356 (index %d) to areasToTest\n', m2356Idx);
+        end
+    elseif isempty(idxM23) || isempty(idxM56)
+        fprintf('\n=== Warning: includeM2356 is true but M23 or M56 not found. Skipping M2356. ===\n');
+    end
 end
 
 %% =============================    Optimal Bin Sizes Per Area    =============================

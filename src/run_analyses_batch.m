@@ -18,11 +18,12 @@ paths = get_paths;
 % Define which analyses to run (set to true to run, false to skip)
 % Add new analyses here as needed
 analysesToRun = struct();
-analysesToRun.lzc = true;  % Run lzc analysis
-analysesToRun.rqa = false;         % Run RQA analysis
+analysesToRun.lzc = false;  % Run lzc analysis
+analysesToRun.rqa = true;         % Run RQA analysis
 analysesToRun.criticality_ar = false;  % Run criticality AR (d2/mrBr) analysis
 analysesToRun.criticality_av = false;  % Run criticality AV (avalanche) analysis
 analysesToRun.criticality_lfp = false; % Run criticality LFP analysis
+analysesToRun.dimensionality_pr = false;  % Run participation ratio analysis
 % =========================
 
 % Add paths for session list functions
@@ -47,6 +48,7 @@ end
 complexityScriptPath = fullfile(srcPath, 'complexity', 'scripts');
 rqaScriptPath = fullfile(srcPath, 'metastability', 'scripts');
 criticalityScriptPath = fullfile(srcPath, 'criticality', 'scripts');
+dimensionalityScriptPath = fullfile(srcPath, 'dimensionality', 'scripts');
 
 if exist(complexityScriptPath, 'dir')
     addpath(complexityScriptPath);
@@ -57,6 +59,9 @@ end
 if exist(criticalityScriptPath, 'dir')
     addpath(criticalityScriptPath);
 end
+if exist(dimensionalityScriptPath, 'dir')
+    addpath(dimensionalityScriptPath);
+end
 
 % Get list of sessions based on selected type
 switch lower(batchSessionType)
@@ -64,13 +69,13 @@ switch lower(batchSessionType)
         sessions = reach_session_list();
         sessionType = 'reach';
     case 'schall'
-        % sessions = schall_session_list();
-        sessionType = 'schall';
-        subjectID = 'broca';  % joule  broca
-        searchDir = fullfile(paths.dropPath, 'schall/data', subjectID);  % Set this+ to the directory path containing .mat files
-        loadPath = fullfile(searchDir, 'goodSessionsCCM.mat');
-        load(loadPath);
-        sessions = goodSessionsCCM;
+        sessions = schall_session_list();
+        % sessionType = 'schall';
+        % subjectID = 'joule';  % joule  broca
+        % searchDir = fullfile(paths.dropPath, 'schall/data', subjectID);  % Set this+ to the directory path containing .mat files
+        % loadPath = fullfile(searchDir, 'goodSessionsCCM.mat');
+        % load(loadPath);
+        % sessions = goodSessionsCCM;
     case 'spontaneous'
         sessions = spontaneous_session_list();
         sessionType = 'spontaneous';
@@ -117,7 +122,7 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
-for s = 1:numSessions
+for s = 2:numSessions
     sessionName = sessions{s};
     
     fprintf('\n');
@@ -148,6 +153,8 @@ for s = 1:numSessions
                     run_criticality_av;
                 case 'criticality_lfp'
                     run_criticality_lfp;
+                case 'dimensionality_pr'
+                    run_participation_ratio;
                 otherwise
                     error('Unknown analysis: %s', analysisName);
             end

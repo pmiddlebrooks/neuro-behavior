@@ -233,12 +233,15 @@ smoothedBhvID = behavior_label_smoothing(dataFull.Code, bopts);
 
 
 %% Unique sequences
-uOpts.patternLength = 3;
+uOpts.patternLength = 2;
 uOpts.nMin = 10;
-uOpts.includeBhv = 5:12;
-% uOpts.includeBhv = [0:2 13:15];
+uOpts.includeBhv = [5 6];
+% uOpts.includeBhv = [0:2 15];
+% uOpts.includeBhv = [14 15];
 uOpts.includeIsFirst = true;
-uOpts.excludeBhv = [-1 13:15];
+uOpts.noRepeat = false;
+uOpts.nPreBuffer = .15 * opts.fsBhv;
+uOpts.excludeBhv = [-1];
 [uniqueSequences, sequenceTimes, sequenceIdx] = find_unique_sequences(dataFull, uOpts);
 %%
 % For criticality_behavior_sequences..
@@ -254,3 +257,4 @@ criticality_behavior_sequences
 
 
 %%
+dimensionality_spontaneous_sequences_pr

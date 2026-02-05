@@ -6,9 +6,9 @@ sessions = {'ag112321_1', ... % good
     'kw092121', ... % Ok... few M56
     'kw092821', ... % Bad M56, Good DS
     };
-sessions = {'ag112321_1', ... % good
-    'kw092121', ... % Ok... few M56
-    };
+% sessions = {'ag112321_1', ... % good
+%     'kw092121', ... % Ok... few M56
+%     };
 
 % I have these sessions but they generally have too few neurons for
 % reliable population analyses:
