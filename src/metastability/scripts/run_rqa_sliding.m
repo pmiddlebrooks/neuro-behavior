@@ -7,7 +7,7 @@
 % and run this script, or use rqa_sliding_analysis() function directly.
 
 % use parallel processing?
-runParallel = 1;
+runParallel = 0;
 
 % Set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
@@ -281,7 +281,7 @@ if runParallel
     % Check if parpool is already running, start one if not
     currentPool = gcp('nocreate');
     if isempty(currentPool)
-        NumWorkers = min(4, length(dataStruct.areas));
+        NumWorkers = min(5, length(dataStruct.areas));
         parpool('local', NumWorkers);
         fprintf('Started parallel pool with %d workers\n', NumWorkers);
     else

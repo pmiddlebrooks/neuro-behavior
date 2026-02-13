@@ -48,9 +48,14 @@ end
 % Set up configuration from workspace variables
 % (These should be set before running this script)
 config = struct();
-config.slidingWindowSize = 180;  % Default window size
-config.avStepSize = 20;  % Default step size
-config.minSpikesPerBin = 2.5;
+
+% Window geometry
+config.slidingWindowSize = 180;  % Base window size (s). If useOptimalBinWindowFunction is false
+                                 % this can be scalar or per-area vector.
+config.avStepSize = 20;          % Step size between sliding windows (s)
+
+% Parameters for automatic optimal bin/window search
+config.minSpikesPerBin = 3;
 config.minBinsPerWindow = 1000;
 
 % Analysis flags (set these before running)
@@ -60,15 +65,26 @@ config.pcaFlag = 0;
 config.pcaFirstFlag = 1;  % Use first nDim if 1, last nDim if 0
 config.nDim = 5;  % Number of PCA dimensions
 config.enablePermutations = true;
-config.nShuffles = 3;
+config.nShuffles = 5;
 config.makePlots = true;
-config.saveData = true;  % Set to false to skip saving results
-config.useOptimalBinWindowFunction = true;  % Find optimal bin/window sizes
+config.saveData = true;              % Set to false to skip saving results
+
+% If true (default), binSize and slidingWindowSize are found automatically
+% per area using firing rate heuristics (recommended).
+% If false, user must provide:
+%   - config.binSize (scalar or per-area vector, in seconds)
+%   - config.slidingWindowSize (scalar or per-area vector, in seconds)
+config.useOptimalBinWindowFunction = true;
+
+% Example manual settings (uncomment and set useOptimalBinWindowFunction = false):
+% config.useOptimalBinWindowFunction = false;
+% config.binSize = 0.02;            % 20 ms bins for all areas
+% config.slidingWindowSize = 180;   % 180 s windows for all areas
 
 % Additional parameters
 config.thresholdFlag = 1;  % Use threshold method
 config.thresholdPct = 1;  % Threshold as percentage of median
-config.nMinNeurons = 10;  % Minimum number of neurons required per area
+config.nMinNeurons = 15;  % Minimum number of neurons required per area
 config.includeM2356 = false;  % Set to true to include combined M23+M56 area
 % saveDir will be obtained from dataStruct.saveDir in the analysis function
 % (set by load_sliding_window_data)

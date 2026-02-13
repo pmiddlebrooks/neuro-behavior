@@ -145,16 +145,52 @@ function results = criticality_av_analysis(dataStruct, config)
         tempBinSize = [];  % Not used if no PCA
     end
     
-    % Find optimal parameters
-    fprintf('\n--- Step 3: Finding optimal parameters ---\n');
-    if config.pcaFlag
-        % Use PCA-reconstructed data for parameter optimization
-        [binSize, slidingWindowSize] = find_optimal_parameters_av_pca(...
-            reconstructedDataMat, config, areasToTest, timeRange, tempBinSize, areas);
+    % Bin size / window size selection
+    % Either use automatic optimal bin/window search, or user-specified values
+    if config.useOptimalBinWindowFunction
+        fprintf('\n--- Step 3: Finding optimal bin/window parameters ---\n');
+        if config.pcaFlag
+            % Use PCA-reconstructed data for parameter optimization
+            [binSize, slidingWindowSize] = find_optimal_parameters_av_pca(...
+                reconstructedDataMat, config, areasToTest, timeRange, tempBinSize, areas);
+        else
+            % Use original spike times for parameter optimization
+            [binSize, slidingWindowSize] = find_optimal_parameters_av(...
+                dataStruct, config, areasToTest, timeRange);
+        end
     else
-        % Use original spike times for parameter optimization
-        [binSize, slidingWindowSize] = find_optimal_parameters_av(...
-            dataStruct, config, areasToTest, timeRange);
+        fprintf('\n--- Step 3: Using user-specified binSize and slidingWindowSize ---\n');
+        numAreas = length(areas);
+        binSize = zeros(1, numAreas);
+        slidingWindowSize = zeros(1, numAreas);
+
+        % binSize: required when not using automatic optimization
+        if ~isfield(config, 'binSize') || isempty(config.binSize)
+            error(['config.binSize must be provided (scalar or per-area vector) when ', ...
+                   'config.useOptimalBinWindowFunction is false.']);
+        end
+        if isscalar(config.binSize)
+            binSize(:) = config.binSize;
+        else
+            if numel(config.binSize) ~= numAreas
+                error('config.binSize must be scalar or length(numAreas) when useOptimalBinWindowFunction is false.');
+            end
+            binSize(:) = config.binSize(:);
+        end
+
+        % slidingWindowSize: can be scalar (applied to all areas) or vector
+        if ~isfield(config, 'slidingWindowSize') || isempty(config.slidingWindowSize)
+            error(['config.slidingWindowSize must be provided (scalar or per-area vector) when ', ...
+                   'config.useOptimalBinWindowFunction is false.']);
+        end
+        if isscalar(config.slidingWindowSize)
+            slidingWindowSize(:) = config.slidingWindowSize;
+        else
+            if numel(config.slidingWindowSize) ~= numAreas
+                error('config.slidingWindowSize must be scalar or length(numAreas) when useOptimalBinWindowFunction is false.');
+            end
+            slidingWindowSize(:) = config.slidingWindowSize(:);
+        end
     end
     
     % Filter areas based on valid optimal bin sizes and minimum neurons

@@ -395,7 +395,8 @@ recurrencePlotsTemp = cell(1, numToProcess);
 startSTemp = cell(1, numToProcess);
 behaviorProportionTemp = cell(1, numToProcess);
 
-parfor idx = 1:numToProcess
+% parfor idx = 1:numToProcess
+for idx = 1:numToProcess
     a = areasToProcess(idx);  % Actual area index for data access
     fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
 
