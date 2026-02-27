@@ -33,12 +33,12 @@ HmmParam.MinDur=0.04;   % .05 min duration of an admissible state (s) in HMM DEC
 HmmParam.MinP=0.8;      % pstate>MinP for an admissible state in HMM ADMISSIBLE STATES
 HmmParam.NumSteps=8;%    %10 number of fits at fixed parameters to avoid non-convexity
 HmmParam.NumRuns=33;%     % 50% % number of times we iterate hmmtrain over all trials
-HmmParam.singleSeqXval.K = 3; % Cross-validation
+HmmParam.singleSeqXval.K = 5; % Cross-validation
 
 opts.HmmParam = HmmParam;
 
 
-minNumNeurons = 10;
+minNumNeurons = 15;
 
 % Model selection method
 MODELSEL = 'XVAL'; %'XVAL'; % 'BIC'; % 'AIC';
@@ -88,13 +88,6 @@ opts.firingRateCheckTime = 5*60;
 opts.dataPath = reachDataFile;
 spikeData = spike_times_per_area_reach(opts);
 
-        % [dataMat, idLabels, areaLabels, rmvNeurons] = reach_neural_matrix(dataR, opts);
-        % 
-        % idM23 = find(strcmp(areaLabels, 'M23'));
-        % idM56 = find(strcmp(areaLabels, 'M56'));
-        % idDS = find(strcmp(areaLabels, 'DS'));
-        % idVS = find(strcmp(areaLabels, 'VS'));
-        % fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS))
 end
 idM23 = unique(spikeData(spikeData(:,3) == 1,2));
 idM56 = unique(spikeData(spikeData(:,3) == 2,2));

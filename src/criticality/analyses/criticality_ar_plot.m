@@ -35,6 +35,26 @@ if isfield(results.params, 'normalizeD2')
     normalizeD2 = results.params.normalizeD2;
 end
 
+% Detect subsampling usage (for optional error ribbons)
+useSubsampling = false;
+if isfield(results, 'useSubsampling')
+    useSubsampling = results.useSubsampling;
+elseif isfield(results.params, 'useSubsampling')
+    useSubsampling = results.params.useSubsampling;
+end
+
+% Per-window subsample matrices (raw and normalized), used for error ribbons
+d2SubsamplesAll = {};
+d2NormalizedSubsamples = {};
+if useSubsampling
+    if isfield(results, 'd2Subsamples')
+        d2SubsamplesAll = results.d2Subsamples;
+    end
+    if normalizeD2 && isfield(results, 'd2NormalizedSubsamples')
+        d2NormalizedSubsamples = results.d2NormalizedSubsamples;
+    end
+end
+
 % Use normalized d2 values if normalization is enabled
 if normalizeD2 && isfield(results, 'd2Normalized')
     d2ToPlot = results.d2Normalized;
@@ -215,11 +235,45 @@ for idx = 1:length(areasToTest)
 
     if analyzeD2
         yyaxis left;
-        % Plot real data first (so permutation line appears on top)
+        % Plot real data first (so error ribbons and permutation lines appear correctly)
         if ~isempty(d2ToPlot{a}) && ~isempty(startS{a})
             validIdx = ~isnan(d2ToPlot{a});
             if any(validIdx)
                 areaColor = areaColors{min(a, length(areaColors))};
+
+                % If using subsampling, draw error ribbons (std across subsamples)
+                if useSubsampling
+                    subMat = [];
+                    if normalizeD2 && ~isempty(d2NormalizedSubsamples) && ...
+                            a <= numel(d2NormalizedSubsamples) && ~isempty(d2NormalizedSubsamples{a})
+                        % Use normalized subsample matrix
+                        subMat = d2NormalizedSubsamples{a};  % [numWindows x nSubsamples]
+                    elseif ~normalizeD2 && ~isempty(d2SubsamplesAll) && ...
+                            a <= numel(d2SubsamplesAll) && ~isempty(d2SubsamplesAll{a})
+                        % Use raw d2 subsample matrix
+                        subMat = d2SubsamplesAll{a};  % [numWindows x nSubsamples]
+                    end
+
+                    if ~isempty(subMat) && size(subMat, 1) == numel(d2ToPlot{a})
+                        subMean = nanmean(subMat, 2);
+                        subStd = nanstd(subMat, 0, 2);  % Std across subsamples
+                        ribbonValid = ~isnan(subMean) & ~isnan(subStd) & ~isnan(startS{a}(:));
+                        if any(ribbonValid)
+                            xFill = startS{a}(ribbonValid);
+                            yMean = subMean(ribbonValid);
+                            yStd = subStd(ribbonValid);
+                            if iscolumn(xFill); xFill = xFill'; end
+                            if iscolumn(yMean); yMean = yMean'; end
+                            if iscolumn(yStd); yStd = yStd'; end
+                            fill([xFill, fliplr(xFill)], ...
+                                 [yMean + yStd', fliplr(yMean - yStd')], ...
+                                 areaColor, 'FaceAlpha', 0.15, 'EdgeColor', 'none', ...
+                                 'HandleVisibility', 'off');
+                        end
+                    end
+                end
+
+                % Plot mean trace on top
                 plot(startS{a}(validIdx), d2ToPlot{a}(validIdx), '-', ...
                     'Color', areaColor, 'LineWidth', 3, 'DisplayName', 'Real data');
             end

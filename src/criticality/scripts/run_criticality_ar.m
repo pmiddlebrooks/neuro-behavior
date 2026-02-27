@@ -35,8 +35,8 @@ end
 opts = neuro_behavior_options;
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 0;
-opts.collectEnd = opts.collectStart + 2*60*60;
-opts.collectEnd = [];
+opts.collectEnd = 60*60;
+% opts.collectEnd = [];
 if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
 opts.collectEnd = [];
 end
@@ -204,8 +204,8 @@ end
 % Set up configuration from workspace variables
 % (These should be set before running this script)config = struct();
 config.slidingWindowSize = 10; % Default window size
-config.binSize = .02; % Default bin size
-config.stepSize = .1; % Default step size
+config.binSize = .05; % Default bin size
+config.stepSize = .5; % Default step size
 config.minSpikesPerBin = 2.5;
 config.minBinsPerWindow = 1000;
 
@@ -225,10 +225,24 @@ config.useOptimalBinWindowFunction = false;
 % Additional parameters
 config.pOrder = 10;
 config.critType = 2;
-config.normalizeD2 = true;  % Normalize d2 by shuffled d2 values
+config.normalizeD2 = false;  % Normalize d2 by shuffled d2 values
 config.maxSpikesPerBin = 50;  % Maximum spikes per bin for filtering
-config.nMinNeurons = 10;  % Minimum number of neurons required per area
+config.nMinNeurons = 10;  % Minimum number of neurons required per area (no subsampling)
 config.includeM2356 = true;  % Set to true to include combined M23+M56 area
+
+% Optional list of brain areas (by name) to analyze.
+% Example: {'M23', 'M56'}; leave empty to analyze all available areas.
+config.brainAreas = {'M23', 'M56'};
+
+% Optional neural subsampling configuration
+% When useSubsampling is true:
+%   - nSubsamples controls how many random neuron subsets are analyzed
+%   - nNeuronsSubsample is the number of neurons per subset
+%   - Minimum neurons required per area becomes round(nNeuronsSubsample * minNeuronsMultiple)
+config.useSubsampling = true;       % Enable neural subsampling across windows
+config.nSubsamples = 20;             % Number of subsampling iterations
+config.nNeuronsSubsample = 20;       % Neurons per subsample
+config.minNeuronsMultiple = 1.25;     % Multiplier for minimum neuron requirement
 
 % Modulation analysis parameters (used if analyzeModulation = true)
 config.modulationThreshold = 2;  % Standard deviations for modulation detection

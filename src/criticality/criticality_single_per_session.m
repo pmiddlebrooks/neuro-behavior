@@ -73,6 +73,11 @@ configAR.critType = 2;
 configAR.normalizeD2 = true;
 configAR.maxSpikesPerBin = 50;
 configAR.nMinNeurons = 15;
+% Optional neural subsampling (disabled by default for single-window summary)
+configAR.useSubsampling = false;
+configAR.nSubsamples = 10;
+configAR.nNeuronsSubsample = 10;
+configAR.minNeuronsMultiple = 1.0;
 configAR.includeM2356 = true;
 
 % AV Analysis config - use single large window

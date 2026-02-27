@@ -106,6 +106,12 @@ minBinsPerWindow = 1000;
 nShuffles = 3;
 normalizeD2 = true;
 
+% Optional neural subsampling configuration for windowed d2
+useSubsampling = false;        % If true, subsample neurons within each area
+nSubsamples = 10;              % Number of independent subsampling iterations
+nNeuronsSubsample = 10;        % Number of neurons per subsample
+minNeuronsMultiple = 1.0;      % Minimum neurons required = round(nNeuronsSubsample * minNeuronsMultiple)
+
 pcaFlag = 0;
 pcaFirstFlag = 1;
 nDim = 4;
@@ -296,7 +302,30 @@ for a = areasToTest
                 windowCenter, slidingWindowSize, binSize(a), numTimePoints);
             if startIdx >= 1 && endIdx <= numTimePoints && endIdx > startIdx
                 wDataMat = aDataMat(startIdx:endIdx, :);
-                wPopActivity = sum(wDataMat, 2);
+
+                % Optionally subsample neurons within this window
+                if useSubsampling
+                    nNeuronsTotal = size(wDataMat, 2);
+                    minNeuronsRequired = round(nNeuronsSubsample * minNeuronsMultiple);
+                    if nNeuronsTotal < minNeuronsRequired
+                        continue;
+                    end
+                    nThisSub = min(nNeuronsSubsample, nNeuronsTotal);
+                    wPopMatrix = nan(nSubsamples, size(wDataMat, 1));
+                    for ss = 1:nSubsamples
+                        if nThisSub == nNeuronsTotal
+                            neuronIdx = 1:nNeuronsTotal;
+                        else
+                            neuronIdx = randperm(nNeuronsTotal, nThisSub);
+                        end
+                        subMat = wDataMat(:, neuronIdx);
+                        wPopMatrix(ss, :) = sum(subMat, 2)';
+                    end
+                    wPopActivity = mean(wPopMatrix, 1)';  % average across subsamples
+                else
+                    wPopActivity = sum(wDataMat, 2);
+                end
+
                 if isempty(collectedAlign1Windows{a, posIdx})
                     collectedAlign1Windows{a, posIdx} = wPopActivity(:)';
                     collectedAlign1WindowData{a, posIdx} = {wDataMat};
@@ -325,7 +354,30 @@ for a = areasToTest
                 windowCenter, slidingWindowSize, binSize(a), numTimePoints);
             if startIdx >= 1 && endIdx <= numTimePoints && endIdx > startIdx
                 wDataMat = aDataMat(startIdx:endIdx, :);
-                wPopActivity = sum(wDataMat, 2);
+
+                % Optionally subsample neurons within this window
+                if useSubsampling
+                    nNeuronsTotal = size(wDataMat, 2);
+                    minNeuronsRequired = round(nNeuronsSubsample * minNeuronsMultiple);
+                    if nNeuronsTotal < minNeuronsRequired
+                        continue;
+                    end
+                    nThisSub = min(nNeuronsSubsample, nNeuronsTotal);
+                    wPopMatrix = nan(nSubsamples, size(wDataMat, 1));
+                    for ss = 1:nSubsamples
+                        if nThisSub == nNeuronsTotal
+                            neuronIdx = 1:nNeuronsTotal;
+                        else
+                            neuronIdx = randperm(nNeuronsTotal, nThisSub);
+                        end
+                        subMat = wDataMat(:, neuronIdx);
+                        wPopMatrix(ss, :) = sum(subMat, 2)';
+                    end
+                    wPopActivity = mean(wPopMatrix, 1)';  % average across subsamples
+                else
+                    wPopActivity = sum(wDataMat, 2);
+                end
+
                 if isempty(collectedAlign2Windows{a, posIdx})
                     collectedAlign2Windows{a, posIdx} = wPopActivity(:)';
                     collectedAlign2WindowData{a, posIdx} = {wDataMat};
