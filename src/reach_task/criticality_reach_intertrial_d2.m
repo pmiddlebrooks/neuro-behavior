@@ -109,7 +109,7 @@ fprintf('Calculated %d intertrial midpoints\n', length(intertrialMidpoints));
 % Sliding window parameters
 beforeAlign = -2;  % Start sliding from this many seconds before alignment point
 afterAlign  =  2;  % End sliding at this many seconds after alignment point
-slidingWindowSize = 5;  % Window size for d2 analysis (user-defined, same for all areas)
+slidingWindowSize = 6;  % Window size for d2 analysis (user-defined, same for all areas)
 stepSize    = .25; % Step size for sliding window (seconds)
 windowBuffer = .5; % Minimum distance from window edge to event/midpoint (seconds)
 minWindowSize = slidingWindowSize;  % Minimum window size required (seconds)
@@ -120,7 +120,11 @@ critType = 2;       % Criticality type for d2 calculation
 minSpikesPerBin = 3;  % Minimum spikes per bin for optimal bin size calculation
 minBinsPerWindow = 1000;  % Minimum bins per window (used for optimal bin size, but window size is user-defined)
 nShuffles = 3;      % Number of circular permutations for d2 normalization
-normalizeD2 = true;  % Set to true to normalize d2 by shuffled d2 values
+normalizeD2 = false;  % Set to true to normalize d2 by shuffled d2 values
+
+% Bin/window selection mode (manual vs. optimal, similar to criticality_ar)
+useOptimalBinWindowFunction = false;  % If false, use binSizeManual and slidingWindowSize as set above
+binSizeManual = 0.03;                % Manual bin size (seconds) when useOptimalBinWindowFunction is false
 
 % Optional neural subsampling configuration for windowed d2
 useSubsampling = false;        % If true, subsample neurons within each area
@@ -180,20 +184,48 @@ else
     reconstructedDataMat = [];  % Not needed if no PCA
 end
 
-% Find optimal bin size per area using spike times
+% Choose bin size (and optionally slidingWindowSize) per area
+% Follows the same manual/optimal pattern as criticality_ar_analysis.
 binSize = zeros(1, numAreas);
-for a = areasToTest
-    neuronIDs = dataStruct.idLabel{a};
+
+if useOptimalBinWindowFunction
+    % Find optimal bin and window sizes from spike times
+    slidingWindowSizeOptimal = nan(1, numAreas);
+    for a = areasToTest
+        neuronIDs = dataStruct.idLabel{a};
+        
+        % Calculate firing rate from spike times
+        thisFiringRate = calculate_firing_rate_from_spikes( ...
+            dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+            neuronIDs, timeRange);
+        
+        [binSize(a), slidingWindowSizeOptimal(a)] = ...
+            find_optimal_bin_and_window(thisFiringRate, minSpikesPerBin, minBinsPerWindow);
+        fprintf('Area %s: bin size = %.3f s, optimal window = %.1f s, firing rate = %.2f spikes/s\n', ...
+            areas{a}, binSize(a), slidingWindowSizeOptimal(a), thisFiringRate);
+    end
     
-    % Calculate firing rate from spike times
-    thisFiringRate = calculate_firing_rate_from_spikes(...
-        dataStruct.spikeTimes, dataStruct.spikeClusters, ...
-        neuronIDs, timeRange);
-    
-    [binSize(a), ~] = find_optimal_bin_and_window(thisFiringRate, minSpikesPerBin, minBinsPerWindow);
-    fprintf('Area %s: bin size = %.3f s, firing rate = %.2f spikes/s\n', ...
-        areas{a}, binSize(a), thisFiringRate);
+    % Use a single slidingWindowSize across areas: minimum of optimal sizes
+    validOptimalWindows = slidingWindowSizeOptimal(areasToTest);
+    validOptimalWindows = validOptimalWindows(~isnan(validOptimalWindows) & validOptimalWindows > 0);
+    if ~isempty(validOptimalWindows)
+        slidingWindowSize = min(validOptimalWindows);
+        fprintf('Using slidingWindowSize = %.1f s (min optimal window across areas)\n', slidingWindowSize);
+    else
+        warning('No valid optimal window sizes found; keeping user-defined slidingWindowSize = %.1f s', slidingWindowSize);
+    end
+else
+    % Manual mode: use user-defined binSize and slidingWindowSize
+    if isempty(binSizeManual) || ~isscalar(binSizeManual) || binSizeManual <= 0
+        error('When useOptimalBinWindowFunction is false, binSizeManual must be a positive scalar (got %.3f).', binSizeManual);
+    end
+    binSize(:) = binSizeManual;
+    fprintf('Using manual binSize = %.3f s and slidingWindowSize = %.1f s for all areas\n', ...
+        binSizeManual, slidingWindowSize);
 end
+
+% Ensure minimum window size requirement matches the (possibly updated) slidingWindowSize
+minWindowSize = slidingWindowSize;
 
 % =============================    Find Valid Reaches and Intertrial Midpoints    =============================
 fprintf('\n=== Finding Valid Reaches and Intertrial Midpoints ===\n');
@@ -1089,6 +1121,9 @@ if loadResultsForPlotting
     if isfield(results, 'idMatIdx')
         idMatIdx = results.idMatIdx;
     end
+    if isfield(results, 'segmentWindows')
+        segmentWindows = results.segmentWindows;
+    end
     
     % Determine saveDir from results file path if not already defined
     if ~exist('saveDir', 'var') || isempty(saveDir)
@@ -1122,6 +1157,277 @@ else
     end
 end
 
+% =============================    Reach Timeline Plot    =============================
+% Visualize reach times with Block 1/2 engaged and not-engaged segments,
+% plus reach- and intertrial-aligned d2 values for each brain area.
+
+% Determine which engagement window structure is available
+if exist('segmentWindows', 'var')
+    segmentWindowsPlot = segmentWindows;
+elseif exist('segmentWindowsEng', 'var')
+    segmentWindowsPlot = segmentWindowsEng;
+else
+    segmentWindowsPlot = [];
+end
+
+if ~isempty(segmentWindowsPlot) && exist('reachStart', 'var') && ~isempty(reachStart) ...
+        && exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ~isempty(slidingPositions)
+
+    fprintf('\n=== Plotting Reach/Intertrial d2 with Engagement Segments (per area) ===\n');
+
+    % Sliding position index closest to 0 (event-centered windows)
+    alignPosIdx = find(abs(slidingPositions) < (stepSize/2), 1);
+    if isempty(alignPosIdx)
+        alignPosIdx = 1;
+    end
+
+    areasToPlot = areasToTest;
+    nAreasToPlot = numel(areasToPlot);
+
+    figure(2002); clf;
+
+    % Global x-limits across all areas and d2 times
+    globalTimes = reachStart(:);
+    winFields = {'block1EngagedWindow','block1NotEngagedWindow', ...
+                 'block2EngagedWindow','block2NotEngagedWindow'};
+    for iField = 1:numel(winFields)
+        fName = winFields{iField};
+        if isfield(segmentWindowsPlot, fName) && ~isempty(segmentWindowsPlot.(fName))
+            globalTimes = [globalTimes; segmentWindowsPlot.(fName)(:)];
+        end
+    end
+
+    % Include all d2 centers in global x-limits
+    for idxArea = 1:nAreasToPlot
+        a = areasToPlot(idxArea);
+
+        if normalizeD2
+            hasReachTimes = ~isempty(perWindowD2.reachNormalized) && ...
+                a <= numel(perWindowD2.reachNormalized) && ...
+                ~isempty(perWindowD2.reachNormalized{a}) && ...
+                alignPosIdx <= numel(perWindowD2.reachNormalized{a}) && ...
+                ~isempty(perWindowD2.reachCenters{a}{alignPosIdx});
+            hasInterTimes = ~isempty(perWindowD2.intertrialNormalized) && ...
+                a <= numel(perWindowD2.intertrialNormalized) && ...
+                ~isempty(perWindowD2.intertrialNormalized{a}) && ...
+                alignPosIdx <= numel(perWindowD2.intertrialNormalized{a}) && ...
+                ~isempty(perWindowD2.intertrialCenters{a}{alignPosIdx});
+        else
+            hasReachTimes = ~isempty(perWindowD2.reach) && ...
+                a <= numel(perWindowD2.reach) && ...
+                ~isempty(perWindowD2.reach{a}) && ...
+                alignPosIdx <= numel(perWindowD2.reach{a}) && ...
+                ~isempty(perWindowD2.reachCenters{a}{alignPosIdx});
+            hasInterTimes = ~isempty(perWindowD2.intertrial) && ...
+                a <= numel(perWindowD2.intertrial) && ...
+                ~isempty(perWindowD2.intertrial{a}) && ...
+                alignPosIdx <= numel(perWindowD2.intertrial{a}) && ...
+                ~isempty(perWindowD2.intertrialCenters{a}{alignPosIdx});
+        end
+
+        if hasReachTimes
+            globalTimes = [globalTimes; perWindowD2.reachCenters{a}{alignPosIdx}(:)];
+        end
+        if hasInterTimes
+            globalTimes = [globalTimes; perWindowD2.intertrialCenters{a}{alignPosIdx}(:)];
+        end
+    end
+
+    globalTimes = globalTimes(~isnan(globalTimes));
+    if isempty(globalTimes)
+        warning('No valid times found for reach timeline engagement+d2 plot.');
+        return;
+    end
+    xLimitsGlobal = [min(globalTimes), max(globalTimes)];
+
+    % One row per area
+    ax = gobjects(nAreasToPlot,1);
+    for idxArea = 1:nAreasToPlot
+        a = areasToPlot(idxArea);
+        ax(idxArea) = subplot(nAreasToPlot, 1, idxArea);
+        hold(ax(idxArea), 'on');
+
+        % Start y-range
+        yMinArea = 0;
+        yMaxArea = 1;
+
+        % Reach-aligned d2
+        if normalizeD2
+            if ~isempty(perWindowD2.reachNormalized) && ...
+               a <= numel(perWindowD2.reachNormalized) && ...
+               ~isempty(perWindowD2.reachNormalized{a}) && ...
+               alignPosIdx <= numel(perWindowD2.reachNormalized{a}) && ...
+               ~isempty(perWindowD2.reachNormalized{a}{alignPosIdx}) && ...
+               ~isempty(perWindowD2.reachCenters{a}{alignPosIdx})
+                d2ReachVals = perWindowD2.reachNormalized{a}{alignPosIdx};
+                d2ReachTimes = perWindowD2.reachCenters{a}{alignPosIdx};
+            else
+                d2ReachVals  = [];
+                d2ReachTimes = [];
+            end
+        else
+            if ~isempty(perWindowD2.reach) && ...
+               a <= numel(perWindowD2.reach) && ...
+               ~isempty(perWindowD2.reach{a}) && ...
+               alignPosIdx <= numel(perWindowD2.reach{a}) && ...
+               ~isempty(perWindowD2.reach{a}{alignPosIdx}) && ...
+               ~isempty(perWindowD2.reachCenters{a}{alignPosIdx})
+                d2ReachVals = perWindowD2.reach{a}{alignPosIdx};
+                d2ReachTimes = perWindowD2.reachCenters{a}{alignPosIdx};
+            else
+                d2ReachVals  = [];
+                d2ReachTimes = [];
+            end
+        end
+
+        % Intertrial-aligned d2
+        if normalizeD2
+            if ~isempty(perWindowD2.intertrialNormalized) && ...
+               a <= numel(perWindowD2.intertrialNormalized) && ...
+               ~isempty(perWindowD2.intertrialNormalized{a}) && ...
+               alignPosIdx <= numel(perWindowD2.intertrialNormalized{a}) && ...
+               ~isempty(perWindowD2.intertrialNormalized{a}{alignPosIdx}) && ...
+               ~isempty(perWindowD2.intertrialCenters{a}{alignPosIdx})
+                d2InterVals = perWindowD2.intertrialNormalized{a}{alignPosIdx};
+                d2InterTimes = perWindowD2.intertrialCenters{a}{alignPosIdx};
+            else
+                d2InterVals  = [];
+                d2InterTimes = [];
+            end
+        else
+            if ~isempty(perWindowD2.intertrial) && ...
+               a <= numel(perWindowD2.intertrial) && ...
+               ~isempty(perWindowD2.intertrial{a}) && ...
+               alignPosIdx <= numel(perWindowD2.intertrial{a}) && ...
+               ~isempty(perWindowD2.intertrial{a}{alignPosIdx}) && ...
+               ~isempty(perWindowD2.intertrialCenters{a}{alignPosIdx})
+                d2InterVals = perWindowD2.intertrial{a}{alignPosIdx};
+                d2InterTimes = perWindowD2.intertrialCenters{a}{alignPosIdx};
+            else
+                d2InterVals  = [];
+                d2InterTimes = [];
+            end
+        end
+
+        % Expand y-range for this area
+        d2AllVals = [d2ReachVals(:); d2InterVals(:)];
+        d2AllVals = d2AllVals(~isnan(d2AllVals));
+        if ~isempty(d2AllVals)
+            yMinArea = min([yMinArea; d2AllVals]);
+            yMaxArea = max([yMaxArea; d2AllVals]);
+        end
+
+        % Engagement shading (same windows, per-row y-range)
+        if isfield(segmentWindowsPlot,'block1EngagedWindow') && ~isempty(segmentWindowsPlot.block1EngagedWindow)
+            tWin = segmentWindowsPlot.block1EngagedWindow;
+            patch(ax(idxArea), [tWin(1) tWin(2) tWin(2) tWin(1)], ...
+                [yMinArea yMinArea yMaxArea yMaxArea], [0 0.6 0], ...
+                'FaceAlpha', 0.2, 'EdgeColor', 'none');
+        end
+        if isfield(segmentWindowsPlot,'block1NotEngagedWindow') && ~isempty(segmentWindowsPlot.block1NotEngagedWindow)
+            tWin = segmentWindowsPlot.block1NotEngagedWindow;
+            patch(ax(idxArea), [tWin(1) tWin(2) tWin(2) tWin(1)], ...
+                [yMinArea yMinArea yMaxArea yMaxArea], [0.6 0.9 0.6], ...
+                'FaceAlpha', 0.2, 'EdgeColor', 'none');
+        end
+        if isfield(segmentWindowsPlot,'block2EngagedWindow') && ~isempty(segmentWindowsPlot.block2EngagedWindow)
+            tWin = segmentWindowsPlot.block2EngagedWindow;
+            patch(ax(idxArea), [tWin(1) tWin(2) tWin(2) tWin(1)], ...
+                [yMinArea yMinArea yMaxArea yMaxArea], [0 0 0.7], ...
+                'FaceAlpha', 0.2, 'EdgeColor', 'none');
+        end
+        if isfield(segmentWindowsPlot,'block2NotEngagedWindow') && ~isempty(segmentWindowsPlot.block2NotEngagedWindow)
+            tWin = segmentWindowsPlot.block2NotEngagedWindow;
+            patch(ax(idxArea), [tWin(1) tWin(2) tWin(2) tWin(1)], ...
+                [yMinArea yMinArea yMaxArea yMaxArea], [0.7 0.7 1], ...
+                'FaceAlpha', 0.2, 'EdgeColor', 'none');
+        end
+
+        % Vertical lines at each reach
+        for r = 1:numel(reachStart)
+            xReach = reachStart(r);
+            plot(ax(idxArea), [xReach xReach], [yMinArea yMaxArea], ...
+                'k-', 'LineWidth', 0.5);
+        end
+
+        % d2 traces: reach in blue, intertrial in red
+        reachHandle = [];
+        interHandle = [];
+        if ~isempty(d2ReachVals) && ~isempty(d2ReachTimes)
+            reachHandle = plot(ax(idxArea), d2ReachTimes, d2ReachVals, '-o', ...
+                'Color', [0 0 1], 'LineWidth', 1.5, 'MarkerSize', 4, ...
+                'DisplayName', 'Reach d2');
+        end
+        if ~isempty(d2InterVals) && ~isempty(d2InterTimes)
+            interHandle = plot(ax(idxArea), d2InterTimes, d2InterVals, '-s', ...
+                'Color', [1 0 0], 'LineWidth', 1.5, 'MarkerSize', 4, ...
+                'DisplayName', 'Intertrial d2');
+        end
+
+        xlim(ax(idxArea), xLimitsGlobal);
+        ylim(ax(idxArea), [yMinArea yMaxArea]);
+
+        if normalizeD2
+            ylabel(ax(idxArea), 'd2 (norm)');
+        else
+            ylabel(ax(idxArea), 'd2');
+        end
+
+        % Area label
+        if exist('areas','var') && a <= numel(areas)
+            if exist('idMatIdx','var') && ~isempty(idMatIdx) && a <= numel(idMatIdx) && ~isempty(idMatIdx{a})
+                numNeuronsArea = numel(idMatIdx{a});
+                areaTitle = sprintf('%s (n=%d)', areas{a}, numNeuronsArea);
+            else
+                areaTitle = areas{a};
+            end
+            title(ax(idxArea), areaTitle, 'Interpreter','none');
+        end
+
+        % Legend only on first row
+        if idxArea == 1 && (~isempty(reachHandle) || ~isempty(interHandle))
+            legendHandles = [];
+            legendLabels = {};
+            if ~isempty(reachHandle)
+                legendHandles = [legendHandles, reachHandle];
+                legendLabels{end+1} = get(reachHandle,'DisplayName');
+            end
+            if ~isempty(interHandle)
+                legendHandles = [legendHandles, interHandle];
+                legendLabels{end+1} = get(interHandle,'DisplayName');
+            end
+            if ~isempty(legendHandles)
+                legend(ax(idxArea), legendHandles, legendLabels, 'Location','best');
+            end
+        end
+
+        if idxArea < nAreasToPlot
+            set(ax(idxArea), 'XTickLabel', []);  % hide x labels except bottom
+        end
+    end
+
+    xlabel(ax(end), 'Time (s)');
+
+    % Overall title
+    if exist('sessionName','var') && ~isempty(sessionName)
+        titleStr = sprintf('%s - Reach/Intertrial d2 with Engagement Segments', sessionName);
+    else
+        titleStr = 'Reach/Intertrial d2 with Engagement Segments';
+    end
+    sgtitle(titleStr, 'Interpreter','none');
+
+    % Save
+    if exist('saveDir','var') && ~isempty(saveDir)
+        if exist('sessionName','var') && ~isempty(sessionName)
+            saveNamePart = sessionName;
+        else
+            saveNamePart = 'session';
+        end
+        saveFileTimeline = fullfile(saveDir, sprintf('reach_timeline_engagement_d2_%s.png', saveNamePart));
+        exportgraphics(gcf, saveFileTimeline, 'Resolution',300);
+        fprintf('Saved reach timeline engagement+d2 plot to: %s\n', saveFileTimeline);
+    end
+end
 % Detect monitors and size figure to full screen (prefer second monitor if present)
 monitorPositions = get(0, 'MonitorPositions');
 monitorOne = monitorPositions(1, :);
@@ -1171,7 +1477,7 @@ else
 end
 
 % Create single figure with tight_subplot
-figure(1001); clf;
+figure(1002); clf;
 set(gcf, 'Units', 'pixels');
 set(gcf, 'Position', targetPos);
 

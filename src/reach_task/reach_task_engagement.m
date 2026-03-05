@@ -1,21 +1,32 @@
 function segmentWindows = reach_task_engagement(fileName, opts)
 % REACH_TASK_ENGAGEMENT Defines time windows for engagement segments of a session
 %
-% This function identifies engagement segments of a reach task session based on threshold crossings:
-%   1. Block 1 engaged: largest window with at least nEngaged consecutive reaches below threshold
-%   2. Block 1 not-engaged: largest window with at least nNotEngaged consecutive reaches above threshold
-%   3. Block 2 engaged: largest window with at least nEngaged consecutive reaches below threshold
-%   4. Block 2 not-engaged: largest window with at least nNotEngaged consecutive reaches above threshold
+% This function identifies engagement segments of a reach task session based on
+% thresholded reach rates relative to the median:
+%   1. Block 1 engaged: largest window with at least nEngaged consecutive reaches
+%      whose reach rate is ABOVE the threshold (i.e., inter-reach intervals below
+%      the threshold interval).
+%   2. Block 1 not-engaged: largest window with at least nNotEngaged consecutive
+%      reaches whose reach rate is BELOW the threshold (i.e., inter-reach
+%      intervals above the threshold interval).
+%   3. Block 2 engaged: largest window with at least nEngaged consecutive reaches
+%      whose reach rate is ABOVE the threshold.
+%   4. Block 2 not-engaged: largest window with at least nNotEngaged consecutive
+%      reaches whose reach rate is BELOW the threshold.
 %
 % Threshold crossings are defined as the reach before the threshold is crossed.
 %
 % Inputs:
 %   fileName - Path to reach data file (.mat file containing R and block matrices)
 %   opts     - Structure with optional fields:
-%       .timesMedian - Times median for engagement threshold (default: 0.5)
-%       .windowSize - Window size for running average (default: 10 reaches)
-%       .nEngaged - Number of consecutive reaches below threshold required (default: 5)
-%       .nNotEngaged - Number of consecutive reaches above threshold required (default: 5)
+%       .timesMedian - Factor relative to the median reach RATE used to define
+%                     the engagement threshold (default: 1.0; >1 requires a
+%                     higher-than-median rate to be considered engaged).
+%       .windowSize - Window size for running average (default: 3 reaches)
+%       .nEngaged - Number of consecutive reaches with rate ABOVE threshold
+%                   required (default: 5)
+%       .nNotEngaged - Number of consecutive reaches with rate BELOW threshold
+%                      required (default: 5)
 %       .nReachMin - Minimum number of reaches required for any segment (default: 5)
 %
 % Outputs:
@@ -38,16 +49,16 @@ if nargin < 2
     opts = struct();
 end
 if ~isfield(opts, 'timesMedian')
-    opts.timesMedian = 2.5; % Default: 0.5 times median
+    opts.timesMedian = 1.0; % Default: threshold at median reach rate
 end
 if ~isfield(opts, 'windowSize')
-    opts.windowSize = 3; % Default: 10 reaches for running average
+    opts.windowSize = 3; % Default: 3 reaches for running average
 end
 if ~isfield(opts, 'nEngaged')
-    opts.nEngaged = 5; % Default: 5 consecutive reaches below threshold
+    opts.nEngaged = 5; % Default: 5 consecutive reaches with rate ABOVE threshold
 end
 if ~isfield(opts, 'nNotEngaged')
-    opts.nNotEngaged = 5; % Default: 5 consecutive reaches above threshold
+    opts.nNotEngaged = 4; % Default: 5 consecutive reaches with rate BELOW threshold
 end
 if ~isfield(opts, 'nReachMin')
     opts.nReachMin = 5; % Default: minimum 5 reaches for any segment
@@ -83,7 +94,16 @@ if length(reachStartSec) > 1
     
     % Calculate median of all inter-reach intervals
     medianInterval = median(interReachIntervals);
-    threshold = opts.timesMedian * medianInterval;
+    
+    % Define threshold in the interval domain such that:
+    %   runningAvg <= threshold  <=>  reach rate >= opts.timesMedian * medianRate
+    % where medianRate = 1 / medianInterval. This ensures "engaged" segments
+    % correspond to ABOVE-threshold reach rates and "not-engaged" to BELOW.
+    if opts.timesMedian <= 0
+        error('reach_task_engagement:InvalidTimesMedian', ...
+            'opts.timesMedian must be > 0 (got %g).', opts.timesMedian);
+    end
+    threshold = medianInterval / opts.timesMedian;
     
     % Calculate running average of intervals
     windowSize = opts.windowSize;
