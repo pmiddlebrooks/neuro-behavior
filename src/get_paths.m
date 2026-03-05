@@ -24,7 +24,7 @@ elseif exist('/Users/paulmiddlebrooks/Projects/', 'dir')
     dropPath = '/Users/paulmiddlebrooks/Library/CloudStorage/Dropbox/Data/';
 end
 
-freeDataPath = fullfile(dropPath, 'spontaneous/data');
+spontaneousDataPath = fullfile(dropPath, 'spontaneous/data');
 reachDataPath = fullfile(dropPath, 'reach_task/data');
 reachResultsPath = fullfile(dropPath, 'reach_task/results');
 schallDataPath = fullfile(dropPath, 'schall/data');
@@ -45,7 +45,7 @@ end
 
 
 paths.homePath = homePath;
-paths.freeDataPath = freeDataPath;
+paths.spontaneousDataPath = spontaneousDataPath;
 paths.figurePath = figurePath;
 paths.bhvDataPath = bhvDataPath;
 paths.nrnDataPath = nrnDataPath;

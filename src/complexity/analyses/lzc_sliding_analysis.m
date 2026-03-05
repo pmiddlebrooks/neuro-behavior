@@ -164,6 +164,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 % We only need bin size, so we'll use a dummy minBinsPerWindow
                 % The actual window size will be calculated separately
                 [config.binSize(a), ~] = find_optimal_bin_and_window(spikeRate, config.minSpikesPerBin, 1);
+                config.binSize(a) = max(config.binSize(a), config.minBinSize);
                 
                 fprintf('  Area %s: spike rate = %.2f spikes/s, optimal bin size = %.3f s (%.1f ms)\n', ...
                     areas{a}, spikeRate, config.binSize(a), config.binSize(a) * 1000);
@@ -218,39 +219,6 @@ function results = lzc_sliding_analysis(dataStruct, config)
         error('Invalid dataSource. Must be ''spikes'' or ''lfp''.');
     end
     
-    % Calculate common centerTime values based on slidingWindowSize and stepSize
-    % This ensures all areas have aligned windows regardless of their bin sizes
-    if strcmp(dataSource, 'spikes')
-        % Total time from spike data
-        totalTime = timeRange(2) - timeRange(1);
-    elseif strcmp(dataSource, 'lfp')
-        % For LFP, we'll calculate from the first area's signal length
-        % (all areas should have same length)
-        rawSignal = dataStruct.lfpPerArea(:, areasToTest(1));
-        fsRaw = dataStruct.opts.fsLfp;
-        totalTime = length(rawSignal) / fsRaw;
-    end
-    
-    % Generate common centerTime values
-    % Use minimum window size for common alignment (before area-specific optimization)
-    % Convert scalar to vector if needed for calculation
-    if isscalar(config.slidingWindowSize)
-        minWindowSize = config.slidingWindowSize;
-    else
-        minWindowSize = min(config.slidingWindowSize);
-    end
-    firstCenterTime = minWindowSize / 2;
-    lastCenterTime = totalTime - minWindowSize / 2;
-    commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
-    
-    if isempty(commonCenterTimes)
-        error('No valid windows found. Check slidingWindowSize and stepSize relative to total time.');
-    end
-    
-    numWindows = length(commonCenterTimes);
-    fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s\n', ...
-        numWindows, firstCenterTime, lastCenterTime);
-    
     % Set default minDataPoints if not provided
     if ~isfield(config, 'minDataPoints') || isempty(config.minDataPoints)
         config.minDataPoints = 2*10^5;
@@ -284,7 +252,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
     % Calculate window size per area (either optimal or user-specified)
     % Always store as slidingWindowSize vector (length numAreas)
     % Window size is optimized to have at least minDataPoints data points if useOptimalWindowSize is true
-    % Constrained to be between 5s and 20s
+    % Constrained to be between minSlidingWindowSize and maxSlidingWindowSize
     fprintf('\n=== Calculating Window Sizes ===\n');
     % Initialize all areas with original window size
     % Convert scalar to vector if needed
@@ -309,7 +277,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 % So: windowSize >= (minDataPoints × binSize) / nNeurons
                 minRequiredWindowSize = (config.minDataPoints * config.binSize(a)) / nNeurons;
                 
-                % Constrain to 5-20s range and use minimum that satisfies requirement
+                % Constrain to minSlidingWindowSize-maxSlidingWindowSize range and use minimum that satisfies requirement
                 slidingWindowSize(a) = ceil(max(config.minSlidingWindowSize, min(config.maxSlidingWindowSize, minRequiredWindowSize)));
                 
                 % Calculate actual data points with this window size
@@ -332,7 +300,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 fsRaw = dataStruct.opts.fsLfp;
                 minRequiredWindowSize = config.minDataPoints / fsRaw;
                 
-                % Constrain to 5-20s range
+                % Constrain to minSlidingWindowSize-maxSlidingWindowSize range
                 slidingWindowSize(a) = ceil(max(config.minSlidingWindowSize, min(config.maxSlidingWindowSize, minRequiredWindowSize)));
                 
                 % Calculate actual data points
@@ -347,6 +315,36 @@ function results = lzc_sliding_analysis(dataStruct, config)
             end
         end
     end
+    
+    % Calculate common centerTime values based on slidingWindowSize and stepSize
+    % This ensures all areas have aligned windows regardless of their bin sizes
+    % Use the minimum window size (either optimal or user-specified) for common alignment
+    if strcmp(dataSource, 'spikes')
+        % Total time from spike data
+        totalTime = timeRange(2) - timeRange(1);
+    elseif strcmp(dataSource, 'lfp')
+        % For LFP, we'll calculate from the first area's signal length
+        % (all areas should have same length)
+        rawSignal = dataStruct.lfpPerArea(:, areasToTest(1));
+        fsRaw = dataStruct.opts.fsLfp;
+        totalTime = length(rawSignal) / fsRaw;
+    end
+    
+    % Generate common centerTime values
+    % Use minimum window size across all areas (optimal if useOptimalWindowSize is true, otherwise user-specified)
+    % This ensures all areas can have valid windows at these center times
+    minWindowSize = min(slidingWindowSize);
+    firstCenterTime = minWindowSize / 2;
+    lastCenterTime = totalTime - minWindowSize / 2;
+    commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
+    
+    if isempty(commonCenterTimes)
+        error('No valid windows found. Check slidingWindowSize and stepSize relative to total time.');
+    end
+    
+    numWindows = length(commonCenterTimes);
+    fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s (using min window size: %.2f s)\n', ...
+        numWindows, firstCenterTime, lastCenterTime, minWindowSize);
     
     % Initialize results
     lzComplexity = cell(1, numAreas);
@@ -414,9 +412,18 @@ function results = lzc_sliding_analysis(dataStruct, config)
     
     % Analysis loop
     fprintf('\n=== Processing Areas ===\n');
+    
+    % Pre-allocate temporary cell arrays indexed by loop variable idx
+    % These will be assigned to the correct area indices after the parfor loop
+    tempLzComplexity = cell(1, length(areasToProcess));
+    tempLzComplexityNormalized = cell(1, length(areasToProcess));
+    tempLzComplexityNormalizedBernoulli = cell(1, length(areasToProcess));
+    tempStartS = cell(1, length(areasToProcess));
+    tempBehaviorProportion = cell(1, length(areasToProcess));
         
-    parfor a = areasToProcess
-    % for a = areasToProcess
+    parfor idx = 1:length(areasToProcess)
+    % for idx = 1:length(areasToProcess)
+        a = areasToProcess(idx);  % Get actual area index
         fprintf('\nProcessing area %s (%s)...\n', areas{a}, dataSource);
         
         tic;
@@ -445,25 +452,25 @@ function results = lzc_sliding_analysis(dataStruct, config)
             fprintf('  Time points: %d, Window size: %.2fs, Window samples: %d, Bin size: %.3f s\n', ...
                 numTimePoints, areaWindowSize, winSamples, config.binSize(a));
             
-            % Initialize arrays
-            lzComplexity{a} = nan(1, numWindows);
-            lzComplexityNormalized{a} = nan(1, numWindows);
-            lzComplexityNormalizedBernoulli{a} = nan(1, numWindows);
-            startS{a} = nan(1, numWindows);
+            % Initialize arrays (indexed by idx for parfor compatibility)
+            tempLzComplexity{idx} = nan(1, numWindows);
+            tempLzComplexityNormalized{idx} = nan(1, numWindows);
+            tempLzComplexityNormalizedBernoulli{idx} = nan(1, numWindows);
+            tempStartS{idx} = nan(1, numWindows);
             
             % Initialize behavior proportion array if enabled
             if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
                     isfield(config, 'behaviorDenominatorIDs') && ...
                     ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
-                behaviorProportion{a} = nan(1, numWindows);
+                tempBehaviorProportion{idx} = nan(1, numWindows);
             else
-                behaviorProportion{a} = [];
+                tempBehaviorProportion{idx} = [];
             end
             
             % Process each window using common centerTime
             for w = 1:numWindows
                 centerTime = commonCenterTimes(w);
-                startS{a}(w) = centerTime;
+                tempStartS{idx}(w) = centerTime;
                 
                 % Convert centerTime to indices for this area's binning
                 % Use area-specific window size
@@ -488,8 +495,8 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 binarySeq = double(concatenatedSeq > 0);
                 
                 % Calculate Lempel-Ziv complexity with controls
-                [lzComplexity{a}(w), lzComplexityNormalized{a}(w), ...
-                    lzComplexityNormalizedBernoulli{a}(w)] = ...
+                [tempLzComplexity{idx}(w), tempLzComplexityNormalized{idx}(w), ...
+                    tempLzComplexityNormalizedBernoulli{idx}(w)] = ...
                     compute_lz_complexity_with_controls(binarySeq, config.nShuffles, config.useBernoulliControl);
                 
                 % Calculate behavior proportion if enabled for spontaneous sessions
@@ -514,9 +521,9 @@ function results = lzc_sliding_analysis(dataStruct, config)
                             numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
                             denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
                             if denominatorCount > 0
-                                behaviorProportion{a}(w) = numeratorCount / denominatorCount;
+                                tempBehaviorProportion{idx}(w) = numeratorCount / denominatorCount;
                             else
-                                behaviorProportion{a}(w) = nan;
+                                tempBehaviorProportion{idx}(w) = nan;
                             end
                         end
                     end
@@ -551,25 +558,25 @@ function results = lzc_sliding_analysis(dataStruct, config)
             fprintf('  Time points: %d, Window size: %.2fs, Window samples: %d, Sampling rate: %.1f Hz\n', ...
                 numTimePoints, areaWindowSize, winSamples, fsRaw);
             
-            % Initialize arrays
-            lzComplexity{a} = nan(1, numWindows);
-            lzComplexityNormalized{a} = nan(1, numWindows);
-            lzComplexityNormalizedBernoulli{a} = nan(1, numWindows);
-            startS{a} = nan(1, numWindows);
+            % Initialize arrays (indexed by idx for parfor compatibility)
+            tempLzComplexity{idx} = nan(1, numWindows);
+            tempLzComplexityNormalized{idx} = nan(1, numWindows);
+            tempLzComplexityNormalizedBernoulli{idx} = nan(1, numWindows);
+            tempStartS{idx} = nan(1, numWindows);
             
             % Initialize behavior proportion array if enabled
             if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
                     isfield(config, 'behaviorDenominatorIDs') && ...
                     ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
-                behaviorProportion{a} = nan(1, numWindows);
+                tempBehaviorProportion{idx} = nan(1, numWindows);
             else
-                behaviorProportion{a} = [];
+                tempBehaviorProportion{idx} = [];
             end
             
             % Process each window using common centerTime
             for w = 1:numWindows
                 centerTime = commonCenterTimes(w);
-                startS{a}(w) = centerTime;
+                tempStartS{idx}(w) = centerTime;
                 
                 % Convert centerTime to indices for LFP (sampling rate = fsRaw)
                 % Use area-specific window size
@@ -590,8 +597,8 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 binarySeq = double(wSignal > windowMean);
                 
                 % Calculate Lempel-Ziv complexity with controls
-                [lzComplexity{a}(w), lzComplexityNormalized{a}(w), ...
-                    lzComplexityNormalizedBernoulli{a}(w)] = ...
+                [tempLzComplexity{idx}(w), tempLzComplexityNormalized{idx}(w), ...
+                    tempLzComplexityNormalizedBernoulli{idx}(w)] = ...
                     compute_lz_complexity_with_controls(binarySeq, config.nShuffles, config.useBernoulliControl);
                 
                 % Calculate behavior proportion if enabled for spontaneous sessions
@@ -616,9 +623,9 @@ function results = lzc_sliding_analysis(dataStruct, config)
                             numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
                             denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
                             if denominatorCount > 0
-                                behaviorProportion{a}(w) = numeratorCount / denominatorCount;
+                                tempBehaviorProportion{idx}(w) = numeratorCount / denominatorCount;
                             else
-                                behaviorProportion{a}(w) = nan;
+                                tempBehaviorProportion{idx}(w) = nan;
                             end
                         end
                     end
@@ -628,6 +635,16 @@ function results = lzc_sliding_analysis(dataStruct, config)
         
         
         fprintf('  Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+    end
+    
+    % Map temporary results back to correct area indices
+    for idx = 1:length(areasToProcess)
+        a = areasToProcess(idx);
+        lzComplexity{a} = tempLzComplexity{idx};
+        lzComplexityNormalized{a} = tempLzComplexityNormalized{idx};
+        lzComplexityNormalizedBernoulli{a} = tempLzComplexityNormalizedBernoulli{idx};
+        startS{a} = tempStartS{idx};
+        behaviorProportion{a} = tempBehaviorProportion{idx};
     end
     
    

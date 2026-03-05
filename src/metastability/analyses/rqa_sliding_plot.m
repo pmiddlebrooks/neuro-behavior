@@ -1,4 +1,9 @@
 function rqa_sliding_plot(results, plotConfig, config, dataStruct)
+% Add path to utility functions (for bin_spikes, add_event_markers, etc.)
+utilsPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils');
+if exist(utilsPath, 'dir')
+    addpath(utilsPath);
+end
 % RQA_SLIDING_PLOT Create plots for RQA analysis results
 %
 % Variables:
@@ -221,7 +226,9 @@ areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1], [1 0.5 0]};
 % Calculate windowed mean activity for smoothing
 % Note: Use original area indices for dataStruct access
 summedActivityWindowed = cell(1, numAreas);
-if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'dataMat') && isfield(dataStruct, 'idMatIdx')
+if strcmp(results.dataSource, 'spikes') && ...
+        isfield(dataStruct, 'idMatIdx') && isfield(dataStruct, 'idLabel') && ...
+        isfield(dataStruct, 'spikeTimes') && isfield(dataStruct, 'spikeClusters')
     % Use binSize and slidingWindowSize (area-specific vectors)
     if isfield(results.params, 'binSize')
         binSize = results.params.binSize;
@@ -233,14 +240,36 @@ if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'dataMat') && isf
     else
         error('slidingWindowSize not found in results.params');
     end
+
+    % Determine time range consistent with analysis code
+    if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectStart')
+        timeRange = [dataStruct.spikeData.collectStart, dataStruct.spikeData.collectEnd];
+    else
+        timeRange = [0, max(dataStruct.spikeTimes)];
+    end
+
     for plotIdx = 1:numAreas
-        origIdx = areasToPlot(plotIdx);  % Original area index
-        aID = dataStruct.idMatIdx{origIdx};
-        if ~isempty(aID) && ~isempty(results.startS{plotIdx}) && ~isnan(binSize(origIdx))
-            % Bin data using the area-specific binSize
-            aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(origIdx));
+        origIdx = areasToPlot(plotIdx);  % Original area index into dataStruct.* (when available)
+
+        % Guard against composite areas (e.g., M2356) that may not exist in
+        % dataStruct.idMatIdx / idLabel when plotting from saved results.
+        hasIdMat = origIdx <= numel(dataStruct.idMatIdx) && ~isempty(dataStruct.idMatIdx{origIdx});
+        hasIdLabel = isfield(dataStruct, 'idLabel') && ...
+            origIdx <= numel(dataStruct.idLabel) && ~isempty(dataStruct.idLabel{origIdx});
+        hasStartS = ~isempty(results.startS{plotIdx});
+        hasBin = origIdx <= numel(binSize) && ~isnan(binSize(origIdx));
+
+        if hasIdMat && hasIdLabel && hasStartS && hasBin
+            % Get neuron IDs for this area (used by bin_spikes)
+            neuronIDs = dataStruct.idLabel{origIdx};
+
+            % Bin spikes on-demand using area-specific binSize
+            aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                neuronIDs, timeRange, binSize(origIdx));
+
             % Sum across neurons
             summedActivity = sum(aDataMat, 2);
+
             % Calculate time bins (center of each bin)
             numBins = size(aDataMat, 1);
             activityTimeBins = ((0:numBins-1) + 0.5) * binSize(origIdx);
@@ -260,6 +289,8 @@ if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'dataMat') && isf
                 end
             end
         else
+            % No valid spike info for this area (e.g., composite M2356 when
+            % plotting from saved results) – skip summed activity for it.
             summedActivityWindowed{plotIdx} = [];
         end
     end
@@ -605,15 +636,19 @@ else
     dataSourceStr = '';
 end
 if ~isempty(plotConfig.filePrefix)
-    plotPath = fullfile(plotSaveDir, sprintf('%s_rqa%s%s%s.png', ...
+    plotPathPng = fullfile(plotSaveDir, sprintf('%s_rqa%s%s%s.png', ...
+        plotConfig.filePrefix, dataSourceStr, pcaSuffix, driftSuffix));
+    plotPathEps = fullfile(plotSaveDir, sprintf('%s_rqa%s%s%s.eps', ...
         plotConfig.filePrefix, dataSourceStr, pcaSuffix, driftSuffix));
 else
-    plotPath = fullfile(plotSaveDir, sprintf('rqa%s%s%s.png', ...
+    plotPathPng = fullfile(plotSaveDir, sprintf('rqa%s%s%s.png', ...
+        dataSourceStr, pcaSuffix, driftSuffix));
+    plotPathEps = fullfile(plotSaveDir, sprintf('rqa%s%s%s.eps', ...
         dataSourceStr, pcaSuffix, driftSuffix));
 end
 
 % Extract directory from plot path and create it (including all parent directories)
-plotDir = fileparts(plotPath);
+plotDir = fileparts(plotPathPng);
 if ~isempty(plotDir) && ~exist(plotDir, 'dir')
     % mkdir creates all parent directories automatically
     [status, msg] = mkdir(plotDir);
@@ -626,12 +661,15 @@ if ~isempty(plotDir) && ~exist(plotDir, 'dir')
     end
 end
 
-% Now save the figure
+% Now save the figure (PNG and EPS)
 try
-    exportgraphics(gcf, plotPath, 'Resolution', 300);
-    fprintf('Saved RQA plot to: %s\n', plotPath);
+    exportgraphics(gcf, plotPathPng, 'Resolution', 300);
+    fprintf('Saved RQA PNG plot to: %s\n', plotPathPng);
+    exportgraphics(gcf, plotPathEps, 'ContentType', 'vector');
+    fprintf('Saved RQA EPS plot to: %s\n', plotPathEps);
 catch ME
-    error('Failed to save plot to %s: %s\nDirectory exists: %d', plotPath, ME.message, exist(plotDir, 'dir'));
+    error('Failed to save plot to %s or %s: %s\nDirectory exists: %d', ...
+        plotPathPng, plotPathEps, ME.message, exist(plotDir, 'dir'));
 end
 
 % Create separate figure for recurrence plots (all areas together) - only if available
@@ -779,6 +817,7 @@ if saveRecurrencePlots && isfield(results, 'recurrencePlots')
 
         try
 drawnow
+pause(5)
 exportgraphics(gcf, recurrencePlotPath, 'Resolution', 300);
             fprintf('Saved RQA recurrence plots to: %s\n', recurrencePlotPath);
         catch ME

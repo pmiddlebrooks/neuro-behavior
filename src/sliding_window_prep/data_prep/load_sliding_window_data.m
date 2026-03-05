@@ -23,93 +23,93 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
 %       For LFP: .lfpPerArea, .binnedEnvelopes, .bands, .bandBinSizes, etc.
 %       Data-type specific: .dataR, .reachStart, .sessionName, etc.
 
-    % Parse optional arguments
-    p = inputParser;
-    addParameter(p, 'sessionName', '', @(x) ischar(x) || isempty(x));
-    addParameter(p, 'opts', [], @(x) isstruct(x) || isempty(x));
-    addParameter(p, 'lfpCleanParams', [], @(x) isstruct(x) || isempty(x));
-    addParameter(p, 'bands', [], @(x) iscell(x) || isempty(x));
-    addParameter(p, 'minBinSize', 0.005, @isnumeric);
-    parse(p, varargin{:});
-    
-    sessionName = p.Results.sessionName;
-    opts = p.Results.opts;
-    lfpCleanParams = p.Results.lfpCleanParams;
-    bands = p.Results.bands;
-    minBinSize = p.Results.minBinSize;
-    
-    % Initialize paths
-    paths = get_paths;
-    
-    % Initialize options structure if not provided
-    if isempty(opts)
-        opts = neuro_behavior_options;
-        opts.frameSize = .001;
-        opts.firingRateCheckTime = 5 * 60;
-        opts.collectStart = 0;
-        opts.minFiringRate = .05;
-        opts.maxFiringRate = 200;
+% Parse optional arguments
+p = inputParser;
+addParameter(p, 'sessionName', '', @(x) ischar(x) || isempty(x));
+addParameter(p, 'opts', [], @(x) isstruct(x) || isempty(x));
+addParameter(p, 'lfpCleanParams', [], @(x) isstruct(x) || isempty(x));
+addParameter(p, 'bands', [], @(x) iscell(x) || isempty(x));
+addParameter(p, 'minBinSize', 0.005, @isnumeric);
+parse(p, varargin{:});
+
+sessionName = p.Results.sessionName;
+opts = p.Results.opts;
+lfpCleanParams = p.Results.lfpCleanParams;
+bands = p.Results.bands;
+minBinSize = p.Results.minBinSize;
+
+% Initialize paths
+paths = get_paths;
+
+% Initialize options structure if not provided
+if isempty(opts)
+    opts = neuro_behavior_options;
+    opts.frameSize = .001;
+    opts.firingRateCheckTime = 5 * 60;
+    opts.collectStart = 0;
+    opts.minFiringRate = .05;
+    opts.maxFiringRate = 200;
+end
+
+% Initialize LFP parameters if needed
+if strcmp(dataSource, 'lfp')
+    if isempty(bands)
+        bands = {'alpha', [8 13]; ...
+            'beta', [13 30]; ...
+            'lowGamma', [30 50]; ...
+            'highGamma', [50 80]};
     end
-    
-    % Initialize LFP parameters if needed
-    if strcmp(dataSource, 'lfp')
-        if isempty(bands)
-            bands = {'alpha', [8 13]; ...
-                'beta', [13 30]; ...
-                'lowGamma', [30 50]; ...
-                'highGamma', [50 80]};
+
+    if isempty(lfpCleanParams)
+        lfpCleanParams = struct();
+        lfpCleanParams.spikeThresh = 4;
+        lfpCleanParams.spikeWinSize = 50;
+        lfpCleanParams.notchFreqs = [60 120 180];
+        lfpCleanParams.lowpassFreq = 300;
+        lfpCleanParams.useHampel = true;
+        lfpCleanParams.hampelK = 5;
+        lfpCleanParams.hampelNsigma = 3;
+        lfpCleanParams.detrendOrder = 'linear';
+    end
+end
+
+% Initialize output structure
+dataStruct = struct();
+dataStruct.sessionType = sessionType;
+dataStruct.dataSource = dataSource;
+dataStruct.opts = opts;
+
+fprintf('\n=== Loading %s %s data ===\n', sessionType, dataSource);
+
+% Load data based on data type
+switch sessionType
+    case 'spontaneous'
+        if isempty(sessionName)
+            error('sessionName must be provided for spontaneous data');
         end
-        
-        if isempty(lfpCleanParams)
-            lfpCleanParams = struct();
-            lfpCleanParams.spikeThresh = 4;
-            lfpCleanParams.spikeWinSize = 50;
-            lfpCleanParams.notchFreqs = [60 120 180];
-            lfpCleanParams.lowpassFreq = 300;
-            lfpCleanParams.useHampel = true;
-            lfpCleanParams.hampelK = 5;
-            lfpCleanParams.hampelNsigma = 3;
-            lfpCleanParams.detrendOrder = 'linear';
+        dataStruct.sessionName = sessionName;
+        dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands);
+
+    case 'reach'
+        if isempty(sessionName)
+            error('sessionName must be provided for reach data');
         end
-    end
-    
-    % Initialize output structure
-    dataStruct = struct();
-    dataStruct.sessionType = sessionType;
-    dataStruct.dataSource = dataSource;
-    dataStruct.opts = opts;
-    
-    fprintf('\n=== Loading %s %s data ===\n', sessionType, dataSource);
-    
-    % Load data based on data type
-    switch sessionType
-        case 'spontaneous'
-            if isempty(sessionName)
-                error('sessionName must be provided for spontaneous data');
-            end
-            dataStruct.sessionName = sessionName;
-            dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands);
-            
-        case 'reach'
-            if isempty(sessionName)
-                error('sessionName must be provided for reach data');
-            end
-            dataStruct.sessionName = sessionName;
-            dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName, opts, lfpCleanParams, bands);
-            
-        case 'schall'
-            if isempty(sessionName)
-                error('sessionName must be provided for schall data');
-            end
-            dataStruct.sessionName = sessionName;
-            dataStruct = load_schall_data(dataStruct, dataSource, paths, sessionName, opts, lfpCleanParams, bands);
-            
-        case 'hong'
-            dataStruct = load_hong_data(dataStruct, dataSource, paths, opts, lfpCleanParams, bands);
-            dataStruct.sessionName = sessionName;            
-        otherwise
-            error('Invalid sessionType: %s. Must be ''reach'', ''spontaneous'', ''schall'', or ''hong''', sessionType);
-    end
-        
-    fprintf('Data loading complete. %d areas loaded.\n', length(dataStruct.areas));
+        dataStruct.sessionName = sessionName;
+        dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName, opts, lfpCleanParams, bands);
+
+    case 'schall'
+        if isempty(sessionName)
+            error('sessionName must be provided for schall data');
+        end
+        dataStruct.sessionName = sessionName;
+        dataStruct = load_schall_data(dataStruct, dataSource, paths, sessionName, opts, lfpCleanParams, bands);
+
+    case 'hong'
+        dataStruct = load_hong_data(dataStruct, dataSource, paths, opts, lfpCleanParams, bands);
+        dataStruct.sessionName = sessionName;
+    otherwise
+        error('Invalid sessionType: %s. Must be ''reach'', ''spontaneous'', ''schall'', or ''hong''', sessionType);
+end
+
+fprintf('Data loading complete. %d areas loaded.\n', length(dataStruct.areas));
 end

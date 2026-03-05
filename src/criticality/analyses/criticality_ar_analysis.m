@@ -18,6 +18,9 @@ function results = criticality_ar_analysis(dataStruct, config)
 %     .makePlots - Create plots (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
 %     .includeM2356 - Include combined M23+M56 area (default: false)
+%     .brainAreas - Optional cell array of area name strings to analyze
+%                   (e.g. {'M23','M56'}). If empty or not provided, all
+%                   areas are analyzed.
 %
 % Goal:
 %   Compute d2 and/or mrBr criticality measures in sliding windows for spike data.
@@ -34,10 +37,11 @@ function results = criticality_ar_analysis(dataStruct, config)
     validate_workspace_vars({'sessionType', 'spikeTimes', 'spikeClusters', 'areas', 'idMatIdx'}, dataStruct, ...
         'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
     
-    % Set defaults only if config is not supplied or is empty
+    % Merge in defaults for any missing config fields (allows partial config from callers)
     if nargin < 2 || isempty(config) || ~isstruct(config)
-    config = set_config_defaults(config);
+        config = struct();
     end
+    config = set_config_defaults(config);
     
     sessionType = dataStruct.sessionType;
     areas = dataStruct.areas;
@@ -84,6 +88,41 @@ function results = criticality_ar_analysis(dataStruct, config)
             areasToTest = [areasToTest, m2356Idx];
             fprintf('Added M2356 (index %d) to areasToTest\n', m2356Idx);
         end
+    end
+    
+    % Optional: override areasToTest using config.brainAreas (cell array of area name strings)
+    if isfield(config, 'brainAreas') && ~isempty(config.brainAreas)
+        if ischar(config.brainAreas)
+            desiredAreas = {config.brainAreas};
+        else
+            desiredAreas = config.brainAreas;
+        end
+        
+        % If both M23 and M56 are requested and includeM2356 is true, also include M2356
+        if isfield(config, 'includeM2356') && config.includeM2356
+            hasM23 = any(strcmp(desiredAreas, 'M23'));
+            hasM56 = any(strcmp(desiredAreas, 'M56'));
+            if hasM23 && hasM56 && any(strcmp(areas, 'M2356'))
+                desiredAreas = [desiredAreas, {'M2356'}];
+            end
+        end
+        
+        selectedIdx = [];
+        for iArea = 1:numel(desiredAreas)
+            thisName = desiredAreas{iArea};
+            idx = find(strcmp(areas, thisName));
+            if isempty(idx)
+                fprintf('Warning: requested brain area "%s" not found. Skipping.\n', thisName);
+            else
+                selectedIdx = [selectedIdx, idx(:)']; %#ok<AGROW>
+            end
+        end
+        selectedIdx = unique(selectedIdx, 'stable');
+        if isempty(selectedIdx)
+            error('config.brainAreas was specified but none of the requested areas were found.');
+        end
+        areasToTest = selectedIdx;
+        fprintf('Restricting analysis to brainAreas: %s\n', strjoin(areas(areasToTest), ', '));
     end
     
     fprintf('\n=== Criticality AR Analysis Setup ===\n');
@@ -165,15 +204,25 @@ function results = criticality_ar_analysis(dataStruct, config)
         end
     else
         reconstructedDataMat = [];  % Not needed if no PCA
+        tempBinSize = [];  % Not used if no PCA
     end
     
     % Find bin and window sizes (either optimal or user-specified)
     % Always store as binSize and slidingWindowSize vectors (length numAreas)
     fprintf('\n--- Step 3: Finding bin and window sizes ---\n');
-    [binSize, slidingWindowSize, ...
-        binSizeModulated, binSizeUnmodulated, ...
-        slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
-        find_optimal_parameters_from_spikes(dataStruct, config, modulationResults, areasToTest, timeRange);
+    if config.pcaFlag
+        % Use PCA-reconstructed data for parameter optimization
+        [binSize, slidingWindowSize, ...
+            binSizeModulated, binSizeUnmodulated, ...
+            slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
+            find_optimal_parameters_from_spikes_pca(reconstructedDataMat, config, modulationResults, areasToTest, timeRange, tempBinSize, areas, dataStruct);
+    else
+        % Use original spike times for parameter optimization
+        [binSize, slidingWindowSize, ...
+            binSizeModulated, binSizeUnmodulated, ...
+            slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
+            find_optimal_parameters_from_spikes(dataStruct, config, modulationResults, areasToTest, timeRange);
+    end
     slidingWindowSize(slidingWindowSize < 10) = 10;
     % Initialize modulation parameters if not already set
     if ~config.analyzeModulation
@@ -219,6 +268,22 @@ function results = criticality_ar_analysis(dataStruct, config)
     [popActivity, mrBr, d2, d2Normalized, startS, popActivityWindows, popActivityFull] = ...
         deal(cell(1, numAreas));
     
+    % Initialize behavior proportion for spontaneous sessions if configured
+    if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
+            isfield(config, 'behaviorDenominatorIDs') && ...
+            ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+        behaviorProportion = cell(1, numAreas);
+    else
+        behaviorProportion = cell(1, numAreas);
+        for a = 1:numAreas
+            behaviorProportion{a} = [];
+        end
+    end
+    
+    % Optional: store per-subsample d2 (raw and normalized) for plotting error ribbons
+    d2SubsamplesAll = cell(1, numAreas);
+    d2NormalizedSubsamplesAll = cell(1, numAreas);
+    
     if config.enablePermutations
         d2Permuted = cell(1, numAreas);
         mrBrPermuted = cell(1, numAreas);
@@ -250,6 +315,25 @@ function results = criticality_ar_analysis(dataStruct, config)
     areasToProcess = [];
     areasToSkip = [];
     
+    % Determine minimum neuron requirement (supports optional subsampling)
+    if isfield(config, 'useSubsampling') && config.useSubsampling
+        % Validate subsampling parameters
+        if ~isfield(config, 'nNeuronsSubsample') || isempty(config.nNeuronsSubsample) || config.nNeuronsSubsample <= 0
+            error('When config.useSubsampling is true, config.nNeuronsSubsample must be a positive scalar.');
+        end
+        if ~isfield(config, 'nSubsamples') || isempty(config.nSubsamples) || config.nSubsamples <= 0
+            error('When config.useSubsampling is true, config.nSubsamples must be a positive scalar.');
+        end
+        if ~isfield(config, 'minNeuronsMultiple') || isempty(config.minNeuronsMultiple)
+            config.minNeuronsMultiple = 1;
+        end
+        minNeuronsRequired = round(config.nNeuronsSubsample * config.minNeuronsMultiple);
+        fprintf('Subsampling enabled: nSubsamples=%d, nNeuronsSubsample=%d, minNeuronsMultiple=%.2f -> min neurons required=%d\n', ...
+            config.nSubsamples, config.nNeuronsSubsample, config.minNeuronsMultiple, minNeuronsRequired);
+    else
+        minNeuronsRequired = config.nMinNeurons;
+    end
+    
     for a = areasToTest
         shouldSkip = false;
         skipReason = '';
@@ -257,10 +341,10 @@ function results = criticality_ar_analysis(dataStruct, config)
         aID = dataStruct.idMatIdx{a};
         nNeurons = length(aID);
         
-        % Check minimum number of neurons
-        if nNeurons < config.nMinNeurons
+        % Check minimum number of neurons (supports subsampling rule)
+        if nNeurons < minNeuronsRequired
             shouldSkip = true;
-            skipReason = sprintf('Only %d neurons (minimum required: %d)', nNeurons, config.nMinNeurons);
+            skipReason = sprintf('Only %d neurons (minimum required: %d)', nNeurons, minNeuronsRequired);
         end
         
         % Check if bin size is valid
@@ -280,6 +364,7 @@ function results = criticality_ar_analysis(dataStruct, config)
             startS{a} = [];
             popActivityWindows{a} = [];
             popActivityFull{a} = [];
+            behaviorProportion{a} = [];
             if config.enablePermutations
                 d2Permuted{a} = [];
                 mrBrPermuted{a} = [];
@@ -295,119 +380,399 @@ function results = criticality_ar_analysis(dataStruct, config)
     
     fprintf('  Will process %d area(s): %s\n', length(areasToProcess), strjoin(areas(areasToProcess), ', '));
     
-    % Main analysis loop
+    % Main analysis loop (area-wise, optionally parallel via parfor)
     fprintf('\n=== Processing Areas ===\n');
-    for a = areasToProcess
+    
+    % Pre-allocate temporary cell arrays indexed by loop variable (for parfor compatibility)
+    nAreasToProcess = length(areasToProcess);
+    tempPopActivity = cell(1, nAreasToProcess);
+    tempMrBr = cell(1, nAreasToProcess);
+    tempD2 = cell(1, nAreasToProcess);
+    tempD2Normalized = cell(1, nAreasToProcess);
+    tempStartS = cell(1, nAreasToProcess);
+    tempPopActivityWindows = cell(1, nAreasToProcess);
+    tempPopActivityFull = cell(1, nAreasToProcess);
+    tempD2SubsamplesAll = cell(1, nAreasToProcess);
+    tempD2NormalizedSubsamplesAll = cell(1, nAreasToProcess);
+    tempD2Permuted = cell(1, nAreasToProcess);
+    tempMrBrPermuted = cell(1, nAreasToProcess);
+    tempBehaviorProportion = cell(1, nAreasToProcess);
+    
+    % parfor idx = 1:nAreasToProcess
+    for idx = 1:nAreasToProcess
+        a = areasToProcess(idx);  % Actual area index
         fprintf('\nProcessing area %s (%s)...\n', areas{a}, sessionType);
         tic;
-        
-        aID = dataStruct.idMatIdx{a};
         
         % Calculate window size in samples for this area
         winSamples = round(slidingWindowSize(a) / binSize(a));
         
         % Get neuron IDs for this area
         neuronIDs = dataStruct.idLabel{a};
-        % Bin spikes on-demand at area-specific bin size
-        aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
-            neuronIDs, timeRange, binSize(a));
-        numTimePoints = size(aDataMat, 1);
         
+        % Bin data at area-specific bin size
         if config.pcaFlag
-            [coeff, score, ~, ~, explained, mu] = pca(aDataMat);
-            forDim = find(cumsum(explained) > 30, 1);
-            forDim = max(3, min(6, forDim));
-            nDim = 1:forDim;
-            aDataMat = score(:,nDim) * coeff(:,nDim)' + mu;
+            % Use PCA-reconstructed data: rebin from 1ms to optimal bin size
+            % reconstructedDataMat{a} is [timeBins_1ms x neurons]
+            % We need to downsample to binSize(a)
+            reconstructedMat_1ms = reconstructedDataMat{a};  % [timeBins_1ms x neurons]
+            
+            % Calculate number of bins at optimal bin size
+            totalTime = timeRange(2) - timeRange(1);
+            numBins_1ms = size(reconstructedMat_1ms, 1);
+            numBins_optimal = round(totalTime / binSize(a));
+            
+            % Downsample reconstructed data to optimal bin size
+            % Average across bins within each optimal bin
+            binsPerOptimalBin = binSize(a) / tempBinSize;
+            aDataMat = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
+            for b = 1:numBins_optimal
+                startIdx_1ms = round((b-1) * binsPerOptimalBin) + 1;
+                endIdx_1ms = min(round(b * binsPerOptimalBin), numBins_1ms);
+                if startIdx_1ms <= numBins_1ms
+                    aDataMat(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
+                end
+            end
+            numTimePoints = size(aDataMat, 1);
+        else
+            % Bin spikes on-demand at area-specific bin size
+            aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                neuronIDs, timeRange, binSize(a));
+            numTimePoints = size(aDataMat, 1);
         end
         
-        popActivity{a} = mean(aDataMat, 2);
-        [startS{a}, mrBr{a}, d2{a}, d2Normalized{a}, popActivityWindows{a}, popActivityFull{a}] = ...
+        numNeuronsArea = size(aDataMat, 2);
+        popActivityLocal = mean(aDataMat, 2);
+        [startSLocal, mrBrLocal, d2Local, d2NormalizedLocal, popActivityWindowsLocal, popActivityFullLocal] = ...
             deal(nan(1, numWindows));
         
-        % Process each window using common centerTime
+        % Initialize behavior proportion storage for this area if enabled
+        if strcmp(sessionType, 'spontaneous') && isfield(dataStruct, 'bhvID') && ...
+                ~isempty(dataStruct.bhvID) && isfield(config, 'behaviorNumeratorIDs') && ...
+                isfield(config, 'behaviorDenominatorIDs') && ...
+                ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+            tempBehaviorProportion{idx} = nan(1, numWindows);
+        else
+            tempBehaviorProportion{idx} = [];
+        end
+        
+        % Local storage for subsampling and permutations
+        d2SubsamplesLocal = [];
+        d2NormalizedSubsamplesLocal = [];
+        d2PermutedLocal = [];
+        mrBrPermutedLocal = [];
+        
+        % Precompute window indices for this area (shared across subsamples)
+        windowIndices = nan(numWindows, 2);
         for w = 1:numWindows
             centerTime = commonCenterTimes(w);
-            startS{a}(w) = centerTime;
+            [startIdx, endIdx] = calculate_window_indices_from_center(...
+                centerTime, slidingWindowSize(a), binSize(a), numTimePoints);
+            windowIndices(w, :) = [startIdx, endIdx];
+        end
+        
+        if isfield(config, 'useSubsampling') && config.useSubsampling
+            % --- Subsampling mode: draw random neuron subsets and average metrics across subsamples ---
+            nSubsamples = config.nSubsamples;
+            nNeuronsSubsample = min(config.nNeuronsSubsample, numNeuronsArea);
             
-            % Convert centerTime to indices for this area's binning
-            % Use area-specific optimal window size
-                [startIdx, endIdx] = calculate_window_indices_from_center(...
-                    centerTime, slidingWindowSize(a), binSize(a), numTimePoints);
+            d2Subsamples = nan(numWindows, nSubsamples);
+            mrBrSubsamples = nan(numWindows, nSubsamples);
+            d2NormalizedSubsamples = nan(numWindows, nSubsamples);
             
-            % Check if window is valid (within bounds)
-            if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
-                % Window is out of bounds for this area, skip
-                continue;
+            % Optional: store all permutation results across subsamples for summary statistics
+            if config.enablePermutations && config.normalizeD2 && config.analyzeD2
+                d2PermutedAll = nan(numWindows, config.nShuffles * nSubsamples);
+                mrBrPermutedAll = nan(numWindows, config.nShuffles * nSubsamples);
+            else
+                d2PermutedAll = [];
+                mrBrPermutedAll = [];
             end
             
-            wPopActivity = popActivity{a}(startIdx:endIdx);
-            popActivityWindows{a}(w) = mean(wPopActivity);
-            popActivityFull{a}(w) = popActivity{a}(startIdx + round(winSamples/2) - 1);
+            % Draw independent neuron subsets for each subsample
+            neuronIdxSubsamples = cell(1, nSubsamples);
+            for s = 1:nSubsamples
+                if nNeuronsSubsample == numNeuronsArea
+                    neuronIdxSubsamples{s} = 1:numNeuronsArea;
+                else
+                    neuronIdxSubsamples{s} = randperm(numNeuronsArea, nNeuronsSubsample);
+                end
+            end
             
+            for s = 1:nSubsamples
+                thisIdx = neuronIdxSubsamples{s};
+                aDataMatSub = aDataMat(:, thisIdx);
+                popActivitySub = mean(aDataMatSub, 2);
+                
+                % Process each window using common centerTime
+                for w = 1:numWindows
+                    centerTime = commonCenterTimes(w);
+                    startSLocal(w) = centerTime;
+                    
+                    startIdx = windowIndices(w, 1);
+                    endIdx = windowIndices(w, 2);
+                    
+                    % Check if window is valid (within bounds)
+                    if isnan(startIdx) || startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
+                        continue;
+                    end
+                    
+                    % Full-population activity (for plotting and correlations; same across subsamples)
+                    if s == 1
+                        wPopActivityFull = popActivityLocal(startIdx:endIdx);
+                        popActivityWindowsLocal(w) = mean(wPopActivityFull);
+                        popActivityFullLocal(w) = popActivityLocal(startIdx + round(winSamples/2) - 1);
+                        
+                        % Calculate behavior proportion once per window for this area
+                        if ~isempty(tempBehaviorProportion{idx})
+                            if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+                                fsBhv = dataStruct.fsBhv;
+                                bhvBinSize = 1 / fsBhv;
+                                winStartTime = centerTime - slidingWindowSize(a) / 2;
+                                winEndTime = centerTime + slidingWindowSize(a) / 2;
+                                bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
+                                bhvEndIdx = round(winEndTime / bhvBinSize);
+                                bhvStartIdx = max(1, bhvStartIdx);
+                                bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
+                                if bhvStartIdx <= bhvEndIdx
+                                    windowBhvID = dataStruct.bhvID(bhvStartIdx:bhvEndIdx);
+                                    numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
+                                    denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
+                                    if denominatorCount > 0
+                                        tempBehaviorProportion{idx}(w) = numeratorCount / denominatorCount;
+                                    else
+                                        tempBehaviorProportion{idx}(w) = nan;
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    
+                    % Subsampled population activity for metrics
+                    wPopActivitySub = popActivitySub(startIdx:endIdx);
+                    
+                    if config.analyzeMrBr
+                        result = branching_ratio_mr_estimation(wPopActivitySub);
+                        mrBrSubsamples(w, s) = result.branching_ratio;
+                    end
+                    
+                    if config.analyzeD2
+                        [varphi, ~] = myYuleWalker3(double(wPopActivitySub), config.pOrder);
+                        d2Subsamples(w, s) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                    end
+                end
+                
+                % Circular permutations for this subsample (used only for normalization and summary stats)
+                if config.enablePermutations && config.normalizeD2 && config.analyzeD2
+                    [d2PermutedSub, mrBrPermutedSub] = perform_circular_permutations(...
+                        aDataMatSub, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config);
+                    
+                    % Normalize d2 for this subsample
+                    d2PermutedMeanSub = nanmean(d2PermutedSub, 2);
+                    for w = 1:numWindows
+                        if ~isnan(d2Subsamples(w, s)) && ~isnan(d2PermutedMeanSub(w)) && d2PermutedMeanSub(w) > 0
+                            d2NormalizedSubsamples(w, s) = d2Subsamples(w, s) / d2PermutedMeanSub(w);
+                        end
+                    end
+                    
+                    % Store permutations from this subsample in combined matrix
+                    colStart = (s - 1) * config.nShuffles + 1;
+                    colEnd = colStart + config.nShuffles - 1;
+                    d2PermutedAll(:, colStart:colEnd) = d2PermutedSub;
+                    if config.analyzeMrBr
+                        mrBrPermutedAll(:, colStart:colEnd) = mrBrPermutedSub;
+                    end
+                end
+            end
+            
+            % Aggregate metrics across subsamples (mean across subsamples per window)
             if config.analyzeMrBr
-                result = branching_ratio_mr_estimation(wPopActivity);
-                mrBr{a}(w) = result.branching_ratio;
+                mrBrLocal = nanmean(mrBrSubsamples, 2)';
             else
-                mrBr{a}(w) = nan;
+                mrBrLocal(:) = nan;
             end
             
             if config.analyzeD2
-                [varphi, ~] = myYuleWalker3(wPopActivity, config.pOrder);
-                d2{a}(w) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                d2Local = nanmean(d2Subsamples, 2)';
             else
-                d2{a}(w) = nan;
+                d2Local(:) = nan;
             end
-        end
-        
-        % Perform circular permutations if enabled
-        if config.enablePermutations
-            [d2Permuted{a}, mrBrPermuted{a}] = perform_circular_permutations(...
-                aDataMat, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config);
             
-            % Normalize d2 by shuffled d2 values if requested
-            if config.normalizeD2 && config.analyzeD2 && ~isempty(d2Permuted{a})
-                % Calculate mean shuffled d2 for each window
-                d2PermutedMean = nanmean(d2Permuted{a}, 2);
-                % Normalize: d2Normalized = d2 / mean(shuffled_d2)
-                for w = 1:numWindows
-                    if ~isnan(d2{a}(w)) && ~isnan(d2PermutedMean(w)) && d2PermutedMean(w) > 0
-                        d2Normalized{a}(w) = d2{a}(w) / d2PermutedMean(w);
-                    else
-                        d2Normalized{a}(w) = nan;
-                    end
+            % Store full set of raw d2 subsamples for optional plotting
+            d2SubsamplesLocal = d2Subsamples;
+            
+            if config.enablePermutations && config.normalizeD2 && config.analyzeD2
+                % Use subsample-normalized values as primary normalized metric
+                d2NormalizedLocal = nanmean(d2NormalizedSubsamples, 2)';
+                d2NormalizedSubsamplesLocal = d2NormalizedSubsamples;
+                % Expose all permutation results for summary statistics
+                d2PermutedLocal = d2PermutedAll;
+                if config.analyzeMrBr
+                    mrBrPermutedLocal = mrBrPermutedAll;
                 end
             else
-                % If normalization disabled or no permutations, set to NaN
-                d2Normalized{a}(:) = nan;
+                d2NormalizedSubsamplesLocal = [];
+                d2NormalizedLocal(:) = nan;
+                % No stored permutations in this configuration
+                if isempty(d2PermutedLocal)
+                    d2PermutedLocal = [];
+                end
+                if isempty(mrBrPermutedLocal)
+                    mrBrPermutedLocal = [];
+                end
             end
         else
-            % Initialize empty if permutations disabled
-            if isempty(d2Permuted{a})
-                d2Permuted{a} = [];
+            % --- Standard (no subsampling) mode ---
+            
+            % Process each window using common centerTime
+            for w = 1:numWindows
+                centerTime = commonCenterTimes(w);
+                startSLocal(w) = centerTime;
+                
+                % Convert centerTime to indices for this area's binning
+                % Use area-specific optimal window size
+                [startIdx, endIdx] = calculate_window_indices_from_center(...
+                    centerTime, slidingWindowSize(a), binSize(a), numTimePoints);
+                
+                % Check if window is valid (within bounds)
+                if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
+                    % Window is out of bounds for this area, skip
+                    continue;
+                end
+                
+                wPopActivity = popActivityLocal(startIdx:endIdx);
+                popActivityWindowsLocal(w) = mean(wPopActivity);
+                popActivityFullLocal(w) = popActivityLocal(startIdx + round(winSamples/2) - 1);
+                
+                % Calculate behavior proportion for this window if enabled
+                if ~isempty(tempBehaviorProportion{idx})
+                    if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+                        fsBhv = dataStruct.fsBhv;
+                        bhvBinSize = 1 / fsBhv;
+                        winStartTime = centerTime - slidingWindowSize(a) / 2;
+                        winEndTime = centerTime + slidingWindowSize(a) / 2;
+                        bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
+                        bhvEndIdx = round(winEndTime / bhvBinSize);
+                        bhvStartIdx = max(1, bhvStartIdx);
+                        bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
+                        if bhvStartIdx <= bhvEndIdx
+                            windowBhvID = dataStruct.bhvID(bhvStartIdx:bhvEndIdx);
+                            numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
+                            denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
+                            if denominatorCount > 0
+                                tempBehaviorProportion{idx}(w) = numeratorCount / denominatorCount;
+                            else
+                                tempBehaviorProportion{idx}(w) = nan;
+                            end
+                        end
+                    end
+                end
+                
+                if config.analyzeMrBr
+                    result = branching_ratio_mr_estimation(wPopActivity);
+                    mrBrLocal(w) = result.branching_ratio;
+                else
+                    mrBrLocal(w) = nan;
+                end
+                
+                if config.analyzeD2
+                    [varphi, ~] = myYuleWalker3(double(wPopActivity), config.pOrder);
+                    d2Local(w) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                else
+                    d2Local(w) = nan;
+                end
             end
-            if isempty(mrBrPermuted{a})
-                mrBrPermuted{a} = [];
+            
+            % Perform circular permutations if enabled
+            if config.enablePermutations
+                if config.pcaFlag
+                    % Use PCA-reconstructed data for permutations
+                    [d2PermutedLocal, mrBrPermutedLocal] = perform_circular_permutations_pca(...
+                        reconstructedDataMat{a}, a, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config, timeRange, tempBinSize);
+                else
+                    % Use original binned data for permutations
+                    [d2PermutedLocal, mrBrPermutedLocal] = perform_circular_permutations(...
+                        aDataMat, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config);
+                end
+                
+                % Normalize d2 by shuffled d2 values if requested
+                if config.normalizeD2 && config.analyzeD2 && ~isempty(d2PermutedLocal)
+                    % Calculate mean shuffled d2 for each window
+                    d2PermutedMean = nanmean(d2PermutedLocal, 2);
+                    % Normalize: d2Normalized = d2 / mean(shuffled_d2)
+                    for w = 1:numWindows
+                        if ~isnan(d2Local(w)) && ~isnan(d2PermutedMean(w)) && d2PermutedMean(w) > 0
+                            d2NormalizedLocal(w) = d2Local(w) / d2PermutedMean(w);
+                        else
+                            d2NormalizedLocal(w) = nan;
+                        end
+                    end
+                else
+                    % If normalization disabled or no permutations, set to NaN
+                    d2NormalizedLocal(:) = nan;
+                end
+            else
+                % Initialize empty if permutations disabled
+                if isempty(d2PermutedLocal)
+                    d2PermutedLocal = [];
+                end
+                if isempty(mrBrPermutedLocal)
+                    mrBrPermutedLocal = [];
+                end
+                % If no permutations, normalization not possible
+                d2NormalizedLocal(:) = nan;
             end
-            % If no permutations, normalization not possible
-            d2Normalized{a}(:) = nan;
         end
         
         fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+        
+        % Store local results into temporary cell arrays
+        tempPopActivity{idx} = popActivityLocal;
+        tempMrBr{idx} = mrBrLocal;
+        tempD2{idx} = d2Local;
+        tempD2Normalized{idx} = d2NormalizedLocal;
+        tempStartS{idx} = startSLocal;
+        tempPopActivityWindows{idx} = popActivityWindowsLocal;
+        tempPopActivityFull{idx} = popActivityFullLocal;
+        tempD2SubsamplesAll{idx} = d2SubsamplesLocal;
+        tempD2NormalizedSubsamplesAll{idx} = d2NormalizedSubsamplesLocal;
+        tempD2Permuted{idx} = d2PermutedLocal;
+        tempMrBrPermuted{idx} = mrBrPermutedLocal;
+        tempBehaviorProportion{idx} = tempBehaviorProportion{idx};
+    end
+    
+    % Map temporary results back to correct area indices
+    for idx = 1:nAreasToProcess
+        a = areasToProcess(idx);
+        popActivity{a} = tempPopActivity{idx};
+        mrBr{a} = tempMrBr{idx};
+        d2{a} = tempD2{idx};
+        d2Normalized{a} = tempD2Normalized{idx};
+        startS{a} = tempStartS{idx};
+        popActivityWindows{a} = tempPopActivityWindows{idx};
+        popActivityFull{a} = tempPopActivityFull{idx};
+        d2SubsamplesAll{a} = tempD2SubsamplesAll{idx};
+        d2NormalizedSubsamplesAll{a} = tempD2NormalizedSubsamplesAll{idx};
+        behaviorProportion{a} = tempBehaviorProportion{idx};
+        if config.enablePermutations
+            d2Permuted{a} = tempD2Permuted{idx};
+            mrBrPermuted{a} = tempMrBrPermuted{idx};
+        end
     end
     
     % Build results structure
     results = build_results_structure(dataStruct, config, areas, areasToTest, ...
         popActivity, mrBr, d2, d2Normalized, startS, popActivityWindows, popActivityFull, ...
         binSize, slidingWindowSize, ...
-        d2Permuted, mrBrPermuted, ...
+        d2Permuted, mrBrPermuted, d2SubsamplesAll, d2NormalizedSubsamplesAll, ...
         modulationResults, ...
         popActivityModulated, mrBrModulated, d2Modulated, startSModulated, ...
         popActivityWindowsModulated, popActivityFullModulated, ...
         popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, ...
         popActivityWindowsUnmodulated, popActivityFullUnmodulated, ...
         binSizeModulated, binSizeUnmodulated, ...
-        slidingWindowSizeModulated, slidingWindowSizeUnmodulated);
+        slidingWindowSizeModulated, slidingWindowSizeUnmodulated, ...
+        behaviorProportion);
     
     % Save results if requested
     if config.saveData
@@ -459,6 +824,12 @@ function config = set_config_defaults(config)
     defaults.modulationPlotFlag = false;
     defaults.includeM2356 = false;  % Include combined M23+M56 area (optional)
     defaults.nMinNeurons = 10;  % Minimum number of neurons required
+    % Optional neural subsampling parameters (used when useSubsampling = true)
+    defaults.useSubsampling = false;      % If true, analyze random neuron subsets per area
+    defaults.nSubsamples = 10;           % Number of subsampling iterations
+    defaults.nNeuronsSubsample = 10;     % Number of neurons per subsample
+    defaults.minNeuronsMultiple = 1.0;   % Minimum neuron requirement multiplier (round(nNeuronsSubsample * minNeuronsMultiple))
+    defaults.brainAreas = {};            % Optional list of area name strings to analyze; empty = all areas
     
     % Apply defaults
     fields = fieldnames(defaults);
@@ -573,6 +944,124 @@ function [binSize, slidingWindowSize, ...
     end
 end
 
+function [binSize, slidingWindowSize, ...
+    binSizeModulated, binSizeUnmodulated, ...
+    slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
+    find_optimal_parameters_from_spikes_pca(reconstructedDataMat, config, modulationResults, areasToTest, timeRange, tempBinSize, areas, dataStruct)
+% FIND_OPTIMAL_PARAMETERS_FROM_SPIKES_PCA Find bin and window sizes from PCA-reconstructed data
+% Returns binSize and slidingWindowSize as vectors (length numAreas)
+% Uses PCA-reconstructed data matrices (for when pcaFlag = 1)
+%
+% Variables:
+%   reconstructedDataMat - Cell array of PCA-reconstructed data matrices [timeBins x neurons] at tempBinSize
+%   config - Configuration structure
+%   modulationResults - Modulation analysis results (cell array)
+%   areasToTest - Areas to process
+%   timeRange - [startTime, endTime] in seconds
+%   tempBinSize - Bin size used for PCA reconstruction (typically 0.001s = 1ms)
+%   areas - Cell array of area names
+%   dataStruct - Data structure (for modulation analysis if needed)
+%
+% Returns:
+%   binSize - Optimal bin sizes per area
+%   slidingWindowSize - Optimal window sizes per area
+%   binSizeModulated - Optimal bin sizes for modulated neurons (if modulation analysis enabled)
+%   binSizeUnmodulated - Optimal bin sizes for unmodulated neurons (if modulation analysis enabled)
+%   slidingWindowSizeModulated - Optimal window sizes for modulated neurons (if modulation analysis enabled)
+%   slidingWindowSizeUnmodulated - Optimal window sizes for unmodulated neurons (if modulation analysis enabled)
+    
+    numAreas = length(reconstructedDataMat);
+    binSize = zeros(1, numAreas);
+    slidingWindowSize = zeros(1, numAreas);
+    
+    totalTime = timeRange(2) - timeRange(1);
+    
+    if config.useOptimalBinWindowFunction
+        for a = areasToTest
+            % Get PCA-reconstructed data for this area
+            % reconstructedDataMat{a} is [timeBins_1ms x neurons]
+            reconstructedMat = reconstructedDataMat{a};
+            
+            % Calculate firing rate from reconstructed data
+            % Sum across neurons and time, then divide by total time
+            totalSpikes = sum(reconstructedMat(:));  % Sum across all neurons and time bins
+            thisFiringRate = totalSpikes / totalTime;  % Firing rate in spikes per second
+            
+            [binSize(a), slidingWindowSize(a)] = ...
+                find_optimal_bin_and_window(thisFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
+        end
+    else
+        % Use manually defined values
+        if isfield(config, 'binSize')
+            % Convert scalar to vector if needed
+            if isscalar(config.binSize)
+                binSize = repmat(config.binSize, 1, numAreas);
+            else
+                binSize = config.binSize;
+            end
+        else
+            error('binSize must be provided if useOptimalBinWindowFunction is false');
+        end
+        % Convert scalar to vector if needed
+        if isscalar(config.slidingWindowSize)
+            slidingWindowSize = repmat(config.slidingWindowSize, 1, numAreas);
+        else
+            slidingWindowSize = config.slidingWindowSize;
+        end
+    end
+    
+    % Initialize modulation parameters
+    binSizeModulated = nan(1, numAreas);
+    binSizeUnmodulated = nan(1, numAreas);
+    slidingWindowSizeModulated = nan(1, numAreas);
+    slidingWindowSizeUnmodulated = nan(1, numAreas);
+    
+    if config.analyzeModulation && config.useOptimalBinWindowFunction
+        for a = areasToTest
+            if ~isempty(modulationResults{a})
+                % Get modulated and unmodulated neuron IDs
+                modulatedNeurons = modulationResults{a}.neuronIds(modulationResults{a}.isModulated);
+                unmodulatedNeurons = modulationResults{a}.neuronIds(~modulationResults{a}.isModulated);
+                
+                % For PCA, we need to extract the relevant neurons from the reconstructed data
+                % reconstructedDataMat{a} is [timeBins x all_neurons]
+                % We need to identify which columns correspond to modulated/unmodulated neurons
+                % This requires matching neuronIDs from modulationResults to the original neuron order
+                % For now, we'll use the full reconstructed data and calculate firing rates
+                % (This is a simplification - ideally we'd extract specific neurons)
+                
+                if length(modulatedNeurons) >= 5
+                    % Use full reconstructed data as approximation
+                    reconstructedMat = reconstructedDataMat{a};
+                    totalSpikes = sum(reconstructedMat(:));
+                    mFiringRate = totalSpikes / totalTime;
+                    [binSizeModulated(a), slidingWindowSizeModulated(a)] = ...
+                        find_optimal_bin_and_window(mFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
+                end
+                
+                if length(unmodulatedNeurons) >= 5
+                    % Use full reconstructed data as approximation
+                    reconstructedMat = reconstructedDataMat{a};
+                    totalSpikes = sum(reconstructedMat(:));
+                    uFiringRate = totalSpikes / totalTime;
+                    [binSizeUnmodulated(a), slidingWindowSizeUnmodulated(a)] = ...
+                        find_optimal_bin_and_window(uFiringRate, config.minSpikesPerBin, config.minBinsPerWindow);
+                end
+            end
+        end
+    elseif config.analyzeModulation
+        binSizeModulated = binSize;
+        binSizeUnmodulated = binSize;
+        slidingWindowSizeModulated = slidingWindowSize;
+        slidingWindowSizeUnmodulated = slidingWindowSize;
+    end
+    
+    for a = areasToTest
+        fprintf('Area %s: bin size = %.3f s, window size = %.1f s (from PCA-reconstructed data)\n', ...
+            areas{a}, binSize(a), slidingWindowSize(a));
+    end
+end
+
 function [d2Permuted, mrBrPermuted] = perform_circular_permutations(aDataMat, commonCenterTimes, slidingWindowSize, binSize, numTimePoints, config)
 % PERFORM_CIRCULAR_PERMUTATIONS Perform circular permutation testing
 %   Shuffles each neuron's activity independently using circular shifts,
@@ -630,7 +1119,94 @@ function [d2Permuted, mrBrPermuted] = perform_circular_permutations(aDataMat, co
             end
             
             if config.analyzeD2
-                [varphi, ~] = myYuleWalker3(wPopActivity, config.pOrder);
+                [varphi, ~] = myYuleWalker3(double(wPopActivity), config.pOrder);
+                d2Permuted(w, s) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+            end
+        end
+    end
+end
+
+function [d2Permuted, mrBrPermuted] = perform_circular_permutations_pca(reconstructedMat_1ms, a, commonCenterTimes, slidingWindowSize, binSize, numTimePoints, config, timeRange, tempBinSize)
+% PERFORM_CIRCULAR_PERMUTATIONS_PCA Perform circular permutation testing for AR analysis
+%   Uses PCA-reconstructed data (for when pcaFlag = 1)
+%   Shuffles each neuron's activity independently using circular shifts,
+%   then computes population activity from the shuffled data.
+%
+% Variables:
+%   reconstructedMat_1ms - PCA-reconstructed data matrix [timeBins_1ms x neurons] at tempBinSize
+%   a - Area index
+%   commonCenterTimes - Vector of window center times
+%   slidingWindowSize - Window size in seconds
+%   binSize - Bin size in seconds
+%   numTimePoints - Number of time points at optimal bin size
+%   config - Configuration structure
+%   timeRange - [startTime, endTime] in seconds
+%   tempBinSize - Bin size used for PCA (typically 0.001s = 1ms)
+%
+% Goal:
+%   For each shuffle, circularly shift each neuron's activity independently,
+%   then compute population activity and analyze d2/mrBr in sliding windows.
+    
+    numWindows = length(commonCenterTimes);
+    
+    d2Permuted = nan(numWindows, config.nShuffles);
+    mrBrPermuted = nan(numWindows, config.nShuffles);
+    
+    % Downsample reconstructed data from 1ms to optimal bin size for full time range
+    totalTime = timeRange(2) - timeRange(1);
+    numBins_1ms = size(reconstructedMat_1ms, 1);
+    numBins_optimal = round(totalTime / binSize);
+    binsPerOptimalBin = binSize / tempBinSize;
+    
+    % Create downsampled data matrix at optimal bin size
+    originalDataMat = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
+    for b = 1:numBins_optimal
+        startIdx_1ms = round((b-1) * binsPerOptimalBin) + 1;
+        endIdx_1ms = min(round(b * binsPerOptimalBin), numBins_1ms);
+        if startIdx_1ms <= numBins_1ms
+            originalDataMat(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
+        end
+    end
+    numNeurons = size(originalDataMat, 2);
+    
+    for s = 1:config.nShuffles
+        % Circularly shift each neuron's activity independently
+        % originalDataMat is [time bins x neurons]
+        permutedDataMat = zeros(size(originalDataMat));
+        for n = 1:numNeurons
+            shiftAmount = randi(size(originalDataMat, 1));
+            permutedDataMat(:, n) = circshift(originalDataMat(:, n), shiftAmount);
+        end
+        
+        % No need to re-apply PCA - data is already PCA-reconstructed
+        % Just use the permuted data directly
+        
+        % Compute population activity from shuffled data
+        permutedPopActivity = mean(permutedDataMat, 2);
+        
+        for w = 1:numWindows
+            centerTime = commonCenterTimes(w);
+            
+            % Convert centerTime to indices for this area's binning
+            % Use area-specific window size
+            [startIdx, endIdx] = calculate_window_indices_from_center(...
+                centerTime, slidingWindowSize, binSize, numTimePoints);
+            
+            % Check if window is valid (within bounds)
+            if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
+                % Window is out of bounds, skip
+                continue;
+            end
+            
+            wPopActivity = permutedPopActivity(startIdx:endIdx);
+            
+            if config.analyzeMrBr
+                result = branching_ratio_mr_estimation(wPopActivity);
+                mrBrPermuted(w, s) = result.branching_ratio;
+            end
+            
+            if config.analyzeD2
+                [varphi, ~] = myYuleWalker3(double(wPopActivity), config.pOrder);
                 d2Permuted(w, s) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
             end
         end
@@ -640,14 +1216,15 @@ end
 function results = build_results_structure(dataStruct, config, areas, areasToTest, ...
     popActivity, mrBr, d2, d2Normalized, startS, popActivityWindows, popActivityFull, ...
     binSize, slidingWindowSize, ...
-    d2Permuted, mrBrPermuted, ...
+    d2Permuted, mrBrPermuted, d2SubsamplesAll, d2NormalizedSubsamplesAll, ...
     modulationResults, ...
     popActivityModulated, mrBrModulated, d2Modulated, startSModulated, ...
     popActivityWindowsModulated, popActivityFullModulated, ...
     popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, ...
     popActivityWindowsUnmodulated, popActivityFullUnmodulated, ...
     binSizeModulated, binSizeUnmodulated, ...
-    slidingWindowSizeModulated, slidingWindowSizeUnmodulated)
+    slidingWindowSizeModulated, slidingWindowSizeUnmodulated, ...
+    behaviorProportion)
 % BUILD_RESULTS_STRUCTURE Build results structure
     
     results = struct();
@@ -663,6 +1240,20 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.binSize = binSize;
     results.slidingWindowSize = slidingWindowSize;
     results.d2WindowSize = slidingWindowSize;
+    
+    % Store behavior proportion if available (spontaneous sessions)
+    if strcmp(dataStruct.sessionType, 'spontaneous') && ...
+            isfield(config, 'behaviorNumeratorIDs') && isfield(config, 'behaviorDenominatorIDs') && ...
+            ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+        results.behaviorProportion = behaviorProportion;
+        results.params.behaviorNumeratorIDs = config.behaviorNumeratorIDs;
+        results.params.behaviorDenominatorIDs = config.behaviorDenominatorIDs;
+    else
+        results.behaviorProportion = cell(1, length(areas));
+        for a = 1:length(areas)
+            results.behaviorProportion{a} = [];
+        end
+    end
     results.params.slidingWindowSize = config.slidingWindowSize;
     results.params.stepSize = config.stepSize;
     results.params.analyzeD2 = config.analyzeD2;
@@ -673,36 +1264,74 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.params.pOrder = config.pOrder;
     results.params.critType = config.critType;
     results.params.normalizeD2 = config.normalizeD2;
+    if isfield(config, 'useSubsampling')
+        results.params.useSubsampling = config.useSubsampling;
+        if config.useSubsampling
+            results.useSubsampling = true;
+            if exist('d2SubsamplesAll', 'var')
+                results.d2Subsamples = d2SubsamplesAll;
+            end
+            if exist('d2NormalizedSubsamplesAll', 'var')
+                results.d2NormalizedSubsamples = d2NormalizedSubsamplesAll;
+            end
+        else
+            results.useSubsampling = false;
+        end
+    else
+        results.useSubsampling = false;
+    end
+    if isfield(config, 'nSubsamples')
+        results.params.nSubsamples = config.nSubsamples;
+    end
+    if isfield(config, 'nNeuronsSubsample')
+        results.params.nNeuronsSubsample = config.nNeuronsSubsample;
+    end
+    if isfield(config, 'minNeuronsMultiple')
+        results.params.minNeuronsMultiple = config.minNeuronsMultiple;
+    end
     
     if config.enablePermutations
         results.enablePermutations = true;
-        results.nShuffles = config.nShuffles;
         results.d2Permuted = d2Permuted;
         results.mrBrPermuted = mrBrPermuted;
         
-        % Calculate mean and SEM
+        % Calculate mean and SEM using the effective number of shuffled samples
         d2PermutedMean = cell(1, length(areas));
         d2PermutedSEM = cell(1, length(areas));
         mrBrPermutedMean = cell(1, length(areas));
         mrBrPermutedSEM = cell(1, length(areas));
         
+        maxEffectiveShuffles = 0;
         for a = 1:length(areas)
             if ~isempty(d2Permuted{a})
+                nEff = size(d2Permuted{a}, 2);
+                maxEffectiveShuffles = max(maxEffectiveShuffles, nEff);
                 d2PermutedMean{a} = nanmean(d2Permuted{a}, 2);
-                d2PermutedSEM{a} = nanstd(d2Permuted{a}, 0, 2) / sqrt(config.nShuffles);
+                if nEff > 0
+                    d2PermutedSEM{a} = nanstd(d2Permuted{a}, 0, 2) / sqrt(nEff);
+                else
+                    d2PermutedSEM{a} = [];
+                end
             else
                 d2PermutedMean{a} = [];
                 d2PermutedSEM{a} = [];
             end
             if ~isempty(mrBrPermuted{a})
+                nEff = size(mrBrPermuted{a}, 2);
+                maxEffectiveShuffles = max(maxEffectiveShuffles, nEff);
                 mrBrPermutedMean{a} = nanmean(mrBrPermuted{a}, 2);
-                mrBrPermutedSEM{a} = nanstd(mrBrPermuted{a}, 0, 2) / sqrt(config.nShuffles);
+                if nEff > 0
+                    mrBrPermutedSEM{a} = nanstd(mrBrPermuted{a}, 0, 2) / sqrt(nEff);
+                else
+                    mrBrPermutedSEM{a} = [];
+                end
             else
                 mrBrPermutedMean{a} = [];
                 mrBrPermutedSEM{a} = [];
             end
         end
         
+        results.nShuffles = maxEffectiveShuffles;
         results.d2PermutedMean = d2PermutedMean;
         results.d2PermutedSEM = d2PermutedSEM;
         results.mrBrPermutedMean = mrBrPermutedMean;

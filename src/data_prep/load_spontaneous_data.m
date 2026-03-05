@@ -17,7 +17,7 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
 %   dataStruct - Updated data structure with all loaded data
 
     % Set default collectEnd if not set
-    if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
+    if ~isfield(opts, 'collectEnd')
         opts.collectEnd = 10 * 60;  % Default 10 minutes
     end
     
@@ -38,9 +38,9 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
     
     % Build data path with subdirectory
     if ~isempty(subDir)
-        opts.dataPath = fullfile(paths.freeDataPath, subDir);
+        opts.dataPath = fullfile(paths.spontaneousDataPath, subDir);
     else
-        opts.dataPath = paths.freeDataPath;
+        opts.dataPath = paths.spontaneousDataPath;
     end
     opts.sessionName = sessionName;
     

@@ -11,6 +11,26 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
 %   Create time series plots of normalized Lempel-Ziv complexity with
 %   reference line at shuffled mean (1.0) and optional reach onset markers.
 
+    % Ensure dataStruct has all areas from results (including M2356 if it exists)
+    % This is important when loading results in loadAndPlot mode
+    if length(results.areas) > length(dataStruct.areas)
+        % Check if M2356 exists in results but not in dataStruct
+        m2356IdxResults = find(strcmp(results.areas, 'M2356'));
+        if ~isempty(m2356IdxResults)
+            idxM23 = find(strcmp(dataStruct.areas, 'M23'));
+            idxM56 = find(strcmp(dataStruct.areas, 'M56'));
+            if ~isempty(idxM23) && ~isempty(idxM56) && ~any(strcmp(dataStruct.areas, 'M2356'))
+                % Add M2356 to dataStruct to match results
+                dataStruct.areas{end+1} = 'M2356';
+                dataStruct.idMatIdx{end+1} = [dataStruct.idMatIdx{idxM23}(:); dataStruct.idMatIdx{idxM56}(:)];
+                if isfield(dataStruct, 'idLabel') && ~isempty(dataStruct.idLabel{idxM23}) && ~isempty(dataStruct.idLabel{idxM56})
+                    dataStruct.idLabel{end+1} = [dataStruct.idLabel{idxM23}(:); dataStruct.idLabel{idxM56}(:)];
+                end
+                fprintf('Added M2356 to dataStruct for plotting (to match results.areas)\n');
+            end
+        end
+    end
+    
     % Collect data for axis limits and calculate metric means
     allStartS = [];
     allLZNorm = [];
@@ -114,7 +134,20 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
     
     % Calculate windowed mean activity for each area (for right y-axis)
     summedActivityWindowed = cell(1, length(results.areas));
-    if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'dataMat') && isfield(dataStruct, 'idMatIdx')
+    if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'spikeTimes') && isfield(dataStruct, 'spikeClusters') && isfield(dataStruct, 'idMatIdx')
+        % Add path to data_prep for bin_spikes function
+        dataPrepPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep');
+        if exist(dataPrepPath, 'dir')
+            addpath(dataPrepPath);
+        end
+        
+        % Calculate time range from spike data
+        if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectStart')
+            timeRange = [dataStruct.spikeData.collectStart, dataStruct.spikeData.collectEnd];
+        else
+            timeRange = [0, max(dataStruct.spikeTimes)];
+        end
+        
         % Use binSize and slidingWindowSize (area-specific vectors)
         if isfield(results.params, 'binSize')
             binSize = results.params.binSize;
@@ -127,10 +160,25 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
             error('slidingWindowSize not found in results.params');
         end
         for a = 1:length(results.areas)
+            % Check if this area index exists in dataStruct
+            if a > length(dataStruct.idMatIdx) || isempty(dataStruct.idMatIdx{a})
+                summedActivityWindowed{a} = [];
+                continue;
+            end
             aID = dataStruct.idMatIdx{a};
             if ~isempty(aID) && ~isempty(results.startS{a}) && ~isnan(binSize(a))
-                % Bin data using the area-specific binSize
-                aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize(a));
+                % Get neuron IDs for this area
+                if isfield(dataStruct, 'idLabel') && a <= length(dataStruct.idLabel) && ~isempty(dataStruct.idLabel{a})
+                    neuronIDs = dataStruct.idLabel{a};
+                else
+                    % Fallback: use idMatIdx if idLabel not available
+                    neuronIDs = dataStruct.idMatIdx{a};
+                end
+                
+                % Bin data using bin_spikes (on-demand binning)
+                aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                    neuronIDs, timeRange, binSize(a));
+                
                 % Sum across neurons
                 summedActivity = sum(aDataMat, 2);
                 % Calculate time bins (center of each bin)
@@ -204,6 +252,8 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
             yyaxis left;
         end
         
+        yline(1);
+
         % Plot metrics on top
         if ~isempty(results.lzComplexityNormalized{a}) && ~isempty(results.startS{a})
             validIdx = ~isnan(results.lzComplexityNormalized{a});
@@ -236,7 +286,7 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
                     validIdx = ~isnan(behaviorProportionCentered);
                     if any(validIdx)
                         plot(results.startS{a}(validIdx), behaviorProportionCentered(validIdx), ':', ...
-                            'Color', [.7 .7 .7], 'LineWidth', 2, ...
+                            'Color', [0 0 0], 'LineWidth', 2, ...
                             'DisplayName', sprintf('%s (bhv prop)', results.areas{a}));
                     end
                 end
@@ -246,21 +296,23 @@ function lzc_sliding_plot(results, plotConfig, config, dataStruct)
         
         % Get neuron count for spike data
         if strcmp(results.dataSource, 'spikes') && isfield(dataStruct, 'idMatIdx') && ...
-                ~isempty(dataStruct.idMatIdx{a})
+                a <= length(dataStruct.idMatIdx) && ~isempty(dataStruct.idMatIdx{a})
             nNeurons = length(dataStruct.idMatIdx{a});
             title(sprintf('%s - Normalized Lempel-Ziv Complexity (n=%d)', results.areas{a}, nNeurons));
         else
             title(sprintf('%s - Normalized Lempel-Ziv Complexity', results.areas{a}));
         end
+        if idx == length(results.areas)
         xlabel('Time (s)');
+        end
         ylabel('Normalized LZ Complexity');
         if ~isempty(results.startS{a})
             xlim([results.startS{a}(1), results.startS{a}(end)]);
         else
             xlim([xMin, xMax]);
         end
-        % ylim([yMinLZNorm, yMaxLZNorm]);
-        ylim([.85, 1.05]);
+        ylim([max(.8, yMinLZNorm), min(1.2, yMaxLZNorm)]);
+        % ylim([.85, 1.05]);
         set(gca, 'XTickLabelMode', 'auto');
         set(gca, 'YTickLabelMode', 'auto');
         grid on;

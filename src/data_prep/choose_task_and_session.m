@@ -41,10 +41,6 @@ end
 
 
 %% =============================    Data Loading    =============================
-fprintf('\n=== Loading %s %s data ===\n', sessionType, dataSource);
-
-% Create filename suffix based on PCA flag (will be set in analysis script)
-% This is a placeholder - actual value will be set in criticality_sliding_window_ar.m
 
 %% =============================    Spontaneous Data Loading    =============================
 % Data type selection
@@ -61,8 +57,8 @@ sessionName =  'ag112321_1';
 sessionType = 'reach';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 
 % For reach data: specify session name (uncomment and set one)
-% sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh';  % GOOD (only 4 m23)
-sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh';  % GOOD (only 6 m23)
+sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh';  % GOOD (only 4 m23)
+% sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh';  % GOOD (only 6 m23)
 % sessionName =  'AB2_11-May-2023 17_31_00_NeuroBeh';  % OK (21 M56, 11 M23)
 % sessionName =  'AB2_30-May-2023 12_49_52_NeuroBeh';  %  GOOD
 % sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh';  % GOOD enough (only 4 m23 though)

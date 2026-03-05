@@ -18,6 +18,27 @@ if exist(utilsPath, 'dir')
     addpath(utilsPath);
 end
 
+% Light-plot options to avoid renderer crashes and heavy export (many windows = many vertices)
+plotResolution = 300;
+if isfield(config, 'plotResolution') && ~isempty(config.plotResolution)
+    plotResolution = config.plotResolution;
+end
+% No downsampling: keep all vertices (Inf). Set config.maxPlotPoints to e.g. 500 to re-enable light plot.
+maxPlotPoints = Inf;
+if isfield(config, 'maxPlotPoints') && ~isempty(config.maxPlotPoints)
+    maxPlotPoints = config.maxPlotPoints;
+end
+useSoftwareRenderer = true;
+if isfield(config, 'useSoftwareRenderer') && ~isempty(config.useSoftwareRenderer)
+    useSoftwareRenderer = config.useSoftwareRenderer;
+end
+saveEps = true;
+if isfield(config, 'saveEps') && ~isempty(config.saveEps)
+    saveEps = config.saveEps;
+end
+% Downsample long series to this many points for all fill/plot (fewer vertices = less crash-prone)
+downsample_series = @(x, varargin) downsample_plot_series(x, maxPlotPoints, varargin{:});
+
 % Extract data from results
 areas = results.areas;
 d2 = results.d2;  % Raw d2 values
@@ -35,6 +56,26 @@ if isfield(results.params, 'normalizeD2')
     normalizeD2 = results.params.normalizeD2;
 end
 
+% Detect subsampling usage (for optional error ribbons)
+useSubsampling = false;
+if isfield(results, 'useSubsampling')
+    useSubsampling = results.useSubsampling;
+elseif isfield(results.params, 'useSubsampling')
+    useSubsampling = results.params.useSubsampling;
+end
+
+% Per-window subsample matrices (raw and normalized), used for error ribbons
+d2SubsamplesAll = {};
+d2NormalizedSubsamples = {};
+if useSubsampling
+    if isfield(results, 'd2Subsamples')
+        d2SubsamplesAll = results.d2Subsamples;
+    end
+    if normalizeD2 && isfield(results, 'd2NormalizedSubsamples')
+        d2NormalizedSubsamples = results.d2NormalizedSubsamples;
+    end
+end
+
 % Use normalized d2 values if normalization is enabled
 if normalizeD2 && isfield(results, 'd2Normalized')
     d2ToPlot = results.d2Normalized;
@@ -44,8 +85,35 @@ else
     d2Label = 'd2';
 end
 
+% Pre-compute mean metric per area (for centering behavior proportion)
+metricMeans = cell(1, length(areas));
+for a = 1:length(areas)
+    if ~isempty(d2ToPlot{a})
+        validVals = d2ToPlot{a}(~isnan(d2ToPlot{a}));
+        if ~isempty(validVals)
+            metricMeans{a} = mean(validVals);
+        else
+            metricMeans{a} = nan;
+        end
+    else
+        metricMeans{a} = nan;
+    end
+end
+
+% Extract behavior proportion if available (spontaneous sessions)
+if isfield(results, 'behaviorProportion') && strcmp(results.sessionType, 'spontaneous')
+    behaviorProportion = results.behaviorProportion;
+    plotBehaviorProportion = true;
+else
+    behaviorProportion = cell(1, length(areas));
+    for a = 1:length(areas)
+        behaviorProportion{a} = [];
+    end
+    plotBehaviorProportion = false;
+end
+
 % Get areas to plot
-    areasToTest = 1:length(areas);
+areasToTest = 1:length(areas);
 
 sessionType = results.sessionType;
 slidingWindowSize = results.params.slidingWindowSize;
@@ -61,6 +129,10 @@ end
 figure(909); clf;
 set(gcf, 'Units', 'pixels');
 set(gcf, 'Position', plotConfig.targetPos);
+% Use software renderer to avoid OpenGL crashes
+if useSoftwareRenderer
+    set(gcf, 'Renderer', 'zbuffer');
+end
 
 numRows = length(areasToTest) + 1;  % Add one row for combined d2 plot
 
@@ -133,7 +205,8 @@ if analyzeD2
             if ~isempty(d2ToPlot{a}) && ~isempty(startS{a})
                 validIdx = ~isnan(d2ToPlot{a});
                 if any(validIdx)
-                    plot(startS{a}(validIdx), d2ToPlot{a}(validIdx), '-', ...
+                    [xLine, yLine] = downsample_series(startS{a}(validIdx), d2ToPlot{a}(validIdx));
+                    plot(xLine, yLine, '-', ...
                         'Color', areaColors{min(a, length(areaColors))}, ...
                         'LineWidth', 3, 'DisplayName', areas{a});
                 end
@@ -202,7 +275,8 @@ for idx = 1:length(areasToTest)
         validIdx = ~isnan(popActivityWindows{a});
         if any(validIdx)
             areaColor = areaColors{min(a, length(areaColors))};
-            plot(startS{a}(validIdx), popActivityWindows{a}(validIdx), '-', ...
+            [xLine, yLine] = downsample_series(startS{a}(validIdx), popActivityWindows{a}(validIdx));
+            plot(xLine, yLine, '-', ...
                 'Color', [.7 .7 .7], 'LineWidth', 2, ...
                 'HandleVisibility', 'off');
         end
@@ -215,12 +289,45 @@ for idx = 1:length(areasToTest)
 
     if analyzeD2
         yyaxis left;
-        % Plot real data first (so permutation line appears on top)
+        % Plot real data first (so error ribbons and permutation lines appear correctly)
         if ~isempty(d2ToPlot{a}) && ~isempty(startS{a})
             validIdx = ~isnan(d2ToPlot{a});
             if any(validIdx)
                 areaColor = areaColors{min(a, length(areaColors))};
-                plot(startS{a}(validIdx), d2ToPlot{a}(validIdx), '-', ...
+
+                % If using subsampling, draw error ribbons (std across subsamples)
+                if useSubsampling
+                    subMat = [];
+                    if normalizeD2 && ~isempty(d2NormalizedSubsamples) && ...
+                            a <= numel(d2NormalizedSubsamples) && ~isempty(d2NormalizedSubsamples{a})
+                        % Use normalized subsample matrix
+                        subMat = d2NormalizedSubsamples{a};  % [numWindows x nSubsamples]
+                    elseif ~normalizeD2 && ~isempty(d2SubsamplesAll) && ...
+                            a <= numel(d2SubsamplesAll) && ~isempty(d2SubsamplesAll{a})
+                        % Use raw d2 subsample matrix
+                        subMat = d2SubsamplesAll{a};  % [numWindows x nSubsamples]
+                    end
+
+                    if ~isempty(subMat) && size(subMat, 1) == numel(d2ToPlot{a})
+                        subMean = nanmean(subMat, 2);
+                        subStd = nanstd(subMat, 0, 2);  % Std across subsamples
+                        ribbonValid = ~isnan(subMean) & ~isnan(subStd) & ~isnan(startS{a}(:));
+                        if any(ribbonValid)
+                            xFill = startS{a}(ribbonValid);
+                            yMean = subMean(ribbonValid);
+                            yStd = subStd(ribbonValid);
+                            [xFill, yMean, yStd] = downsample_series(xFill, yMean, yStd);
+                            fill([xFill, fliplr(xFill)], ...
+                                 [yMean + yStd, fliplr(yMean - yStd)], ...
+                                 areaColor, 'FaceAlpha', 0.15, 'EdgeColor', 'none', ...
+                                 'HandleVisibility', 'off');
+                        end
+                    end
+                end
+
+                % Plot mean trace on top (downsampled for light export)
+                [xLine, yLine] = downsample_series(startS{a}(validIdx), d2ToPlot{a}(validIdx));
+                plot(xLine, yLine, '-', ...
                     'Color', areaColor, 'LineWidth', 3, 'DisplayName', 'Real data');
             end
         end
@@ -269,11 +376,7 @@ for idx = 1:length(areasToTest)
                 xFill = startS{a}(validIdx);
                 yMean = permutedMean(validIdx);
                 yStd = permutedStd(validIdx);
-
-                % Ensure row vectors for fill
-                if iscolumn(xFill); xFill = xFill'; end
-                if iscolumn(yMean); yMean = yMean'; end
-                if iscolumn(yStd); yStd = yStd'; end
+                [xFill, yMean, yStd] = downsample_series(xFill, yMean, yStd);
 
                 % Plot shaded region (mean ± std)
                 fill([xFill, fliplr(xFill)], ...
@@ -281,10 +384,29 @@ for idx = 1:length(areasToTest)
                     [0.7 0.7 1], 'FaceAlpha', 0.3, 'EdgeColor', 'none', ...
                     'DisplayName', 'Permuted mean ± std');
 
-                % Plot mean line
-                plot(startS{a}(validIdx), permutedMean(validIdx), '-', ...
+                % Plot mean line (downsampled)
+                [xLine, yLine] = downsample_series(startS{a}(validIdx), permutedMean(validIdx));
+                plot(xLine, yLine, '-', ...
                     'Color', [0.5 0.5 1], 'LineWidth', 1.5, 'LineStyle', '--', ...
                     'DisplayName', 'Permuted mean');
+            end
+        end
+    end
+    
+    % Plot behavior proportion (centered on metric mean) if available
+    if plotBehaviorProportion && ~isempty(behaviorProportion{a}) && ~isempty(startS{a}) && ...
+            ~isnan(metricMeans{a})
+        validBhvVals = behaviorProportion{a}(~isnan(behaviorProportion{a}));
+        if ~isempty(validBhvVals)
+            meanBhvVal = mean(validBhvVals);
+            % Center: subtract behavior mean, add metric mean; scale by 0.2 for visibility
+            behaviorProportionCentered = 0.2 * (behaviorProportion{a} - meanBhvVal) + metricMeans{a};
+            validIdxBhv = ~isnan(behaviorProportionCentered);
+            if any(validIdxBhv)
+                [xLineBhv, yLineBhv] = downsample_series(startS{a}(validIdxBhv), behaviorProportionCentered(validIdxBhv));
+                plot(xLineBhv, yLineBhv, ':', ...
+                    'Color', [0 0 0], 'LineWidth', 2, ...
+                    'DisplayName', sprintf('%s (bhv prop)', areas{a}));
             end
         end
     end
@@ -363,10 +485,11 @@ else
 end
 
 drawnow
-    exportgraphics(gcf, plotPath, 'Resolution', 300);
+    exportgraphics(gcf, plotPath, 'Resolution', plotResolution);
     fprintf('Saved plot to: %s\n', plotPath);
-    
-    % Also save as .eps
+
+% Optional EPS (off by default; vector export often triggers renderer crash)
+if saveEps
     if ~isempty(plotConfig.filePrefix)
         plotPathEps = fullfile(config.saveDir, ...
             sprintf('%s_criticality_%s_ar%s.eps', ...
@@ -376,9 +499,39 @@ drawnow
             sprintf('criticality_%s_ar%s.eps', ...
             sessionType, filenameSuffix));
     end
-    
-    exportgraphics(gcf, plotPathEps, 'ContentType', 'vector');
-    fprintf('Saved plot to: %s\n', plotPathEps);
+    try
+        set(gcf, 'Renderer', 'painters');
+        exportgraphics(gcf, plotPathEps, 'ContentType', 'vector');
+        fprintf('Saved plot to: %s\n', plotPathEps);
+    catch me
+        fprintf('Skipping EPS save (renderer failed): %s\n', me.message);
+    end
+end
+end
 
-
+function [xOut, varargout] = downsample_plot_series(x, maxPts, varargin)
+% Downsample long series to maxPts points for lighter plotting (avoids renderer crash).
+% Preserves first and last point. All outputs as row vectors.
+    n = numel(x);
+    if n <= maxPts
+        if iscolumn(x), x = x'; end
+        xOut = x;
+        varargout = cell(1, numel(varargin));
+        for i = 1:numel(varargin)
+            y = varargin{i};
+            if iscolumn(y), y = y'; end
+            varargout{i} = y;
+        end
+        return;
+    end
+    idx = round(linspace(1, n, maxPts));
+    xOut = x(idx);
+    if iscolumn(xOut), xOut = xOut'; end
+    varargout = cell(1, numel(varargin));
+    for i = 1:numel(varargin)
+        y = varargin{i};
+        yOut = y(idx);
+        if iscolumn(yOut), yOut = yOut'; end
+        varargout{i} = yOut;
+    end
 end

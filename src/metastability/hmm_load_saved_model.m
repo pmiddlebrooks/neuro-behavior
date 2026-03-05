@@ -1,12 +1,12 @@
-function [hmm_results] = hmm_load_saved_model(natOrReach, varargin)
+function [hmm_results] = hmm_load_saved_model(sessionType, varargin)
 %HMM_LOAD_SAVED_MODEL Load saved HMM analysis results for use with new data
 %
-%   hmm_results = hmm_load_saved_model(natOrReach)
-%   hmm_results = hmm_load_saved_model(natOrReach, 'brainArea', 'M56')
-%   hmm_results = hmm_load_saved_model(natOrReach, 'brainArea', 'M56', 'binSize', 0.01, 'minDur', 0.04)
+%   hmm_results = hmm_load_saved_model(sessionType)
+%   hmm_results = hmm_load_saved_model(sessionType, 'brainArea', 'M56')
+%   hmm_results = hmm_load_saved_model(sessionType, 'brainArea', 'M56', 'binSize', 0.01, 'minDur', 0.04)
 %
 %   INPUTS:
-%       natOrReach - String: 'Nat' for spontaneous data, 'Reach' for reach data
+%       sessionType - String: spontaneous for spontaneous data, 'reach' for reach data
 %       brainArea  - (Optional) String: 'M23', 'M56', 'DS', 'VS'. If not specified, returns all areas
 %       fileIndex  - (Optional) Integer: Index of file to load (1 = most recent, 2 = second most recent, etc.)
 %       binSize    - (Optional) Numeric: Bin size in seconds to filter files (e.g., 0.01)
@@ -29,7 +29,7 @@ function [hmm_results] = hmm_load_saved_model(natOrReach, varargin)
 %           .hmm_parameters   - Original HMM parameters from training
 %
 %       metadata   - Structure containing analysis metadata:
-%           .data_type        - 'Nat' or 'Reach'
+%           .data_type        - 'spontaneous' or 'reach'
 %           .brain_area       - Brain area analyzed
 %           .analysis_date    - Date of analysis
 %           .analysis_status  - 'SUCCESS' or 'FAILED'
@@ -43,13 +43,13 @@ function [hmm_results] = hmm_load_saved_model(natOrReach, varargin)
 %
 %   EXAMPLE:
 %       % Load all areas from the most recent file
-%       all_results = hmm_load_saved_model('Nat');
+%       all_results = hmm_load_saved_model('spontaneous');
 %
 %       % Load specific area from most recent file
-%       hmm_res = hmm_load_saved_model('Nat', 'brainArea', 'M56');
+%       hmm_res = hmm_load_saved_model('spontaneous', 'brainArea', 'M56');
 %
 %       % Load specific area from file with specific binSize and minDur
-%       hmm_res = hmm_load_saved_model('Nat', 'brainArea', 'M56', 'binSize', 0.01, 'minDur', 0.04);
+%       hmm_res = hmm_load_saved_model('spontaneous', 'brainArea', 'M56', 'binSize', 0.01, 'minDur', 0.04);
 %
 %       % Access continuous results
 %       state_sequence = hmm_res.continuous_results.sequence;
@@ -60,24 +60,24 @@ function [hmm_results] = hmm_load_saved_model(natOrReach, varargin)
 
 % Parse optional inputs
 p = inputParser;
-addRequired(p, 'natOrReach', @ischar);
+addRequired(p, 'sessionType', @ischar);
 addParameter(p, 'brainArea', [], @(x) ischar(x) || isempty(x));
 addParameter(p, 'fileIndex', 1, @isnumeric);
 addParameter(p, 'binSize', [], @isnumeric);
 addParameter(p, 'minDur', [], @isnumeric);
-parse(p, natOrReach, varargin{:});
+parse(p, sessionType, varargin{:});
 
-natOrReach = p.Results.natOrReach;
+sessionType = p.Results.sessionType;
 brainArea = p.Results.brainArea;
 fileIndex = p.Results.fileIndex;
 binSize = p.Results.binSize;
 minDur = p.Results.minDur;
 
 % Validate inputs
-validDataTypes = {'Nat', 'Reach'};
+validDataTypes = {'spontaneous', 'reach'};
 validBrainAreas = {'M23', 'M56', 'DS', 'VS'};
 
-if ~ismember(natOrReach, validDataTypes)
+if ~ismember(sessionType, validDataTypes)
     error('Invalid data type. Must be one of: %s', strjoin(validDataTypes, ', '));
 end
 
@@ -109,7 +109,7 @@ end
 
 %% Find and load the HMM results file
 fprintf('Looking for HMM results files...\n');
-fprintf('Data type: %s\n', natOrReach);
+fprintf('Data type: %s\n', sessionType);
 if ~isempty(brainArea)
     fprintf('Brain area: %s\n', brainArea);
 else
@@ -118,7 +118,7 @@ end
 
 % If both binSize and minDur are specified, construct filename directly (like hmm_mazz_peri_nat.m)
 if ~isempty(binSize) && ~isempty(minDur)
-    if strcmpi(natOrReach, 'Reach')
+    if strcmpi(sessionType, 'reach')
         % For Reach data: need to search session folders
         reachResultsDir = paths.reachResultsPath;
         if ~exist(reachResultsDir, 'dir')
@@ -173,7 +173,7 @@ else
     matchingFiles = {};
     filePaths = {};
     
-    if strcmpi(natOrReach, 'Reach')
+    if strcmpi(sessionType, 'reach')
         % For Reach data: look in session-specific folders
         reachResultsDir = paths.reachResultsPath;
         if ~exist(reachResultsDir, 'dir')
@@ -210,7 +210,7 @@ else
     end
     
     if isempty(matchingFiles)
-        error('No matching HMM results files found for %s data.\nCheck the results directories.', natOrReach);
+        error('No matching HMM results files found for %s data.\nCheck the results directories.', sessionType);
     end
     
     % Filter files by binSize and minDur if partially specified
@@ -247,11 +247,11 @@ else
         if isempty(filteredFiles)
             if ~isempty(binSize) && ~isempty(minDur)
                 error('No matching HMM results files found for %s data with binSize=%.3f and minDur=%.3f', ...
-                    natOrReach, binSize, minDur);
+                    sessionType, binSize, minDur);
             elseif ~isempty(binSize)
-                error('No matching HMM results files found for %s data with binSize=%.3f', natOrReach, binSize);
+                error('No matching HMM results files found for %s data with binSize=%.3f', sessionType, binSize);
             else
-                error('No matching HMM results files found for %s data with minDur=%.3f', natOrReach, minDur);
+                error('No matching HMM results files found for %s data with minDur=%.3f', sessionType, minDur);
             end
         end
         

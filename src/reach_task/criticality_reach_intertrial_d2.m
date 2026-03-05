@@ -122,6 +122,12 @@ minBinsPerWindow = 1000;  % Minimum bins per window (used for optimal bin size, 
 nShuffles = 3;      % Number of circular permutations for d2 normalization
 normalizeD2 = true;  % Set to true to normalize d2 by shuffled d2 values
 
+% Optional neural subsampling configuration for windowed d2
+useSubsampling = false;        % If true, subsample neurons within each area
+nSubsamples = 10;              % Number of independent subsampling iterations
+nNeuronsSubsample = 10;        % Number of neurons per subsample
+minNeuronsMultiple = 1.0;      % Minimum neurons required = round(nNeuronsSubsample * minNeuronsMultiple)
+
 % PCA options
 pcaFlag = 0;           % Set to 1 to use PCA
 pcaFirstFlag = 1;      % Use first nDim dimensions if 1, last nDim if 0
@@ -692,7 +698,7 @@ for a = areasToTest
                 % Compute d2 for this window
                 if ~isempty(wPopActivity)
                     try
-                        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                        [varphi, ~] = myYuleWalker3(double(wPopActivity), pOrder);
                         d2PerWindow(w) = getFixedPointDistance2(pOrder, critType, varphi);
                     catch
                         d2PerWindow(w) = nan;
@@ -718,7 +724,7 @@ for a = areasToTest
                         % Compute d2 on permuted data
                         if ~isempty(permutedPopActivity)
                             try
-                                [varphiPerm, ~] = myYuleWalker3(permutedPopActivity, pOrder);
+                                [varphiPerm, ~] = myYuleWalker3(double(permutedPopActivity), pOrder);
                                 d2ShuffledPerWindow(w, s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
                             catch
                                 d2ShuffledPerWindow(w, s) = nan;
@@ -773,7 +779,7 @@ for a = areasToTest
                 % Compute d2 for this window
                 if ~isempty(wPopActivity)
                     try
-                        [varphi, ~] = myYuleWalker3(wPopActivity, pOrder);
+                        [varphi, ~] = myYuleWalker3(double(wPopActivity), pOrder);
                         d2PerWindow(w) = getFixedPointDistance2(pOrder, critType, varphi);
                     catch
                         d2PerWindow(w) = nan;
@@ -799,7 +805,7 @@ for a = areasToTest
                         % Compute d2 on permuted data
                         if ~isempty(permutedPopActivity)
                             try
-                                [varphiPerm, ~] = myYuleWalker3(permutedPopActivity, pOrder);
+                                [varphiPerm, ~] = myYuleWalker3(double(permutedPopActivity), pOrder);
                                 d2ShuffledPerWindow(w, s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
                             catch
                                 d2ShuffledPerWindow(w, s) = nan;
