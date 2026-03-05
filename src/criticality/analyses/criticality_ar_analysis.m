@@ -37,10 +37,11 @@ function results = criticality_ar_analysis(dataStruct, config)
     validate_workspace_vars({'sessionType', 'spikeTimes', 'spikeClusters', 'areas', 'idMatIdx'}, dataStruct, ...
         'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
     
-    % Set defaults only if config is not supplied or is empty
+    % Merge in defaults for any missing config fields (allows partial config from callers)
     if nargin < 2 || isempty(config) || ~isstruct(config)
-    config = set_config_defaults(config);
+        config = struct();
     end
+    config = set_config_defaults(config);
     
     sessionType = dataStruct.sessionType;
     areas = dataStruct.areas;
@@ -267,6 +268,18 @@ function results = criticality_ar_analysis(dataStruct, config)
     [popActivity, mrBr, d2, d2Normalized, startS, popActivityWindows, popActivityFull] = ...
         deal(cell(1, numAreas));
     
+    % Initialize behavior proportion for spontaneous sessions if configured
+    if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
+            isfield(config, 'behaviorDenominatorIDs') && ...
+            ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+        behaviorProportion = cell(1, numAreas);
+    else
+        behaviorProportion = cell(1, numAreas);
+        for a = 1:numAreas
+            behaviorProportion{a} = [];
+        end
+    end
+    
     % Optional: store per-subsample d2 (raw and normalized) for plotting error ribbons
     d2SubsamplesAll = cell(1, numAreas);
     d2NormalizedSubsamplesAll = cell(1, numAreas);
@@ -351,6 +364,7 @@ function results = criticality_ar_analysis(dataStruct, config)
             startS{a} = [];
             popActivityWindows{a} = [];
             popActivityFull{a} = [];
+            behaviorProportion{a} = [];
             if config.enablePermutations
                 d2Permuted{a} = [];
                 mrBrPermuted{a} = [];
@@ -366,13 +380,29 @@ function results = criticality_ar_analysis(dataStruct, config)
     
     fprintf('  Will process %d area(s): %s\n', length(areasToProcess), strjoin(areas(areasToProcess), ', '));
     
-    % Main analysis loop
+    % Main analysis loop (area-wise, optionally parallel via parfor)
     fprintf('\n=== Processing Areas ===\n');
-    for a = areasToProcess
+    
+    % Pre-allocate temporary cell arrays indexed by loop variable (for parfor compatibility)
+    nAreasToProcess = length(areasToProcess);
+    tempPopActivity = cell(1, nAreasToProcess);
+    tempMrBr = cell(1, nAreasToProcess);
+    tempD2 = cell(1, nAreasToProcess);
+    tempD2Normalized = cell(1, nAreasToProcess);
+    tempStartS = cell(1, nAreasToProcess);
+    tempPopActivityWindows = cell(1, nAreasToProcess);
+    tempPopActivityFull = cell(1, nAreasToProcess);
+    tempD2SubsamplesAll = cell(1, nAreasToProcess);
+    tempD2NormalizedSubsamplesAll = cell(1, nAreasToProcess);
+    tempD2Permuted = cell(1, nAreasToProcess);
+    tempMrBrPermuted = cell(1, nAreasToProcess);
+    tempBehaviorProportion = cell(1, nAreasToProcess);
+    
+    % parfor idx = 1:nAreasToProcess
+    for idx = 1:nAreasToProcess
+        a = areasToProcess(idx);  % Actual area index
         fprintf('\nProcessing area %s (%s)...\n', areas{a}, sessionType);
         tic;
-        
-        aID = dataStruct.idMatIdx{a};
         
         % Calculate window size in samples for this area
         winSamples = round(slidingWindowSize(a) / binSize(a));
@@ -412,9 +442,25 @@ function results = criticality_ar_analysis(dataStruct, config)
         end
         
         numNeuronsArea = size(aDataMat, 2);
-        popActivity{a} = mean(aDataMat, 2);
-        [startS{a}, mrBr{a}, d2{a}, d2Normalized{a}, popActivityWindows{a}, popActivityFull{a}] = ...
+        popActivityLocal = mean(aDataMat, 2);
+        [startSLocal, mrBrLocal, d2Local, d2NormalizedLocal, popActivityWindowsLocal, popActivityFullLocal] = ...
             deal(nan(1, numWindows));
+        
+        % Initialize behavior proportion storage for this area if enabled
+        if strcmp(sessionType, 'spontaneous') && isfield(dataStruct, 'bhvID') && ...
+                ~isempty(dataStruct.bhvID) && isfield(config, 'behaviorNumeratorIDs') && ...
+                isfield(config, 'behaviorDenominatorIDs') && ...
+                ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+            tempBehaviorProportion{idx} = nan(1, numWindows);
+        else
+            tempBehaviorProportion{idx} = [];
+        end
+        
+        % Local storage for subsampling and permutations
+        d2SubsamplesLocal = [];
+        d2NormalizedSubsamplesLocal = [];
+        d2PermutedLocal = [];
+        mrBrPermutedLocal = [];
         
         % Precompute window indices for this area (shared across subsamples)
         windowIndices = nan(numWindows, 2);
@@ -438,6 +484,9 @@ function results = criticality_ar_analysis(dataStruct, config)
             if config.enablePermutations && config.normalizeD2 && config.analyzeD2
                 d2PermutedAll = nan(numWindows, config.nShuffles * nSubsamples);
                 mrBrPermutedAll = nan(numWindows, config.nShuffles * nSubsamples);
+            else
+                d2PermutedAll = [];
+                mrBrPermutedAll = [];
             end
             
             % Draw independent neuron subsets for each subsample
@@ -458,7 +507,7 @@ function results = criticality_ar_analysis(dataStruct, config)
                 % Process each window using common centerTime
                 for w = 1:numWindows
                     centerTime = commonCenterTimes(w);
-                    startS{a}(w) = centerTime;
+                    startSLocal(w) = centerTime;
                     
                     startIdx = windowIndices(w, 1);
                     endIdx = windowIndices(w, 2);
@@ -470,9 +519,33 @@ function results = criticality_ar_analysis(dataStruct, config)
                     
                     % Full-population activity (for plotting and correlations; same across subsamples)
                     if s == 1
-                        wPopActivityFull = popActivity{a}(startIdx:endIdx);
-                        popActivityWindows{a}(w) = mean(wPopActivityFull);
-                        popActivityFull{a}(w) = popActivity{a}(startIdx + round(winSamples/2) - 1);
+                        wPopActivityFull = popActivityLocal(startIdx:endIdx);
+                        popActivityWindowsLocal(w) = mean(wPopActivityFull);
+                        popActivityFullLocal(w) = popActivityLocal(startIdx + round(winSamples/2) - 1);
+                        
+                        % Calculate behavior proportion once per window for this area
+                        if ~isempty(tempBehaviorProportion{idx})
+                            if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+                                fsBhv = dataStruct.fsBhv;
+                                bhvBinSize = 1 / fsBhv;
+                                winStartTime = centerTime - slidingWindowSize(a) / 2;
+                                winEndTime = centerTime + slidingWindowSize(a) / 2;
+                                bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
+                                bhvEndIdx = round(winEndTime / bhvBinSize);
+                                bhvStartIdx = max(1, bhvStartIdx);
+                                bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
+                                if bhvStartIdx <= bhvEndIdx
+                                    windowBhvID = dataStruct.bhvID(bhvStartIdx:bhvEndIdx);
+                                    numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
+                                    denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
+                                    if denominatorCount > 0
+                                        tempBehaviorProportion{idx}(w) = numeratorCount / denominatorCount;
+                                    else
+                                        tempBehaviorProportion{idx}(w) = nan;
+                                    end
+                                end
+                            end
+                        end
                     end
                     
                     % Subsampled population activity for metrics
@@ -514,38 +587,38 @@ function results = criticality_ar_analysis(dataStruct, config)
             
             % Aggregate metrics across subsamples (mean across subsamples per window)
             if config.analyzeMrBr
-                mrBr{a} = nanmean(mrBrSubsamples, 2)';
+                mrBrLocal = nanmean(mrBrSubsamples, 2)';
             else
-                mrBr{a}(:) = nan;
+                mrBrLocal(:) = nan;
             end
             
             if config.analyzeD2
-                d2{a} = nanmean(d2Subsamples, 2)';
+                d2Local = nanmean(d2Subsamples, 2)';
             else
-                d2{a}(:) = nan;
+                d2Local(:) = nan;
             end
             
             % Store full set of raw d2 subsamples for optional plotting
-            d2SubsamplesAll{a} = d2Subsamples;
+            d2SubsamplesLocal = d2Subsamples;
             
             if config.enablePermutations && config.normalizeD2 && config.analyzeD2
                 % Use subsample-normalized values as primary normalized metric
-                d2Normalized{a} = nanmean(d2NormalizedSubsamples, 2)';
-                d2NormalizedSubsamplesAll{a} = d2NormalizedSubsamples;
+                d2NormalizedLocal = nanmean(d2NormalizedSubsamples, 2)';
+                d2NormalizedSubsamplesLocal = d2NormalizedSubsamples;
                 % Expose all permutation results for summary statistics
-                d2Permuted{a} = d2PermutedAll;
+                d2PermutedLocal = d2PermutedAll;
                 if config.analyzeMrBr
-                    mrBrPermuted{a} = mrBrPermutedAll;
+                    mrBrPermutedLocal = mrBrPermutedAll;
                 end
             else
-                d2NormalizedSubsamplesAll{a} = [];
-                d2Normalized{a}(:) = nan;
+                d2NormalizedSubsamplesLocal = [];
+                d2NormalizedLocal(:) = nan;
                 % No stored permutations in this configuration
-                if isempty(d2Permuted{a})
-                    d2Permuted{a} = [];
+                if isempty(d2PermutedLocal)
+                    d2PermutedLocal = [];
                 end
-                if isempty(mrBrPermuted{a})
-                    mrBrPermuted{a} = [];
+                if isempty(mrBrPermutedLocal)
+                    mrBrPermutedLocal = [];
                 end
             end
         else
@@ -554,7 +627,7 @@ function results = criticality_ar_analysis(dataStruct, config)
             % Process each window using common centerTime
             for w = 1:numWindows
                 centerTime = commonCenterTimes(w);
-                startS{a}(w) = centerTime;
+                startSLocal(w) = centerTime;
                 
                 % Convert centerTime to indices for this area's binning
                 % Use area-specific optimal window size
@@ -567,22 +640,46 @@ function results = criticality_ar_analysis(dataStruct, config)
                     continue;
                 end
                 
-                wPopActivity = popActivity{a}(startIdx:endIdx);
-                popActivityWindows{a}(w) = mean(wPopActivity);
-                popActivityFull{a}(w) = popActivity{a}(startIdx + round(winSamples/2) - 1);
+                wPopActivity = popActivityLocal(startIdx:endIdx);
+                popActivityWindowsLocal(w) = mean(wPopActivity);
+                popActivityFullLocal(w) = popActivityLocal(startIdx + round(winSamples/2) - 1);
+                
+                % Calculate behavior proportion for this window if enabled
+                if ~isempty(tempBehaviorProportion{idx})
+                    if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+                        fsBhv = dataStruct.fsBhv;
+                        bhvBinSize = 1 / fsBhv;
+                        winStartTime = centerTime - slidingWindowSize(a) / 2;
+                        winEndTime = centerTime + slidingWindowSize(a) / 2;
+                        bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
+                        bhvEndIdx = round(winEndTime / bhvBinSize);
+                        bhvStartIdx = max(1, bhvStartIdx);
+                        bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
+                        if bhvStartIdx <= bhvEndIdx
+                            windowBhvID = dataStruct.bhvID(bhvStartIdx:bhvEndIdx);
+                            numeratorCount = sum(ismember(windowBhvID, config.behaviorNumeratorIDs));
+                            denominatorCount = sum(ismember(windowBhvID, config.behaviorDenominatorIDs));
+                            if denominatorCount > 0
+                                tempBehaviorProportion{idx}(w) = numeratorCount / denominatorCount;
+                            else
+                                tempBehaviorProportion{idx}(w) = nan;
+                            end
+                        end
+                    end
+                end
                 
                 if config.analyzeMrBr
                     result = branching_ratio_mr_estimation(wPopActivity);
-                    mrBr{a}(w) = result.branching_ratio;
+                    mrBrLocal(w) = result.branching_ratio;
                 else
-                    mrBr{a}(w) = nan;
+                    mrBrLocal(w) = nan;
                 end
                 
                 if config.analyzeD2
                     [varphi, ~] = myYuleWalker3(double(wPopActivity), config.pOrder);
-                    d2{a}(w) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                    d2Local(w) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
                 else
-                    d2{a}(w) = nan;
+                    d2Local(w) = nan;
                 end
             end
             
@@ -590,44 +687,77 @@ function results = criticality_ar_analysis(dataStruct, config)
             if config.enablePermutations
                 if config.pcaFlag
                     % Use PCA-reconstructed data for permutations
-                    [d2Permuted{a}, mrBrPermuted{a}] = perform_circular_permutations_pca(...
+                    [d2PermutedLocal, mrBrPermutedLocal] = perform_circular_permutations_pca(...
                         reconstructedDataMat{a}, a, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config, timeRange, tempBinSize);
                 else
                     % Use original binned data for permutations
-                    [d2Permuted{a}, mrBrPermuted{a}] = perform_circular_permutations(...
+                    [d2PermutedLocal, mrBrPermutedLocal] = perform_circular_permutations(...
                         aDataMat, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config);
                 end
                 
                 % Normalize d2 by shuffled d2 values if requested
-                if config.normalizeD2 && config.analyzeD2 && ~isempty(d2Permuted{a})
+                if config.normalizeD2 && config.analyzeD2 && ~isempty(d2PermutedLocal)
                     % Calculate mean shuffled d2 for each window
-                    d2PermutedMean = nanmean(d2Permuted{a}, 2);
+                    d2PermutedMean = nanmean(d2PermutedLocal, 2);
                     % Normalize: d2Normalized = d2 / mean(shuffled_d2)
                     for w = 1:numWindows
-                        if ~isnan(d2{a}(w)) && ~isnan(d2PermutedMean(w)) && d2PermutedMean(w) > 0
-                            d2Normalized{a}(w) = d2{a}(w) / d2PermutedMean(w);
+                        if ~isnan(d2Local(w)) && ~isnan(d2PermutedMean(w)) && d2PermutedMean(w) > 0
+                            d2NormalizedLocal(w) = d2Local(w) / d2PermutedMean(w);
                         else
-                            d2Normalized{a}(w) = nan;
+                            d2NormalizedLocal(w) = nan;
                         end
                     end
                 else
                     % If normalization disabled or no permutations, set to NaN
-                    d2Normalized{a}(:) = nan;
+                    d2NormalizedLocal(:) = nan;
                 end
             else
                 % Initialize empty if permutations disabled
-                if isempty(d2Permuted{a})
-                    d2Permuted{a} = [];
+                if isempty(d2PermutedLocal)
+                    d2PermutedLocal = [];
                 end
-                if isempty(mrBrPermuted{a})
-                    mrBrPermuted{a} = [];
+                if isempty(mrBrPermutedLocal)
+                    mrBrPermutedLocal = [];
                 end
                 % If no permutations, normalization not possible
-                d2Normalized{a}(:) = nan;
+                d2NormalizedLocal(:) = nan;
             end
         end
         
         fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
+        
+        % Store local results into temporary cell arrays
+        tempPopActivity{idx} = popActivityLocal;
+        tempMrBr{idx} = mrBrLocal;
+        tempD2{idx} = d2Local;
+        tempD2Normalized{idx} = d2NormalizedLocal;
+        tempStartS{idx} = startSLocal;
+        tempPopActivityWindows{idx} = popActivityWindowsLocal;
+        tempPopActivityFull{idx} = popActivityFullLocal;
+        tempD2SubsamplesAll{idx} = d2SubsamplesLocal;
+        tempD2NormalizedSubsamplesAll{idx} = d2NormalizedSubsamplesLocal;
+        tempD2Permuted{idx} = d2PermutedLocal;
+        tempMrBrPermuted{idx} = mrBrPermutedLocal;
+        tempBehaviorProportion{idx} = tempBehaviorProportion{idx};
+    end
+    
+    % Map temporary results back to correct area indices
+    for idx = 1:nAreasToProcess
+        a = areasToProcess(idx);
+        popActivity{a} = tempPopActivity{idx};
+        mrBr{a} = tempMrBr{idx};
+        d2{a} = tempD2{idx};
+        d2Normalized{a} = tempD2Normalized{idx};
+        startS{a} = tempStartS{idx};
+        popActivityWindows{a} = tempPopActivityWindows{idx};
+        popActivityFull{a} = tempPopActivityFull{idx};
+        d2SubsamplesAll{a} = tempD2SubsamplesAll{idx};
+        d2NormalizedSubsamplesAll{a} = tempD2NormalizedSubsamplesAll{idx};
+        behaviorProportion{a} = tempBehaviorProportion{idx};
+        if config.enablePermutations
+            d2Permuted{a} = tempD2Permuted{idx};
+            mrBrPermuted{a} = tempMrBrPermuted{idx};
+        end
     end
     
     % Build results structure
@@ -641,7 +771,8 @@ function results = criticality_ar_analysis(dataStruct, config)
         popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, ...
         popActivityWindowsUnmodulated, popActivityFullUnmodulated, ...
         binSizeModulated, binSizeUnmodulated, ...
-        slidingWindowSizeModulated, slidingWindowSizeUnmodulated);
+        slidingWindowSizeModulated, slidingWindowSizeUnmodulated, ...
+        behaviorProportion);
     
     % Save results if requested
     if config.saveData
@@ -1092,7 +1223,8 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     popActivityUnmodulated, mrBrUnmodulated, d2Unmodulated, startSUnmodulated, ...
     popActivityWindowsUnmodulated, popActivityFullUnmodulated, ...
     binSizeModulated, binSizeUnmodulated, ...
-    slidingWindowSizeModulated, slidingWindowSizeUnmodulated)
+    slidingWindowSizeModulated, slidingWindowSizeUnmodulated, ...
+    behaviorProportion)
 % BUILD_RESULTS_STRUCTURE Build results structure
     
     results = struct();
@@ -1108,6 +1240,20 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.binSize = binSize;
     results.slidingWindowSize = slidingWindowSize;
     results.d2WindowSize = slidingWindowSize;
+    
+    % Store behavior proportion if available (spontaneous sessions)
+    if strcmp(dataStruct.sessionType, 'spontaneous') && ...
+            isfield(config, 'behaviorNumeratorIDs') && isfield(config, 'behaviorDenominatorIDs') && ...
+            ~isempty(config.behaviorNumeratorIDs) && ~isempty(config.behaviorDenominatorIDs)
+        results.behaviorProportion = behaviorProportion;
+        results.params.behaviorNumeratorIDs = config.behaviorNumeratorIDs;
+        results.params.behaviorDenominatorIDs = config.behaviorDenominatorIDs;
+    else
+        results.behaviorProportion = cell(1, length(areas));
+        for a = 1:length(areas)
+            results.behaviorProportion{a} = [];
+        end
+    end
     results.params.slidingWindowSize = config.slidingWindowSize;
     results.params.stepSize = config.stepSize;
     results.params.analyzeD2 = config.analyzeD2;

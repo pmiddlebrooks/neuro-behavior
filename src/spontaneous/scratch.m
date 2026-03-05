@@ -215,7 +215,6 @@ patterns(end)
 uniqueBehaviors = dataFull.Behavior(ia);
 
 % Sort by Code
-[sortedCodes, sortIdx] = sort(uniqueCodes);
 sortedBehaviors = uniqueBehaviors(sortIdx);
 
 % Display mapping

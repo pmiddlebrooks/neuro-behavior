@@ -1,9 +1,12 @@
-%%
+%% 
 % Criticality AR Analysis - Wrapper Script
 % Backward-compatible wrapper that uses the new function-based architecture
 %
 % This script maintains compatibility with the old workflow while using
 % the new modular functions.
+
+% Want to parallelize the area-wise analysis?
+runParallel = 0;
 
 % Set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
@@ -35,8 +38,8 @@ end
 opts = neuro_behavior_options;
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = 0;
-opts.collectEnd = 60*60;
-% opts.collectEnd = [];
+% opts.collectEnd = 60*60;
+opts.collectEnd = [];
 if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
 opts.collectEnd = [];
 end
@@ -94,6 +97,9 @@ if loadAndPlot
     
     % Add saveDir from dataStruct (needed for plotting)
     config.saveDir = dataStruct.saveDir;
+    % Optional: if PNG export crashes, use lighter plotting (defaults in plot fn):
+    % config.plotResolution = 100; config.maxPlotPoints = 500;
+    % config.useSoftwareRenderer = true; config.saveEps = false;
     
     % Allow user to specify time range for plotting
     % Example: config.plotTimeRange = [100, 500];  % Plot from 100s to 500s
@@ -124,6 +130,14 @@ if loadAndPlot
                 
                 if isfield(results, 'd2Normalized') && ~isempty(results.d2Normalized{a})
                     results.d2Normalized{a} = results.d2Normalized{a}(timeMask);
+                end
+                
+                % Filter subsample matrices, keeping rows aligned with d2 / startS
+                if isfield(results, 'd2Subsamples') && ~isempty(results.d2Subsamples{a})
+                    results.d2Subsamples{a} = results.d2Subsamples{a}(timeMask, :);
+                end
+                if isfield(results, 'd2NormalizedSubsamples') && ~isempty(results.d2NormalizedSubsamples{a})
+                    results.d2NormalizedSubsamples{a} = results.d2NormalizedSubsamples{a}(timeMask, :);
                 end
                 
                 if ~isempty(results.mrBr{a})
@@ -161,6 +175,10 @@ if loadAndPlot
                 
                 if isfield(results, 'mrBrPermutedSEM') && ~isempty(results.mrBrPermutedSEM{a})
                     results.mrBrPermutedSEM{a} = results.mrBrPermutedSEM{a}(timeMask);
+                end
+                
+                if isfield(results, 'behaviorProportion') && ~isempty(results.behaviorProportion{a})
+                    results.behaviorProportion{a} = results.behaviorProportion{a}(timeMask);
                 end
             end
         end
@@ -205,7 +223,7 @@ end
 % (These should be set before running this script)config = struct();
 config.slidingWindowSize = 10; % Default window size
 config.binSize = .05; % Default bin size
-config.stepSize = .5; % Default step size
+config.stepSize = .2; % Default step size
 config.minSpikesPerBin = 2.5;
 config.minBinsPerWindow = 1000;
 
@@ -220,19 +238,26 @@ config.nShuffles = 20;
 config.analyzeModulation = false;
 config.makePlots = true;
 config.saveData = true;  % Set to false to skip saving results
+% Optional: lighter plotting to avoid export crash (plotResolution, maxPlotPoints, useSoftwareRenderer, saveEps)
 config.useOptimalBinWindowFunction = false;
 
 % Additional parameters
 config.pOrder = 10;
 config.critType = 2;
-config.normalizeD2 = false;  % Normalize d2 by shuffled d2 values
+config.normalizeD2 = true;  % Normalize d2 by shuffled d2 values
 config.maxSpikesPerBin = 50;  % Maximum spikes per bin for filtering
 config.nMinNeurons = 10;  % Minimum number of neurons required per area (no subsampling)
 config.includeM2356 = true;  % Set to true to include combined M23+M56 area
 
+if strcmp(sessionType, 'spontaneous')
+    config.behaviorNumeratorIDs = 5:10;
+    config.behaviorDenominatorIDs = [config.behaviorNumeratorIDs, 0:2, 15:17];
+end
+
 % Optional list of brain areas (by name) to analyze.
 % Example: {'M23', 'M56'}; leave empty to analyze all available areas.
 config.brainAreas = {'M23', 'M56'};
+config.brainAreas = [];
 
 % Optional neural subsampling configuration
 % When useSubsampling is true:
@@ -254,6 +279,18 @@ config.modulationPlotFlag = false;  % Set to true to generate modulation analysi
 % (set by load_sliding_window_data)
 
 % Run analysis
+% Optional parallel pool for area-wise processing (similar to LZC sliding analysis)
+if runParallel
+    currentPool = gcp('nocreate');
+    if isempty(currentPool)
+        NumWorkers = min(3, length(dataStruct.areas));
+        parpool('local', NumWorkers);
+        fprintf('Started parallel pool with %d workers\n', NumWorkers);
+    else
+        fprintf('Using existing parallel pool with %d workers\n', currentPool.NumWorkers);
+    end
+end
+
 results = criticality_ar_analysis(dataStruct, config);
 
 

@@ -11,7 +11,7 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'spontaneous'
-batchSessionType = 'reach';  % Change this to process different session types
+batchSessionType = 'spontaneous';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
@@ -19,8 +19,8 @@ paths = get_paths;
 % Add new analyses here as needed
 analysesToRun = struct();
 analysesToRun.lzc = false;  % Run lzc analysis
-analysesToRun.rqa = true;         % Run RQA analysis
-analysesToRun.criticality_ar = false;  % Run criticality AR (d2/mrBr) analysis
+analysesToRun.rqa = false;         % Run RQA analysis
+analysesToRun.criticality_ar = true;  % Run criticality AR (d2/mrBr) analysis
 analysesToRun.criticality_av = false;  % Run criticality AV (avalanche) analysis
 analysesToRun.criticality_lfp = false; % Run criticality LFP analysis
 analysesToRun.dimensionality_pr = false;  % Run participation ratio analysis
@@ -122,7 +122,7 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
-for s = 8:numSessions
+for s = 4:numSessions
     sessionName = sessions{s};
     
     fprintf('\n');

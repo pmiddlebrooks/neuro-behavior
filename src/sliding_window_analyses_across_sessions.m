@@ -21,12 +21,12 @@
 %   metric values per session per area, and create bar plots comparing the two groups.
 
 %% Configuration
-analysisType = 'lzc';  % Options: 'criticality_ar', 'lzc', 'rqa', 'criticality_av', 'criticality_lfp', 'participation_ratio'
+analysisType = 'criticality_ar';  % Options: 'criticality_ar', 'lzc', 'rqa', 'criticality_av', 'criticality_lfp', 'participation_ratio'
 metricName = '';  % If empty, uses default for analysis type
-useNormalized = true;  % Use normalized metric if available (for non-PR analyses)
+useNormalized = false;  % Use normalized metric if available (for non-PR analyses)
 prNormalizationType = 'neurons';  % For participation_ratio: 'none', 'shuffle', 'neurons'
 filenameSuffix = '';  % Optional suffix (e.g., '_pca')
-timeRange = [300, 1500];  % Time range in seconds to analyze [startTime, endTime]. Use [] to analyze all data.
+timeRange = [2*60, 16*60];  % Time range in seconds to analyze [startTime, endTime]. Use [] to analyze all data.
 
 natColor = [0 191 255] ./ 255;   % Color for spontaneous sessions
 reachColor = [255 215 0] ./ 255; % Color for reach sessions

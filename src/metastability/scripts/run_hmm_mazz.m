@@ -19,16 +19,6 @@ if loadAndPlot
         sessionType = 'spontaneous';
     end
 
-    % Map sessionType to legacy natOrReach label for hmm_load_saved_model
-    switch lower(sessionType)
-        case 'spontaneous'
-            natOrReach = 'Nat';
-        case 'reach'
-            natOrReach = 'Reach';
-        otherwise
-            error('sessionType must be ''spontaneous'' or ''reach'' for loadAndPlot mode.');
-    end
-
     % Optional selection parameters
     brainArea = [];      % e.g., 'M56'
     binSizeLoad = [];    % e.g., 0.01
@@ -46,7 +36,7 @@ if loadAndPlot
     end
 
     fprintf('Loading saved HMM model via hmm_load_saved_model...\n');
-    hmmRes = hmm_load_saved_model(natOrReach, loadArgs{:});
+    hmmRes = hmm_load_saved_model(sessionType, loadArgs{:});
 
     % Add analyses path for new plotting function
     basePath = fileparts(mfilename('fullpath'));   % metastability/scripts
@@ -104,7 +94,7 @@ switch lower(sessionType)
     case 'spontaneous'
         % Spontaneous data
         opts.collectStart = 0;
-        opts.collectEnd = 30 * 60;
+        opts.collectEnd = [];
 
         freeDataPath = fullfile(paths.freeDataPath, ['animal_', animal], sessionNrn, 'recording1');
         opts.dataPath = freeDataPath;
