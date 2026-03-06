@@ -1186,8 +1186,15 @@ if ~isempty(segmentWindowsPlot) && exist('reachStart', 'var') && ~isempty(reachS
 
     figure(2002); clf;
 
+    % Choose reach times for plotting: use all original reaches if available
+    if exist('reachStartOriginal', 'var') && ~isempty(reachStartOriginal)
+        reachTimesForPlot = reachStartOriginal;
+    else
+        reachTimesForPlot = reachStart;
+    end
+
     % Global x-limits across all areas and d2 times
-    globalTimes = reachStart(:);
+    globalTimes = reachTimesForPlot(:);
     winFields = {'block1EngagedWindow','block1NotEngagedWindow', ...
                  'block2EngagedWindow','block2NotEngagedWindow'};
     for iField = 1:numel(winFields)
@@ -1343,9 +1350,9 @@ if ~isempty(segmentWindowsPlot) && exist('reachStart', 'var') && ~isempty(reachS
                 'FaceAlpha', 0.2, 'EdgeColor', 'none');
         end
 
-        % Vertical lines at each reach
-        for r = 1:numel(reachStart)
-            xReach = reachStart(r);
+        % Vertical lines at each reach (use all reaches if available)
+        for r = 1:numel(reachTimesForPlot)
+            xReach = reachTimesForPlot(r);
             plot(ax(idxArea), [xReach xReach], [yMinArea yMaxArea], ...
                 'k-', 'LineWidth', 0.5);
         end

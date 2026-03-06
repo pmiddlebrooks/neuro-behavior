@@ -1,33 +1,26 @@
 function segmentWindows = reach_task_engagement(fileName, opts)
 % REACH_TASK_ENGAGEMENT Defines time windows for engagement segments of a session
 %
-% This function identifies engagement segments of a reach task session based on
-% thresholded reach rates relative to the median:
-%   1. Block 1 engaged: largest window with at least nEngaged consecutive reaches
-%      whose reach rate is ABOVE the threshold (i.e., inter-reach intervals below
-%      the threshold interval).
-%   2. Block 1 not-engaged: largest window with at least nNotEngaged consecutive
-%      reaches whose reach rate is BELOW the threshold (i.e., inter-reach
-%      intervals above the threshold interval).
-%   3. Block 2 engaged: largest window with at least nEngaged consecutive reaches
-%      whose reach rate is ABOVE the threshold.
-%   4. Block 2 not-engaged: largest window with at least nNotEngaged consecutive
-%      reaches whose reach rate is BELOW the threshold.
-%
-% Threshold crossings are defined as the reach before the threshold is crossed.
+% Uses configurable percentiles of inter-reach intervals to define the largest
+% possible segments:
+%   - Engaged: contiguous stretch whose mean is BELOW engagedBelowPercentile,
+%     with at most engagedNumExcepts intervals above engagedAvoidPercentile.
+%   - Not-engaged: contiguous stretch whose mean is ABOVE nonengagedAbovePercentile,
+%     with at most nonengagedNumExcepts intervals below nonengagedAvoidPercentile.
+% For each block (Block 1 = before Block 2 start, Block 2 = from first Block 2 reach),
+% the function returns the single largest such segment of each type.
 %
 % Inputs:
-%   fileName - Path to reach data file (.mat file containing R and block matrices)
+%   fileName - Path to reach data file (.mat file containing R and Block matrices)
 %   opts     - Structure with optional fields:
-%       .timesMedian - Factor relative to the median reach RATE used to define
-%                     the engagement threshold (default: 1.0; >1 requires a
-%                     higher-than-median rate to be considered engaged).
-%       .windowSize - Window size for running average (default: 3 reaches)
-%       .nEngaged - Number of consecutive reaches with rate ABOVE threshold
-%                   required (default: 5)
-%       .nNotEngaged - Number of consecutive reaches with rate BELOW threshold
-%                      required (default: 5)
-%       .nReachMin - Minimum number of reaches required for any segment (default: 5)
+%       .nReachMin - Minimum number of reaches in a segment to be valid (default: 5)
+%       .engagedBelowPercentile - Segment mean must be below this percentile (default: 40)
+%       .engagedAvoidPercentile - At most engagedNumExcepts intervals may be above this (default: 60)
+%       .engagedNumExcepts - Allowed number of intervals above engagedAvoidPercentile (default: 2)
+%       .nonengagedAbovePercentile - Segment mean must be above this percentile (default: 60)
+%       .nonengagedAvoidPercentile - At most nonengagedNumExcepts intervals may be below this (default: 40)
+%       .nonengagedNumExcepts - Allowed number of intervals below nonengagedAvoidPercentile (default: 2)
+%       .plotSegments - If true, create a diagnostic plot (default: false)
 %
 % Outputs:
 %   segmentWindows - Structure with fields:
@@ -37,31 +30,43 @@ function segmentWindows = reach_task_engagement(fileName, opts)
 %       .block2NotEngagedWindow - [start stop] time window for Block 2 not-engaged (seconds) or []
 %
 % Example:
-%   opts.timesMedian = 0.5;
-%   opts.windowSize = 10;
-%   opts.nEngaged = 5;
-%   opts.nNotEngaged = 5;
-%   opts.nReachMin = 5;
+%   opts.nReachMin = 8;
+%   opts.engagedBelowPercentile = 40;
+%   opts.engagedAvoidPercentile = 60;
+%   opts.engagedNumExcepts = 1;
+%   opts.nonengagedAbovePercentile = 60;
+%   opts.nonengagedAvoidPercentile = 40;
+%   opts.nonengagedNumExcepts = 1;
+%   opts.plotSegments = true;  % optional: plot reaches and segments
 %   segmentWindows = reach_task_engagement('Y4_100623_Spiketimes_idchan_BEH.mat', opts);
 
 % Default options
 if nargin < 2
     opts = struct();
 end
-if ~isfield(opts, 'timesMedian')
-    opts.timesMedian = 1.0; % Default: threshold at median reach rate
-end
-if ~isfield(opts, 'windowSize')
-    opts.windowSize = 3; % Default: 3 reaches for running average
-end
-if ~isfield(opts, 'nEngaged')
-    opts.nEngaged = 5; % Default: 5 consecutive reaches with rate ABOVE threshold
-end
-if ~isfield(opts, 'nNotEngaged')
-    opts.nNotEngaged = 4; % Default: 5 consecutive reaches with rate BELOW threshold
-end
 if ~isfield(opts, 'nReachMin')
-    opts.nReachMin = 5; % Default: minimum 5 reaches for any segment
+    opts.nReachMin = 7;
+end
+if ~isfield(opts, 'engagedBelowPercentile')
+    opts.engagedBelowPercentile = 60;
+end
+if ~isfield(opts, 'engagedAvoidPercentile')
+    opts.engagedAvoidPercentile = 70;
+end
+if ~isfield(opts, 'engagedNumExcepts')
+    opts.engagedNumExcepts = 2;
+end
+if ~isfield(opts, 'nonengagedAbovePercentile')
+    opts.nonengagedAbovePercentile = 70;
+end
+if ~isfield(opts, 'nonengagedAvoidPercentile')
+    opts.nonengagedAvoidPercentile = 50;
+end
+if ~isfield(opts, 'nonengagedNumExcepts')
+    opts.nonengagedNumExcepts = 1;
+end
+if ~isfield(opts, 'plotSegments')
+    opts.plotSegments = false;
 end
 
 % Load reach data
@@ -88,89 +93,41 @@ else
     warning('No Block 2 reaches (reachClass == 3 or 4) found in data');
 end
 
-% Calculate inter-reach intervals and running average
+% Percentile-based engagement segmentation (configurable via opts)
 if length(reachStartSec) > 1
-    interReachIntervals = diff(reachStartSec); % Intervals in seconds
+    interReachIntervals = diff(reachStartSec); % Intervals in seconds (index i = between reach i and i+1)
     
-    % Calculate median of all inter-reach intervals
-    medianInterval = median(interReachIntervals);
+    % Thresholds from percentiles of all inter-reach intervals
+    engagedBelowThresh = prctile(interReachIntervals, opts.engagedBelowPercentile);
+    engagedAvoidThresh = prctile(interReachIntervals, opts.engagedAvoidPercentile);
+    nonengagedAboveThresh = prctile(interReachIntervals, opts.nonengagedAbovePercentile);
+    nonengagedAvoidThresh = prctile(interReachIntervals, opts.nonengagedAvoidPercentile);
     
-    % Define threshold in the interval domain such that:
-    %   runningAvg <= threshold  <=>  reach rate >= opts.timesMedian * medianRate
-    % where medianRate = 1 / medianInterval. This ensures "engaged" segments
-    % correspond to ABOVE-threshold reach rates and "not-engaged" to BELOW.
-    if opts.timesMedian <= 0
-        error('reach_task_engagement:InvalidTimesMedian', ...
-            'opts.timesMedian must be > 0 (got %g).', opts.timesMedian);
-    end
-    threshold = medianInterval / opts.timesMedian;
-    
-    % Calculate running average of intervals
-    windowSize = opts.windowSize;
-    runningAvg = zeros(length(interReachIntervals), 1);
-    
-    for i = 1:length(interReachIntervals)
-        % Window extends from max(1, i-windowSize+1) to i
-        windowStart = max(1, i - windowSize + 1);
-        windowEnd = i;
-        runningAvg(i) = mean(interReachIntervals(windowStart:windowEnd));
-    end
-    
-    % Find all threshold crossings
-    % A crossing occurs when runningAvg transitions from below to above or above to below
-    % The crossing is defined as the reach before the threshold is crossed
-    % runningAvg(i) is the running avg for interval between reach i and reach i+1
-    % If runningAvg(i) crosses threshold, the crossing reach is reach i+1, and we use reach i
-    
-    % Determine if each interval is above or below threshold
-    isAboveThreshold = runningAvg > threshold;
-    
-    % Find all crossings (transitions)
-    % Crossing from below to above: reach before is the reach at index i (reach i+1 is first above)
-    % Crossing from above to below: reach before is the reach at index i (reach i+1 is first below)
-    crossings = [];
-    for i = 1:length(isAboveThreshold)-1
-        if isAboveThreshold(i) ~= isAboveThreshold(i+1)
-            % Threshold crossed between interval i and i+1
-            % The reach before the crossing is reach i+1
-            crossings = [crossings; i+1, isAboveThreshold(i+1)]; % [reachIndex, isAboveAfterCrossing]
-        end
-    end
-    
-    % Find Block 1 windows: engaged and not-engaged
-    % Block 1 is before Block 2 engaged starts
+    nReachMin = opts.nReachMin;
     block1EndIdx = firstBlock2Idx - 1; % Last reach index in Block 1
+    
+    % Block 1: engaged and not-engaged (largest valid stretch in reaches 1 .. block1EndIdx)
     if block1EndIdx > 0
-        % Block 1 engaged: largest window with at least nEngaged consecutive reaches below threshold
-        block1EngagedWindow = findLargestWindowBelowThreshold(reachStartSec, runningAvg, threshold, ...
-            1, block1EndIdx, opts.nEngaged, opts.nReachMin);
-        % Block 1 not-engaged: largest window with at least nNotEngaged consecutive reaches above threshold
-        block1NotEngagedWindow = findLargestWindowAboveThreshold(reachStartSec, runningAvg, threshold, ...
-            1, block1EndIdx, opts.nNotEngaged, opts.nReachMin);
+        block1EngagedWindow = find_largest_engaged_percentile(reachStartSec, interReachIntervals, ...
+            engagedBelowThresh, engagedAvoidThresh, opts.engagedNumExcepts, 1, block1EndIdx, nReachMin);
+        block1NotEngagedWindow = find_largest_not_engaged_percentile(reachStartSec, interReachIntervals, ...
+            nonengagedAboveThresh, nonengagedAvoidThresh, opts.nonengagedNumExcepts, 1, block1EndIdx, nReachMin);
     else
         block1EngagedWindow = [];
         block1NotEngagedWindow = [];
     end
     
-    % Find Block 2 engaged window: largest window with at least nEngaged consecutive reaches below threshold
-    % Block 2 engaged is after Block 2 engaged starts
+    % Block 2: engaged and not-engaged (largest valid stretch in firstBlock2Idx .. end)
     if firstBlock2Idx <= length(reachStartSec)
-        block2EngagedWindow = findLargestWindowBelowThreshold(reachStartSec, runningAvg, threshold, ...
-            firstBlock2Idx, length(reachStartSec), opts.nEngaged, opts.nReachMin);
+        block2EngagedWindow = find_largest_engaged_percentile(reachStartSec, interReachIntervals, ...
+            engagedBelowThresh, engagedAvoidThresh, opts.engagedNumExcepts, firstBlock2Idx, length(reachStartSec), nReachMin);
+        block2NotEngagedWindow = find_largest_not_engaged_percentile(reachStartSec, interReachIntervals, ...
+            nonengagedAboveThresh, nonengagedAvoidThresh, opts.nonengagedNumExcepts, firstBlock2Idx, length(reachStartSec), nReachMin);
     else
         block2EngagedWindow = [];
-    end
-    
-    % Find Block 2 not-engaged window: largest window with at least nNotEngaged consecutive reaches above threshold
-    if firstBlock2Idx <= length(reachStartSec)
-        block2NotEngagedWindow = findLargestWindowAboveThreshold(reachStartSec, runningAvg, threshold, ...
-            firstBlock2Idx, length(reachStartSec), opts.nNotEngaged, opts.nReachMin);
-    else
         block2NotEngagedWindow = [];
     end
-    
 else
-    % If only one reach, cannot calculate intervals - return empty windows
     block1EngagedWindow = [];
     block1NotEngagedWindow = [];
     block2EngagedWindow = [];
@@ -184,168 +141,207 @@ segmentWindows.block1NotEngagedWindow = block1NotEngagedWindow;
 segmentWindows.block2EngagedWindow = block2EngagedWindow;
 segmentWindows.block2NotEngagedWindow = block2NotEngagedWindow;
 
+% Optional diagnostic plot for visualizing reaches and engagement segments
+if opts.plotSegments
+    try
+        plot_engagement_segments(reachStartSec, reachClass, segmentWindows, fileName);
+    catch plotErr
+        warning('reach_task_engagement:PlotFailed', ...
+            'Failed to create engagement plot: %s', plotErr.message);
+    end
 end
 
-function window = findLargestWindowBelowThreshold(reachStartSec, runningAvg, threshold, startReachIdx, endReachIdx, nConsecutive, nReachMin)
-% FINDLARGESTWINDOWBELOWTHRESHOLD Finds largest window with nConsecutive reaches below threshold
-%
-% Inputs:
-%   reachStartSec - Vector of reach start times in seconds
-%   runningAvg - Vector of running averages for intervals
-%   threshold - Threshold value
-%   startReachIdx - Starting reach index to search from
-%   endReachIdx - Ending reach index to search to
-%   nConsecutive - Number of consecutive reaches below threshold required
-%   nReachMin - Minimum number of reaches required for segment to be valid
-%
-% Outputs:
-%   window - [start stop] time window in seconds, or [] if no valid segment found
+end
 
-% Find all intervals in the range that are below threshold
-% Interval i is between reach i and reach i+1
-validIntervalStart = startReachIdx;
-validIntervalEnd = min(endReachIdx - 1, length(runningAvg));
+function window = find_largest_engaged_percentile(reachStartSec, interReachIntervals, belowThresh, avoidThresh, numExcepts, startReachIdx, endReachIdx, nReachMin)
+% FIND_LARGEST_ENGAGED_PERCENTILE Largest contiguous "engaged" stretch by percentile rules.
+%
+% Engaged: mean(intervals in segment) < belowThresh, and at most numExcepts intervals > avoidThresh.
+% Returns [startTime, endTime] in seconds or [] if no valid segment.
 
-if validIntervalStart > validIntervalEnd
-    % No valid intervals, return empty
+intervalStart = startReachIdx;
+intervalEnd   = endReachIdx - 1;
+if intervalStart > intervalEnd
     window = [];
     return;
 end
 
-validIntervals = validIntervalStart:validIntervalEnd;
-belowThreshold = runningAvg(validIntervals) <= threshold;
+nIntervals = length(interReachIntervals);
+intervalEnd = min(intervalEnd, nIntervals);
+maxLen = 0;
+bestA = [];
+bestB = [];
 
-% Find all segments with at least nConsecutive consecutive reaches below threshold
-% nConsecutive reaches means nConsecutive-1 consecutive intervals below threshold
-maxWindow = []; % Default to empty
-maxWindowSize = 0;
-
-% Need at least nConsecutive-1 intervals to have nConsecutive reaches
-if length(belowThreshold) >= nConsecutive - 1
-    i = 1;
-    while i <= length(belowThreshold) - (nConsecutive - 2)
-        % Check if we have nConsecutive-1 consecutive intervals below threshold starting at i
-        if i + nConsecutive - 2 <= length(belowThreshold) && all(belowThreshold(i:i+nConsecutive-2))
-            % Found a valid segment starting at interval i
-            % Find the full extent of this segment
-            segmentStartInterval = i;
-            segmentEndInterval = i;
-            
-            % Extend forward to find the end of the segment
-            for j = i:length(belowThreshold)
-                if belowThreshold(j)
-                    segmentEndInterval = j;
-                else
-                    break;
-                end
-            end
-            
-            % Convert interval indices to reach indices
-            % Interval segmentStartInterval corresponds to interval validIntervals(segmentStartInterval)
-            % This interval is between reach validIntervals(segmentStartInterval) and reach validIntervals(segmentStartInterval)+1
-            % The crossing INTO below threshold happens at the transition to interval segmentStartInterval
-            % The reach before this crossing is reach validIntervals(segmentStartInterval)
-            % The crossing OUT OF below threshold happens at the transition from interval segmentEndInterval to the next
-            % The reach before this crossing is reach validIntervals(segmentEndInterval)+1
-            windowStartReach = validIntervals(segmentStartInterval);
-            windowEndReach = min(validIntervals(segmentEndInterval) + 1, endReachIdx);
-            windowSize = windowEndReach - windowStartReach + 1;
-            
-            % Check that window meets both nConsecutive and nReachMin requirements
-            if windowSize >= nConsecutive && windowSize >= nReachMin && windowSize > maxWindowSize
-                maxWindowSize = windowSize;
-                maxWindow = [reachStartSec(windowStartReach), reachStartSec(windowEndReach)];
-            end
-            
-            % Move to after this segment
-            i = segmentEndInterval + 1;
-        else
-            i = i + 1;
+for a = intervalStart:intervalEnd
+    for b = a:intervalEnd
+        iv = interReachIntervals(a:b);
+        nReaches = length(iv) + 1;
+        if nReaches < nReachMin
+            continue;
+        end
+        nAboveAvoid = sum(iv > avoidThresh);
+        if nAboveAvoid > numExcepts
+            break;
+        end
+        if mean(iv) >= belowThresh
+            continue;
+        end
+        if (b - a + 1) > maxLen
+            maxLen = b - a + 1;
+            bestA = a;
+            bestB = b;
         end
     end
 end
 
-window = maxWindow;
+if isempty(bestA)
+    window = [];
+    return;
+end
+window = [reachStartSec(bestA), reachStartSec(bestB + 1)];
 end
 
-function window = findLargestWindowAboveThreshold(reachStartSec, runningAvg, threshold, startReachIdx, endReachIdx, nConsecutive, nReachMin)
-% FINDLARGESTWINDOWABOVETHRESHOLD Finds largest window with nConsecutive reaches above threshold
+function window = find_largest_not_engaged_percentile(reachStartSec, interReachIntervals, aboveThresh, avoidThresh, numExcepts, startReachIdx, endReachIdx, nReachMin)
+% FIND_LARGEST_NOT_ENGAGED_PERCENTILE Largest contiguous "not-engaged" stretch by percentile rules.
 %
-% Inputs:
-%   reachStartSec - Vector of reach start times in seconds
-%   runningAvg - Vector of running averages for intervals
-%   threshold - Threshold value
-%   startReachIdx - Starting reach index to search from
-%   endReachIdx - Ending reach index to search to
-%   nConsecutive - Number of consecutive reaches above threshold required
-%   nReachMin - Minimum number of reaches required for segment to be valid
-%
-% Outputs:
-%   window - [start stop] time window in seconds, or [] if no valid segment found
+% Not-engaged: mean(intervals in segment) > aboveThresh, and at most numExcepts intervals < avoidThresh.
+% Returns [startTime, endTime] in seconds or [] if no valid segment.
 
-% Find all intervals in the range that are above threshold
-% Interval i is between reach i and reach i+1
-validIntervalStart = startReachIdx;
-validIntervalEnd = min(endReachIdx - 1, length(runningAvg));
-
-if validIntervalStart > validIntervalEnd
-    % No valid intervals, return empty
+intervalStart = startReachIdx;
+intervalEnd   = endReachIdx - 1;
+if intervalStart > intervalEnd
     window = [];
     return;
 end
 
-validIntervals = validIntervalStart:validIntervalEnd;
-aboveThreshold = runningAvg(validIntervals) > threshold;
+nIntervals = length(interReachIntervals);
+intervalEnd = min(intervalEnd, nIntervals);
+maxLen = 0;
+bestA = [];
+bestB = [];
 
-% Find all segments with at least nConsecutive consecutive reaches above threshold
-% nConsecutive reaches means nConsecutive-1 consecutive intervals above threshold
-maxWindow = []; % Default to empty
-maxWindowSize = 0;
-
-% Need at least nConsecutive-1 intervals to have nConsecutive reaches
-if length(aboveThreshold) >= nConsecutive - 1
-    i = 1;
-    while i <= length(aboveThreshold) - (nConsecutive - 2)
-        % Check if we have nConsecutive-1 consecutive intervals above threshold starting at i
-        if i + nConsecutive - 2 <= length(aboveThreshold) && all(aboveThreshold(i:i+nConsecutive-2))
-            % Found a valid segment starting at interval i
-            % Find the full extent of this segment
-            segmentStartInterval = i;
-            segmentEndInterval = i;
-            
-            % Extend forward to find the end of the segment
-            for j = i:length(aboveThreshold)
-                if aboveThreshold(j)
-                    segmentEndInterval = j;
-                else
-                    break;
-                end
-            end
-            
-            % Convert interval indices to reach indices
-            % Interval segmentStartInterval corresponds to interval validIntervals(segmentStartInterval)
-            % This interval is between reach validIntervals(segmentStartInterval) and reach validIntervals(segmentStartInterval)+1
-            % The crossing INTO above threshold happens at the transition to interval segmentStartInterval
-            % The reach before this crossing is reach validIntervals(segmentStartInterval)
-            % The crossing OUT OF above threshold happens at the transition from interval segmentEndInterval to the next
-            % The reach before this crossing is reach validIntervals(segmentEndInterval)+1
-            windowStartReach = validIntervals(segmentStartInterval);
-            windowEndReach = min(validIntervals(segmentEndInterval) + 1, endReachIdx);
-            windowSize = windowEndReach - windowStartReach + 1;
-            
-            % Check that window meets both nConsecutive and nReachMin requirements
-            if windowSize >= nConsecutive && windowSize >= nReachMin && windowSize > maxWindowSize
-                maxWindowSize = windowSize;
-                maxWindow = [reachStartSec(windowStartReach), reachStartSec(windowEndReach)];
-            end
-            
-            % Move to after this segment
-            i = segmentEndInterval + 1;
-        else
-            i = i + 1;
+for a = intervalStart:intervalEnd
+    for b = a:intervalEnd
+        iv = interReachIntervals(a:b);
+        nReaches = length(iv) + 1;
+        if nReaches < nReachMin
+            continue;
+        end
+        nBelowAvoid = sum(iv < avoidThresh);
+        if nBelowAvoid > numExcepts
+            break;
+        end
+        if mean(iv) <= aboveThresh
+            continue;
+        end
+        if (b - a + 1) > maxLen
+            maxLen = b - a + 1;
+            bestA = a;
+            bestB = b;
         end
     end
 end
 
-window = maxWindow;
+if isempty(bestA)
+    window = [];
+    return;
+end
+window = [reachStartSec(bestA), reachStartSec(bestB + 1)];
+end
+
+function plot_engagement_segments(reachStartSec, reachClass, segmentWindows, fileName)
+% PLOT_ENGAGEMENT_SEGMENTS Plot reaches and engagement segments for inspection
+%
+% Inputs:
+%   reachStartSec - Vector of reach start times in seconds
+%   reachClass - Vector of reach class labels (same length as reachStartSec)
+%   segmentWindows - Structure with fields:
+%       .block1EngagedWindow
+%       .block1NotEngagedWindow
+%       .block2EngagedWindow
+%       .block2NotEngagedWindow
+%   fileName - Name of the reach data file (used for plot title)
+%
+% Goal:
+%   Provide a quick visual sanity check of the engagement segmentation by
+%   plotting all reaches as vertical lines and highlighting the engaged and
+%   not-engaged windows for Block 1 and Block 2.
+
+% Basic y-limits for schematic engagement bands and reach lines
+yMin = 0;
+yMax = 1;
+
+figure;
+hold on;
+
+% Plot vertical lines at each reach time
+for iReach = 1:numel(reachStartSec)
+    x = reachStartSec(iReach);
+    plot([x, x], [yMin, yMax], 'Color', [0.5, 0.5, 0.5], 'LineWidth', 0.5);
+end
+
+% Demarcate Block 2 start with a red vertical line
+block2Reaches = (reachClass == 3) | (reachClass == 4);
+if any(block2Reaches)
+    firstBlock2Idx = find(block2Reaches, 1, 'first');
+    block2StartTime = reachStartSec(firstBlock2Idx);
+    plot([block2StartTime, block2StartTime], [yMin, yMax], 'r', 'LineWidth', 1.5);
+end
+
+segmentHandles = [];
+segmentLabels = {};
+
+% Helper function for adding a shaded window
+    function h = addWindow(windowField, colorVal, labelText)
+        h = [];
+        if isfield(segmentWindows, windowField) && ~isempty(segmentWindows.(windowField))
+            tWin = segmentWindows.(windowField);
+            h = patch([tWin(1), tWin(2), tWin(2), tWin(1)], ...
+                [yMin, yMin, yMax, yMax], colorVal, ...
+                'FaceAlpha', 0.2, 'EdgeColor', 'none');
+            segmentHandles(end+1) = h; %#ok<AGROW>
+            segmentLabels{end+1} = labelText; %#ok<AGROW>
+        end
+    end
+
+% Block 1 and Block 2 engaged / not-engaged windows
+addWindow('block1EngagedWindow', [0, 0.6, 0], 'Block 1 Engaged');
+addWindow('block1NotEngagedWindow', [0.6, 0.9, 0.6], 'Block 1 Not Engaged');
+addWindow('block2EngagedWindow', [0, 0, 0.7], 'Block 2 Engaged');
+addWindow('block2NotEngagedWindow', [0.7, 0.7, 1], 'Block 2 Not Engaged');
+
+% X-limits determined from reach times and segment windows
+allTimes = reachStartSec(:);
+winFields = {'block1EngagedWindow', 'block1NotEngagedWindow', ...
+    'block2EngagedWindow', 'block2NotEngagedWindow'};
+for iField = 1:numel(winFields)
+    fName = winFields{iField};
+    if isfield(segmentWindows, fName) && ~isempty(segmentWindows.(fName))
+        allTimes = [allTimes; segmentWindows.(fName)(:)]; %#ok<AGROW>
+    end
+end
+allTimes = allTimes(~isnan(allTimes));
+if ~isempty(allTimes)
+    xlim([min(allTimes), max(allTimes)]);
+end
+
+ylim([yMin, yMax]);
+xlabel('Time (s)');
+ylabel('Engagement (schematic)');
+
+% Use file name (without path) for the title if available
+if nargin >= 4 && ~isempty(fileName)
+    [~, sessionNameOnly, ~] = fileparts(fileName);
+    titleStr = sprintf('%s - Engagement Segments', sessionNameOnly);
+else
+    titleStr = 'Engagement Segments';
+end
+title(titleStr, 'Interpreter', 'none');
+
+if ~isempty(segmentHandles)
+    legend(segmentHandles, segmentLabels, 'Location', 'best');
+end
+
+hold off;
+
 end
