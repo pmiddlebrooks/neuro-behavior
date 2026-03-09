@@ -118,7 +118,7 @@ poolStartedHere = false;
 if config.useParallel
     if isempty(gcp('nocreate'))
         poolCluster = parcluster('local');
-        numWorkers = min(poolCluster.NumWorkers, 3);
+        numWorkers = min(poolCluster.NumWorkers, 4);
         parpool('local', numWorkers);
         poolStartedHere = true;
     end

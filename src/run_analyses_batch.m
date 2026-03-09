@@ -1,6 +1,6 @@
 %%
 % Sliding Window Analyses - Batch Script
-% Loops through multiple sessions and runs multiple sliding window analyses for each
+% Loops through multiple sessions and runs multiple sliding window analyses (and HMM analysis) for each
 %
 % This script can process sessions from:
 %   - reach_session_list() for reach task sessions
@@ -20,10 +20,11 @@ paths = get_paths;
 analysesToRun = struct();
 analysesToRun.lzc = false;  % Run lzc analysis
 analysesToRun.rqa = false;         % Run RQA analysis
-analysesToRun.criticality_ar = true;  % Run criticality AR (d2/mrBr) analysis
+analysesToRun.criticality_ar = false;  % Run criticality AR (d2/mrBr) analysis
 analysesToRun.criticality_av = false;  % Run criticality AV (avalanche) analysis
 analysesToRun.criticality_lfp = false; % Run criticality LFP analysis
 analysesToRun.dimensionality_pr = false;  % Run participation ratio analysis
+analysesToRun.hmm_mazz = true;  % Run HMM Mazzucato analysis
 % =========================
 
 % Add paths for session list functions
@@ -122,7 +123,7 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
-for s = 4:numSessions
+for s = 1:numSessions
     sessionName = sessions{s};
     
     fprintf('\n');
@@ -155,6 +156,8 @@ for s = 4:numSessions
                     run_criticality_lfp;
                 case 'dimensionality_pr'
                     run_participation_ratio;
+                case 'hmm_mazz'
+                    run_hmm_mazz;
                 otherwise
                     error('Unknown analysis: %s', analysisName);
             end

@@ -63,10 +63,14 @@ end
 % Add analyses path so we can call hmm_mazz_analysis / hmm_mazz_plot
 paths = get_paths;
 basePath = fileparts(mfilename('fullpath'));   % metastability/scripts
-srcPath = fullfile(basePath, '..', '..');      %#ok<NASGU>
+srcPath = fullfile(basePath, '..', '..');      
 analysesPath = fullfile(basePath, '..', 'analyses');
+dataPrepPath = fullfile(srcPath, 'data_prep');
 if exist(analysesPath, 'dir')
     addpath(analysesPath);
+end
+if exist(dataPrepPath, 'dir')
+    addpath(dataPrepPath);
 end
 
 % ---------------------------------------------------------------------
@@ -76,7 +80,7 @@ end
 % sessionType and sessionName should be set in the workspace before running:
 
 % ---------------------------------------------------------------------
-% Build opts and load spikes per area
+% Build opts and load spikes per area (match sliding-window loaders)
 % ---------------------------------------------------------------------
 
 opts = neuro_behavior_options;
@@ -84,36 +88,59 @@ opts.minActTime = 0.16;
 opts.minFiringRate = 0.1;
 opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
+if ~isfield(opts, 'maxFiringRate') || isempty(opts.maxFiringRate)
+    opts.maxFiringRate = 100;
+end
+if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+    opts.collectStart = 0;
+end
+if ~isfield(opts, 'collectEnd')
+    opts.collectEnd = [];
+end
+if ~isfield(opts, 'removeSome')
+    opts.removeSome = true;
+end
 
 % HMM fitting uses a conceptual "trial duration" (seconds)
 trialDur = 30;
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 
-switch lower(sessionType)
-    case 'spontaneous'
-        % Spontaneous data
-        opts.collectStart = 0;
-        opts.collectEnd = [];
+% Load spike times using the same infrastructure as sliding-window analyses
+fprintf('Loading spike times for %s session: %s\n', sessionType, sessionName);
+spikeDataStruct = load_spike_times(sessionType, paths, sessionName, opts);
 
-        freeDataPath = fullfile(paths.freeDataPath, ['animal_', animal], sessionNrn, 'recording1');
-        opts.dataPath = freeDataPath;
-
-        fprintf('Loading Nat spikes via spike_times_per_area for %s (%s)...\n', ...
-            animal, sessionNrn);
-        spikeData = spike_times_per_area(opts);
-
-    case 'reach'
-        % Reach data
-        reachDataFile = fullfile(paths.reachDataPath, sessionName);
-        opts.collectStart = 0;
-        opts.collectEnd = [];
-        opts.dataPath = reachDataFile;
-
-        fprintf('Loading Reach spikes via spike_times_per_area_reach for %s...\n', ...
-            sessionName);
-        spikeData = spike_times_per_area_reach(opts);
+% Update opts with actual collection window used by loader
+if isfield(spikeDataStruct, 'collectStart')
+    opts.collectStart = spikeDataStruct.collectStart;
 end
+if isfield(spikeDataStruct, 'collectEnd')
+    opts.collectEnd = spikeDataStruct.collectEnd;
+end
+
+% Convert spikeDataStruct to [time, neuronId, areaIdx] table expected by hmm_mazz_analysis
+spikeTimes = spikeDataStruct.spikeTimes(:);
+spikeClusters = spikeDataStruct.spikeClusters(:);
+neuronIDs = spikeDataStruct.neuronIDs(:);
+neuronAreas = spikeDataStruct.neuronAreas(:);
+
+areaMapping = containers.Map({'M23', 'M56', 'DS', 'VS'}, {1, 2, 3, 4});
+areaIdxPerNeuron = zeros(numel(neuronIDs), 1);
+for n = 1:numel(neuronIDs)
+    label = neuronAreas{n};
+    if isKey(areaMapping, label)
+        areaIdxPerNeuron(n) = areaMapping(label);
+    else
+        areaIdxPerNeuron(n) = 0;
+    end
+end
+
+[~, loc] = ismember(spikeClusters, neuronIDs);
+areaIdxPerSpike = zeros(size(spikeClusters));
+validMask = loc > 0;
+areaIdxPerSpike(validMask) = areaIdxPerNeuron(loc(validMask));
+
+spikeData = [spikeTimes, spikeClusters, areaIdxPerSpike];
 
 % Build neuron id lists per area (area indices encoded in column 3)
 idM23 = unique(spikeData(spikeData(:, 3) == 1, 2));
@@ -138,9 +165,7 @@ dataStruct.idList = idList;
 dataStruct.spikeData = spikeData;
 dataStruct.trialDur = trialDur;
 dataStruct.sessionName = sessionName;
-if strcmpi(sessionType, 'reach')
-    dataStruct.reachDataFile = reachDataFile;
-end
+% For reach sessions, hmm_mazz_analysis will infer saving location from paths and sessionName
 
 if ~exist('config', 'var') || isempty(config)
     config = struct();
@@ -163,11 +188,11 @@ if ~isfield(config, 'HmmParam') || isempty(config.HmmParam)
     hmmParam = struct();
     hmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
     hmmParam.BinSize = 0.01;       % Markov chain time step (s)
-    hmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (s)
+    hmmParam.MinDur = 0.05;        % Minimum admissible state duration in decoding (s)
     hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
-    hmmParam.NumSteps = 8;         % Number of independent EM runs at fixed parameters
+    hmmParam.NumSteps = 10;         % Number of independent EM runs at fixed parameters
     hmmParam.NumRuns = 33;         % Maximum iterations per EM run
-    hmmParam.singleSeqXval.K = 5;  % Cross-validation folds
+    hmmParam.singleSeqXval.K = 7;  % Cross-validation folds
     config.HmmParam = hmmParam;
 end
 
