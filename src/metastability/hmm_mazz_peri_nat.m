@@ -34,19 +34,75 @@ minDurBetweenValid = 1.0; % minimum time between end of previous behavior and st
 % Maximum number of trials/bouts to plot per behavior ID
 maxTrial = 60;
 
-% Determine save directory and filename based on parameters
-hmmdir = fullfile(paths.dropPath, 'metastability');
-filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', binSize, minDur);
-resultsPath = fullfile(hmmdir, filename);
+% Determine results directory and filename based on parameters and session.
+% New structure: paths.spontaneousResultsPath/<sessionBaseName>/hmm_mazz_spontaneous_...
+% Fallback: legacy paths.dropPath/metastability/hmm_mazz_nat_...
 
-% Extract first 10 characters of filename for titles and file names
-filePrefix = 'Nat';
+% Optional: sessionName can be set in workspace to target a specific session
+dataBaseName = '';
+if exist('sessionName', 'var') && ~isempty(sessionName)
+    [~, dataBaseName, ~] = fileparts(sessionName);
+end
+
+spontResultsRoot = paths.spontaneousResultsPath;
+legacyRoot = fullfile(paths.dropPath, 'metastability');
+
+filenameNew = sprintf('hmm_mazz_spontaneous_bin%.3f_minDur%.3f.mat', binSize, minDur);
+filenameLegacy = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', binSize, minDur);
+
+candidatePaths = {};
+candidateLabels = {};
+
+% Prefer new per-session structure if session is known
+if ~isempty(dataBaseName)
+    sessionDir = fullfile(spontResultsRoot, dataBaseName);
+    candidatePaths{end+1} = fullfile(sessionDir, filenameNew); %#ok<AGROW>
+    candidateLabels{end+1} = sprintf('spontaneous session "%s"', dataBaseName); %#ok<AGROW>
+end
+
+% If no explicit session provided, search all spontaneous session folders
+if isempty(dataBaseName) && exist(spontResultsRoot, 'dir')
+    sessionDirs = dir(fullfile(spontResultsRoot, '*'));
+    sessionDirs = sessionDirs([sessionDirs.isdir] & ~strncmp({sessionDirs.name}, '.', 1));
+    for s = 1:numel(sessionDirs)
+        candidatePaths{end+1} = fullfile(spontResultsRoot, sessionDirs(s).name, filenameNew); %#ok<AGROW>
+        candidateLabels{end+1} = sprintf('spontaneous session "%s"', sessionDirs(s).name); %#ok<AGROW>
+    end
+end
+
+% Legacy location last
+candidatePaths{end+1} = fullfile(legacyRoot, filenameLegacy); %#ok<AGROW>
+candidateLabels{end+1} = 'legacy Nat file'; %#ok<AGROW>
+
+resultsPath = '';
+hmmdir = '';
+filePrefix = '';
+chosenLabel = '';
+
+for iCand = 1:numel(candidatePaths)
+    if exist(candidatePaths{iCand}, 'file')
+        resultsPath = candidatePaths{iCand};
+        chosenLabel = candidateLabels{iCand};
+        break;
+    end
+end
+
+if isempty(resultsPath)
+    error('No HMM results file found for binSize=%.3f, minDur=%.3f in "%s" or legacy "%s".', ...
+        binSize, minDur, spontResultsRoot, legacyRoot);
+end
+
+% Set base directory and prefix for later saving/plot titles
+hmmdir = fileparts(resultsPath);
+if ~isempty(dataBaseName)
+    filePrefix = dataBaseName;
+else
+    % Fallback: use label or generic tag
+    filePrefix = 'Spontaneous';
+end
 
 % Load HMM analysis results
-fprintf('Loading HMM analysis results from: %s\n', resultsPath);
-if ~exist(resultsPath, 'file')
-    error('Results file not found: %s\nMake sure hmm_mazz.m has been run for this dataset.', resultsPath);
-end
+fprintf('Loading HMM analysis results (%s) from: %s\n', chosenLabel, resultsPath);
 results = load(resultsPath);
 results = results.results;
 

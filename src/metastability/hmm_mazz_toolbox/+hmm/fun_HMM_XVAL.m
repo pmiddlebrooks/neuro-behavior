@@ -17,42 +17,69 @@ NStates=numel(HmmParam.VarStates);
 LLtotxval=NaN(1,NStates); % store average LL of LLholdout values for each state
 
 % PGM edit to add single-sequence
-% Single-sequence XVAL: if only one sequence present, hold out contiguous segments
+% Single-sequence XVAL: if only one sequence present, hold out contiguous segments.
+% Parallelize across (fold, stateCount) using serial training to avoid nested parfor.
 if numel(sequence)==1
     % Expect HmmParam.singleSeqXval.K specifying number of folds (optional)
-    Kss=K; 
-    if any(strcmp(fieldnames(HmmParam),'singleSeqXval')) && any(strcmp(fieldnames(HmmParam.singleSeqXval),'K'))
-        Kss=HmmParam.singleSeqXval.K;
+    Kss = K;
+    if any(strcmp(fieldnames(HmmParam), 'singleSeqXval')) && ...
+            any(strcmp(fieldnames(HmmParam.singleSeqXval), 'K'))
+        Kss = HmmParam.singleSeqXval.K;
     end
-    seqData=sequence.data; % emissions matrix: units x time or 1 x time (per Spikes2Seq)
-    T=size(seqData,2);
-    edges=round(linspace(1,T+1,Kss+1));
-    % accumulate per-state log-likelihood across folds
-    LLacc=NaN(Kss,NStates);
-    for k=1:Kss
-        holdIdx=edges(k):edges(k+1)-1;
-        trainIdx=[1:edges(k)-1, edges(k+1):T];
-        seqTrainSingle=struct('data', seqData(:,trainIdx));
-        % train as single sequence (no repeated state-1 starts)
-        fit_k=hmm.fun_HMM_training(seqTrainSingle,gnunits,HmmParam);
-        % evaluate on hold-out segment for each state count
-        for s=1:NStates
-            esttr=fit_k(s).tpm;
-            estemis=fit_k(s).epm;
-            MinValue=1e-100;
-            esttr(esttr<MinValue)=MinValue;
-            estemis(estemis<MinValue)=MinValue;
-            holdSeq=seqData(:,holdIdx);
-            [~,logpseq]=hmmdecode(holdSeq,esttr,estemis);
-            LLacc(k,s)=logpseq;
-        end
+    seqData = sequence.data; % emissions matrix: units x time or 1 x time (per Spikes2Seq)
+    T = size(seqData, 2);
+    edges = round(linspace(1, T+1, Kss+1));
+
+    % Set up iterations over (fold, stateCount) for parfor
+    iterations = [Kss, NStates];
+    NumIter = prod(iterations);
+    HmmTemp = repmat(HmmParam, 1, NumIter);
+    jj = NaN(1, NumIter);  % fold indices
+    cnt = NaN(1, NumIter); % state-count indices
+    for ix = 1:NumIter
+        [jj(ix), cnt(ix)] = ind2sub(iterations, ix);
+        % Each job trains a single VarStates value
+        HmmTemp(ix).VarStates = HmmParam.VarStates(cnt(ix));
     end
-    LLtotxval=mean(LLacc,1);
-    hmm_all_data=repmat(struct('tpm',[],'epm',[],'LLtrain',[]),1,NStates);
-    % return the last fit (or could return best by avg LL)
-    for s=1:NStates
-        hmm_all_data(1,s)=fit_k(s);
+
+    temp_LLholdout = NaN(1, NumIter); % hold-out LL per (fold, stateCount)
+    temp_hmm_all_bestfit = repmat(struct('tpm', [], 'epm', [], 'LLtrain', []), 1, NumIter);
+
+    % Parallelize across folds and state counts; training itself is serial (NOPARFOR)
+    parfor ix = 1:NumIter
+        k = jj(ix);          % which fold
+        % Build train / hold indices for this fold
+        holdIdx = edges(k):edges(k+1)-1;
+        trainIdx = [1:edges(k)-1, edges(k+1):T];
+        seqTrainSingle = struct('data', seqData(:, trainIdx));
+
+        % Serial training for this (fold, VarStates) combination
+        fit_mat = hmm.fun_HMM_training_NOPARFOR(seqTrainSingle, gnunits, HmmTemp(ix));
+        % Since VarStates is scalar here, take the single entry
+        best_fit = fit_mat(1, 1);
+        temp_hmm_all_bestfit(ix) = best_fit;
+
+        % Evaluate on hold-out segment
+        esttr = best_fit.tpm;
+        estemis = best_fit.epm;
+        MinValue = 1e-100;
+        esttr(esttr < MinValue) = MinValue;
+        estemis(estemis < MinValue) = MinValue;
+        holdSeq = seqData(:, holdIdx);
+        [~, logpseq] = hmmdecode(holdSeq, esttr, estemis);
+        temp_LLholdout(ix) = logpseq;
     end
+
+    % Aggregate results back into [Kss x NStates] form
+    LLacc = NaN(Kss, NStates);
+    hmm_all_data = repmat(struct('tpm', [], 'epm', [], 'LLtrain', []), Kss, NStates);
+    for ix = 1:NumIter
+        LLacc(jj(ix), cnt(ix)) = temp_LLholdout(ix);
+        hmm_all_data(jj(ix), cnt(ix)) = temp_hmm_all_bestfit(ix);
+    end
+
+    % Mean hold-out LL per state count across folds
+    LLtotxval = mean(LLacc, 1);
 else
     % Original multi-trial path
     iterations=[K, numel(HmmParam.VarStates)];

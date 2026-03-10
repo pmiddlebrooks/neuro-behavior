@@ -363,19 +363,28 @@ if config.saveData
         write_hmm_summary(summaryFilepath, sessionType, modelSel, ...
             areas, areasToTest, allResults);
     else
-        hmmDir = fullfile(paths.dropPath, 'metastability');
-        if ~exist(hmmDir, 'dir')
-            mkdir(hmmDir);
+        % Spontaneous data: mirror reach-style per-session structure
+        % Use paths.spontaneousResultsPath / <sessionFolder>
+        if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+            % Remove any file extension from session name
+            [~, dataBaseName, ~] = fileparts(dataStruct.sessionName);
+        else
+            dataBaseName = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
         end
 
-        filenameNat = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', ...
+        saveDirSpont = fullfile(paths.spontaneousResultsPath, dataBaseName);
+        if ~exist(saveDirSpont, 'dir')
+            mkdir(saveDirSpont);
+        end
+
+        filenameNat = sprintf('hmm_mazz_spontaneous_bin%.3f_minDur%.3f.mat', ...
             binSizeSave, minDurSave);
-        filePathNat = fullfile(hmmDir, filenameNat);
+        filePathNat = fullfile(saveDirSpont, filenameNat);
         fprintf('Saving Spontaneous HMM results to:\n%s\n', filePathNat);
         save(filePathNat, 'results', '-v7.3');
 
-        summaryFilename = sprintf('HMM_summary_%s.txt', sessionType);
-        summaryFilepath = fullfile(hmmDir, summaryFilename);
+        summaryFilename = sprintf('HMM_summary_%s.txt', dataBaseName);
+        summaryFilepath = fullfile(saveDirSpont, summaryFilename);
         write_hmm_summary(summaryFilepath, sessionType, modelSel, ...
             areas, areasToTest, allResults);
     end

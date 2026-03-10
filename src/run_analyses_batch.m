@@ -158,6 +158,7 @@ for s = 1:numSessions
                     run_participation_ratio;
                 case 'hmm_mazz'
                     run_hmm_mazz;
+                    close all
                 otherwise
                     error('Unknown analysis: %s', analysisName);
             end

@@ -8,6 +8,9 @@ function data = load_data(opts, dataType)
 
 % dataType: neuron:
 %
+
+
+% sessionFolder = fullfile(opts.dataPath, opts.sessionName(1:2), opts.sessionName);
 sessionFolder = fullfile(opts.dataPath, opts.sessionName);
 
 switch dataType

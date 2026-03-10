@@ -29,7 +29,7 @@ switch METHOD
         HmmParam.NumSteps=1;
         HiddenStep=1; % increment in hidden states% RUNNING EACH SESSION SEPARATELY
         HiddenMin=3;
-        HiddenMax=25; % max value allowed
+        HiddenMax=26; % max value allowed
     case 'BIC'
         NP=@(NumStates,gnunits,logT)(NumStates.*(NumStates-1)+NumStates.*gnunits+NumStates-1)*logT;
         fprintf('\n BIC...\n');

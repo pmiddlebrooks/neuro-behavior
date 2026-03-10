@@ -11,7 +11,7 @@ clear eventMat eventMatZ
 %% get desired file paths
 paths = get_paths;
 
-    opts.dataPath = paths.freeDataPath;
+    opts.dataPath = paths.spontaneousDataPath;
     opts.sessionName = sessionName;
 
 %%

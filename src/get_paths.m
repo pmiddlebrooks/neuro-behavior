@@ -25,6 +25,7 @@ elseif exist('/Users/paulmiddlebrooks/Projects/', 'dir')
 end
 
 spontaneousDataPath = fullfile(dropPath, 'spontaneous/data');
+spontaneousResultsPath = fullfile(dropPath, 'spontaneous/results');
 reachDataPath = fullfile(dropPath, 'reach_task/data');
 reachResultsPath = fullfile(dropPath, 'reach_task/results');
 schallDataPath = fullfile(dropPath, 'schall/data');
@@ -46,6 +47,7 @@ end
 
 paths.homePath = homePath;
 paths.spontaneousDataPath = spontaneousDataPath;
+paths.spontaneousResultsPath = spontaneousResultsPath;
 paths.figurePath = figurePath;
 paths.bhvDataPath = bhvDataPath;
 paths.nrnDataPath = nrnDataPath;

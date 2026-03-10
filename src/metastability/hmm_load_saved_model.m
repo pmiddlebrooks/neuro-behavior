@@ -150,17 +150,43 @@ if ~isempty(binSize) && ~isempty(minDur)
         selectedFile = filename;
         
     else
-        % For Spontaneous data: construct filename directly
-        hmmdir = fullfile(paths.dropPath, 'metastability');
-        if ~exist(hmmdir, 'dir')
-            error('HMM directory not found: %s', hmmdir);
+        % For Spontaneous data: search in new per-session structure first,
+        % then fall back to legacy metastability directory.
+        spontResultsDir = paths.spontaneousResultsPath;
+        filenameNew = sprintf('hmm_mazz_spontaneous_bin%.3f_minDur%.3f.mat', binSize, minDur);
+        filePath = [];
+        
+        if exist(spontResultsDir, 'dir')
+            % Get all session folders
+            sessionDirs = dir(fullfile(spontResultsDir, '*'));
+            sessionDirs = sessionDirs([sessionDirs.isdir] & ~strncmp({sessionDirs.name}, '.', 1));
+            
+            for s = 1:length(sessionDirs)
+                sessionPath = fullfile(spontResultsDir, sessionDirs(s).name);
+                candidatePath = fullfile(sessionPath, filenameNew);
+                if exist(candidatePath, 'file')
+                    filePath = candidatePath;
+                    break;
+                end
+            end
         end
         
-        filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', binSize, minDur);
-        filePath = fullfile(hmmdir, filename);
-        
-        if ~exist(filePath, 'file')
-            error('File not found: %s\nMake sure hmm_mazz.m has been run for this dataset.', filePath);
+        if ~isempty(filePath)
+            filename = filenameNew;
+        else
+            % Legacy location: dropPath/metastability with Nat-style naming
+            hmmdir = fullfile(paths.dropPath, 'metastability');
+            if ~exist(hmmdir, 'dir')
+                error('HMM directory not found: %s', hmmdir);
+            end
+            
+            filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', binSize, minDur);
+            filePath = fullfile(hmmdir, filename);
+            
+            if ~exist(filePath, 'file')
+                error('File not found in new (%s) or legacy (%s) locations. Last tried: %s', ...
+                    spontResultsDir, hmmdir, filePath);
+            end
         end
         
         selectedFile = filename;
@@ -195,17 +221,30 @@ else
         end
         
     else
-        % For Spontaneous data: look in metastability folder
-        hmmdir = fullfile(paths.dropPath, 'metastability');
-        if ~exist(hmmdir, 'dir')
-            error('HMM directory not found: %s', hmmdir);
+        % For Spontaneous data: look in new per-session structure, then legacy folder
+        spontResultsDir = paths.spontaneousResultsPath;
+        if exist(spontResultsDir, 'dir')
+            sessionDirs = dir(fullfile(spontResultsDir, '*'));
+            sessionDirs = sessionDirs([sessionDirs.isdir] & ~strncmp({sessionDirs.name}, '.', 1));
+            
+            for s = 1:length(sessionDirs)
+                sessionPath = fullfile(spontResultsDir, sessionDirs(s).name);
+                files = dir(fullfile(sessionPath, 'hmm_mazz_spontaneous_bin*.mat'));
+                for f = 1:length(files)
+                    matchingFiles{end+1} = files(f).name;
+                    filePaths{end+1} = fullfile(sessionPath, files(f).name);
+                end
+            end
         end
         
-        % Search for hmm_mazz_nat_bin*.mat files
-        files = dir(fullfile(hmmdir, 'hmm_mazz_nat_bin*.mat'));
-        for f = 1:length(files)
-            matchingFiles{end+1} = files(f).name;
-            filePaths{end+1} = fullfile(hmmdir, files(f).name);
+        % Also include legacy Nat-style files in metastability folder (if any)
+        hmmdir = fullfile(paths.dropPath, 'metastability');
+        if exist(hmmdir, 'dir')
+            filesLegacy = dir(fullfile(hmmdir, 'hmm_mazz_nat_bin*.mat'));
+            for f = 1:length(filesLegacy)
+                matchingFiles{end+1} = filesLegacy(f).name;
+                filePaths{end+1} = fullfile(hmmdir, filesLegacy(f).name);
+            end
         end
     end
     

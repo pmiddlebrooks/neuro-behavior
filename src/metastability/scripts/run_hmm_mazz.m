@@ -63,7 +63,7 @@ end
 % Add analyses path so we can call hmm_mazz_analysis / hmm_mazz_plot
 paths = get_paths;
 basePath = fileparts(mfilename('fullpath'));   % metastability/scripts
-srcPath = fullfile(basePath, '..', '..');      
+srcPath = fullfile(basePath, '..', '..');
 analysesPath = fullfile(basePath, '..', 'analyses');
 dataPrepPath = fullfile(srcPath, 'data_prep');
 if exist(analysesPath, 'dir')
@@ -88,23 +88,16 @@ opts.minActTime = 0.16;
 opts.minFiringRate = 0.1;
 opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
-if ~isfield(opts, 'maxFiringRate') || isempty(opts.maxFiringRate)
-    opts.maxFiringRate = 100;
-end
-if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
-    opts.collectStart = 0;
-end
-if ~isfield(opts, 'collectEnd')
-    opts.collectEnd = [];
-end
-if ~isfield(opts, 'removeSome')
-    opts.removeSome = true;
-end
+opts.maxFiringRate = 100;
+opts.collectStart = 0;
+opts.collectEnd = [];
+opts.removeSome = true;
 
 % HMM fitting uses a conceptual "trial duration" (seconds)
 trialDur = 30;
 
 areas = {'M23', 'M56', 'DS', 'VS'};
+areas = {'M23'};
 
 % Load spike times using the same infrastructure as sliding-window analyses
 fprintf('Loading spike times for %s session: %s\n', sessionType, sessionName);
@@ -184,17 +177,15 @@ if ~isfield(config, 'useParallel')
 end
 
 % Set HMM parameter configuration (can be overridden by caller)
-if ~isfield(config, 'HmmParam') || isempty(config.HmmParam)
-    hmmParam = struct();
-    hmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
-    hmmParam.BinSize = 0.01;       % Markov chain time step (s)
-    hmmParam.MinDur = 0.05;        % Minimum admissible state duration in decoding (s)
-    hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
-    hmmParam.NumSteps = 10;         % Number of independent EM runs at fixed parameters
-    hmmParam.NumRuns = 33;         % Maximum iterations per EM run
-    hmmParam.singleSeqXval.K = 7;  % Cross-validation folds
-    config.HmmParam = hmmParam;
-end
+hmmParam = struct();
+hmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
+hmmParam.BinSize = 0.01;       % Markov chain time step (s)
+hmmParam.MinDur = 0.05;        % Minimum admissible state duration in decoding (s)
+hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
+hmmParam.NumSteps = 10;         % Number of independent EM runs at fixed parameters
+hmmParam.NumRuns = 30;         % Maximum iterations per EM run
+hmmParam.singleSeqXval.K = 5;  % Cross-validation folds
+config.HmmParam = hmmParam;
 
 fprintf('\nRunning hmm_mazz_analysis...\n');
 results = hmm_mazz_analysis(dataStruct, config);
