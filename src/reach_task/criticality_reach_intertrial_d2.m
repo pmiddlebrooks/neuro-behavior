@@ -107,9 +107,9 @@ fprintf('Calculated %d intertrial midpoints\n', length(intertrialMidpoints));
 
 % =============================    Configuration    =============================
 % Sliding window parameters
-beforeAlign = -2;  % Start sliding from this many seconds before alignment point
-afterAlign  =  2;  % End sliding at this many seconds after alignment point
-slidingWindowSize = 6;  % Window size for d2 analysis (user-defined, same for all areas)
+beforeAlign = -3;  % Start sliding from this many seconds before alignment point
+afterAlign  =  3;  % End sliding at this many seconds after alignment point
+slidingWindowSize = 5;  % Window size for d2 analysis (user-defined, same for all areas)
 stepSize    = .25; % Step size for sliding window (seconds)
 windowBuffer = .5; % Minimum distance from window edge to event/midpoint (seconds)
 minWindowSize = slidingWindowSize;  % Minimum window size required (seconds)
@@ -124,7 +124,7 @@ normalizeD2 = false;  % Set to true to normalize d2 by shuffled d2 values
 
 % Bin/window selection mode (manual vs. optimal, similar to criticality_ar)
 useOptimalBinWindowFunction = false;  % If false, use binSizeManual and slidingWindowSize as set above
-binSizeManual = 0.03;                % Manual bin size (seconds) when useOptimalBinWindowFunction is false
+binSizeManual = 0.05;                % Manual bin size (seconds) when useOptimalBinWindowFunction is false
 
 % Optional neural subsampling configuration for windowed d2
 useSubsampling = false;        % If true, subsample neurons within each area
@@ -1031,6 +1031,11 @@ results.slidingPositions = slidingPositions;
 results.d2Metrics = d2Metrics;
 results.segmentMetrics = segmentMetrics;
 results.segmentNames = segmentNames;
+results.perWindowD2 = perWindowD2;
+results.collectedReachWindowCenterBins = collectedReachWindowCenterBins;
+results.collectedIntertrialWindowCenterBins = collectedIntertrialWindowCenterBins;
+results.collectedReachWindowCenterBinsNormalized = collectedReachWindowCenterBinsNormalized;
+results.collectedIntertrialWindowCenterBinsNormalized = collectedIntertrialWindowCenterBinsNormalized;
 if exist('sessionName', 'var')
     results.sessionName = sessionName;
 end
@@ -1103,6 +1108,8 @@ if loadResultsForPlotting
     
     % Extract variables from results structure
     areas = results.areas;
+    
+    % Core timing and analysis parameters
     reachStart = results.reachStart;
     intertrialMidpoints = results.intertrialMidpoints;
     slidingWindowSize = results.slidingWindowSize;
@@ -1114,6 +1121,23 @@ if loadResultsForPlotting
     d2Metrics = results.d2Metrics;
     segmentMetrics = results.segmentMetrics;
     segmentNames = results.segmentNames;
+    
+    % Optional detailed per-window measures (may be missing in older result files)
+    if isfield(results, 'perWindowD2')
+        perWindowD2 = results.perWindowD2;
+    end
+    if isfield(results, 'collectedReachWindowCenterBins')
+        collectedReachWindowCenterBins = results.collectedReachWindowCenterBins;
+    end
+    if isfield(results, 'collectedIntertrialWindowCenterBins')
+        collectedIntertrialWindowCenterBins = results.collectedIntertrialWindowCenterBins;
+    end
+    if isfield(results, 'collectedReachWindowCenterBinsNormalized')
+        collectedReachWindowCenterBinsNormalized = results.collectedReachWindowCenterBinsNormalized;
+    end
+    if isfield(results, 'collectedIntertrialWindowCenterBinsNormalized')
+        collectedIntertrialWindowCenterBinsNormalized = results.collectedIntertrialWindowCenterBinsNormalized;
+    end
     binSize = results.binSize;
     if isfield(results, 'sessionName')
         sessionName = results.sessionName;
@@ -1686,5 +1710,147 @@ end
 saveFile = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_all_areas_win%.1f_step%.1f.png', slidingWindowSize, stepSize));
 exportgraphics(gcf, saveFile, 'Resolution', 300);
 fprintf('Saved combined plot to: %s\n', saveFile);
+
+%% =============================    d2 vs Population Activity Plot    =============================
+% Scatter plot of d2 values vs. population activity (center-bin mean)
+% for windows centered on reach starts and intertrial midpoints.
+
+if exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ...
+        exist('collectedReachWindowCenterBins', 'var') && exist('collectedIntertrialWindowCenterBins', 'var')
+    
+    % Use sliding position closest to 0 s (event-centered windows)
+    alignPosIdx = find(abs(slidingPositions) < (stepSize/2), 1);
+    if isempty(alignPosIdx)
+        alignPosIdx = 1;
+    end
+    
+    areasToPlot = areasToTest;
+    nAreasToPlot = numel(areasToPlot);
+    
+    figure(3003); clf;
+    t = tiledlayout(nAreasToPlot, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+    
+    for idxArea = 1:nAreasToPlot
+        a = areasToPlot(idxArea);
+        nexttile;
+        hold on;
+        
+        % Population activity (center-bin mean) for reach-centered windows
+        popReach = [];
+        d2ReachVals = [];
+        if a <= size(collectedReachWindowCenterBins, 1) && ...
+                alignPosIdx <= size(collectedReachWindowCenterBins, 2) && ...
+                ~isempty(collectedReachWindowCenterBins{a, alignPosIdx}) && ...
+                a <= numel(perWindowD2.reach) && ...
+                alignPosIdx <= numel(perWindowD2.reach{a}) && ...
+                ~isempty(perWindowD2.reach{a}{alignPosIdx})
+            
+            popReach = collectedReachWindowCenterBins{a, alignPosIdx}(:);
+            if normalizeD2
+                d2ReachVals = perWindowD2.reachNormalized{a}{alignPosIdx}(:);
+            else
+                d2ReachVals = perWindowD2.reach{a}{alignPosIdx}(:);
+            end
+            
+            nMin = min(numel(popReach), numel(d2ReachVals));
+            popReach = popReach(1:nMin);
+            d2ReachVals = d2ReachVals(1:nMin);
+            
+            validIdx = ~isnan(popReach) & ~isnan(d2ReachVals);
+            popReach = popReach(validIdx);
+            d2ReachVals = d2ReachVals(validIdx);
+        end
+        
+        % Population activity (center-bin mean) for intertrial-centered windows
+        popInter = [];
+        d2InterVals = [];
+        if a <= size(collectedIntertrialWindowCenterBins, 1) && ...
+                alignPosIdx <= size(collectedIntertrialWindowCenterBins, 2) && ...
+                ~isempty(collectedIntertrialWindowCenterBins{a, alignPosIdx}) && ...
+                a <= numel(perWindowD2.intertrial) && ...
+                alignPosIdx <= numel(perWindowD2.intertrial{a}) && ...
+                ~isempty(perWindowD2.intertrial{a}{alignPosIdx})
+            
+            popInter = collectedIntertrialWindowCenterBins{a, alignPosIdx}(:);
+            if normalizeD2
+                d2InterVals = perWindowD2.intertrialNormalized{a}{alignPosIdx}(:);
+            else
+                d2InterVals = perWindowD2.intertrial{a}{alignPosIdx}(:);
+            end
+            
+            nMin = min(numel(popInter), numel(d2InterVals));
+            popInter = popInter(1:nMin);
+            d2InterVals = d2InterVals(1:nMin);
+            
+            validIdx = ~isnan(popInter) & ~isnan(d2InterVals);
+            popInter = popInter(validIdx);
+            d2InterVals = d2InterVals(validIdx);
+        end
+        
+        reachHandle = [];
+        interHandle = [];
+        if ~isempty(popReach) && ~isempty(d2ReachVals)
+            % x-axis: d2, y-axis: population activity
+            reachHandle = scatter(d2ReachVals, popReach, 20, [0 0 1], 'filled', ...
+                'DisplayName', 'Reach');
+        end
+        if ~isempty(popInter) && ~isempty(d2InterVals)
+            % x-axis: d2, y-axis: population activity
+            interHandle = scatter(d2InterVals, popInter, 20, [1 0 0], 'filled', ...
+                'DisplayName', 'Intertrial');
+        end
+        
+        % y-axis is population activity
+        ylabel('Population activity (center-bin mean across window)');
+        
+        % Area label with neuron count if available
+        if exist('areas', 'var') && a <= numel(areas)
+            if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= numel(idMatIdx) && ~isempty(idMatIdx{a})
+                numNeuronsArea = numel(idMatIdx{a});
+                areaTitle = sprintf('%s (n=%d)', areas{a}, numNeuronsArea);
+            else
+                areaTitle = areas{a};
+            end
+            title(areaTitle, 'Interpreter', 'none');
+        end
+        
+        if idxArea == 1 && (~isempty(reachHandle) || ~isempty(interHandle))
+            legendHandles = [];
+            legendLabels = {};
+            if ~isempty(reachHandle)
+                legendHandles = [legendHandles, reachHandle];
+                legendLabels{end+1} = get(reachHandle, 'DisplayName');
+            end
+            if ~isempty(interHandle)
+                legendHandles = [legendHandles, interHandle];
+                legendLabels{end+1} = get(interHandle, 'DisplayName');
+            end
+            if ~isempty(legendHandles)
+                legend(legendHandles, legendLabels, 'Location', 'best');
+            end
+        end
+        
+        grid on;
+    end
+    
+    % x-axis is d2
+    if normalizeD2
+        xlabel(t, 'd2 (normalized)');
+    else
+        xlabel(t, 'd2');
+    end
+    
+    if exist('sessionName', 'var') && ~isempty(sessionName)
+        titleStr = sprintf('%s - Population Activity vs d2 (Reach vs Intertrial)', sessionName);
+    else
+        titleStr = 'Population Activity vs d2 (Reach vs Intertrial)';
+    end
+    title(t, titleStr, 'Interpreter', 'none');
+    
+    % Save scatter figure
+    saveFileScatter = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_vs_popActivity_win%.1f_step%.1f.png', slidingWindowSize, stepSize));
+    exportgraphics(gcf, saveFileScatter, 'Resolution', 300);
+    fprintf('Saved d2 vs population activity plot to: %s\n', saveFileScatter);
+end
 
 fprintf('\n=== Analysis Complete ===\n');
