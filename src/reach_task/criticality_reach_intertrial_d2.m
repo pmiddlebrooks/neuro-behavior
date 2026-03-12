@@ -1469,22 +1469,22 @@ else
     targetPos = monitorOne;
 end
 
-% First, collect all y-values to determine shared y-axis limits
+% First, collect all y-values to determine shared y-axis limits for d2 traces
 allYVals = [];
 for a = areasToTest
     if normalizeD2
-        reachVals = d2Metrics.reachNormalized{a};
-        intertrialVals = d2Metrics.intertrialNormalized{a};
+        reachValsTmp = d2Metrics.reachNormalized{a};
+        intertrialValsTmp = d2Metrics.intertrialNormalized{a};
     else
-        reachVals = d2Metrics.reach{a};
-        intertrialVals = d2Metrics.intertrial{a};
+        reachValsTmp = d2Metrics.reach{a};
+        intertrialValsTmp = d2Metrics.intertrial{a};
     end
-    allYVals = [allYVals, reachVals(~isnan(reachVals)), intertrialVals(~isnan(intertrialVals))];
+    allYVals = [allYVals, reachValsTmp(~isnan(reachValsTmp)), intertrialValsTmp(~isnan(intertrialValsTmp))];
     
     % Note: Segment values are now center bin means (different scale), so not included in yLimits
 end
 
-% Calculate shared y-axis limits with some padding
+% Calculate shared y-axis limits with some padding for d2 traces
 if ~isempty(allYVals)
     yMin = min(allYVals);
     yMax = max(allYVals);
@@ -1497,13 +1497,113 @@ else
     yLimits = [0, 1];  % Default if no data
 end
 
-% Determine layout: 2 rows if segments exist, 1 row otherwise
+% Precompute d2/popActivity ratios across sliding positions for all areas
+ratioMetrics = struct();
+ratioMetrics.reach = cell(1, length(areasToTest));
+ratioMetrics.intertrial = cell(1, length(areasToTest));
+
+if exist('perWindowD2', 'var') && ...
+        exist('collectedReachWindowCenterBins', 'var') && ...
+        exist('collectedIntertrialWindowCenterBins', 'var')
+    
+    for idxArea = 1:length(areasToTest)
+        a = areasToTest(idxArea);
+        reachRatioVals = nan(size(slidingPositions));
+        intertrialRatioVals = nan(size(slidingPositions));
+        
+        % Choose source d2 values (normalized or raw) to match main traces
+        if normalizeD2
+            reachCell = perWindowD2.reachNormalized;
+            intertrialCell = perWindowD2.intertrialNormalized;
+        else
+            reachCell = perWindowD2.reach;
+            intertrialCell = perWindowD2.intertrial;
+        end
+        
+        if a <= numel(reachCell) && a <= numel(intertrialCell)
+            for posIdx = 1:numel(slidingPositions)
+                % Reach windows
+                if a <= size(collectedReachWindowCenterBins, 1) && ...
+                        posIdx <= size(collectedReachWindowCenterBins, 2) && ...
+                        ~isempty(collectedReachWindowCenterBins{a, posIdx}) && ...
+                        ~isempty(reachCell{a}) && ...
+                        posIdx <= numel(reachCell{a}) && ...
+                        ~isempty(reachCell{a}{posIdx})
+                    
+                    popVec = collectedReachWindowCenterBins{a, posIdx}(:);
+                    d2Vec = reachCell{a}{posIdx}(:);
+                    nMin = min(numel(popVec), numel(d2Vec));
+                    if nMin > 0
+                        popUse = popVec(1:nMin);
+                        d2Use = d2Vec(1:nMin);
+                        validIdx = ~isnan(popUse) & ~isnan(d2Use) & (popUse ~= 0);
+                        if any(validIdx)
+                            reachRatioVals(posIdx) = nanmean(d2Use(validIdx) ./ popUse(validIdx));
+                        end
+                    end
+                end
+                
+                % Intertrial windows
+                if a <= size(collectedIntertrialWindowCenterBins, 1) && ...
+                        posIdx <= size(collectedIntertrialWindowCenterBins, 2) && ...
+                        ~isempty(collectedIntertrialWindowCenterBins{a, posIdx}) && ...
+                        ~isempty(intertrialCell{a}) && ...
+                        posIdx <= numel(intertrialCell{a}) && ...
+                        ~isempty(intertrialCell{a}{posIdx})
+                    
+                    popVec = collectedIntertrialWindowCenterBins{a, posIdx}(:);
+                    d2Vec = intertrialCell{a}{posIdx}(:);
+                    nMin = min(numel(popVec), numel(d2Vec));
+                    if nMin > 0
+                        popUse = popVec(1:nMin);
+                        d2Use = d2Vec(1:nMin);
+                        validIdx = ~isnan(popUse) & ~isnan(d2Use) & (popUse ~= 0);
+                        if any(validIdx)
+                            intertrialRatioVals(posIdx) = nanmean(d2Use(validIdx) ./ popUse(validIdx));
+                        end
+                    end
+                end
+            end
+        end
+        
+        ratioMetrics.reach{a} = reachRatioVals;
+        ratioMetrics.intertrial{a} = intertrialRatioVals;
+    end
+end
+
+% Shared y-axis limits for d2/popActivity ratios
+allRatioYVals = [];
+for a = areasToTest
+    if a <= numel(ratioMetrics.reach) && ~isempty(ratioMetrics.reach{a})
+        allRatioYVals = [allRatioYVals, ratioMetrics.reach{a}(~isnan(ratioMetrics.reach{a}))];
+    end
+    if a <= numel(ratioMetrics.intertrial) && ~isempty(ratioMetrics.intertrial{a})
+        allRatioYVals = [allRatioYVals, ratioMetrics.intertrial{a}(~isnan(ratioMetrics.intertrial{a}))];
+    end
+end
+
+if ~isempty(allRatioYVals)
+    rMin = min(allRatioYVals);
+    rMax = max(allRatioYVals);
+    rRange = rMax - rMin;
+    if rRange == 0
+        rRange = 1;
+    end
+    yLimitsRatio = [rMin - 0.05*rRange, rMax + 0.05*rRange];
+else
+    yLimitsRatio = [0, 1];
+end
+
+% Determine layout:
+% - Row 1: d2 sliding-position traces
+% - Row 2: d2/popActivity sliding-position traces
+% - Optional Row 3: segment-wise bar plots (if nSegments > 0)
 numAreasToPlot = length(areasToTest);
 if nSegments > 0
-    numRows = 2;
+    numRows = 3;
     numCols = numAreasToPlot;
 else
-    numRows = 1;
+    numRows = 2;
     numCols = numAreasToPlot;
 end
 
@@ -1524,14 +1624,15 @@ else
     end
 end
 
-% Create sliding position plots for each area (line plots across sliding positions)
+% Create sliding position plots for each area
 plotIdx = 0;
+
+% Row 1: d2 traces across sliding positions
 for a = areasToTest
     plotIdx = plotIdx + 1;
     axes(ha(plotIdx));
     hold on;
     
-    % Extract reach and intertrial d2 values across sliding positions
     % Get number of neurons for this area
     if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= length(idMatIdx) && ~isempty(idMatIdx{a})
         numNeurons = length(idMatIdx{a});
@@ -1552,12 +1653,11 @@ for a = areasToTest
         titleStr = sprintf('%s%s - Sliding Positions', areas{a}, neuronStr);
     end
     
-    % Plot as lines
+    % Plot d2 traces
     plot(slidingPositions, reachVals, '-o', 'Color', [0 0 1], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Reach');
     plot(slidingPositions, intertrialVals, '-s', 'Color', [1 0 0], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Intertrial');
     
-    xlabel('Sliding Position (s)', 'FontSize', 10);
-    if plotIdx == 1 || (nSegments == 0 && plotIdx <= numCols)
+    if plotIdx == 1
         ylabel(yLabelStr, 'FontSize', 10);
     end
     title(titleStr, 'FontSize', 11);
@@ -1574,6 +1674,48 @@ for a = areasToTest
     
     % Add horizontal line at y = 1
     yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
+end
+
+% Row 2: d2/popActivity traces across sliding positions
+for aIdx = 1:length(areasToTest)
+    a = areasToTest(aIdx);
+    plotIdx = plotIdx + 1;
+    axes(ha(plotIdx));
+    hold on;
+    
+    reachRatioVals = nan(size(slidingPositions));
+    intertrialRatioVals = nan(size(slidingPositions));
+    if a <= numel(ratioMetrics.reach) && ~isempty(ratioMetrics.reach{a})
+        reachRatioVals = ratioMetrics.reach{a};
+    end
+    if a <= numel(ratioMetrics.intertrial) && ~isempty(ratioMetrics.intertrial{a})
+        intertrialRatioVals = ratioMetrics.intertrial{a};
+    end
+    
+    if any(~isnan(reachRatioVals))
+        plot(slidingPositions, reachRatioVals, '--o', 'Color', [0 0 1], 'LineWidth', 1.5, 'MarkerSize', 4, ...
+            'DisplayName', 'Reach d2/popActivity');
+    end
+    if any(~isnan(intertrialRatioVals))
+        plot(slidingPositions, intertrialRatioVals, '--s', 'Color', [1 0 0], 'LineWidth', 1.5, 'MarkerSize', 4, ...
+            'DisplayName', 'Intertrial d2/popActivity');
+    end
+    
+    if aIdx == 1
+        ylabel('d2 / popActivity', 'FontSize', 10);
+    end
+    xlabel('Sliding Position (s)', 'FontSize', 10);
+    
+    grid on;
+    if aIdx == 1 && (any(~isnan(reachRatioVals)) || any(~isnan(intertrialRatioVals)))
+        legend('Location', 'best', 'FontSize', 9);
+    end
+    set(gca, 'XTickLabelMode', 'auto');
+    set(gca, 'YTickLabelMode', 'auto');
+    ylim(yLimitsRatio);
+    
+    % Add vertical line at 0 (alignment point)
+    xline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
 end
 
 % Create segment-wise summary plots (bar plots for segments) if they exist
@@ -1616,7 +1758,8 @@ if nSegments > 0
         segmentYLimits = [0, 1];  % Default if no data
     end
     
-    plotIdx = numAreasToPlot;  % Start from second row
+    % Start bar plots on third row (indices 2*numAreasToPlot+1 .. 3*numAreasToPlot)
+    plotIdx = 2 * numAreasToPlot;
     for a = areasToTest
         plotIdx = plotIdx + 1;
         axes(ha(plotIdx));
@@ -1662,7 +1805,7 @@ if nSegments > 0
         set(gca, 'XTick', 1:nSeg, 'XTickLabel', segmentNames);
         xtickangle(45);  % Rotate labels for readability
         xlabel('Segment', 'FontSize', 10);
-        if plotIdx == numAreasToPlot + 1
+        if plotIdx == 2 * numAreasToPlot + 1
             if normalizeD2
                 ylabel('d2 (normalized)', 'FontSize', 10);
             else
@@ -1678,7 +1821,7 @@ if nSegments > 0
         end
         title(sprintf('%s%s - Segments', areas{a}, neuronStr), 'FontSize', 11);
         grid on;
-        if plotIdx == numAreasToPlot + 1
+        if plotIdx == 2 * numAreasToPlot + 1
             legend('Location', 'best', 'FontSize', 9);
         end
         set(gca, 'YTickLabelMode', 'auto');
