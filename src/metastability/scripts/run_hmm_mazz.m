@@ -97,7 +97,6 @@ opts.removeSome = true;
 trialDur = 30;
 
 areas = {'M23', 'M56', 'DS', 'VS'};
-areas = {'M23'};
 
 % Load spike times using the same infrastructure as sliding-window analyses
 fprintf('Loading spike times for %s session: %s\n', sessionType, sessionName);
