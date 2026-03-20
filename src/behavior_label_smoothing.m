@@ -77,7 +77,7 @@ function smoothedBhvID = behavior_label_smoothing(bhvID, opts)
     counts = accumarray(ic, 1);
 
     [countsSorted, sortIdx] = sort(counts, 'descend');
-    nReport = min(10, length(countsSorted));
+    nReport = min(20, length(countsSorted));
 
     fprintf('  Most common label switches (old -> new):\n');
     for k = 1:nReport

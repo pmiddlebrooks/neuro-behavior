@@ -1017,48 +1017,6 @@ for a = areasToTest
     end
 end
 
-%% =============================    Save Results    =============================
-results = struct();
-results.areas = areas;
-results.reachStart = reachStart;
-results.intertrialMidpoints = intertrialMidpoints;
-results.slidingWindowSize = slidingWindowSize;
-results.windowBuffer = windowBuffer;
-results.beforeAlign = beforeAlign;
-results.afterAlign = afterAlign;
-results.stepSize = stepSize;
-results.slidingPositions = slidingPositions;
-results.d2Metrics = d2Metrics;
-results.segmentMetrics = segmentMetrics;
-results.segmentNames = segmentNames;
-results.perWindowD2 = perWindowD2;
-results.collectedReachWindowCenterBins = collectedReachWindowCenterBins;
-results.collectedIntertrialWindowCenterBins = collectedIntertrialWindowCenterBins;
-results.collectedReachWindowCenterBinsNormalized = collectedReachWindowCenterBinsNormalized;
-results.collectedIntertrialWindowCenterBinsNormalized = collectedIntertrialWindowCenterBinsNormalized;
-if exist('sessionName', 'var')
-    results.sessionName = sessionName;
-end
-if exist('idMatIdx', 'var')
-    results.idMatIdx = idMatIdx;
-end
-if exist('segmentWindowsEng', 'var')
-    results.segmentWindows = segmentWindowsEng;
-end
-results.binSize = binSize;  % Area-specific bin sizes
-results.params.pcaFlag = pcaFlag;
-results.params.pcaFirstFlag = pcaFirstFlag;
-results.params.nDim = nDim;
-results.params.pOrder = pOrder;
-results.params.critType = critType;
-results.params.minSpikesPerBin = minSpikesPerBin;
-results.params.minBinsPerWindow = minBinsPerWindow;
-results.params.nShuffles = nShuffles;
-results.params.normalizeD2 = normalizeD2;
-
-resultsPath = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_win%.1f_step%.1f.mat', slidingWindowSize, stepSize));
-save(resultsPath, 'results');
-fprintf('\nSaved results to: %s\n', resultsPath);
 
 %% =============================    Plotting    =============================
 % To plot from saved results without running analysis:
@@ -1597,15 +1555,9 @@ end
 % Determine layout:
 % - Row 1: d2 sliding-position traces
 % - Row 2: d2/popActivity sliding-position traces
-% - Optional Row 3: segment-wise bar plots (if nSegments > 0)
 numAreasToPlot = length(areasToTest);
-if nSegments > 0
-    numRows = 3;
-    numCols = numAreasToPlot;
-else
-    numRows = 2;
-    numCols = numAreasToPlot;
-end
+numRows = 2;
+numCols = numAreasToPlot;
 
 % Create single figure with tight_subplot
 figure(1002); clf;
@@ -1718,121 +1670,7 @@ for aIdx = 1:length(areasToTest)
     xline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
 end
 
-% Create segment-wise summary plots (bar plots for segments) if they exist
-if nSegments > 0
-    % Calculate y-axis limits for segment plots (center bin means, normalized if applicable)
-    segmentYVals = [];
-    for a = areasToTest
-        nSeg = numel(segmentNames);
-        for s = 1:nSeg
-            if normalizeD2
-                % Use normalized values for y-axis limits
-                if ~isempty(segmentMetrics.reachNormalized{a, s}) && ~isnan(segmentMetrics.reachNormalized{a, s})
-                    segmentYVals = [segmentYVals, segmentMetrics.reachNormalized{a, s}];
-                end
-                if ~isempty(segmentMetrics.intertrialNormalized{a, s}) && ~isnan(segmentMetrics.intertrialNormalized{a, s})
-                    segmentYVals = [segmentYVals, segmentMetrics.intertrialNormalized{a, s}];
-                end
-            else
-                % Use raw values for y-axis limits
-                if ~isempty(segmentMetrics.reach{a, s}) && ~isnan(segmentMetrics.reach{a, s})
-                    segmentYVals = [segmentYVals, segmentMetrics.reach{a, s}];
-                end
-                if ~isempty(segmentMetrics.intertrial{a, s}) && ~isnan(segmentMetrics.intertrial{a, s})
-                    segmentYVals = [segmentYVals, segmentMetrics.intertrial{a, s}];
-                end
-            end
-        end
-    end
-    
-    % Calculate segment y-axis limits
-    if ~isempty(segmentYVals)
-        segYMin = min(segmentYVals);
-        segYMax = max(segmentYVals);
-        segYRange = segYMax - segYMin;
-        if segYRange == 0
-            segYRange = 1;  % Avoid zero range
-        end
-        segmentYLimits = [segYMin - 0.05*segYRange, segYMax + 0.05*segYRange];
-    else
-        segmentYLimits = [0, 1];  % Default if no data
-    end
-    
-    % Start bar plots on third row (indices 2*numAreasToPlot+1 .. 3*numAreasToPlot)
-    plotIdx = 2 * numAreasToPlot;
-    for a = areasToTest
-        plotIdx = plotIdx + 1;
-        axes(ha(plotIdx));
-        hold on;
-        
-        % Extract reach and intertrial center bin means across segments (normalized if applicable)
-        nSeg = numel(segmentNames);
-        reachVals = nan(1, nSeg);
-        intertrialVals = nan(1, nSeg);
-        for s = 1:nSeg
-            if normalizeD2
-                % Use normalized values
-                if ~isempty(segmentMetrics.reachNormalized{a, s})
-                    reachVals(s) = segmentMetrics.reachNormalized{a, s};
-                else
-                    reachVals(s) = nan;
-                end
-                if ~isempty(segmentMetrics.intertrialNormalized{a, s})
-                    intertrialVals(s) = segmentMetrics.intertrialNormalized{a, s};
-                else
-                    intertrialVals(s) = nan;
-                end
-            else
-                % Use raw values
-                if ~isempty(segmentMetrics.reach{a, s})
-                    reachVals(s) = segmentMetrics.reach{a, s};
-                else
-                    reachVals(s) = nan;
-                end
-                if ~isempty(segmentMetrics.intertrial{a, s})
-                    intertrialVals(s) = segmentMetrics.intertrial{a, s};
-                else
-                    intertrialVals(s) = nan;
-                end
-            end
-        end
-        
-        X = 1:nSeg;
-        barWidth = 0.35;
-        bar(X - barWidth/2, reachVals, barWidth, 'FaceColor', [0 0 1], 'DisplayName', 'Reach');
-        bar(X + barWidth/2, intertrialVals, barWidth, 'FaceColor', [1 0 0], 'DisplayName', 'Intertrial');
-        
-        set(gca, 'XTick', 1:nSeg, 'XTickLabel', segmentNames);
-        xtickangle(45);  % Rotate labels for readability
-        xlabel('Segment', 'FontSize', 10);
-        if plotIdx == 2 * numAreasToPlot + 1
-            if normalizeD2
-                ylabel('d2 (normalized)', 'FontSize', 10);
-            else
-                ylabel('d2', 'FontSize', 10);
-            end
-        end
-        % Get number of neurons for this area
-        if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= length(idMatIdx) && ~isempty(idMatIdx{a})
-            numNeurons = length(idMatIdx{a});
-            neuronStr = sprintf(' (n=%d)', numNeurons);
-        else
-            neuronStr = '';
-        end
-        title(sprintf('%s%s - Segments', areas{a}, neuronStr), 'FontSize', 11);
-        grid on;
-        if plotIdx == 2 * numAreasToPlot + 1
-            legend('Location', 'best', 'FontSize', 9);
-        end
-        set(gca, 'YTickLabelMode', 'auto');
-        ylim(segmentYLimits);
-        
-        % Add horizontal line at y = 1 for normalized plots
-        if normalizeD2
-            yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
-        end
-    end
-end
+% Segment bar plots were moved to a dedicated figure below.
 
 % Add overall title
 if exist('sessionName', 'var') && ~isempty(sessionName)
@@ -1854,12 +1692,261 @@ saveFile = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_all_areas_
 exportgraphics(gcf, saveFile, 'Resolution', 300);
 fprintf('Saved combined plot to: %s\n', saveFile);
 
+%% =============================    Segment + ITI Summary Figure    =============================
+if nSegments > 0
+    % Figure layout:
+    % - Row 1: segment-wise bar plots (Reach vs Intertrial)
+    % - Row 2: ITI vs d2 scatter (Reach and Intertrial midpoint windows)
+    figure(1004); clf;
+    set(gcf, 'Units', 'pixels');
+    set(gcf, 'Position', targetPos);
+    
+    useTightSubplotSeg = exist('tight_subplot', 'file');
+    if useTightSubplotSeg
+        haSeg = tight_subplot(2, numAreasToPlot, [0.18 0.04], [0.1 0.1], [0.08 0.04]);
+    else
+        haSeg = zeros(2 * numAreasToPlot, 1);
+        for i = 1:(2 * numAreasToPlot)
+            haSeg(i) = subplot(2, numAreasToPlot, i);
+        end
+    end
+    
+    % Y-limits for segment bars
+    segmentYVals = [];
+    for a = areasToTest
+        nSeg = numel(segmentNames);
+        for s = 1:nSeg
+            if normalizeD2
+                if ~isempty(segmentMetrics.reachNormalized{a, s}) && ~isnan(segmentMetrics.reachNormalized{a, s})
+                    segmentYVals = [segmentYVals, segmentMetrics.reachNormalized{a, s}]; %#ok<AGROW>
+                end
+                if ~isempty(segmentMetrics.intertrialNormalized{a, s}) && ~isnan(segmentMetrics.intertrialNormalized{a, s})
+                    segmentYVals = [segmentYVals, segmentMetrics.intertrialNormalized{a, s}]; %#ok<AGROW>
+                end
+            else
+                if ~isempty(segmentMetrics.reach{a, s}) && ~isnan(segmentMetrics.reach{a, s})
+                    segmentYVals = [segmentYVals, segmentMetrics.reach{a, s}]; %#ok<AGROW>
+                end
+                if ~isempty(segmentMetrics.intertrial{a, s}) && ~isnan(segmentMetrics.intertrial{a, s})
+                    segmentYVals = [segmentYVals, segmentMetrics.intertrial{a, s}]; %#ok<AGROW>
+                end
+            end
+        end
+    end
+    if ~isempty(segmentYVals)
+        segYMin = min(segmentYVals);
+        segYMax = max(segmentYVals);
+        segYRange = segYMax - segYMin;
+        if segYRange == 0
+            segYRange = 1;
+        end
+        segmentYLimits = [segYMin - 0.05*segYRange, segYMax + 0.05*segYRange];
+    else
+        segmentYLimits = [0, 1];
+    end
+    
+    % Sliding position index closest to 0 (event-centered windows)
+    alignPosIdx = find(abs(slidingPositions) < (stepSize/2), 1);
+    if isempty(alignPosIdx)
+        alignPosIdx = 1;
+    end
+    
+    % Row 1: segment bars
+    for aIdx = 1:numAreasToPlot
+        a = areasToTest(aIdx);
+        axes(haSeg(aIdx));
+        hold on;
+        
+        nSeg = numel(segmentNames);
+        reachVals = nan(1, nSeg);
+        intertrialVals = nan(1, nSeg);
+        for s = 1:nSeg
+            if normalizeD2
+                if ~isempty(segmentMetrics.reachNormalized{a, s})
+                    reachVals(s) = segmentMetrics.reachNormalized{a, s};
+                end
+                if ~isempty(segmentMetrics.intertrialNormalized{a, s})
+                    intertrialVals(s) = segmentMetrics.intertrialNormalized{a, s};
+                end
+            else
+                if ~isempty(segmentMetrics.reach{a, s})
+                    reachVals(s) = segmentMetrics.reach{a, s};
+                end
+                if ~isempty(segmentMetrics.intertrial{a, s})
+                    intertrialVals(s) = segmentMetrics.intertrial{a, s};
+                end
+            end
+        end
+        
+        X = 1:nSeg;
+        barWidth = 0.35;
+        bar(X - barWidth/2, reachVals, barWidth, 'FaceColor', [0 0 1], 'DisplayName', 'Reach');
+        bar(X + barWidth/2, intertrialVals, barWidth, 'FaceColor', [1 0 0], 'DisplayName', 'Intertrial');
+        set(gca, 'XTick', 1:nSeg, 'XTickLabel', segmentNames);
+        xtickangle(45);
+        xlabel('Segment', 'FontSize', 10);
+        if aIdx == 1
+            if normalizeD2
+                ylabel('d2 (normalized)', 'FontSize', 10);
+            else
+                ylabel('d2', 'FontSize', 10);
+            end
+            legend('Location', 'best', 'FontSize', 9);
+        end
+        if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= length(idMatIdx) && ~isempty(idMatIdx{a})
+            numNeurons = length(idMatIdx{a});
+            neuronStr = sprintf(' (n=%d)', numNeurons);
+        else
+            neuronStr = '';
+        end
+        title(sprintf('%s%s - Segments', areas{a}, neuronStr), 'FontSize', 11);
+        ylim(segmentYLimits);
+        grid on;
+        if normalizeD2
+            yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
+        end
+    end
+    
+    % Row 2: ITI vs d2 scatter
+    % Reach ITI: previous ITI (time from previous reach to current reach)
+    % Intertrial midpoint ITI: ITI interval that midpoint is centered on
+    reachTimesAll = reachStart(:)';
+    if numel(reachTimesAll) > 1
+        reachItiPrevAll = [nan, diff(reachTimesAll)];
+        intertrialMidpointsAllFromReach = (reachTimesAll(1:end-1) + reachTimesAll(2:end)) / 2;
+        intertrialItiAll = diff(reachTimesAll);
+    else
+        reachItiPrevAll = nan(size(reachTimesAll));
+        intertrialMidpointsAllFromReach = [];
+        intertrialItiAll = [];
+    end
+    timeMatchTol = max(stepSize, 1e-3);
+    
+    for aIdx = 1:numAreasToPlot
+        a = areasToTest(aIdx);
+        axes(haSeg(numAreasToPlot + aIdx));
+        hold on;
+        
+        % Reach d2 and centers at alignment position
+        reachCenters = [];
+        reachD2Vals = [];
+        if a <= numel(perWindowD2.reachCenters) && ~isempty(perWindowD2.reachCenters{a}) && ...
+                alignPosIdx <= numel(perWindowD2.reachCenters{a}) && ~isempty(perWindowD2.reachCenters{a}{alignPosIdx})
+            reachCenters = perWindowD2.reachCenters{a}{alignPosIdx}(:);
+            if normalizeD2
+                if a <= numel(perWindowD2.reachNormalized) && ~isempty(perWindowD2.reachNormalized{a}) && ...
+                        alignPosIdx <= numel(perWindowD2.reachNormalized{a}) && ~isempty(perWindowD2.reachNormalized{a}{alignPosIdx})
+                    reachD2Vals = perWindowD2.reachNormalized{a}{alignPosIdx}(:);
+                end
+            else
+                if a <= numel(perWindowD2.reach) && ~isempty(perWindowD2.reach{a}) && ...
+                        alignPosIdx <= numel(perWindowD2.reach{a}) && ~isempty(perWindowD2.reach{a}{alignPosIdx})
+                    reachD2Vals = perWindowD2.reach{a}{alignPosIdx}(:);
+                end
+            end
+        end
+        
+        % Intertrial d2 and centers at alignment position
+        interCenters = [];
+        interD2Vals = [];
+        if a <= numel(perWindowD2.intertrialCenters) && ~isempty(perWindowD2.intertrialCenters{a}) && ...
+                alignPosIdx <= numel(perWindowD2.intertrialCenters{a}) && ~isempty(perWindowD2.intertrialCenters{a}{alignPosIdx})
+            interCenters = perWindowD2.intertrialCenters{a}{alignPosIdx}(:);
+            if normalizeD2
+                if a <= numel(perWindowD2.intertrialNormalized) && ~isempty(perWindowD2.intertrialNormalized{a}) && ...
+                        alignPosIdx <= numel(perWindowD2.intertrialNormalized{a}) && ~isempty(perWindowD2.intertrialNormalized{a}{alignPosIdx})
+                    interD2Vals = perWindowD2.intertrialNormalized{a}{alignPosIdx}(:);
+                end
+            else
+                if a <= numel(perWindowD2.intertrial) && ~isempty(perWindowD2.intertrial{a}) && ...
+                        alignPosIdx <= numel(perWindowD2.intertrial{a}) && ~isempty(perWindowD2.intertrial{a}{alignPosIdx})
+                    interD2Vals = perWindowD2.intertrial{a}{alignPosIdx}(:);
+                end
+            end
+        end
+        
+        % Match reach centers to previous ITI
+        reachItiVals = nan(size(reachCenters));
+        for k = 1:numel(reachCenters)
+            if isempty(reachTimesAll)
+                continue;
+            end
+            [minDiff, idxNearest] = min(abs(reachTimesAll - reachCenters(k)));
+            if minDiff <= timeMatchTol
+                reachItiVals(k) = reachItiPrevAll(idxNearest);
+            end
+        end
+        
+        % Match intertrial centers to their centered ITI
+        interItiVals = nan(size(interCenters));
+        for k = 1:numel(interCenters)
+            if isempty(intertrialMidpointsAllFromReach)
+                continue;
+            end
+            [minDiff, idxNearest] = min(abs(intertrialMidpointsAllFromReach - interCenters(k)));
+            if minDiff <= timeMatchTol
+                interItiVals(k) = intertrialItiAll(idxNearest);
+            end
+        end
+        
+        % Keep paired valid samples
+        nReach = min(numel(reachItiVals), numel(reachD2Vals));
+        reachItiVals = reachItiVals(1:nReach);
+        reachD2Vals = reachD2Vals(1:nReach);
+        reachValid = ~isnan(reachItiVals) & ~isnan(reachD2Vals);
+        
+        nInter = min(numel(interItiVals), numel(interD2Vals));
+        interItiVals = interItiVals(1:nInter);
+        interD2Vals = interD2Vals(1:nInter);
+        interValid = ~isnan(interItiVals) & ~isnan(interD2Vals);
+        
+        scatter(reachItiVals(reachValid), reachD2Vals(reachValid), 24, [0 0 1], ...
+            'o', 'LineWidth', 1.0, 'DisplayName', 'Reach');
+        scatter(interItiVals(interValid), interD2Vals(interValid), 24, [1 0 0], ...
+            'o', 'LineWidth', 1.0, 'DisplayName', 'Intertrial midpoint');
+        
+        xlabel('ITI (s)', 'FontSize', 10);
+        if aIdx == 1
+            if normalizeD2
+                ylabel('d2 (normalized)', 'FontSize', 10);
+            else
+                ylabel('d2', 'FontSize', 10);
+            end
+            legend('Location', 'best', 'FontSize', 9);
+        end
+        title(sprintf('%s - ITI vs d2', areas{a}), 'FontSize', 11);
+        grid on;
+        set(gca, 'XTickMode', 'auto', 'YTickMode', 'auto', ...
+            'XTickLabelMode', 'auto', 'YTickLabelMode', 'auto');
+        if normalizeD2
+            yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
+        end
+    end
+    
+    if exist('sessionName', 'var') && ~isempty(sessionName)
+        sessionNameShort = sessionName(1:min(10, length(sessionName)));
+        titlePrefixSeg = [sessionNameShort, ' - '];
+    else
+        titlePrefixSeg = '';
+    end
+    sgtitle(sprintf('%sSegment d2 and ITI vs d2 (Window: %.1fs, Buffer: %.1fs)', ...
+        titlePrefixSeg, slidingWindowSize, windowBuffer), 'FontSize', 14, 'interpreter', 'none');
+    
+    saveFileSeg = fullfile(saveDir, sprintf('criticality_reach_intertrial_segment_and_iti_d2_win%.1f_step%.1f.png', ...
+        slidingWindowSize, stepSize));
+    exportgraphics(gcf, saveFileSeg, 'Resolution', 300);
+    fprintf('Saved segment + ITI summary plot to: %s\n', saveFileSeg);
+end
+
 %% =============================    d2 vs Population Activity Plot    =============================
-% Scatter plot of d2 values vs. population activity (center-bin mean)
+% Scatter plots of d2 values vs:
+%   (1) population activity center-bin mean
+%   (2) within-window variance of bin-wise population activity
 % for windows centered on reach starts and intertrial midpoints.
 
 if exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ...
-        exist('collectedReachWindowCenterBins', 'var') && exist('collectedIntertrialWindowCenterBins', 'var')
+        exist('collectedReachWindowCenterBins', 'var') && exist('collectedIntertrialWindowCenterBins', 'var') && ...
+        exist('collectedReachWindowData', 'var') && exist('collectedIntertrialWindowData', 'var')
     
     % Use sliding position closest to 0 s (event-centered windows)
     alignPosIdx = find(abs(slidingPositions) < (stepSize/2), 1);
@@ -1871,10 +1958,12 @@ if exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ...
     nAreasToPlot = numel(areasToPlot);
     
     figure(3003); clf;
-    t = tiledlayout(nAreasToPlot, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+    t = tiledlayout(nAreasToPlot, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
     
     for idxArea = 1:nAreasToPlot
         a = areasToPlot(idxArea);
+        
+        %% Column 1: center-bin mean popActivity vs d2
         nexttile;
         hold on;
         
@@ -1933,30 +2022,24 @@ if exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ...
         reachHandle = [];
         interHandle = [];
         if ~isempty(popReach) && ~isempty(d2ReachVals)
-            % x-axis: d2, y-axis: population activity
-            reachHandle = scatter(d2ReachVals, popReach, 20, [0 0 1], 'filled', ...
-                'DisplayName', 'Reach');
+            reachHandle = scatter(d2ReachVals, popReach, 20, [0 0 1], ...
+                'lineWidth', 1.2, 'DisplayName', 'Reach');
         end
         if ~isempty(popInter) && ~isempty(d2InterVals)
-            % x-axis: d2, y-axis: population activity
-            interHandle = scatter(d2InterVals, popInter, 20, [1 0 0], 'filled', ...
-                'DisplayName', 'Intertrial');
+            interHandle = scatter(d2InterVals, popInter, 20, [1 0 0], ...
+                'lineWidth', 1.2, 'DisplayName', 'Intertrial');
         end
         
-        % y-axis is population activity
-        ylabel('Population activity (center-bin mean across window)');
-        
-        % Area label with neuron count if available
+        ylabel('Center-bin population spiking');
         if exist('areas', 'var') && a <= numel(areas)
             if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= numel(idMatIdx) && ~isempty(idMatIdx{a})
                 numNeuronsArea = numel(idMatIdx{a});
-                areaTitle = sprintf('%s (n=%d)', areas{a}, numNeuronsArea);
+                areaTitle = sprintf('%s (n=%d) - Mean', areas{a}, numNeuronsArea);
             else
-                areaTitle = areas{a};
+                areaTitle = sprintf('%s - Mean', areas{a});
             end
             title(areaTitle, 'Interpreter', 'none');
         end
-        
         if idxArea == 1 && (~isempty(reachHandle) || ~isempty(interHandle))
             legendHandles = [];
             legendLabels = {};
@@ -1972,7 +2055,118 @@ if exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ...
                 legend(legendHandles, legendLabels, 'Location', 'best');
             end
         end
+        grid on;
         
+        %% Column 2: variance of bin-wise popActivity within each window vs d2
+        nexttile;
+        hold on;
+        
+        popVarReach = [];
+        d2ReachVarVals = [];
+        if a <= size(collectedReachWindowData, 1) && ...
+                alignPosIdx <= size(collectedReachWindowData, 2) && ...
+                ~isempty(collectedReachWindowData{a, alignPosIdx}) && ...
+                a <= numel(perWindowD2.reach) && ...
+                alignPosIdx <= numel(perWindowD2.reach{a}) && ...
+                ~isempty(perWindowD2.reach{a}{alignPosIdx})
+            
+            windowDataList = collectedReachWindowData{a, alignPosIdx};
+            nWindows = numel(windowDataList);
+            popVarReach = nan(nWindows, 1);
+            for w = 1:nWindows
+                wDataMat = windowDataList{w};
+                if ~isempty(wDataMat)
+                    wPop = mean(wDataMat, 2);  % bin-wise population activity trace within the window
+                    popVarReach(w) = var(wPop, 0, 'omitnan');
+                end
+            end
+            
+            if normalizeD2
+                d2ReachVarVals = perWindowD2.reachNormalized{a}{alignPosIdx}(:);
+            else
+                d2ReachVarVals = perWindowD2.reach{a}{alignPosIdx}(:);
+            end
+            
+            nMin = min(numel(popVarReach), numel(d2ReachVarVals));
+            popVarReach = popVarReach(1:nMin);
+            d2ReachVarVals = d2ReachVarVals(1:nMin);
+            
+            validIdx = ~isnan(popVarReach) & ~isnan(d2ReachVarVals);
+            popVarReach = popVarReach(validIdx);
+            d2ReachVarVals = d2ReachVarVals(validIdx);
+        end
+        
+        popVarInter = [];
+        d2InterVarVals = [];
+        if a <= size(collectedIntertrialWindowData, 1) && ...
+                alignPosIdx <= size(collectedIntertrialWindowData, 2) && ...
+                ~isempty(collectedIntertrialWindowData{a, alignPosIdx}) && ...
+                a <= numel(perWindowD2.intertrial) && ...
+                alignPosIdx <= numel(perWindowD2.intertrial{a}) && ...
+                ~isempty(perWindowD2.intertrial{a}{alignPosIdx})
+            
+            windowDataList = collectedIntertrialWindowData{a, alignPosIdx};
+            nWindows = numel(windowDataList);
+            popVarInter = nan(nWindows, 1);
+            for w = 1:nWindows
+                wDataMat = windowDataList{w};
+                if ~isempty(wDataMat)
+                    wPop = mean(wDataMat, 2);  % bin-wise population activity trace within the window
+                    popVarInter(w) = var(wPop, 0, 'omitnan');
+                end
+            end
+            
+            if normalizeD2
+                d2InterVarVals = perWindowD2.intertrialNormalized{a}{alignPosIdx}(:);
+            else
+                d2InterVarVals = perWindowD2.intertrial{a}{alignPosIdx}(:);
+            end
+            
+            nMin = min(numel(popVarInter), numel(d2InterVarVals));
+            popVarInter = popVarInter(1:nMin);
+            d2InterVarVals = d2InterVarVals(1:nMin);
+            
+            validIdx = ~isnan(popVarInter) & ~isnan(d2InterVarVals);
+            popVarInter = popVarInter(validIdx);
+            d2InterVarVals = d2InterVarVals(validIdx);
+        end
+        
+        reachHandleVar = [];
+        interHandleVar = [];
+        if ~isempty(popVarReach) && ~isempty(d2ReachVarVals)
+            reachHandleVar = scatter(d2ReachVarVals, popVarReach, 20, [0 0 1], ...
+                'lineWidth', 1.2, 'DisplayName', 'Reach');
+        end
+        if ~isempty(popVarInter) && ~isempty(d2InterVarVals)
+            interHandleVar = scatter(d2InterVarVals, popVarInter, 20, [1 0 0], ...
+                'lineWidth', 1.2, 'DisplayName', 'Intertrial');
+        end
+        
+        ylabel('Var(population spiking in window)');
+        if exist('areas', 'var') && a <= numel(areas)
+            if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= numel(idMatIdx) && ~isempty(idMatIdx{a})
+                numNeuronsArea = numel(idMatIdx{a});
+                areaTitle = sprintf('%s (n=%d) - Variance', areas{a}, numNeuronsArea);
+            else
+                areaTitle = sprintf('%s - Variance', areas{a});
+            end
+            title(areaTitle, 'Interpreter', 'none');
+        end
+        if idxArea == 1 && (~isempty(reachHandleVar) || ~isempty(interHandleVar))
+            legendHandles = [];
+            legendLabels = {};
+            if ~isempty(reachHandleVar)
+                legendHandles = [legendHandles, reachHandleVar];
+                legendLabels{end+1} = get(reachHandleVar, 'DisplayName');
+            end
+            if ~isempty(interHandleVar)
+                legendHandles = [legendHandles, interHandleVar];
+                legendLabels{end+1} = get(interHandleVar, 'DisplayName');
+            end
+            if ~isempty(legendHandles)
+                legend(legendHandles, legendLabels, 'Location', 'best');
+            end
+        end
         grid on;
     end
     
@@ -1984,16 +2178,62 @@ if exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ...
     end
     
     if exist('sessionName', 'var') && ~isempty(sessionName)
-        titleStr = sprintf('%s - Population Activity vs d2 (Reach vs Intertrial)', sessionName);
+        titleStr = sprintf('%s - Population Activity Metrics vs d2 (Reach vs Intertrial)', sessionName);
     else
-        titleStr = 'Population Activity vs d2 (Reach vs Intertrial)';
+        titleStr = 'Population Activity Metrics vs d2 (Reach vs Intertrial)';
     end
     title(t, titleStr, 'Interpreter', 'none');
     
     % Save scatter figure
-    saveFileScatter = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_vs_popActivity_win%.1f_step%.1f.png', slidingWindowSize, stepSize));
+    saveFileScatter = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_vs_popActivity_metrics_win%.1f_step%.1f.png', slidingWindowSize, stepSize));
     exportgraphics(gcf, saveFileScatter, 'Resolution', 300);
-    fprintf('Saved d2 vs population activity plot to: %s\n', saveFileScatter);
+    fprintf('Saved d2 vs population activity metric plots to: %s\n', saveFileScatter);
 end
 
 fprintf('\n=== Analysis Complete ===\n');
+
+
+
+
+%% =============================    Save Results    =============================
+results = struct();
+results.areas = areas;
+results.reachStart = reachStart;
+results.intertrialMidpoints = intertrialMidpoints;
+results.slidingWindowSize = slidingWindowSize;
+results.windowBuffer = windowBuffer;
+results.beforeAlign = beforeAlign;
+results.afterAlign = afterAlign;
+results.stepSize = stepSize;
+results.slidingPositions = slidingPositions;
+results.d2Metrics = d2Metrics;
+results.segmentMetrics = segmentMetrics;
+results.segmentNames = segmentNames;
+results.perWindowD2 = perWindowD2;
+results.collectedReachWindowCenterBins = collectedReachWindowCenterBins;
+results.collectedIntertrialWindowCenterBins = collectedIntertrialWindowCenterBins;
+results.collectedReachWindowCenterBinsNormalized = collectedReachWindowCenterBinsNormalized;
+results.collectedIntertrialWindowCenterBinsNormalized = collectedIntertrialWindowCenterBinsNormalized;
+if exist('sessionName', 'var')
+    results.sessionName = sessionName;
+end
+if exist('idMatIdx', 'var')
+    results.idMatIdx = idMatIdx;
+end
+if exist('segmentWindowsEng', 'var')
+    results.segmentWindows = segmentWindowsEng;
+end
+results.binSize = binSize;  % Area-specific bin sizes
+results.params.pcaFlag = pcaFlag;
+results.params.pcaFirstFlag = pcaFirstFlag;
+results.params.nDim = nDim;
+results.params.pOrder = pOrder;
+results.params.critType = critType;
+results.params.minSpikesPerBin = minSpikesPerBin;
+results.params.minBinsPerWindow = minBinsPerWindow;
+results.params.nShuffles = nShuffles;
+results.params.normalizeD2 = normalizeD2;
+
+resultsPath = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_win%.1f_step%.1f.mat', slidingWindowSize, stepSize));
+save(resultsPath, 'results');
+fprintf('\nSaved results to: %s\n', resultsPath);
