@@ -1,10 +1,28 @@
 function [ymin,smin]=funCriterion(X,optmethod)
 
 if ~isempty(strfind(optmethod,'elbow'))
+    % Elbow is computed on first differences; map back to original X index.
+    % diff(X) index i corresponds to transition between X(i) and X(i+1),
+    % so we select the elbow at i+1 on the original state axis.
+    originalLen = numel(X);
     X=diff(X);
+    originalDiffIdx = 1:numel(X);
     %# get coordinates of all the points
-    X(isnan(X))=[];
+    validMask = ~isnan(X);
+    X = X(validMask);
+    originalDiffIdx = originalDiffIdx(validMask);
     nPoints = length(X);
+    if nPoints < 2
+        % Fallback: not enough valid points for geometric elbow.
+        if isempty(originalDiffIdx)
+            smin = 1;
+        else
+            smin = originalDiffIdx(1) + 1;
+        end
+        smin = min(max(smin, 1), max(originalLen, 1));
+        ymin = NaN;
+        return;
+    end
     allCoord = [1:nPoints;X]';              %'# SO formatting
     firstPoint = allCoord(1,:);%# pull out first point
     lineVec = allCoord(end,:) - firstPoint;%# get vector between first and last point - this is the line
@@ -29,7 +47,8 @@ if ~isempty(strfind(optmethod,'elbow'))
     %# distance to line is the norm of vecToLine
     distToLine = sqrt(sum(vecToLine.^2,2));
     [maxDist,idxOfBestPoint] = max(distToLine);
-    ymin=maxDist; smin=idxOfBestPoint;
+    ymin=maxDist;
+    smin=originalDiffIdx(idxOfBestPoint) + 1;
 else
     [ymin,smin] = min(X(:));
 end

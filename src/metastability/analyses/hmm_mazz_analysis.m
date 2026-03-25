@@ -194,22 +194,23 @@ for areaIdx = areasToTest
         numNeurons = size(res.hmm_results(1).rates, 2);
         totalTimeBins = numTrials * numTimePerTrial;
 
-        continuousPStates = zeros(totalTimeBins, numStates);
-        continuousRates = zeros(totalTimeBins, numStates, numNeurons); %#ok<NASGU>
-        continuousSequence = zeros(totalTimeBins, 1);
+        % Memory note:
+        % - continuousPStates is [totalTimeBins x numStates] and is usually manageable.
+        % - A full continuousRates tensor [totalTimeBins x numStates x numNeurons] is
+        %   extremely large for long sessions and is not used downstream here, so
+        %   we avoid allocating it.
+        continuousPStates = zeros(totalTimeBins, numStates, 'single');
+        continuousSequence = zeros(totalTimeBins, 1, 'uint16');
 
         for trialIdx = 1:numTrials
             timeIdx = ((trialIdx - 1) * numTimePerTrial + 1):(trialIdx * numTimePerTrial);
-            continuousPStates(timeIdx, :) = res.hmm_results(trialIdx).pStates';
+            continuousPStates(timeIdx, :) = single(res.hmm_results(trialIdx).pStates');
         end
 
-        for binIdx = 1:totalTimeBins
-            stateProbs = continuousPStates(binIdx, :);
-            [maxProb, maxState] = max(stateProbs);
-            if maxProb >= res.HmmParam.MinP
-                continuousSequence(binIdx) = maxState;
-            end
-        end
+        % Vectorized: take MAP state, then apply MinP threshold
+        [maxProb, maxState] = max(continuousPStates, [], 2);
+        aboveThreshMask = maxProb >= res.HmmParam.MinP;
+        continuousSequence(aboveThreshMask) = uint16(maxState(aboveThreshMask));
 
         fprintf('Successfully transformed results to continuous format\n');
         fprintf('Proportion of undefined states: %.2f\n', ...

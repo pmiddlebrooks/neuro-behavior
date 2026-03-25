@@ -11,7 +11,7 @@
 
 % ===== CONFIGURATION =====
 % Select which session type to process: 'reach', 'schall', or 'spontaneous'
-batchSessionType = 'reach';  % Change this to process different session types
+batchSessionType = 'spontaneous';  % Change this to process different session types
 dataSource = 'spikes';  % 'spikes' or 'lfp'
 paths = get_paths;
 
@@ -123,7 +123,7 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
-for s = 1:numSessions
+for s = 1 %:numSessions
     sessionName = sessions{s};
     
     fprintf('\n');

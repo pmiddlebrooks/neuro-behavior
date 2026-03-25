@@ -43,7 +43,7 @@ for k = 1:numel(sortedCodes)
 end
 
 %% Explore unique sequences
-uOpts.patternLength = 2:6;
+uOpts.patternLength = 3:6;
 uOpts.nMin = 10;
 % uOpts.includeBhv = [5 6];
 % uOpts.includeBhv = [0:2 15];
@@ -54,7 +54,7 @@ uOpts.firstBhv = [];
 uOpts.includeIsFirst = true;
 uOpts.noRepeat = false;  % Can behavior labels repeat (true) or not (false) in the sequence?
 uOpts.preBufferSec = 0.5; % How many frames before the sequences must no t contain labels in includeBhv
-uOpts.excludeBhv = [-1, 0:4, 13:15];
+uOpts.excludeBhv = [-1];
 % uOpts.excludeBhv = [-1];
 [uniqueSequences, sequenceTimes] = find_unique_sequences(bhvMat, uOpts);
 [uniqueSequences', sequenceTimes']
@@ -64,7 +64,7 @@ uOpts.excludeBhv = [-1, 0:4, 13:15];
 % data for analysis
 alignOnIdx = 2; % Which behavior index (in the compressed sequence) do you want to align on for analysis?
 
-useIdx = [1 6]; % indices into `uniqueSequences` to analyze
+useIdx = [1:3 7]; % indices into `uniqueSequences` to analyze
 
 [alignTimes, sequences, sequenceNames] = deal(cell(1, length(useIdx)));
 for i = 1:length(useIdx)

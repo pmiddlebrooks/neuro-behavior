@@ -11,8 +11,25 @@ clear eventMat eventMatZ
 %% get desired file paths
 paths = get_paths;
 
+% Session folder basename (handles sessionName as path or plain name)
+[~, sessionBaseName, ~] = fileparts(sessionName);
+if isempty(sessionBaseName)
+    sessionBaseName = sessionName;
+end
+opts.sessionName = sessionBaseName;
+
+% Spontaneous data: CSV/spikes are under spontaneousDataPath/<first 2 letters>/<sessionBaseName>
+% Fallback: older flat layout spontaneousDataPath/<sessionBaseName>
+subDir = sessionBaseName(1:min(2, numel(sessionBaseName)));
+pathWithSubfolder = fullfile(paths.spontaneousDataPath, subDir, sessionBaseName);
+pathFlat = fullfile(paths.spontaneousDataPath, sessionBaseName);
+if isfolder(pathWithSubfolder)
+    opts.dataPath = fullfile(paths.spontaneousDataPath, subDir);
+elseif isfolder(pathFlat)
     opts.dataPath = paths.spontaneousDataPath;
-    opts.sessionName = sessionName;
+else
+    opts.dataPath = fullfile(paths.spontaneousDataPath, subDir);
+end
 
 %%
 
