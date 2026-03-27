@@ -8,6 +8,7 @@ function hmm_mazz_debug_model_selection_plot(results, config)
 %   config - Optional struct:
 %       .areasToPlot - Area indices or area labels to include (default: all valid)
 %       .showDiffElbow - True to compute elbow on diff(LL) for comparison (default: true)
+%       .showFoldUncertainty - True to add fold-based uncertainty (default: true)
 %
 % Goal:
 %   Plot diagnostics to verify whether selected number of states matches:
@@ -20,6 +21,10 @@ end
 
 if ~isfield(config, 'showDiffElbow') || isempty(config.showDiffElbow)
     config.showDiffElbow = true;
+end
+
+if ~isfield(config, 'showFoldUncertainty') || isempty(config.showFoldUncertainty)
+    config.showFoldUncertainty = true;
 end
 
 if ~isfield(results, 'hmm_results') || ~iscell(results.hmm_results)
@@ -104,6 +109,17 @@ for areaIdx = areasToPlot
     selectedNumStates = hiddenTotal(bestStateIdx);
     llDiff = diff(llCurve);
 
+    % Optional uncertainty from folds/runs (mirrors hmm.funHMM figure(1))
+    % Note: funHMM shades LLtot.m2LL +/- SEM where SEM is computed from LLtrain
+    % across folds/runs (areaRes.hmm_data(:, iState).LLtrain).
+    llSem = [];
+    if config.showFoldUncertainty && isfield(areaRes, 'hmm_data') && ~isempty(areaRes.hmm_data)
+        llSem = local_compute_ll_sem(areaRes.hmm_data, numel(hiddenTotal));
+        if ~isempty(llSem) && numel(llSem) ~= numel(hiddenTotal)
+            llSem = llSem(1:min(numel(llSem), numel(hiddenTotal)));
+        end
+    end
+
     diffElbowIdx = NaN;
     diffElbowState = NaN;
     if config.showDiffElbow && numel(llCurve) >= 3
@@ -116,7 +132,11 @@ for areaIdx = areasToPlot
         'Color', 'w');
 
     subplot(2, 1, 1);
-    plot(hiddenTotal, llCurve, '-ok', 'LineWidth', 1.5, 'MarkerSize', 5); hold on;
+    hold on;
+    if ~isempty(llSem) && all(isfinite(llSem)) && any(llSem > 0)
+        local_plot_uncertainty_ribbon(hiddenTotal, llCurve, llSem);
+    end
+    plot(hiddenTotal, llCurve, '-ok', 'LineWidth', 1.5, 'MarkerSize', 5);
     plot(hiddenTotal(bestStateIdx), llCurve(bestStateIdx), 'or', ...
         'MarkerFaceColor', 'r', 'MarkerSize', 8);
     if ~isnan(diffElbowIdx)
@@ -167,5 +187,53 @@ elseif isinf(numValue)
     numStr = 'Inf';
 else
     numStr = sprintf('%g', numValue);
+end
+end
+
+function llSem = local_compute_ll_sem(hmmData, numStates)
+% LOCAL_COMPUTE_LL_SEM Compute SEM across folds/runs for each state count.
+%
+% Variables:
+%   hmmData   - KxN struct array with field .LLtrain (per fold/run and state count)
+%   numStates - Scalar, expected number of state-count entries (N)
+%
+% Goal:
+%   Replicate the uncertainty band used in hmm.funHMM figure(1):
+%     SD = nanstd(LLtemp) / sqrt(numFoldsOrRuns)
+%   where LLtemp(:, i) = [hmmData(:, i).LLtrain].
+
+llSem = [];
+if isempty(hmmData) || ~isstruct(hmmData) || ~isfield(hmmData, 'LLtrain')
+    return;
+end
+
+if nargin < 2 || isempty(numStates)
+    numStates = size(hmmData, 2);
+end
+
+numStates = min(numStates, size(hmmData, 2));
+if numStates < 1
+    return;
+end
+
+llSem = NaN(1, numStates);
+for stateIdx = 1:numStates
+    llTrainVals = [hmmData(:, stateIdx).LLtrain]';
+    llSem(stateIdx) = nanstd(llTrainVals) / sqrt(size(llTrainVals, 1));
+end
+end
+
+function local_plot_uncertainty_ribbon(xVals, yVals, ySem)
+% LOCAL_PLOT_UNCERTAINTY_RIBBON Plot a grey SEM ribbon around a curve.
+
+upperBound = yVals + ySem;
+lowerBound = yVals - ySem;
+
+if exist('aux.jbfill', 'file') == 2
+    aux.jbfill(xVals, upperBound, lowerBound, [0.8, 0.8, 0.8], 0, 0.15);
+else
+    xFill = [xVals, fliplr(xVals)];
+    yFill = [upperBound, fliplr(lowerBound)];
+    fill(xFill, yFill, [0.8, 0.8, 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.15);
 end
 end

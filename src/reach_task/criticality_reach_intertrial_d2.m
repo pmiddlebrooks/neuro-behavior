@@ -1918,6 +1918,7 @@ if nSegments > 0
         grid on;
         set(gca, 'XTickMode', 'auto', 'YTickMode', 'auto', ...
             'XTickLabelMode', 'auto', 'YTickLabelMode', 'auto');
+        xlim([0 35])
         if normalizeD2
             yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
         end

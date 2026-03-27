@@ -1,29 +1,56 @@
 function [ymin,smin]=funCriterion(X,optmethod)
 
 if ~isempty(strfind(optmethod,'elbow'))
+    % Variables:
+    %   X         - Model-selection curve over candidate state counts
+    %   optmethod - Selection mode; 'elbow' uses geometric elbow on diff(X)
+    %
+    % Goal:
+    %   Select an elbow only from negative first-differences so that the
+    %   chosen state corresponds to a local LL decrease. If no negative
+    %   deflection exists, fall back to the global minimum of X.
+
     % Elbow is computed on first differences; map back to original X index.
     % diff(X) index i corresponds to transition between X(i) and X(i+1),
     % so we select the elbow at i+1 on the original state axis.
-    originalLen = numel(X);
-    X=diff(X);
-    originalDiffIdx = 1:numel(X);
+    originalCurve = X(:)';
+    originalLen = numel(originalCurve);
+    diffCurve = diff(originalCurve);
+    originalDiffIdx = 1:numel(diffCurve);
+
     %# get coordinates of all the points
-    validMask = ~isnan(X);
-    X = X(validMask);
-    originalDiffIdx = originalDiffIdx(validMask);
-    nPoints = length(X);
+    validMask = ~isnan(diffCurve);
+    negativeMask = diffCurve < 0;
+    candidateMask = validMask & negativeMask;
+    if ~any(candidateMask)
+        [ymin,smin] = min(originalCurve(:));
+        if isempty(smin) || isnan(smin)
+            smin = 1;
+            ymin = NaN;
+        end
+        smin = min(max(smin, 1), max(originalLen, 1));
+        return;
+    end
+
+    diffCurve = diffCurve(candidateMask);
+    originalDiffIdx = originalDiffIdx(candidateMask);
+    nPoints = length(diffCurve);
     if nPoints < 2
         % Fallback: not enough valid points for geometric elbow.
         if isempty(originalDiffIdx)
-            smin = 1;
+            [ymin,smin] = min(originalCurve(:));
+            if isempty(smin) || isnan(smin)
+                smin = 1;
+                ymin = NaN;
+            end
         else
+            ymin = NaN;
             smin = originalDiffIdx(1) + 1;
         end
         smin = min(max(smin, 1), max(originalLen, 1));
-        ymin = NaN;
         return;
     end
-    allCoord = [1:nPoints;X]';              %'# SO formatting
+    allCoord = [1:nPoints;diffCurve]';              %'# SO formatting
     firstPoint = allCoord(1,:);%# pull out first point
     lineVec = allCoord(end,:) - firstPoint;%# get vector between first and last point - this is the line
     lineVecN = lineVec / sqrt(sum(lineVec.^2));%# normalize the line vector

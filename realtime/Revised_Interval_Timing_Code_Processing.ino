@@ -17,11 +17,11 @@ const int BEAM_BREAK_PORT = 2;   // active low
 const int LED_PORT = 10;         // reward confirmation LED
 
 // Timing (ms)
-const int SOLENOID_ON_TIME = 30;   // solenoid stays open
+const int SOLENOID_ON_TIME = 20;   // solenoid stays open
 const int SOLENOID_OFF_TIME = 300; // wait btwn pulses
-const int SOLENOID_REPEATS = 1;   // additional pulses
+const int SOLENOID_REPEATS = 1;    // additional pulses
 
-const unsigned long INTERVAL_DURATION = 3000;   // min wait time after confirmed leave
+const unsigned long INTERVAL_DURATION = 4000;   // min wait time after confirmed leave
 const unsigned long MIN_LEAVE_TIME = 100;       // min leave time to confirm exit
 const unsigned long LED_PULSE = 100;            // reward LED duration
 
@@ -107,15 +107,8 @@ void pulse_led() {
  *  Block until the host sends at least one byte over Serial (handshake).
  */
 void wait_for_processing_start() {
-  while (!Serial) {
-    ;
-  }
-  while (Serial.available() == 0) {
-    ;
-  }
-  while (Serial.available() > 0) {
-    Serial.read();
-  }
+  while (Serial.available() == 0) { ; }
+  while (Serial.available() > 0) { Serial.read(); }
 }
 
 void setup() {
@@ -129,14 +122,13 @@ void setup() {
   Serial.begin(9600);
   wait_for_processing_start();
 
-  // CSV header (matches Revised_Interval_Timing_Code.ino format)
+  // CSV header
   Serial.println("timestamp_ms,event,value,");
-
-  // Task starts immediately after header
 }
 
 void loop() {
-  beamState = !digitalRead(BEAM_BREAK_PORT);
+  beamState = (digitalRead(BEAM_BREAK_PORT) == LOW);
+  // beamState = !digitalRead(BEAM_BREAK_PORT);
 
   if (beamState != lastBeamState) {
     write_beam(beamState);
@@ -177,15 +169,11 @@ void loop() {
       leaveTime = initialExitTime;
       timerArmed = true;
     }
-    if (beamState) {
-      leavePending = false;
-    }
+    if (beamState) leavePending = false;
   }
 
   if (givingReward) {
-    if (millis() - rewardStartTime >= SOLENOID_ON_TIME) {
-      close_solenoid();
-    }
+    if (millis() - rewardStartTime >= SOLENOID_ON_TIME) close_solenoid();
   }
 
   if (inBurst && !givingReward) {

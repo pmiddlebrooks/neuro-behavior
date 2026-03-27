@@ -181,8 +181,8 @@ hmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
 hmmParam.BinSize = 0.01;       % Markov chain time step (s)
 hmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (s)
 hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
-hmmParam.NumSteps = 8;         % Number of independent EM runs at fixed parameters
-hmmParam.NumRuns = 20;         % Maximum iterations per EM run
+hmmParam.NumSteps = 7;         % Number of independent EM runs at fixed parameters
+hmmParam.NumRuns = 25;         % Maximum iterations per EM run
 hmmParam.singleSeqXval.K = 7;  % Cross-validation folds
 config.HmmParam = hmmParam;
 
@@ -191,7 +191,7 @@ results = hmm_mazz_analysis(dataStruct, config);
 
 fprintf('\n=== HMM Analysis Complete ===\n');
 
-% Optional immediate plotting from in-memory results
+%% Optional immediate plotting from in-memory results
 makePlots = true;
 if makePlots
     fprintf('Creating basic HMM plots from in-memory results...\n');
@@ -205,7 +205,7 @@ if makeModelSelectionDebugPlots
     fprintf('Creating HMM model-selection debug plots...\n');
     debugConfig = struct();
     debugConfig.showDiffElbow = true;
-    debugConfig.areasToPlot = {'M56','DS'};
+    debugConfig.areasToPlot = {'M23','M56','DS','VS'};
     hmm_mazz_debug_model_selection_plot(results, debugConfig);
     fprintf('=== HMM Model-Selection Debug Plots Complete ===\n');
 end

@@ -105,7 +105,7 @@ minWindowSize = slidingWindowSize;
 
 % Bin/window selection mode (manual vs. optimal)
 useOptimalBinWindowFunction = false;  % If true, choose binSize + slidingWindowSize from spike rates
-binSizeManual = 0.05;                % Manual bin size (seconds) when useOptimalBinWindowFunction is false
+binSizeManual = 0.025;                % Manual bin size (seconds) when useOptimalBinWindowFunction is false
 
 pOrder = 10;
 critType = 2;

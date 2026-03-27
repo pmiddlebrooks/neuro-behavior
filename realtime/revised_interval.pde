@@ -17,7 +17,7 @@ import processing.serial.*;
 Serial rigPort;
 PrintWriter logFile;
 
-int serialPortIndex = 0;
+int serialPortIndex = 1;
 
 /**
  * get_log_file_name
@@ -78,6 +78,7 @@ void serialEvent(Serial p) {
   if (line != null) {
     line = trim(line);
     if (line.length() == 0) return;
+    println(line);
     logFile.println(line);
     logFile.flush();
   }
