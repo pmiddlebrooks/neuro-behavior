@@ -6,6 +6,8 @@
 % This script mirrors the style of run_rqa_sliding.m. You can:
 %   - Set variables in the workspace and run this script, or
 %   - Call hmm_mazz_analysis() directly with a dataStruct/config.
+% Synthetic pipeline test: set hmmMazzTestMode = true below (after addpath). Uses
+% hmm_mazz_unit_test_generate; data file under dropboxMetastabilityData.
 
 % Toggle: set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
@@ -73,6 +75,70 @@ if exist(analysesPath, 'dir')
 end
 if exist(dataPrepPath, 'dir')
     addpath(dataPrepPath);
+end
+
+% ---------------------------------------------------------------------
+% Test mode: synthetic Poisson ground-truth dataset (see hmm_mazz_unit_test_generate)
+% ---------------------------------------------------------------------
+hmmMazzTestMode = true;
+dropboxMetastabilityData = fullfile(paths.dropPath, 'metastability');
+synthMatFile = 'hmm_mazz_unit_test_synth.mat';
+
+if hmmMazzTestMode
+    sessionType = 'spontaneous';
+    if ~exist(dropboxMetastabilityData, 'dir')
+        mkdir(dropboxMetastabilityData);
+    end
+    synthMatPath = fullfile(dropboxMetastabilityData, synthMatFile);
+    if ~exist(synthMatPath, 'file')
+        fprintf('Generating synthetic HMM unit-test data...\n');
+        hmm_mazz_unit_test_generate(dropboxMetastabilityData);
+    end
+    fprintf('Loading synthetic unit-test data from:\n%s\n', synthMatPath);
+    loadedSynth = load(synthMatPath);
+
+    dataStruct = struct();
+    dataStruct.sessionType = sessionType;
+    dataStruct.paths = paths;
+    dataStruct.opts = loadedSynth.opts;
+    dataStruct.areas = loadedSynth.areas;
+    dataStruct.idList = loadedSynth.idList;
+    dataStruct.spikeData = loadedSynth.spikeData;
+    dataStruct.trialDur = loadedSynth.trialDur;
+    dataStruct.sessionName = loadedSynth.sessionName;
+
+    if ~exist('config', 'var') || isempty(config)
+        config = struct();
+    end
+    if ~isfield(config, 'modelSelectionMethod') || isempty(config.modelSelectionMethod)
+        config.modelSelectionMethod = 'XVAL';
+    end
+    if ~isfield(config, 'minNumNeurons') || isempty(config.minNumNeurons)
+        config.minNumNeurons = 15;
+    end
+    if ~isfield(config, 'saveData') || isempty(config.saveData)
+        config.saveData = false;
+    end
+    if ~isfield(config, 'useParallel') || isempty(config.useParallel)
+        config.useParallel = true;
+    end
+    if isfield(loadedSynth, 'opts') && isfield(loadedSynth.opts, 'HmmParam')
+        config.HmmParam = loadedSynth.opts.HmmParam;
+    end
+
+    fprintf('\nRunning hmm_mazz_analysis (test mode)...\n');
+    results = hmm_mazz_analysis(dataStruct, config);
+    fprintf('\n=== HMM Analysis Complete (test mode) ===\n');
+
+    unitTestReport = hmm_mazz_unit_test_validate(results, loadedSynth.groundTruthStateSeq); %#ok<NASGU>
+
+    makePlots = true;
+    if makePlots
+        fprintf('Creating basic HMM plots from in-memory test results...\n');
+        hmm_mazz_plot(results, struct('brainArea', 'M23'));
+        fprintf('=== HMM Plotting Complete ===\n');
+    end
+    return;
 end
 
 % ---------------------------------------------------------------------
@@ -198,10 +264,10 @@ fprintf('\n=== HMM Analysis Complete ===\n');
 %% Optional immediate plotting from in-memory results
 makePlots = true;
 checkArea = 'M56';
-plotCongif.brainArea = checkArea;
+configPlot = struct('brainArea', checkArea);
 if makePlots
     fprintf('Creating basic HMM plots from in-memory results...\n');
-    hmm_mazz_plot(results, plotCongif);
+    hmm_mazz_plot(results, configPlot);
     fprintf('=== HMM Plotting Complete ===\n');
 end
 

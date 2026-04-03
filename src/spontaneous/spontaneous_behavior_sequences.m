@@ -18,6 +18,8 @@ end
 fileName = csvFiles(1).name;
 bhvMat = readtable(fullfile(sessionFolder, fileName));
 
+collectEnd = 60*60;
+bhvMat(bhvMat.Time > collectEnd,:) = [];
 %%  Smooth behavior labels if you want to
 bopts.fsBhv = 60;
 bopts.smoothingWindow = .25;
@@ -49,6 +51,7 @@ uOpts.nMin = 10;
 % uOpts.includeBhv = [0:2 15];
 % uOpts.includeBhv = [14 15];
 uOpts.includeBhv = [5:12];
+uOpts.includeBhv = [];
 % uOpts.includeBhv = [5 8];
 uOpts.firstBhv = [];
 uOpts.includeIsFirst = true;
@@ -57,7 +60,7 @@ uOpts.preBufferSec = 0.5; % How many frames before the sequences must no t conta
 uOpts.excludeBhv = [-1];
 % uOpts.excludeBhv = [-1];
 [uniqueSequences, sequenceTimes] = find_unique_sequences(bhvMat, uOpts);
-[uniqueSequences', sequenceTimes']
+[num2cell((1:length(uniqueSequences))'), uniqueSequences', sequenceTimes']
 
 %% Isolate and collect the sequences for analysis
 % Choose which of the sequences to analyze, and use a for loop to build the
@@ -65,6 +68,7 @@ uOpts.excludeBhv = [-1];
 alignOnIdx = 2; % Which behavior index (in the compressed sequence) do you want to align on for analysis?
 
 useIdx = [1:3 7]; % indices into `uniqueSequences` to analyze
+useIdx = [13 14 72 78]; % indices into `uniqueSequences` to analyze
 
 [alignTimes, sequences, sequenceNames] = deal(cell(1, length(useIdx)));
 for i = 1:length(useIdx)
