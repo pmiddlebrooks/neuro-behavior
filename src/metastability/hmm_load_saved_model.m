@@ -11,6 +11,8 @@ function [hmm_results] = hmm_load_saved_model(sessionType, varargin)
 %       fileIndex  - (Optional) Integer: Index of file to load (1 = most recent, 2 = second most recent, etc.)
 %       binSize    - (Optional) Numeric: Bin size in seconds to filter files (e.g., 0.01)
 %       minDur     - (Optional) Numeric: Minimum duration in seconds to filter files (e.g., 0.04)
+%       collectStart, collectEnd - (Optional) Seconds; when collectEnd is set, filename
+%           includes _start_XX_end_XX (must match hmm_mazz_analysis save naming).
 %
 %   OUTPUTS (in hmm_results):
 %       hmm_model  - Structure containing the trained HMM model:
@@ -65,6 +67,8 @@ addParameter(p, 'brainArea', [], @(x) ischar(x) || isempty(x));
 addParameter(p, 'fileIndex', 1, @isnumeric);
 addParameter(p, 'binSize', [], @isnumeric);
 addParameter(p, 'minDur', [], @isnumeric);
+addParameter(p, 'collectStart', [], @isnumeric);
+addParameter(p, 'collectEnd', [], @isnumeric);
 parse(p, sessionType, varargin{:});
 
 sessionType = p.Results.sessionType;
@@ -72,6 +76,8 @@ brainArea = p.Results.brainArea;
 fileIndex = p.Results.fileIndex;
 binSize = p.Results.binSize;
 minDur = p.Results.minDur;
+collectStart = p.Results.collectStart;
+collectEnd = p.Results.collectEnd;
 
 % Validate inputs
 validDataTypes = {'spontaneous', 'reach'};
@@ -118,6 +124,14 @@ end
 
 % If both binSize and minDur are specified, construct filename directly (like hmm_mazz_peri_nat.m)
 if ~isempty(binSize) && ~isempty(minDur)
+    timeWindowSuffix = '';
+    if ~isempty(collectEnd)
+        collectStartSec = 0;
+        if ~isempty(collectStart)
+            collectStartSec = collectStart;
+        end
+        timeWindowSuffix = sprintf('_start_%g_end_%g', collectStartSec, collectEnd);
+    end
     if strcmpi(sessionType, 'reach')
         % For Reach data: need to search session folders
         reachResultsDir = paths.reachResultsPath;
@@ -130,7 +144,8 @@ if ~isempty(binSize) && ~isempty(minDur)
         sessionDirs = sessionDirs([sessionDirs.isdir] & ~strncmp({sessionDirs.name}, '.', 1));
         
         % Construct filename
-        filename = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f.mat', binSize, minDur);
+        filename = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f%s.mat', ...
+            binSize, minDur, timeWindowSuffix);
         
         % Search for this file in all session folders
         filePath = [];
@@ -153,7 +168,8 @@ if ~isempty(binSize) && ~isempty(minDur)
         % For Spontaneous data: search in new per-session structure first,
         % then fall back to legacy metastability directory.
         spontResultsDir = paths.spontaneousResultsPath;
-        filenameNew = sprintf('hmm_mazz_spontaneous_bin%.3f_minDur%.3f.mat', binSize, minDur);
+        filenameNew = sprintf('hmm_mazz_spontaneous_bin%.3f_minDur%.3f%s.mat', ...
+            binSize, minDur, timeWindowSuffix);
         filePath = [];
         
         if exist(spontResultsDir, 'dir')
@@ -180,7 +196,8 @@ if ~isempty(binSize) && ~isempty(minDur)
                 error('HMM directory not found: %s', hmmdir);
             end
             
-            filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f.mat', binSize, minDur);
+            filename = sprintf('hmm_mazz_nat_bin%.3f_minDur%.3f%s.mat', ...
+                binSize, minDur, timeWindowSuffix);
             filePath = fullfile(hmmdir, filename);
             
             if ~exist(filePath, 'file')

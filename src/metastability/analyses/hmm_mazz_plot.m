@@ -20,6 +20,9 @@ function hmm_mazz_plot(hmmRes, config)
 if nargin < 2
     config = struct(); %#ok<NASGU>
 end
+if ~isfield(config, 'plotStateDominance') || isempty(config.plotStateDominance)
+    config.plotStateDominance = true;
+end
 
 % Handle multi-area vs single-area input
 if isfield(hmmRes, 'hmm_results') && iscell(hmmRes.hmm_results)
@@ -155,6 +158,181 @@ title(sprintf('HMM State Probabilities (%s)', areaLabel), 'Interpreter', 'none')
 hold off;
 
 fprintf('Basic HMM plots completed for %s.\n', areaLabel);
+
+if config.plotStateDominance
+    plot_state_dominance_diagnostics(hmmResSingle, areaLabel);
+end
+
+end
+
+function plot_state_dominance_diagnostics(hmmResSingle, areaLabel)
+% PLOT_STATE_DOMINANCE_DIAGNOSTICS Plot state dominance diagnostics.
+%
+% Variables:
+%   hmmResSingle - Single-area HMM result struct with:
+%       .continuous_results.pStates  - [timeBins x numStates] posteriors
+%       .continuous_results.sequence - [timeBins x 1] thresholded states
+%       .HmmParam.MinP               - Threshold for state assignment
+%       .HmmParam.BinSize            - Bin size in seconds
+%   areaLabel   - Area name for titles.
+%
+% Goal:
+%   Compare soft state occupancy (posteriors) with hard occupancy
+%   (thresholded sequence), and visualize confidence/dwell statistics.
+
+if ~isfield(hmmResSingle, 'continuous_results') || ...
+        ~isfield(hmmResSingle.continuous_results, 'pStates') || ...
+        ~isfield(hmmResSingle.continuous_results, 'sequence')
+    warning('Skipping state dominance diagnostics: missing continuous results.');
+    return;
+end
+
+pStates = hmmResSingle.continuous_results.pStates;
+sequence = hmmResSingle.continuous_results.sequence(:);
+
+if isempty(pStates) || isempty(sequence)
+    warning('Skipping state dominance diagnostics: empty pStates or sequence.');
+    return;
+end
+
+[numTimeBins, numStates] = size(pStates);
+if numel(sequence) ~= numTimeBins
+    minLen = min(numel(sequence), numTimeBins);
+    warning(['Length mismatch between sequence (%d) and pStates (%d). ' ...
+        'Truncating to %d bins.'], numel(sequence), numTimeBins, minLen);
+    sequence = sequence(1:minLen);
+    pStates = pStates(1:minLen, :);
+    numTimeBins = minLen;
+end
+
+minP = 0.8;
+if isfield(hmmResSingle, 'HmmParam') && isfield(hmmResSingle.HmmParam, 'MinP')
+    minP = hmmResSingle.HmmParam.MinP;
+end
+
+binSize = 1;
+if isfield(hmmResSingle, 'HmmParam') && isfield(hmmResSingle.HmmParam, 'BinSize')
+    binSize = hmmResSingle.HmmParam.BinSize;
+end
+
+[maxProb, maxState] = max(pStates, [], 2);
+assignedMask = sequence > 0;
+
+% Soft occupancy: expected fraction of time spent in each state.
+occSoft = mean(pStates, 1);
+occMap = arrayfun(@(stateIdx) mean(maxState == stateIdx), 1:numStates);
+occHard = arrayfun(@(stateIdx) mean(sequence == stateIdx), 1:numStates);
+occHardCond = zeros(1, numStates);
+if any(assignedMask)
+    occHardCond = arrayfun(@(stateIdx) mean(sequence(assignedMask) == stateIdx), 1:numStates);
+end
+fracUnassigned = mean(~assignedMask);
+
+% Entropy diagnostic for posterior concentration.
+epsVal = 1e-12;
+stateEntropy = -sum(pStates .* log(pStates + epsVal), 2);
+if numStates > 1
+    entropyNorm = stateEntropy / log(numStates);
+else
+    entropyNorm = zeros(size(stateEntropy));
+end
+
+figure('Name', sprintf('HMM state dominance: %s', areaLabel), 'Color', 'w');
+tiledlayout(2, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
+
+nexttile;
+bar((1:numStates)', [occSoft(:), occMap(:), occHard(:)], 'grouped');
+xlabel('State');
+ylabel('Occupancy fraction');
+title('Occupancy: soft vs MAP vs hard');
+legend({'Soft mean(P)', 'MAP winner', 'Thresholded sequence'}, ...
+    'Location', 'best');
+ylim([0, 1]);
+grid on;
+
+nexttile;
+histogram(maxProb, 30, 'FaceColor', [0.2, 0.4, 0.8], 'EdgeColor', 'none');
+hold on;
+xline(minP, '--r', sprintf('MinP=%.2f', minP), 'LineWidth', 1.5);
+hold off;
+xlabel('max_k P(state=k | t)');
+ylabel('Count');
+title(sprintf('Confidence (unassigned=%.2f)', fracUnassigned));
+grid on;
+
+nexttile;
+timeAxis = (1:numTimeBins) * binSize;
+plot(timeAxis, entropyNorm, 'k-', 'LineWidth', 1);
+xlabel('Time (s)');
+ylabel('Normalized entropy');
+title('Posterior entropy over time');
+ylim([0, 1]);
+grid on;
+
+nexttile;
+maxPlotBins = min(numTimeBins, 3000);
+plotTimeAxis = (1:maxPlotBins) * binSize;
+area(plotTimeAxis, pStates(1:maxPlotBins, :), 'LineStyle', 'none');
+xlabel('Time (s)');
+ylabel('Probability mass');
+title(sprintf('Stacked pStates (first %d bins)', maxPlotBins));
+ylim([0, 1]);
+grid on;
+
+nexttile;
+[runState, runDurSec] = local_compute_run_durations(sequence, binSize);
+if isempty(runState)
+    text(0.1, 0.5, 'No assigned state runs (all bins unassigned).', 'FontSize', 10);
+    axis off;
+else
+    boxplot(runDurSec, runState, 'Symbol', '.');
+    xlabel('State');
+    ylabel('Run duration (s)');
+    title('Dwell-time distribution (hard sequence)');
+    grid on;
+end
+
+nexttile;
+edges = linspace(0, 1, 21);
+probHist = zeros(numStates, numel(edges) - 1);
+for stateIdx = 1:numStates
+    probHist(stateIdx, :) = histcounts(pStates(:, stateIdx), edges, ...
+        'Normalization', 'probability');
+end
+imagesc(edges(1:end-1), 1:numStates, probHist);
+axis xy;
+colorbar;
+xlabel('Posterior probability');
+ylabel('State');
+title('Per-state posterior distribution');
+
+sgtitle(sprintf(['%s | softOcc sum=%.2f | assigned=%.2f | ' ...
+    'hardCond max=%.2f'], ...
+    areaLabel, sum(occSoft), mean(assignedMask), max(occHardCond)), ...
+    'Interpreter', 'none');
+
+fprintf('State dominance diagnostics completed for %s.\n', areaLabel);
+
+end
+
+function [runState, runDurSec] = local_compute_run_durations(sequence, binSize)
+% LOCAL_COMPUTE_RUN_DURATIONS Compute run durations by state from sequence.
+
+if isempty(sequence)
+    runState = [];
+    runDurSec = [];
+    return;
+end
+
+changeMask = [true; diff(sequence) ~= 0];
+runStart = find(changeMask);
+runEnd = [runStart(2:end) - 1; numel(sequence)];
+runState = sequence(runStart);
+runDurBins = runEnd - runStart + 1;
+
+validMask = runState > 0;
+runState = runState(validMask);
+runDurSec = runDurBins(validMask) * binSize;
 
 end
 

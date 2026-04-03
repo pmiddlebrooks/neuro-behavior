@@ -8,6 +8,8 @@
 %   sessionName   - spontaneous session name (e.g. 'ag112321_1')
 %   binSize       - HMM bin size used in saved result filename
 %   minDur        - HMM min duration used in saved result filename
+%   collectStart, collectEnd - (optional) seconds; if collectEnd is set, filename matches
+%       hmm_mazz_analysis: ..._start_XX_end_XX.mat before .mat
 %   periWindowSec - peri-event window duration (seconds)
 %   maxTrial      - max number of aligned events plotted per sequence
 %   areasToTest   - area indices to consider from saved HMM results
@@ -28,10 +30,13 @@ if ~exist('savePlots', 'var') || isempty(savePlots)
 end
 
 binSize = 0.01;
-minDur = 0.05;
-periWindowSec = 20;
-maxTrial = 60;
-areasToTest = 2;
+minDur = 0.04;
+collectStart = [];
+collectEnd = []; % set with collectStart for windowed HMM saves; [] = full session filename
+periWindowSec = 16;
+maxTrial = 100;
+areasToTest = 1:4;
+probMetric = 'maxProb'; % 'maxProb' | 'dominance' | 'margin' | 'entropy'
 
 %% Validate required sequence variables (manual workflow only)
 hasSequenceVars = exist('alignTimes', 'var') && exist('sequences', 'var') && ...
@@ -49,8 +54,16 @@ end
 
 %% Load saved HMM analysis results (no legacy fallback)
 [~, sessionBaseName, ~] = fileparts(sessionName);
+timeWindowSuffix = '';
+if exist('collectEnd', 'var') && ~isempty(collectEnd)
+    collectStartSec = 0;
+    if exist('collectStart', 'var') && ~isempty(collectStart)
+        collectStartSec = collectStart;
+    end
+    timeWindowSuffix = sprintf('_start_%g_end_%g', collectStartSec, collectEnd);
+end
 resultsPath = fullfile(paths.spontaneousResultsPath, sessionBaseName, ...
-    sprintf('hmm_mazz_spontaneous_bin%.3f_minDur%.3f.mat', binSize, minDur));
+    sprintf('hmm_mazz_spontaneous_bin%.3f_minDur%.3f%s.mat', binSize, minDur, timeWindowSuffix));
 
 if ~exist(resultsPath, 'file')
     error('HMM result file not found: %s', resultsPath);
@@ -144,6 +157,12 @@ for areaIdx = areasToTest
     end
     
     continuousSequence = hmmRes.continuous_results.sequence(:);
+    if isfield(hmmRes.continuous_results, 'pStates') && ~isempty(hmmRes.continuous_results.pStates)
+        continuousPStates = hmmRes.continuous_results.pStates;
+    else
+        warning('Area %d missing continuous_results.pStates; skipping.', areaIdx);
+        continue;
+    end
     hmmBinSize = hmmRes.HmmParam.BinSize;
     nStates = hmmRes.best_model.num_states;
     totalTimeBins = numel(continuousSequence);
@@ -169,11 +188,11 @@ for areaIdx = areasToTest
     end
     
     if exist('tight_subplot', 'file')
-        ha = tight_subplot(2, numSequences, [0.08 0.03], [0.08 0.08], [0.05 0.02]);
+        ha = tight_subplot(3, numSequences, [0.08 0.03], [0.08 0.08], [0.05 0.02]);
     else
-        ha = zeros(2 * numSequences, 1);
-        for axisIdx = 1:(2 * numSequences)
-            ha(axisIdx) = subplot(2, numSequences, axisIdx);
+        ha = zeros(3 * numSequences, 1);
+        for axisIdx = 1:(3 * numSequences)
+            ha(axisIdx) = subplot(3, numSequences, axisIdx);
         end
     end
     
@@ -182,6 +201,7 @@ for areaIdx = areasToTest
         seqEvents = eventTimesPerSequence{seqIdx};
         
         stateWindows = nan(0, nBinsWindow);
+        probMetricWindows = nan(0, nBinsWindow);
         behaviorWindows = nan(0, nBinsWindow);
         
         for evIdx = 1:numel(seqEvents)
@@ -195,6 +215,8 @@ for areaIdx = areasToTest
             end
             
             thisStateWindow = continuousSequence(winStart:winEnd)';
+            thisPStateWindow = continuousPStates(winStart:winEnd, :);
+            thisMetricWindow = compute_prob_metric(thisPStateWindow, probMetric);
             
             % HMM bin k -> absolute session time (same convention as hmm_mazz_analysis:
             % winTrain starts at 0). Nearest CSV row: use interp1 — NOT broadcast
@@ -206,6 +228,7 @@ for areaIdx = areasToTest
             thisBehaviorWindow = bhvID(bhvIdx)';
             
             stateWindows(end+1, :) = thisStateWindow; %#ok<AGROW>
+            probMetricWindows(end+1, :) = thisMetricWindow; %#ok<AGROW>
             behaviorWindows(end+1, :) = thisBehaviorWindow; %#ok<AGROW>
             
             if size(stateWindows, 1) >= maxTrial
@@ -235,8 +258,28 @@ for areaIdx = areasToTest
         set(gca, 'FontSize', 9);
         grid on;
         
-        % Row 2: aligned behavior labels
-        axBhv = ha(numSequences + seqIdx);
+        % Row 2: aligned posterior metric from pStates
+        axMetric = ha(numSequences + seqIdx);
+        axes(axMetric); %#ok<LAXES>
+        hold on;
+        if nTrialsPlot > 0
+            imagesc(timeAxis, 1:nTrialsPlot, probMetricWindows);
+            ylim([0.5, nTrialsPlot + 0.5]);
+        else
+            imagesc(timeAxis, [1 1], nan(1, nBinsWindow));
+            ylim([0.5, 1.5]);
+        end
+        colormap(axMetric, parula(256));
+
+            caxis(axMetric, [0, 1]);
+        plot([0 0], ylim, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+        ylabel(sprintf('%s', probMetric));
+        set(gca, 'FontSize', 9);
+        grid on;
+        colorbar('eastoutside');
+
+        % Row 3: aligned behavior labels
+        axBhv = ha(2 * numSequences + seqIdx);
         axes(axBhv); %#ok<LAXES>
         hold on;
         if nTrialsPlot > 0
@@ -267,8 +310,9 @@ for areaIdx = areasToTest
         grid on;
     end
     
-    sgtitle(sprintf('%s - %s sequence-aligned HMM states (alignOnIdx=%d, window=%.1fs)', ...
-        sessionBaseName, areas{areaIdx}, alignOnIdx, periWindowSec), ...
+    sgtitle(sprintf(['%s - %s sequence-aligned HMM states (alignOnIdx=%d, window=%.1fs)\n' ...
+        'Middle row metric from pStates: %s'], ...
+        sessionBaseName, areas{areaIdx}, alignOnIdx, periWindowSec, probMetric), ...
         'Interpreter', 'none', 'FontSize', 14);
     
     if savePlots
@@ -277,4 +321,66 @@ for areaIdx = areasToTest
         exportgraphics(gcf, savePath, 'ContentType', 'vector');
         fprintf('Saved area %s plot to: %s\n', areas{areaIdx}, savePath);
     end
+end
+
+function metricVals = compute_prob_metric(pStateWindow, probMetric)
+% COMPUTE_PROB_METRIC Compute aligned scalar confidence metric from pStates.
+%
+% Variables:
+%   pStateWindow - [nBins x nStates] posterior probabilities in peri window.
+%   probMetric   - String selector:
+%       'maxProb'    : max posterior per bin (confidence of winning state).
+%       'dominance'  : 1 - normalized entropy (high = concentrated posterior).
+%       'margin'     : top1 - top2 posterior gap per bin.
+%       'entropy'    : normalized entropy (high = uncertainty).
+%
+% Goal:
+%   Reduce per-bin posterior vectors into one interpretable trace that can
+%   be visualized trial-by-trial alongside state and behavior rasters.
+
+if nargin < 2 || isempty(probMetric)
+    probMetric = 'maxProb';
+end
+
+if isempty(pStateWindow)
+    metricVals = [];
+    return;
+end
+
+[nBins, nStates] = size(pStateWindow);
+[maxProb, ~] = max(pStateWindow, [], 2);
+
+switch lower(probMetric)
+    case 'maxprob'
+        metricVals = maxProb;
+    case 'margin'
+        if nStates < 2
+            metricVals = ones(nBins, 1);
+        else
+            sortedProbs = sort(pStateWindow, 2, 'descend');
+            metricVals = sortedProbs(:, 1) - sortedProbs(:, 2);
+        end
+    case 'entropy'
+        epsVal = 1e-12;
+        entropyVals = -sum(pStateWindow .* log(pStateWindow + epsVal), 2);
+        if nStates > 1
+            metricVals = entropyVals ./ log(nStates);
+        else
+            metricVals = zeros(nBins, 1);
+        end
+    case 'dominance'
+        epsVal = 1e-12;
+        entropyVals = -sum(pStateWindow .* log(pStateWindow + epsVal), 2);
+        if nStates > 1
+            metricVals = 1 - (entropyVals ./ log(nStates));
+        else
+            metricVals = ones(nBins, 1);
+        end
+    otherwise
+        warning('Unknown probMetric "%s"; using maxProb.', probMetric);
+        metricVals = maxProb;
+end
+
+metricVals = metricVals(:)';
+
 end

@@ -14,15 +14,17 @@ loadAndPlot = 0;
 %   sessionType = 'spontaneous' or 'reach'
 %   Optional: config.brainArea = 'M23' | 'M56' | 'DS' | 'VS';
 %             binSize, minDur to target specific files (see hmm_load_saved_model)
+%             If analysis used nonempty opts.collectEnd, also pass collectStart, collectEnd
+%             (seconds) so the loader finds ..._start_XX_end_XX.mat files.
 if loadAndPlot
     if ~exist('sessionType', 'var') || isempty(sessionType)
         sessionType = 'spontaneous';
     end
 
     % Optional selection parameters
-    brainArea = [];      % e.g., 'M56'
-    binSizeLoad = [];    % e.g., 0.01
-    minDurLoad = [];     % e.g., 0.04
+    brainArea = 'DS';      % e.g., 'M56'
+    binSizeLoad = .01;    % e.g., 0.01
+    minDurLoad = .04;     % e.g., 0.04
 
     loadArgs = {};
     if ~isempty(brainArea)
@@ -90,7 +92,9 @@ opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
 opts.collectStart = 0;
-opts.collectEnd = [];
+opts.collectEnd = 60*60;
+% When collectEnd is nonempty after load_spike_times, saved .mat names include
+% _start_SEC_end_SEC so different time windows from the same session do not overwrite.
 opts.removeSome = true;
 
 % HMM fitting uses a conceptual "trial duration" (seconds)
@@ -181,9 +185,9 @@ hmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
 hmmParam.BinSize = 0.01;       % Markov chain time step (s)
 hmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (s)
 hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
-hmmParam.NumSteps = 7;         % Number of independent EM runs at fixed parameters
-hmmParam.NumRuns = 25;         % Maximum iterations per EM run
-hmmParam.singleSeqXval.K = 7;  % Cross-validation folds
+hmmParam.NumSteps = 10;         % Number of independent EM runs at fixed parameters
+hmmParam.NumRuns = 35;         % Maximum iterations per EM run
+hmmParam.singleSeqXval.K = 10;  % Cross-validation folds
 config.HmmParam = hmmParam;
 
 fprintf('\nRunning hmm_mazz_analysis...\n');
@@ -193,14 +197,16 @@ fprintf('\n=== HMM Analysis Complete ===\n');
 
 %% Optional immediate plotting from in-memory results
 makePlots = true;
+checkArea = 'M56';
+plotCongif.brainArea = checkArea;
 if makePlots
     fprintf('Creating basic HMM plots from in-memory results...\n');
-    hmm_mazz_plot(results, struct());
+    hmm_mazz_plot(results, plotCongif);
     fprintf('=== HMM Plotting Complete ===\n');
 end
 
 % Optional debug figure to verify state-selection behavior
-makeModelSelectionDebugPlots = true;
+makeModelSelectionDebugPlots = false;
 if makeModelSelectionDebugPlots
     fprintf('Creating HMM model-selection debug plots...\n');
     debugConfig = struct();

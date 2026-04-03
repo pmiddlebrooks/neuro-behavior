@@ -338,6 +338,7 @@ results.hmm_results = allResults.hmm_results;
 if config.saveData
     binSizeSave = opts.HmmParam.BinSize;
     minDurSave = opts.HmmParam.MinDur;
+    timeWindowSuffix = hmm_mazz_collect_window_suffix(opts);
 
     if strcmpi(sessionType, 'reach')
         if isfield(dataStruct, 'reachDataFile') && ~isempty(dataStruct.reachDataFile)
@@ -353,8 +354,8 @@ if config.saveData
             mkdir(saveDirReach);
         end
 
-        filenameReach = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f.mat', ...
-            binSizeSave, minDurSave);
+        filenameReach = sprintf('hmm_mazz_reach_bin%.3f_minDur%.3f%s.mat', ...
+            binSizeSave, minDurSave, timeWindowSuffix);
         filePathReach = fullfile(saveDirReach, filenameReach);
         fprintf('Saving Reach HMM results to:\n%s\n', filePathReach);
         save(filePathReach, 'results', '-v7.3');
@@ -378,8 +379,8 @@ if config.saveData
             mkdir(saveDirSpont);
         end
 
-        filenameNat = sprintf('hmm_mazz_spontaneous_bin%.3f_minDur%.3f.mat', ...
-            binSizeSave, minDurSave);
+        filenameNat = sprintf('hmm_mazz_spontaneous_bin%.3f_minDur%.3f%s.mat', ...
+            binSizeSave, minDurSave, timeWindowSuffix);
         filePathNat = fullfile(saveDirSpont, filenameNat);
         fprintf('Saving Spontaneous HMM results to:\n%s\n', filePathNat);
         save(filePathNat, 'results', '-v7.3');
@@ -397,6 +398,29 @@ if poolStartedHere
         delete(poolObj);
     end
 end
+
+end
+
+function timeWindowSuffix = hmm_mazz_collect_window_suffix(opts)
+% HMM_MAZZ_COLLECT_WINDOW_SUFFIX Filename fragment for restricted time window.
+%
+% Variables:
+%   opts - neuro_behavior_options-style struct with optional .collectStart,
+%          .collectEnd (seconds).
+%
+% Goal:
+%   When collectEnd is nonempty, return '_start_XX_end_XX' for unique saves;
+%   otherwise return '' (full-dataset naming unchanged).
+
+timeWindowSuffix = '';
+if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
+    return;
+end
+collectStartSec = 0;
+if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+    collectStartSec = opts.collectStart;
+end
+timeWindowSuffix = sprintf('_start_%g_end_%g', collectStartSec, opts.collectEnd);
 
 end
 
