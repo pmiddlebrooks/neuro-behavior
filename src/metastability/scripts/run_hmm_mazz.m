@@ -91,7 +91,7 @@ end
 
 opts = neuro_behavior_options;
 opts.minActTime = 0.16;
-opts.minFiringRate = 0.5;
+opts.minFiringRate = 0.7;
 opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
@@ -186,12 +186,12 @@ end
 % Set HMM parameter configuration (can be overridden by caller)
 hmmParam = struct();
 hmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
-hmmParam.BinSize = 0.01;       % Markov chain time step (s)
+hmmParam.BinSize = 0.005;       % Markov chain time step (s)
 hmmParam.MinDur = 0.05;        % Minimum admissible state duration in decoding (s)
 hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
 hmmParam.NumSteps = 10;         % Number of independent EM runs at fixed parameters
 hmmParam.NumRuns = 35;         % Maximum iterations per EM run
-hmmParam.singleSeqXval.K = 10;  % Cross-validation folds
+hmmParam.singleSeqXval.K = 15;  % Cross-validation folds
 config.HmmParam = hmmParam;
 
 fprintf('\nRunning hmm_mazz_analysis...\n');
