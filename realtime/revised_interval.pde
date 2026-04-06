@@ -8,7 +8,8 @@
 //  4. Sketch opens serial, sends start byte, then streams CSV lines to a timestamped file.
 //
 // Handshake: Processing sends 'S' after opening the port; Arduino waits for that before starting.
-// CSV format: timestamp_ms,event,value,  (events: B, REWARD, ERROR)
+// CSV format: timestamp_ms,event,value,  (events: B, REWARD, ERROR, SYNC)
+//   SYNC: value 1 = sync line high (on), 2 = low (off); one row per edge
 //
 // Press 'q' or 'Q' to stop logging and exit.
 

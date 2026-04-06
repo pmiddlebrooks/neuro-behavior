@@ -7,7 +7,8 @@
 // the serial port.
 //
 // CSV format (one line per event): timestamp_ms,event,value,
-// Events: B (beam), REWARD, ERROR
+// Events: B (beam), REWARD, ERROR, SYNC (external sync line on pin 5)
+//   SYNC value 1 = line high (on), 2 = line low (off) — log on each transition
 
 #include <string.h>
 
@@ -15,6 +16,7 @@
 const int SOLENOID_PORT = 12;
 const int BEAM_BREAK_PORT = 2;   // active low
 const int LED_PORT = 10;         // reward confirmation LED
+const int SYNC_PULSES_PORT = 5;       // external TTL sync (e.g. video frame clock); active HIGH = on
 
 // Timing (ms)
 const int SOLENOID_ON_TIME = 20;   // solenoid stays open
@@ -37,6 +39,8 @@ bool timerArmed = false;
 int beamState = 0;
 int lastBeamState = 0;
 
+int lastSyncState = -1;  // initialized in setup from digitalRead(SYNC_PULSES_PORT)
+
 unsigned long initialExitTime = 0;
 unsigned long leaveConfirmStart = 0;
 unsigned long leaveTime = 0;
@@ -49,7 +53,7 @@ unsigned long ledStartTime = 0;
 
 /**
  * log_line
- *  - tag: event code (e.g., "B", "REWARD", "ERROR")
+ *  - tag: event code (e.g., "B", "REWARD", "ERROR", "SYNC")
  *  - value: integer value
  *
  * Goal:
@@ -63,6 +67,17 @@ void log_line(const char *tag, int value) {
 void write_beam(int state) { log_line("B", state); }
 void write_reward() { log_line("REWARD", 1); }
 void write_error() { log_line("ERROR", 1); }
+
+/**
+ * write_sync_edge
+ *  - syncPinHigh: true if SYNC_PULSES_PORT reads HIGH after transition
+ *
+ * Goal:
+ *  Log external sync line edges for alignment with video (1 = on/high, 2 = off/low).
+ */
+void write_sync_edge(bool syncPinHigh) {
+  log_line("SYNC", syncPinHigh ? 1 : 2);
+}
 
 /**
  * open_solenoid
@@ -115,6 +130,7 @@ void setup() {
   pinMode(SOLENOID_PORT, OUTPUT);
   pinMode(LED_PORT, OUTPUT);
   pinMode(BEAM_BREAK_PORT, INPUT);
+  pinMode(SYNC_PULSES_PORT, INPUT);  // use INPUT_PULLUP if the source is open-collector
 
   digitalWrite(SOLENOID_PORT, LOW);
   digitalWrite(LED_PORT, LOW);
@@ -124,9 +140,18 @@ void setup() {
 
   // CSV header
   Serial.println("timestamp_ms,event,value,");
+
+  // Baseline sync line so only real transitions are logged (not spurious first edge)
+  lastSyncState = digitalRead(SYNC_PULSES_PORT);
 }
 
 void loop() {
+  int syncState = digitalRead(SYNC_PULSES_PORT);
+  if (syncState != lastSyncState) {
+    write_sync_edge(syncState == HIGH);
+    lastSyncState = syncState;
+  }
+
   beamState = (digitalRead(BEAM_BREAK_PORT) == LOW);
   // beamState = !digitalRead(BEAM_BREAK_PORT);
 
