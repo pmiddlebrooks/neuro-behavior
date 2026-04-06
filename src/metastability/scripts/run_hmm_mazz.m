@@ -6,6 +6,9 @@
 % This script mirrors the style of run_rqa_sliding.m. You can:
 %   - Set variables in the workspace and run this script, or
 %   - Call hmm_mazz_analysis() directly with a dataStruct/config.
+% Synthetic pipeline test: set hmmMazzTestMode = true below (after addpath). Uses
+% hmm_mazz_unit_test_generate with hmmMazzTestSynthParams; data file under
+% dropboxMetastabilityData. Delete the .mat there to regenerate after changing params.
 
 % Toggle: set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
@@ -75,6 +78,7 @@ if exist(dataPrepPath, 'dir')
     addpath(dataPrepPath);
 end
 
+
 % ---------------------------------------------------------------------
 % User configuration
 % ---------------------------------------------------------------------
@@ -87,7 +91,7 @@ end
 
 opts = neuro_behavior_options;
 opts.minActTime = 0.16;
-opts.minFiringRate = 0.1;
+opts.minFiringRate = 0.5;
 opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
@@ -183,7 +187,7 @@ end
 hmmParam = struct();
 hmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
 hmmParam.BinSize = 0.01;       % Markov chain time step (s)
-hmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (s)
+hmmParam.MinDur = 0.05;        % Minimum admissible state duration in decoding (s)
 hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
 hmmParam.NumSteps = 10;         % Number of independent EM runs at fixed parameters
 hmmParam.NumRuns = 35;         % Maximum iterations per EM run
@@ -198,15 +202,15 @@ fprintf('\n=== HMM Analysis Complete ===\n');
 %% Optional immediate plotting from in-memory results
 makePlots = true;
 checkArea = 'M56';
-plotCongif.brainArea = checkArea;
+configPlot = struct('brainArea', checkArea);
 if makePlots
     fprintf('Creating basic HMM plots from in-memory results...\n');
-    hmm_mazz_plot(results, plotCongif);
+    hmm_mazz_plot(results, configPlot);
     fprintf('=== HMM Plotting Complete ===\n');
 end
 
-% Optional debug figure to verify state-selection behavior
-makeModelSelectionDebugPlots = false;
+%% Optional debug figure to verify state-selection behavior
+makeModelSelectionDebugPlots = true;
 if makeModelSelectionDebugPlots
     fprintf('Creating HMM model-selection debug plots...\n');
     debugConfig = struct();

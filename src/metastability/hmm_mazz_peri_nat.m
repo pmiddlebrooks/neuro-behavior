@@ -33,6 +33,7 @@ binSize = 0.01;
 minDur = 0.04;
 collectStart = [];
 collectEnd = []; % set with collectStart for windowed HMM saves; [] = full session filename
+collectEnd = 60*60; % set with collectStart for windowed HMM saves; [] = full session filename
 periWindowSec = 16;
 maxTrial = 100;
 areasToTest = 1:4;
