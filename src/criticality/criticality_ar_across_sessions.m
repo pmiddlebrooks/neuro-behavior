@@ -8,6 +8,8 @@
 %   filenameSuffix - Optional suffix for results files (e.g., '_pca', default: '')
 %   areasToPlot - Cell array of area names to plot (default: [] = all common areas)
 %                 Example: {'M1', 'PMd'} or [] for all areas
+%   includeReach - If false, exclude reach-task windows that overlap peri-reach time
+%   excludeTime - Peri-reach half-window in seconds (exclude [reach-excludeTime, reach+excludeTime])
 %
 % Goal:
 %   Load pre-analyzed results for each session, filter by time range, and compare
@@ -16,11 +18,13 @@
 %% Configuration
 paths = get_paths;
 
-timeRange = [0, 20*60];  % Time range in seconds [startTime, endTime]
+timeRange = [0, 45*60];  % Time range in seconds [startTime, endTime]
 useNormalized = true;  % Use normalized d2 if available
 filenameSuffix = '';  % Optional suffix for results files (e.g., '_pca')
 areasToPlot = {};  % Cell array of area names to plot (empty = all common areas)
                    % Example: {'M1', 'PMd'} or [] for all areas
+includeReach = false;  % If false, remove windows that overlap peri-reach periods (reach sessions only)
+excludeTime = 0.5;  % Seconds around each reach event to exclude when includeReach is false
 
 % Calculate window parameters from timeRange
 windowStartTime = timeRange(1);
@@ -32,6 +36,11 @@ nMin = windowDuration / 60;  % Window size in minutes (for display purposes)
 fprintf('\n=== Criticality AR Analysis Across Sessions ===\n');
 fprintf('Time range: [%.1f, %.1f] seconds (%.1f minutes)\n', ...
     windowStartTime, windowEndTime, nMin);
+if includeReach
+    fprintf('Reach-window filtering: includeReach = true (no peri-reach exclusion)\n');
+else
+    fprintf('Reach-window filtering: includeReach = false, excludeTime = %.3f s\n', excludeTime);
+end
 
 spontaneousSessions = spontaneous_session_list();
 reachSessions = reach_session_list();
@@ -204,10 +213,25 @@ for s = 1:length(reachSessions)
         
         % Filter results by time range and extract d2 values per area
         if isfield(results, 'd2') && isfield(results, 'd2Normalized') && isfield(results, 'startS')
+            reachStart = [];
+            if ~includeReach
+                reachStart = get_reach_start_times_for_session(results, sessionName, paths);
+                if isempty(reachStart)
+                    warning(['includeReach=false but reach times were not found for %s. ' ...
+                        'Proceeding without peri-reach exclusion for this reach session.'], sessionName);
+                end
+            end
+
             for a = 1:length(results.areas)
                 % Find windows within time range
                 if ~isempty(results.startS{a})
                     timeMask = results.startS{a} >= windowStartTime & results.startS{a} <= windowEndTime;
+                    if ~includeReach && ~isempty(reachStart)
+                        windowSizeForArea = get_window_size_for_area(results, a);
+                        reachOverlapMask = windows_overlap_reach_periods( ...
+                            results.startS{a}, windowSizeForArea, reachStart, excludeTime);
+                        timeMask = timeMask & ~reachOverlapMask;
+                    end
                     
                     % Extract d2 values within time range
                     if a <= length(results.d2) && ~isempty(results.d2{a})
@@ -359,10 +383,11 @@ else
     ylimD2Normalized = [0, 1];
 end
 
-% Create figure with two subplots: raw and normalized
+% Create figure with 2 rows x N columns:
+%   row 1 = d2 raw, row 2 = d2 normalized, each column = one area
 figure(3000); clf;
 set(gcf, 'Units', 'pixels');
-set(gcf, 'Position', [100, 100, 1400, 300 * numAreasToPlot]);
+set(gcf, 'Position', [100, 100, max(1400, 420 * numAreasToPlot), 700]);
 
 % Create subplots for raw d2
 for a = 1:numAreasToPlot
@@ -389,7 +414,7 @@ for a = 1:numAreasToPlot
     end
     
     % Create subplot
-    subplot(numAreasToPlot, 2, (a-1)*2 + 1);
+    subplot(2, numAreasToPlot, a);
     hold on;
     
     % Create bar plot
@@ -437,8 +462,8 @@ for a = 1:numAreasToPlot
     
     hold off;
     
-    % Create subplot for normalized d2
-    subplot(numAreasToPlot, 2, (a-1)*2 + 2);
+    % Create subplot for normalized d2 (row 2, same area column)
+    subplot(2, numAreasToPlot, numAreasToPlot + a);
     hold on;
     
     % Get normalized d2 values for this area
@@ -587,4 +612,154 @@ function resultsPath = find_results_file(analysisType, sessionType, sessionName,
     end
     
     resultsPath = fullfile(files(1).folder, files(1).name);
+end
+
+function reachStart = get_reach_start_times_for_session(results, sessionName, paths)
+% get_reach_start_times_for_session
+% Variables:
+%   results - loaded analysis results struct
+%   sessionName - reach session identifier
+%   paths - output from get_paths()
+% Goal:
+%   Return reach start times in seconds, preferring saved results fields and
+%   falling back to loading reach task data from disk.
+
+    reachStart = [];
+
+    if isfield(results, 'reachStart') && ~isempty(results.reachStart)
+        reachStart = results.reachStart(:);
+        return;
+    end
+
+    if isfield(results, 'dataR') && isstruct(results.dataR) && isfield(results.dataR, 'R') ...
+            && ~isempty(results.dataR.R)
+        reachStart = results.dataR.R(:,1) / 1000;
+        return;
+    end
+
+    if isfield(results, 'params') && isfield(results.params, 'reachStart') ...
+            && ~isempty(results.params.reachStart)
+        reachStart = results.params.reachStart(:);
+        return;
+    end
+
+    % Match load_reach_data behavior: reach file is in reachDataPath and named
+    % [sessionName '.mat'], where sessionName is typically a base session string.
+    candidateNames = {};
+    candidateNames{end+1} = sessionName;
+    if isfield(results, 'sessionName') && ~isempty(results.sessionName)
+        candidateNames{end+1} = results.sessionName;
+    end
+    if isfield(results, 'dataBaseName') && ~isempty(results.dataBaseName)
+        candidateNames{end+1} = results.dataBaseName;
+    end
+    if isfield(results, 'params') && isfield(results.params, 'sessionName') ...
+            && ~isempty(results.params.sessionName)
+        candidateNames{end+1} = results.params.sessionName;
+    end
+
+    for c = 1:numel(candidateNames)
+        thisName = candidateNames{c};
+        if ~ischar(thisName) && ~isstring(thisName)
+            continue;
+        end
+        thisName = char(thisName);
+        thisName = strtrim(thisName);
+        if isempty(thisName)
+            continue;
+        end
+
+        % If a path-like string is provided, use basename only (same as dataBaseName logic).
+        [~, baseName, ext] = fileparts(thisName);
+        if isempty(baseName)
+            baseName = thisName;
+        end
+        if isempty(ext)
+            fileName = [baseName, '.mat'];
+        else
+            fileName = [baseName, ext];
+        end
+
+        reachDataFile = fullfile(paths.reachDataPath, fileName);
+        if ~exist(reachDataFile, 'file')
+            continue;
+        end
+
+        loadedData = load(reachDataFile);
+        if isfield(loadedData, 'R') && ~isempty(loadedData.R)
+            reachStart = loadedData.R(:,1) / 1000;
+            return;
+        end
+        if isfield(loadedData, 'dataR') && isstruct(loadedData.dataR) ...
+                && isfield(loadedData.dataR, 'R') && ~isempty(loadedData.dataR.R)
+            reachStart = loadedData.dataR.R(:,1) / 1000;
+            return;
+        end
+    end
+end
+
+function windowSizeSeconds = get_window_size_for_area(results, areaIdx)
+% get_window_size_for_area
+% Variables:
+%   results - loaded analysis results struct
+%   areaIdx - area index in results.areas
+% Goal:
+%   Resolve sliding window size in seconds for the requested area.
+
+    windowSizeSeconds = [];
+    if isfield(results, 'slidingWindowSize') && ~isempty(results.slidingWindowSize)
+        if isnumeric(results.slidingWindowSize)
+            if isscalar(results.slidingWindowSize)
+                windowSizeSeconds = results.slidingWindowSize;
+            elseif areaIdx <= numel(results.slidingWindowSize)
+                windowSizeSeconds = results.slidingWindowSize(areaIdx);
+            end
+        elseif iscell(results.slidingWindowSize) && areaIdx <= numel(results.slidingWindowSize) ...
+                && ~isempty(results.slidingWindowSize{areaIdx})
+            windowSizeSeconds = results.slidingWindowSize{areaIdx};
+        end
+    end
+
+    if isempty(windowSizeSeconds) && isfield(results, 'd2WindowSize') && ~isempty(results.d2WindowSize)
+        if isnumeric(results.d2WindowSize)
+            if isscalar(results.d2WindowSize)
+                windowSizeSeconds = results.d2WindowSize;
+            elseif areaIdx <= numel(results.d2WindowSize)
+                windowSizeSeconds = results.d2WindowSize(areaIdx);
+            end
+        elseif iscell(results.d2WindowSize) && areaIdx <= numel(results.d2WindowSize) ...
+                && ~isempty(results.d2WindowSize{areaIdx})
+            windowSizeSeconds = results.d2WindowSize{areaIdx};
+        end
+    end
+
+    if isempty(windowSizeSeconds) || ~isscalar(windowSizeSeconds) || ~isfinite(windowSizeSeconds)
+        windowSizeSeconds = 0;
+    end
+end
+
+function overlapMask = windows_overlap_reach_periods(startTimes, windowSizeSeconds, reachStart, excludeTime)
+% windows_overlap_reach_periods
+% Variables:
+%   startTimes - vector of window start times in seconds
+%   windowSizeSeconds - sliding window duration in seconds
+%   reachStart - vector of reach onset times in seconds
+%   excludeTime - exclude peri-reach range [reach-excludeTime, reach+excludeTime]
+% Goal:
+%   Return logical mask where each window overlaps the peri-reach exclusion zone.
+
+    overlapMask = false(size(startTimes));
+    if isempty(startTimes) || isempty(reachStart)
+        return;
+    end
+
+    endTimes = startTimes + windowSizeSeconds;
+    for idx = 1:length(startTimes)
+        wStart = startTimes(idx);
+        wEnd = endTimes(idx);
+        eventStarts = reachStart - excludeTime;
+        eventEnds = reachStart + excludeTime;
+        hasOverlap = any((eventStarts <= wEnd) & (eventEnds >= wStart));
+        overlapMask(idx) = hasOverlap;
+    end
 end
