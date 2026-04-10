@@ -283,12 +283,13 @@ set(figD2, 'Color', 'w', 'Name', 'd2 by behavior cluster group', 'NumberTitle', 
 if isprop(figD2, 'WindowState')
     figD2.WindowState = 'maximized';
 end
+tiledlayout(figD2, 1, nAreasPlot, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 colorsGroup = lines(max(2, nGroups));
 
 for plotIdx = 1:nAreasPlot
     a = areasToPlot(plotIdx);
-    subplot(nAreasPlot, 1, plotIdx);
+    nexttile(plotIdx);
     hold on;
 
     allD2 = [];
@@ -320,6 +321,8 @@ for plotIdx = 1:nAreasPlot
     end
 
     ylabel('d2');
+    ylim([0, 0.5]);
+    xtickangle(45);
     title(sprintf('%s: d2 per cluster', areas{a}), 'Interpreter', 'none');
     grid on;
     hold off;

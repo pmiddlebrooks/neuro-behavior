@@ -13,6 +13,7 @@
 %   stepSize - Step size for sliding window (seconds)
 %   nShuffles - Number of circular permutations for d2 normalization
 %   normalizeD2 - Set to true to normalize d2 by shuffled d2 values (default: true)
+%   meanSubtract - Subtract bin-wise mean across windows at each sliding position
 %
 % This script uses load_sliding_window_data() to load data (as in choose_task_and_session.m)
 % and finds optimal bin sizes per area (as in criticality_ar_analysis.m)
@@ -107,9 +108,9 @@ fprintf('Calculated %d intertrial midpoints\n', length(intertrialMidpoints));
 
 % =============================    Configuration    =============================
 % Sliding window parameters
-beforeAlign = -3;  % Start sliding from this many seconds before alignment point
-afterAlign  =  3;  % End sliding at this many seconds after alignment point
-slidingWindowSize = 5;  % Window size for d2 analysis (user-defined, same for all areas)
+beforeAlign = -4;  % Start sliding from this many seconds before alignment point
+afterAlign  =  4;  % End sliding at this many seconds after alignment point
+slidingWindowSize = 6;  % Window size for d2 analysis (user-defined, same for all areas)
 stepSize    = .25; % Step size for sliding window (seconds)
 windowBuffer = .5; % Minimum distance from window edge to event/midpoint (seconds)
 minWindowSize = slidingWindowSize;  % Minimum window size required (seconds)
@@ -121,10 +122,11 @@ minSpikesPerBin = 3;  % Minimum spikes per bin for optimal bin size calculation
 minBinsPerWindow = 1000;  % Minimum bins per window (used for optimal bin size, but window size is user-defined)
 nShuffles = 3;      % Number of circular permutations for d2 normalization
 normalizeD2 = false;  % Set to true to normalize d2 by shuffled d2 values
+meanSubtract = true; % If true, subtract bin-wise mean across windows per sliding position
 
 % Bin/window selection mode (manual vs. optimal, similar to criticality_ar)
 useOptimalBinWindowFunction = false;  % If false, use binSizeManual and slidingWindowSize as set above
-binSizeManual = 0.05;                % Manual bin size (seconds) when useOptimalBinWindowFunction is false
+binSizeManual = 0.025;                % Manual bin size (seconds) when useOptimalBinWindowFunction is false
 
 % Optional neural subsampling configuration for windowed d2
 useSubsampling = false;        % If true, subsample neurons within each area
@@ -142,6 +144,8 @@ loadResultsForPlotting = false;  % Set to true to load saved results for plottin
                                   % Set to false to use variables from workspace
 resultsFileForPlotting = '';     % Path to results file (empty = auto-detect from saveDir)
 makePlots = true;                 % Set to true to generate plots
+makeMeanSubtractDiagnosticPlot = true;  % Optional diagnostic figure for mean subtraction
+meanSubtractDiagnosticPositions = [-1 0 1];  % Sliding positions (s) to visualize
 
 % Get saveDir from dataStruct
 saveDir = dataStruct.saveDir;
@@ -394,6 +398,7 @@ fprintf('  Minimum window size: %.2f seconds\n', minWindowSize);
 fprintf('  Valid reaches: %d/%d (%.1f%%)\n', length(validReachIndices), length(maxWindowPerReach), 100*length(validReachIndices)/length(maxWindowPerReach));
 fprintf('  Valid intertrial midpoints: %d/%d (%.1f%%)\n', length(intertrialMidpoints), length(maxWindowPerIntertrial), 100*length(intertrialMidpoints)/length(maxWindowPerIntertrial));
 fprintf('  Window buffer: %.2f seconds\n', windowBuffer);
+fprintf('  Mean-subtract popActivity across aligned bins: %d\n', meanSubtract);
 
 %% =============================    Analysis    =============================
 fprintf('\n=== Processing Areas ===\n');
@@ -717,15 +722,21 @@ for a = areasToTest
         if ~isempty(collectedReachWindows{a, posIdx})
             windowDataList = collectedReachWindowData{a, posIdx};
             windowCenters = collectedReachWindowCenters{a, posIdx};
+            popActivityMat = collectedReachWindows{a, posIdx};  % [windows x time bins]
             numWindows = numel(windowDataList);
+            numBins = size(popActivityMat, 2);
+            
+            if meanSubtract
+                meanPerBin = nanmean(popActivityMat, 1);  % [1 x time bins]
+                popActivityMat = popActivityMat - meanPerBin;
+            end
             
             d2PerWindow = nan(1, numWindows);
             d2ShuffledPerWindow = nan(numWindows, nShuffles);
             
             % Compute d2 for each window
             for w = 1:numWindows
-                wDataMat = windowDataList{w};  % [time bins x neurons]
-                wPopActivity = mean(wDataMat, 2);  % Population activity for this window
+                wPopActivity = popActivityMat(w, :)';  % [time bins x 1]
                 
                 % Compute d2 for this window
                 if ~isempty(wPopActivity)
@@ -736,10 +747,15 @@ for a = areasToTest
                         d2PerWindow(w) = nan;
                     end
                 end
-                
-                % Compute shuffled d2 for normalization if requested
-                if normalizeD2
-                    for s = 1:nShuffles
+            end
+            
+            % Compute shuffled d2 for normalization if requested
+            if normalizeD2
+                for shuffleIdx = 1:nShuffles
+                    shuffledPopActivityMat = nan(numWindows, numBins);  % [windows x time bins]
+                    
+                    for w = 1:numWindows
+                        wDataMat = windowDataList{w};  % [time bins x neurons]
                         numNeurons = size(wDataMat, 2);
                         numTimeBins = size(wDataMat, 1);
                         
@@ -750,16 +766,24 @@ for a = areasToTest
                             permutedDataMat(:, n) = circshift(wDataMat(:, n), shiftAmount);
                         end
                         
-                        % Compute population activity from shuffled data
-                        permutedPopActivity = mean(permutedDataMat, 2);
-                        
-                        % Compute d2 on permuted data
+                        % Population activity from shuffled data
+                        shuffledPopActivityMat(w, :) = mean(permutedDataMat, 2)';
+                    end
+                    
+                    % Apply the same bin-wise mean subtraction to shuffled windows
+                    if meanSubtract
+                        shuffledMeanPerBin = nanmean(shuffledPopActivityMat, 1);
+                        shuffledPopActivityMat = shuffledPopActivityMat - shuffledMeanPerBin;
+                    end
+                    
+                    for w = 1:numWindows
+                        permutedPopActivity = shuffledPopActivityMat(w, :)';
                         if ~isempty(permutedPopActivity)
                             try
                                 [varphiPerm, ~] = myYuleWalker3(double(permutedPopActivity), pOrder);
-                                d2ShuffledPerWindow(w, s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
+                                d2ShuffledPerWindow(w, shuffleIdx) = getFixedPointDistance2(pOrder, critType, varphiPerm);
                             catch
-                                d2ShuffledPerWindow(w, s) = nan;
+                                d2ShuffledPerWindow(w, shuffleIdx) = nan;
                             end
                         end
                     end
@@ -798,15 +822,21 @@ for a = areasToTest
         if ~isempty(collectedIntertrialWindows{a, posIdx})
             windowDataList = collectedIntertrialWindowData{a, posIdx};
             windowCenters = collectedIntertrialWindowCenters{a, posIdx};
+            popActivityMat = collectedIntertrialWindows{a, posIdx};  % [windows x time bins]
             numWindows = numel(windowDataList);
+            numBins = size(popActivityMat, 2);
+            
+            if meanSubtract
+                meanPerBin = nanmean(popActivityMat, 1);  % [1 x time bins]
+                popActivityMat = popActivityMat - meanPerBin;
+            end
             
             d2PerWindow = nan(1, numWindows);
             d2ShuffledPerWindow = nan(numWindows, nShuffles);
             
             % Compute d2 for each window
             for w = 1:numWindows
-                wDataMat = windowDataList{w};  % [time bins x neurons]
-                wPopActivity = mean(wDataMat, 2);  % Population activity for this window
+                wPopActivity = popActivityMat(w, :)';  % [time bins x 1]
                 
                 % Compute d2 for this window
                 if ~isempty(wPopActivity)
@@ -817,10 +847,15 @@ for a = areasToTest
                         d2PerWindow(w) = nan;
                     end
                 end
-                
-                % Compute shuffled d2 for normalization if requested
-                if normalizeD2
-                    for s = 1:nShuffles
+            end
+            
+            % Compute shuffled d2 for normalization if requested
+            if normalizeD2
+                for shuffleIdx = 1:nShuffles
+                    shuffledPopActivityMat = nan(numWindows, numBins);  % [windows x time bins]
+                    
+                    for w = 1:numWindows
+                        wDataMat = windowDataList{w};  % [time bins x neurons]
                         numNeurons = size(wDataMat, 2);
                         numTimeBins = size(wDataMat, 1);
                         
@@ -831,16 +866,24 @@ for a = areasToTest
                             permutedDataMat(:, n) = circshift(wDataMat(:, n), shiftAmount);
                         end
                         
-                        % Compute population activity from shuffled data
-                        permutedPopActivity = mean(permutedDataMat, 2);
-                        
-                        % Compute d2 on permuted data
+                        % Population activity from shuffled data
+                        shuffledPopActivityMat(w, :) = mean(permutedDataMat, 2)';
+                    end
+                    
+                    % Apply the same bin-wise mean subtraction to shuffled windows
+                    if meanSubtract
+                        shuffledMeanPerBin = nanmean(shuffledPopActivityMat, 1);
+                        shuffledPopActivityMat = shuffledPopActivityMat - shuffledMeanPerBin;
+                    end
+                    
+                    for w = 1:numWindows
+                        permutedPopActivity = shuffledPopActivityMat(w, :)';
                         if ~isempty(permutedPopActivity)
                             try
                                 [varphiPerm, ~] = myYuleWalker3(double(permutedPopActivity), pOrder);
-                                d2ShuffledPerWindow(w, s) = getFixedPointDistance2(pOrder, critType, varphiPerm);
+                                d2ShuffledPerWindow(w, shuffleIdx) = getFixedPointDistance2(pOrder, critType, varphiPerm);
                             catch
-                                d2ShuffledPerWindow(w, s) = nan;
+                                d2ShuffledPerWindow(w, shuffleIdx) = nan;
                             end
                         end
                     end
@@ -2191,6 +2234,118 @@ if exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ...
     fprintf('Saved d2 vs population activity metric plots to: %s\n', saveFileScatter);
 end
 
+%% =============================    Mean-Subtract Diagnostic Plot    =============================
+% Optional sanity-check plot at the zero-centered sliding position.
+% Shows mean raw vs mean-subtracted traces plus four single-window examples.
+if makePlots && meanSubtract && makeMeanSubtractDiagnosticPlot && ...
+        exist('collectedReachWindows', 'var') && exist('collectedIntertrialWindows', 'var')
+    
+    areasToPlotDiag = areasToTest;
+    nAreasDiag = numel(areasToPlotDiag);
+    
+    % Use only the sliding position nearest 0 s.
+    [~, alignPosIdx] = min(abs(slidingPositions));
+    nExampleWindows = 4;
+    
+    figure(3004); clf;
+    tDiag = tiledlayout(nAreasDiag, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+    
+    for idxArea = 1:nAreasDiag
+        a = areasToPlotDiag(idxArea);
+        
+        % Reach panel
+        nexttile;
+        hold on;
+        if a <= size(collectedReachWindows, 1) && alignPosIdx <= size(collectedReachWindows, 2) && ...
+                ~isempty(collectedReachWindows{a, alignPosIdx})
+            rawMat = collectedReachWindows{a, alignPosIdx};  % [windows x bins]
+            rawMean = nanmean(rawMat, 1);
+            meanSubMat = rawMat - rawMean;
+            meanSubMean = nanmean(meanSubMat, 1);
+            
+            % Four example windows: raw (solid) and mean-subtracted (dashed)
+            nWin = size(rawMat, 1);
+            exampleWindowIdx = round(linspace(1, nWin, min(nExampleWindows, nWin)));
+            exampleWindowIdx = unique(exampleWindowIdx);
+            for exampleIdx = 1:numel(exampleWindowIdx)
+                w = exampleWindowIdx(exampleIdx);
+                plot(rawMat(w, :), '-', 'Color', [0.6 0.75 1], 'LineWidth', 0.9, ...
+                    'HandleVisibility', 'off');
+                plot(meanSubMat(w, :), '--', 'Color', [0.1 0.35 0.9], 'LineWidth', 0.9, ...
+                    'HandleVisibility', 'off');
+            end
+            
+            % Mean traces (raw mean intentionally bolder)
+            plot(rawMean, '-', 'Color', [0 0 1], 'LineWidth', 3, 'DisplayName', 'Raw mean');
+            plot(meanSubMean, '--', 'Color', [0 0 0.5], 'LineWidth', 1.8, 'DisplayName', 'Mean-subtracted mean');
+        end
+        yline(0, 'k:', 'HandleVisibility', 'off');
+        grid on;
+        xlabel('Bin index within window');
+        ylabel('PopActivity mean');
+        if exist('areas', 'var') && a <= numel(areas)
+            title(sprintf('%s Reach (pos %.2fs)', areas{a}, slidingPositions(alignPosIdx)), 'Interpreter', 'none');
+        else
+            title('Reach');
+        end
+        if idxArea == 1
+            legend('Location', 'best');
+        end
+        
+        % Intertrial panel
+        nexttile;
+        hold on;
+        if a <= size(collectedIntertrialWindows, 1) && alignPosIdx <= size(collectedIntertrialWindows, 2) && ...
+                ~isempty(collectedIntertrialWindows{a, alignPosIdx})
+            rawMat = collectedIntertrialWindows{a, alignPosIdx};  % [windows x bins]
+            rawMean = nanmean(rawMat, 1);
+            meanSubMat = rawMat - rawMean;
+            meanSubMean = nanmean(meanSubMat, 1);
+            
+            % Four example windows: raw (solid) and mean-subtracted (dashed)
+            nWin = size(rawMat, 1);
+            exampleWindowIdx = round(linspace(1, nWin, min(nExampleWindows, nWin)));
+            exampleWindowIdx = unique(exampleWindowIdx);
+            for exampleIdx = 1:numel(exampleWindowIdx)
+                w = exampleWindowIdx(exampleIdx);
+                plot(rawMat(w, :), '-', 'Color', [1 0.75 0.75], 'LineWidth', 0.9, ...
+                    'HandleVisibility', 'off');
+                plot(meanSubMat(w, :), '--', 'Color', [0.85 0.2 0.2], 'LineWidth', 0.9, ...
+                    'HandleVisibility', 'off');
+            end
+            
+            % Mean traces (raw mean intentionally bolder)
+            plot(rawMean, '-', 'Color', [1 0 0], 'LineWidth', 3, 'DisplayName', 'Raw mean');
+            plot(meanSubMean, '--', 'Color', [0.6 0 0], 'LineWidth', 1.8, 'DisplayName', 'Mean-subtracted mean');
+        end
+        yline(0, 'k:', 'HandleVisibility', 'off');
+        grid on;
+        xlabel('Bin index within window');
+        ylabel('PopActivity mean');
+        if exist('areas', 'var') && a <= numel(areas)
+            title(sprintf('%s Intertrial (pos %.2fs)', areas{a}, slidingPositions(alignPosIdx)), 'Interpreter', 'none');
+        else
+            title('Intertrial');
+        end
+        if idxArea == 1
+            legend('Location', 'best');
+        end
+    end
+    
+    if exist('sessionName', 'var') && ~isempty(sessionName)
+        titleDiag = sprintf('%s - Mean-subtract diagnostic (raw vs mean-subtracted)', sessionName);
+    else
+        titleDiag = 'Mean-subtract diagnostic (raw vs mean-subtracted)';
+    end
+    title(tDiag, titleDiag, 'Interpreter', 'none');
+    
+    % saveFileMeanSubtractDiag = fullfile(saveDir, ...
+    %     sprintf('criticality_reach_intertrial_meanSubtract_diagnostic_win%.1f_step%.1f.png', ...
+    %     slidingWindowSize, stepSize));
+    % exportgraphics(gcf, saveFileMeanSubtractDiag, 'Resolution', 300);
+    % fprintf('Saved mean-subtract diagnostic plot to: %s\n', saveFileMeanSubtractDiag);
+end
+
 fprintf('\n=== Analysis Complete ===\n');
 
 
@@ -2234,6 +2389,9 @@ results.params.minSpikesPerBin = minSpikesPerBin;
 results.params.minBinsPerWindow = minBinsPerWindow;
 results.params.nShuffles = nShuffles;
 results.params.normalizeD2 = normalizeD2;
+results.params.meanSubtract = meanSubtract;
+results.params.makeMeanSubtractDiagnosticPlot = makeMeanSubtractDiagnosticPlot;
+results.params.meanSubtractDiagnosticPositions = meanSubtractDiagnosticPositions;
 
 resultsPath = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_win%.1f_step%.1f.mat', slidingWindowSize, stepSize));
 save(resultsPath, 'results');

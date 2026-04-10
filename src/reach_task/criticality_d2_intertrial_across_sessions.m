@@ -25,7 +25,7 @@
 
 %% Configuration
 sessionType = 'reach';
-itiWindowMode = 'fixed';  % 'fixed' | 'maximize'
+itiWindowMode = 'maximize';  % 'fixed' | 'maximize'
 fixedWindowSizeSeconds = 6;
 windowBuffer = 1;
 maxItiSeconds = 20;  % e.g. 30 to cap ITI; Inf keeps all ITIs
@@ -42,7 +42,7 @@ binSizeManual = 0.025;
 
 pcaFlag = 0;
 
-plotAreaIdx = [2];  % empty = first entry of areasToTest after load
+plotAreaIdx = [3];  % empty = first entry of areasToTest after load
 
 optsLoad = neuro_behavior_options;
 optsLoad.frameSize = .001;
