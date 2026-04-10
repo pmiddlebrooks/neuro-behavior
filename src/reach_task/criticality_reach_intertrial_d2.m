@@ -108,8 +108,8 @@ fprintf('Calculated %d intertrial midpoints\n', length(intertrialMidpoints));
 
 % =============================    Configuration    =============================
 % Sliding window parameters
-beforeAlign = -4;  % Start sliding from this many seconds before alignment point
-afterAlign  =  4;  % End sliding at this many seconds after alignment point
+beforeAlign = -10;  % Start sliding from this many seconds before alignment point
+afterAlign  =  10;  % End sliding at this many seconds after alignment point
 slidingWindowSize = 6;  % Window size for d2 analysis (user-defined, same for all areas)
 stepSize    = .25; % Step size for sliding window (seconds)
 windowBuffer = .5; % Minimum distance from window edge to event/midpoint (seconds)
@@ -122,6 +122,7 @@ minSpikesPerBin = 3;  % Minimum spikes per bin for optimal bin size calculation
 minBinsPerWindow = 1000;  % Minimum bins per window (used for optimal bin size, but window size is user-defined)
 nShuffles = 3;      % Number of circular permutations for d2 normalization
 normalizeD2 = false;  % Set to true to normalize d2 by shuffled d2 values
+useLog10D2 = true;    % If true, analyze/plot log10(d2); values <= 0 map to NaN
 meanSubtract = true; % If true, subtract bin-wise mean across windows per sliding position
 
 % Bin/window selection mode (manual vs. optimal, similar to criticality_ar)
@@ -1143,6 +1144,9 @@ if loadResultsForPlotting
     if isfield(results, 'sessionName')
         sessionName = results.sessionName;
     end
+    if isfield(results, 'params') && isfield(results.params, 'useLog10D2')
+        useLog10D2 = results.params.useLog10D2;
+    end
     if isfield(results, 'idMatIdx')
         idMatIdx = results.idMatIdx;
     end
@@ -1179,6 +1183,53 @@ else
         else
             error('areasToTest and areas not defined. Please run analysis section first or set loadResultsForPlotting = true.');
         end
+    end
+end
+
+% =============================    Optional log10 d2 transform for analysis/plots    =============================
+% Keep raw values intact in saved results; transform display/analysis structures only.
+if useLog10D2
+    d2Metrics.reach = log10_cell_numeric(d2Metrics.reach);
+    d2Metrics.intertrial = log10_cell_numeric(d2Metrics.intertrial);
+    d2Metrics.reachNormalized = log10_cell_numeric(d2Metrics.reachNormalized);
+    d2Metrics.intertrialNormalized = log10_cell_numeric(d2Metrics.intertrialNormalized);
+
+    segmentMetrics.reach = log10_cell_numeric(segmentMetrics.reach);
+    segmentMetrics.intertrial = log10_cell_numeric(segmentMetrics.intertrial);
+    segmentMetrics.reachNormalized = log10_cell_numeric(segmentMetrics.reachNormalized);
+    segmentMetrics.intertrialNormalized = log10_cell_numeric(segmentMetrics.intertrialNormalized);
+
+    if exist('perWindowD2', 'var') && ~isempty(perWindowD2)
+        if isfield(perWindowD2, 'reach')
+            perWindowD2.reach = log10_cell_nested(perWindowD2.reach);
+        end
+        if isfield(perWindowD2, 'intertrial')
+            perWindowD2.intertrial = log10_cell_nested(perWindowD2.intertrial);
+        end
+        if isfield(perWindowD2, 'reachNormalized')
+            perWindowD2.reachNormalized = log10_cell_nested(perWindowD2.reachNormalized);
+        end
+        if isfield(perWindowD2, 'intertrialNormalized')
+            perWindowD2.intertrialNormalized = log10_cell_nested(perWindowD2.intertrialNormalized);
+        end
+    end
+end
+
+if useLog10D2
+    if normalizeD2
+        d2LabelShort = 'log_{10}(d2 norm.)';
+        d2LabelLong = 'log_{10}(d2 normalized)';
+    else
+        d2LabelShort = 'log_{10}(d2)';
+        d2LabelLong = 'log_{10}(d2)';
+    end
+else
+    if normalizeD2
+        d2LabelShort = 'd2 (norm)';
+        d2LabelLong = 'd2 (normalized)';
+    else
+        d2LabelShort = 'd2';
+        d2LabelLong = 'd2';
     end
 end
 
@@ -1399,11 +1450,7 @@ if ~isempty(segmentWindowsPlot) && exist('reachStart', 'var') && ~isempty(reachS
         xlim(ax(idxArea), xLimitsGlobal);
         ylim(ax(idxArea), [yMinArea yMaxArea]);
 
-        if normalizeD2
-            ylabel(ax(idxArea), 'd2 (norm)');
-        else
-            ylabel(ax(idxArea), 'd2');
-        end
+        ylabel(ax(idxArea), d2LabelShort);
 
         % Area label
         if exist('areas','var') && a <= numel(areas)
@@ -1498,10 +1545,12 @@ else
     yLimits = [0, 1];  % Default if no data
 end
 
-% Precompute d2/popActivity ratios across sliding positions for all areas
+% Precompute d2*popActivity products across sliding positions for all areas
 ratioMetrics = struct();
 ratioMetrics.reach = cell(1, length(areasToTest));
 ratioMetrics.intertrial = cell(1, length(areasToTest));
+ratioMetrics.reachSem = cell(1, length(areasToTest));
+ratioMetrics.intertrialSem = cell(1, length(areasToTest));
 
 if exist('perWindowD2', 'var') && ...
         exist('collectedReachWindowCenterBins', 'var') && ...
@@ -1511,6 +1560,8 @@ if exist('perWindowD2', 'var') && ...
         a = areasToTest(idxArea);
         reachRatioVals = nan(size(slidingPositions));
         intertrialRatioVals = nan(size(slidingPositions));
+        reachRatioSemVals = nan(size(slidingPositions));
+        intertrialRatioSemVals = nan(size(slidingPositions));
         
         % Choose source d2 values (normalized or raw) to match main traces
         if normalizeD2
@@ -1539,7 +1590,12 @@ if exist('perWindowD2', 'var') && ...
                         d2Use = d2Vec(1:nMin);
                         validIdx = ~isnan(popUse) & ~isnan(d2Use) & (popUse ~= 0);
                         if any(validIdx)
-                            reachRatioVals(posIdx) = nanmean(d2Use(validIdx) ./ popUse(validIdx));
+                            ratioNow = d2Use(validIdx) .* popUse(validIdx);
+                            reachRatioVals(posIdx) = nanmean(ratioNow);
+                            nNow = sum(~isnan(ratioNow));
+                            if nNow > 1
+                                reachRatioSemVals(posIdx) = nanstd(ratioNow) / sqrt(nNow);
+                            end
                         end
                     end
                 end
@@ -1560,7 +1616,12 @@ if exist('perWindowD2', 'var') && ...
                         d2Use = d2Vec(1:nMin);
                         validIdx = ~isnan(popUse) & ~isnan(d2Use) & (popUse ~= 0);
                         if any(validIdx)
-                            intertrialRatioVals(posIdx) = nanmean(d2Use(validIdx) ./ popUse(validIdx));
+                            ratioNow = d2Use(validIdx) .* popUse(validIdx);
+                            intertrialRatioVals(posIdx) = nanmean(ratioNow);
+                            nNow = sum(~isnan(ratioNow));
+                            if nNow > 1
+                                intertrialRatioSemVals(posIdx) = nanstd(ratioNow) / sqrt(nNow);
+                            end
                         end
                     end
                 end
@@ -1569,10 +1630,12 @@ if exist('perWindowD2', 'var') && ...
         
         ratioMetrics.reach{a} = reachRatioVals;
         ratioMetrics.intertrial{a} = intertrialRatioVals;
+        ratioMetrics.reachSem{a} = reachRatioSemVals;
+        ratioMetrics.intertrialSem{a} = intertrialRatioSemVals;
     end
 end
 
-% Shared y-axis limits for d2/popActivity ratios
+% Shared y-axis limits for d2*popActivity products
 allRatioYVals = [];
 for a = areasToTest
     if a <= numel(ratioMetrics.reach) && ~isempty(ratioMetrics.reach{a})
@@ -1597,7 +1660,7 @@ end
 
 % Determine layout:
 % - Row 1: d2 sliding-position traces
-% - Row 2: d2/popActivity sliding-position traces
+% - Row 2: d2*popActivity sliding-position traces
 numAreasToPlot = length(areasToTest);
 numRows = 2;
 numCols = numAreasToPlot;
@@ -1639,18 +1702,30 @@ for a = areasToTest
     if normalizeD2
         reachVals = d2Metrics.reachNormalized{a};
         intertrialVals = d2Metrics.intertrialNormalized{a};
-        yLabelStr = 'd2 (normalized)';
+        yLabelStr = d2LabelLong;
+        reachSemVals = get_sem_series_from_nested(perWindowD2.reachNormalized, a, numSlidingPositions);
+        intertrialSemVals = get_sem_series_from_nested(perWindowD2.intertrialNormalized, a, numSlidingPositions);
         titleStr = sprintf('%s%s - Sliding Positions', areas{a}, neuronStr);
     else
         reachVals = d2Metrics.reach{a};
         intertrialVals = d2Metrics.intertrial{a};
-        yLabelStr = 'd2';
+        yLabelStr = d2LabelLong;
+        reachSemVals = get_sem_series_from_nested(perWindowD2.reach, a, numSlidingPositions);
+        intertrialSemVals = get_sem_series_from_nested(perWindowD2.intertrial, a, numSlidingPositions);
         titleStr = sprintf('%s%s - Sliding Positions', areas{a}, neuronStr);
     end
     
     % Plot d2 traces
     plot(slidingPositions, reachVals, '-o', 'Color', [0 0 1], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Reach');
     plot(slidingPositions, intertrialVals, '-s', 'Color', [1 0 0], 'LineWidth', 2, 'MarkerSize', 6, 'DisplayName', 'Intertrial');
+    if any(~isnan(reachSemVals))
+        errorbar(slidingPositions, reachVals, reachSemVals, 'LineStyle', 'none', ...
+            'Color', [0 0 1], 'LineWidth', 1, 'HandleVisibility', 'off');
+    end
+    if any(~isnan(intertrialSemVals))
+        errorbar(slidingPositions, intertrialVals, intertrialSemVals, 'LineStyle', 'none', ...
+            'Color', [1 0 0], 'LineWidth', 1, 'HandleVisibility', 'off');
+    end
     
     if plotIdx == 1
         ylabel(yLabelStr, 'FontSize', 10);
@@ -1667,8 +1742,10 @@ for a = areasToTest
     % Add vertical line at 0 (alignment point)
     xline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
     
-    % Add horizontal line at y = 1
-    yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
+    % Add horizontal line at y = 1 only on non-log normalized scale
+    if normalizeD2 && ~useLog10D2
+        yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
+    end
 end
 
 % Row 2: d2/popActivity traces across sliding positions
@@ -1680,24 +1757,40 @@ for aIdx = 1:length(areasToTest)
     
     reachRatioVals = nan(size(slidingPositions));
     intertrialRatioVals = nan(size(slidingPositions));
+    reachRatioSemVals = nan(size(slidingPositions));
+    intertrialRatioSemVals = nan(size(slidingPositions));
     if a <= numel(ratioMetrics.reach) && ~isempty(ratioMetrics.reach{a})
         reachRatioVals = ratioMetrics.reach{a};
     end
     if a <= numel(ratioMetrics.intertrial) && ~isempty(ratioMetrics.intertrial{a})
         intertrialRatioVals = ratioMetrics.intertrial{a};
     end
+    if a <= numel(ratioMetrics.reachSem) && ~isempty(ratioMetrics.reachSem{a})
+        reachRatioSemVals = ratioMetrics.reachSem{a};
+    end
+    if a <= numel(ratioMetrics.intertrialSem) && ~isempty(ratioMetrics.intertrialSem{a})
+        intertrialRatioSemVals = ratioMetrics.intertrialSem{a};
+    end
     
     if any(~isnan(reachRatioVals))
         plot(slidingPositions, reachRatioVals, '--o', 'Color', [0 0 1], 'LineWidth', 1.5, 'MarkerSize', 4, ...
-            'DisplayName', 'Reach d2/popActivity');
+            'DisplayName', 'Reach d2*popActivity');
+        if any(~isnan(reachRatioSemVals))
+            errorbar(slidingPositions, reachRatioVals, reachRatioSemVals, 'LineStyle', 'none', ...
+                'Color', [0 0 1], 'LineWidth', 1, 'HandleVisibility', 'off');
+        end
     end
     if any(~isnan(intertrialRatioVals))
         plot(slidingPositions, intertrialRatioVals, '--s', 'Color', [1 0 0], 'LineWidth', 1.5, 'MarkerSize', 4, ...
-            'DisplayName', 'Intertrial d2/popActivity');
+            'DisplayName', 'Intertrial d2*popActivity');
+        if any(~isnan(intertrialRatioSemVals))
+            errorbar(slidingPositions, intertrialRatioVals, intertrialRatioSemVals, 'LineStyle', 'none', ...
+                'Color', [1 0 0], 'LineWidth', 1, 'HandleVisibility', 'off');
+        end
     end
     
     if aIdx == 1
-        ylabel('d2 / popActivity', 'FontSize', 10);
+        ylabel('d2 * popActivity', 'FontSize', 10);
     end
     xlabel('Sliding Position (s)', 'FontSize', 10);
     
@@ -1722,13 +1815,8 @@ if exist('sessionName', 'var') && ~isempty(sessionName)
 else
     titlePrefix = '';
 end
-if normalizeD2
-    sgtitle(sprintf('%sd2 (normalized): Reach vs Intertrial (Window: %.1fs, Buffer: %.1fs)', ...
-        titlePrefix, slidingWindowSize, windowBuffer), 'FontSize', 14, 'interpreter', 'none');
-else
-    sgtitle(sprintf('%sd2: Reach vs Intertrial (Window: %.1fs, Buffer: %.1fs)', ...
-        titlePrefix, slidingWindowSize, windowBuffer), 'FontSize', 14, 'interpreter', 'none');
-end
+sgtitle(sprintf('%s%s: Reach vs Intertrial (Window: %.1fs, Buffer: %.1fs)', ...
+    titlePrefix, d2LabelLong, slidingWindowSize, windowBuffer), 'FontSize', 14, 'interpreter', 'none');
 
 % Save figure
 saveFile = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_all_areas_win%.1f_step%.1f.png', slidingWindowSize, stepSize));
@@ -1829,11 +1917,7 @@ if nSegments > 0
         xtickangle(45);
         xlabel('Segment', 'FontSize', 10);
         if aIdx == 1
-            if normalizeD2
-                ylabel('d2 (normalized)', 'FontSize', 10);
-            else
-                ylabel('d2', 'FontSize', 10);
-            end
+            ylabel(d2LabelLong, 'FontSize', 10);
             legend('Location', 'best', 'FontSize', 9);
         end
         if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= length(idMatIdx) && ~isempty(idMatIdx{a})
@@ -1845,7 +1929,7 @@ if nSegments > 0
         title(sprintf('%s%s - Segments', areas{a}, neuronStr), 'FontSize', 11);
         ylim(segmentYLimits);
         grid on;
-        if normalizeD2
+        if normalizeD2 && ~useLog10D2
             yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
         end
     end
@@ -1950,11 +2034,7 @@ if nSegments > 0
         
         xlabel('ITI (s)', 'FontSize', 10);
         if aIdx == 1
-            if normalizeD2
-                ylabel('d2 (normalized)', 'FontSize', 10);
-            else
-                ylabel('d2', 'FontSize', 10);
-            end
+            ylabel(d2LabelLong, 'FontSize', 10);
             legend('Location', 'best', 'FontSize', 9);
         end
         title(sprintf('%s - ITI vs d2', areas{a}), 'FontSize', 11);
@@ -1962,7 +2042,7 @@ if nSegments > 0
         set(gca, 'XTickMode', 'auto', 'YTickMode', 'auto', ...
             'XTickLabelMode', 'auto', 'YTickLabelMode', 'auto');
         xlim([0 35])
-        if normalizeD2
+        if normalizeD2 && ~useLog10D2
             yline(1, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
         end
     end
@@ -2178,15 +2258,16 @@ if exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ...
         reachHandleVar = [];
         interHandleVar = [];
         if ~isempty(popVarReach) && ~isempty(d2ReachVarVals)
-            reachHandleVar = scatter(d2ReachVarVals, popVarReach, 20, [0 0 1], ...
+            reachHandleVar = scatter(popVarReach, d2ReachVarVals, 20, [0 0 1], ...
                 'lineWidth', 1.2, 'DisplayName', 'Reach');
         end
         if ~isempty(popVarInter) && ~isempty(d2InterVarVals)
-            interHandleVar = scatter(d2InterVarVals, popVarInter, 20, [1 0 0], ...
+            interHandleVar = scatter(popVarInter, d2InterVarVals, 20, [1 0 0], ...
                 'lineWidth', 1.2, 'DisplayName', 'Intertrial');
         end
         
-        ylabel('Var(population spiking in window)');
+        xlabel('Var(population spiking in window)');
+        ylabel(d2LabelLong);
         if exist('areas', 'var') && a <= numel(areas)
             if exist('idMatIdx', 'var') && ~isempty(idMatIdx) && a <= numel(idMatIdx) && ~isempty(idMatIdx{a})
                 numNeuronsArea = numel(idMatIdx{a});
@@ -2215,16 +2296,12 @@ if exist('perWindowD2', 'var') && exist('slidingPositions', 'var') && ...
     end
     
     % x-axis is d2
-    if normalizeD2
-        xlabel(t, 'd2 (normalized)');
-    else
-        xlabel(t, 'd2');
-    end
+    xlabel(t, d2LabelLong);
     
     if exist('sessionName', 'var') && ~isempty(sessionName)
-        titleStr = sprintf('%s - Population Activity Metrics vs d2 (Reach vs Intertrial)', sessionName);
+        titleStr = sprintf('%s - d2 vs Population Activity Metrics (Reach vs Intertrial)', sessionName);
     else
-        titleStr = 'Population Activity Metrics vs d2 (Reach vs Intertrial)';
+        titleStr = 'd2 vs Population Activity Metrics (Reach vs Intertrial)';
     end
     title(t, titleStr, 'Interpreter', 'none');
     
@@ -2389,6 +2466,7 @@ results.params.minSpikesPerBin = minSpikesPerBin;
 results.params.minBinsPerWindow = minBinsPerWindow;
 results.params.nShuffles = nShuffles;
 results.params.normalizeD2 = normalizeD2;
+results.params.useLog10D2 = useLog10D2;
 results.params.meanSubtract = meanSubtract;
 results.params.makeMeanSubtractDiagnosticPlot = makeMeanSubtractDiagnosticPlot;
 results.params.meanSubtractDiagnosticPositions = meanSubtractDiagnosticPositions;
@@ -2396,3 +2474,82 @@ results.params.meanSubtractDiagnosticPositions = meanSubtractDiagnosticPositions
 resultsPath = fullfile(saveDir, sprintf('criticality_reach_intertrial_d2_win%.1f_step%.1f.mat', slidingWindowSize, stepSize));
 save(resultsPath, 'results');
 fprintf('\nSaved results to: %s\n', resultsPath);
+
+function cellOut = log10_cell_numeric(cellIn)
+% log10_cell_numeric Apply safe log10 to numeric vectors/matrices in a cell.
+%
+% Values <= 0 or non-finite are set to NaN before/after transform.
+
+cellOut = cellIn;
+for i = 1:numel(cellIn)
+    if isempty(cellIn{i}) || ~isnumeric(cellIn{i})
+        continue;
+    end
+    x = cellIn{i};
+    validMask = isfinite(x) & x > 0;
+    y = nan(size(x));
+    y(validMask) = log10(x(validMask));
+    cellOut{i} = y;
+end
+end
+
+function cellOut = log10_cell_nested(cellIn)
+% log10_cell_nested Apply safe log10 to nested cell-of-cell numeric leaves.
+%
+% Supports structures like perWindowD2.reach{area}{posIdx} = numeric vector.
+
+cellOut = cellIn;
+for i = 1:numel(cellIn)
+    if isempty(cellIn{i})
+        continue;
+    end
+    if iscell(cellIn{i})
+        nested = cellIn{i};
+        for j = 1:numel(nested)
+            if isempty(nested{j}) || ~isnumeric(nested{j})
+                continue;
+            end
+            x = nested{j};
+            validMask = isfinite(x) & x > 0;
+            y = nan(size(x));
+            y(validMask) = log10(x(validMask));
+            nested{j} = y;
+        end
+        cellOut{i} = nested;
+    elseif isnumeric(cellIn{i})
+        x = cellIn{i};
+        validMask = isfinite(x) & x > 0;
+        y = nan(size(x));
+        y(validMask) = log10(x(validMask));
+        cellOut{i} = y;
+    end
+end
+end
+
+function semVals = get_sem_series_from_nested(cellByArea, areaIdx, nPositions)
+% get_sem_series_from_nested Compute SEM across per-window values by position.
+%
+% Variables:
+%   cellByArea - nested cell, e.g., perWindowD2.reach{area}{posIdx} = vector
+%   areaIdx - area index
+%   nPositions - number of sliding positions
+%
+% Returns:
+%   semVals - [1 x nPositions] SEM values (NaN when <2 valid samples)
+
+semVals = nan(1, nPositions);
+if isempty(cellByArea) || areaIdx > numel(cellByArea) || isempty(cellByArea{areaIdx})
+    return;
+end
+for posIdx = 1:nPositions
+    if posIdx > numel(cellByArea{areaIdx}) || isempty(cellByArea{areaIdx}{posIdx})
+        continue;
+    end
+    x = cellByArea{areaIdx}{posIdx}(:);
+    x = x(~isnan(x));
+    n = numel(x);
+    if n > 1
+        semVals(posIdx) = nanstd(x) / sqrt(n);
+    end
+end
+end

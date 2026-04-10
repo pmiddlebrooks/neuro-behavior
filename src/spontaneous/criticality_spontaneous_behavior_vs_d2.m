@@ -10,6 +10,9 @@
 %   4) Controlled analysis: OLS d2 ~ popActivity + switchRate (z-scored predictors
 %      per area), partial correlation (d2, switch | pop), delta R^2, nested F-test;
 %      summary table, partial-residual plot, bar summary of incremental R^2 and p.
+%
+%   useLog10D2 - If true (default), regression and scatter plots use log10(d2) or
+%      log10(d2 normalized); windows with d2 <= 0 are excluded from log scale.
 
 %% =============================    Data Loading    =============================
 fprintf('\n=== Loading Spontaneous Data for Behavior-vs-d2 ===\n');
@@ -62,7 +65,7 @@ if sessionDurationSec <= 0
     error('Invalid session duration: [%.3f, %.3f].', sessionStartSec, sessionEndSec);
 end
 
-%% =============================    Behavior Labels    =============================
+% =============================    Behavior Labels    =============================
 paths = get_paths;
 pathParts = strsplit(sessionName, filesep);
 subDir = pathParts{1}(1:min(2, numel(pathParts{1})));
@@ -146,7 +149,10 @@ makePlots = true;
 runControlledAnalysis = true;
 standardizePredictorsForRegression = true;  % z-score popActivity and switchRate within each area
 
-%% =============================    Bin Size Per Area    =============================
+% Response scale: log10(d2) is often better behaved for linear models / scatter
+useLog10D2 = true;  % false = use raw (or normalized) d2 on the original scale
+
+% =============================    Bin Size Per Area    =============================
 binSize = zeros(1, numAreas);
 
 if useOptimalBinWindowFunction
@@ -163,7 +169,7 @@ else
     binSize(:) = binSizeManual;
 end
 
-%% =============================    Non-overlapping Windows    =============================
+% =============================    Non-overlapping Windows    =============================
 % Build non-overlapping windows inside buffered session bounds.
 windowStartMin = sessionStartSec + windowBufferSec;
 windowEndMax = sessionEndSec - windowBufferSec;
@@ -182,7 +188,7 @@ windowCenterSec = (windowStartSec + windowEndSec) / 2;
 
 fprintf('Using %d non-overlapping windows (%.2f s each)\n', numWindows, windowSizeSec);
 
-%% =============================    Behavior Metric Per Window    =============================
+% =============================    Behavior Metric Per Window    =============================
 switchRatePerWindow = nan(numWindows, 1);
 for w = 1:numWindows
     inWindow = behaviorTimeAxisSec >= windowStartSec(w) & behaviorTimeAxisSec < windowEndSec(w);
@@ -312,6 +318,46 @@ for a = areasToTest
     end
 end
 
+%% =============================    Response scale for analysis / plots    =============================
+if normalizeD2
+    d2BaseForAnalysis = d2NormalizedPerWindowByArea;
+else
+    d2BaseForAnalysis = d2PerWindowByArea;
+end
+if useLog10D2
+    d2ForAnalysisByArea = apply_log10_d2_matrix(d2BaseForAnalysis);
+    fprintf(['Analysis/plot response: log10(d2). Windows with d2 <= 0 or non-finite ' ...
+        'are NaN on this scale.\n']);
+else
+    d2ForAnalysisByArea = d2BaseForAnalysis;
+end
+
+if useLog10D2 && normalizeD2
+    d2YAxisLabelLong = 'log_{10}(d2 normalized)';
+elseif useLog10D2
+    d2YAxisLabelLong = 'log_{10}(d2)';
+elseif normalizeD2
+    d2YAxisLabelLong = 'd2 (normalized)';
+else
+    d2YAxisLabelLong = 'd2';
+end
+
+if useLog10D2
+    if normalizeD2
+        partialResidualYLabel = 'log_{10}(d2 norm.) residual | popActivity';
+    else
+        partialResidualYLabel = 'log_{10}(d2) residual | popActivity';
+    end
+    d2ScaleTitleTag = 'log_{10} d2';
+else
+    partialResidualYLabel = 'd2 residual | popActivity';
+    if normalizeD2
+        d2ScaleTitleTag = 'd2 (normalized)';
+    else
+        d2ScaleTitleTag = 'd2';
+    end
+end
+
 %% =============================    Controlled analysis (d2 vs behavior | popActivity)    =============================
 % Tests whether switch rate explains d2 beyond population firing (sum of bins
 % in window). Uses OLS: d2 ~ 1 + popActivity + switchRate, plus nested models.
@@ -321,16 +367,15 @@ controlledAnalysis.summaryTable = [];
 
 if runControlledAnalysis
     fprintf('\n=== Controlled analysis: d2 ~ popActivity + switchRate (per area) ===\n');
+    if useLog10D2
+        fprintf('  (dependent variable: log10 of d2 / normalized d2 as selected)\n');
+    end
 
     summaryRows = {};
 
     for idx = 1:numel(areasToTest)
         a = areasToTest(idx);
-        if normalizeD2
-            d2Vec = d2NormalizedPerWindowByArea(:, a);
-        else
-            d2Vec = d2PerWindowByArea(:, a);
-        end
+        d2Vec = d2ForAnalysisByArea(:, a);
         popVec = popActivityPerWindowByArea(:, a);
         swVec = switchRatePerWindow(:);
 
@@ -382,9 +427,9 @@ if runControlledAnalysis
             'area', 'nObs', 'R2_full', 'R2_popOnly', 'deltaR2_switch', ...
             'p_switch_slope', 'partialR_d2_sw_given_pop', 'partialP_d2_sw_given_pop', 'p_nested_F_switch'});
         disp(controlledAnalysis.summaryTable);
-        fprintf(['Interpretation: deltaR2_switch = extra variance in d2 explained by switch rate\n' ...
-            'after popActivity; small p_switch_slope / p_nested_F_switch => switch rate still\n' ...
-            'associates with d2 beyond firing rate (per area, linear model).\n']);
+        fprintf(['Interpretation: deltaR2_switch = extra variance in the *response* (d2 or log10 d2) ' ...
+            'explained by switch rate\nafter popActivity; small p_switch_slope / p_nested_F_switch => ' ...
+            'switch rate still\nassociates with that response beyond firing rate (per area, linear model).\n']);
     end
 end
 
@@ -404,13 +449,8 @@ if makePlots
         nexttile;
         hold on;
 
-        if normalizeD2
-            d2Vals = d2NormalizedPerWindowByArea(:, a);
-            yLabelText = 'd2 (normalized)';
-        else
-            d2Vals = d2PerWindowByArea(:, a);
-            yLabelText = 'd2';
-        end
+        d2Vals = d2ForAnalysisByArea(:, a);
+        yLabelText = d2YAxisLabelLong;
 
         validIdx = ~isnan(switchRatePerWindow) & ~isnan(d2Vals);
         xVals = switchRatePerWindow(validIdx);
@@ -441,10 +481,11 @@ if makePlots
     end
 
     if exist('sessionName', 'var') && ~isempty(sessionName)
-        titleText = sprintf('%s - d2 vs Behavior Switch Rate (non-overlapping %.1fs windows)', ...
-            sessionName, windowSizeSec);
+        titleText = sprintf('%s - %s vs Behavior Switch Rate (non-overlapping %.1fs windows)', ...
+            sessionName, d2ScaleTitleTag, windowSizeSec);
     else
-        titleText = sprintf('d2 vs Behavior Switch Rate (non-overlapping %.1fs windows)', windowSizeSec);
+        titleText = sprintf('%s vs Behavior Switch Rate (non-overlapping %.1fs windows)', ...
+            d2ScaleTitleTag, windowSizeSec);
     end
     title(t, titleText, 'Interpreter', 'none');
 
@@ -462,13 +503,8 @@ if makePlots
         nexttile;
         hold on;
         
-        if normalizeD2
-            d2Vals = d2NormalizedPerWindowByArea(:, a);
-            yLabelText = 'd2 (normalized)';
-        else
-            d2Vals = d2PerWindowByArea(:, a);
-            yLabelText = 'd2';
-        end
+        d2Vals = d2ForAnalysisByArea(:, a);
+        yLabelText = d2YAxisLabelLong;
         
         popVals = popActivityPerWindowByArea(:, a);
         validIdx = ~isnan(popVals) & ~isnan(d2Vals);
@@ -500,10 +536,11 @@ if makePlots
     end
     
     if exist('sessionName', 'var') && ~isempty(sessionName)
-        titleTextPop = sprintf('%s - d2 vs popActivity (non-overlapping %.1fs windows)', ...
-            sessionName, windowSizeSec);
+        titleTextPop = sprintf('%s - %s vs popActivity (non-overlapping %.1fs windows)', ...
+            sessionName, d2ScaleTitleTag, windowSizeSec);
     else
-        titleTextPop = sprintf('d2 vs popActivity (non-overlapping %.1fs windows)', windowSizeSec);
+        titleTextPop = sprintf('%s vs popActivity (non-overlapping %.1fs windows)', ...
+            d2ScaleTitleTag, windowSizeSec);
     end
     title(tPop, titleTextPop, 'Interpreter', 'none');
     
@@ -530,15 +567,11 @@ if makePlots
             if isempty(st) || (isfield(st, 'skipped') && st.skipped)
                 title(sprintf('%s (skipped)', areas{a}), 'Interpreter', 'none');
                 xlabel('Switch rate (switches/s)');
-                ylabel('Partial residual');
+                ylabel(partialResidualYLabel);
                 grid on;
                 continue;
             end
-            if normalizeD2
-                d2Vec = d2NormalizedPerWindowByArea(:, a);
-            else
-                d2Vec = d2PerWindowByArea(:, a);
-            end
+            d2Vec = d2ForAnalysisByArea(:, a);
             popVec = popActivityPerWindowByArea(:, a);
             swVec = switchRatePerWindow(:);
             validMask = ~isnan(d2Vec) & ~isnan(popVec) & ~isnan(swVec);
@@ -566,13 +599,15 @@ if makePlots
                 title(areas{a}, 'Interpreter', 'none');
             end
             xlabel('Switch rate (switches/s)');
-            ylabel('d2 residual | popActivity');
+            ylabel(partialResidualYLabel);
             grid on;
         end
         if exist('sessionName', 'var') && ~isempty(sessionName)
-            titlePart = sprintf('%s - Partial residuals: (d2 - fit(d2~pop)) vs switch rate', sessionName);
+            titlePart = sprintf('%s - Partial residuals: (%s - fit(%s~pop)) vs switch rate', ...
+                sessionName, d2ScaleTitleTag, d2ScaleTitleTag);
         else
-            titlePart = 'Partial residuals: (d2 - fit(d2~popActivity)) vs switch rate';
+            titlePart = sprintf('Partial residuals: (%s - fit(%s~popActivity)) vs switch rate', ...
+                d2ScaleTitleTag, d2ScaleTitleTag);
         end
         title(tPart, titlePart, 'Interpreter', 'none');
         plotFilePart = fullfile(saveDir, sprintf('criticality_spontaneous_d2_partial_residuals_vs_switch_win%.1f.png', windowSizeSec));
@@ -587,7 +622,8 @@ if makePlots
         bar(1:nSum, tblS.deltaR2_switch, 'FaceColor', [0.3 0.45 0.65]);
         set(gca, 'XTick', 1:nSum, 'XTickLabel', tblS.area, 'XTickLabelRotation', 45);
         ylabel('\Delta R^2 (full - pop-only)');
-        title('Incremental variance in d2 explained by switch rate (after popActivity)');
+        title(sprintf('Incremental variance in %s explained by switch rate (after popActivity)', ...
+            d2ScaleTitleTag), 'Interpreter', 'none');
         grid on;
 
         nexttile;
@@ -598,7 +634,8 @@ if makePlots
         yline(-log10(0.05), 'r--', 'LineWidth', 1);
         set(gca, 'XTick', 1:nSum, 'XTickLabel', tblS.area, 'XTickLabelRotation', 45);
         ylabel('-log_{10}(p) switch slope');
-        title('Significance of switchRate coefficient in d2 ~ popActivity + switchRate');
+        title(sprintf('Significance of switchRate in %s ~ popActivity + switchRate', ...
+            d2ScaleTitleTag), 'Interpreter', 'none');
         grid on;
 
         if exist('sessionName', 'var') && ~isempty(sessionName)
@@ -630,11 +667,13 @@ results.windowCenterSec = windowCenterSec;
 results.numWindows = numWindows;
 results.switchRatePerWindow = switchRatePerWindow;
 results.d2PerWindowByArea = d2PerWindowByArea;
+results.d2ForAnalysisByArea = d2ForAnalysisByArea;
 results.popActivityPerWindowByArea = popActivityPerWindowByArea;
 results.binSize = binSize;
 results.params.pOrder = pOrder;
 results.params.critType = critType;
 results.params.normalizeD2 = normalizeD2;
+results.params.useLog10D2 = useLog10D2;
 results.params.useSubsampling = useSubsampling;
 results.params.standardizePredictorsForRegression = standardizePredictorsForRegression;
 if runControlledAnalysis
@@ -646,11 +685,23 @@ save(resultsFile, 'results');
 fprintf('Saved results to: %s\n', resultsFile);
 
 %% =============================    Local Functions    =============================
+function Mout = apply_log10_d2_matrix(Min)
+% apply_log10_d2_matrix
+% Variables:
+%   Min - matrix of raw or normalized d2 values
+% Goal:
+%   log10 element-wise where value is finite and > 0; otherwise NaN.
+
+    Mout = nan(size(Min));
+    okMask = isfinite(Min) & Min > 0;
+    Mout(okMask) = log10(Min(okMask));
+end
+
 function statsOut = run_d2_behavior_pop_regression(y, popX, swX, ~, ~)
 % run_d2_behavior_pop_regression OLS for d2 ~ 1 + popActivity + switchRate.
 %
 % Variables:
-%   y     - d2 per window (vector).
+%   y     - d2 per window (vector), or log10(d2) when useLog10D2 is true upstream.
 %   popX  - popActivity predictor (often z-scored within area).
 %   swX   - switch rate predictor (often z-scored within area).
 %
