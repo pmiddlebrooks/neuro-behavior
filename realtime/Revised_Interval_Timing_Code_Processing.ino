@@ -16,16 +16,21 @@
 const int SOLENOID_PORT = 12;
 const int BEAM_BREAK_PORT = 2;   // active low
 const int LED_PORT = 10;         // reward confirmation LED
-const int SYNC_PULSES_PORT = 5;       // external TTL sync (e.g. video frame clock); active HIGH = on
 
 // Timing (ms)
 const int SOLENOID_ON_TIME = 20;   // solenoid stays open
 const int SOLENOID_OFF_TIME = 300; // wait btwn pulses
 const int SOLENOID_REPEATS = 1;    // additional pulses
 
-const unsigned long INTERVAL_DURATION = 4000;   // min wait time after confirmed leave
+const unsigned long INTERVAL_DURATION = 5000;   // min wait time after confirmed leave
 const unsigned long MIN_LEAVE_TIME = 100;       // min leave time to confirm exit
 const unsigned long LED_PULSE = 100;            // reward LED duration
+
+const int BLINK_DURATION = 100; // ms
+const int INTER_SYNC_DURATION = 5000; // ms
+const int NUM_PULSES = 3;
+const int SYNC_LED_PORT = 3;
+const int BREAKOUT_BOARD_PORT = 5;
 
 char buffer[100];
 
@@ -35,6 +40,8 @@ bool givingReward = false;
 bool inBurst = false;
 bool leavePending = false;
 bool timerArmed = false;
+bool inSyncBurst = false;
+bool inSyncPulse = false;
 
 int beamState = 0;
 int lastBeamState = 0;
@@ -46,10 +53,13 @@ unsigned long leaveConfirmStart = 0;
 unsigned long leaveTime = 0;
 unsigned long rewardStartTime = 0;
 unsigned long lastPulseEndTime = 0;
+unsigned long lastPulseStartTime = 0;
+
 int pulsesGivenInBurst = 0;
 
 bool ledActive = false;
 unsigned long ledStartTime = 0;
+
 
 /**
  * log_line
@@ -130,7 +140,8 @@ void setup() {
   pinMode(SOLENOID_PORT, OUTPUT);
   pinMode(LED_PORT, OUTPUT);
   pinMode(BEAM_BREAK_PORT, INPUT);
-  pinMode(SYNC_PULSES_PORT, INPUT);  // use INPUT_PULLUP if the source is open-collector
+  pinMode(SYNC_LED_PORT, OUTPUT);
+  pinMode(BREAKOUT_BOARD_PORT, OUTPUT);
 
   digitalWrite(SOLENOID_PORT, LOW);
   digitalWrite(LED_PORT, LOW);
@@ -140,16 +151,51 @@ void setup() {
 
   // CSV header
   Serial.println("timestamp_ms,event,value,");
-
-  // Baseline sync line so only real transitions are logged (not spurious first edge)
-  lastSyncState = digitalRead(SYNC_PULSES_PORT);
 }
 
 void loop() {
-  int syncState = digitalRead(SYNC_PULSES_PORT);
-  if (syncState != lastSyncState) {
-    write_sync_edge(syncState == HIGH);
-    lastSyncState = syncState;
+  unsigned long now = millis();
+  if (inSyncBurst) {
+    if (inSyncPulse) {
+      unsigned long PulseTimeElapsed = now - lastPulseStartTime;
+      if (PulseTimeElapsed > BLINK_DURATION) {
+        write_sync_edge(false);
+        digitalWrite(SYNC_LED_PORT, LOW);
+        digitalWrite(BREAKOUT_BOARD_PORT, LOW);
+        lastPulseEndTime = millis();
+
+        pulsesGivenInBurst++;
+        inSyncPulse = false;
+
+        if (pulsesGivenInBurst >= NUM_PULSES) {
+          inSyncBurst = false;
+          pulsesGivenInBurst = 0;
+        }
+      }
+    }
+    else {
+      unsigned long OffPulseTimeElapsed = now - lastPulseEndTime;
+      if (OffPulseTimeElapsed > BLINK_DURATION) {
+        write_sync_edge(true);
+        digitalWrite(SYNC_LED_PORT, HIGH);
+        digitalWrite(BREAKOUT_BOARD_PORT, HIGH);
+        lastPulseStartTime = millis();
+
+        inSyncPulse = true;
+      }
+    }
+  }
+  else {
+    unsigned long OffPulseTimeElapsed = now - lastPulseEndTime;
+    if (OffPulseTimeElapsed > INTER_SYNC_DURATION) {
+      write_sync_edge(true);
+      digitalWrite(SYNC_LED_PORT, HIGH);
+      digitalWrite(BREAKOUT_BOARD_PORT, HIGH);
+      lastPulseStartTime = millis();
+
+      inSyncPulse = true;
+      inSyncBurst = true;
+    }
   }
 
   beamState = (digitalRead(BEAM_BREAK_PORT) == LOW);

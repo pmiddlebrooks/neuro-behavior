@@ -55,33 +55,40 @@ void setup() {
     return;
   }
 
-  String portName = ports[serialPortIndex];
-  println("Opening port: " + portName);
-  rigPort = new Serial(this, portName, 9600);
-  rigPort.clear();
-
-  delay(2000);
-  rigPort.write('S');
-  rigPort.write('\n');
-
   String fileName = get_log_file_name();
   logFile = createWriter(fileName);
   println("Logging to: " + fileName);
 
   text("Logging to: " + fileName + "\nPress 'q' to quit.", 10, 10);
+
+  String portName = ports[serialPortIndex];
+  println("Opening port: " + portName);
+  rigPort = new Serial(this, portName, 9600);
+  rigPort.bufferUntil('\n');
+  rigPort.clear();
+
+  delay(2000);
+  rigPort.write('S');
+  rigPort.write('\n');
 }
 
 void draw() {
 }
 
 void serialEvent(Serial p) {
-  String line = p.readStringUntil('\n');
-  if (line != null) {
-    line = trim(line);
-    if (line.length() == 0) return;
-    println(line);
-    logFile.println(line);
-    logFile.flush();
+  try {
+    String line = p.readStringUntil('\n');
+    if (line != null) {
+      line = trim(line);
+      if (line.length() == 0) return;
+      println(line);
+      if (logFile != null) {
+        logFile.println(line);
+        logFile.flush();
+      }
+    }
+  } catch (Exception ex) {
+    println("serialEvent exception: " + ex.getMessage());
   }
 }
 
