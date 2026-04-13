@@ -17,14 +17,20 @@
 %
 % Reach-free windows: d2 is computed only if (i) [winStart,winEnd] contains no
 % reach onset in the session, (ii) the window lies fully inside the recording
-% (with windowBuffer), and (iii) the binned window is full-length (indices not
-% clamped). Mean/SEM at each slide position use only finite d2 (reach-free trials).
+% (with windowBuffer), (iii) the binned window is full-length (indices not
+% clamped), and (iv) the window lies strictly between the aligned reach and the
+% relevant neighbor (pre: between prev and current onset; post: between current
+% and next). That drops trials at extreme slide positions where the window would
+% sit in an earlier/later inter-reach segment, so mean/SEM n decreases away from
+% the aligned reach and SEM can widen.
 %
 % Plots: one figure, row 1 = pre, row 2 = post, columns = areas.
-%   Mean d2 vs relative time (window center - reach), SEM error bars.
+%   Left y-axis: mean d2 vs relative time (window center - reach), SEM error bars.
+%   Right y-axis: mean population activity in window (mean of binned counts over bins x neurons).
 %   Vertical dashed lines at -W/2 and +W/2: reference distance from reach onset
 %   (nearest slide centers lie just inside these bounds).
-%   Faint gray xlines: per-reach relative times of previous and next reach (distribution).
+%   Faint gray xlines: pre row = previous reach only (itiPrev >= minITI); post row =
+%   next reach only (itiNext >= minITI) — not both neighbors on the same panel.
 
 %% ============================= Data loading =============================
 fprintf('\n=== criticality_peri_reach_d2: load reach spikes ===\n');
@@ -79,16 +85,16 @@ tRecStart = timeRange(1);
 tRecEnd = timeRange(2);
 
 %% ============================= Configuration =============================
-minITI = 1.5;           % s; pre requires gap from prev reach, post requires gap to next
-prePostSec = 8;         % s; sliding extent before / after reach
-slidingWindowSize = 2;  % s
+minITI = 6;           % s; pre requires gap from prev reach, post requires gap to next
+prePostSec = 15;         % s; sliding extent before / after reach
+slidingWindowSize = 5;  % s
 stepSize = 0.25;        % s
 windowBuffer = 0.5;     % s inside recording bounds
 
 pOrder = 10;
 critType = 2;
-normalizeD2 = false;
-nShuffles = 3;
+normalizeD2 = true;
+nShuffles = 10;
 
 useOptimalBinWindowFunction = false;
 binSizeManual = 0.025;
@@ -103,7 +109,7 @@ makePlots = true;
 
 halfW = slidingWindowSize / 2;
 
-%% Relative sliding positions (window center relative to reach onset at 0)
+% Relative sliding positions (window center relative to reach onset at 0)
 % Require strict separation from aligned reach: pre has winEnd < reach, post has winStart > reach.
 relCentersPre = (-prePostSec + halfW):stepSize:(-halfW);
 relCentersPre = relCentersPre(relCentersPre < -halfW);
@@ -125,7 +131,7 @@ nPost = numel(relCentersPost);
 boundaryPreRel = -halfW;
 boundaryPostRel = halfW;
 
-%% Reach eligibility
+% Reach eligibility
 eligiblePre = false(nReach, 1);
 eligiblePost = false(nReach, 1);
 itiPrev = nan(nReach, 1);
@@ -149,7 +155,7 @@ end
 fprintf('Reaches: %d | pre-eligible (minITI from prev): %d | post-eligible (minITI to next): %d\n', ...
     nReach, sum(eligiblePre), sum(eligiblePost));
 
-%% Bin sizes
+% Bin sizes
 binSize = zeros(1, numAreas);
 if useOptimalBinWindowFunction
     for a = areasToTest
@@ -162,12 +168,16 @@ else
     binSize(:) = binSizeManual;
 end
 
-%% Storage: d2Pre{d2Post}{a} = [nPos x nReach] then mask NaN
+% Storage: d2Pre/d2Post and popActPre/Post{a} = [nPos x nReach] (NaN = no valid window)
 d2Pre = cell(1, numAreas);
 d2Post = cell(1, numAreas);
+popActPre = cell(1, numAreas);
+popActPost = cell(1, numAreas);
 for a = areasToTest
     d2Pre{a} = nan(nPre, nReach);
     d2Post{a} = nan(nPost, nReach);
+    popActPre{a} = nan(nPre, nReach);
+    popActPost{a} = nan(nPost, nReach);
 end
 
 %% ============================= Per-area loop =============================
@@ -189,7 +199,7 @@ for a = areasToTest
     for r = 1:nReach
         tReach = reachStart(r);
 
-        %% Pre
+        % Pre
         if eligiblePre(r)
             for k = 1:nPre
                 relC = relCentersPre(k);
@@ -199,6 +209,10 @@ for a = areasToTest
                 if winStart < tRecStart + windowBuffer || winEnd > tRecEnd - windowBuffer
                     continue;
                 end
+                tPrevReach = reachStart(r - 1);
+                if ~(winStart > tPrevReach && winEnd < tReach)
+                    continue;
+                end
                 if window_contains_any_reach(winStart, winEnd, reachStart)
                     continue;
                 end
@@ -209,13 +223,14 @@ for a = areasToTest
                     continue;
                 end
                 wMat = aDataMat(i0:i1, :);
+                popActPre{a}(k, r) = mean(wMat(:));
                 d2v = compute_d2_for_window_matrix_local(wMat, pOrder, critType, ...
                     normalizeD2, nShuffles);
                 d2Pre{a}(k, r) = d2v;
             end
         end
 
-        %% Post
+        % Post
         if eligiblePost(r)
             for k = 1:nPost
                 relC = relCentersPost(k);
@@ -225,6 +240,10 @@ for a = areasToTest
                 if winStart < tRecStart + windowBuffer || winEnd > tRecEnd - windowBuffer
                     continue;
                 end
+                tNextReach = reachStart(r + 1);
+                if ~(winStart > tReach && winEnd < tNextReach)
+                    continue;
+                end
                 if window_contains_any_reach(winStart, winEnd, reachStart)
                     continue;
                 end
@@ -235,6 +254,7 @@ for a = areasToTest
                     continue;
                 end
                 wMat = aDataMat(i0:i1, :);
+                popActPost{a}(k, r) = mean(wMat(:));
                 d2v = compute_d2_for_window_matrix_local(wMat, pOrder, critType, ...
                     normalizeD2, nShuffles);
                 d2Post{a}(k, r) = d2v;
@@ -243,7 +263,7 @@ for a = areasToTest
     end
 end
 
-%% Optional log10
+% Optional log10
 if useLog10D2
     for a = areasToTest
         d2Pre{a} = apply_log10_safe_matrix(d2Pre{a});
@@ -258,12 +278,17 @@ else
 end
 
 %% ============================= Summary + plot =============================
-% Per slide position: nanmean / SEM use only finite d2 (valid, reach-free, full-bin
-% windows). NaNs at (k,r) are omitted from n; ineligible reaches are excluded by mask.
+% Per slide position: nanmean / SEM use only finite d2 at (k,r) after all window
+% gates (recording bounds, strict inter-reach corridor, no reach in window, strict
+% bin indices). NaNs omit that trial from n at that k; ineligible reaches never enter the loop.
 meanPre = nan(nPre, numAreas);
 semPre = nan(nPre, numAreas);
 meanPost = nan(nPost, numAreas);
 semPost = nan(nPost, numAreas);
+meanPopPre = nan(nPre, numAreas);
+semPopPre = nan(nPre, numAreas);
+meanPopPost = nan(nPost, numAreas);
+semPopPost = nan(nPost, numAreas);
 
 for a = areasToTest
     for k = 1:nPre
@@ -273,6 +298,12 @@ for a = areasToTest
         if nn > 1
             semPre(k, a) = nanstd(rowv) / sqrt(nn);
         end
+        rowPop = popActPre{a}(k, eligiblePre);
+        meanPopPre(k, a) = nanmean(rowPop);
+        nnPop = sum(isfinite(rowPop));
+        if nnPop > 1
+            semPopPre(k, a) = nanstd(rowPop) / sqrt(nnPop);
+        end
     end
     for k = 1:nPost
         rowv = d2Post{a}(k, eligiblePost);
@@ -280,6 +311,12 @@ for a = areasToTest
         nn = sum(isfinite(rowv));
         if nn > 1
             semPost(k, a) = nanstd(rowv) / sqrt(nn);
+        end
+        rowPop = popActPost{a}(k, eligiblePost);
+        meanPopPost(k, a) = nanmean(rowPop);
+        nnPop = sum(isfinite(rowPop));
+        if nnPop > 1
+            semPopPost(k, a) = nanstd(rowPop) / sqrt(nnPop);
         end
     end
 end
@@ -297,6 +334,85 @@ end
 
 if makePlots
     nCol = numel(areasToTest);
+
+    % Shared y-limits: mean ± SEM across areas under test (pre + post).
+    areaCols = areasToTest(:);
+    bandLo = [meanPre(:, areaCols) - semPre(:, areaCols); ...
+        meanPost(:, areaCols) - semPost(:, areaCols)];
+    bandHi = [meanPre(:, areaCols) + semPre(:, areaCols); ...
+        meanPost(:, areaCols) + semPost(:, areaCols)];
+    yMinData = nanmin(bandLo(:));
+    yMaxData = nanmax(bandHi(:));
+    if ~isfinite(yMinData) || ~isfinite(yMaxData)
+        yLimGlobal = [0, 1];
+    elseif yMaxData <= yMinData
+        yLimGlobal = [yMinData - 0.05, yMaxData + 0.05];
+    else
+        yPad = 0.05 * (yMaxData - yMinData);
+        yLimGlobal = [yMinData - yPad, yMaxData + yPad];
+    end
+
+    % X includes 0 on both rows so the reach-onset reference is on every axis.
+    xPreLim = [min(relCentersPre), 0];
+    xPostLim = [0, max(relCentersPost)];
+    xLabelStr = 'Window center - reach onset (s); 0 = reach start';
+    if useLog10D2
+        yLabInterpreter = 'tex';
+    else
+        yLabInterpreter = 'none';
+    end
+
+    nTickX = 6;
+    xTicksPre = linspace(xPreLim(1), xPreLim(2), nTickX);
+    xTicksPre(end) = 0;
+    xTickLabelsPre = cell(nTickX, 1);
+    for tt = 1:nTickX
+        if abs(xTicksPre(tt)) < 1e-10
+            xTickLabelsPre{tt} = '0';
+        else
+            xTickLabelsPre{tt} = sprintf('%.1f', xTicksPre(tt));
+        end
+    end
+    xTicksPost = linspace(xPostLim(1), xPostLim(2), nTickX);
+    xTicksPost(1) = 0;
+    xTickLabelsPost = cell(nTickX, 1);
+    for tt = 1:nTickX
+        if abs(xTicksPost(tt)) < 1e-10
+            xTickLabelsPost{tt} = '0';
+        else
+            xTickLabelsPost{tt} = sprintf('%.1f', xTicksPost(tt));
+        end
+    end
+
+    nTickY = 5;
+    yTicksGlobal = linspace(yLimGlobal(1), yLimGlobal(2), nTickY);
+    yTickLabelsGlobal = cell(nTickY, 1);
+    for tt = 1:nTickY
+        yTickLabelsGlobal{tt} = sprintf('%.3g', yTicksGlobal(tt));
+    end
+
+    % Right axis: mean population activity (mean ± SEM across tested areas, pre + post).
+    bandPopLo = [meanPopPre(:, areaCols) - semPopPre(:, areaCols); ...
+        meanPopPost(:, areaCols) - semPopPost(:, areaCols)];
+    bandPopHi = [meanPopPre(:, areaCols) + semPopPre(:, areaCols); ...
+        meanPopPost(:, areaCols) + semPopPost(:, areaCols)];
+    yMinPop = nanmin(bandPopLo(:));
+    yMaxPop = nanmax(bandPopHi(:));
+    if ~isfinite(yMinPop) || ~isfinite(yMaxPop)
+        yLimPopGlobal = [0, 1];
+    elseif yMaxPop <= yMinPop
+        yLimPopGlobal = [yMinPop - 0.05, yMaxPop + 0.05];
+    else
+        yPadPop = 0.05 * (yMaxPop - yMinPop);
+        yLimPopGlobal = [yMinPop - yPadPop, yMaxPop + yPadPop];
+    end
+    yTicksPopGlobal = linspace(yLimPopGlobal(1), yLimPopGlobal(2), nTickY);
+    yTickLabelsPopGlobal = cell(nTickY, 1);
+    for tt = 1:nTickY
+        yTickLabelsPopGlobal{tt} = sprintf('%.3g', yTicksPopGlobal(tt));
+    end
+    popActYLabelStr = 'Mean population activity (spks/bin)';
+
     figure(4101);
     clf;
     set(gcf, 'Color', 'w', 'Name', 'Peri-reach d2', 'NumberTitle', 'off');
@@ -321,33 +437,75 @@ if makePlots
         a = areasToTest(colIdx);
         axPre = ha(colIdx);
         axPost = ha(nCol + colIdx);
-        %% Pre panel
+        % Pre panel (left: d2; right: mean population activity in each window)
         axes(axPre);
+        yyaxis left;
         hold on;
-        plot_gray_reach_marks(relPrevAll(eligiblePre), relNextAll(eligiblePre), relCentersPre);
+        % Only previous-reach times: eligiblePre enforces itiPrev >= minITI, not itiNext.
+        plot_gray_reach_marks(relPrevAll(eligiblePre), [], relCentersPre);
         errorbar(relCentersPre, meanPre(:, a), semPre(:, a), 'k.', 'LineWidth', 1);
         plot(relCentersPre, meanPre(:, a), 'b-', 'LineWidth', 1.2);
         xline(boundaryPreRel, 'k--', 'LineWidth', 1.5);
         xline(0, 'k:', 'LineWidth', 1);
-        xlabel('Window center - reach (s)');
-        ylabel(yLabelStr);
+        yyaxis right;
+        hold on;
+        errorbar(relCentersPre, meanPopPre(:, a), semPopPre(:, a), '.', 'Color', [0.55 0.55 0.55], ...
+            'LineWidth', 0.9, 'MarkerSize', 10, 'CapSize', 3);
+        plot(relCentersPre, meanPopPre(:, a), '-', 'Color', [0.85 0.4 0.08], 'LineWidth', 1.2);
+        hold off;
+        yyaxis left;
         title(sprintf('%s pre-reach', areas{a}), 'Interpreter', 'none');
         grid on;
         hold off;
+        xlabel(axPre, xLabelStr, 'Interpreter', 'none');
+        xlim(axPre, xPreLim);
+        set(axPre, 'XTick', xTicksPre, 'XTickLabel', xTickLabelsPre, ...
+            'TickLabelInterpreter', 'none', 'XTickLabelMode', 'manual');
+        yyaxis left;
+        ylabel(axPre, yLabelStr, 'Interpreter', yLabInterpreter);
+        ylim(axPre, yLimGlobal);
+        set(axPre, 'YTick', yTicksGlobal, 'YTickLabel', yTickLabelsGlobal, ...
+            'TickLabelInterpreter', 'none', 'YTickLabelMode', 'manual');
+        yyaxis right;
+        ylabel(axPre, popActYLabelStr, 'Interpreter', 'none');
+        ylim(axPre, yLimPopGlobal);
+        set(axPre, 'YTick', yTicksPopGlobal, 'YTickLabel', yTickLabelsPopGlobal, ...
+            'TickLabelInterpreter', 'none', 'YTickLabelMode', 'manual');
 
-        %% Post panel
+        % Post panel
         axes(axPost);
+        yyaxis left;
         hold on;
-        plot_gray_reach_marks(relPrevAll(eligiblePost), relNextAll(eligiblePost), relCentersPost);
+        % Only next-reach times: eligiblePost enforces itiNext >= minITI, not itiPrev.
+        plot_gray_reach_marks([], relNextAll(eligiblePost), relCentersPost);
         errorbar(relCentersPost, meanPost(:, a), semPost(:, a), 'k.', 'LineWidth', 1);
         plot(relCentersPost, meanPost(:, a), 'r-', 'LineWidth', 1.2);
         xline(boundaryPostRel, 'k--', 'LineWidth', 1.5);
         xline(0, 'k:', 'LineWidth', 1);
-        xlabel('Window center - reach (s)');
-        ylabel(yLabelStr);
+        yyaxis right;
+        hold on;
+        errorbar(relCentersPost, meanPopPost(:, a), semPopPost(:, a), '.', 'Color', [0.55 0.55 0.55], ...
+            'LineWidth', 0.9, 'MarkerSize', 10, 'CapSize', 3);
+        plot(relCentersPost, meanPopPost(:, a), '-', 'Color', [0.85 0.4 0.08], 'LineWidth', 1.2);
+        hold off;
+        yyaxis left;
         title(sprintf('%s post-reach', areas{a}), 'Interpreter', 'none');
         grid on;
         hold off;
+        xlabel(axPost, xLabelStr, 'Interpreter', 'none');
+        xlim(axPost, xPostLim);
+        set(axPost, 'XTick', xTicksPost, 'XTickLabel', xTickLabelsPost, ...
+            'TickLabelInterpreter', 'none', 'XTickLabelMode', 'manual');
+        yyaxis left;
+        ylabel(axPost, yLabelStr, 'Interpreter', yLabInterpreter);
+        ylim(axPost, yLimGlobal);
+        set(axPost, 'YTick', yTicksGlobal, 'YTickLabel', yTickLabelsGlobal, ...
+            'TickLabelInterpreter', 'none', 'YTickLabelMode', 'manual');
+        yyaxis right;
+        ylabel(axPost, popActYLabelStr, 'Interpreter', 'none');
+        ylim(axPost, yLimPopGlobal);
+        set(axPost, 'YTick', yTicksPopGlobal, 'YTickLabel', yTickLabelsPopGlobal, ...
+            'TickLabelInterpreter', 'none', 'YTickLabelMode', 'manual');
     end
 
     sgtitle(sprintf(['Peri-reach d2 | %s | W=%.2fs step=%.2fs minITI=%.2fs prePost=%.2fs'], ...
@@ -377,6 +535,12 @@ results.eligiblePre = eligiblePre;
 results.eligiblePost = eligiblePost;
 results.d2Pre = d2Pre;
 results.d2Post = d2Post;
+results.popActPre = popActPre;
+results.popActPost = popActPost;
+results.meanPopPre = meanPopPre;
+results.semPopPre = semPopPre;
+results.meanPopPost = meanPopPost;
+results.semPopPost = semPopPost;
 results.meanPre = meanPre;
 results.semPre = semPre;
 results.meanPost = meanPost;
