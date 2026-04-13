@@ -29,8 +29,8 @@ if ~exist('savePlots', 'var') || isempty(savePlots)
     savePlots = false;
 end
 
-binSize = 0.01;
-minDur = 0.04;
+binSize = 0.005;
+minDur = 0.05;
 collectStart = [];
 collectEnd = []; % set with collectStart for windowed HMM saves; [] = full session filename
 collectEnd = 60*60; % set with collectStart for windowed HMM saves; [] = full session filename
@@ -132,7 +132,7 @@ for seqIdx = 1:numSequences
     end
 end
 
-%% Prepare color maps
+% Prepare color maps
 % HMM states: distinguishable colors from figure_tools
 figureToolsPath = '/Users/paulmiddlebrooks/Projects/figure_tools';
 if exist(figureToolsPath, 'dir')

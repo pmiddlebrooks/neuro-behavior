@@ -25,9 +25,12 @@ if loadAndPlot
     end
 
     % Optional selection parameters
-    brainArea = 'DS';      % e.g., 'M56'
-    binSizeLoad = .01;    % e.g., 0.01
-    minDurLoad = .04;     % e.g., 0.04
+    brainArea = 'M56';      % e.g., 'M56'
+    binSizeLoad = .005;     % e.g., 0.01
+    minDurLoad = .05;       % e.g., 0.04
+    % Set these for windowed analyses saved as ..._start_XX_end_XX.mat
+    collectStartLoad = [];  % e.g., 0
+    collectEndLoad = 60*60;    % e.g., 3600
 
     loadArgs = {};
     if ~isempty(brainArea)
@@ -38,6 +41,12 @@ if loadAndPlot
     end
     if ~isempty(minDurLoad)
         loadArgs = [loadArgs, {'minDur'}, {minDurLoad}]; %#ok<AGROW>
+    end
+    if ~isempty(collectStartLoad)
+        loadArgs = [loadArgs, {'collectStart'}, {collectStartLoad}]; %#ok<AGROW>
+    end
+    if ~isempty(collectEndLoad)
+        loadArgs = [loadArgs, {'collectEnd'}, {collectEndLoad}]; %#ok<AGROW>
     end
 
     fprintf('Loading saved HMM model via hmm_load_saved_model...\n');
@@ -91,7 +100,7 @@ end
 
 opts = neuro_behavior_options;
 opts.minActTime = 0.16;
-opts.minFiringRate = 0.7;
+opts.minFiringRate = 1; % 0.7;
 opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;

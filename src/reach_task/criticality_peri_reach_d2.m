@@ -3,8 +3,11 @@
 % Peri-reach sliding-window d2: how criticality changes before vs after reach onsets.
 %
 % Align all windows to reach start times (seconds). Two analyses:
-%   Pre  — centers in (-prePostSec+W/2, -W/2) so winEnd < reach (no reach in window).
-%   Post — centers in (W/2, prePostSec-W/2) so winStart > reach (no reach in window).
+%   Pre  — strict: centers < -W/2 so winEnd < reach (no reach in window). Additional
+%         overlap bins: centers in [-W/2, 0] so the sliding window can include reach
+%         onset (d2 and pop activity still exclude other reaches; aligned reach allowed).
+%   Post — strict: centers > W/2 so winStart > reach. Additional overlap bins: centers
+%         in (0, W/2] straddling or ending past reach onset.
 %
 % Variables:
 %   sessionType, sessionName — same as criticality_reach_intertrial_d2.m
@@ -15,20 +18,20 @@
 %   pOrder, critType, normalizeD2, nShuffles — d2
 %   useLog10D2 — if true, plot/analyze log10(d2), d2<=0 -> NaN
 %
-% Reach-free windows: d2 is computed only if (i) [winStart,winEnd] contains no
-% reach onset in the session, (ii) the window lies fully inside the recording
-% (with windowBuffer), (iii) the binned window is full-length (indices not
-% clamped), and (iv) the window lies strictly between the aligned reach and the
-% relevant neighbor (pre: between prev and current onset; post: between current
-% and next). That drops trials at extreme slide positions where the window would
-% sit in an earlier/later inter-reach segment, so mean/SEM n decreases away from
-% the aligned reach and SEM can widen.
+% Valid windows: recording bounds + windowBuffer, full binned length, and corridor
+% between neighbors. Strict bins also require no reach onset in the window. Overlap
+% bins include the aligned reach onset but exclude any other reach; pre overlap
+% requires winEnd < next reach; post overlap requires winStart > prev reach (when
+% it exists). Extreme slide positions can still drop trials, so mean/SEM n can fall
+% near corridor edges.
 %
 % Plots: one figure, row 1 = pre, row 2 = post, columns = areas.
 %   Left y-axis: mean d2 vs relative time (window center - reach), SEM error bars.
-%   Right y-axis: mean population activity in window (mean of binned counts over bins x neurons).
-%   Vertical dashed lines at -W/2 and +W/2: reference distance from reach onset
-%   (nearest slide centers lie just inside these bounds).
+%   Right y-axis: (1) mean population activity in each full window (mean over bins of
+%   summed counts per bin); (2) raw summed population activity at the single bin aligned
+%   with each window center (same x = slide centers).
+%   Vertical dashed lines at -W/2 and +W/2: last slide centers where the window still
+%   touches/overlaps reach onset (strict reach-free bins lie outside these bounds).
 %   Faint gray xlines: pre row = previous reach only (itiPrev >= minITI); post row =
 %   next reach only (itiNext >= minITI) — not both neighbors on the same panel.
 
@@ -93,7 +96,7 @@ windowBuffer = 0.5;     % s inside recording bounds
 
 pOrder = 10;
 critType = 2;
-normalizeD2 = true;
+normalizeD2 = false;
 nShuffles = 10;
 
 useOptimalBinWindowFunction = false;
@@ -109,12 +112,18 @@ makePlots = true;
 
 halfW = slidingWindowSize / 2;
 
-% Relative sliding positions (window center relative to reach onset at 0)
-% Require strict separation from aligned reach: pre has winEnd < reach, post has winStart > reach.
-relCentersPre = (-prePostSec + halfW):stepSize:(-halfW);
-relCentersPre = relCentersPre(relCentersPre < -halfW);
-relCentersPost = (halfW):stepSize:(prePostSec - halfW);
-relCentersPost = relCentersPost(relCentersPost > halfW);
+% Relative sliding positions (window center relative to reach onset at 0).
+% Strict bins: no aligned reach inside the window. Overlap bins: window contains reach.
+relCentersPreStrict = (-prePostSec + halfW):stepSize:(-halfW);
+relCentersPreStrict = relCentersPreStrict(relCentersPreStrict < -halfW);
+relCentersPreOverlap = (-halfW):stepSize:0;
+relCentersPre = sort(unique([relCentersPreStrict(:); relCentersPreOverlap(:)]'));
+
+relCentersPostStrict = (halfW):stepSize:(prePostSec - halfW);
+relCentersPostStrict = relCentersPostStrict(relCentersPostStrict > halfW);
+relCentersPostOverlap = stepSize:stepSize:halfW;
+relCentersPost = sort(unique([relCentersPostOverlap(:); relCentersPostStrict(:)]'));
+
 if isempty(relCentersPre)
     error('prePostSec too small for slidingWindowSize (pre side empty after reach-free filter).');
 end
@@ -168,16 +177,21 @@ else
     binSize(:) = binSizeManual;
 end
 
-% Storage: d2Pre/d2Post and popActPre/Post{a} = [nPos x nReach] (NaN = no valid window)
+% Storage: d2Pre/d2Post, popActPre/Post (window-mean pop), popCenterRawPre/Post (summed
+% population count at the bin aligned with each window center) — all [nPos x nReach].
 d2Pre = cell(1, numAreas);
 d2Post = cell(1, numAreas);
 popActPre = cell(1, numAreas);
 popActPost = cell(1, numAreas);
+popCenterRawPre = cell(1, numAreas);
+popCenterRawPost = cell(1, numAreas);
 for a = areasToTest
     d2Pre{a} = nan(nPre, nReach);
     d2Post{a} = nan(nPost, nReach);
     popActPre{a} = nan(nPre, nReach);
     popActPost{a} = nan(nPost, nReach);
+    popCenterRawPre{a} = nan(nPre, nReach);
+    popCenterRawPost{a} = nan(nPost, nReach);
 end
 
 %% ============================= Per-area loop =============================
@@ -201,6 +215,11 @@ for a = areasToTest
 
         % Pre
         if eligiblePre(r)
+            tPrevReach = reachStart(r - 1);
+            tNextReach = inf;
+            if r < nReach
+                tNextReach = reachStart(r + 1);
+            end
             for k = 1:nPre
                 relC = relCentersPre(k);
                 centerTime = tReach + relC;
@@ -209,12 +228,24 @@ for a = areasToTest
                 if winStart < tRecStart + windowBuffer || winEnd > tRecEnd - windowBuffer
                     continue;
                 end
-                tPrevReach = reachStart(r - 1);
-                if ~(winStart > tPrevReach && winEnd < tReach)
-                    continue;
-                end
-                if window_contains_any_reach(winStart, winEnd, reachStart)
-                    continue;
+                isStrictPreBin = relC < -halfW;
+                if isStrictPreBin
+                    if ~(winStart > tPrevReach && winEnd < tReach)
+                        continue;
+                    end
+                    if window_contains_any_reach(winStart, winEnd, reachStart)
+                        continue;
+                    end
+                else
+                    if ~(winStart > tPrevReach && winEnd < tNextReach)
+                        continue;
+                    end
+                    if ~(winEnd >= tReach && winStart < tReach)
+                        continue;
+                    end
+                    if window_contains_other_reaches(winStart, winEnd, reachStart, r)
+                        continue;
+                    end
                 end
 
                 [i0, i1, idxOk] = window_indices_strict(centerTime, slidingWindowSize, ...
@@ -223,7 +254,14 @@ for a = areasToTest
                     continue;
                 end
                 wMat = aDataMat(i0:i1, :);
-                popActPre{a}(k, r) = mean(wMat(:));
+                popTraceCol = sum(wMat, 2);
+                centerIdx = round(centerTime / binSize(a)) + 1;
+                cRow = centerIdx - i0 + 1;
+                if cRow < 1 || cRow > size(wMat, 1)
+                    continue;
+                end
+                popActPre{a}(k, r) = mean(popTraceCol);
+                popCenterRawPre{a}(k, r) = sum(wMat(cRow, :));
                 d2v = compute_d2_for_window_matrix_local(wMat, pOrder, critType, ...
                     normalizeD2, nShuffles);
                 d2Pre{a}(k, r) = d2v;
@@ -232,6 +270,7 @@ for a = areasToTest
 
         % Post
         if eligiblePost(r)
+            tNextReach = reachStart(r + 1);
             for k = 1:nPost
                 relC = relCentersPost(k);
                 centerTime = tReach + relC;
@@ -240,12 +279,27 @@ for a = areasToTest
                 if winStart < tRecStart + windowBuffer || winEnd > tRecEnd - windowBuffer
                     continue;
                 end
-                tNextReach = reachStart(r + 1);
-                if ~(winStart > tReach && winEnd < tNextReach)
-                    continue;
-                end
-                if window_contains_any_reach(winStart, winEnd, reachStart)
-                    continue;
+                isStrictPostBin = relC > halfW;
+                if isStrictPostBin
+                    if ~(winStart > tReach && winEnd < tNextReach)
+                        continue;
+                    end
+                    if window_contains_any_reach(winStart, winEnd, reachStart)
+                        continue;
+                    end
+                else
+                    if r > 1 && winStart <= reachStart(r - 1)
+                        continue;
+                    end
+                    if ~(winStart > tRecStart + windowBuffer && winEnd < tNextReach)
+                        continue;
+                    end
+                    if ~(winStart <= tReach && winEnd >= tReach)
+                        continue;
+                    end
+                    if window_contains_other_reaches(winStart, winEnd, reachStart, r)
+                        continue;
+                    end
                 end
 
                 [i0, i1, idxOk] = window_indices_strict(centerTime, slidingWindowSize, ...
@@ -254,7 +308,14 @@ for a = areasToTest
                     continue;
                 end
                 wMat = aDataMat(i0:i1, :);
-                popActPost{a}(k, r) = mean(wMat(:));
+                popTraceCol = sum(wMat, 2);
+                centerIdx = round(centerTime / binSize(a)) + 1;
+                cRow = centerIdx - i0 + 1;
+                if cRow < 1 || cRow > size(wMat, 1)
+                    continue;
+                end
+                popActPost{a}(k, r) = mean(popTraceCol);
+                popCenterRawPost{a}(k, r) = sum(wMat(cRow, :));
                 d2v = compute_d2_for_window_matrix_local(wMat, pOrder, critType, ...
                     normalizeD2, nShuffles);
                 d2Post{a}(k, r) = d2v;
@@ -284,11 +345,15 @@ end
 meanPre = nan(nPre, numAreas);
 semPre = nan(nPre, numAreas);
 meanPost = nan(nPost, numAreas);
-semPost = nan(nPost, numAreas);
+semPost = nan(nPost, numAreas); 
 meanPopPre = nan(nPre, numAreas);
 semPopPre = nan(nPre, numAreas);
 meanPopPost = nan(nPost, numAreas);
 semPopPost = nan(nPost, numAreas);
+meanPopCenterRawPre = nan(nPre, numAreas);
+semPopCenterRawPre = nan(nPre, numAreas);
+meanPopCenterRawPost = nan(nPost, numAreas);
+semPopCenterRawPost = nan(nPost, numAreas);
 
 for a = areasToTest
     for k = 1:nPre
@@ -304,6 +369,12 @@ for a = areasToTest
         if nnPop > 1
             semPopPre(k, a) = nanstd(rowPop) / sqrt(nnPop);
         end
+        rowCenter = popCenterRawPre{a}(k, eligiblePre);
+        meanPopCenterRawPre(k, a) = nanmean(rowCenter);
+        nnC = sum(isfinite(rowCenter));
+        if nnC > 1
+            semPopCenterRawPre(k, a) = nanstd(rowCenter) / sqrt(nnC);
+        end
     end
     for k = 1:nPost
         rowv = d2Post{a}(k, eligiblePost);
@@ -317,6 +388,12 @@ for a = areasToTest
         nnPop = sum(isfinite(rowPop));
         if nnPop > 1
             semPopPost(k, a) = nanstd(rowPop) / sqrt(nnPop);
+        end
+        rowCenter = popCenterRawPost{a}(k, eligiblePost);
+        meanPopCenterRawPost(k, a) = nanmean(rowCenter);
+        nnC = sum(isfinite(rowCenter));
+        if nnC > 1
+            semPopCenterRawPost(k, a) = nanstd(rowCenter) / sqrt(nnC);
         end
     end
 end
@@ -396,8 +473,12 @@ if makePlots
         meanPopPost(:, areaCols) - semPopPost(:, areaCols)];
     bandPopHi = [meanPopPre(:, areaCols) + semPopPre(:, areaCols); ...
         meanPopPost(:, areaCols) + semPopPost(:, areaCols)];
-    yMinPop = nanmin(bandPopLo(:));
-    yMaxPop = nanmax(bandPopHi(:));
+    bandCenterLo = [meanPopCenterRawPre(:, areaCols) - semPopCenterRawPre(:, areaCols); ...
+        meanPopCenterRawPost(:, areaCols) - semPopCenterRawPost(:, areaCols)];
+    bandCenterHi = [meanPopCenterRawPre(:, areaCols) + semPopCenterRawPre(:, areaCols); ...
+        meanPopCenterRawPost(:, areaCols) + semPopCenterRawPost(:, areaCols)];
+    yMinPop = nanmin([bandPopLo(:); bandCenterLo(:)]);
+    yMaxPop = nanmax([bandPopHi(:); bandCenterHi(:)]);
     if ~isfinite(yMinPop) || ~isfinite(yMaxPop)
         yLimPopGlobal = [0, 1];
     elseif yMaxPop <= yMinPop
@@ -411,7 +492,7 @@ if makePlots
     for tt = 1:nTickY
         yTickLabelsPopGlobal{tt} = sprintf('%.3g', yTicksPopGlobal(tt));
     end
-    popActYLabelStr = 'Mean population activity (spks/bin)';
+    popActYLabelStr = 'Population activity (spks/bin)';
 
     figure(4101);
     clf;
@@ -424,12 +505,13 @@ if makePlots
     end
 
     useTight = exist('tight_subplot', 'file');
+    nRowFig = 2;
     if useTight
-        ha = tight_subplot(2, nCol, [0.07 0.05], [0.1 0.08], [0.06 0.04]);
+        ha = tight_subplot(nRowFig, nCol, [0.07 0.05], [0.1 0.08], [0.06 0.04]);
     else
-        ha = gobjects(2 * nCol, 1);
-        for ii = 1:(2 * nCol)
-            ha(ii) = subplot(2, nCol, ii);
+        ha = gobjects(nRowFig * nCol, 1);
+        for ii = 1:(nRowFig * nCol)
+            ha(ii) = subplot(nRowFig, nCol, ii);
         end
     end
 
@@ -452,6 +534,10 @@ if makePlots
         errorbar(relCentersPre, meanPopPre(:, a), semPopPre(:, a), '.', 'Color', [0.55 0.55 0.55], ...
             'LineWidth', 0.9, 'MarkerSize', 10, 'CapSize', 3);
         plot(relCentersPre, meanPopPre(:, a), '-', 'Color', [0.85 0.4 0.08], 'LineWidth', 1.2);
+        errorbar(relCentersPre, meanPopCenterRawPre(:, a), semPopCenterRawPre(:, a), '.', ...
+            'Color', [0.15 0.55 0.25], 'LineWidth', 0.85, 'MarkerSize', 8, 'CapSize', 2);
+        plot(relCentersPre, meanPopCenterRawPre(:, a), '-', 'Color', [0.1 0.45 0.2], ...
+            'LineWidth', 1.1);
         hold off;
         yyaxis left;
         title(sprintf('%s pre-reach', areas{a}), 'Interpreter', 'none');
@@ -487,6 +573,10 @@ if makePlots
         errorbar(relCentersPost, meanPopPost(:, a), semPopPost(:, a), '.', 'Color', [0.55 0.55 0.55], ...
             'LineWidth', 0.9, 'MarkerSize', 10, 'CapSize', 3);
         plot(relCentersPost, meanPopPost(:, a), '-', 'Color', [0.85 0.4 0.08], 'LineWidth', 1.2);
+        errorbar(relCentersPost, meanPopCenterRawPost(:, a), semPopCenterRawPost(:, a), '.', ...
+            'Color', [0.15 0.55 0.25], 'LineWidth', 0.85, 'MarkerSize', 8, 'CapSize', 2);
+        plot(relCentersPost, meanPopCenterRawPost(:, a), '-', 'Color', [0.1 0.45 0.2], ...
+            'LineWidth', 1.1);
         hold off;
         yyaxis left;
         title(sprintf('%s post-reach', areas{a}), 'Interpreter', 'none');
@@ -537,6 +627,12 @@ results.d2Pre = d2Pre;
 results.d2Post = d2Post;
 results.popActPre = popActPre;
 results.popActPost = popActPost;
+results.popCenterRawPre = popCenterRawPre;
+results.popCenterRawPost = popCenterRawPost;
+results.meanPopCenterRawPre = meanPopCenterRawPre;
+results.semPopCenterRawPre = semPopCenterRawPre;
+results.meanPopCenterRawPost = meanPopCenterRawPost;
+results.semPopCenterRawPost = semPopCenterRawPost;
 results.meanPopPre = meanPopPre;
 results.semPopPre = semPopPre;
 results.meanPopPost = meanPopPost;
@@ -563,6 +659,22 @@ function tf = window_contains_any_reach(winStart, winEnd, reachStartAll)
 % Variables: winStart, winEnd (s); reachStartAll — column vector of reach times (s).
 
     tf = any(reachStartAll >= winStart & reachStartAll <= winEnd);
+end
+
+function tf = window_contains_other_reaches(winStart, winEnd, reachStartAll, idxExcept)
+% window_contains_other_reaches
+% Goal: true if any reach onset other than idxExcept lies in [winStart, winEnd].
+% Variables: winStart, winEnd (s); reachStartAll — reach onsets (s); idxExcept — index
+%   of the aligned reach (allowed inside the window for overlap-bin analysis).
+
+    reachCol = reachStartAll(:);
+    nR = numel(reachCol);
+    mask = true(nR, 1);
+    if idxExcept >= 1 && idxExcept <= nR
+        mask(idxExcept) = false;
+    end
+    rs = reachCol(mask);
+    tf = any(rs >= winStart & rs <= winEnd);
 end
 
 function [startIdx, endIdx, ok] = window_indices_strict(centerTime, slidingWindowSize, binSize, numTimePoints)
