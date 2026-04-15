@@ -98,6 +98,7 @@ pOrder = 10;
 critType = 2;
 normalizeD2 = false;
 nShuffles = 10;
+meanSubtract = false;   % If true, subtract bin-wise mean across windows at each slide position
 
 useOptimalBinWindowFunction = false;
 binSizeManual = 0.025;
@@ -109,6 +110,7 @@ pcaFlag = 0;
 useLog10D2 = true;
 
 makePlots = true;
+plotJoystick = true;  % If true, overlay peri-reach joystick metrics on right y-axis
 
 halfW = slidingWindowSize / 2;
 
@@ -185,6 +187,8 @@ popActPre = cell(1, numAreas);
 popActPost = cell(1, numAreas);
 popCenterRawPre = cell(1, numAreas);
 popCenterRawPost = cell(1, numAreas);
+jsCenterRawPre = cell(1, numAreas);
+jsCenterRawPost = cell(1, numAreas);
 for a = areasToTest
     d2Pre{a} = nan(nPre, nReach);
     d2Post{a} = nan(nPost, nReach);
@@ -192,6 +196,24 @@ for a = areasToTest
     popActPost{a} = nan(nPost, nReach);
     popCenterRawPre{a} = nan(nPre, nReach);
     popCenterRawPost{a} = nan(nPost, nReach);
+    jsCenterRawPre{a} = nan(nPre, nReach);
+    jsCenterRawPost{a} = nan(nPost, nReach);
+end
+
+jsSampleRate = 1000;  % Hz; NIDATA is sampled at 1 kHz in reach task files
+jsSmoothWindow = 61;  % samples; matches explore_session.m
+hasJoystickTrace = isfield(dataR, 'NIDATA') && size(dataR.NIDATA, 1) >= 8 && size(dataR.NIDATA, 2) > 1;
+if plotJoystick && hasJoystickTrace
+    jsXIdx = 7;
+    jsYIdx = 8;
+    jsAmpTrace = sqrt(dataR.NIDATA(jsXIdx, 2:end).^2 + dataR.NIDATA(jsYIdx, 2:end).^2);
+    jsAmpTrace = movmean(jsAmpTrace, jsSmoothWindow);
+    jsAmpTrace = zscore(jsAmpTrace);
+else
+    jsAmpTrace = [];
+    if plotJoystick
+        warning('plotJoystick is true but NIDATA joystick channels are unavailable. Skipping joystick overlay.');
+    end
 end
 
 %% ============================= Per-area loop =============================
@@ -209,6 +231,13 @@ for a = areasToTest
         nDimUse = 1:forDim;
         aDataMat = score(:, nDimUse) * coeff(:, nDimUse)' + mu;
     end
+
+    prePopTraceForD2 = cell(nPre, nReach);    % each entry: [timeBins x 1], population mean trace
+    postPopTraceForD2 = cell(nPost, nReach);  % each entry: [timeBins x 1], population mean trace
+    preWindowMatForShuffle = cell(nPre, nReach);   % each entry: [timeBins x neurons]
+    postWindowMatForShuffle = cell(nPost, nReach); % each entry: [timeBins x neurons]
+    preCenterRowForD2 = cell(nPre, nReach);   % each entry: center-bin row index for the window
+    postCenterRowForD2 = cell(nPost, nReach); % each entry: center-bin row index for the window
 
     for r = 1:nReach
         tReach = reachStart(r);
@@ -262,9 +291,15 @@ for a = areasToTest
                 end
                 popActPre{a}(k, r) = mean(popTraceCol);
                 popCenterRawPre{a}(k, r) = sum(wMat(cRow, :));
-                d2v = compute_d2_for_window_matrix_local(wMat, pOrder, critType, ...
-                    normalizeD2, nShuffles);
-                d2Pre{a}(k, r) = d2v;
+                prePopTraceForD2{k, r} = mean(wMat, 2);
+                preWindowMatForShuffle{k, r} = wMat;
+                preCenterRowForD2{k, r} = cRow;
+                if plotJoystick && ~isempty(jsAmpTrace)
+                    [jsCenterVal, jsOk] = trace_center_value_local(jsAmpTrace, centerTime, jsSampleRate, 0);
+                    if jsOk
+                        jsCenterRawPre{a}(k, r) = jsCenterVal;
+                    end
+                end
             end
         end
 
@@ -316,11 +351,33 @@ for a = areasToTest
                 end
                 popActPost{a}(k, r) = mean(popTraceCol);
                 popCenterRawPost{a}(k, r) = sum(wMat(cRow, :));
-                d2v = compute_d2_for_window_matrix_local(wMat, pOrder, critType, ...
-                    normalizeD2, nShuffles);
-                d2Post{a}(k, r) = d2v;
+                postPopTraceForD2{k, r} = mean(wMat, 2);
+                postWindowMatForShuffle{k, r} = wMat;
+                postCenterRowForD2{k, r} = cRow;
+                if plotJoystick && ~isempty(jsAmpTrace)
+                    [jsCenterVal, jsOk] = trace_center_value_local(jsAmpTrace, centerTime, jsSampleRate, 0);
+                    if jsOk
+                        jsCenterRawPost{a}(k, r) = jsCenterVal;
+                    end
+                end
             end
         end
+    end
+
+    % Compute d2 per slide position after collecting all window traces so that
+    % optional mean subtraction uses the bin-wise mean across windows.
+    d2Pre{a} = compute_d2_by_position_local(prePopTraceForD2, preWindowMatForShuffle, ...
+        pOrder, critType, normalizeD2, nShuffles, meanSubtract);
+    d2Post{a} = compute_d2_by_position_local(postPopTraceForD2, postWindowMatForShuffle, ...
+        pOrder, critType, normalizeD2, nShuffles, meanSubtract);
+
+    % If mean subtraction is active, plot population metrics from mean-subtracted
+    % traces (window-mean and center-bin values) instead of raw traces.
+    if meanSubtract
+        [popActPre{a}, popCenterRawPre{a}] = compute_mean_subtracted_pop_metrics_local( ...
+            prePopTraceForD2, preCenterRowForD2);
+        [popActPost{a}, popCenterRawPost{a}] = compute_mean_subtracted_pop_metrics_local( ...
+            postPopTraceForD2, postCenterRowForD2);
     end
 end
 
@@ -354,6 +411,10 @@ meanPopCenterRawPre = nan(nPre, numAreas);
 semPopCenterRawPre = nan(nPre, numAreas);
 meanPopCenterRawPost = nan(nPost, numAreas);
 semPopCenterRawPost = nan(nPost, numAreas);
+meanJsCenterRawPre = nan(nPre, numAreas);
+semJsCenterRawPre = nan(nPre, numAreas);
+meanJsCenterRawPost = nan(nPost, numAreas);
+semJsCenterRawPost = nan(nPost, numAreas);
 
 for a = areasToTest
     for k = 1:nPre
@@ -375,6 +436,12 @@ for a = areasToTest
         if nnC > 1
             semPopCenterRawPre(k, a) = nanstd(rowCenter) / sqrt(nnC);
         end
+        rowJsCenter = jsCenterRawPre{a}(k, eligiblePre);
+        meanJsCenterRawPre(k, a) = nanmean(rowJsCenter);
+        nnJsC = sum(isfinite(rowJsCenter));
+        if nnJsC > 1
+            semJsCenterRawPre(k, a) = nanstd(rowJsCenter) / sqrt(nnJsC);
+        end
     end
     for k = 1:nPost
         rowv = d2Post{a}(k, eligiblePost);
@@ -394,6 +461,12 @@ for a = areasToTest
         nnC = sum(isfinite(rowCenter));
         if nnC > 1
             semPopCenterRawPost(k, a) = nanstd(rowCenter) / sqrt(nnC);
+        end
+        rowJsCenter = jsCenterRawPost{a}(k, eligiblePost);
+        meanJsCenterRawPost(k, a) = nanmean(rowJsCenter);
+        nnJsC = sum(isfinite(rowJsCenter));
+        if nnJsC > 1
+            semJsCenterRawPost(k, a) = nanstd(rowJsCenter) / sqrt(nnJsC);
         end
     end
 end
@@ -465,7 +538,7 @@ if makePlots
     yTicksGlobal = linspace(yLimGlobal(1), yLimGlobal(2), nTickY);
     yTickLabelsGlobal = cell(nTickY, 1);
     for tt = 1:nTickY
-        yTickLabelsGlobal{tt} = sprintf('%.3g', yTicksGlobal(tt));
+        yTickLabelsGlobal{tt} = sprintf('%.2f', yTicksGlobal(tt));
     end
 
     % Right axis: mean population activity (mean ± SEM across tested areas, pre + post).
@@ -477,8 +550,18 @@ if makePlots
         meanPopCenterRawPost(:, areaCols) - semPopCenterRawPost(:, areaCols)];
     bandCenterHi = [meanPopCenterRawPre(:, areaCols) + semPopCenterRawPre(:, areaCols); ...
         meanPopCenterRawPost(:, areaCols) + semPopCenterRawPost(:, areaCols)];
-    yMinPop = nanmin([bandPopLo(:); bandCenterLo(:)]);
-    yMaxPop = nanmax([bandPopHi(:); bandCenterHi(:)]);
+    bandAllLo = [bandPopLo(:); bandCenterLo(:)];
+    bandAllHi = [bandPopHi(:); bandCenterHi(:)];
+    if plotJoystick && ~isempty(jsAmpTrace)
+        bandJsCenterLo = [meanJsCenterRawPre(:, areaCols) - semJsCenterRawPre(:, areaCols); ...
+            meanJsCenterRawPost(:, areaCols) - semJsCenterRawPost(:, areaCols)];
+        bandJsCenterHi = [meanJsCenterRawPre(:, areaCols) + semJsCenterRawPre(:, areaCols); ...
+            meanJsCenterRawPost(:, areaCols) + semJsCenterRawPost(:, areaCols)];
+        bandAllLo = [bandAllLo; bandJsCenterLo(:)];
+        bandAllHi = [bandAllHi; bandJsCenterHi(:)];
+    end
+    yMinPop = nanmin(bandAllLo);
+    yMaxPop = nanmax(bandAllHi);
     if ~isfinite(yMinPop) || ~isfinite(yMaxPop)
         yLimPopGlobal = [0, 1];
     elseif yMaxPop <= yMinPop
@@ -490,11 +573,15 @@ if makePlots
     yTicksPopGlobal = linspace(yLimPopGlobal(1), yLimPopGlobal(2), nTickY);
     yTickLabelsPopGlobal = cell(nTickY, 1);
     for tt = 1:nTickY
-        yTickLabelsPopGlobal{tt} = sprintf('%.3g', yTicksPopGlobal(tt));
+        yTickLabelsPopGlobal{tt} = sprintf('%.2f', yTicksPopGlobal(tt));
     end
-    popActYLabelStr = 'Population activity (spks/bin)';
+    if plotJoystick && ~isempty(jsAmpTrace)
+        popActYLabelStr = 'Population / joystick activity';
+    else
+        popActYLabelStr = 'Population activity (spks/bin)';
+    end
 
-    figure(4101);
+    figure(4102);
     clf;
     set(gcf, 'Color', 'w', 'Name', 'Peri-reach d2', 'NumberTitle', 'off');
     monitorPositions = get(0, 'MonitorPositions');
@@ -507,7 +594,7 @@ if makePlots
     useTight = exist('tight_subplot', 'file');
     nRowFig = 2;
     if useTight
-        ha = tight_subplot(nRowFig, nCol, [0.07 0.05], [0.1 0.08], [0.06 0.04]);
+        ha = tight_subplot(nRowFig, nCol, [0.075 0.075], [0.1 0.08], [0.06 0.04]);
     else
         ha = gobjects(nRowFig * nCol, 1);
         for ii = 1:(nRowFig * nCol)
@@ -538,6 +625,12 @@ if makePlots
             'Color', [0.15 0.55 0.25], 'LineWidth', 0.85, 'MarkerSize', 8, 'CapSize', 2);
         plot(relCentersPre, meanPopCenterRawPre(:, a), '-', 'Color', [0.1 0.45 0.2], ...
             'LineWidth', 1.1);
+        if plotJoystick && ~isempty(jsAmpTrace)
+            errorbar(relCentersPre, meanJsCenterRawPre(:, a), semJsCenterRawPre(:, a), '.', ...
+                'Color', [0.7 0.55 0.9], 'LineWidth', 0.8, 'MarkerSize', 7, 'CapSize', 2);
+            plot(relCentersPre, meanJsCenterRawPre(:, a), '-', 'Color', [0.58 0.42 0.82], ...
+                'LineWidth', 1.0);
+        end
         hold off;
         yyaxis left;
         title(sprintf('%s pre-reach', areas{a}), 'Interpreter', 'none');
@@ -577,6 +670,12 @@ if makePlots
             'Color', [0.15 0.55 0.25], 'LineWidth', 0.85, 'MarkerSize', 8, 'CapSize', 2);
         plot(relCentersPost, meanPopCenterRawPost(:, a), '-', 'Color', [0.1 0.45 0.2], ...
             'LineWidth', 1.1);
+        if plotJoystick && ~isempty(jsAmpTrace)
+            errorbar(relCentersPost, meanJsCenterRawPost(:, a), semJsCenterRawPost(:, a), '.', ...
+                'Color', [0.7 0.55 0.9], 'LineWidth', 0.8, 'MarkerSize', 7, 'CapSize', 2);
+            plot(relCentersPost, meanJsCenterRawPost(:, a), '-', 'Color', [0.58 0.42 0.82], ...
+                'LineWidth', 1.0);
+        end
         hold off;
         yyaxis left;
         title(sprintf('%s post-reach', areas{a}), 'Interpreter', 'none');
@@ -629,6 +728,8 @@ results.popActPre = popActPre;
 results.popActPost = popActPost;
 results.popCenterRawPre = popCenterRawPre;
 results.popCenterRawPost = popCenterRawPost;
+results.jsCenterRawPre = jsCenterRawPre;
+results.jsCenterRawPost = jsCenterRawPost;
 results.meanPopCenterRawPre = meanPopCenterRawPre;
 results.semPopCenterRawPre = semPopCenterRawPre;
 results.meanPopCenterRawPost = meanPopCenterRawPost;
@@ -637,6 +738,10 @@ results.meanPopPre = meanPopPre;
 results.semPopPre = semPopPre;
 results.meanPopPost = meanPopPost;
 results.semPopPost = semPopPost;
+results.meanJsCenterRawPre = meanJsCenterRawPre;
+results.semJsCenterRawPre = semJsCenterRawPre;
+results.meanJsCenterRawPost = meanJsCenterRawPost;
+results.semJsCenterRawPost = semJsCenterRawPost;
 results.meanPre = meanPre;
 results.semPre = semPre;
 results.meanPost = meanPost;
@@ -646,6 +751,10 @@ results.params.pOrder = pOrder;
 results.params.critType = critType;
 results.params.normalizeD2 = normalizeD2;
 results.params.useLog10D2 = useLog10D2;
+results.params.meanSubtract = meanSubtract;
+results.params.plotJoystick = plotJoystick;
+results.params.jsSampleRate = jsSampleRate;
+results.params.jsSmoothWindow = jsSmoothWindow;
 
 resultsPath = fullfile(saveDir, sprintf('criticality_peri_reach_d2_W%.1f_step%.2f.mat', ...
     slidingWindowSize, stepSize));
@@ -728,57 +837,200 @@ function Mout = apply_log10_safe_matrix(Min)
     Mout(ok) = log10(Min(ok));
 end
 
-function d2Val = compute_d2_for_window_matrix_local(wDataMat, pOrder, critType, normalizeD2, nShuffles)
-% compute_d2_for_window_matrix_local
-% Goal: d2 from one window of binned population activity [timeBins x neurons].
+function d2Mat = compute_d2_by_position_local(popTraceCell, windowMatCell, pOrder, critType, ...
+    normalizeD2, nShuffles, meanSubtract)
+% compute_d2_by_position_local
+% Goal: compute d2 matrix [nPos x nReach] from per-window population traces.
 % Variables:
-%   wDataMat — binned spikes (or PCA-reconstructed activity) for the window
-%   pOrder, critType — passed to myYuleWalker3 / getFixedPointDistance2
-%   normalizeD2 — if true, divide raw d2 by mean d2 from circularly shuffled controls
-%   nShuffles — number of shuffle draws for normalization
+%   popTraceCell — cell [nPos x nReach], each entry [timeBins x 1] pop trace
+%   windowMatCell — cell [nPos x nReach], each entry [timeBins x neurons] for shuffles
+%   pOrder, critType — AR/d2 parameters
+%   normalizeD2 — if true, divide each window d2 by mean shuffled d2 at same window
+%   nShuffles — number of circular-shift shuffles
+%   meanSubtract — if true, subtract bin-wise mean across windows at each slide position
 % Returns:
-%   d2Val — scalar d2 (or NaN)
+%   d2Mat — numeric [nPos x nReach] d2 values.
+
+    [nPos, nReachLocal] = size(popTraceCell);
+    d2Mat = nan(nPos, nReachLocal);
+
+    for k = 1:nPos
+        validMask = false(1, nReachLocal);
+        nBinsRef = nan;
+        for r = 1:nReachLocal
+            tr = popTraceCell{k, r};
+            if ~isempty(tr)
+                if isnan(nBinsRef)
+                    nBinsRef = numel(tr);
+                end
+                if numel(tr) == nBinsRef
+                    validMask(r) = true;
+                end
+            end
+        end
+        if ~any(validMask)
+            continue;
+        end
+
+        validIdx = find(validMask);
+        nValid = numel(validIdx);
+        popMat = nan(nValid, nBinsRef);
+        for ii = 1:nValid
+            popMat(ii, :) = popTraceCell{k, validIdx(ii)}(:)';
+        end
+        if meanSubtract
+            meanPerBin = nanmean(popMat, 1);
+            popMat = popMat - meanPerBin;
+        end
+
+        d2Raw = nan(nValid, 1);
+        for ii = 1:nValid
+            d2Raw(ii) = compute_d2_from_pop_trace_local(popMat(ii, :)', pOrder, critType);
+        end
+
+        if ~normalizeD2
+            d2Mat(k, validIdx) = d2Raw;
+            continue;
+        end
+
+        d2Shuffled = nan(nValid, nShuffles);
+        for sh = 1:nShuffles
+            shuffledPopMat = nan(nValid, nBinsRef);
+            for ii = 1:nValid
+                wMat = windowMatCell{k, validIdx(ii)};
+                if isempty(wMat)
+                    continue;
+                end
+                nBins = size(wMat, 1);
+                nNeu = size(wMat, 2);
+                permutedMat = zeros(size(wMat));
+                for n = 1:nNeu
+                    permutedMat(:, n) = circshift(wMat(:, n), randi(nBins));
+                end
+                shuffledPopMat(ii, :) = mean(permutedMat, 2)';
+            end
+
+            if meanSubtract
+                shMeanPerBin = nanmean(shuffledPopMat, 1);
+                shuffledPopMat = shuffledPopMat - shMeanPerBin;
+            end
+
+            for ii = 1:nValid
+                shuffledTrace = shuffledPopMat(ii, :)';
+                d2Shuffled(ii, sh) = compute_d2_from_pop_trace_local(shuffledTrace, pOrder, critType);
+            end
+        end
+
+        meanShuffled = nanmean(d2Shuffled, 2);
+        d2Norm = nan(nValid, 1);
+        for ii = 1:nValid
+            if isfinite(d2Raw(ii)) && isfinite(meanShuffled(ii)) && meanShuffled(ii) > 0
+                d2Norm(ii) = d2Raw(ii) / meanShuffled(ii);
+            end
+        end
+        d2Mat(k, validIdx) = d2Norm;
+    end
+end
+
+function d2Val = compute_d2_from_pop_trace_local(popTrace, pOrder, critType)
+% compute_d2_from_pop_trace_local
+% Goal: d2 from one population activity trace [timeBins x 1].
+% Variables:
+%   popTrace — population activity for one window (typically mean across neurons)
+%   pOrder, critType — passed to myYuleWalker3 / getFixedPointDistance2
+% Returns:
+%   d2Val — scalar d2 (or NaN if estimation fails).
 
     d2Val = nan;
-    if isempty(wDataMat) || size(wDataMat, 1) < pOrder + 2
+    if isempty(popTrace) || numel(popTrace) < pOrder + 2
         return;
     end
-
-    wPopActivity = mean(wDataMat, 2);
-
     try
-        [varphi, ~] = myYuleWalker3(double(wPopActivity), pOrder);
-        d2Raw = getFixedPointDistance2(pOrder, critType, varphi);
+        [varphi, ~] = myYuleWalker3(double(popTrace), pOrder);
+        d2Val = getFixedPointDistance2(pOrder, critType, varphi);
     catch
-        d2Raw = nan;
+        d2Val = nan;
     end
+end
 
-    if ~normalizeD2
-        d2Val = d2Raw;
+function [popWindowMeanMat, popCenterMat] = compute_mean_subtracted_pop_metrics_local(popTraceCell, centerRowCell)
+% compute_mean_subtracted_pop_metrics_local
+% Goal: build population-activity plot matrices from mean-subtracted traces.
+% Variables:
+%   popTraceCell — cell [nPos x nReach], each entry [timeBins x 1] pop trace
+%   centerRowCell — cell [nPos x nReach], each entry scalar center-bin row index
+% Returns:
+%   popWindowMeanMat — [nPos x nReach], mean over bins of mean-subtracted trace
+%   popCenterMat — [nPos x nReach], center-bin value of mean-subtracted trace.
+
+    [nPos, nReachLocal] = size(popTraceCell);
+    popWindowMeanMat = nan(nPos, nReachLocal);
+    popCenterMat = nan(nPos, nReachLocal);
+
+    for k = 1:nPos
+        validMask = false(1, nReachLocal);
+        nBinsRef = nan;
+        for r = 1:nReachLocal
+            tr = popTraceCell{k, r};
+            cRow = centerRowCell{k, r};
+            if isempty(tr) || isempty(cRow)
+                continue;
+            end
+            if isnan(nBinsRef)
+                nBinsRef = numel(tr);
+            end
+            if numel(tr) == nBinsRef && cRow >= 1 && cRow <= numel(tr)
+                validMask(r) = true;
+            end
+        end
+        if ~any(validMask)
+            continue;
+        end
+
+        validIdx = find(validMask);
+        nValid = numel(validIdx);
+        traceMat = nan(nValid, nBinsRef);
+        centerRows = nan(nValid, 1);
+        for ii = 1:nValid
+            r = validIdx(ii);
+            traceMat(ii, :) = popTraceCell{k, r}(:)';
+            centerRows(ii) = centerRowCell{k, r};
+        end
+
+        meanPerBin = nanmean(traceMat, 1);
+        traceMatSub = traceMat - meanPerBin;
+
+        for ii = 1:nValid
+            r = validIdx(ii);
+            cRow = centerRows(ii);
+            popWindowMeanMat(k, r) = mean(traceMatSub(ii, :), 'omitnan');
+            popCenterMat(k, r) = traceMatSub(ii, cRow);
+        end
+    end
+end
+
+function [centerVal, ok] = trace_center_value_local(traceVec, centerTime, sampleRate, traceStartSec)
+% trace_center_value_local
+% Goal: extract center-sample value from a continuous trace.
+% Variables:
+%   traceVec — 1 x n or n x 1 continuous signal
+%   centerTime — window center time (s)
+%   sampleRate — trace sampling rate (Hz)
+%   traceStartSec — start time (s) corresponding to traceVec(1)
+% Returns:
+%   centerVal — value at the center sample
+%   ok — true if requested index is in bounds.
+
+    centerVal = nan;
+    ok = false;
+    if isempty(traceVec) || ~isfinite(centerTime) || sampleRate <= 0
         return;
     end
-    if isnan(d2Raw)
+    tr = traceVec(:);
+    ic = round((centerTime - traceStartSec) * sampleRate) + 1;
+    if ic < 1 || ic > numel(tr)
         return;
     end
-
-    nNeu = size(wDataMat, 2);
-    nBins = size(wDataMat, 1);
-    d2Sh = nan(1, nShuffles);
-    for sh = 1:nShuffles
-        permutedMat = zeros(size(wDataMat));
-        for n = 1:nNeu
-            permutedMat(:, n) = circshift(wDataMat(:, n), randi(nBins));
-        end
-        permPop = mean(permutedMat, 2);
-        try
-            [varphiPerm, ~] = myYuleWalker3(double(permPop), pOrder);
-            d2Sh(sh) = getFixedPointDistance2(pOrder, critType, varphiPerm);
-        catch
-            d2Sh(sh) = nan;
-        end
-    end
-    meanSh = nanmean(d2Sh);
-    if isfinite(meanSh) && meanSh > 0
-        d2Val = d2Raw / meanSh;
-    end
+    centerVal = tr(ic);
+    ok = isfinite(centerVal);
 end

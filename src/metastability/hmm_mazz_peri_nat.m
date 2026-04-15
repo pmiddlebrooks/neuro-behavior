@@ -37,9 +37,9 @@ collectEnd = 60*60; % set with collectStart for windowed HMM saves; [] = full se
 periWindowSec = 16;
 maxTrial = 100;
 areasToTest = 1:4;
-probMetric = 'maxProb'; % 'maxProb' | 'dominance' | 'margin' | 'entropy'
+probMetric = 'entropy'; % 'maxProb' | 'dominance' | 'margin' | 'entropy'
 
-%% Validate required sequence variables (manual workflow only)
+% Validate required sequence variables (manual workflow only)
 hasSequenceVars = exist('alignTimes', 'var') && exist('sequences', 'var') && ...
     exist('sequenceNames', 'var') && exist('alignOnIdx', 'var');
 
@@ -53,7 +53,7 @@ if numSequences == 0
     error('No sequences available in alignTimes.');
 end
 
-%% Load saved HMM analysis results (no legacy fallback)
+% Load saved HMM analysis results (no legacy fallback)
 [~, sessionBaseName, ~] = fileparts(sessionName);
 timeWindowSuffix = '';
 if exist('collectEnd', 'var') && ~isempty(collectEnd)
@@ -77,7 +77,7 @@ areas = results.areas;
 hmmResults = results.hmm_results;
 hmmdir = fileparts(resultsPath);
 
-%% Load behavior labels at native CSV / B-SOiD rate (same as spontaneous_behavior_sequences)
+% Load behavior labels at native CSV / B-SOiD rate (same as spontaneous_behavior_sequences)
 fprintf('Loading behavior labels (behavior_labels*.csv, fsBhv) for session %s...\n', sessionName);
 pathParts = strsplit(sessionName, filesep);
 subDir = pathParts{1}(1:min(2, numel(pathParts{1})));
@@ -109,7 +109,7 @@ end
 fprintf('  Loaded %d behavior samples (native fsBhv=%g Hz; one row per CSV sample).\n', ...
     nBhvBins, opts.fsBhv);
 
-%% Build alignment event times per sequence
+% Build alignment event times per sequence
 eventTimesPerSequence = cell(1, numSequences);
 for seqIdx = 1:numSequences
     seqOccurrences = alignTimes{seqIdx};
