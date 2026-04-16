@@ -30,7 +30,7 @@ if loadAndPlot
     minDurLoad = .05;       % e.g., 0.04
     % Set these for windowed analyses saved as ..._start_XX_end_XX.mat
     collectStartLoad = [];  % e.g., 0
-    collectEndLoad = 60*60;    % e.g., 3600
+    collectEndLoad = 30*60;    % e.g., 3600
 
     loadArgs = {};
     if ~isempty(brainArea)
@@ -105,7 +105,7 @@ opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
 opts.collectStart = 0;
-opts.collectEnd = 60*60;
+opts.collectEnd = 30*60;
 % When collectEnd is nonempty after load_spike_times, saved .mat names include
 % _start_SEC_end_SEC so different time windows from the same session do not overwrite.
 opts.removeSome = true;
@@ -196,7 +196,7 @@ end
 hmmParam = struct();
 hmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
 hmmParam.BinSize = 0.005;       % Markov chain time step (s)
-hmmParam.MinDur = 0.05;        % Minimum admissible state duration in decoding (s)
+hmmParam.MinDur = 0.025;        % Minimum admissible state duration in decoding (s)
 hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
 hmmParam.NumSteps = 10;         % Number of independent EM runs at fixed parameters
 hmmParam.NumRuns = 35;         % Maximum iterations per EM run

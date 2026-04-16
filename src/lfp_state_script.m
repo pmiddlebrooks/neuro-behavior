@@ -17,13 +17,28 @@ opts.collectStart = 0 * 60 * 60; % seconds
 opts.collectEnd = 45 * 60; % seconds
 opts.frameSize = .001;
 
-getDataType = 'lfp';
-get_standard_data
+% Depths corresponding to brain areas:
+m23 = [0 500];
+        m56 = [501 1240];
+        cc = [1241 1540];
+        ds = [1541 2700];
+        vs = [2701 3840];
+
+% getDataType = 'lfp';
+% get_standard_data
+lfpPath = 'E:\Dropbox\Data\spontaneous\data\ag\ag112321_1';
+load(fullfile(lfpPath, 'lfp.mat'));
+%%
+
+
+
+%%
 getDataType = 'behavior';
 get_standard_data
 [dataBhv, bhvIDMat] = curate_behavior_labels(dataBhv, opts);
 
-% lowpass the LFP at 300hz
+
+%% lowpass the LFP at 300hz
 lfpPerArea = lowpass(lfpPerArea, 300, opts.fsLfp);
 
 
