@@ -2,36 +2,44 @@
 % Variables:
 %   - lfpPath: path to spontaneous session folder containing lfp.mat
 %   - areaDefs: brain-area depth definitions [um]
-%   - bands: frequency bands [Hz] used for power integration
+%   - bands: frequency bands [Hz] (Akella et al. 2024 bioRxiv for HMM; Welch summary uses same bands)
 % Goal:
 %   Compare band-power similarity for each brain area when the area signal is:
 %   (1) one middle-depth channel, (2) mean of two channels near 1/3 and 2/3
 %   depth positions, or (3) mean of all channels in that area.
 % Notes:
-%   Includes HMM-style state modeling on time-resolved band envelopes.
+%   HMM: one LFP per area (M23, M56, DS, VS), Butterworth bandpass + Hilbert envelope,
+%   non-overlapping bins (hmmBinSizeSec), diagonal Gaussian-emission HMM (Baum-Welch).
 
 
 %% User settings
-lfpPath = 'E:\Dropbox\Data\spontaneous\data\ag\ag112321_1';
+paths = get_paths;
+% lfpPath = fullfile(paths.dropPath, 'spontaneous\data\ag\ag112321_1');
+lfpPath = fullfile(paths.dropPath, 'spontaneous/data/ag/ag112321_1');
+lfpPath = fullfile(paths.dropPath, 'spontaneous/data/ey/ey042822');
+
 doCleanArtifacts = false;
 welchWindowSec = 2;
 welchOverlapFrac = 0.5;
-frameSizeSec = 0.01;
-binMethod = 'cwt'; % 'cwt' or 'stft' if supported by lfp_bin_bandpower
+hmmBinSizeSec = 0.02; % non-overlapping bins for HMM features (20 ms)
+bandpassOrder = 11; % Akella et al.: 11th-order Butterworth per band
 maxStates = 10;
 numFolds = 3;
-numReplicates = 10;
+hmmNumRestarts = 5;
+hmmMaxIter = 200;
 modelModeIdx = 2; % 1=singleMiddle, 2=twoThirdsAverage, 3=allChannelsAverage
+saveHmmResults = true;
 
-% Depths corresponding to brain areas [um]
+% Depths corresponding to brain areas [um] — four sample areas (no CC)
 areaDefs = struct( ...
-    'name', {'M23', 'M56', 'CC', 'DS', 'VS'}, ...
-    'range', {[0 500], [501 1240], [1241 1540], [1541 2700], [2701 3840]} ...
+    'name', {'M23', 'M56', 'DS', 'VS'}, ...
+    'range', {[0 500], [501 1240], [1541 2700], [2701 3840]} ...
     );
 
+% Akella et al. 2024 bioRxiv (LFP oscillation states)
 bands = { ...
-    'alpha', [8 13]; ...
-    'beta', [13 30]; ...
+    'theta', [3 8]; ...
+    'beta', [10 30]; ...
     'lowGamma', [30 50]; ...
     'highGamma', [50 80] ...
     };
@@ -135,7 +143,7 @@ for areaIdx = 1:numAreas
     end
 end
 
-%% Print channel-selection summary
+% Print channel-selection summary
 fprintf('\n=== Channel selection summary by area ===\n');
 for areaIdx = 1:numAreas
     fprintf('\n%s [%d %d] um\n', areaDefs(areaIdx).name, areaDefs(areaIdx).range(1), areaDefs(areaIdx).range(2));
@@ -150,7 +158,7 @@ for areaIdx = 1:numAreas
     end
 end
 
-%% Print similarity summary table
+% Print similarity summary table
 fprintf('\n=== Similarity of normalized band-power profiles by area ===\n');
 for pairIdx = 1:numPairs
     fprintf('\n-- %s --\n', pairNames{pairIdx});
@@ -180,7 +188,7 @@ for areaIdx = 1:numAreas
 end
 xlabel('Band');
 
-%% Plot: similarity heatmaps
+% Plot: similarity heatmaps
 figure(1102); clf;
 tiledlayout(1, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
 
@@ -205,9 +213,11 @@ title('Mean abs pct diff');
 xticks(1:numPairs); xticklabels(pairNames);
 yticks(1:numAreas); yticklabels({areaDefs.name});
 
-%% Build time-resolved features and fit HMM per mode
+%% Build time-resolved features and fit Gaussian HMM per mode
+min2Model = 60; % how many minutes to model
+cutoffIdx = round(60 * min2Model * fs);
 % Feature layout per mode:
-%   [area1_band1 ... area1_bandN area2_band1 ... areaN_bandN]
+%   [area1_band1 ... area1_bandN area2_band1 ... areaN_bandN]  (N = numBands)
 hmmResults = repmat(struct( ...
     'modeName', '', ...
     'featureMatrix', [], ...
@@ -215,75 +225,67 @@ hmmResults = repmat(struct( ...
     'bestNumStates', nan, ...
     'stateEstimates', [], ...
     'hmm', [], ...
-    'likelihoods', []), numModes, 1);
+    'likelihoods', [], ...
+    'cvScores', []), numModes, 1);
+
+emOpts = struct('maxIter', hmmMaxIter, 'tol', 1e-4, ...
+    'numRestarts', hmmNumRestarts, 'regVar', 1e-3, 'decode', true);
 
 for modeIdx = modelModeIdx
-    binnedBandPowersMode = [];
-    binnedEnvelopesMode = [];
-    timeBinsRef = [];
+    binnedEnvelopesMode = cell(numAreas, 1);
+    minBinsAcrossAreas = inf;
 
     for areaIdx = 1:numAreas
         signal = areaSignals{areaIdx, modeIdx};
         if isempty(signal)
             continue;
         end
+        nUse = min(numel(signal), cutoffIdx);
+        signal = signal(1:nUse);
 
-        [iBinnedPower, iBinnedEnvelopes, iTimeBins] = lfp_bin_bandpower( ...
-            signal, fs, bands, frameSizeSec, binMethod);
+        [iBinnedEnvelopes, ~] = build_lfp_hilbert_bins( ...
+            signal, fs, bands, hmmBinSizeSec, bandpassOrder);
 
-        % Keep orientation consistent with lfp_state_script style:
-        % rows = time bins, cols = features
-        binnedBandPowersMode = [binnedBandPowersMode, iBinnedPower'];
-        binnedEnvelopesMode = [binnedEnvelopesMode, iBinnedEnvelopes'];
-
-        if isempty(timeBinsRef)
-            timeBinsRef = iTimeBins(:);
+        if isempty(iBinnedEnvelopes)
+            continue;
         end
+
+        minBinsAcrossAreas = min(minBinsAcrossAreas, size(iBinnedEnvelopes, 1));
+        binnedEnvelopesMode{areaIdx} = iBinnedEnvelopes;
     end
 
-    if isempty(binnedEnvelopesMode)
+    if ~isfinite(minBinsAcrossAreas) || minBinsAcrossAreas < 2
         continue;
     end
 
-    idxFit = 1:size(binnedEnvelopesMode, 1);
-    featureMatrix = zscore(binnedEnvelopesMode(idxFit, :));
-
-    % Use cross-validated state selection helper when available.
-    if exist('fit_hmm_crossval_cov_penalty', 'file') == 2
-        hmmFitOpts = struct();
-        hmmFitOpts.stateRange = 2:maxStates;
-        hmmFitOpts.numFolds = numFolds;
-        hmmFitOpts.minState = frameSizeSec; % minimum state duration in seconds
-        hmmFitOpts.plotFlag = false;
-        hmmFitOpts.penaltyType = 'normalized';
-
-        [bestNumStates, stateEstimates, ~, likelihoods] = fit_hmm_crossval_cov_penalty( ...
-            featureMatrix, hmmFitOpts);
-    else
-        % Fallback: select state count by BIC over diagonal-covariance GMMs.
-        [bestNumStates, likelihoods] = select_num_states_bic(featureMatrix, maxStates, numReplicates);
-        options = statset('MaxIter', 500);
-        hmmFallback = fitgmdist(featureMatrix, bestNumStates, ...
-            'Replicates', numReplicates, ...
-            'CovarianceType', 'diagonal', ...
-            'Options', options);
-        stateEstimates = cluster(hmmFallback, featureMatrix);
+    binnedStack = [];
+    for areaIdx = 1:numAreas
+        if isempty(binnedEnvelopesMode{areaIdx})
+            binnedStack = [];
+            break;
+        end
+        binnedStack = [binnedStack, binnedEnvelopesMode{areaIdx}(1:minBinsAcrossAreas, :)]; %#ok<AGROW>
     end
 
-    options = statset('MaxIter', 500);
-    hmm = fitgmdist(featureMatrix, bestNumStates, ...
-        'Replicates', numReplicates, ...
-        'CovarianceType', 'diagonal', ...
-        'Options', options);
-    stateEstimates = cluster(hmm, featureMatrix);
+    if isempty(binnedStack) || size(binnedStack, 2) ~= numAreas * numBands
+        continue;
+    end
+
+    timeBinsRef = ((1:minBinsAcrossAreas)' - 0.5) * hmmBinSizeSec;
+    featureMatrix = zscore_columns_finite(binnedStack);
+
+    [bestNumStates, cvScores, hmmModel, ~] = gaussian_hmm_cv_select_num_states( ...
+        featureMatrix, 2:maxStates, numFolds, emOpts);
+    stateEstimates = hmmModel.stateSeq;
 
     hmmResults(modeIdx).modeName = modeNames{modeIdx};
     hmmResults(modeIdx).featureMatrix = featureMatrix;
     hmmResults(modeIdx).timeBins = timeBinsRef;
     hmmResults(modeIdx).bestNumStates = bestNumStates;
     hmmResults(modeIdx).stateEstimates = stateEstimates;
-    hmmResults(modeIdx).hmm = hmm;
-    hmmResults(modeIdx).likelihoods = likelihoods;
+    hmmResults(modeIdx).hmm = hmmModel;
+    hmmResults(modeIdx).likelihoods = cvScores;
+    hmmResults(modeIdx).cvScores = cvScores;
 end
 
 %% Print HMM summary
@@ -292,7 +294,7 @@ for modeIdx = modelModeIdx
     if isempty(hmmResults(modeIdx).stateEstimates)
         fprintf('%-17s : no valid features\n', modeNames{modeIdx});
         continue;
-    end
+     end
     uniqueStates = unique(hmmResults(modeIdx).stateEstimates);
     fprintf('%-17s : bestNumStates=%d, nFrames=%d, statesFound=%s\n', ...
         modeNames{modeIdx}, ...
@@ -318,27 +320,52 @@ for modeIdx = modelModeIdx
     end
 
     figure(1200 + modeIdx); clf;
-    tiledlayout(1, nState, 'TileSpacing', 'compact', 'Padding', 'compact');
+    tileLayout = tiledlayout(1, nState, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+    meanByBandPerState = cell(nState, 1);
+    yMinAll = inf;
+    yMaxAll = -inf;
     for stateIdx = 1:nState
         currentState = uniqueStates(stateIdx);
         meanPower = mean(featureMatrix(stateEstimates == currentState, :), 1);
         meanByBand = reshape(meanPower, numBands, numAreas)';
+        meanByBandPerState{stateIdx} = meanByBand;
+        meanAcrossAreas = mean(meanByBand, 1);
+        yMinAll = min([yMinAll, meanByBand(:)', meanAcrossAreas]);
+        yMaxAll = max([yMaxAll, meanByBand(:)', meanAcrossAreas]);
+    end
+    if ~isfinite(yMinAll) || ~isfinite(yMaxAll)
+        yLo = -1;
+        yHi = 1;
+    elseif yMinAll == yMaxAll
+        pad = 0.5;
+        yLo = yMinAll - pad;
+        yHi = yMaxAll + pad;
+    else
+        pad = 0.05 * (yMaxAll - yMinAll);
+        yLo = yMinAll - pad;
+        yHi = yMaxAll + pad;
+    end
 
-        nexttile; hold on;
+    for stateIdx = 1:nState
+        currentState = uniqueStates(stateIdx);
+        meanByBand = meanByBandPerState{stateIdx};
+        ax = nexttile(tileLayout); hold(ax, 'on');
         for areaIdx = 1:numAreas
-            plot(1:numBands, meanByBand(areaIdx, :), 'o-', 'LineWidth', 1.5, ...
+            plot(ax, 1:numBands, meanByBand(areaIdx, :), 'o-', 'LineWidth', 1.5, ...
                 'DisplayName', areaDefs(areaIdx).name);
         end
-        plot(1:numBands, mean(meanByBand, 1), 'k-o', 'LineWidth', 3, 'DisplayName', 'meanAreas');
-        xticks(1:numBands);
-        xticklabels(bands(:, 1));
-        xlim([0.5 numBands + 0.5]);
-        yline(0, '--', 'Color', [0.6 0.6 0.6]);
-        xlabel('Power band');
-        ylabel('Z envelope');
-        title(sprintf('%s state %d (n=%d)', modeNames{modeIdx}, currentState, sum(stateEstimates == currentState)));
+        plot(ax, 1:numBands, mean(meanByBand, 1), 'k-o', 'LineWidth', 3, 'DisplayName', 'meanAreas');
+        xticks(ax, 1:numBands);
+        xticklabels(ax, bands(:, 1));
+        xlim(ax, [0.5 numBands + 0.5]);
+        ylim(ax, [yLo yHi]);
+        yline(ax, 0, '--', 'Color', [0.6 0.6 0.6]);
+        xlabel(ax, 'Power band');
+        ylabel(ax, 'Z envelope');
+        title(ax, sprintf('%s state %d (n=%d)', modeNames{modeIdx}, currentState, sum(stateEstimates == currentState)));
         if stateIdx == 1
-            legend('Location', 'best');
+            legend(ax, 'Location', 'best');
         end
     end
 end
@@ -352,20 +379,90 @@ for modeIdx = modelModeIdx
     stateEstimates = hmmResults(modeIdx).stateEstimates;
     uniqueStates = unique(stateEstimates);
     nState = numel(uniqueStates);
-    xTime = (0:numel(stateEstimates)-1) * frameSizeSec;
+    xTime = (0:numel(stateEstimates) - 1) * hmmBinSizeSec;
     colorMap = lines(max(nState, 3));
 
     figure(1300 + modeIdx); clf; hold on;
     for frameIdx = 1:numel(xTime)
         stateVal = stateEstimates(frameIdx);
-        patch([xTime(frameIdx), xTime(frameIdx) + frameSizeSec, xTime(frameIdx) + frameSizeSec, xTime(frameIdx)], ...
+        patch([xTime(frameIdx), xTime(frameIdx) + hmmBinSizeSec, xTime(frameIdx) + hmmBinSizeSec, xTime(frameIdx)], ...
             [0, 0, 1, 1], colorMap(stateVal, :), 'EdgeColor', 'none');
     end
-    xlim([0 max(xTime) + frameSizeSec]);
+    xlim([0 max(xTime) + hmmBinSizeSec]);
     ylim([0 1]);
     yticks([]);
     xlabel('Time (s)');
     title(sprintf('State timeline: %s (nStates=%d)', modeNames{modeIdx}, hmmResults(modeIdx).bestNumStates));
+end
+
+%% Save HMM results (session-scoped, metastability-style pathing)
+if saveHmmResults
+    [~, sessionName] = fileparts(lfpPath);
+    saveDir = fullfile(paths.spontaneousResultsPath, sessionName);
+    if ~exist(saveDir, 'dir')
+        mkdir(saveDir);
+    end
+
+    modeledModes = modeNames(modelModeIdx);
+    modeledModes = modeledModes(~cellfun(@isempty, modeledModes));
+
+    lfpHmmResults = struct();
+    lfpHmmResults.sessionName = sessionName;
+    lfpHmmResults.lfpPath = lfpPath;
+    lfpHmmResults.areaDefs = areaDefs;
+    lfpHmmResults.bands = bands;
+    lfpHmmResults.modeNames = modeNames;
+    lfpHmmResults.modeledModeIdx = modelModeIdx;
+    lfpHmmResults.hmmResults = hmmResults;
+    lfpHmmResults.settings = struct( ...
+        'hmmBinSizeSec', hmmBinSizeSec, ...
+        'bandpassOrder', bandpassOrder, ...
+        'maxStates', maxStates, ...
+        'numFolds', numFolds, ...
+        'hmmNumRestarts', hmmNumRestarts, ...
+        'hmmMaxIter', hmmMaxIter, ...
+        'modelModeIdx', modelModeIdx, ...
+        'min2Model', min2Model, ...
+        'doCleanArtifacts', doCleanArtifacts, ...
+        'welchWindowSec', welchWindowSec, ...
+        'welchOverlapFrac', welchOverlapFrac);
+    lfpHmmResults.createdAt = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+
+    saveFilename = sprintf('hmm_lfp_states_bin%.3f_order%d_mode%d.mat', ...
+        hmmBinSizeSec, bandpassOrder, modelModeIdx);
+    saveFilepath = fullfile(saveDir, saveFilename);
+    fprintf('\nSaving LFP HMM results to:\n%s\n', saveFilepath);
+    save(saveFilepath, 'lfpHmmResults', '-v7.3');
+
+    summaryPath = fullfile(saveDir, sprintf('HMM_summary_%s.txt', sessionName));
+    fid = fopen(summaryPath, 'w');
+    if fid ~= -1
+        fprintf(fid, 'LFP HMM Analysis Summary\n');
+        fprintf(fid, '========================\n\n');
+        fprintf(fid, 'Created: %s\n', lfpHmmResults.createdAt);
+        fprintf(fid, 'Session: %s\n', sessionName);
+        fprintf(fid, 'LFP path: %s\n', lfpPath);
+        fprintf(fid, 'Modeled modes: %s\n', strjoin(modeledModes, ', '));
+        fprintf(fid, 'Bin size: %.4f s\n', hmmBinSizeSec);
+        fprintf(fid, 'Bandpass order: %d\n', bandpassOrder);
+        fprintf(fid, 'Bands:\n');
+        for bandIdx = 1:numBands
+            fprintf(fid, '  %s: [%g %g] Hz\n', bands{bandIdx, 1}, bands{bandIdx, 2}(1), bands{bandIdx, 2}(2));
+        end
+        fprintf(fid, '\nPer-mode results:\n');
+        for modeIdx = modelModeIdx
+            if isempty(hmmResults(modeIdx).stateEstimates)
+                fprintf(fid, '  %s: no valid HMM result\n', modeNames{modeIdx});
+            else
+                fprintf(fid, '  %s: bestNumStates=%d, nFrames=%d\n', ...
+                    modeNames{modeIdx}, hmmResults(modeIdx).bestNumStates, numel(hmmResults(modeIdx).stateEstimates));
+            end
+        end
+        fclose(fid);
+        fprintf('Summary saved to:\n%s\n', summaryPath);
+    else
+        warning('Could not write summary file: %s', summaryPath);
+    end
 end
 
 %% Local functions
