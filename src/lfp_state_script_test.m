@@ -19,7 +19,7 @@ lfpPath = fullfile(paths.dropPath, 'spontaneous/data/ag/ag112321_1');
 lfpPath = fullfile(paths.dropPath, 'spontaneous/data/ey/ey042822');
 
 doCleanArtifacts = false;
-welchWindowSec = 2;
+welchWindowSec = .5;
 welchOverlapFrac = 0.5;
 hmmBinSizeSec = 0.02; % non-overlapping bins for HMM features (20 ms)
 bandpassOrder = 11; % Akella et al.: 11th-order Butterworth per band
@@ -28,6 +28,7 @@ numFolds = 3;
 hmmNumRestarts = 5;
 hmmMaxIter = 200;
 modelModeIdx = 2; % 1=singleMiddle, 2=twoThirdsAverage, 3=allChannelsAverage
+nMinPlot = 5; % first minutes to visualize in spectrogram heatmaps
 saveHmmResults = true;
 
 % Depths corresponding to brain areas [um] — four sample areas (no CC)
@@ -168,6 +169,46 @@ for pairIdx = 1:numPairs
     end
 end
 
+%% Power spectra heatmaps (twoThirdsAverage mode)
+% Variables:
+%   - nMinPlot: number of minutes from session start to include
+%   - twoThirdsModeIdx: channel-selection mode index for twoThirdsAverage
+% Goal:
+%   For each brain area, plot frequency-vs-time power (spectrogram) for
+%   the first nMinPlot minutes without reducing into predefined bands.
+twoThirdsModeIdx = 2;
+samplesToPlot = round(nMinPlot * 60 * fs);
+specWindowSamples = max(64, round(welchWindowSec * fs));
+specOverlapSamples = min(specWindowSamples - 1, round(specWindowSamples * welchOverlapFrac));
+specNfft = max(256, 2 ^ nextpow2(specWindowSamples));
+plotFreqRangeHz = [1 120];
+
+figure(1103); clf;
+tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+for areaIdx = 1:numAreas
+    nexttile;
+    signal = areaSignals{areaIdx, twoThirdsModeIdx};
+    if isempty(signal)
+        axis off;
+        title(sprintf('%s twoThirdsAverage: no signal', areaDefs(areaIdx).name));
+        continue;
+    end
+
+    nUse = min(numel(signal), samplesToPlot);
+    signal = double(signal(1:nUse));
+    [specStft, specFreq, specTime] = spectrogram(signal, specWindowSamples, specOverlapSamples, specNfft, fs);
+    specPower = abs(specStft) .^ 2;
+    freqMask = specFreq >= plotFreqRangeHz(1) & specFreq <= plotFreqRangeHz(2);
+    specPowerDb = 10 * log10(specPower(freqMask, :) + eps);
+    imagesc(specTime / 60, specFreq(freqMask), specPowerDb);
+    axis xy;
+    colormap(gca, 'turbo');
+    colorbar;
+    ylabel('Frequency (Hz)');
+    title(sprintf('%s twoThirdsAverage power spectrogram (first %.1f min)', areaDefs(areaIdx).name, nUse / fs / 60));
+end
+xlabel('Time (min)');
+
 %% Plot: normalized band-power profiles per area
 figure(1101); clf;
 tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
@@ -229,15 +270,18 @@ hmmResults = repmat(struct( ...
     'cvScores', []), numModes, 1);
 
 emOpts = struct('maxIter', hmmMaxIter, 'tol', 1e-4, ...
-    'numRestarts', hmmNumRestarts, 'regVar', 1e-3, 'decode', true);
+    'numRestarts', hmmNumRestarts, 'regVar', 1e-3, 'decode', true, 'verbose', true);
 
 for modeIdx = modelModeIdx
+    fprintf('\n[HMM progress] Starting mode %d/%d: %s\n', modeIdx, numModes, modeNames{modeIdx});
     binnedEnvelopesMode = cell(numAreas, 1);
     minBinsAcrossAreas = inf;
 
     for areaIdx = 1:numAreas
+        fprintf('[HMM progress]   Building features for area %d/%d: %s\n', areaIdx, numAreas, areaDefs(areaIdx).name);
         signal = areaSignals{areaIdx, modeIdx};
         if isempty(signal)
+            fprintf('[HMM progress]   -> %s skipped (empty signal)\n', areaDefs(areaIdx).name);
             continue;
         end
         nUse = min(numel(signal), cutoffIdx);
@@ -247,14 +291,18 @@ for modeIdx = modelModeIdx
             signal, fs, bands, hmmBinSizeSec, bandpassOrder);
 
         if isempty(iBinnedEnvelopes)
+            fprintf('[HMM progress]   -> %s skipped (no binned envelopes)\n', areaDefs(areaIdx).name);
             continue;
         end
 
         minBinsAcrossAreas = min(minBinsAcrossAreas, size(iBinnedEnvelopes, 1));
         binnedEnvelopesMode{areaIdx} = iBinnedEnvelopes;
+        fprintf('[HMM progress]   -> %s features ready (%d bins x %d bands)\n', ...
+            areaDefs(areaIdx).name, size(iBinnedEnvelopes, 1), size(iBinnedEnvelopes, 2));
     end
 
     if ~isfinite(minBinsAcrossAreas) || minBinsAcrossAreas < 2
+        fprintf('[HMM progress] Mode %s skipped (insufficient bins)\n', modeNames{modeIdx});
         continue;
     end
 
@@ -268,15 +316,20 @@ for modeIdx = modelModeIdx
     end
 
     if isempty(binnedStack) || size(binnedStack, 2) ~= numAreas * numBands
+        fprintf('[HMM progress] Mode %s skipped (incomplete feature stack)\n', modeNames{modeIdx});
         continue;
     end
 
     timeBinsRef = ((1:minBinsAcrossAreas)' - 0.5) * hmmBinSizeSec;
     featureMatrix = zscore_columns_finite(binnedStack);
+    fprintf('[HMM progress] Running CV state selection for %s (T=%d, D=%d, K=%s, folds=%d)\n', ...
+        modeNames{modeIdx}, size(featureMatrix, 1), size(featureMatrix, 2), mat2str(2:maxStates), numFolds);
 
     [bestNumStates, cvScores, hmmModel, ~] = gaussian_hmm_cv_select_num_states( ...
         featureMatrix, 2:maxStates, numFolds, emOpts);
     stateEstimates = hmmModel.stateSeq;
+    fprintf('[HMM progress] Finished %s: bestNumStates=%d, nFrames=%d\n', ...
+        modeNames{modeIdx}, bestNumStates, numel(stateEstimates));
 
     hmmResults(modeIdx).modeName = modeNames{modeIdx};
     hmmResults(modeIdx).featureMatrix = featureMatrix;

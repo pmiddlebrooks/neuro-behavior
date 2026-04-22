@@ -35,14 +35,27 @@ if isfield(emOptsTrain, 'decode')
 else
     emOptsTrain.decode = false;
 end
+if isfield(emOpts, 'verbose')
+    verbose = logical(emOpts.verbose);
+else
+    verbose = true;
+end
 
 cvScores = nan(numel(stateRange), 1);
 % Scalar struct: struct('foldDetails', cell(n,1)) would create n structs, not one field of cells.
 diagnostics = struct();
 diagnostics.foldDetails = cell(numel(stateRange), 1);
 
+if verbose
+    fprintf('[HMM CV] Start: T=%d, D=%d, K candidates=%s, folds=%d\n', ...
+        T, size(observationMatrix, 2), mat2str(stateRange), numFolds);
+end
+
 for rangeIdx = 1:numel(stateRange)
     numStates = stateRange(rangeIdx);
+    if verbose
+        fprintf('[HMM CV] K=%d (%d/%d)\n', numStates, rangeIdx, numel(stateRange));
+    end
     foldLls = nan(numFolds, 1);
     for foldIdx = 1:numFolds
         testStart = (foldIdx - 1) * foldLen + 1;
@@ -56,24 +69,43 @@ for rangeIdx = 1:numel(stateRange)
         testIdx = find(testMask);
         if numel(trainIdx) < numStates * 5 || numel(testIdx) < 2
             foldLls(foldIdx) = nan;
+            if verbose
+                fprintf('[HMM CV]   fold %d/%d skipped (train=%d, test=%d)\n', ...
+                    foldIdx, numFolds, numel(trainIdx), numel(testIdx));
+            end
             continue;
         end
         trainX = observationMatrix(trainIdx, :);
         testX = observationMatrix(testIdx, :);
+        if verbose
+            fprintf('[HMM CV]   fold %d/%d fitting... ', foldIdx, numFolds);
+        end
         try
             [foldModel, ~] = gaussian_hmm_fit(trainX, numStates, emOptsTrain);
             if isempty(foldModel)
                 foldLls(foldIdx) = nan;
+                if verbose
+                    fprintf('failed (empty model)\n');
+                end
                 continue;
             end
             ll = gaussian_hmm_sequence_loglik(testX, foldModel);
             foldLls(foldIdx) = ll / size(testX, 1);
+            if verbose
+                fprintf('done (ll/bin=%.4f)\n', foldLls(foldIdx));
+            end
         catch
             foldLls(foldIdx) = nan;
+            if verbose
+                fprintf('failed (exception)\n');
+            end
         end
     end
     cvScores(rangeIdx) = mean(foldLls, 'omitnan');
     diagnostics.foldDetails{rangeIdx} = foldLls;
+    if verbose
+        fprintf('[HMM CV] K=%d mean ll/bin=%.4f\n', numStates, cvScores(rangeIdx));
+    end
 end
 
 [cvMax, bestIdx] = max(cvScores, [], 'omitnan');
@@ -84,8 +116,15 @@ if isnan(cvMax)
 else
     bestNumStates = stateRange(bestIdx);
 end
+if verbose
+    fprintf('[HMM CV] Selected K=%d (score=%.4f)\n', bestNumStates, cvMax);
+    fprintf('[HMM CV] Full-data fit for selected K=%d...\n', bestNumStates);
+end
 
 emOptsFull = emOpts;
 emOptsFull.decode = true;
 [bestModel, diagnostics.fullFitDiag] = gaussian_hmm_fit(observationMatrix, bestNumStates, emOptsFull);
+if verbose
+    fprintf('[HMM CV] Full-data fit complete.\n');
+end
 end
