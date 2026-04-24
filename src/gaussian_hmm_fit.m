@@ -12,7 +12,8 @@ function [model, diagnostics] = gaussian_hmm_fit(observationMatrix, numStates, o
 % Goal:
 %   Fit diagonal-covariance Gaussian HMM (full state transitions) for continuous LFP features.
 % Returns:
-%   - model: struct with fields pi0 [Kx1], A [KxK], mu [KxD], varDiag [KxD], stateSeq [nBinsx1]
+%   - model: struct with fields pi0 [Kx1], A [KxK], mu [KxD], varDiag [KxD],
+%            stateSeq [nBinsx1], statePosterior [nBinsxK], maxPosterior [nBinsx1]
 %   - diagnostics: struct with trainLogLik, numIterations, restartIdx
 
 if nargin < 3
@@ -61,6 +62,10 @@ diagnostics = bestDiag;
 
 if doDecode && ~isempty(model)
     model.stateSeq = gaussian_hmm_viterbi(observationMatrix, model);
+    logB = gaussian_hmm_logB(observationMatrix, model.mu, model.varDiag);
+    [statePosterior, ~, ~] = e_step(model.pi0, model.A, logB);
+    model.statePosterior = statePosterior;
+    model.maxPosterior = max(statePosterior, [], 2);
 end
 end
 
@@ -95,7 +100,8 @@ for iterIdx = 1:maxIter
     prevLl = logLik;
 end
 
-model = struct('pi0', pi0, 'A', A, 'mu', mu, 'varDiag', varDiag, 'numStates', K, 'stateSeq', []);
+model = struct('pi0', pi0, 'A', A, 'mu', mu, 'varDiag', varDiag, 'numStates', K, ...
+    'stateSeq', [], 'statePosterior', [], 'maxPosterior', []);
 diagOut = struct('trainLogLik', logLik, 'numIterations', iterIdx);
 end
 

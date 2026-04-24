@@ -21,14 +21,17 @@ lfpPath = fullfile(paths.dropPath, 'spontaneous/data/ey/ey042822');
 doCleanArtifacts = false;
 welchWindowSec = .5;
 welchOverlapFrac = 0.5;
-hmmBinSizeSec = 0.02; % non-overlapping bins for HMM features (20 ms)
+hmmBinSizeSec = 0.03; % Akella et al.: non-overlapping 30 ms bins (movie frame scale)
 bandpassOrder = 11; % Akella et al.: 11th-order Butterworth per band
-maxStates = 10;
-numFolds = 3;
+maxStates = 6; % Akella et al. model-selection range tested over 2..6 states
+numFolds = 5;
 hmmNumRestarts = 5;
 hmmMaxIter = 200;
 modelModeIdx = 2; % 1=singleMiddle, 2=twoThirdsAverage, 3=allChannelsAverage
+min2Model = [0 30]; % analysis window [start end] in minutes; set [0 Inf] for full duration
+posteriorThreshold = 0.8; % bins with max posterior below this are labeled undefined
 nMinPlot = 5; % first minutes to visualize in spectrogram heatmaps
+timePlotWindowMin = [0 5]; % timeline window [start end] in minutes; set [0 Inf] to plot full duration
 saveHmmResults = true;
 
 % Depths corresponding to brain areas [um] — four sample areas (no CC)
@@ -45,7 +48,7 @@ bands = { ...
     'highGamma', [50 80] ...
     };
 
-%% Load spontaneous LFP struct
+% Load spontaneous LFP struct
 load(fullfile(lfpPath, 'lfp.mat'), 'lfp');
 assert(exist('lfp', 'var') == 1, 'lfp variable not found in lfp.mat');
 assert(isstruct(lfp), 'lfp must be a struct array');
@@ -58,7 +61,7 @@ for channelIdx = 1:numel(lfp)
     assert(lfp(channelIdx).samplerate == fs, 'All channels must share sampling rate');
 end
 
-%% Build per-area representative signals for each channel-selection mode
+% Build per-area representative signals for each channel-selection mode
 modeNames = {'singleMiddle', 'twoThirdsAverage', 'allChannelsAverage'};
 numModes = numel(modeNames);
 numAreas = numel(areaDefs);
@@ -72,7 +75,33 @@ for areaIdx = 1:numAreas
     [areaSignals(areaIdx, :), areaMeta(areaIdx, :)] = get_area_signals_by_mode(lfp, thisRange);
 end
 
-%% Optional artifact cleaning and low-pass
+% Restrict all analyses to selected analysis window
+assert(numel(min2Model) == 2, 'min2Model must be [startMin endMin].');
+startMinModel = min2Model(1);
+endMinModel = min2Model(2);
+assert(startMinModel >= 0, 'min2Model start must be >= 0.');
+assert(endMinModel > startMinModel, 'min2Model end must be greater than start.');
+startSampleModel = floor(startMinModel * 60 * fs) + 1;
+for areaIdx = 1:numAreas
+    for modeIdx = 1:numModes
+        signal = areaSignals{areaIdx, modeIdx};
+        if isempty(signal)
+            continue;
+        end
+        endSampleModel = numel(signal);
+        if isfinite(endMinModel)
+            endSampleModel = min(endSampleModel, floor(endMinModel * 60 * fs));
+        end
+        startIdx = min(max(1, startSampleModel), numel(signal));
+        if endSampleModel < startIdx
+            areaSignals{areaIdx, modeIdx} = [];
+            continue;
+        end
+        areaSignals{areaIdx, modeIdx} = signal(startIdx:endSampleModel);
+    end
+end
+
+% Optional artifact cleaning and low-pass
 if doCleanArtifacts
     for areaIdx = 1:numAreas
         for modeIdx = 1:numModes
@@ -101,7 +130,7 @@ else
     end
 end
 
-%% Compute band powers from Welch PSD integration
+% Compute band powers from Welch PSD integration
 bandPowerMat = nan(numAreas, numModes, numBands);
 for areaIdx = 1:numAreas
     for modeIdx = 1:numModes
@@ -169,19 +198,19 @@ for pairIdx = 1:numPairs
     end
 end
 
-%% Power spectra heatmaps (twoThirdsAverage mode)
+%% Power spectra heatmaps (twoThirdsAverage mode, Fig 2A-style)
 % Variables:
 %   - nMinPlot: number of minutes from session start to include
 %   - twoThirdsModeIdx: channel-selection mode index for twoThirdsAverage
 % Goal:
-%   For each brain area, plot frequency-vs-time power (spectrogram) for
-%   the first nMinPlot minutes without reducing into predefined bands.
+%   For each brain area, plot deviations from mean power spectral density
+%   (dB/Hz) over time in the 0-100 Hz range (Akella et al. Fig 2A style).
 twoThirdsModeIdx = 2;
 samplesToPlot = round(nMinPlot * 60 * fs);
-specWindowSamples = max(64, round(welchWindowSec * fs));
-specOverlapSamples = min(specWindowSamples - 1, round(specWindowSamples * welchOverlapFrac));
+specWindowSamples = max(64, round(0.8 * fs)); % Akella et al.: ~800 ms Hann window
+specOverlapSamples = min(specWindowSamples - 1, round(0.4 * fs)); % ~400 ms overlap
 specNfft = max(256, 2 ^ nextpow2(specWindowSamples));
-plotFreqRangeHz = [1 120];
+plotFreqRangeHz = [0 100];
 
 figure(1103); clf;
 tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
@@ -196,16 +225,17 @@ for areaIdx = 1:numAreas
 
     nUse = min(numel(signal), samplesToPlot);
     signal = double(signal(1:nUse));
-    [specStft, specFreq, specTime] = spectrogram(signal, specWindowSamples, specOverlapSamples, specNfft, fs);
-    specPower = abs(specStft) .^ 2;
+    specWindow = hann(specWindowSamples, 'periodic');
+    [~, specFreq, specTime, specPsd] = spectrogram(signal, specWindow, specOverlapSamples, specNfft, fs, 'yaxis', 'psd');
     freqMask = specFreq >= plotFreqRangeHz(1) & specFreq <= plotFreqRangeHz(2);
-    specPowerDb = 10 * log10(specPower(freqMask, :) + eps);
-    imagesc(specTime / 60, specFreq(freqMask), specPowerDb);
+    specPsdDbPerHz = 10 * log10(specPsd(freqMask, :) + eps);
+    specPsdDbPerHzDev = specPsdDbPerHz - mean(specPsdDbPerHz, 2);
+    imagesc(specTime / 60, specFreq(freqMask), specPsdDbPerHzDev);
     axis xy;
     colormap(gca, 'turbo');
     colorbar;
     ylabel('Frequency (Hz)');
-    title(sprintf('%s twoThirdsAverage power spectrogram (first %.1f min)', areaDefs(areaIdx).name, nUse / fs / 60));
+    title(sprintf('%s twoThirdsAverage PSD deviation (dB/Hz, first %.1f min)', areaDefs(areaIdx).name, nUse / fs / 60));
 end
 xlabel('Time (min)');
 
@@ -255,8 +285,6 @@ xticks(1:numPairs); xticklabels(pairNames);
 yticks(1:numAreas); yticklabels({areaDefs.name});
 
 %% Build time-resolved features and fit Gaussian HMM per mode
-min2Model = 60; % how many minutes to model
-cutoffIdx = round(60 * min2Model * fs);
 % Feature layout per mode:
 %   [area1_band1 ... area1_bandN area2_band1 ... areaN_bandN]  (N = numBands)
 hmmResults = repmat(struct( ...
@@ -265,12 +293,16 @@ hmmResults = repmat(struct( ...
     'timeBins', [], ...
     'bestNumStates', nan, ...
     'stateEstimates', [], ...
+    'stateEstimatesThresholded', [], ...
+    'statePosterior', [], ...
+    'maxPosterior', [], ...
     'hmm', [], ...
     'likelihoods', [], ...
     'cvScores', []), numModes, 1);
 
 emOpts = struct('maxIter', hmmMaxIter, 'tol', 1e-4, ...
-    'numRestarts', hmmNumRestarts, 'regVar', 1e-3, 'decode', true, 'verbose', true);
+    'numRestarts', hmmNumRestarts, 'regVar', 1e-3, 'decode', true, 'verbose', true, ...
+    'useParallel', true, 'numWorkers', 4);
 
 for modeIdx = modelModeIdx
     fprintf('\n[HMM progress] Starting mode %d/%d: %s\n', modeIdx, numModes, modeNames{modeIdx});
@@ -284,8 +316,6 @@ for modeIdx = modelModeIdx
             fprintf('[HMM progress]   -> %s skipped (empty signal)\n', areaDefs(areaIdx).name);
             continue;
         end
-        nUse = min(numel(signal), cutoffIdx);
-        signal = signal(1:nUse);
 
         [iBinnedEnvelopes, ~] = build_lfp_hilbert_bins( ...
             signal, fs, bands, hmmBinSizeSec, bandpassOrder);
@@ -325,20 +355,31 @@ for modeIdx = modelModeIdx
     fprintf('[HMM progress] Running CV state selection for %s (T=%d, D=%d, K=%s, folds=%d)\n', ...
         modeNames{modeIdx}, size(featureMatrix, 1), size(featureMatrix, 2), mat2str(2:maxStates), numFolds);
 
-    [bestNumStates, cvScores, hmmModel, ~] = gaussian_hmm_cv_select_num_states( ...
-        featureMatrix, 2:maxStates, numFolds, emOpts);
+    [bestNumStates, cvScores, hmmModel, hmmDiagnostics] = gaussian_hmm_cv_select_num_states( ...
+        featureMatrix, 2:maxStates, numFolds, emOpts, numBands);
     stateEstimates = hmmModel.stateSeq;
+    statePosterior = hmmModel.statePosterior;
+    maxPosterior = hmmModel.maxPosterior;
+    stateEstimatesThresholded = stateEstimates;
+    stateEstimatesThresholded(maxPosterior < posteriorThreshold) = nan;
+    nUndefined = sum(~isfinite(stateEstimatesThresholded));
     fprintf('[HMM progress] Finished %s: bestNumStates=%d, nFrames=%d\n', ...
         modeNames{modeIdx}, bestNumStates, numel(stateEstimates));
+    fprintf('[HMM progress]   Posterior threshold=%.2f -> undefined bins=%d (%.2f%%)\n', ...
+        posteriorThreshold, nUndefined, 100 * nUndefined / numel(stateEstimatesThresholded));
 
     hmmResults(modeIdx).modeName = modeNames{modeIdx};
     hmmResults(modeIdx).featureMatrix = featureMatrix;
     hmmResults(modeIdx).timeBins = timeBinsRef;
     hmmResults(modeIdx).bestNumStates = bestNumStates;
     hmmResults(modeIdx).stateEstimates = stateEstimates;
+    hmmResults(modeIdx).stateEstimatesThresholded = stateEstimatesThresholded;
+    hmmResults(modeIdx).statePosterior = statePosterior;
+    hmmResults(modeIdx).maxPosterior = maxPosterior;
     hmmResults(modeIdx).hmm = hmmModel;
     hmmResults(modeIdx).likelihoods = cvScores;
     hmmResults(modeIdx).cvScores = cvScores;
+    hmmResults(modeIdx).selectionDiagnostics = hmmDiagnostics;
 end
 
 %% Print HMM summary
@@ -349,22 +390,25 @@ for modeIdx = modelModeIdx
         continue;
      end
     uniqueStates = unique(hmmResults(modeIdx).stateEstimates);
-    fprintf('%-17s : bestNumStates=%d, nFrames=%d, statesFound=%s\n', ...
+    undefinedPct = 100 * mean(~isfinite(hmmResults(modeIdx).stateEstimatesThresholded));
+    fprintf('%-17s : bestNumStates=%d, nFrames=%d, statesFound=%s, undefined=%.2f%% (thr=%.2f)\n', ...
         modeNames{modeIdx}, ...
         hmmResults(modeIdx).bestNumStates, ...
         numel(hmmResults(modeIdx).stateEstimates), ...
-        mat2str(uniqueStates'));
+        mat2str(uniqueStates'), ...
+        undefinedPct, posteriorThreshold);
 end
 
-%% Plot HMM state mean power profiles (per mode)
+% Plot HMM state mean power profiles (per mode)
 for modeIdx = modelModeIdx
     if isempty(hmmResults(modeIdx).stateEstimates)
         continue;
     end
 
     featureMatrix = hmmResults(modeIdx).featureMatrix;
-    stateEstimates = hmmResults(modeIdx).stateEstimates;
+    stateEstimates = hmmResults(modeIdx).stateEstimatesThresholded;
     uniqueStates = unique(stateEstimates);
+    uniqueStates = uniqueStates(isfinite(uniqueStates));
     nState = numel(uniqueStates);
     nFeatExpected = numAreas * numBands;
     if size(featureMatrix, 2) ~= nFeatExpected
@@ -423,32 +467,127 @@ for modeIdx = modelModeIdx
     end
 end
 
-%% Plot HMM state timelines (per mode)
+% % Plot HMM state timelines (per mode)
+% for modeIdx = modelModeIdx
+%     if isempty(hmmResults(modeIdx).stateEstimates)
+%         continue;
+%     end
+% 
+%     stateEstimates = hmmResults(modeIdx).stateEstimatesThresholded;
+%     uniqueStates = unique(stateEstimates);
+%     nState = numel(uniqueStates);
+%     assert(numel(timePlotWindowMin) == 2, 'timePlotWindowMin must be [startMin endMin].');
+%     startMin = timePlotWindowMin(1);
+%     endMin = timePlotWindowMin(2);
+%     assert(startMin >= 0, 'timePlotWindowMin start must be >= 0.');
+%     assert(endMin > startMin, 'timePlotWindowMin end must be greater than start.');
+%     startFrame = max(1, floor(startMin * 60 / hmmBinSizeSec) + 1);
+%     if isfinite(endMin)
+%         endFrame = min(numel(stateEstimates), floor(endMin * 60 / hmmBinSizeSec));
+%     else
+%         endFrame = numel(stateEstimates);
+%     end
+%     if endFrame < startFrame
+%         warning('Skipping timeline plot for %s: selected time window has no frames.', modeNames{modeIdx});
+%         continue;
+%     end
+%     frameIdx = startFrame:endFrame;
+%     stateToPlot = stateEstimates(frameIdx);
+%     xTime = ((frameIdx - 1) * hmmBinSizeSec) - (startMin * 60);
+%     nFramesToPlot = numel(frameIdx);
+%     colorMap = lines(max(nState, 3));
+% 
+%     figure(1300 + modeIdx); clf; hold on;
+%     for frameIdx = 1:nFramesToPlot
+%         stateVal = stateToPlot(frameIdx);
+%         if ~isfinite(stateVal)
+%             patchColor = [0.6 0.6 0.6]; % undefined bins
+%         else
+%             patchColor = colorMap(stateVal, :);
+%         end
+%         patch([xTime(frameIdx), xTime(frameIdx) + hmmBinSizeSec, xTime(frameIdx) + hmmBinSizeSec, xTime(frameIdx)], ...
+%             [0, 0, 1, 1], patchColor, 'EdgeColor', 'none');
+%     end
+%     xlim([0 max(xTime) + hmmBinSizeSec]);
+%     ylim([0 1]);
+%     yticks([]);
+%     xlabel('Time (s)');
+%     title(sprintf('State timeline: %s (%.2f to %.2f min, nStates=%d)', ...
+%         modeNames{modeIdx}, startMin, min(endMin, numel(stateEstimates) * hmmBinSizeSec / 60), hmmResults(modeIdx).bestNumStates));
+% end
+
+% Plot HMM state occupancy proportions (per mode)
 for modeIdx = modelModeIdx
     if isempty(hmmResults(modeIdx).stateEstimates)
         continue;
     end
 
-    stateEstimates = hmmResults(modeIdx).stateEstimates;
-    uniqueStates = unique(stateEstimates);
-    nState = numel(uniqueStates);
-    xTime = (0:numel(stateEstimates) - 1) * hmmBinSizeSec;
-    colorMap = lines(max(nState, 3));
+    stateEstimates = hmmResults(modeIdx).stateEstimatesThresholded(:);
+    nFrames = numel(stateEstimates);
+    numStates = hmmResults(modeIdx).bestNumStates;
+    stateIds = 1:numStates;
+    validMask = isfinite(stateEstimates) & stateEstimates >= 1 & stateEstimates <= numStates & stateEstimates == round(stateEstimates);
+    validStates = stateEstimates(validMask);
 
-    figure(1300 + modeIdx); clf; hold on;
-    for frameIdx = 1:numel(xTime)
-        stateVal = stateEstimates(frameIdx);
-        patch([xTime(frameIdx), xTime(frameIdx) + hmmBinSizeSec, xTime(frameIdx) + hmmBinSizeSec, xTime(frameIdx)], ...
-            [0, 0, 1, 1], colorMap(stateVal, :), 'EdgeColor', 'none');
+    stateProportion = zeros(1, numStates);
+    for stateIdx = 1:numStates
+        stateProportion(stateIdx) = sum(validStates == stateIds(stateIdx)) / nFrames;
     end
-    xlim([0 max(xTime) + hmmBinSizeSec]);
+    undefinedProportion = 1 - sum(stateProportion);
+    barValues = [stateProportion, undefinedProportion];
+    xLabels = [arrayfun(@(stateVal) sprintf('state%d', stateVal), stateIds, 'UniformOutput', false), {'undefined'}];
+
+    figure(1400 + modeIdx); clf;
+    bar(barValues, 'FaceColor', [0.25 0.45 0.85], 'EdgeColor', 'none');
+    xticks(1:numel(barValues));
+    xticklabels(xLabels);
     ylim([0 1]);
-    yticks([]);
-    xlabel('Time (s)');
-    title(sprintf('State timeline: %s (nStates=%d)', modeNames{modeIdx}, hmmResults(modeIdx).bestNumStates));
+    ylabel('Proportion of session');
+    title(sprintf('State occupancy: %s (nFrames=%d)', modeNames{modeIdx}, nFrames));
+    grid on;
 end
 
-%% Save HMM results (session-scoped, metastability-style pathing)
+% Plot HMM state-duration distributions (per mode)
+for modeIdx = modelModeIdx
+    if isempty(hmmResults(modeIdx).stateEstimates)
+        continue;
+    end
+
+    stateEstimates = hmmResults(modeIdx).stateEstimatesThresholded(:);
+    numStates = hmmResults(modeIdx).bestNumStates;
+    nRows = ceil(sqrt(numStates));
+    nCols = ceil(numStates / nRows);
+
+    figure(1500 + modeIdx); clf;
+    tileLayout = tiledlayout(nRows, nCols, 'TileSpacing', 'compact', 'Padding', 'compact');
+    title(tileLayout, sprintf('State duration histograms: %s', modeNames{modeIdx}));
+
+    for stateIdx = 1:numStates
+        % Find contiguous runs for this state across the full session.
+        isThisState = (stateEstimates == stateIdx);
+        stateEdges = diff([false; isThisState; false]);
+        runStartIdx = find(stateEdges == 1);
+        runEndIdx = find(stateEdges == -1) - 1;
+        durationSec = (runEndIdx - runStartIdx + 1) * hmmBinSizeSec;
+
+        ax = nexttile(tileLayout); hold(ax, 'on');
+        if isempty(durationSec)
+            text(0.5, 0.5, 'No bouts', 'HorizontalAlignment', 'center', 'Parent', ax);
+            xlim(ax, [0 1]);
+            ylim(ax, [0 1]);
+            xticks(ax, []);
+            yticks(ax, []);
+        else
+            histogram(ax, durationSec, 20, 'FaceColor', [0.3 0.6 0.35], 'EdgeColor', 'none');
+            xlabel(ax, 'Duration (s)');
+            ylabel(ax, 'Count');
+        end
+        title(ax, sprintf('State %d (n=%d bouts)', stateIdx, numel(durationSec)));
+        grid(ax, 'on');
+    end
+end
+
+% Save HMM results (session-scoped, metastability-style pathing)
 if saveHmmResults
     [~, sessionName] = fileparts(lfpPath);
     saveDir = fullfile(paths.spontaneousResultsPath, sessionName);
@@ -476,6 +615,8 @@ if saveHmmResults
         'hmmMaxIter', hmmMaxIter, ...
         'modelModeIdx', modelModeIdx, ...
         'min2Model', min2Model, ...
+        'posteriorThreshold', posteriorThreshold, ...
+        'timePlotWindowMin', timePlotWindowMin, ...
         'doCleanArtifacts', doCleanArtifacts, ...
         'welchWindowSec', welchWindowSec, ...
         'welchOverlapFrac', welchOverlapFrac);
