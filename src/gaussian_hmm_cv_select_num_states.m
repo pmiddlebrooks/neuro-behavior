@@ -9,7 +9,8 @@ function [bestNumStates, cvScores, bestModel, diagnostics] = gaussian_hmm_cv_sel
 %   - numBands: number of frequency bands used per area/layer feature block
 % Goal:
 %   Train HMM on training bins, evaluate mean per-bin log-likelihood on held-out bins,
-%   then apply Akella et al.-style penalty for similar state definitions.
+%   then apply Akella et al. model selection:
+%   score(K) = normalizedCVLL(K) / normalizedTopEigenvalue(K).
 % Returns:
 %   - bestNumStates: K with highest mean CV log-likelihood
 %   - cvScores: length(stateRange) vector of mean CV log p / bin
@@ -58,12 +59,10 @@ else
 end
 
 cvScores = nan(numel(stateRange), 1);
-% Scalar struct: struct('foldDetails', cell(n,1)) would create n structs, not one field of cells.
-diagnostics = struct();
-diagnostics.foldDetails = cell(numel(stateRange), 1);
-diagnostics.topEigenvalue = nan(numel(stateRange), 1);
-diagnostics.selectionScore = nan(numel(stateRange), 1);
-diagnostics.stateDefMatrix = cell(numel(stateRange), 1);
+% Sliced temporaries for parfor (struct field assignment is not classifiable in parfor).
+foldDetailsCell = cell(numel(stateRange), 1);
+topEigenvalueVec = nan(numel(stateRange), 1);
+stateDefMatrixCell = cell(numel(stateRange), 1);
 
 if verbose
     fprintf('[HMM CV] Start: T=%d, D=%d, K candidates=%s, folds=%d\n', ...
@@ -127,18 +126,18 @@ if useParallel
             end
         end
         cvScores(rangeIdx) = mean(foldLls, 'omitnan');
-        diagnostics.foldDetails{rangeIdx} = foldLls;
+        foldDetailsCell{rangeIdx} = foldLls;
         try
             emOptsEval = emOpts;
             emOptsEval.decode = false;
             [evalModel, ~] = gaussian_hmm_fit(observationMatrix, numStates, emOptsEval);
             stateDefMat = compute_state_definition_matrix(evalModel.mu, numBands);
             eigVals = eig(cov(stateDefMat));
-            diagnostics.topEigenvalue(rangeIdx) = max(real(eigVals));
-            diagnostics.stateDefMatrix{rangeIdx} = stateDefMat;
+            topEigenvalueVec(rangeIdx) = max(real(eigVals));
+            stateDefMatrixCell{rangeIdx} = stateDefMat;
         catch
-            diagnostics.topEigenvalue(rangeIdx) = nan;
-            diagnostics.stateDefMatrix{rangeIdx} = [];
+            topEigenvalueVec(rangeIdx) = nan;
+            stateDefMatrixCell{rangeIdx} = [];
         end
     end
 else
@@ -193,25 +192,33 @@ else
         end
     end
     cvScores(rangeIdx) = mean(foldLls, 'omitnan');
-    diagnostics.foldDetails{rangeIdx} = foldLls;
+    foldDetailsCell{rangeIdx} = foldLls;
     try
         emOptsEval = emOpts;
         emOptsEval.decode = false;
         [evalModel, ~] = gaussian_hmm_fit(observationMatrix, numStates, emOptsEval);
         stateDefMat = compute_state_definition_matrix(evalModel.mu, numBands);
         eigVals = eig(cov(stateDefMat));
-        diagnostics.topEigenvalue(rangeIdx) = max(real(eigVals));
-        diagnostics.stateDefMatrix{rangeIdx} = stateDefMat;
+        topEigenvalueVec(rangeIdx) = max(real(eigVals));
+        stateDefMatrixCell{rangeIdx} = stateDefMat;
     catch
-        diagnostics.topEigenvalue(rangeIdx) = nan;
-        diagnostics.stateDefMatrix{rangeIdx} = [];
+        topEigenvalueVec(rangeIdx) = nan;
+        stateDefMatrixCell{rangeIdx} = [];
     end
     if verbose
         fprintf('[HMM CV] K=%d mean ll/bin=%.4f, lambda1=%.4f\n', ...
-            numStates, cvScores(rangeIdx), diagnostics.topEigenvalue(rangeIdx));
+            numStates, cvScores(rangeIdx), topEigenvalueVec(rangeIdx));
     end
     end
 end
+
+diagnostics = struct();
+diagnostics.foldDetails = foldDetailsCell;
+diagnostics.topEigenvalue = topEigenvalueVec;
+diagnostics.stateDefMatrix = stateDefMatrixCell;
+diagnostics.selectionScore = nan(numel(stateRange), 1);
+diagnostics.normCvScores = nan(numel(stateRange), 1);
+diagnostics.normTopEigenvalue = nan(numel(stateRange), 1);
 
 if useParallel && verbose
     for rangeIdx = 1:numel(stateRange)
@@ -222,10 +229,11 @@ end
 
 normCv = normalize_to_unit_range(cvScores);
 normLambda = normalize_to_unit_range(diagnostics.topEigenvalue);
-lambdaPenalty = (normLambda + 1) / 2; % map to [0, 1] for stable ratio penalty
-selectionScore = normCv ./ max(lambdaPenalty, eps);
+selectionScore = normCv ./ normLambda;
 selectionScore(~isfinite(selectionScore)) = nan;
 diagnostics.selectionScore = selectionScore;
+diagnostics.normCvScores = normCv;
+diagnostics.normTopEigenvalue = normLambda;
 
 [scoreMax, bestIdx] = max(selectionScore, [], 'omitnan');
 if isnan(scoreMax)

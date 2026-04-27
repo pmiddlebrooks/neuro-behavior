@@ -21,14 +21,14 @@ lfpPath = fullfile(paths.dropPath, 'spontaneous/data/ey/ey042822');
 doCleanArtifacts = false;
 welchWindowSec = .5;
 welchOverlapFrac = 0.5;
-hmmBinSizeSec = 0.03; % Akella et al.: non-overlapping 30 ms bins (movie frame scale)
+hmmBinSizeSec = 0.05; % Akella et al.: non-overlapping 30 ms bins (movie frame scale)
 bandpassOrder = 11; % Akella et al.: 11th-order Butterworth per band
 maxStates = 6; % Akella et al. model-selection range tested over 2..6 states
-numFolds = 5;
+numFolds = 3; % Akella et al. use 3-fold cross-validation
 hmmNumRestarts = 5;
 hmmMaxIter = 200;
-modelModeIdx = 2; % 1=singleMiddle, 2=twoThirdsAverage, 3=allChannelsAverage
-min2Model = [0 30]; % analysis window [start end] in minutes; set [0 Inf] for full duration
+modelModeIdx = 1; % 1=singleMiddle, 2=twoThirdsAverage, 3=allChannelsAverage
+min2Model = [0 Inf]; % analysis window [start end] in minutes; set [0 Inf] for full duration
 posteriorThreshold = 0.8; % bins with max posterior below this are labeled undefined
 nMinPlot = 5; % first minutes to visualize in spectrogram heatmaps
 timePlotWindowMin = [0 5]; % timeline window [start end] in minutes; set [0 Inf] to plot full duration
@@ -198,7 +198,7 @@ for pairIdx = 1:numPairs
     end
 end
 
-%% Power spectra heatmaps (twoThirdsAverage mode, Fig 2A-style)
+% Power spectra heatmaps (twoThirdsAverage mode, Fig 2A-style)
 % Variables:
 %   - nMinPlot: number of minutes from session start to include
 %   - twoThirdsModeIdx: channel-selection mode index for twoThirdsAverage
@@ -239,7 +239,7 @@ for areaIdx = 1:numAreas
 end
 xlabel('Time (min)');
 
-%% Plot: normalized band-power profiles per area
+% Plot: normalized band-power profiles per area
 figure(1101); clf;
 tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
 for areaIdx = 1:numAreas
@@ -291,6 +291,7 @@ hmmResults = repmat(struct( ...
     'modeName', '', ...
     'featureMatrix', [], ...
     'timeBins', [], ...
+    'stateRange', [], ...
     'bestNumStates', nan, ...
     'stateEstimates', [], ...
     'stateEstimatesThresholded', [], ...
@@ -298,7 +299,8 @@ hmmResults = repmat(struct( ...
     'maxPosterior', [], ...
     'hmm', [], ...
     'likelihoods', [], ...
-    'cvScores', []), numModes, 1);
+    'cvScores', [], ...
+    'selectionScore', []), numModes, 1);
 
 emOpts = struct('maxIter', hmmMaxIter, 'tol', 1e-4, ...
     'numRestarts', hmmNumRestarts, 'regVar', 1e-3, 'decode', true, 'verbose', true, ...
@@ -371,6 +373,7 @@ for modeIdx = modelModeIdx
     hmmResults(modeIdx).modeName = modeNames{modeIdx};
     hmmResults(modeIdx).featureMatrix = featureMatrix;
     hmmResults(modeIdx).timeBins = timeBinsRef;
+    hmmResults(modeIdx).stateRange = 2:maxStates;
     hmmResults(modeIdx).bestNumStates = bestNumStates;
     hmmResults(modeIdx).stateEstimates = stateEstimates;
     hmmResults(modeIdx).stateEstimatesThresholded = stateEstimatesThresholded;
@@ -380,9 +383,41 @@ for modeIdx = modelModeIdx
     hmmResults(modeIdx).likelihoods = cvScores;
     hmmResults(modeIdx).cvScores = cvScores;
     hmmResults(modeIdx).selectionDiagnostics = hmmDiagnostics;
+    if isfield(hmmDiagnostics, 'selectionScore')
+        hmmResults(modeIdx).selectionScore = hmmDiagnostics.selectionScore;
+    end
 end
 
-%% Print HMM summary
+% Plot CV model-selection scores used for choosing best state count.
+for modeIdx = modelModeIdx
+    if isempty(hmmResults(modeIdx).cvScores)
+        continue;
+    end
+
+    stateRange = hmmResults(modeIdx).stateRange;
+    cvScores = hmmResults(modeIdx).cvScores(:);
+    selectionScore = hmmResults(modeIdx).selectionScore(:);
+    if isempty(stateRange)
+        stateRange = 2:(numel(cvScores) + 1);
+    end
+    hasPenaltyScore = ~isempty(selectionScore) && any(isfinite(selectionScore));
+
+    figure(1600 + modeIdx); clf; hold on;
+    plot(stateRange, cvScores, '-o', 'LineWidth', 1.6, 'DisplayName', 'CV log-likelihood / bin');
+    if hasPenaltyScore
+        plot(stateRange, selectionScore, '-s', 'LineWidth', 1.6, 'DisplayName', 'Penalty-adjusted score');
+    end
+    xline(hmmResults(modeIdx).bestNumStates, '--k', ...
+        sprintf('Best K=%d', hmmResults(modeIdx).bestNumStates), ...
+        'LabelVerticalAlignment', 'bottom', 'HandleVisibility', 'off');
+    xlabel('Number of states (K)');
+    ylabel('Score');
+    title(sprintf('State selection scores: %s', modeNames{modeIdx}));
+    grid on;
+    legend('Location', 'best');
+end
+
+% Print HMM summary
 fprintf('\n=== HMM summary by channel-inclusion mode ===\n');
 for modeIdx = modelModeIdx
     if isempty(hmmResults(modeIdx).stateEstimates)
@@ -622,8 +657,20 @@ if saveHmmResults
         'welchOverlapFrac', welchOverlapFrac);
     lfpHmmResults.createdAt = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
 
-    saveFilename = sprintf('hmm_lfp_states_bin%.3f_order%d_mode%d.mat', ...
-        hmmBinSizeSec, bandpassOrder, modelModeIdx);
+    windowTag = '';
+    usesFullSessionWindow = (numel(min2Model) == 2) && (min2Model(1) == 0) && isinf(min2Model(2));
+    if ~usesFullSessionWindow
+        startMinTag = min2Model(1);
+        endMinTag = min2Model(2);
+        if isfinite(endMinTag)
+            windowTag = sprintf('_window%dgto%dgmin', startMinTag, endMinTag);
+        else
+            windowTag = sprintf('_window%dtoEndmin', startMinTag);
+        end
+    end
+
+    saveFilename = sprintf('hmm_lfp_states_bin%.3f%s.mat', ...
+        hmmBinSizeSec, windowTag);
     saveFilepath = fullfile(saveDir, saveFilename);
     fprintf('\nSaving LFP HMM results to:\n%s\n', saveFilepath);
     save(saveFilepath, 'lfpHmmResults', '-v7.3');
