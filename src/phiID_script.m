@@ -1,29 +1,35 @@
-%% Build 4-area PCA inputs for PhiID (spontaneous spiking)
+%% Build PhiID lagged inputs from area PCA (spontaneous spiking)
 % Variables:
 %   - phiIDPath: absolute path to local PhiID toolbox
 %   - sessionName: spontaneous session folder name
 %   - binSize: spike-count bin size [s]
 %   - analysisDurationSec: total analyzed duration from collectStart [s]
+%   - explainVarThreshold: cumulative explained variance threshold for PCA
 % Goal:
-%   Load 30 minutes of spontaneous spiking data, bin spikes at 20 ms, run
-%   PCA independently within each area (M23, M56, DS, VS), and create a
-%   4-column matrix of first principal components for PhiID input.
+%   Load spontaneous spiking data, bin spikes, run PCA in selected areas,
+%   retain enough PCs to explain at least explainVarThreshold variance, and
+%   construct lagged PhiID inputs:
+%       X1, X2 at time t
+%       Y1, Y2 at time t+1 (one-bin future of X1 and X2)
 % Output:
-%   - phiInputMat: [nBins x 4] matrix with columns [M23, M56, DS, VS]
-%   - areaPca: struct array with PCA details for each area
+%   - X1, X2, Y1, Y2 matrices for PhiID
+%   - areaPca struct with PCA details for each requested area
 
 %% User settings
-phiIDPath = '/Users/paulmiddlebrooks/Projects/toolboxes/PhiID';
+phiIDPath = 'E:\Projects\toolboxes\PhiID';
 sessionName = 'ag112321_1';
 collectStartSec = 0;
 analysisDurationSec = 30 * 60;
 binSize = 0.02;
 saveOutput = true;
+explainVarThreshold = 0.85;
 
-% Keep area order fixed for downstream PhiID use.
-areaNames = {'M23', 'M56', 'DS', 'VS'};
+% Area names for X1 and X2. Use M23 as current M1 label in this dataset.
+areaNameX1 = 'M56';
+areaNameX2 = 'DS';
+areaNames = {areaNameX1, areaNameX2};
 
-%% Paths and dependencies
+% Paths and dependencies
 paths = get_paths;
 addpath(genpath(phiIDPath));
 
@@ -31,22 +37,31 @@ addpath(genpath(phiIDPath));
 opts = neuro_behavior_options;
 opts.collectStart = collectStartSec;
 opts.collectEnd = collectStartSec + analysisDurationSec;
-opts.removeSome = false; % start with all good+mua units, matching current pipeline
+opts.removeSome = true; % start with all good+mua units, matching current pipeline
+opts.minFiringRate = .5; % 0.7;
 
 spikeData = load_spike_times('spontaneous', paths, sessionName, opts);
 
-%% Bin spikes and run PCA in each area
+%% Bin spikes and run PCA in each selected area
 timeRange = [opts.collectStart, opts.collectEnd];
 numAreas = numel(areaNames);
 areaPca = repmat(struct( ...
     'areaName', '', ...
     'neuronIDs', [], ...
     'binnedSpikes', [], ...
-    'firstPc', [], ...
-    'explainedVariance', [], ...
-    'coeff', []), numAreas, 1);
+    'scores', [], ...
+    'coeff', [], ...
+    'explained', [], ...
+    'cumExplained', [], ...
+    'numComponentsUsed', []), numAreas, 1);
 
-firstPcByArea = cell(numAreas, 1);
+scoreByArea = cell(numAreas, 1);
+numBinsByArea = zeros(numAreas, 1);
+if explainVarThreshold <= 1
+    explainVarThresholdPct = explainVarThreshold * 100;
+else
+    explainVarThresholdPct = explainVarThreshold;
+end
 
 for areaIdx = 1:numAreas
     thisAreaName = areaNames{areaIdx};
@@ -66,31 +81,68 @@ for areaIdx = 1:numAreas
     spikeMatZ(:, any(~isfinite(spikeMatZ), 1)) = 0;
 
     [coeff, score, ~, ~, explained] = pca(spikeMatZ, 'Centered', true);
-    firstPc = score(:, 1);
+    cumExplained = cumsum(explained);
+    numComponentsUsed = find(cumExplained >= explainVarThresholdPct, 1, 'first');
+    if isempty(numComponentsUsed)
+        numComponentsUsed = size(score, 2);
+    end
 
-    firstPcByArea{areaIdx} = firstPc;
+    scoreByArea{areaIdx} = score(:, 1:numComponentsUsed);
+    numBinsByArea(areaIdx) = size(score, 1);
     areaPca(areaIdx).areaName = thisAreaName;
     areaPca(areaIdx).neuronIDs = neuronIDs;
     areaPca(areaIdx).binnedSpikes = spikeMat;
-    areaPca(areaIdx).firstPc = firstPc;
-    areaPca(areaIdx).explainedVariance = explained(1);
-    areaPca(areaIdx).coeff = coeff(:, 1);
+    areaPca(areaIdx).scores = score(:, 1:numComponentsUsed);
+    areaPca(areaIdx).coeff = coeff(:, 1:numComponentsUsed);
+    areaPca(areaIdx).explained = explained(:);
+    areaPca(areaIdx).cumExplained = cumExplained(:);
+    areaPca(areaIdx).numComponentsUsed = numComponentsUsed;
 
-    fprintf('%s: nNeurons=%d, nBins=%d, PC1 explained=%.2f%%\n', ...
-        thisAreaName, numel(neuronIDs), size(spikeMat, 1), explained(1));
+    fprintf('%s: nNeurons=%d, nBins=%d, PCs used=%d, cumulative explained=%.2f%%\n', ...
+        thisAreaName, numel(neuronIDs), size(spikeMat, 1), ...
+        numComponentsUsed, cumExplained(numComponentsUsed));
 end
 
-%% Build final 4-column matrix for PhiID
-numBinsEachArea = cellfun(@numel, firstPcByArea);
-if numel(unique(numBinsEachArea)) ~= 1
-    error('Area PC vectors have mismatched lengths: %s', mat2str(numBinsEachArea));
+%% Build X1/X2 and one-bin-future Y1/Y2
+if numel(unique(numBinsByArea)) ~= 1
+    error('Area PCA score matrices have mismatched bin counts: %s', mat2str(numBinsByArea));
 end
 
-phiInputMat = [firstPcByArea{1}, firstPcByArea{2}, firstPcByArea{3}, firstPcByArea{4}];
-timeAxisSec = opts.collectStart + ((1:size(phiInputMat, 1))' - 0.5) * binSize;
+X1Full = scoreByArea{1};
+X2Full = scoreByArea{2};
+numComponentsPhiID = min(size(X1Full, 2), size(X2Full, 2));
+if numComponentsPhiID < 1
+    error('No PCA components available for PhiID inputs.');
+end
 
-fprintf('\nphiInputMat created: %d bins x %d areas\n', size(phiInputMat, 1), size(phiInputMat, 2));
-fprintf('Columns: %s\n', strjoin(areaNames, ', '));
+% PhiIDFull requires all four inputs to have identical column count.
+X1Full = X1Full(:, 1:numComponentsPhiID);
+X2Full = X2Full(:, 1:numComponentsPhiID);
+
+% Build lagged pairs in time-major format, then transpose to features x time
+% for PhiIDFull input convention.
+X1TimeMajor = X1Full(1:end-1, :);
+X2TimeMajor = X2Full(1:end-1, :);
+Y1TimeMajor = X1Full(2:end, :);
+Y2TimeMajor = X2Full(2:end, :);
+
+X1 = X1TimeMajor';
+X2 = X2TimeMajor';
+Y1 = Y1TimeMajor';
+Y2 = Y2TimeMajor';
+
+timeAxisSec = opts.collectStart + ((1:size(X1Full, 1))' - 0.5) * binSize;
+timeAxisSec = timeAxisSec(1:end-1);
+
+fprintf('\nConstructed lagged PhiID inputs:\n');
+fprintf('Shared PCA dimensions used for PhiID: %d\n', numComponentsPhiID);
+fprintf('X1 (%s, features x time): %d x %d\n', areaNameX1, size(X1, 1), size(X1, 2));
+fprintf('X2 (%s, features x time): %d x %d\n', areaNameX2, size(X2, 1), size(X2, 2));
+fprintf('Y1 (%s, +1 bin, features x time): %d x %d\n', areaNameX1, size(Y1, 1), size(Y1, 2));
+fprintf('Y2 (%s, +1 bin, features x time): %d x %d\n', areaNameX2, size(Y2, 1), size(Y2, 2));
+
+%% Run PhiID
+phiOutput = PhiIDFull(X1, X2, Y1, Y2);
 
 %% Save output (optional)
 if saveOutput
@@ -99,8 +151,9 @@ if saveOutput
         mkdir(saveDir);
     end
 
-    savePath = fullfile(saveDir, sprintf('phiID_inputs_%s_bin%.3f_30min.mat', sessionName, binSize));
-    save(savePath, 'phiInputMat', 'areaPca', 'areaNames', 'binSize', ...
-        'sessionName', 'timeAxisSec', 'collectStartSec', 'analysisDurationSec', '-v7.3');
-    fprintf('Saved PhiID inputs to:\n%s\n', savePath);
+    savePath = fullfile(saveDir, sprintf('phiID_inputs_lagged_%s_bin%.3f.mat', sessionName, binSize));
+    save(savePath, 'X1', 'X2', 'Y1', 'Y2', 'phiOutput', 'areaPca', 'areaNameX1', ...
+        'areaNameX2', 'explainVarThreshold', 'numComponentsPhiID', 'binSize', 'sessionName', ...
+        'timeAxisSec', 'collectStartSec', 'analysisDurationSec', '-v7.3');
+    fprintf('Saved lagged PhiID inputs to:\n%s\n', savePath);
 end
