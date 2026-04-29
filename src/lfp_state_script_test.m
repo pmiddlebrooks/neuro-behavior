@@ -23,13 +23,12 @@ welchWindowSec = .5;
 welchOverlapFrac = 0.5;
 hmmBinSizeSec = 0.05; % Akella et al.: non-overlapping 30 ms bins (movie frame scale)
 bandpassOrder = 11; % Akella et al.: 11th-order Butterworth per band
-maxStates = 6; % Akella et al. model-selection range tested over 2..6 states
+statesRange = 3:8; % HMM candidate state counts tested during CV model selection
 numFolds = 3; % Akella et al. use 3-fold cross-validation
 hmmNumRestarts = 5;
 hmmMaxIter = 200;
 modelModeIdx = 1; % 1=singleMiddle, 2=twoThirdsAverage, 3=allChannelsAverage
 min2Model = [0 Inf]; % analysis window [start end] in minutes; set [0 Inf] for full duration
-min2Model = [0 30]; % analysis window [start end] in minutes; set [0 Inf] for full duration
 posteriorThreshold = 0.8; % bins with max posterior below this are labeled undefined
 nMinPlot = 5; % first minutes to visualize in spectrogram heatmaps
 timePlotWindowMin = [0 5]; % timeline window [start end] in minutes; set [0 Inf] to plot full duration
@@ -306,6 +305,11 @@ hmmResults = repmat(struct( ...
 emOpts = struct('maxIter', hmmMaxIter, 'tol', 1e-4, ...
     'numRestarts', hmmNumRestarts, 'regVar', 1e-3, 'decode', true, 'verbose', true, ...
     'useParallel', true, 'numWorkers', 4);
+statesRange = unique(statesRange(:))';
+assert(~isempty(statesRange), 'statesRange must contain at least one state value.');
+assert(all(isfinite(statesRange)), 'statesRange must contain finite values only.');
+assert(all(statesRange == round(statesRange)), 'statesRange values must be integers.');
+assert(all(statesRange >= 2), 'statesRange values must be >= 2.');
 
 for modeIdx = modelModeIdx
     fprintf('\n[HMM progress] Starting mode %d/%d: %s\n', modeIdx, numModes, modeNames{modeIdx});
@@ -356,10 +360,10 @@ for modeIdx = modelModeIdx
     timeBinsRef = ((1:minBinsAcrossAreas)' - 0.5) * hmmBinSizeSec;
     featureMatrix = zscore_columns_finite(binnedStack);
     fprintf('[HMM progress] Running CV state selection for %s (T=%d, D=%d, K=%s, folds=%d)\n', ...
-        modeNames{modeIdx}, size(featureMatrix, 1), size(featureMatrix, 2), mat2str(2:maxStates), numFolds);
+        modeNames{modeIdx}, size(featureMatrix, 1), size(featureMatrix, 2), mat2str(statesRange), numFolds);
 
     [bestNumStates, cvScores, hmmModel, hmmDiagnostics] = gaussian_hmm_cv_select_num_states( ...
-        featureMatrix, 2:maxStates, numFolds, emOpts, numBands);
+        featureMatrix, statesRange, numFolds, emOpts, numBands);
     stateEstimates = hmmModel.stateSeq;
     statePosterior = hmmModel.statePosterior;
     maxPosterior = hmmModel.maxPosterior;
@@ -374,7 +378,7 @@ for modeIdx = modelModeIdx
     hmmResults(modeIdx).modeName = modeNames{modeIdx};
     hmmResults(modeIdx).featureMatrix = featureMatrix;
     hmmResults(modeIdx).timeBins = timeBinsRef;
-    hmmResults(modeIdx).stateRange = 2:maxStates;
+    hmmResults(modeIdx).stateRange = statesRange;
     hmmResults(modeIdx).bestNumStates = bestNumStates;
     hmmResults(modeIdx).stateEstimates = stateEstimates;
     hmmResults(modeIdx).stateEstimatesThresholded = stateEstimatesThresholded;
@@ -645,7 +649,7 @@ if saveHmmResults
     lfpHmmResults.settings = struct( ...
         'hmmBinSizeSec', hmmBinSizeSec, ...
         'bandpassOrder', bandpassOrder, ...
-        'maxStates', maxStates, ...
+        'statesRange', statesRange, ...
         'numFolds', numFolds, ...
         'hmmNumRestarts', hmmNumRestarts, ...
         'hmmMaxIter', hmmMaxIter, ...
@@ -832,3 +836,4 @@ assert(~isempty(validIdx), 'State-selection failed for all candidate state count
 bestNumStates = validIdx(minPos);
 end
 end
+
