@@ -16,7 +16,7 @@
 paths = get_paths;
 % lfpPath = fullfile(paths.dropPath, 'spontaneous\data\ag\ag112321_1');
 lfpPath = fullfile(paths.dropPath, 'spontaneous/data/ag/ag112321_1');
-lfpPath = fullfile(paths.dropPath, 'spontaneous/data/ey/ey042822');
+% lfpPath = fullfile(paths.dropPath, 'spontaneous/data/ey/ey042822');
 
 doCleanArtifacts = false;
 welchWindowSec = .5;
@@ -29,6 +29,7 @@ hmmNumRestarts = 5;
 hmmMaxIter = 200;
 modelModeIdx = 1; % 1=singleMiddle, 2=twoThirdsAverage, 3=allChannelsAverage
 min2Model = [0 Inf]; % analysis window [start end] in minutes; set [0 Inf] for full duration
+min2Model = [0 30]; % analysis window [start end] in minutes; set [0 Inf] for full duration
 posteriorThreshold = 0.8; % bins with max posterior below this are labeled undefined
 nMinPlot = 5; % first minutes to visualize in spectrogram heatmaps
 timePlotWindowMin = [0 5]; % timeline window [start end] in minutes; set [0 Inf] to plot full duration
