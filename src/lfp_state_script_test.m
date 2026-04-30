@@ -27,8 +27,8 @@ statesRange = 3:8; % HMM candidate state counts tested during CV model selection
 numFolds = 3; % Akella et al. use 3-fold cross-validation
 hmmNumRestarts = 5;
 hmmMaxIter = 200;
-modelModeIdx = 1; % 1=singleMiddle, 2=twoThirdsAverage, 3=allChannelsAverage
-min2Model = [0 Inf]; % analysis window [start end] in minutes; set [0 Inf] for full duration
+modelModeIdx = 2; % 1=singleMiddle, 2=twoThirdsAverage, 3=allChannelsAverage
+min2Model = [0 60]; % analysis window [start end] in minutes; set [0 Inf] for full duration
 posteriorThreshold = 0.8; % bins with max posterior below this are labeled undefined
 nMinPlot = 5; % first minutes to visualize in spectrogram heatmaps
 timePlotWindowMin = [0 5]; % timeline window [start end] in minutes; set [0 Inf] to plot full duration

@@ -65,6 +65,8 @@ swUtilsPath = fullfile(srcPath, 'sliding_window_prep', 'utils');
 reachTaskPath = fullfile(srcPath, 'reach_task');
 figureToolsPath = fullfile(fileparts(srcPath), '..', 'figure_tools');
 
+addpath('/Users/paulmiddlebrooks/Projects/toolboxes/tmapper2')
+
 addpath(srcPath);   % for bin_spikes_with_overlap.m, load_data.m, colors_for_behaviors.m
 addpath(tmapperTools);
 if exist(dataPrepPath, 'dir'), addpath(dataPrepPath); end
@@ -81,7 +83,7 @@ opts.maxFiringRate = 100;
 %% ===== User: session and time window =====
 % Set session via choose_task_and_session.m or here:
 %   sessionType = 'spontaneous'; sessionName = 'ey042822';
-%   sessionType = 'reach';       sessionName = 'Y4_06-Oct-2023 14_14_53_NeuroBeh';
+  sessionType = 'reach';       sessionName = 'Y4_06-Oct-2023 14_14_53_NeuroBeh';
 %   sessionType = 'schall';     sessionName = 'jp124n04';
 %   sessionType = 'hong';       sessionName = '';  % Hong uses fixed files
 
@@ -90,7 +92,7 @@ if ~exist('sessionType', 'var') || ~exist('sessionName', 'var')
 end
 
 % Time window to analyze (seconds)
-timeWindowSec = [300, 600];   % e.g. first 5 minutes
+timeWindowSec = [300, 600];   % e.g. 5 minutes
 % Bin size (window length) and step size for state matrix (seconds).
 % If stepSize omitted or stepSize == binSize, uses non-overlapping bins.
 % If stepSize < binSize, uses overlapping bins (more time points).
