@@ -5,7 +5,7 @@
 %
 % This script mirrors the style of run_rqa_sliding.m. You can:
 %   - Set variables in the workspace and run this script, or
-%   - Call hmm_mazz_analysis() directly with a dataStruct/config.
+%   - Call hmm_mazz_analysis() directly with a dataStruct/HmmParam.
 % Synthetic pipeline test: set hmmMazzTestMode = true below (after addpath). Uses
 % hmm_mazz_unit_test_generate with hmmMazzTestSynthParams; data file under
 % dropboxMetastabilityData. Delete the .mat there to regenerate after changing params.
@@ -100,12 +100,12 @@ end
 
 opts = neuro_behavior_options;
 opts.minActTime = 0.16;
-opts.minFiringRate = .5; % 0.7;
+opts.minFiringRate = .1; % 0.7;
 opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
 opts.collectStart = 0;
-opts.collectEnd = [];
+opts.collectEnd = 15;
 % When collectEnd is nonempty after load_spike_times, saved .mat names include
 % _start_SEC_end_SEC so different time windows from the same session do not overwrite.
 opts.removeSome = true;
@@ -162,7 +162,7 @@ fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', ...
     numel(idM23), numel(idM56), numel(idDS), numel(idVS));
 
 % ---------------------------------------------------------------------
-% Assemble dataStruct and config, then run analysis
+% Assemble dataStruct and HmmParam, then run analysis
 % ---------------------------------------------------------------------
 
 dataStruct = struct();
@@ -176,35 +176,24 @@ dataStruct.trialDur = trialDur;
 dataStruct.sessionName = sessionName;
 % For reach sessions, hmm_mazz_analysis will infer saving location from paths and sessionName
 
-if ~exist('config', 'var') || isempty(config)
-    config = struct();
-end
-if ~isfield(config, 'modelSelectionMethod')
-    config.modelSelectionMethod = 'XVAL';
-end
-if ~isfield(config, 'minNumNeurons')
-    config.minNumNeurons = 15;
-end
-if ~isfield(config, 'saveData')
-    config.saveData = true;
-end
-if ~isfield(config, 'useParallel')
-    config.useParallel = true;
-end
-
-% Set HMM parameter configuration (can be overridden by caller)
-hmmParam = struct();
-hmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
-hmmParam.BinSize = 0.01;       % Markov chain time step (s)
-hmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (s)
-hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
-hmmParam.NumSteps = 10;         % Number of independent EM runs at fixed parameters
-hmmParam.NumRuns = 50;         % Maximum iterations per EM run
-hmmParam.singleSeqXval.K = 5;  % Cross-validation folds
-config.HmmParam = hmmParam;
+% Unified analysis + HMM fit configuration (single struct)
+HmmParam = struct();
+HmmParam.modelSelectionMethod = 'XVAL';  % XVAL, BIC, AIC
+HmmParam.minNumNeurons = 12;
+HmmParam.saveData = true;
+HmmParam.useParallel = true;
+HmmParam.hiddenMin = 3;
+HmmParam.hiddenMax = 26;
+HmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
+HmmParam.BinSize = 0.01;       % Markov chain time step (s)
+HmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (s)
+HmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
+HmmParam.NumSteps = 10;        % Number of independent EM runs at fixed parameters
+HmmParam.NumRuns = 50;         % Maximum iterations per EM run
+HmmParam.singleSeqXval.K = 5;  % Cross-validation folds
 
 fprintf('\nRunning hmm_mazz_analysis...\n');
-results = hmm_mazz_analysis(dataStruct, config);
+results = hmm_mazz_analysis(dataStruct, HmmParam);
 
 fprintf('\n=== HMM Analysis Complete ===\n');
 

@@ -1,13 +1,11 @@
-function results = hmm_mazz_analysis(dataStruct, config)
+function results = hmm_mazz_analysis(dataStruct, HmmParam)
 % HMM_MAZZ_ANALYSIS Run Mazzucato-style HMM analysis for spontaneous/reach data.
 %
 % Variables:
 %   dataStruct - Structure with precomputed data and metadata:
 %       .sessionType     - 'spontaneous' or 'reach' (preferred)
-%                          (legacy: .natOrReach = 'Nat' or 'Reach')
 %       .paths           - Output of get_paths()
-%       .opts            - Options struct from neuro_behavior_options(), with
-%                          .HmmParam optionally pre-populated
+%       .opts            - Options struct from neuro_behavior_options()
 %       .areas           - Cell array of brain area names (e.g., {'M23','M56','DS','VS'})
 %       .idList          - Cell array of neuron id vectors per area (same order as areas)
 %       .spikeData       - [time, neuronId, areaIdx] spike table
@@ -15,37 +13,29 @@ function results = hmm_mazz_analysis(dataStruct, config)
 %       .sessionName     - (Reach) Session name string for saving/metadata
 %       .reachDataFile   - (Reach, optional) Full path to NeuroBeh.mat file
 %
-%   config - Structure controlling analysis behavior:
+%   HmmParam - Unified structure controlling analysis behavior and HMM fitting:
 %       .modelSelectionMethod - Model selection method string (default: 'XVAL')
 %       .minNumNeurons        - Minimum neuron count per area (default: 15)
 %       .areasToTest          - Optional vector of area indices to analyze
 %       .saveData             - Save results/summary to disk (default: true)
 %       .useParallel          - Use parallel pool for hmm.funHMM (default: true)
+%       .hiddenMin/.hiddenMax - Hidden-state scan range (default: 3..26)
+%       .AdjustT/.BinSize/.MinDur/.MinP/.NumSteps/.NumRuns/.singleSeqXval
+%                             - Core HMM training/decoding parameters
 %
 % Goal:
 %   Perform HMM fitting per brain area, build continuous state and metastate
 %   sequences, and save a results struct compatible with hmm_load_saved_model
 %   and existing peri-event analysis scripts.
 
-if nargin < 2 || isempty(config)
-    config = struct();
+if nargin < 2 || isempty(HmmParam)
+    HmmParam = struct();
 end
 
-% Backward-compatible handling of Nat/Reach vs sessionType
-if isfield(dataStruct, 'sessionType') && ~isempty(dataStruct.sessionType)
-    sessionType = dataStruct.sessionType;
-elseif isfield(dataStruct, 'natOrReach') && ~isempty(dataStruct.natOrReach)
-    switch dataStruct.natOrReach
-        case 'Nat'
-            sessionType = 'spontaneous';
-        case 'Reach'
-            sessionType = 'reach';
-        otherwise
-            error('Unrecognized natOrReach value: %s', dataStruct.natOrReach);
-    end
-else
-    error('dataStruct must contain either sessionType or natOrReach.');
+if ~isfield(dataStruct, 'sessionType') || isempty(dataStruct.sessionType)
+    error('dataStruct.sessionType is required and must be ''spontaneous'' or ''reach''.');
 end
+sessionType = dataStruct.sessionType;
 
 paths = dataStruct.paths;
 opts = dataStruct.opts;
@@ -54,44 +44,57 @@ idList = dataStruct.idList;
 spikeData = dataStruct.spikeData;
 trialDur = dataStruct.trialDur;
 
-if ~isfield(config, 'modelSelectionMethod') || isempty(config.modelSelectionMethod)
-    config.modelSelectionMethod = 'XVAL';
+if ~isfield(HmmParam, 'modelSelectionMethod') || isempty(HmmParam.modelSelectionMethod)
+    HmmParam.modelSelectionMethod = 'XVAL';
 end
-if ~isfield(config, 'minNumNeurons') || isempty(config.minNumNeurons)
-    config.minNumNeurons = 15;
+if ~isfield(HmmParam, 'minNumNeurons') || isempty(HmmParam.minNumNeurons)
+    HmmParam.minNumNeurons = 15;
 end
-if ~isfield(config, 'saveData') || isempty(config.saveData)
-    config.saveData = true;
+if ~isfield(HmmParam, 'saveData') || isempty(HmmParam.saveData)
+    HmmParam.saveData = true;
 end
-if ~isfield(config, 'useParallel') || isempty(config.useParallel)
-    config.useParallel = true;
+if ~isfield(HmmParam, 'useParallel') || isempty(HmmParam.useParallel)
+    HmmParam.useParallel = true;
 end
-
-modelSel = config.modelSelectionMethod;
-minNumNeurons = config.minNumNeurons;
-
-% HMM parameter defaults (allow override via opts.HmmParam or config.HmmParam)
-if isfield(config, 'HmmParam') && ~isempty(config.HmmParam)
-    hmmParam = config.HmmParam;
-elseif isfield(opts, 'HmmParam') && ~isempty(opts.HmmParam)
-    hmmParam = opts.HmmParam;
-else
-    hmmParam = struct();
-    hmmParam.AdjustT = 0.0;
-    hmmParam.BinSize = 0.01;
-    hmmParam.MinDur = 0.04;
-    hmmParam.MinP = 0.8;
-    hmmParam.NumSteps = 8;
-    hmmParam.NumRuns = 33;
-    hmmParam.singleSeqXval.K = 5;
+if ~isfield(HmmParam, 'hiddenMin') || isempty(HmmParam.hiddenMin)
+    HmmParam.hiddenMin = 3;
+end
+if ~isfield(HmmParam, 'hiddenMax') || isempty(HmmParam.hiddenMax)
+    HmmParam.hiddenMax = 26;
 end
 
-opts.HmmParam = hmmParam;
+modelSel = HmmParam.modelSelectionMethod;
+minNumNeurons = HmmParam.minNumNeurons;
+
+if ~isfield(HmmParam, 'AdjustT') || isempty(HmmParam.AdjustT)
+    HmmParam.AdjustT = 0.0;
+end
+if ~isfield(HmmParam, 'BinSize') || isempty(HmmParam.BinSize)
+    HmmParam.BinSize = 0.01;
+end
+if ~isfield(HmmParam, 'MinDur') || isempty(HmmParam.MinDur)
+    HmmParam.MinDur = 0.04;
+end
+if ~isfield(HmmParam, 'MinP') || isempty(HmmParam.MinP)
+    HmmParam.MinP = 0.8;
+end
+if ~isfield(HmmParam, 'NumSteps') || isempty(HmmParam.NumSteps)
+    HmmParam.NumSteps = 8;
+end
+if ~isfield(HmmParam, 'NumRuns') || isempty(HmmParam.NumRuns)
+    HmmParam.NumRuns = 33;
+end
+if ~isfield(HmmParam, 'singleSeqXval') || isempty(HmmParam.singleSeqXval) || ...
+        ~isfield(HmmParam.singleSeqXval, 'K') || isempty(HmmParam.singleSeqXval.K)
+    HmmParam.singleSeqXval.K = 5;
+end
+
+opts.HmmParam = HmmParam;
 
 % Determine areasToTest based on neuron counts and optional mask
 numAreas = numel(areas);
-if isfield(config, 'areasToTest') && ~isempty(config.areasToTest)
-    areasToTest = config.areasToTest(:)';
+if isfield(HmmParam, 'areasToTest') && ~isempty(HmmParam.areasToTest)
+    areasToTest = HmmParam.areasToTest(:)';
 else
     areaCounts = zeros(1, numAreas);
     for areaIdx = 1:numAreas
@@ -115,7 +118,7 @@ allResults.hmm_results = cell(1, numAreas);
 
 % Optional parallel pool
 poolStartedHere = false;
-if config.useParallel
+if HmmParam.useParallel
     if isempty(gcp('nocreate'))
         poolCluster = parcluster('local');
         numWorkers = min(poolCluster.NumWorkers, 4);
@@ -174,6 +177,8 @@ for areaIdx = areasToTest
     dataIn.win = winTrain;
     dataIn.METHOD = modelSel;
     dataIn.HmmParam = opts.HmmParam;
+    dataIn.hiddenMin = HmmParam.hiddenMin;
+    dataIn.hiddenMax = HmmParam.hiddenMax;
 
     res = hmm.funHMM(dataIn);
 
@@ -335,7 +340,7 @@ results.numStates = allResults.numStates;
 results.hmm_results = allResults.hmm_results;
 
 % Save results and summary (paths and naming must match hmm_mazz.m)
-if config.saveData
+if HmmParam.saveData
     binSizeSave = opts.HmmParam.BinSize;
     minDurSave = opts.HmmParam.MinDur;
     timeWindowSuffix = hmm_mazz_collect_window_suffix(opts);

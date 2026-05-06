@@ -21,6 +21,12 @@ win_train = DATAIN.win;
 HmmParam = DATAIN.HmmParam;
 % run HMM
 IN=struct('METHOD',METHOD,'Spikes',spikes,'win_train',win_train,'SELECTION',SELECTION, 'HmmParam', HmmParam);
+if isfield(DATAIN, 'hiddenMin') && ~isempty(DATAIN.hiddenMin)
+    IN.hiddenMin = DATAIN.hiddenMin;
+end
+if isfield(DATAIN, 'hiddenMax') && ~isempty(DATAIN.hiddenMax)
+    IN.hiddenMax = DATAIN.hiddenMax;
+end
 OUT=hmm.fun_HMM_modelSel(IN);
 
 
