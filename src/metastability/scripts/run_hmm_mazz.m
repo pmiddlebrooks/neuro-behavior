@@ -200,7 +200,7 @@ hmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (
 hmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
 hmmParam.NumSteps = 10;         % Number of independent EM runs at fixed parameters
 hmmParam.NumRuns = 50;         % Maximum iterations per EM run
-hmmParam.singleSeqXval.K = 15;  % Cross-validation folds
+hmmParam.singleSeqXval.K = 5;  % Cross-validation folds
 config.HmmParam = hmmParam;
 
 fprintf('\nRunning hmm_mazz_analysis...\n');
