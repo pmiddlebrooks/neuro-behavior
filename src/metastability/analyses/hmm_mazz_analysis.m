@@ -26,7 +26,9 @@ function results = hmm_mazz_analysis(dataStruct, HmmParam)
 % Goal:
 %   Perform HMM fitting per brain area, build continuous state and metastate
 %   sequences, and save a results struct compatible with hmm_load_saved_model
-%   and existing peri-event analysis scripts.
+%   and existing peri-event analysis scripts. Top-level results.llCriterionAcrossStates
+%   stores the penalized -2LL (or toolbox criterion curve) indexed by scanned K for
+%   each area alongside the chosen model index for quick plotting offline.
 
 if nargin < 2 || isempty(HmmParam)
     HmmParam = struct();
@@ -338,6 +340,7 @@ results.areas = allResults.areas;
 results.binSize = allResults.binSize;
 results.numStates = allResults.numStates;
 results.hmm_results = allResults.hmm_results;
+results.llCriterionAcrossStates = hmm_mazz_pack_ll_criterion_cells(allResults.areas, allResults.hmm_results);
 
 % Save results and summary (paths and naming must match hmm_mazz.m)
 if HmmParam.saveData
@@ -402,6 +405,58 @@ if poolStartedHere
     if ~isempty(poolObj)
         delete(poolObj);
     end
+end
+
+end
+
+function llCell = hmm_mazz_pack_ll_criterion_cells(areas, hmmResultsCells)
+% HMM_MAZZ_PACK_LL_CRITERION_CELLS Build per-area summaries of penalized criterion vs K.
+%
+% Variables:
+%   areas            - Cellstr of brain area labels (canonical order).
+%   hmmResultsCells - Cell array parallel to areas with per-area HMM structs or [].
+%
+% Goal:
+%   Pack LLtot.m2LL (penalized -2LL for BIC/AIC; -2 * XVAL score for XVAL) per tested
+%   hidden state count so saved results support model-selection figures without
+%   re-parsing hmm_data.
+
+numAreas = numel(areas);
+llCell = cell(1, numAreas);
+
+for areaIdx = 1:numAreas
+    hmmRes = hmmResultsCells{areaIdx};
+    if isempty(hmmRes) || ~isfield(hmmRes, 'metadata') || ~isfield(hmmRes, 'LLtot') ...
+            || ~isfield(hmmRes.LLtot, 'm2LL') || ~isfield(hmmRes, 'HmmParam') ...
+            || ~isfield(hmmRes.HmmParam, 'VarStates') || ~isfield(hmmRes, 'best_model')
+        continue;
+    end
+    hiddenTotal = hmmRes.HmmParam.VarStates(:);
+    penalizedLl = hmmRes.LLtot.m2LL(:, 1);
+    penalizedLl = penalizedLl(:);
+
+    vecLen = min(numel(hiddenTotal), numel(penalizedLl));
+    if vecLen == 0
+        continue;
+    end
+
+    bundle = struct();
+    bundle.area_name = areas{areaIdx};
+    bundle.hidden_total = reshape(hiddenTotal(1:vecLen), 1, []);
+    bundle.penalized_minus2_ll = penalizedLl(1:vecLen);
+    methodStr = 'unknown';
+    if isfield(hmmRes.metadata, 'model_selection_method')
+        methodStr = hmmRes.metadata.model_selection_method;
+    end
+    bundle.model_selection_method = methodStr;
+    bestIdxLocal = hmmRes.best_model.best_state_index;
+    if bestIdxLocal < 1 || bestIdxLocal > vecLen
+        bestIdxLocal = max(1, min(bestIdxLocal, vecLen));
+    end
+    bundle.chosen_column_index = bestIdxLocal;
+    bundle.chosen_num_states = hmmRes.best_model.num_states;
+
+    llCell{areaIdx} = bundle;
 end
 
 end

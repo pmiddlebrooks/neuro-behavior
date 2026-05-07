@@ -86,6 +86,10 @@ end
 if exist(dataPrepPath, 'dir')
     addpath(dataPrepPath);
 end
+hmmToolboxPathLocal = fullfile(basePath, '..', 'hmm_mazz_toolbox');
+if exist(hmmToolboxPathLocal, 'dir')
+    addpath(hmmToolboxPathLocal);
+end
 
 
 % ---------------------------------------------------------------------
@@ -105,7 +109,8 @@ opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
 opts.collectStart = 0;
-opts.collectEnd = 15;
+opts.collectEnd = 10*60;
+% opts.collectEnd = [];
 % When collectEnd is nonempty after load_spike_times, saved .mat names include
 % _start_SEC_end_SEC so different time windows from the same session do not overwrite.
 opts.removeSome = true;
@@ -185,17 +190,28 @@ HmmParam.useParallel = true;
 HmmParam.hiddenMin = 3;
 HmmParam.hiddenMax = 26;
 HmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
-HmmParam.BinSize = 0.01;       % Markov chain time step (s)
+HmmParam.BinSize = 0.002;       % Markov chain time step (s)
 HmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (s)
 HmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
 HmmParam.NumSteps = 10;        % Number of independent EM runs at fixed parameters
-HmmParam.NumRuns = 50;         % Maximum iterations per EM run
+HmmParam.NumRuns = 30;         % Maximum iterations per EM run
 HmmParam.singleSeqXval.K = 5;  % Cross-validation folds
 
 fprintf('\nRunning hmm_mazz_analysis...\n');
 results = hmm_mazz_analysis(dataStruct, HmmParam);
 
 fprintf('\n=== HMM Analysis Complete ===\n');
+
+%% Penalized -2LL / criterion vs number of states (toolbox-style curve + chosen K marker)
+% Uses results.llCriterionAcrossStates plus hmm_data-derived SEM ribbons when available.
+makeCriterionLlPlots = true;
+if makeCriterionLlPlots
+    fprintf('Plotting penalized LL / model-selection criterion curves...\n');
+    configLlCurve = struct();
+    % Restrict with e.g. configLlCurve.areasToPlot = {'M56','M23'}; ([] = every nonempty area)
+    hmm_mazz_plot_penalized_ll_curve(results, configLlCurve);
+    fprintf('=== Penalized LL plots complete ===\n');
+end
 
 %% Optional immediate plotting from in-memory results
 makePlots = true;
