@@ -1,7 +1,8 @@
 %%                     Load results for SVM decoding comparisons
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% This script loads results saved by svm_decoding_compare.m and prepares the
-% workspace variables so that svm_decoding_compare_plot.m can plot from them.
+% This script loads results saved by svm_decoding_compare.m (per-area) or
+% svm_decoding_compare_joint_area.m (conjoint), then prepares workspace variables
+% for svm_decoding_compare_plot.m.
 
 % ------------------------------ User options ---------------------------------
 paths = get_paths;
@@ -9,13 +10,23 @@ paths = get_paths;
 % Where results were saved
 savePath = fullfile(paths.dropPath, 'decoding');
 
-% Identify which saved results to load
+% 'perArea' — svm_decoding_compare.m MAT; 'joint' — svm_decoding_compare_joint_area.m MAT
+decodeResultsLayout = 'perArea';  % 'perArea' | 'joint'
+
+% --- perArea filename knobs (ignored when decodeResultsLayout is 'joint')
 dataType = 'spontaneous';  % 'spontaneous' or 'reach' (used only for colors/labels and filenames)
 kernelFunction = 'polynomial';
 transOrWithin = 'all';      % 'all' | 'trans' | 'transPost' | 'within'
 nDim = 8;                   % latent dimension used when saving
 frameSize = .15;            % frame/bin size used when saving
 nShuffles = 2;              % number of permutations used when saving
+
+% --- joint filename knobs — must match the run that produced the file (ignored for perArea)
+jointAreasSlug = 'M56_DS';     % underscores between area names as saved
+jointEmbedDim = 8;
+jointNComponentsPerArea = 4;
+jointNumAreas = 2;
+jointDataSubset = 'all';     % subset string as in joint script save
 
 % Plot flags (compatible with svm_decoding_compare_plot.m)
 plotFullMap = 0;      % full time plots require bhvID which is not saved; keep 0 by default
@@ -25,8 +36,17 @@ savePlotFlag = 1;
 
 
 % ---------------------------- Load saved results ------------------------------
-fileName = sprintf('svm_%s_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
-    kernelFunction, transOrWithin, nDim, frameSize, nShuffles);
+switch decodeResultsLayout
+    case 'perArea'
+        fileName = sprintf('svm_%s_decoding_compare_multi_area_%s_nDim%d_bin%.2f_nShuffles%d.mat', ...
+            kernelFunction, transOrWithin, nDim, frameSize, nShuffles);
+    case 'joint'
+        fileName = sprintf('svm_%s_joint_area_%s_subset_%s_embed%d_nComp%d_nAreas%d_bin%.2f_nShuffles%d.mat', ...
+            kernelFunction, jointAreasSlug, jointDataSubset, jointEmbedDim, jointNComponentsPerArea, ...
+            jointNumAreas, frameSize, nShuffles);
+    otherwise
+        error('decodeResultsLayout must be ''perArea'' or ''joint''.');
+end
 fullFilePath = fullfile(savePath, fileName);
 
 if ~exist(fullFilePath, 'file')
@@ -48,10 +68,23 @@ if isfield(allResults, 'parameters')
     if isfield(allResults.parameters, 'transOrWithin'); transOrWithin = allResults.parameters.transOrWithin; end
 end
 
+% Prefer on-disk marker for conjoint vs per-area bundles
+if isfield(allResults, 'parameters') && isfield(allResults.parameters, 'analysisLayout')
+    decodeResultsLayout = allResults.parameters.analysisLayout;
+elseif isfield(allResults, 'jointLatents')
+    decodeResultsLayout = 'joint';
+end
+
 % ------------------------ Reconstruct plotting context ------------------------
 % Areas and selection
 if isfield(allResults, 'areas'); areas = allResults.areas; else; areas = {'M23','M56','DS','VS'}; end
-if isfield(allResults, 'areasToTest'); areasToTest = allResults.areasToTest; else; areasToTest = 1:numel(areas); end
+if strcmp(decodeResultsLayout, 'joint') && isfield(allResults, 'areasToInclude')
+    areasToTest = allResults.areasToInclude(:)';
+elseif isfield(allResults, 'areasToTest')
+    areasToTest = allResults.areasToTest(:)';
+else
+    areasToTest = 1:numel(areas);
+end
 
 % Labels and colors (approximate defaults to match creation-time behavior)
 switch lower(dataType)
@@ -77,8 +110,18 @@ switch lower(dataType)
         colorsAdjust = 2;  % offset used in author scripts
         % If colors_for_behaviors available, use it; otherwise generate a palette
         try
-            % Require variable 'codes' in path; if absent, generate a palette large enough
-            maxCode = max(cellfun(@(v) max(v(:)), allResults.svmID(~cellfun(@isempty, allResults.svmID))));
+            if strcmp(decodeResultsLayout, 'joint') && isnumeric(allResults.svmID)
+                maxCode = max(allResults.svmID(:));
+            elseif iscell(allResults.svmID)
+                nonEmptyCells = ~cellfun(@isempty, allResults.svmID);
+                if any(nonEmptyCells)
+                    maxCode = max(cellfun(@(v) max(v(:)), allResults.svmID(nonEmptyCells)));
+                else
+                    maxCode = numel(behaviors);
+                end
+            else
+                maxCode = numel(behaviors);
+            end
             if isempty(maxCode); maxCode = numel(behaviors); end
             colors = lines(maxCode + colorsAdjust + 2);
         catch
@@ -87,15 +130,27 @@ switch lower(dataType)
 end
 
 % Provide bhv2ModelColors as a matrix for row-indexing within the plot script
-bhv2ModelColors = colors;
+if strcmp(decodeResultsLayout, 'joint') && isfield(allResults, 'bhv2ModelColors') && ~isempty(allResults.bhv2ModelColors)
+    bhv2ModelColors = allResults.bhv2ModelColors;
+else
+    bhv2ModelColors = colors;
+end
+
+jointLabelStr = '';
+if strcmp(decodeResultsLayout, 'joint')
+    jointLabelStr = strjoin(allResults.areas(areasToTest), '+');
+end
 
 % Provide opts struct with frameSize field for plot titles/filenames
 opts = struct();
 opts.frameSize = frameSize;
 
-% dataSubset/dataSubsetLabel used by the plot script
-dataSubset = transOrWithin;
-switch lower(transOrWithin)
+if isfield(allResults, 'parameters') && isfield(allResults.parameters, 'dataSubset')
+    dataSubset = allResults.parameters.dataSubset;
+else
+    dataSubset = transOrWithin;
+end
+switch lower(dataSubset)
     case 'trans'
         dataSubsetLabel = 'transitions: Pre';
     case 'transpost'
@@ -108,10 +163,9 @@ end
 
 % ------------------------------- Ready to plot -------------------------------
 fprintf('Loaded: %s\n', fullFilePath);
-fprintf('Parameters: dataType=%s, kernel=%s, subset=%s, nDim=%d, bin=%.3f, nShuf=%d\n', ...
-    dataType, kernelFunction, transOrWithin, nDim, frameSize, nShuffles);
+fprintf('Layout: %s | dataType=%s | kernel=%s | dataSubset=%s | nDim=%d | bin=%.3f | nShuf=%d\n', ...
+    decodeResultsLayout, dataType, kernelFunction, dataSubset, nDim, frameSize, nShuffles);
 
-% Call the plotting script (expects variables prepared above)
-% svm_decoding_compare_plot
+% svm_decoding_compare_plot   % uncomment to plot from loaded MAT
 
 

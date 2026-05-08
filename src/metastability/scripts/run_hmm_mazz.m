@@ -83,6 +83,9 @@ dataPrepPath = fullfile(srcPath, 'data_prep');
 if exist(analysesPath, 'dir')
     addpath(analysesPath);
 end
+if exist(srcPath, 'dir')
+    addpath(srcPath);
+end
 if exist(dataPrepPath, 'dir')
     addpath(dataPrepPath);
 end
@@ -104,7 +107,7 @@ end
 
 opts = neuro_behavior_options;
 opts.minActTime = 0.16;
-opts.minFiringRate = .1; % 0.7;
+opts.minFiringRate = .2; % 0.7;
 opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
@@ -187,10 +190,12 @@ HmmParam.modelSelectionMethod = 'XVAL';  % XVAL, BIC, AIC
 HmmParam.minNumNeurons = 12;
 HmmParam.saveData = true;
 HmmParam.useParallel = true;
+HmmParam.useOptimalBinSize = true; % true: per-area bin sweep; false: use fixed BinSize below
+HmmParam.maxAllowedMultiSpikeProportion = 0.0; % Used when useOptimalBinSize=true
 HmmParam.hiddenMin = 3;
 HmmParam.hiddenMax = 26;
 HmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
-HmmParam.BinSize = 0.002;       % Markov chain time step (s)
+HmmParam.BinSize = 0.002;      % Fixed bin size when useOptimalBinSize=false
 HmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (s)
 HmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
 HmmParam.NumSteps = 10;        % Number of independent EM runs at fixed parameters
@@ -215,7 +220,7 @@ end
 
 %% Optional immediate plotting from in-memory results
 makePlots = true;
-checkArea = 'M56';
+checkArea = 'DS';
 configPlot = struct('brainArea', checkArea);
 if makePlots
     fprintf('Creating basic HMM plots from in-memory results...\n');

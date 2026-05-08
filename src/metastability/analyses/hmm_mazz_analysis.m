@@ -19,6 +19,11 @@ function results = hmm_mazz_analysis(dataStruct, HmmParam)
 %       .areasToTest          - Optional vector of area indices to analyze
 %       .saveData             - Save results/summary to disk (default: true)
 %       .useParallel          - Use parallel pool for hmm.funHMM (default: true)
+%       .useOptimalBinSize    - If true, compute per-area BinSize from spikes
+%                               using find_min_nonoverlap_bin_size (default: true)
+%       .maxAllowedMultiSpikeProportion
+%                             - Allowed fraction of occupied bins with >1 spike
+%                               during optimal-bin selection (default: 0)
 %       .hiddenMin/.hiddenMax - Hidden-state scan range (default: 3..26)
 %       .AdjustT/.BinSize/.MinDur/.MinP/.NumSteps/.NumRuns/.singleSeqXval
 %                             - Core HMM training/decoding parameters
@@ -57,6 +62,12 @@ if ~isfield(HmmParam, 'saveData') || isempty(HmmParam.saveData)
 end
 if ~isfield(HmmParam, 'useParallel') || isempty(HmmParam.useParallel)
     HmmParam.useParallel = true;
+end
+if ~isfield(HmmParam, 'useOptimalBinSize') || isempty(HmmParam.useOptimalBinSize)
+    HmmParam.useOptimalBinSize = true;
+end
+if ~isfield(HmmParam, 'maxAllowedMultiSpikeProportion') || isempty(HmmParam.maxAllowedMultiSpikeProportion)
+    HmmParam.maxAllowedMultiSpikeProportion = 0;
 end
 if ~isfield(HmmParam, 'hiddenMin') || isempty(HmmParam.hiddenMin)
     HmmParam.hiddenMin = 3;
@@ -161,6 +172,22 @@ for areaIdx = areasToTest
     end
     trialDurationSec = max(trialEndSec - trialStartSec, 0);
     winTrain = [trialStartSec, trialEndSec];
+    areaMask = ismember(spikeData(:, 2), neuronIds) & (spikeData(:, 3) == areaIdx);
+    areaTimeMask = areaMask & spikeData(:, 1) >= trialStartSec & spikeData(:, 1) <= trialEndSec;
+    areaSpikeTimes = spikeData(areaTimeMask, 1) - trialStartSec;
+    areaSpikeNeuronIds = spikeData(areaTimeMask, 2);
+
+    if HmmParam.useOptimalBinSize
+        fprintf('Selecting bin size for area %s...\n', areaName);
+        [areaBinSize, areaBinSweepSummary] = find_min_nonoverlap_bin_size( ...
+            areaSpikeTimes, areaSpikeNeuronIds, HmmParam.maxAllowedMultiSpikeProportion); %#ok<NASGU>
+        fprintf('Area %s selected bin size: %.3f ms\n', areaName, areaBinSize * 1e3);
+    else
+        areaBinSize = HmmParam.BinSize;
+        fprintf('Using fixed bin size for area %s: %.3f ms\n', areaName, areaBinSize * 1e3);
+    end
+    areaHmmParam = opts.HmmParam;
+    areaHmmParam.BinSize = areaBinSize;
 
     for neuronIdx = 1:numUnits
         neuronId = neuronIds(neuronIdx);
@@ -178,7 +205,7 @@ for areaIdx = areasToTest
     dataIn.spikes = spikesStruct;
     dataIn.win = winTrain;
     dataIn.METHOD = modelSel;
-    dataIn.HmmParam = opts.HmmParam;
+    dataIn.HmmParam = areaHmmParam;
     dataIn.hiddenMin = HmmParam.hiddenMin;
     dataIn.hiddenMax = HmmParam.hiddenMax;
 
@@ -279,7 +306,7 @@ for areaIdx = areasToTest
     hmmRes.metadata.model_selection_method = modelSel;
 
     hmmRes.data_params = struct();
-    hmmRes.data_params.bin_size = opts.frameSize;
+    hmmRes.data_params.bin_size = res.HmmParam.BinSize;
     hmmRes.data_params.collect_start = opts.collectStart;
     hmmRes.data_params.collect_duration = opts.collectEnd;
     hmmRes.data_params.min_act_time = opts.minActTime;
