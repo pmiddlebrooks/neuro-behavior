@@ -90,9 +90,10 @@ saveMatFile = false;
 % Order of areas in areas cell: M23, M56, DS, VS
 areas = {'M23', 'M56', 'DS', 'VS'};
 % Which areas to merge (indices into areas / idList)
-areasToInclude = [2, 3];  % e.g. M56 and DS
+areasToInclude = [1, 2, 3];  % e.g. M56 and DS
 
 methodsToRun = {'pca', 'umap', 'psidKin'};
+methodsToRun = {'pca'};
 fprintf('Running methods: %s\n', strjoin(methodsToRun, ', '));
 fprintf('Joint areas: %s\n', strjoin(areas(areasToInclude), ', '));
 
@@ -100,7 +101,7 @@ cvType = 'holdout';  % 'holdout' or 'kfold'
 holdoutRatio = 0.2;
 nFolds = 4;
 
-nShuffles = 2;
+nShuffles = 10;
 permuteStrategy = 'circular';  % 'label' or 'circular'
 
 balanceStrategy = 'subsample';  % 'none' or 'subsample'
@@ -636,12 +637,12 @@ else
 end
 
 nWorkers = min(4, nMethods);
-fprintf('Setting up parallel pool with %d workers...\n', nWorkers);
-if isempty(gcp('nocreate'))
-    parpool('local', nWorkers);
-else
-    fprintf('Parallel pool already exists with %d workers\n', gcp('nocreate').NumWorkers);
-end
+% fprintf('Setting up parallel pool with %d workers...\n', nWorkers);
+% if isempty(gcp('nocreate'))
+%     parpool('local', nWorkers);
+% else
+%     fprintf('Parallel pool already exists with %d workers\n', gcp('nocreate').NumWorkers);
+% end
 
 accuracy = zeros(nMethods, 1);
 accuracyPermuted = zeros(nMethods, nShuffles);
@@ -669,7 +670,8 @@ if nMethods > 0
     tempAllPredictionIndices = cell(nMethods, 1);
 
     ticSvmBlock = tic;
-    parfor m = 1:nMethods
+    % parfor m = 1:nMethods
+    for m = 1:nMethods
         methodName = methods{m};
         latentData = allResults.jointLatents.(methodName);
         if isempty(latentData)
@@ -786,7 +788,7 @@ if nMethods > 0
     end
 end
 
-delete(gcp('nocreate'));
+% delete(gcp('nocreate'));
 
 allResults.methods = methods;
 allResults.accuracy = accuracy;

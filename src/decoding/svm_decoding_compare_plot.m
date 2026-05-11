@@ -3,6 +3,8 @@
 % svm_decoding_compare_load.m (supports per-area and conjoint bundles).
 
 %%
+savePlotFlag = false;
+
 if ~exist('paths', 'var') || isempty(paths)
     paths = get_paths;
 end
