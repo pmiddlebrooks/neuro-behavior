@@ -15,6 +15,7 @@
 %   lagged PhiID inputs, run PhiIDFull, and aggregate six taxonomy classes
 %   (storage, transfer, copy, erasure, downward, upward). Plot class sums vs
 %   bin size; optionally save sweep struct and last-bin detailed variables.
+%   - verbosePhiIDAtoms: if true, print every PhiIDFull atom (nats) each sweep
 
 %% User settings
 paths = get_paths;
@@ -32,6 +33,7 @@ yLagBins = 1;
 saveOutput = false;
 explainVarThreshold = 0.85;
 plotBinSizeSweep = true;
+verbosePhiIDAtoms = true;
 
 % Area groups for X1 and X2. Each group can contain one or more areas.
 % Example:
@@ -163,6 +165,9 @@ for sweepIdx = 1:nSweep
 
     phiOutput = PhiIDFull(X1, X2, Y1, Y2);
     tax = phi_id_taxonomy_sums(phiOutput);
+    if verbosePhiIDAtoms
+        print_phi_id_atoms_verbose(phiOutput, binSize, yLagBins);
+    end
 
     storageSweep(sweepIdx) = tax.storage;
     transferSweep(sweepIdx) = tax.transfer;
@@ -319,6 +324,42 @@ tax.downward = phiOutput.stx + phiOutput.sty + phiOutput.str;
 tax.upward = phiOutput.xts + phiOutput.yts + phiOutput.rts;
 atomVals = struct2array(phiOutput);
 tax.tdmi = sum(atomVals(:));
+end
+
+function print_phi_id_atoms_verbose(phiOutput, binSize, yLagBins)
+% PRINT_PHI_ID_ATOMS_VERBOSE  Log all PhiIDFull atom fields (sorted) for debugging taxonomy sums.
+%
+% Variables:
+%   phiOutput  - struct returned by PhiIDFull
+%   binSize    - bin width [s] for this sweep (label only)
+%   yLagBins   - lag in bins (label only)
+% Goal:
+%   Stable, grep-friendly atom table; highlights copy vs erasure and up vs down building blocks.
+
+atomNames = sort(fieldnames(phiOutput));
+fprintf('  PhiID atoms (nats) | binSize=%.4f s | yLagBins=%d\n', binSize, yLagBins);
+for atomIdx = 1:numel(atomNames)
+    atomName = atomNames{atomIdx};
+    atomVal = phiOutput.(atomName);
+    if isnumeric(atomVal) && isscalar(atomVal)
+        fprintf('    %-6s % .8f\n', atomName, atomVal);
+    else
+        fprintf('    %-6s (non-scalar, skipped)\n', atomName);
+    end
+end
+if all(isfield(phiOutput, {'xtr', 'ytr', 'rtx', 'rty'}))
+    copyParts = phiOutput.xtr + phiOutput.ytr;
+    eraseParts = phiOutput.rtx + phiOutput.rty;
+    fprintf('    --- copy=xtr+ytr=% .8f | erasure=rtx+rty=% .8f | diff=% .2e\n', ...
+        copyParts, eraseParts, copyParts - eraseParts);
+    fprintf('    --- xtr vs rty: % .2e | ytr vs rtx: % .2e\n', ...
+        phiOutput.xtr - phiOutput.rty, phiOutput.ytr - phiOutput.rtx);
+end
+if all(isfield(phiOutput, {'stx', 'sty', 'str', 'xts', 'yts', 'rts'}))
+    downSum = phiOutput.stx + phiOutput.sty + phiOutput.str;
+    upSum = phiOutput.xts + phiOutput.yts + phiOutput.rts;
+    fprintf('    --- downward=% .8f | upward=% .8f | diff=% .2e\n', downSum, upSum, downSum - upSum);
+end
 end
 
 function combinedSpikeMat = combine_area_spikes(areaNamesToCombine, availableAreaNames, spikeMatByArea, groupLabel)

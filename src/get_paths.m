@@ -50,8 +50,8 @@ end
 paths.homePath = homePath;
 paths.spontaneousDataPath = spontaneousDataPath;
 paths.spontaneousResultsPath = spontaneousResultsPath;
-paths.spontaneousDataPath = intervalDataPath;
-paths.spontaneousResultsPath = intervalResultsPath;
+paths.intervalDataPath = intervalDataPath;
+paths.intervalResultsPath = intervalResultsPath;
 paths.figurePath = figurePath;
 paths.bhvDataPath = bhvDataPath;
 paths.nrnDataPath = nrnDataPath;
