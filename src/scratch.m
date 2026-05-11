@@ -18,7 +18,7 @@ exampleSessionName = sessionName;
 fprintf('Loading spontaneous session: %s\n', exampleSessionName);
 spikeDataStruct = load_spike_times('spontaneous', paths, exampleSessionName, opts);
 
-areaName = 'VS'; % Choose area to test: M23, M56, DS, VS
+areaName = 'DS'; % Choose area to test: M23, M56, DS, VS
 areaNeuronMask = strcmp(spikeDataStruct.neuronAreas, areaName);
 areaNeuronIds = spikeDataStruct.neuronIDs(areaNeuronMask);
 areaSpikeMask = ismember(spikeDataStruct.spikeClusters, areaNeuronIds);

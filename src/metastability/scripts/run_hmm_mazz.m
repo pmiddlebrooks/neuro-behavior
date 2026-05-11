@@ -157,7 +157,8 @@ areaIdxPerSpike = zeros(size(spikeClusters));
 validMask = loc > 0;
 areaIdxPerSpike(validMask) = areaIdxPerNeuron(loc(validMask));
 
-spikeData = [spikeTimes, spikeClusters, areaIdxPerSpike];
+% Force double so concatenation never promotes the matrix to int32 (loses sub-ms times).
+spikeData = [double(spikeTimes), double(spikeClusters), double(areaIdxPerSpike)];
 
 % Build neuron id lists per area (area indices encoded in column 3)
 idM23 = unique(spikeData(spikeData(:, 3) == 1, 2));
@@ -187,6 +188,7 @@ dataStruct.sessionName = sessionName;
 % Unified analysis + HMM fit configuration (single struct)
 HmmParam = struct();
 HmmParam.modelSelectionMethod = 'XVAL';  % XVAL, BIC, AIC
+HmmParam.areasToTest = 1:4;     % Area IDs to analyze: M23=1, M56=2, DS=3, VS=4
 HmmParam.minNumNeurons = 12;
 HmmParam.saveData = true;
 HmmParam.useParallel = true;
@@ -220,7 +222,7 @@ end
 
 %% Optional immediate plotting from in-memory results
 makePlots = true;
-checkArea = 'DS';
+checkArea = 'M56';
 configPlot = struct('brainArea', checkArea);
 if makePlots
     fprintf('Creating basic HMM plots from in-memory results...\n');

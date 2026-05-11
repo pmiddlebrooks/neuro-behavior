@@ -8,7 +8,7 @@ function results = hmm_mazz_analysis(dataStruct, HmmParam)
 %       .opts            - Options struct from neuro_behavior_options()
 %       .areas           - Cell array of brain area names (e.g., {'M23','M56','DS','VS'})
 %       .idList          - Cell array of neuron id vectors per area (same order as areas)
-%       .spikeData       - [time, neuronId, areaIdx] spike table
+%       .spikeData       - [time, neuronId, areaIdx] spike table (times as double seconds)
 %       .trialDur        - Trial duration (seconds) for metadata
 %       .sessionName     - (Reach) Session name string for saving/metadata
 %       .reachDataFile   - (Reach, optional) Full path to NeuroBeh.mat file
@@ -16,7 +16,8 @@ function results = hmm_mazz_analysis(dataStruct, HmmParam)
 %   HmmParam - Unified structure controlling analysis behavior and HMM fitting:
 %       .modelSelectionMethod - Model selection method string (default: 'XVAL')
 %       .minNumNeurons        - Minimum neuron count per area (default: 15)
-%       .areasToTest          - Optional vector of area indices to analyze
+%       .areasToTest          - Optional vector of area IDs to analyze
+%                               (M23=1, M56=2, DS=3, VS=4; default: 1:4)
 %       .saveData             - Save results/summary to disk (default: true)
 %       .useParallel          - Use parallel pool for hmm.funHMM (default: true)
 %       .useOptimalBinSize    - If true, compute per-area BinSize from spikes
@@ -49,6 +50,8 @@ opts = dataStruct.opts;
 areas = dataStruct.areas;
 idList = dataStruct.idList;
 spikeData = dataStruct.spikeData;
+% Normalize types: int32 cluster ids can make [time, id, area] an int32 matrix and ruin time precision.
+spikeData = [double(spikeData(:, 1)), double(spikeData(:, 2)), double(spikeData(:, 3))];
 trialDur = dataStruct.trialDur;
 
 if ~isfield(HmmParam, 'modelSelectionMethod') || isempty(HmmParam.modelSelectionMethod)
@@ -104,17 +107,15 @@ end
 
 opts.HmmParam = HmmParam;
 
-% Determine areasToTest based on neuron counts and optional mask
+% Determine areasToTest from explicit area IDs (M23=1, M56=2, DS=3, VS=4)
 numAreas = numel(areas);
 if isfield(HmmParam, 'areasToTest') && ~isempty(HmmParam.areasToTest)
-    areasToTest = HmmParam.areasToTest(:)';
+    areasToTest = unique(HmmParam.areasToTest(:)');
 else
-    areaCounts = zeros(1, numAreas);
-    for areaIdx = 1:numAreas
-        areaCounts(areaIdx) = numel(idList{areaIdx});
-    end
-    areaMask = areaCounts >= minNumNeurons;
-    areasToTest = find(areaMask);
+    areasToTest = 1:numAreas;
+end
+if any(areasToTest < 1) || any(areasToTest > numAreas) || any(mod(areasToTest, 1) ~= 0)
+    error('HmmParam.areasToTest must contain integer area IDs in [1, %d].', numAreas);
 end
 
 fprintf('HMM_MAZZ_ANALYSIS: %s data\n', sessionType);
@@ -140,11 +141,11 @@ if HmmParam.useParallel
     end
 end
 
-for areaIdx = areasToTest
-    areaName = areas{areaIdx};
-    neuronIds = idList{areaIdx};
+for areaId = areasToTest
+    areaName = areas{areaId};
+    neuronIds = idList{areaId};
 
-    fprintf('\n=== Processing Brain Area: %s (Index %d) ===\n', areaName, areaIdx);
+    fprintf('\n=== Processing Brain Area: %s (Area ID %d) ===\n', areaName, areaId);
 
     numUnits = numel(neuronIds);
     if numUnits < minNumNeurons
@@ -161,7 +162,7 @@ for areaIdx = areasToTest
         trialStartSec = 0;
         trialEndSec = opts.collectEnd;
     else
-        areaMask = ismember(spikeData(:, 2), neuronIds) & (spikeData(:, 3) == areaIdx);
+        areaMask = ismember(spikeData(:, 2), neuronIds) & (spikeData(:, 3) == areaId);
         if any(areaMask)
             trialStartSec = 0;
             trialEndSec = max(spikeData(areaMask, 1));
@@ -172,7 +173,7 @@ for areaIdx = areasToTest
     end
     trialDurationSec = max(trialEndSec - trialStartSec, 0);
     winTrain = [trialStartSec, trialEndSec];
-    areaMask = ismember(spikeData(:, 2), neuronIds) & (spikeData(:, 3) == areaIdx);
+    areaMask = ismember(spikeData(:, 2), neuronIds) & (spikeData(:, 3) == areaId);
     areaTimeMask = areaMask & spikeData(:, 1) >= trialStartSec & spikeData(:, 1) <= trialEndSec;
     areaSpikeTimes = spikeData(areaTimeMask, 1) - trialStartSec;
     areaSpikeNeuronIds = spikeData(areaTimeMask, 2);
@@ -191,7 +192,7 @@ for areaIdx = areasToTest
 
     for neuronIdx = 1:numUnits
         neuronId = neuronIds(neuronIdx);
-        neuronMask = spikeData(:, 2) == neuronId & spikeData(:, 3) == areaIdx;
+        neuronMask = spikeData(:, 2) == neuronId & spikeData(:, 3) == areaId;
         spikeTimes = spikeData(neuronMask, 1);
         spikeTimes = spikeTimes(spikeTimes >= trialStartSec & spikeTimes <= trialEndSec);
         spikeTimes = spikeTimes - trialStartSec;
@@ -350,9 +351,9 @@ for areaIdx = areasToTest
         hmmRes.metastate_results.transition_matrix = [];
     end
 
-    allResults.binSize(areaIdx) = res.HmmParam.BinSize;
-    allResults.numStates(areaIdx) = res.HmmParam.VarStates(res.BestStateInd);
-    allResults.hmm_results{areaIdx} = hmmRes;
+    allResults.binSize(areaId) = res.HmmParam.BinSize;
+    allResults.numStates(areaId) = res.HmmParam.VarStates(res.BestStateInd);
+    allResults.hmm_results{areaId} = hmmRes;
 
     slackMessage = sprintf('HMM_MAZZ: Completed analysis for brain area: %s\n', areaName);
     disp(slackMessage);

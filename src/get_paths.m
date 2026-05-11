@@ -26,6 +26,8 @@ end
 
 spontaneousDataPath = fullfile(dropPath, 'spontaneous/data');
 spontaneousResultsPath = fullfile(dropPath, 'spontaneous/results');
+intervalDataPath = fullfile(dropPath, 'interval_timing_task/data');
+intervalResultsPath = fullfile(dropPath, 'interval_timing_task/results');
 reachDataPath = fullfile(dropPath, 'reach_task/data');
 reachResultsPath = fullfile(dropPath, 'reach_task/results');
 schallDataPath = fullfile(dropPath, 'schall/data');
@@ -48,6 +50,8 @@ end
 paths.homePath = homePath;
 paths.spontaneousDataPath = spontaneousDataPath;
 paths.spontaneousResultsPath = spontaneousResultsPath;
+paths.spontaneousDataPath = intervalDataPath;
+paths.spontaneousResultsPath = intervalResultsPath;
 paths.figurePath = figurePath;
 paths.bhvDataPath = bhvDataPath;
 paths.nrnDataPath = nrnDataPath;
