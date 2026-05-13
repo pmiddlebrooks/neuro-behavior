@@ -107,12 +107,12 @@ end
 
 opts = neuro_behavior_options;
 opts.minActTime = 0.16;
-opts.minFiringRate = .2; % 0.7;
+opts.minFiringRate = .5; % 0.7;
 opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
 opts.collectStart = 0;
-opts.collectEnd = 10*60;
+opts.collectEnd = 120*60;
 % opts.collectEnd = [];
 % When collectEnd is nonempty after load_spike_times, saved .mat names include
 % _start_SEC_end_SEC so different time windows from the same session do not overwrite.
@@ -192,10 +192,10 @@ HmmParam.areasToTest = 1:4;     % Area IDs to analyze: M23=1, M56=2, DS=3, VS=4
 HmmParam.minNumNeurons = 12;
 HmmParam.saveData = true;
 HmmParam.useParallel = true;
-HmmParam.useOptimalBinSize = true; % true: per-area bin sweep; false: use fixed BinSize below
+HmmParam.useOptimalBinSize = false; % true: per-area bin sweep; false: use fixed BinSize below
 HmmParam.maxAllowedMultiSpikeProportion = 0.0; % Used when useOptimalBinSize=true
 HmmParam.hiddenMin = 3;
-HmmParam.hiddenMax = 26;
+HmmParam.hiddenMax = 32;
 HmmParam.AdjustT = 0.0;        % Interval to skip at trial start (s)
 HmmParam.BinSize = 0.002;      % Fixed bin size when useOptimalBinSize=false
 HmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (s)
@@ -222,7 +222,7 @@ end
 
 %% Optional immediate plotting from in-memory results
 makePlots = true;
-checkArea = 'M56';
+checkArea = 'DS';
 configPlot = struct('brainArea', checkArea);
 if makePlots
     fprintf('Creating basic HMM plots from in-memory results...\n');
