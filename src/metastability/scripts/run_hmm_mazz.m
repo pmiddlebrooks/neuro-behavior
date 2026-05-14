@@ -11,7 +11,7 @@
 % dropboxMetastabilityData. Delete the .mat there to regenerate after changing params.
 
 % Toggle: set to 1 to load and plot existing results instead of running analysis
-loadAndPlot = 0;
+loadAndPlot = 1;
 
 % When loadAndPlot == 1, specify how to select saved HMM results:
 %   sessionType = 'spontaneous' or 'reach'
@@ -25,12 +25,12 @@ if loadAndPlot
     end
 
     % Optional selection parameters
-    brainArea = 'M56';      % e.g., 'M56'
-    binSizeLoad = .01;     % e.g., 0.01
-    minDurLoad = .05;       % e.g., 0.04
+    brainArea = 'M23';      % e.g., 'M56'
+    binSizeLoad = .002;     % e.g., 0.01
+    minDurLoad = .04;       % e.g., 0.04
     % Set these for windowed analyses saved as ..._start_XX_end_XX.mat
     collectStartLoad = [];  % e.g., 0
-    collectEndLoad = 30*60;    % e.g., 3600
+    collectEndLoad = 120*60;    % e.g., 3600
 
     loadArgs = {};
     if ~isempty(brainArea)
@@ -107,7 +107,7 @@ end
 
 opts = neuro_behavior_options;
 opts.minActTime = 0.16;
-opts.minFiringRate = .5; % 0.7;
+opts.minFiringRate = .3; % 0.7;
 opts.frameSize = 0.001;
 opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
@@ -222,12 +222,69 @@ end
 
 %% Optional immediate plotting from in-memory results
 makePlots = true;
-checkArea = 'DS';
+checkArea = 'M56';
 configPlot = struct('brainArea', checkArea);
 if makePlots
     fprintf('Creating basic HMM plots from in-memory results...\n');
     hmm_mazz_plot(results, configPlot);
     fprintf('=== HMM Plotting Complete ===\n');
+end
+
+%% Optional HMM state + behavior ethogram (spontaneous: behavior_labels*.csv via sessionName)
+
+    %% Load a model
+brainArea = 'VS';
+
+    % Optional selection parameters
+    binSizeLoad = .002;     % e.g., 0.01
+    minDurLoad = .04;       % e.g., 0.04
+    % Set these for windowed analyses saved as ..._start_XX_end_XX.mat
+    collectStartLoad = [];  % e.g., 0
+    collectEndLoad = 120*60;    % e.g., 3600
+
+    loadArgs = {};
+        loadArgs = [loadArgs, {'brainArea'}, {brainArea}]; %#ok<AGROW>
+        loadArgs = [loadArgs, {'binSize'}, {binSizeLoad}]; %#ok<AGROW>
+        loadArgs = [loadArgs, {'minDur'}, {minDurLoad}]; %#ok<AGROW>
+        loadArgs = [loadArgs, {'collectStart'}, {collectStartLoad}]; %#ok<AGROW>
+        loadArgs = [loadArgs, {'collectEnd'}, {collectEndLoad}]; %#ok<AGROW>
+
+    fprintf('Loading saved HMM model via hmm_load_saved_model...\n');
+    hmmRes = hmm_load_saved_model(sessionType, loadArgs{:});
+
+% Ethogram plot
+makeEthogramPlots = true;
+ethogramArea = brainArea;
+if makeEthogramPlots
+    if ~exist('sessionType', 'var') || isempty(sessionType) || ~strcmpi(sessionType, 'spontaneous')
+        fprintf('Skipping HMM + behavior ethogram (only wired for spontaneous + behavior_labels CSV).\n');
+    else
+        fprintf('Creating HMM + behavior ethogram...\n');
+        configEthogram = struct();
+        configEthogram.brainArea = ethogramArea;
+        configEthogram.paths = paths;
+        configEthogram.sessionName = sessionName;
+        configEthogram.exportEthogramCsvDir = fullfile(paths.dropPath, 'temp_data');
+        collectStartSec = 0;
+        if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+            collectStartSec = opts.collectStart;
+        end
+        if isfield(opts, 'collectEnd') && ~isempty(opts.collectEnd)
+            configEthogram.timeRangeSec = [0, opts.collectEnd - collectStartSec];
+        else
+            areaMapEth = containers.Map({'M23', 'M56', 'DS', 'VS'}, {1, 2, 3, 4});
+            ethIdx = areaMapEth(ethogramArea);
+            hmmSingleEth = results.hmm_results{ethIdx};
+            if ~isempty(hmmSingleEth) && isfield(hmmSingleEth, 'continuous_results') ...
+                    && isfield(hmmSingleEth.continuous_results, 'totalTime')
+                configEthogram.timeRangeSec = [0, hmmSingleEth.continuous_results.totalTime];
+            else
+                configEthogram.timeRangeSec = [0, 600];
+            end
+        end
+        hmm_mazz_plot_states_ethogram(hmmRes, configEthogram);
+        fprintf('=== HMM ethogram plotting complete ===\n');
+    end
 end
 
 %% Optional debug figure to verify state-selection behavior

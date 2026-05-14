@@ -90,7 +90,7 @@ tRecEnd = timeRange(2);
 %% ============================= Configuration =============================
 minITI = 6;           % s; pre requires gap from prev reach, post requires gap to next
 prePostSec = 15;         % s; sliding extent before / after reach
-slidingWindowSize = 5;  % s
+slidingWindowSize = 6;  % s
 stepSize = 0.25;        % s
 windowBuffer = 0.5;     % s inside recording bounds
 

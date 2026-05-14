@@ -18,6 +18,11 @@ function hmm_mazz_plot_states_ethogram(hmmRes, config)
 %       .behaviorCsvPath  - Optional: full path to behavior_labels*.csv (overrides
 %                           sessionName-based discovery).
 %       .timeOffsetSec    - Add to HMM bin times before compare/plot (default 0).
+%       .exportEthogramCsvDir - Optional: directory path; when nonempty, writes one
+%                           CSV per brain area in hmmRes (multi-area) or one CSV for a
+%                           single-area struct. Columns: Time_s, BehaviorLabel (nearest
+%                           behavior sample to each HMM bin), P_state_1..K.
+%       .exportEthogramCsvPrefix - Optional: prepended to each CSV filename.
 %
 % Goal:
 %   Top row: same style as hmm_mazz_plot — translucent state segments from thresholded
@@ -77,36 +82,8 @@ else
     end
 end
 
-if isempty(hmmResSingle) || ~isfield(hmmResSingle, 'continuous_results')
-    error('hmmResSingle is empty or missing continuous_results.');
-end
-
-sequence = hmmResSingle.continuous_results.sequence(:);
-probabilities = hmmResSingle.continuous_results.pStates;
-if isempty(sequence) || isempty(probabilities)
-    error('continuous_results.sequence or .pStates is empty.');
-end
-
-HmmParam = hmmResSingle.HmmParam;
-if ~isfield(HmmParam, 'BinSize') || isempty(HmmParam.BinSize)
-    error('HmmParam.BinSize is required.');
-end
-binSize = double(HmmParam.BinSize);
-
-% Match hmm_mazz_plot time axis: bin k -> k * binSize (seconds from window start)
-numBins = numel(sequence);
-timeAxisFull = (1:numBins)' * binSize + timeOffsetSec;
-
-idxSlice = find(timeAxisFull >= tStart & timeAxisFull <= tEnd);
-if isempty(idxSlice)
-    error(['No HMM bins fall in [%.6g, %.6g] s (have %.6g .. %.6g s). ' ...
-        'Check timeRangeSec and timeOffsetSec.'], tStart, tEnd, timeAxisFull(1), timeAxisFull(end));
-end
-
-sequence = sequence(idxSlice);
-probabilities = probabilities(idxSlice, :);
-timeAxis = timeAxisFull(idxSlice);
-numStatesProb = size(probabilities, 2);
+[timeAxis, probabilities, sequence, numStatesProb, idxSlice] = ...
+    local_hmm_slice_for_window(hmmResSingle, tStart, tEnd, timeOffsetSec);
 
 stateColors = distinguishable_colors(max(numStatesProb, 4));
 
@@ -204,6 +181,151 @@ sgtitle(figHandle, sprintf('%s | %.3g–%.3g s', areaLabel, tStart, tEnd), 'Inte
 
 fprintf('hmm_mazz_plot_states_ethogram: %s, bins %d–%d, window [%.4g, %.4g] s\n', ...
     areaLabel, idxSlice(1), idxSlice(end), tStart, tEnd);
+
+% --- Optional CSV export (one file per brain area) ---
+if isfield(config, 'exportEthogramCsvDir') && ~isempty(config.exportEthogramCsvDir)
+    exportDir = char(config.exportEthogramCsvDir);
+    if ~exist(exportDir, 'dir')
+        mkdir(exportDir);
+    end
+    if isfield(config, 'exportEthogramCsvPrefix') && ~isempty(config.exportEthogramCsvPrefix)
+        csvPrefix = char(config.exportEthogramCsvPrefix);
+    else
+        csvPrefix = '';
+    end
+
+    if isfield(hmmRes, 'hmm_results') && iscell(hmmRes.hmm_results)
+        for exportAreaIdx = 1:numel(hmmRes.hmm_results)
+            hmmOne = hmmRes.hmm_results{exportAreaIdx};
+            if isempty(hmmOne)
+                continue;
+            end
+            if isfield(hmmRes, 'areas') && numel(hmmRes.areas) >= exportAreaIdx ...
+                    && ~isempty(hmmRes.areas{exportAreaIdx})
+                oneLabel = hmmRes.areas{exportAreaIdx};
+            else
+                oneLabel = sprintf('area_%d', exportAreaIdx);
+            end
+            try
+                [tExp, pExp, ~, nStatesExp] = local_hmm_slice_for_window( ...
+                    hmmOne, tStart, tEnd, timeOffsetSec);
+            catch sliceErr
+                warning('Skipping CSV for area %s: %s', oneLabel, sliceErr.message);
+                continue;
+            end
+            bhvCol = local_behavior_at_hmm_times(tExp, bhvTimeVec, bhvID, tStart, tEnd);
+            local_write_ethogram_csv(exportDir, csvPrefix, oneLabel, tStart, tEnd, ...
+                tExp, bhvCol, pExp, nStatesExp);
+        end
+    else
+        bhvCol = local_behavior_at_hmm_times(timeAxis, bhvTimeVec, bhvID, tStart, tEnd);
+        local_write_ethogram_csv(exportDir, csvPrefix, areaLabel, tStart, tEnd, ...
+            timeAxis, bhvCol, probabilities, numStatesProb);
+    end
+end
+
+end
+
+function [timeAxis, probabilities, sequence, numStatesProb, idxSlice] = ...
+    local_hmm_slice_for_window(hmmResSingle, tStart, tEnd, timeOffsetSec)
+% LOCAL_HMM_SLICE_FOR_WINDOW HMM bin times and posteriors inside [tStart, tEnd].
+%
+% Variables:
+%   hmmResSingle   - Per-area HMM struct with .continuous_results and .HmmParam.BinSize.
+%   tStart, tEnd   - Time window (s), inclusive on the HMM bin axis.
+%   timeOffsetSec  - Added to each bin time (same as config.timeOffsetSec).
+%
+% Goal:
+%   Return sliced sequence, posteriors, and bin index range for plotting or CSV export.
+
+if isempty(hmmResSingle) || ~isfield(hmmResSingle, 'continuous_results')
+    error('hmmResSingle is empty or missing continuous_results.');
+end
+
+sequence = hmmResSingle.continuous_results.sequence(:);
+probabilities = hmmResSingle.continuous_results.pStates;
+if isempty(sequence) || isempty(probabilities)
+    error('continuous_results.sequence or .pStates is empty.');
+end
+
+HmmParam = hmmResSingle.HmmParam;
+if ~isfield(HmmParam, 'BinSize') || isempty(HmmParam.BinSize)
+    error('HmmParam.BinSize is required.');
+end
+binSize = double(HmmParam.BinSize);
+
+% Match hmm_mazz_plot time axis: bin k -> k * binSize (seconds from window start)
+numBins = numel(sequence);
+timeAxisFull = (1:numBins)' * binSize + timeOffsetSec;
+
+idxSlice = find(timeAxisFull >= tStart & timeAxisFull <= tEnd);
+if isempty(idxSlice)
+    error(['No HMM bins fall in [%.6g, %.6g] s (have %.6g .. %.6g s). ' ...
+        'Check timeRangeSec and timeOffsetSec.'], tStart, tEnd, timeAxisFull(1), timeAxisFull(end));
+end
+
+sequence = sequence(idxSlice);
+probabilities = probabilities(idxSlice, :);
+timeAxis = timeAxisFull(idxSlice);
+numStatesProb = size(probabilities, 2);
+
+end
+
+function bhvAligned = local_behavior_at_hmm_times(timeAxis, bhvTimeVec, bhvID, tStart, tEnd)
+% LOCAL_BEHAVIOR_AT_HMM_TIMES Nearest behavior label at each HMM bin time.
+%
+% Variables:
+%   timeAxis     - HMM bin times (s), column vector.
+%   bhvTimeVec   - Behavior sample times (s).
+%   bhvID        - Behavior label per sample (numeric).
+%   tStart, tEnd - Window passed to interp1 for behavior samples.
+%
+% Goal:
+%   Align ethogram labels to HMM bins using nearest-neighbor interpolation (NaN if none).
+
+inWin = bhvTimeVec >= tStart & bhvTimeVec <= tEnd;
+tB = bhvTimeVec(inWin);
+idB = bhvID(inWin);
+if isempty(tB)
+    bhvAligned = nan(numel(timeAxis), 1);
+    return;
+end
+bhvAligned = interp1(tB, double(idB(:)), timeAxis(:), 'nearest', NaN);
+
+end
+
+function local_write_ethogram_csv(exportDir, csvPrefix, areaLabel, tStart, tEnd, ...
+    timeAxis, bhvAligned, probabilities, numStates)
+% LOCAL_WRITE_ETHOGRAM_CSV Write one CSV: time, behavior label, state posteriors.
+%
+% Variables:
+%   exportDir      - Output directory (created if missing by caller).
+%   csvPrefix      - Optional filename prefix; empty for none.
+%   areaLabel      - Brain area name used in the filename.
+%   tStart, tEnd   - Time window (s), included in filename for uniqueness.
+%   timeAxis       - Column 1 (Time_s).
+%   bhvAligned     - Column 2 (BehaviorLabel), same length as timeAxis.
+%   probabilities  - [numBins x numStates] posterior matrix.
+%   numStates      - Number of state columns (P_state_1..P_state_K).
+%
+% Goal:
+%   Export a table readable by external tools (writetable with header row).
+
+safeArea = regexprep(areaLabel, '[^\w-]', '_');
+if isempty(csvPrefix)
+    baseName = sprintf('ethogram_%s_%.4g_%.4g.csv', safeArea, tStart, tEnd);
+else
+    baseName = sprintf('%s_ethogram_%s_%.4g_%.4g.csv', csvPrefix, safeArea, tStart, tEnd);
+end
+outPath = fullfile(exportDir, baseName);
+
+pNames = arrayfun(@(stateIdx) sprintf('P_state_%d', stateIdx), 1:numStates, ...
+    'UniformOutput', false);
+varNames = [{'Time_s', 'BehaviorLabel'}, pNames];
+dataBlock = [timeAxis(:), bhvAligned(:), probabilities];
+exportTable = array2table(dataBlock, 'VariableNames', varNames);
+writetable(exportTable, outPath);
+fprintf('Wrote ethogram CSV: %s\n', outPath);
 
 end
 

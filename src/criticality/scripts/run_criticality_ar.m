@@ -221,8 +221,8 @@ end
 
 % Set up configuration from workspace variables
 % (These should be set before running this script)config = struct();
-config.slidingWindowSize = 10; % Default window size
-config.binSize = .05; % Default bin size
+config.slidingWindowSize = 6; % Default window size
+config.binSize = .03; % Default bin size
 config.stepSize = .2; % Default step size
 config.minSpikesPerBin = 2.5;
 config.minBinsPerWindow = 1000;

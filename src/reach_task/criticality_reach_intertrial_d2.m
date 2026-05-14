@@ -110,7 +110,7 @@ fprintf('Calculated %d intertrial midpoints\n', length(intertrialMidpoints));
 % Sliding window parameters
 beforeAlign = -10;  % Start sliding from this many seconds before alignment point
 afterAlign  =  10;  % End sliding at this many seconds after alignment point
-slidingWindowSize = 6;  % Window size for d2 analysis (user-defined, same for all areas)
+slidingWindowSize = 3;  % Window size for d2 analysis (user-defined, same for all areas)
 stepSize    = .25; % Step size for sliding window (seconds)
 windowBuffer = .5; % Minimum distance from window edge to event/midpoint (seconds)
 minWindowSize = slidingWindowSize;  % Minimum window size required (seconds)
@@ -122,8 +122,8 @@ minSpikesPerBin = 3;  % Minimum spikes per bin for optimal bin size calculation
 minBinsPerWindow = 1000;  % Minimum bins per window (used for optimal bin size, but window size is user-defined)
 nShuffles = 3;      % Number of circular permutations for d2 normalization
 normalizeD2 = false;  % Set to true to normalize d2 by shuffled d2 values
-useLog10D2 = true;    % If true, analyze/plot log10(d2); values <= 0 map to NaN
-meanSubtract = true; % If true, subtract bin-wise mean across windows per sliding position
+useLog10D2 = false;    % If true, analyze/plot log10(d2); values <= 0 map to NaN
+meanSubtract = false; % If true, subtract bin-wise mean across windows per sliding position
 
 % Bin/window selection mode (manual vs. optimal, similar to criticality_ar)
 useOptimalBinWindowFunction = false;  % If false, use binSizeManual and slidingWindowSize as set above
@@ -1545,12 +1545,67 @@ else
     yLimits = [0, 1];  % Default if no data
 end
 
-% Precompute d2*popActivity products across sliding positions for all areas
+% Precompute center-bin popActivity (mean across windows) and d2*popActivity per sliding position
+popMetrics = struct();
+popMetrics.reach = cell(1, length(areasToTest));
+popMetrics.intertrial = cell(1, length(areasToTest));
+popMetrics.reachSem = cell(1, length(areasToTest));
+popMetrics.intertrialSem = cell(1, length(areasToTest));
+
 ratioMetrics = struct();
 ratioMetrics.reach = cell(1, length(areasToTest));
 ratioMetrics.intertrial = cell(1, length(areasToTest));
 ratioMetrics.reachSem = cell(1, length(areasToTest));
 ratioMetrics.intertrialSem = cell(1, length(areasToTest));
+
+if exist('collectedReachWindowCenterBins', 'var') && ...
+        exist('collectedIntertrialWindowCenterBins', 'var')
+    
+    for idxArea = 1:length(areasToTest)
+        a = areasToTest(idxArea);
+        reachPopVals = nan(size(slidingPositions));
+        intertrialPopVals = nan(size(slidingPositions));
+        reachPopSemVals = nan(size(slidingPositions));
+        intertrialPopSemVals = nan(size(slidingPositions));
+        
+        if a <= size(collectedReachWindowCenterBins, 1) && a <= size(collectedIntertrialWindowCenterBins, 1)
+            for posIdx = 1:numel(slidingPositions)
+                % Reach: mean center-bin pop activity across windows at this sliding position
+                if posIdx <= size(collectedReachWindowCenterBins, 2) && ...
+                        ~isempty(collectedReachWindowCenterBins{a, posIdx})
+                    popVec = collectedReachWindowCenterBins{a, posIdx}(:);
+                    validPop = ~isnan(popVec);
+                    if any(validPop)
+                        reachPopVals(posIdx) = nanmean(popVec(validPop));
+                        nPop = sum(validPop);
+                        if nPop > 1
+                            reachPopSemVals(posIdx) = nanstd(popVec(validPop)) / sqrt(nPop);
+                        end
+                    end
+                end
+                
+                % Intertrial: mean center-bin pop activity
+                if posIdx <= size(collectedIntertrialWindowCenterBins, 2) && ...
+                        ~isempty(collectedIntertrialWindowCenterBins{a, posIdx})
+                    popVec = collectedIntertrialWindowCenterBins{a, posIdx}(:);
+                    validPop = ~isnan(popVec);
+                    if any(validPop)
+                        intertrialPopVals(posIdx) = nanmean(popVec(validPop));
+                        nPop = sum(validPop);
+                        if nPop > 1
+                            intertrialPopSemVals(posIdx) = nanstd(popVec(validPop)) / sqrt(nPop);
+                        end
+                    end
+                end
+            end
+        end
+        
+        popMetrics.reach{a} = reachPopVals;
+        popMetrics.intertrial{a} = intertrialPopVals;
+        popMetrics.reachSem{a} = reachPopSemVals;
+        popMetrics.intertrialSem{a} = intertrialPopSemVals;
+    end
+end
 
 if exist('perWindowD2', 'var') && ...
         exist('collectedReachWindowCenterBins', 'var') && ...
@@ -1658,15 +1713,39 @@ else
     yLimitsRatio = [0, 1];
 end
 
+% Shared y-axis limits for center-bin popActivity (mean across windows)
+allPopYVals = [];
+for a = areasToTest
+    if a <= numel(popMetrics.reach) && ~isempty(popMetrics.reach{a})
+        allPopYVals = [allPopYVals, popMetrics.reach{a}(~isnan(popMetrics.reach{a}))];
+    end
+    if a <= numel(popMetrics.intertrial) && ~isempty(popMetrics.intertrial{a})
+        allPopYVals = [allPopYVals, popMetrics.intertrial{a}(~isnan(popMetrics.intertrial{a}))];
+    end
+end
+
+if ~isempty(allPopYVals)
+    pMin = min(allPopYVals);
+    pMax = max(allPopYVals);
+    pRange = pMax - pMin;
+    if pRange == 0
+        pRange = 1;
+    end
+    yLimitsPop = [pMin - 0.05*pRange, pMax + 0.05*pRange];
+else
+    yLimitsPop = [0, 1];
+end
+
 % Determine layout:
 % - Row 1: d2 sliding-position traces
-% - Row 2: d2*popActivity sliding-position traces
+% - Row 2: popActivity (center bin, mean across windows)
+% - Row 3: d2*popActivity sliding-position traces
 numAreasToPlot = length(areasToTest);
-numRows = 2;
+numRows = 3;
 numCols = numAreasToPlot;
 
 % Create single figure with tight_subplot
-figure(1002); clf;
+figure(1003); clf;
 set(gcf, 'Units', 'pixels');
 set(gcf, 'Position', targetPos);
 
@@ -1748,7 +1827,63 @@ for a = areasToTest
     end
 end
 
-% Row 2: d2/popActivity traces across sliding positions
+% Row 2: center-bin popActivity (mean across windows) vs sliding position
+for aIdx = 1:length(areasToTest)
+    a = areasToTest(aIdx);
+    plotIdx = plotIdx + 1;
+    axes(ha(plotIdx));
+    hold on;
+    
+    reachPopVals = nan(size(slidingPositions));
+    intertrialPopVals = nan(size(slidingPositions));
+    reachPopSemVals = nan(size(slidingPositions));
+    intertrialPopSemVals = nan(size(slidingPositions));
+    if a <= numel(popMetrics.reach) && ~isempty(popMetrics.reach{a})
+        reachPopVals = popMetrics.reach{a};
+    end
+    if a <= numel(popMetrics.intertrial) && ~isempty(popMetrics.intertrial{a})
+        intertrialPopVals = popMetrics.intertrial{a};
+    end
+    if a <= numel(popMetrics.reachSem) && ~isempty(popMetrics.reachSem{a})
+        reachPopSemVals = popMetrics.reachSem{a};
+    end
+    if a <= numel(popMetrics.intertrialSem) && ~isempty(popMetrics.intertrialSem{a})
+        intertrialPopSemVals = popMetrics.intertrialSem{a};
+    end
+    
+    if any(~isnan(reachPopVals))
+        plot(slidingPositions, reachPopVals, '-o', 'Color', [0 0 1], 'LineWidth', 1.5, 'MarkerSize', 4, ...
+            'DisplayName', 'Reach popActivity');
+        if any(~isnan(reachPopSemVals))
+            errorbar(slidingPositions, reachPopVals, reachPopSemVals, 'LineStyle', 'none', ...
+                'Color', [0 0 1], 'LineWidth', 1, 'HandleVisibility', 'off');
+        end
+    end
+    if any(~isnan(intertrialPopVals))
+        plot(slidingPositions, intertrialPopVals, '-s', 'Color', [1 0 0], 'LineWidth', 1.5, 'MarkerSize', 4, ...
+            'DisplayName', 'Intertrial popActivity');
+        if any(~isnan(intertrialPopSemVals))
+            errorbar(slidingPositions, intertrialPopVals, intertrialPopSemVals, 'LineStyle', 'none', ...
+                'Color', [1 0 0], 'LineWidth', 1, 'HandleVisibility', 'off');
+        end
+    end
+    
+    if aIdx == 1
+        ylabel('popActivity', 'FontSize', 10);
+    end
+    
+    grid on;
+    if aIdx == 1 && (any(~isnan(reachPopVals)) || any(~isnan(intertrialPopVals)))
+        legend('Location', 'best', 'FontSize', 9);
+    end
+    set(gca, 'XTickLabelMode', 'auto');
+    set(gca, 'YTickLabelMode', 'auto');
+    ylim(yLimitsPop);
+    
+    xline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'HandleVisibility', 'off');
+end
+
+% Row 3: d2*popActivity traces across sliding positions
 for aIdx = 1:length(areasToTest)
     a = areasToTest(aIdx);
     plotIdx = plotIdx + 1;
