@@ -50,6 +50,9 @@ function resultsPath = create_results_path(analysisType, sessionType, sessionNam
             
         case 'criticality_lfp'
                 filename = sprintf('criticality_sliding_lfp%s_%s.mat', filenameSuffix, sessionName);
+
+        case 'criticality_prg'
+            filename = sprintf('criticality_prg_blocks_%s.mat', sessionName);
             
         case {'lzc'}
             if isempty(dataSource)

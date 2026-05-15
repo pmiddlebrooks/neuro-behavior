@@ -11,7 +11,7 @@
 % dropboxMetastabilityData. Delete the .mat there to regenerate after changing params.
 
 % Toggle: set to 1 to load and plot existing results instead of running analysis
-loadAndPlot = 1;
+loadAndPlot = 0;
 
 % When loadAndPlot == 1, specify how to select saved HMM results:
 %   sessionType = 'spontaneous' or 'reach'
@@ -189,7 +189,7 @@ dataStruct.sessionName = sessionName;
 HmmParam = struct();
 HmmParam.modelSelectionMethod = 'XVAL';  % XVAL, BIC, AIC
 HmmParam.areasToTest = 1:4;     % Area IDs to analyze: M23=1, M56=2, DS=3, VS=4
-HmmParam.minNumNeurons = 12;
+HmmParam.minNumNeurons = 15;
 HmmParam.saveData = true;
 HmmParam.useParallel = true;
 HmmParam.useOptimalBinSize = false; % true: per-area bin sweep; false: use fixed BinSize below
@@ -202,7 +202,7 @@ HmmParam.MinDur = 0.04;        % Minimum admissible state duration in decoding (
 HmmParam.MinP = 0.8;           % Minimum posterior probability for state assignment
 HmmParam.NumSteps = 10;        % Number of independent EM runs at fixed parameters
 HmmParam.NumRuns = 30;         % Maximum iterations per EM run
-HmmParam.singleSeqXval.K = 5;  % Cross-validation folds
+HmmParam.singleSeqXval.K = 10;  % Cross-validation folds
 
 fprintf('\nRunning hmm_mazz_analysis...\n');
 results = hmm_mazz_analysis(dataStruct, HmmParam);

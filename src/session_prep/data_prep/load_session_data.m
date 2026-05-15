@@ -1,0 +1,106 @@
+function dataStruct = load_session_data(sessionType, dataSource, varargin)
+% LOAD_SESSION_DATA Load and prepare data for session-based analyses
+%
+% Variables:
+%   sessionType - 'reach', 'spontaneous', 'schall', or 'hong'
+%   dataSource - 'spikes' or 'lfp'
+%   varargin - Optional name-value pairs:
+%       'sessionName' - Session identifier (required for reach/spontaneous/schall)
+%       'opts' - Options structure (default: neuro_behavior_options)
+%       'lfpCleanParams' - LFP cleaning parameters
+%       'bands' - Frequency bands for LFP
+%       'minBinSize' - Minimum bin size for LFP bands (default 0.005)
+%
+% Goal:
+%   Load session data into a single structure for analyses that segment time
+%   (sliding windows, non-overlapping blocks, trials, etc.). Uses the same
+%   underlying loaders as load_sliding_window_data in sliding_window_prep.
+%
+% Returns:
+%   dataStruct - Structure with sessionType, areas, spikeTimes, idLabel, saveDir, etc.
+
+    p = inputParser;
+    addParameter(p, 'sessionName', '', @(x) ischar(x) || isempty(x));
+    addParameter(p, 'opts', [], @(x) isstruct(x) || isempty(x));
+    addParameter(p, 'lfpCleanParams', [], @(x) isstruct(x) || isempty(x));
+    addParameter(p, 'bands', [], @(x) iscell(x) || isempty(x));
+    addParameter(p, 'minBinSize', 0.005, @isnumeric);
+    parse(p, varargin{:});
+
+    sessionName = p.Results.sessionName;
+    opts = p.Results.opts;
+    lfpCleanParams = p.Results.lfpCleanParams;
+    bands = p.Results.bands;
+    minBinSize = p.Results.minBinSize;
+
+    paths = get_paths;
+
+    if isempty(opts)
+        opts = neuro_behavior_options;
+        opts.frameSize = 0.001;
+        opts.firingRateCheckTime = 5 * 60;
+        opts.collectStart = 0;
+        opts.minFiringRate = 0.05;
+        opts.maxFiringRate = 200;
+    end
+
+    if strcmp(dataSource, 'lfp')
+        if isempty(bands)
+            bands = {'alpha', [8 13]; ...
+                'beta', [13 30]; ...
+                'lowGamma', [30 50]; ...
+                'highGamma', [50 80]};
+        end
+
+        if isempty(lfpCleanParams)
+            lfpCleanParams = struct();
+            lfpCleanParams.spikeThresh = 4;
+            lfpCleanParams.spikeWinSize = 50;
+            lfpCleanParams.notchFreqs = [60 120 180];
+            lfpCleanParams.lowpassFreq = 300;
+            lfpCleanParams.useHampel = true;
+            lfpCleanParams.hampelK = 5;
+            lfpCleanParams.hampelNsigma = 3;
+            lfpCleanParams.detrendOrder = 'linear';
+        end
+    end
+
+    dataStruct = struct();
+    dataStruct.sessionType = sessionType;
+    dataStruct.dataSource = dataSource;
+    dataStruct.opts = opts;
+
+    fprintf('\n=== Loading %s %s session data ===\n', sessionType, dataSource);
+
+    switch sessionType
+        case 'spontaneous'
+            if isempty(sessionName)
+                error('sessionName must be provided for spontaneous data');
+            end
+            dataStruct.sessionName = sessionName;
+            dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands);
+
+        case 'reach'
+            if isempty(sessionName)
+                error('sessionName must be provided for reach data');
+            end
+            dataStruct.sessionName = sessionName;
+            dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName, opts, lfpCleanParams, bands);
+
+        case 'schall'
+            if isempty(sessionName)
+                error('sessionName must be provided for schall data');
+            end
+            dataStruct.sessionName = sessionName;
+            dataStruct = load_schall_data(dataStruct, dataSource, paths, sessionName, opts, lfpCleanParams, bands);
+
+        case 'hong'
+            dataStruct = load_hong_data(dataStruct, dataSource, paths, opts, lfpCleanParams, bands);
+            dataStruct.sessionName = sessionName;
+
+        otherwise
+            error('Invalid sessionType: %s. Must be ''reach'', ''spontaneous'', ''schall'', or ''hong''', sessionType);
+    end
+
+    fprintf('Session data loading complete. %d areas loaded.\n', length(dataStruct.areas));
+end
