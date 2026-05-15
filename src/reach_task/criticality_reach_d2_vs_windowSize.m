@@ -17,12 +17,20 @@
 %
 % Optional overrides (set before running):
 %   windowsToTest, binSizeManual, pOrder, critType, meanSubtract, useLog10D2,
-%   makePlots, areasToTest, cvThreshold, windowMin, windowSizeStepSec
+%   makePlots, areasToTest, cvThreshold, windowMin, windowSizeStepSec,
+%   halfSessionReachSweepMode, halfSessionWinMaxSec
 %
-% Half-session reach sweep (section before local functions): center on the reach
-% whose onset is closest to mid-session time; d2 vs window from windowMin to the
-% largest window that fits in the session; marks each window size where a new
-% reach onset enters the symmetric window.
+% Half-session reach sweep (section before local functions):
+%   halfSessionReachSweepMode:
+%     'midSessionCenter' (default) — center on the reach closest to mid-session;
+%       symmetric window [tCenter - W/2, tCenter + W/2]; marks when each reach
+%       onset first enters that window.
+%     'firstReachGrowRight' — anchor at first reach onset; window [tFirst, tFirst+W];
+%       grow W into the session; marks when each reach onset first enters the window.
+%   Window cap: if halfSessionWinMaxSec is unset or empty, use the session-derived
+%   maximum for the chosen mode (symmetric margin around mid-session center, or
+%   timeRange(2) - tFirst). If halfSessionWinMaxSec is set, the sweep uses
+%   min(halfSessionWinMaxSec, that session maximum).
 %
 % Per window size, the script reports how many individual reach-level popActivity
 % CV values exceed cvThreshold (default 5). With makePlots true, a second figure
@@ -252,7 +260,7 @@ results.sessionName = sessionName;
 if makePlots
     nPlot = numel(areasToTest);
     figure(3101); clf;
-    set(gcf, 'Units', 'normalized', 'Position', [0.15 0.08 0.55 0.72]);
+    set(gcf, 'WindowState', 'maximized');
     tl = tiledlayout(nPlot, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
     for k = 1:nPlot
         a = areasToTest(k);
@@ -301,7 +309,7 @@ if makePlots
     winSmallestSec = windowsToTest(1);
     winLargestSec = windowsToTest(end);
     figure(3102); clf;
-    set(gcf, 'Units', 'normalized', 'Position', [0.22 0.08 0.56 0.72]);
+    set(gcf, 'WindowState', 'maximized');
     tlCv = tiledlayout(nPlot, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
     for k = 1:nPlot
         a = areasToTest(k);
@@ -351,127 +359,176 @@ if makePlots
 end
 
 %% ==========    Half-session reach: d2 vs window (growing inclusion)    ==========
-% Center on the reach with onset closest to mid-session time. For window sizes
-% windowMin : windowSizeStepSec : largest W that fits fully inside the session,
-% compute population d2 in that window. Record when each reach onset first lies
-% inside [tCenter - W/2, tCenter + W/2] and mark those window sizes on the plot.
+% Optional: halfSessionReachSweepMode ('midSessionCenter' | 'firstReachGrowRight'),
+% halfSessionWinMaxSec (empty = use session max for the mode), windowMin,
+% windowSizeStepSec.
 
-if ~exist('windowMin', 'var') || isempty(windowMin)
     windowMin = windowsToTest(1);
-end
-        windowSizeStepSec = 0.5;
+    windowSizeStepSec = 0.5;
 
+
+halfSessionReachSweepMode = 'firstReachGrowRight';
 halfSessionTime = (timeRange(1) + timeRange(2)) / 2;
 [~, reachIdxHalfSession] = min(abs(reachStart - halfSessionTime));
 tCenterHalfReach = reachStart(reachIdxHalfSession);
-winMaxSessionSec = 2 * min(tCenterHalfReach - timeRange(1), timeRange(2) - tCenterHalfReach);
+tFirstReach = reachStart(1);
+
+% Session-derived maximum window width for each sweep geometry
+winMaxSessionSecMidCenter = 2 * min(tCenterHalfReach - timeRange(1), timeRange(2) - tCenterHalfReach);
+winMaxSessionSecFirstReach = timeRange(2) - tFirstReach;
+
+if strcmpi(halfSessionReachSweepMode, 'firstReachGrowRight')
+    sweepModeLabel = 'firstReachGrowRight';
+    winMaxFromSessionSec = winMaxSessionSecFirstReach;
+    tCenterForBins = @(winSize) tFirstReach + winSize / 2;
+    inclusionFun = @(winSize) reachStart >= tFirstReach & reachStart <= (tFirstReach + winSize);
+    fprintf(['\n--- Half-session reach sweep (first reach -> grow right): ', ...
+        'tFirst = %.4g s; session max W = %.4g s ---\n'], tFirstReach, winMaxFromSessionSec);
+elseif strcmpi(halfSessionReachSweepMode, 'midSessionCenter')
+    sweepModeLabel = 'midSessionCenter';
+    winMaxFromSessionSec = winMaxSessionSecMidCenter;
+    tCenterForBins = @(winSize) tCenterHalfReach;
+    inclusionFun = @(winSize) reachStart >= (tCenterHalfReach - winSize / 2) & ...
+        reachStart <= (tCenterHalfReach + winSize / 2);
+    fprintf(['\n--- Half-session reach sweep (mid-session center): center reach idx %d at %.4g s ', ...
+        '(mid-session %.4g s); session max W = %.4g s ---\n'], ...
+        reachIdxHalfSession, tCenterHalfReach, halfSessionTime, winMaxFromSessionSec);
+else
+    error(['halfSessionReachSweepMode must be ''midSessionCenter'' or ''firstReachGrowRight''; ', ...
+        'got ''%s''.'], char(halfSessionReachSweepMode));
+end
+
+halfSessionWinMaxSec = 800; %30*60;
+winMaxHalfSweepSec = min(halfSessionWinMaxSec, winMaxFromSessionSec);
+
+if winMaxHalfSweepSec < windowMin
+    warning('criticality_reach_d2_vs_windowSize:halfSessionWinMaxTooSmall', ...
+        'Half-session sweep: winMax (%.4g s) < windowMin (%.4g s); no sweep steps.', ...
+        winMaxHalfSweepSec, windowMin);
+end
 
 d2HalfReachByArea = cell(1, numAreas);
 reachInclusionWinSecByArea = cell(1, numAreas);
 reachInclusionReachIdxByArea = cell(1, numAreas);
 windowsHalfReachSweep = [];
 
-    windowsHalfReachSweep = windowMin:windowSizeStepSec:winMaxSessionSec;
-    numWinHalf = numel(windowsHalfReachSweep);
-    fprintf(['\n--- Half-session reach sweep: center reach idx %d at %.4g s ', ...
-        '(mid-session %.4g s); W = %.4g:%.4g:%.4g s (%d steps) ---\n'], ...
-        reachIdxHalfSession, tCenterHalfReach, halfSessionTime, windowMin, ...
-        windowSizeStepSec, winMaxSessionSec, numWinHalf);
+if winMaxHalfSweepSec >= windowMin
+    windowsHalfReachSweep = windowMin:windowSizeStepSec:winMaxHalfSweepSec;
+else
+    windowsHalfReachSweep = [];
+end
+numWinHalf = numel(windowsHalfReachSweep);
+fprintf(['  Sweep W = %.4g:%.4g:%.4g s (%d steps); (session max %.4g s) ---\n'], ...
+    windowMin, windowSizeStepSec, winMaxHalfSweepSec, numWinHalf, ...
+    winMaxFromSessionSec);
 
-    for a = areasToTest
-        aDataMat = binnedSpikeMatByArea{a};
-        numTimePoints = size(aDataMat, 1);
-        binSizeSec = binSize(a);
-        d2HalfReachTrace = nan(1, numWinHalf);
-        prevIncludedMask = false(1, numReaches);
-        reachInclusionWinSecList = zeros(0, 1);
-        reachInclusionIdxList = zeros(0, 1);
+for a = areasToTest
+    aDataMat = binnedSpikeMatByArea{a};
+    numTimePoints = size(aDataMat, 1);
+    binSizeSec = binSize(a);
+    d2HalfReachTrace = nan(1, numWinHalf);
+    prevIncludedMask = false(1, numReaches);
+    reachInclusionWinSecList = zeros(0, 1);
+    reachInclusionIdxList = zeros(0, 1);
 
-        for jW = 1:numWinHalf
-            winSize = windowsHalfReachSweep(jW);
-            winHalfLo = tCenterHalfReach - winSize / 2;
-            winHalfHi = tCenterHalfReach + winSize / 2;
-            includedNow = reachStart >= winHalfLo & reachStart <= winHalfHi;
-            newlyInMask = includedNow & ~prevIncludedMask;
-            if any(newlyInMask)
-                newIdx = find(newlyInMask);
-                reachInclusionWinSecList = [reachInclusionWinSecList; repmat(winSize, numel(newIdx), 1)]; %#ok<AGROW>
-                reachInclusionIdxList = [reachInclusionIdxList; newIdx(:)]; %#ok<AGROW>
-            end
-            prevIncludedMask = includedNow;
-
-            [startIdx, endIdx] = window_bin_indices_from_center_time( ...
-                tCenterHalfReach, winSize, binSizeSec, numTimePoints);
-            if isempty(startIdx) || startIdx < 1 || endIdx > numTimePoints || endIdx <= startIdx
-                continue;
-            end
-            wDataMat = aDataMat(startIdx:endIdx, :);
-            wPopActivity = sum(wDataMat, 2);
-            if meanSubtract
-                wPopActivity = wPopActivity - nanmean(wPopActivity);
-            end
-            d2HalfReachTrace(jW) = compute_d2_from_pop_activity(wPopActivity, pOrder, critType);
+    for jW = 1:numWinHalf
+        winSize = windowsHalfReachSweep(jW);
+        includedNow = inclusionFun(winSize);
+        newlyInMask = includedNow & ~prevIncludedMask;
+        if any(newlyInMask)
+            newIdx = find(newlyInMask);
+            reachInclusionWinSecList = [reachInclusionWinSecList; repmat(winSize, numel(newIdx), 1)]; %#ok<AGROW>
+            reachInclusionIdxList = [reachInclusionIdxList; newIdx(:)]; %#ok<AGROW>
         end
+        prevIncludedMask = includedNow;
 
-        d2HalfReachByArea{a} = d2HalfReachTrace;
-        reachInclusionWinSecByArea{a} = reachInclusionWinSecList;
-        reachInclusionReachIdxByArea{a} = reachInclusionIdxList;
+        tCenterBins = tCenterForBins(winSize);
+        [startIdx, endIdx] = window_bin_indices_from_center_time( ...
+            tCenterBins, winSize, binSizeSec, numTimePoints);
+        if isempty(startIdx) || startIdx < 1 || endIdx > numTimePoints || endIdx <= startIdx
+            continue;
+        end
+        wDataMat = aDataMat(startIdx:endIdx, :);
+        wPopActivity = sum(wDataMat, 2);
+        if meanSubtract
+            wPopActivity = wPopActivity - nanmean(wPopActivity);
+        end
+        d2HalfReachTrace(jW) = compute_d2_from_pop_activity(wPopActivity, pOrder, critType);
     end
 
-    results.windowMin = windowMin;
-    results.windowSizeStepSec = windowSizeStepSec;
-    results.halfSessionTime = halfSessionTime;
-    results.reachIdxHalfSession = reachIdxHalfSession;
-    results.tCenterHalfReach = tCenterHalfReach;
-    results.winMaxSessionSec = winMaxSessionSec;
-    results.windowsHalfReachSweep = windowsHalfReachSweep;
-    results.d2HalfReachByArea = d2HalfReachByArea;
-    results.reachInclusionWinSecByArea = reachInclusionWinSecByArea;
-    results.reachInclusionReachIdxByArea = reachInclusionReachIdxByArea;
-%%
-    if makePlots && ~isempty(windowsHalfReachSweep)
-        nPlotHalf = numel(areasToTest);
-        figure(3103); clf;
-        set(gcf, 'Units', 'normalized', 'Position', [0.18 0.06 0.52 0.74]);
-        tlHalf = tiledlayout(nPlotHalf, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
-        for k = 1:nPlotHalf
-            a = areasToTest(k);
-            nexttile;
-            hold on;
-            d2Trace = d2HalfReachByArea{a};
-            plot(windowsHalfReachSweep, d2Trace, '-o', 'LineWidth', 1.5, 'Color', [0 0.45 0.74], ...
-                'MarkerFaceColor', [0.65 0.8 1]);
-            if useLog10D2
-                d2Finite = d2Trace(~isnan(d2Trace));
-                if ~isempty(d2Finite) && all(d2Finite > 0)
-                    set(gca, 'YScale', 'log');
-                end
+    d2HalfReachByArea{a} = d2HalfReachTrace;
+    reachInclusionWinSecByArea{a} = reachInclusionWinSecList;
+    reachInclusionReachIdxByArea{a} = reachInclusionIdxList;
+end
+
+results.windowMin = windowMin;
+results.windowSizeStepSec = windowSizeStepSec;
+results.halfSessionTime = halfSessionTime;
+results.reachIdxHalfSession = reachIdxHalfSession;
+results.tCenterHalfReach = tCenterHalfReach;
+results.tFirstReach = tFirstReach;
+results.winMaxSessionSecMidCenter = winMaxSessionSecMidCenter;
+results.winMaxSessionSecFirstReach = winMaxSessionSecFirstReach;
+results.winMaxSessionSec = winMaxFromSessionSec;   % session max for the active sweep mode
+results.halfSessionReachSweepMode = sweepModeLabel;
+results.halfSessionWinMaxSec = halfSessionWinMaxSec;
+results.winMaxHalfSessionFromSessionSec = winMaxFromSessionSec;
+results.winMaxHalfSweepSec = winMaxHalfSweepSec;
+results.windowsHalfReachSweep = windowsHalfReachSweep;
+results.d2HalfReachByArea = d2HalfReachByArea;
+results.reachInclusionWinSecByArea = reachInclusionWinSecByArea;
+results.reachInclusionReachIdxByArea = reachInclusionReachIdxByArea;
+
+if makePlots && ~isempty(windowsHalfReachSweep)
+    nPlotHalf = numel(areasToTest);
+    figure(3103); clf;
+    set(gcf, 'WindowState', 'maximized');
+    tlHalf = tiledlayout(nPlotHalf, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+    for k = 1:nPlotHalf
+        a = areasToTest(k);
+        nexttile;
+        hold on;
+        d2Trace = d2HalfReachByArea{a};
+        plot(windowsHalfReachSweep, d2Trace, '-o', 'LineWidth', 1.5, 'Color', [0 0.45 0.74], ...
+            'MarkerFaceColor', [0.65 0.8 1]);
+        if useLog10D2
+            d2Finite = d2Trace(~isnan(d2Trace));
+            if ~isempty(d2Finite) && all(d2Finite > 0)
+                set(gca, 'YScale', 'log');
             end
-            winInc = reachInclusionWinSecByArea{a};
-            for e = 1:numel(winInc)
-                wE = winInc(e);
-                xline(wE, ':', 'Color', [0.82 0.25 0.2], 'LineWidth', 0.9);
-                tolW = max(1e-9, 1e-9 * max(1, abs(wE)));
-                jMatch = find(abs(windowsHalfReachSweep - wE) < tolW, 1);
-                if isempty(jMatch)
-                    [~, jMatch] = min(abs(windowsHalfReachSweep - wE));
-                end
-                yE = d2Trace(jMatch);
-                if ~isnan(yE)
-                    scatter(wE, yE, 28, [0.82 0.25 0.2], 'filled');
-                end
-            end
-            grid on;
-            xlabel('Window size (s)');
-            ylabel('d2');
-            title(sprintf('%s (bin %.3f s)', areas{a}, binSize(a)), 'Interpreter', 'none');
         end
-        sgtitle(tlHalf, sprintf(['%s: d2 vs window (center = reach nearest mid-session; ', ...
-            'red = reach onset newly inside window)'], sessionName), 'Interpreter', 'none', 'FontSize', 11);
+        winInc = reachInclusionWinSecByArea{a};
+        for e = 1:numel(winInc)
+            wE = winInc(e);
+            xline(wE, ':', 'Color', [0.82 0.25 0.2], 'LineWidth', 0.9);
+            tolW = max(1e-9, 1e-9 * max(1, abs(wE)));
+            jMatch = find(abs(windowsHalfReachSweep - wE) < tolW, 1);
+            if isempty(jMatch)
+                [~, jMatch] = min(abs(windowsHalfReachSweep - wE));
+            end
+            yE = d2Trace(jMatch);
+            if ~isnan(yE)
+                scatter(wE, yE, 28, [0.82 0.25 0.2], 'filled');
+            end
+        end
+        grid on;
+        xlabel('Window size (s)');
+        ylabel('d2');
+        title(sprintf('%s (bin %.3f s)', areas{a}, binSize(a)), 'Interpreter', 'none');
+    end
+    if strcmpi(sweepModeLabel, 'firstReachGrowRight')
+        sgTitleStr = sprintf(['%s: d2 vs window (first reach at %.3g s, grow right; ', ...
+            'red = reach onset newly inside window)'], sessionName, tFirstReach);
+        outPngHalf = fullfile(saveDir, 'criticality_reach_d2_halfsession_first_reach_grow_right.png');
+    else
+        sgTitleStr = sprintf(['%s: d2 vs window (center = reach nearest mid-session; ', ...
+            'red = reach onset newly inside window)'], sessionName);
         outPngHalf = fullfile(saveDir, 'criticality_reach_d2_halfsession_center_win_growth.png');
-        exportgraphics(gcf, outPngHalf, 'Resolution', 300);
-        fprintf('Saved figure: %s\n', outPngHalf);
     end
+    sgtitle(tlHalf, sgTitleStr, 'Interpreter', 'none', 'FontSize', 11);
+    exportgraphics(gcf, outPngHalf, 'Resolution', 300);
+    fprintf('Saved figure: %s\n', outPngHalf);
+end
 
 
 fprintf('\n=== criticality_reach_d2_vs_windowSize: done ===\n');
