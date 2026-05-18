@@ -113,7 +113,7 @@ opts.firingRateCheckTime = 5 * 60;
 opts.maxFiringRate = 100;
 opts.collectStart = 0;
 opts.collectEnd = 120*60;
-% opts.collectEnd = [];
+opts.collectEnd = [];
 % When collectEnd is nonempty after load_spike_times, saved .mat names include
 % _start_SEC_end_SEC so different time windows from the same session do not overwrite.
 opts.removeSome = true;

@@ -51,8 +51,11 @@ if loadAndPlot
         error('sessionType must be defined to load and plot results');
     end
 
-    dataStruct = load_session_data(sessionType, 'spikes', ...
-        'sessionName', sessionName, 'opts', opts);
+    loadArgs = {'sessionName', sessionName, 'opts', opts};
+    if exist('subjectName', 'var') && ~isempty(subjectName)
+        loadArgs = [loadArgs, {'subjectName', subjectName}];
+    end
+    dataStruct = load_session_data(sessionType, 'spikes', loadArgs{:});
 
     sessionNameForPath = '';
     if exist('sessionName', 'var') && ~isempty(sessionName)
@@ -87,8 +90,11 @@ end
 
 if exist('sessionType', 'var') && exist('dataSource', 'var')
     fprintf('Loading data using load_session_data...\n');
-    dataStruct = load_session_data(sessionType, dataSource, ...
-        'sessionName', sessionName, 'opts', opts);
+    loadArgs = {'sessionName', sessionName, 'opts', opts};
+    if exist('subjectName', 'var') && ~isempty(subjectName)
+        loadArgs = [loadArgs, {'subjectName', subjectName}];
+    end
+    dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 else
     error('sessionType and dataSource must be defined, or data must be pre-loaded in workspace');
 end

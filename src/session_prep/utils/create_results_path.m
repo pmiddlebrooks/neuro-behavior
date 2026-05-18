@@ -3,7 +3,7 @@ function resultsPath = create_results_path(analysisType, sessionType, sessionNam
 %
 % Variables:
 %   analysisType - e.g. 'criticality_prg'
-%   sessionType - 'reach', 'spontaneous', 'schall', 'hong'
+%   sessionType - 'reach', 'spontaneous', 'interval', 'schall', 'hong'
 %   sessionName - Session label used in the filename
 %   saveDir - Output directory
 %   varargin - 'filenameSuffix', 'createDir' (default true)

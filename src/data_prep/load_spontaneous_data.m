@@ -1,48 +1,25 @@
-function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands)
-% load_spontaneous_data - Load spontaneous data for sliding window analysis
+function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, subjectName, sessionName, lfpCleanParams, bands)
+% LOAD_SPONTANEOUS_DATA - Load spontaneous session data
 %
-% This function incorporates the functionality of get_standard_data.m
-% directly, removing the dependency on workspace variables.
-%
-% Input:
+% Variables:
 %   dataStruct - Data structure to populate
 %   dataSource - 'spikes' or 'lfp'
 %   paths - Paths structure from get_paths
 %   opts - Options structure
-%   sessionName - Session name (e.g., 'ag/ag112321/recording1')
+%   subjectName - Subject folder under spontaneous/data (e.g. 'ag', 'ey')
+%   sessionName - Session folder under subject (e.g. 'ag112321_1')
 %   lfpCleanParams - LFP cleaning parameters (if dataSource == 'lfp')
 %   bands - Frequency bands (if dataSource == 'lfp')
 %
-% Output:
-%   dataStruct - Updated data structure with all loaded data
+% Goal: Load from paths.spontaneousDataPath/subjectName/sessionName
 
-    % Set default collectEnd if not set
     if ~isfield(opts, 'collectEnd')
-        opts.collectEnd = 10 * 60;  % Default 10 minutes
+        opts.collectEnd = 10 * 60;
     end
-    
-    % Set up paths for spontaneous data (incorporating get_standard_data logic)
-    % Determine subdirectory based on first two characters of sessionName
-    % Extract first path component or first two characters of sessionName
-    pathParts = strsplit(sessionName, filesep);
-    if ~isempty(pathParts{1}) && length(pathParts{1}) >= 2
-        % Use first two characters of first path component
-        subDir = pathParts{1}(1:2);
-    elseif length(sessionName) >= 2
-        % Fallback: use first two characters of sessionName itself
-        subDir = sessionName(1:2);
-    else
-        % Use sessionName as-is if too short
-        subDir = '';
-    end
-    
-    % Build data path with subdirectory
-    if ~isempty(subDir)
-        opts.dataPath = fullfile(paths.spontaneousDataPath, subDir);
-    else
-        opts.dataPath = paths.spontaneousDataPath;
-    end
+
+    opts.dataPath = fullfile(paths.spontaneousDataPath, subjectName);
     opts.sessionName = sessionName;
+    opts.subjectName = subjectName;
     
     if strcmp(dataSource, 'spikes')
         % Load spontaneous spike data
@@ -204,25 +181,13 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
         dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanParams, bands);
     end
     
-    % Create save directory based on subjectID (similar to reach_task/results/{dataBaseName})
-    % Extract subjectID from sessionName
-    pathParts = strsplit(sessionName, filesep);
-    if length(pathParts) > 1
-        % Session name has path separator (e.g., 'ag112321/recording1e')
-        subjectID = fullfile(pathParts{1}, pathParts{2});
-    else
-        % Session name is just the subjectID (e.g., 'ey042822')
-        subjectID = sessionName;
-    end
-    
-    % Use dropPath/spontaneous/results/{subjectID}/ similar to reach_task/results/{dataBaseName}
-    dataStruct.saveDir = fullfile(paths.dropPath, 'spontaneous/results', subjectID);
+    dataStruct.saveDir = fullfile(paths.spontaneousResultsPath, subjectName, sessionName);
     if ~exist(dataStruct.saveDir, 'dir')
         mkdir(dataStruct.saveDir);
     end
-    
-    % Store session name
+
     dataStruct.sessionName = sessionName;
+    dataStruct.subjectName = subjectName;
     
     % Initialize reach-specific variables as empty (not used for spontaneous)
     dataStruct.dataR = [];

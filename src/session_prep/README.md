@@ -19,7 +19,7 @@ session_prep/
     └── validate_workspace_vars.m
 ```
 
-Session loaders delegate to `src/data_prep/` (`load_reach_data`, `load_spontaneous_data`, etc.).
+Session loaders delegate to `src/data_prep/` (`load_reach_data`, `load_spontaneous_data`, `load_interval_data`, etc.).
 
 ## Usage
 
@@ -28,7 +28,12 @@ addpath('src/session_prep/data_prep');
 addpath('src/session_prep/utils');
 addpath('src/data_prep');
 
+% Reach / schall: sessionName only
 dataStruct = load_session_data('reach', 'spikes', ...
     'sessionName', sessionName, 'opts', opts);
+
+% Spontaneous / interval: subjectName + sessionName
+% dataStruct = load_session_data('interval', 'spikes', ...
+%     'subjectName', 'ey9166', 'sessionName', 'ey9166_2026_04_03', 'opts', opts);
 results = criticality_prg_analysis(dataStruct, config);
 ```

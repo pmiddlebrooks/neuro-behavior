@@ -6,7 +6,7 @@ function spikeData = load_spike_times(sessionType, paths, sessionName, opts)
 % on-demand binning at different bin sizes per area.
 %
 % Variables:
-%   sessionType - Type of data: 'reach', 'spontaneous', 'schall', 'hong'
+%   sessionType - Type of data: 'reach', 'spontaneous', 'interval', 'schall', 'hong'
 %   paths - Paths structure from get_paths
 %   sessionName - Session name (format depends on sessionType)
 %   opts - Options structure with firing rate filtering parameters
@@ -28,6 +28,8 @@ function spikeData = load_spike_times(sessionType, paths, sessionName, opts)
             spikeData = load_spike_times_reach(paths, sessionName, opts);
         case 'spontaneous'
             spikeData = load_spike_times_spontaneous(paths, sessionName, opts);
+        case 'interval'
+            spikeData = load_spike_times_interval(paths, sessionName, opts);
         case 'schall'
             spikeData = load_spike_times_schall(paths, sessionName, opts);
         case 'hong'
@@ -98,22 +100,12 @@ end
 
 function spikeData = load_spike_times_spontaneous(paths, sessionName, opts)
 % LOAD_SPIKE_TIMES_SPONTANEOUS - Load spike times for spontaneous data
-    
-    % Set up paths
-    pathParts = strsplit(sessionName, filesep);
-    if ~isempty(pathParts{1}) && length(pathParts{1}) >= 2
-        subDir = pathParts{1}(1:2);
-    elseif length(sessionName) >= 2
-        subDir = sessionName(1:2);
-    else
-        subDir = '';
+
+    if ~isfield(opts, 'subjectName') || isempty(opts.subjectName)
+        error('opts.subjectName must be set before loading spontaneous spike times');
     end
-    
-    if ~isempty(subDir)
-        opts.dataPath = fullfile(paths.spontaneousDataPath, subDir);
-    else
-        opts.dataPath = paths.spontaneousDataPath;
-    end
+
+    opts.dataPath = fullfile(paths.spontaneousDataPath, opts.subjectName);
     opts.sessionName = sessionName;
     
     
@@ -167,6 +159,72 @@ end
     end
     
     % Build output structure
+    spikeData = struct();
+    spikeData.spikeTimes = spikeTimes;
+    spikeData.spikeClusters = spikeClusters;
+    spikeData.neuronIDs = neuronIDs;
+    spikeData.neuronAreas = cell(size(neuronAreas));
+    for i = 1:length(neuronAreas)
+        spikeData.neuronAreas{i} = char(neuronAreas(i));
+    end
+    spikeData.idLabels = neuronIDs;
+    spikeData.areaLabelsUnique = unique(neuronAreas);
+    spikeData.totalTime = opts.collectEnd - opts.collectStart;
+    spikeData.collectStart = opts.collectStart;
+    spikeData.collectEnd = opts.collectEnd;
+end
+
+function spikeData = load_spike_times_interval(paths, sessionName, opts)
+% LOAD_SPIKE_TIMES_INTERVAL - Load spike times for interval timing task data
+
+    if ~isfield(opts, 'subjectName') || isempty(opts.subjectName)
+        error('opts.subjectName must be set before loading interval spike times');
+    end
+
+    opts.dataPath = fullfile(paths.intervalDataPath, opts.subjectName);
+    opts.sessionName = sessionName;
+
+    data = load_data(opts, 'spikes');
+
+    useMulti = 1;
+    if ~useMulti
+        allGood = strcmp(data.ci.group, 'good');
+    else
+        allGood = strcmp(data.ci.group, 'good') | strcmp(data.ci.group, 'mua');
+    end
+
+    goodM23 = allGood & strcmp(data.ci.area, 'M23');
+    goodM56 = allGood & strcmp(data.ci.area, 'M56');
+    goodDS = allGood & strcmp(data.ci.area, 'DS');
+    goodVS = allGood & strcmp(data.ci.area, 'VS');
+
+    opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
+
+    if ismember('id', data.ci.Properties.VariableNames)
+        neuronIDs = data.ci.id(opts.useNeurons);
+    else
+        neuronIDs = data.ci.cluster_id(opts.useNeurons);
+    end
+    neuronAreas = data.ci.area(opts.useNeurons);
+
+    spikeTimes = data.spikeTimes;
+    spikeClusters = data.spikeClusters;
+
+    if isempty(opts.collectEnd)
+        opts.collectEnd = spikeTimes(end);
+    end
+
+    validSpikes = ismember(spikeClusters, neuronIDs) & ...
+        spikeTimes >= opts.collectStart & ...
+        spikeTimes <= opts.collectEnd;
+    spikeTimes = spikeTimes(validSpikes);
+    spikeClusters = spikeClusters(validSpikes);
+
+    if opts.removeSome
+        [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
+            filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
+    end
+
     spikeData = struct();
     spikeData.spikeTimes = spikeTimes;
     spikeData.spikeClusters = spikeClusters;

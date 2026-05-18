@@ -44,20 +44,23 @@ end
 
 %% =============================    Spontaneous Data Loading    =============================
 % Data type selection
-sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
+sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'
 
+subjectName = 'ag';
 sessionName =  'ag112321_1';
 % sessionName =  'ag112321_2';
+% subjectName = 'ey';
 % sessionName =  'ey042822';  % Good M56, Bad DS
+% subjectName = 'kw';
 % sessionName =  'kw092821';  % Bad M56, Good DS
 % sessionName =  'kw092121';  % Ok... few M56
 
 
 %% =============================    Spontaneous Data Loading    =============================
 % Data type selection
-sessionType = 'interval';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
+sessionType = 'interval';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'
 
-subject = 'ey9166';
+subjectName = 'ey9166';
 sessionName =  'ey9166_2026_04_03';
 
 

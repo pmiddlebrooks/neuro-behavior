@@ -2,10 +2,11 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
 % LOAD_SLIDING_WINDOW_DATA Load and prepare data for sliding window analyses
 %
 % Variables:
-%   sessionType - Type of data: 'reach', 'spontaneous', 'schall', 'hong'
+%   sessionType - Type of data: 'reach', 'spontaneous', 'interval', 'schall', 'hong'
 %   dataSource - Source of data: 'spikes' or 'lfp'
 %   varargin - Optional name-value pairs:
-%       'sessionName' - Session name (required for reach/schall data)
+%       'subjectName' - Subject folder (required for spontaneous/interval)
+%       'sessionName' - Session name (required for reach/spontaneous/interval/schall)
 %       'opts' - Options structure (if not provided, creates default)
 %       'lfpCleanParams' - LFP cleaning parameters structure
 %       'bands' - Frequency bands for LFP (default: alpha, beta, lowGamma, highGamma)
@@ -25,6 +26,7 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
 
 % Parse optional arguments
 p = inputParser;
+addParameter(p, 'subjectName', '', @(x) ischar(x) || isempty(x));
 addParameter(p, 'sessionName', '', @(x) ischar(x) || isempty(x));
 addParameter(p, 'opts', [], @(x) isstruct(x) || isempty(x));
 addParameter(p, 'lfpCleanParams', [], @(x) isstruct(x) || isempty(x));
@@ -32,6 +34,7 @@ addParameter(p, 'bands', [], @(x) iscell(x) || isempty(x));
 addParameter(p, 'minBinSize', 0.005, @isnumeric);
 parse(p, varargin{:});
 
+subjectName = p.Results.subjectName;
 sessionName = p.Results.sessionName;
 opts = p.Results.opts;
 lfpCleanParams = p.Results.lfpCleanParams;
@@ -84,11 +87,20 @@ fprintf('\n=== Loading %s %s data ===\n', sessionType, dataSource);
 % Load data based on data type
 switch sessionType
     case 'spontaneous'
-        if isempty(sessionName)
-            error('sessionName must be provided for spontaneous data');
+        if isempty(subjectName) || isempty(sessionName)
+            error('subjectName and sessionName must be provided for spontaneous data');
         end
+        dataStruct.subjectName = subjectName;
         dataStruct.sessionName = sessionName;
-        dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, sessionName, lfpCleanParams, bands);
+        dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, subjectName, sessionName, lfpCleanParams, bands);
+
+    case 'interval'
+        if isempty(subjectName) || isempty(sessionName)
+            error('subjectName and sessionName must be provided for interval data');
+        end
+        dataStruct.subjectName = subjectName;
+        dataStruct.sessionName = sessionName;
+        dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, subjectName, sessionName, lfpCleanParams, bands);
 
     case 'reach'
         if isempty(sessionName)
@@ -108,7 +120,7 @@ switch sessionType
         dataStruct = load_hong_data(dataStruct, dataSource, paths, opts, lfpCleanParams, bands);
         dataStruct.sessionName = sessionName;
     otherwise
-        error('Invalid sessionType: %s. Must be ''reach'', ''spontaneous'', ''schall'', or ''hong''', sessionType);
+        error('Invalid sessionType: %s. Must be ''reach'', ''spontaneous'', ''interval'', ''schall'', or ''hong''', sessionType);
 end
 
 fprintf('Data loading complete. %d areas loaded.\n', length(dataStruct.areas));
