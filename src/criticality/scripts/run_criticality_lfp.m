@@ -1,6 +1,10 @@
 %%
 % Criticality LFP Analysis - Wrapper Script
 % Backward-compatible wrapper that uses the new function-based architecture
+%
+% Workspace variables:
+%   sessionType or dataType, sessionName, dataSource (or dataType for LFP)
+%   subjectName - required for spontaneous and interval; omit for reach/schall/hong
 
 % Add paths (check if directories exist first to avoid warnings)
 basePath = fileparts(mfilename('fullpath'));  % criticality/scripts
@@ -20,13 +24,26 @@ end
 if exist(analysesPath, 'dir')
     addpath(analysesPath);
 end
+if exist(srcPath, 'dir')
+    addpath(srcPath);
+end
+addpath(basePath);
+
+subjectNameForLoad = '';
+if exist('subjectName', 'var') && ~isempty(subjectName)
+    subjectNameForLoad = subjectName;
+end
 
 % Check if data is already loaded
 if ~exist('binnedEnvelopes', 'var')
     if exist('dataType', 'var') && exist('dataSource', 'var')
+        sessionTypeLoad = dataType;
+        if exist('sessionType', 'var') && ~isempty(sessionType)
+            sessionTypeLoad = sessionType;
+        end
         fprintf('Loading data using load_sliding_window_data...\n');
-        dataStruct = load_sliding_window_data(dataType, dataSource, ...
-            'sessionName', sessionName, 'opts', opts);
+        loadArgs = build_session_load_args(sessionTypeLoad, sessionName, opts, subjectNameForLoad);
+        dataStruct = load_sliding_window_data(sessionTypeLoad, dataSource, loadArgs{:});
         
         % Convert structure to workspace variables
         binnedEnvelopes = dataStruct.binnedEnvelopes;
@@ -47,6 +64,9 @@ if ~exist('binnedEnvelopes', 'var')
         end
         if isfield(dataStruct, 'sessionName')
             sessionName = dataStruct.sessionName;
+        end
+        if isfield(dataStruct, 'subjectName')
+            subjectName = dataStruct.subjectName;
         end
         if isfield(dataStruct, 'dataBaseName')
             dataBaseName = dataStruct.dataBaseName;
@@ -111,6 +131,9 @@ if exist('areasToTest', 'var')
 end
 if exist('sessionName', 'var')
     dataStruct.sessionName = sessionName;
+end
+if exist('subjectName', 'var') && ~isempty(subjectName)
+    dataStruct.subjectName = subjectName;
 end
 if exist('dataBaseName', 'var')
     dataStruct.dataBaseName = dataBaseName;

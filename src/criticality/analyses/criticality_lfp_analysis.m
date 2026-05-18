@@ -23,7 +23,10 @@ function results = criticality_lfp_analysis(dataStruct, config)
 %   results - Structure with d2, dfa, startS, and params
 
     % Add paths
-    addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
+    srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
+    addpath(srcRoot);
+    add_figure_tools_path();
+    addpath(fullfile(srcRoot, 'sliding_window_prep', 'utils'));
     addpath(fullfile(fileparts(mfilename('fullpath')), '..'));
     
     % Validate inputs

@@ -6,6 +6,10 @@
 %
 % Uses non-overlapping 30 s windows and 50 ms spike bins (paper defaults).
 % Real-space paired-correlation coarse-graining and scaling exponents are not run.
+%
+% Workspace variables:
+%   sessionType, sessionName, dataSource
+%   subjectName - required for spontaneous and interval; omit for reach/schall/hong
 
 % Set to 1 to load and plot saved results instead of running analysis
 loadAndPlot = 0;
@@ -34,6 +38,10 @@ end
 if exist(criticalityPath, 'dir')
     addpath(criticalityPath);
 end
+if exist(srcPath, 'dir')
+    addpath(srcPath);
+end
+addpath(basePath);
 
 opts = neuro_behavior_options;
 opts.firingRateCheckTime = 5 * 60;
@@ -46,15 +54,17 @@ end
 opts.minFiringRate = 0.1;
 opts.maxFiringRate = 100;
 
+subjectNameForLoad = '';
+if exist('subjectName', 'var') && ~isempty(subjectName)
+    subjectNameForLoad = subjectName;
+end
+
 if loadAndPlot
     if ~exist('sessionType', 'var')
         error('sessionType must be defined to load and plot results');
     end
 
-    loadArgs = {'sessionName', sessionName, 'opts', opts};
-    if exist('subjectName', 'var') && ~isempty(subjectName)
-        loadArgs = [loadArgs, {'subjectName', subjectName}];
-    end
+    loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
     dataStruct = load_session_data(sessionType, 'spikes', loadArgs{:});
 
     sessionNameForPath = '';
@@ -90,10 +100,7 @@ end
 
 if exist('sessionType', 'var') && exist('dataSource', 'var')
     fprintf('Loading data using load_session_data...\n');
-    loadArgs = {'sessionName', sessionName, 'opts', opts};
-    if exist('subjectName', 'var') && ~isempty(subjectName)
-        loadArgs = [loadArgs, {'subjectName', subjectName}];
-    end
+    loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
     dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 else
     error('sessionType and dataSource must be defined, or data must be pre-loaded in workspace');

@@ -12,8 +12,10 @@ function criticality_av_plot(results, plotConfig, config, dataStruct, filenameSu
 %   Create time series plots of avalanche metrics (dcc, tau, alpha, paramSD, decades)
 %   with optional permutation shading.
 
-% Add path to utility functions
-utilsPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils');
+srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
+addpath(srcRoot);
+add_figure_tools_path();
+utilsPath = fullfile(srcRoot, 'sliding_window_prep', 'utils');
 if exist(utilsPath, 'dir')
     addpath(utilsPath);
 end

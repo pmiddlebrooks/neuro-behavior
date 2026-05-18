@@ -30,8 +30,11 @@ function results = criticality_ar_analysis(dataStruct, config)
 %   results - Structure with d2, mrBr, startS, popActivity, and params
 
     % Add paths
-    addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
-    addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
+    srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
+    addpath(srcRoot);
+    add_figure_tools_path();
+    addpath(fullfile(srcRoot, 'sliding_window_prep', 'utils'));
+    addpath(fullfile(srcRoot, 'data_prep'));
     
     % Validate inputs
     validate_workspace_vars({'sessionType', 'spikeTimes', 'spikeClusters', 'areas', 'idMatIdx'}, dataStruct, ...
@@ -284,13 +287,12 @@ function results = criticality_ar_analysis(dataStruct, config)
     d2SubsamplesAll = cell(1, numAreas);
     d2NormalizedSubsamplesAll = cell(1, numAreas);
     
-    if config.enablePermutations
-        d2Permuted = cell(1, numAreas);
-        mrBrPermuted = cell(1, numAreas);
-        for a = 1:numAreas
-            d2Permuted{a} = [];
-            mrBrPermuted{a} = [];
-        end
+    % Always initialize (build_results_structure expects these variables)
+    d2Permuted = cell(1, numAreas);
+    mrBrPermuted = cell(1, numAreas);
+    for a = 1:numAreas
+        d2Permuted{a} = [];
+        mrBrPermuted{a} = [];
     end
     
     if config.analyzeModulation
@@ -812,6 +814,7 @@ function config = set_config_defaults(config)
     defaults.makePlots = true;
     defaults.saveData = true;  % Set to false to skip saving results
     defaults.normalizeD2 = true;  % Normalize d2 by shuffled d2 values
+    defaults.useLog10D2 = false;  % Plot log10(d2); values <= 0 become NaN
     defaults.minSpikesPerBin = 3;
     defaults.maxSpikesPerBin = 50;
     defaults.minBinsPerWindow = 1000;
@@ -1264,6 +1267,11 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.params.pOrder = config.pOrder;
     results.params.critType = config.critType;
     results.params.normalizeD2 = config.normalizeD2;
+    if isfield(config, 'useLog10D2')
+        results.params.useLog10D2 = config.useLog10D2;
+    else
+        results.params.useLog10D2 = false;
+    end
     if isfield(config, 'useSubsampling')
         results.params.useSubsampling = config.useSubsampling;
         if config.useSubsampling

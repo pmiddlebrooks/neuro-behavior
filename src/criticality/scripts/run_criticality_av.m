@@ -4,6 +4,10 @@
 %
 % This script maintains compatibility with the old workflow while using
 % the new modular functions.
+%
+% Workspace variables:
+%   sessionType, sessionName, dataSource
+%   subjectName - required for spontaneous and interval; omit for reach/schall/hong
 
 % Add paths (check if directories exist first to avoid warnings)
 basePath = fileparts(mfilename('fullpath'));  % criticality/scripts
@@ -23,6 +27,10 @@ end
 if exist(analysesPath, 'dir')
     addpath(analysesPath);
 end
+if exist(srcPath, 'dir')
+    addpath(srcPath);
+end
+addpath(basePath);
 
 % Configure variables
 opts = neuro_behavior_options;
@@ -36,11 +44,16 @@ end
 opts.minFiringRate = .1;
 opts.maxFiringRate = 100;
 
+subjectNameForLoad = '';
+if exist('subjectName', 'var') && ~isempty(subjectName)
+    subjectNameForLoad = subjectName;
+end
+
 % Try to load data using new function
 if exist('sessionType', 'var') && exist('dataSource', 'var')
     fprintf('Loading data using load_sliding_window_data...\n');
-    dataStruct = load_sliding_window_data(sessionType, dataSource, ...
-        'sessionName', sessionName, 'opts', opts);
+    loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
+    dataStruct = load_sliding_window_data(sessionType, dataSource, loadArgs{:});
 else
     error('sessionType and dataSource must be defined, or data must be pre-loaded in workspace');
 end

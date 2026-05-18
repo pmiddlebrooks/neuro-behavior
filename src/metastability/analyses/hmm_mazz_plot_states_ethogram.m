@@ -365,15 +365,19 @@ else
         sessionBaseName = config.sessionName;
     end
 
-    pathParts = strsplit(config.sessionName, filesep);
-    subDir = pathParts{1}(1:min(2, numel(pathParts{1})));
-    dataPathBhv = fullfile(paths.spontaneousDataPath, subDir);
-    sessionFolderBhv = fullfile(dataPathBhv, sessionBaseName);
+    if isfield(config, 'subjectName') && ~isempty(config.subjectName)
+        sessionFolderBhv = fullfile(paths.spontaneousDataPath, config.subjectName, sessionBaseName);
+    else
+        pathParts = strsplit(config.sessionName, filesep);
+        subDir = pathParts{1}(1:min(2, numel(pathParts{1})));
+        dataPathBhv = fullfile(paths.spontaneousDataPath, subDir);
+        sessionFolderBhv = fullfile(dataPathBhv, sessionBaseName);
 
-    if ~isfolder(sessionFolderBhv)
-        sessionFolderFlat = fullfile(paths.spontaneousDataPath, sessionBaseName);
-        if isfolder(sessionFolderFlat)
-            sessionFolderBhv = sessionFolderFlat;
+        if ~isfolder(sessionFolderBhv)
+            sessionFolderFlat = fullfile(paths.spontaneousDataPath, sessionBaseName);
+            if isfolder(sessionFolderFlat)
+                sessionFolderBhv = sessionFolderFlat;
+            end
         end
     end
 

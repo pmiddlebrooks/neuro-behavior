@@ -7,6 +7,7 @@
 % Assumes the following workspace variables are set before running:
 %   sessionType  - e.g., 'spontaneous', 'reach', etc.
 %   sessionName  - recording/session identifier (string)
+%   subjectName  - required for spontaneous and interval; omit for reach/schall/hong
 %
 % This script will:
 %   1) Load spike data using load_sliding_window_data
@@ -60,6 +61,11 @@ end
 if exist(analysesPath, 'dir')
     addpath(analysesPath);
 end
+if exist(srcPath, 'dir')
+    addpath(srcPath);
+end
+addpath(basePath);
+add_figure_tools_path();
 
 %% Configure data loading options
 opts = neuro_behavior_options;
@@ -72,6 +78,11 @@ end
 opts.minFiringRate = .1;
 opts.maxFiringRate = 100;
 
+subjectNameForLoad = '';
+if exist('subjectName', 'var') && ~isempty(subjectName)
+    subjectNameForLoad = subjectName;
+end
+
 %% Load data
 dataSource = 'spikes';
 if ~(exist('sessionType', 'var') && exist('sessionName', 'var'))
@@ -79,8 +90,8 @@ if ~(exist('sessionType', 'var') && exist('sessionName', 'var'))
 end
 
 fprintf('Loading data using load_sliding_window_data...\n');
-dataStruct = load_sliding_window_data(sessionType, dataSource, ...
-    'sessionName', sessionName, 'opts', opts);
+loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
+dataStruct = load_sliding_window_data(sessionType, dataSource, loadArgs{:});
 
 %% Set up configuration (based on run_criticality_ar, but without saving/plotting)
 config = struct();

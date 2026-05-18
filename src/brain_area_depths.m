@@ -1,9 +1,10 @@
-function brainAreaDepths = brain_area_depths(sessionType, sessionName)
+function brainAreaDepths = brain_area_depths(sessionType, subjectName, sessionName)
 % BRAIN_AREA_DEPTHS - Interactive brain-area depth boundaries for a session
 %
 % Variables:
 %   sessionType - 'spontaneous' or 'interval' (sessions with cluster_info.tsv)
-%   sessionName - Session folder name or relative path under the data root
+%   subjectName - Subject folder under the task data root (e.g. 'ag', 'ey9166')
+%   sessionName - Session folder under subject (e.g. 'ag112321_1')
 %
 % Goal:
 %   Load cluster_info.tsv, plot a jittered scatter of unit depths, overlay
@@ -12,20 +13,21 @@ function brainAreaDepths = brain_area_depths(sessionType, sessionName)
 %   session folder.
 %
 % Usage (function):
-%   brainAreaDepths = brain_area_depths('spontaneous', 'ag112321_1');
+%   brainAreaDepths = brain_area_depths('spontaneous', 'ag', 'ag112321_1');
+%   brainAreaDepths = brain_area_depths('interval', 'ey9166', 'ey9166_2026_04_03');
 %
-% Usage (script): set sessionType and sessionName in the workspace, then run:
-%   brain_area_depths
+% Usage (script): set sessionType, subjectName, and sessionName in the workspace,
+%   then run: brain_area_depths
 
-if nargin < 2
-    if ~exist('sessionType', 'var') || ~exist('sessionName', 'var')
-        error(['Provide sessionType and sessionName as arguments, or define ', ...
-            'them in the workspace before running brain_area_depths.']);
+if nargin < 3
+    if ~exist('sessionType', 'var') || ~exist('subjectName', 'var') || ~exist('sessionName', 'var')
+        error(['Provide sessionType, subjectName, and sessionName as arguments, ', ...
+            'or define them in the workspace before running brain_area_depths.']);
     end
 end
 
 paths = get_paths;
-sessionFolder = get_cluster_session_folder(sessionType, paths, sessionName);
+sessionFolder = get_cluster_session_folder(sessionType, paths, subjectName, sessionName);
 ci = load_cluster_info(sessionFolder);
 [spikeTimes, spikeClusters] = load_session_spike_trains(sessionFolder);
 ci.firingRateHz = compute_unit_firing_rates(ci, spikeTimes, spikeClusters);
@@ -37,17 +39,17 @@ if strcmp(depthSource, 'session')
     fprintf('Starting from existing brain_area_depths.mat\n');
 end
 
-figHandle = plot_unit_depths(ci, areaNames, depthRanges, sessionType, sessionName);
+figHandle = plot_unit_depths(ci, areaNames, depthRanges, sessionType, subjectName, sessionName);
 draw_area_border_lines(depthRanges);
 
-fprintf('\nSession: %s (%s)\n', sessionName, sessionType);
+fprintf('\nSession: %s / %s (%s)\n', subjectName, sessionName, sessionType);
 fprintf('Folder: %s\n', sessionFolder);
 fprintf('Units in cluster_info: %d\n\n', height(ci));
 
 for iArea = 1:numel(areaNames)
     areaName = areaNames{iArea};
     currentRange = depthRanges(iArea, :);
-    highlight_area_on_plot(figHandle, ci, areaNames, depthRanges, iArea, sessionType, sessionName);
+    highlight_area_on_plot(figHandle, ci, areaNames, depthRanges, iArea, sessionType, subjectName, sessionName);
 
     fprintf('--- %s: depth range [%d, %d] um ---\n', areaName, currentRange(1), currentRange(2));
     userInput = input('Press Enter to accept, or enter new range as "min max": ', 's');
@@ -57,7 +59,7 @@ for iArea = 1:numel(areaNames)
         if ~isequal(newRange, currentRange)
             depthRanges(iArea, :) = newRange;
             fprintf('Updated %s to [%d, %d] um.\n', areaName, newRange(1), newRange(2));
-            plot_unit_depths(ci, areaNames, depthRanges, sessionType, sessionName, figHandle);
+            plot_unit_depths(ci, areaNames, depthRanges, sessionType, subjectName, sessionName, figHandle);
             draw_area_border_lines(depthRanges);
         end
     else
@@ -67,6 +69,7 @@ end
 
 brainAreaDepths = struct();
 brainAreaDepths.sessionType = sessionType;
+brainAreaDepths.subjectName = subjectName;
 brainAreaDepths.sessionName = sessionName;
 brainAreaDepths.sessionFolder = sessionFolder;
 brainAreaDepths.areaNames = areaNames;
@@ -84,22 +87,27 @@ ds = brainAreaDepths.ds;
 vs = brainAreaDepths.vs;
 
 savePath = fullfile(sessionFolder, 'brain_area_depths.mat');
-save(savePath, 'm23', 'm56', 'cc', 'ds', 'vs', 'sessionType', 'sessionName', ...
+save(savePath, 'm23', 'm56', 'cc', 'ds', 'vs', 'sessionType', 'subjectName', 'sessionName', ...
     'areaNames', 'depthRanges', '-v7.3');
 
 fprintf('\nSaved brain area depths to:\n  %s\n', savePath);
 end
 
-function sessionFolder = get_cluster_session_folder(sessionType, paths, sessionName)
+function sessionFolder = get_cluster_session_folder(sessionType, paths, subjectName, sessionName)
 % GET_CLUSTER_SESSION_FOLDER - Resolve session folder for cluster_info.tsv
 %
 % Variables:
 %   sessionType - 'spontaneous' or 'interval'
 %   paths       - struct from get_paths
-%   sessionName - session identifier
+%   subjectName - subject folder under the task data root
+%   sessionName - session folder under subject
 %
 % Goal:
 %   Return the folder containing cluster_info.tsv for this session.
+
+if isempty(subjectName)
+    error('subjectName is required for %s sessions.', sessionType);
+end
 
 switch lower(sessionType)
     case 'spontaneous'
@@ -111,28 +119,7 @@ switch lower(sessionType)
             '(cluster_info.tsv). Got sessionType = %s.'], sessionType);
 end
 
-pathParts = strsplit(sessionName, filesep);
-if ~isempty(pathParts{1}) && strlength(pathParts{1}) >= 2
-    subDir = char(pathParts{1}(1:2));
-elseif strlength(sessionName) >= 2
-    subDir = sessionName(1:2);
-else
-    subDir = '';
-end
-
-if ~isempty(subDir)
-    dataPath = fullfile(basePath, subDir);
-else
-    dataPath = basePath;
-end
-
-sessionFolder = fullfile(dataPath, sessionName);
-if ~isfolder(sessionFolder)
-    sessionFolderFlat = fullfile(basePath, sessionName);
-    if isfolder(sessionFolderFlat)
-        sessionFolder = sessionFolderFlat;
-    end
-end
+sessionFolder = fullfile(basePath, subjectName, sessionName);
 
 clusterInfoPath = fullfile(sessionFolder, 'cluster_info.tsv');
 if ~isfolder(sessionFolder)
@@ -255,7 +242,7 @@ end
 markerSizes(~isfinite(firingRateHz) | firingRateHz <= 0) = minMarkerSize;
 end
 
-function figHandle = plot_unit_depths(ci, areaNames, depthRanges, sessionType, sessionName, figHandle)
+function figHandle = plot_unit_depths(ci, areaNames, depthRanges, sessionType, subjectName, sessionName, figHandle)
 % PLOT_UNIT_DEPTHS - Jittered scatter of unit depths (surface at top)
 %
 % Variables:
@@ -263,6 +250,7 @@ function figHandle = plot_unit_depths(ci, areaNames, depthRanges, sessionType, s
 %   areaNames    - cell of area labels (used for area assignment elsewhere)
 %   depthRanges  - numAreas x 2 depth bounds
 %   sessionType  - session type string
+%   subjectName  - subject folder name
 %   sessionName  - session name string
 %   figHandle    - optional existing figure handle
 %
@@ -270,7 +258,7 @@ function figHandle = plot_unit_depths(ci, areaNames, depthRanges, sessionType, s
 %   Plot all units in one jittered vertical column vs depth; marker size
 %   is proportional to ci.firingRateHz when present.
 
-if nargin < 6 || isempty(figHandle) || ~isvalid(figHandle)
+if nargin < 7 || isempty(figHandle) || ~isvalid(figHandle)
     figHandle = figure('Color', 'w', 'Name', 'Brain area depths');
 else
     figure(figHandle);
@@ -293,7 +281,7 @@ xlim([0.5, 1.5]);
 ylim([-50, 3890]);
 set(gca, 'YDir', 'reverse', 'XTick', []);
 ylabel('Depth from surface (\mum)');
-title(sprintf('Unit depths: %s (%s)', sessionName, sessionType), 'Interpreter', 'none');
+title(sprintf('Unit depths: %s / %s (%s)', subjectName, sessionName, sessionType), 'Interpreter', 'none');
 grid on;
 end
 
@@ -311,7 +299,7 @@ yl = yline(borderDepths, '--', 'Color', [0.15 0.15 0.15], 'LineWidth', 1.1);
 set(yl, 'HandleVisibility', 'off');
 end
 
-function highlight_area_on_plot(figHandle, ci, areaNames, depthRanges, iArea, sessionType, sessionName)
+function highlight_area_on_plot(figHandle, ci, areaNames, depthRanges, iArea, sessionType, subjectName, sessionName)
 % HIGHLIGHT_AREA_ON_PLOT - Emphasize units in the current area on the figure
 %
 % Variables:
@@ -321,6 +309,7 @@ function highlight_area_on_plot(figHandle, ci, areaNames, depthRanges, iArea, se
 %   depthRanges  - depth bounds
 %   iArea        - index of area being reviewed
 %   sessionType  - session type string
+%   subjectName  - subject folder name
 %   sessionName  - session name string
 %
 % Goal:
@@ -331,8 +320,8 @@ areaName = areaNames{iArea};
 currentRange = depthRanges(iArea, :);
 areaAssignments = assign_areas(ci.depth, areaNames, depthRanges);
 nUnits = sum(strcmp(areaAssignments, areaName));
-title(sprintf('%s (%s) | reviewing %s [%d, %d] um (%d units)', ...
-    sessionName, sessionType, areaName, currentRange(1), currentRange(2), nUnits), ...
+title(sprintf('%s / %s (%s) | reviewing %s [%d, %d] um (%d units)', ...
+    subjectName, sessionName, sessionType, areaName, currentRange(1), currentRange(2), nUnits), ...
     'Interpreter', 'none');
 end
 

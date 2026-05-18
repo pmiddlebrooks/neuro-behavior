@@ -12,8 +12,10 @@ function criticality_ar_plot(results, plotConfig, config, dataStruct, filenameSu
 %   Create time series plots of d2 and population activity with optional
 %   permutation shading and reach onset markers.
 
-% Add path to utility functions
-utilsPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils');
+srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
+addpath(srcRoot);
+add_figure_tools_path();
+utilsPath = fullfile(srcRoot, 'sliding_window_prep', 'utils');
 if exist(utilsPath, 'dir')
     addpath(utilsPath);
 end
@@ -79,9 +81,39 @@ end
 % Use normalized d2 values if normalization is enabled
 if normalizeD2 && isfield(results, 'd2Normalized')
     d2ToPlot = results.d2Normalized;
-    d2Label = 'd2 (normalized)';
 else
     d2ToPlot = d2;
+end
+
+useLog10D2 = false;
+if isfield(config, 'useLog10D2') && ~isempty(config.useLog10D2)
+    useLog10D2 = config.useLog10D2;
+elseif isfield(results, 'params') && isfield(results.params, 'useLog10D2')
+    useLog10D2 = results.params.useLog10D2;
+end
+
+% Optional log10 transform for display (raw values remain in saved results)
+if useLog10D2
+    d2ToPlot = log10_cell_numeric(d2ToPlot);
+    if useSubsampling
+        if ~isempty(d2SubsamplesAll)
+            d2SubsamplesAll = log10_cell_numeric(d2SubsamplesAll);
+        end
+        if normalizeD2 && ~isempty(d2NormalizedSubsamples)
+            d2NormalizedSubsamples = log10_cell_numeric(d2NormalizedSubsamples);
+        end
+    end
+end
+
+if useLog10D2
+    if normalizeD2
+        d2Label = 'log_{10}(d2 normalized)';
+    else
+        d2Label = 'log_{10}(d2)';
+    end
+elseif normalizeD2
+    d2Label = 'd2 (normalized)';
+else
     d2Label = 'd2';
 end
 
@@ -124,6 +156,10 @@ if isfield(results, 'enablePermutations')
 else
     enablePermutations = false;
 end
+
+% Shared left y-limits for all area panels (and combined row), from global min/max
+yLimShared = compute_shared_d2_ylim(d2ToPlot, areasToTest, normalizeD2, useLog10D2, ...
+    useSubsampling, d2SubsamplesAll, d2NormalizedSubsamples, results, enablePermutations);
 
 % Create figure
 figure(909); clf;
@@ -213,33 +249,24 @@ if analyzeD2
             end
         end
 
-        % Add reference line at 1.0 for normalized values
-        if normalizeD2
+        % Reference at shuffled mean: 1.0 on linear normalized scale, 0 on log10 scale
+        if normalizeD2 && ~useLog10D2
             yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
+        elseif normalizeD2 && useLog10D2
+            yline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'log_{10}(shuffled mean)');
         end
 
         
         xlim(xLimitsCombined);
-        % Set y-axis from min to max of all d2 signals
-        if ~isempty(allD2Values)
-            maxD2 = max(allD2Values(~isnan(allD2Values)));
-            minD2 = min(allD2Values(~isnan(allD2Values)));
-            if normalizeD2
-                % Ensure reference line at 1.0 is visible
-                yRange = maxD2 - minD2;
-                if yRange == 0
-                    yRange = 0.1;
-                end
-                yMin = min(1.0, minD2) - 0.05 * yRange;
-                yMax = max(1.0, maxD2) + 0.05 * yRange;
-                yMin = max(0, yMin);
-                ylim([yMin yMax]);
-            else
-                ylim([minD2 maxD2]);
-            end
+        if ~isempty(yLimShared)
+            ylim(yLimShared);
         end
         ylabel(d2Label);
-        if normalizeD2
+        if useLog10D2 && normalizeD2
+            title('All Areas - log_{10}(d2 normalized)');
+        elseif useLog10D2
+            title('All Areas - log_{10}(d2)');
+        elseif normalizeD2
             title('All Areas - d2 (Normalized)');
         else
             title('All Areas - d2');
@@ -334,40 +361,24 @@ for idx = 1:length(areasToTest)
         areaColor = areaColors{min(a, length(areaColors))};
         ylabel(d2Label, 'Color', areaColor);
 
-        % Set y-axis limits based on whether normalized
         if normalizeD2
-            % For normalized, ensure reference line at 1.0 is visible
-            if ~isempty(d2ToPlot{a})
-                validD2 = d2ToPlot{a}(~isnan(d2ToPlot{a}));
-                if ~isempty(validD2)
-                    yRange = max(validD2) - min(validD2);
-                    if yRange == 0
-                        yRange = 0.1;
-                    end
-                    yMin = min(1.0, min(validD2)) - 0.05 * yRange;
-                    yMax = max(1.0, max(validD2)) + 0.05 * yRange;
-                    yMin = max(0, yMin);
-                    ylim([yMin yMax]);
-                else
-                    ylim([0 2]);
-                end
+            if ~useLog10D2
+                yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
             else
-                ylim([0 2]);
+                yline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'log_{10}(shuffled mean)');
             end
-            % Add reference line at 1.0
-            yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
-        else
-            ylim([0 0.5]);
         end
-        set(gca, 'YTickLabelMode', 'auto');
-        set(gca, 'YTickMode', 'auto');
 
         % Plot permutation mean ± std per window if available (only for raw d2)
         if ~normalizeD2 && enablePermutations && isfield(results, 'd2Permuted') && ...
                 ~isempty(results.d2Permuted{a})
             % Calculate mean and std for each window across shuffles
-            permutedMean = nanmean(results.d2Permuted{a}, 2);
-            permutedStd = nanstd(results.d2Permuted{a}, 0, 2);
+            permutedBlock = results.d2Permuted{a};
+            if useLog10D2
+                permutedBlock = log10_safe_numeric(permutedBlock);
+            end
+            permutedMean = nanmean(permutedBlock, 2);
+            permutedStd = nanstd(permutedBlock, 0, 2);
 
             % Find valid indices
             validIdx = ~isnan(permutedMean) & ~isnan(permutedStd) & ...
@@ -421,7 +432,11 @@ for idx = 1:length(areasToTest)
         nNeurons = length(dataStruct.idMatIdx{a});
     end
     
-    if normalizeD2
+    if useLog10D2 && normalizeD2
+        title(sprintf('%s (n=%d) - log_{10}(d2 norm., left) and PopActivity Windows (right)', areas{a}, nNeurons));
+    elseif useLog10D2
+        title(sprintf('%s (n=%d) - log_{10}(d2, left) and PopActivity Windows (right)', areas{a}, nNeurons));
+    elseif normalizeD2
         title(sprintf('%s (n=%d) - d2 (normalized, left) and PopActivity Windows (right)', areas{a}, nNeurons));
     else
         title(sprintf('%s (n=%d) - d2 (left) and PopActivity Windows (right)', areas{a}, nNeurons));
@@ -431,23 +446,34 @@ for idx = 1:length(areasToTest)
     end
     grid on;
     set(gca, 'XTickLabelMode', 'auto');
-    % Ensure both left and right y-axes have visible tick labels
-    yyaxis left;
-    set(gca, 'YTickLabelMode', 'auto');
-    set(gca, 'YTickMode', 'auto');
+    % Shared d2 y-limits on left axis (after all traces, ribbons, permutations)
+    if analyzeD2 && ~isempty(yLimShared)
+        yyaxis left;
+        ylim(yLimShared);
+        set(gca, 'YTickLabelMode', 'auto');
+        set(gca, 'YTickMode', 'auto');
+    end
     if isfield(results, 'popActivityWindows') && ...
             ~isempty(popActivityWindows{a}) && ...
             any(~isnan(popActivityWindows{a}))
         yyaxis right;
+        ylim('auto');
         set(gca, 'YTickLabelMode', 'auto');
         set(gca, 'YTickMode', 'auto');
-        yyaxis left;
+        if analyzeD2 && ~isempty(yLimShared)
+            yyaxis left;
+            ylim(yLimShared);
+        end
     end
 end
 
 % Create super title
 normText = '';
-if normalizeD2
+if useLog10D2 && normalizeD2
+    normText = ' log_{10}(normalized)';
+elseif useLog10D2
+    normText = ' log_{10}';
+elseif normalizeD2
     normText = ' (normalized)';
 end
 if strcmp(sessionType, 'reach')
@@ -507,6 +533,118 @@ if saveEps
         fprintf('Skipping EPS save (renderer failed): %s\n', me.message);
     end
 end
+end
+
+function yLimShared = compute_shared_d2_ylim(d2ToPlot, areasToTest, normalizeD2, useLog10D2, ...
+    useSubsampling, d2SubsamplesAll, d2NormalizedSubsamples, results, enablePermutations)
+% COMPUTE_SHARED_D2_YLIM - Global y-limits for d2 panels across brain areas
+%
+% Variables:
+%   d2ToPlot, areasToTest - plotted d2 traces (already log/normalized as requested)
+%   normalizeD2, useLog10D2 - scale options
+%   useSubsampling, d2SubsamplesAll, d2NormalizedSubsamples - optional ribbon extents
+%   results, enablePermutations - optional permutation band extents
+%
+% Goal:
+%   One [yMin yMax] from min/max over all areas and plotted d2-related series.
+
+allY = [];
+for idx = 1:length(areasToTest)
+    a = areasToTest(idx);
+
+    if a <= numel(d2ToPlot) && ~isempty(d2ToPlot{a})
+        allY = [allY; d2ToPlot{a}(:)]; %#ok<AGROW>
+    end
+
+    if useSubsampling
+        subMat = [];
+        if normalizeD2 && a <= numel(d2NormalizedSubsamples) && ~isempty(d2NormalizedSubsamples{a})
+            subMat = d2NormalizedSubsamples{a};
+        elseif ~normalizeD2 && a <= numel(d2SubsamplesAll) && ~isempty(d2SubsamplesAll{a})
+            subMat = d2SubsamplesAll{a};
+        end
+        if ~isempty(subMat)
+            subMean = nanmean(subMat, 2);
+            subStd = nanstd(subMat, 0, 2);
+            ribbonHi = subMean + subStd;
+            ribbonLo = subMean - subStd;
+            allY = [allY; subMean(:); ribbonHi(:); ribbonLo(:)]; %#ok<AGROW>
+        end
+    end
+
+    if ~normalizeD2 && enablePermutations && isfield(results, 'd2Permuted') && ...
+            a <= numel(results.d2Permuted) && ~isempty(results.d2Permuted{a})
+        permutedBlock = results.d2Permuted{a};
+        if useLog10D2
+            permutedBlock = log10_safe_numeric(permutedBlock);
+        end
+        permutedMean = nanmean(permutedBlock, 2);
+        permutedStd = nanstd(permutedBlock, 0, 2);
+        permHi = permutedMean + permutedStd;
+        permLo = permutedMean - permutedStd;
+        allY = [allY; permutedMean(:); permHi(:); permLo(:)]; %#ok<AGROW>
+    end
+end
+
+allY = allY(isfinite(allY));
+if isempty(allY)
+    yLimShared = [];
+    return;
+end
+
+minY = min(allY);
+maxY = max(allY);
+yRange = maxY - minY;
+if yRange == 0
+    yRange = max(0.1, 0.05 * max(abs(maxY), abs(minY), 1));
+end
+pad = 0.05 * yRange;
+
+if normalizeD2
+    refY = 1.0;
+    if useLog10D2
+        refY = 0;
+    end
+    yMin = min(refY, minY) - pad;
+    yMax = max(refY, maxY) + pad;
+    if ~useLog10D2
+        yMin = max(0, yMin);
+    end
+else
+    yMin = minY - pad;
+    yMax = maxY + pad;
+    if ~useLog10D2
+        yMin = max(0, yMin);
+    end
+end
+
+yLimShared = [yMin, yMax];
+end
+
+function cellOut = log10_cell_numeric(cellIn)
+% LOG10_CELL_NUMERIC - Safe log10 for numeric vectors/matrices in a cell array
+%
+% Variables:
+%   cellIn - cell array of numeric vectors or matrices
+%
+% Goal:
+%   Apply log10 to values > 0; non-positive or non-finite values become NaN.
+
+cellOut = cellIn;
+for i = 1:numel(cellIn)
+    if isempty(cellIn{i}) || ~isnumeric(cellIn{i})
+        continue;
+    end
+    cellOut{i} = log10_safe_numeric(cellIn{i});
+end
+end
+
+function y = log10_safe_numeric(x)
+% LOG10_SAFE_NUMERIC - log10 with NaN for non-positive values
+
+validMask = isfinite(x) & x > 0;
+y = nan(size(x));
+y(validMask) = log10(x(validMask));
 end
 
 function [xOut, varargout] = downsample_plot_series(x, maxPts, varargin)

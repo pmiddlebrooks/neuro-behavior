@@ -4,13 +4,20 @@
 %
 % This script maintains compatibility with the old workflow while using
 % the new modular functions.
+%
+% Workspace variables (from choose_task_and_session.m or similar):
+%   sessionType, sessionName, dataSource
+%   subjectName - required for spontaneous and interval; omit for reach/schall/hong
+%
+% Plotting options (in config below):
+%   config.useLog10D2 - if true, plot log10(d2); values <= 0 become NaN
 
 % Want to parallelize the area-wise analysis?
 runParallel = 0;
 
 % Set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
-% When loadAndPlot = 1, you can optionally specify a time range to plot:
+% When loadAndPlot = 1, you can optionally specify a time range to plot: 
 %   config.plotTimeRange = [startTime, endTime];  % in seconds
 %   Example: config.plotTimeRange = [100, 500];  % Plot from 100s to 500s
 %   If not specified or empty, all data will be plotted
@@ -30,21 +37,30 @@ end
 if exist(swUtilsPath, 'dir')
     addpath(swUtilsPath);
 end
+if exist(srcPath, 'dir')
+    addpath(srcPath);
+end
 if exist(analysesPath, 'dir')
     addpath(analysesPath);
 end
+addpath(basePath);
 
 % Configure variables
 opts = neuro_behavior_options;
-opts.firingRateCheckTime = 5 * 60;
+opts.firingRateCheckTime = 20 * 60;
 opts.collectStart = 0;
-% opts.collectEnd = 60*60;
+opts.collectEnd = 45*60;
 opts.collectEnd = [];
 if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
 opts.collectEnd = [];
 end
 opts.minFiringRate = .1;
 opts.maxFiringRate = 100;
+
+subjectNameForLoad = '';
+if exist('subjectName', 'var') && ~isempty(subjectName)
+    subjectNameForLoad = subjectName;
+end
 
 % Load and plot existing results if requested
 if loadAndPlot
@@ -55,8 +71,8 @@ if loadAndPlot
     
     % Load dataStruct (needed for plotting)
     fprintf('Loading data using load_sliding_window_data...\n');
-    dataStruct = load_sliding_window_data(sessionType, 'spikes', ...
-        'sessionName', sessionName, 'opts', opts);
+    loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
+    dataStruct = load_sliding_window_data(sessionType, 'spikes', loadArgs{:});
     
     % Find results file
     sessionNameForPath = '';
@@ -93,6 +109,14 @@ if loadAndPlot
     end
     if isfield(results.params, 'critType')
         config.critType = results.params.critType;
+    end
+    if isfield(results.params, 'useLog10D2')
+        config.useLog10D2 = results.params.useLog10D2;
+    else
+        config.useLog10D2 = false;
+    end
+    if isfield(results.params, 'normalizeD2')
+        config.normalizeD2 = results.params.normalizeD2;
     end
     
     % Add saveDir from dataStruct (needed for plotting)
@@ -213,17 +237,17 @@ end
 % Try to load data using new function
 if exist('sessionType', 'var') && exist('dataSource', 'var')
     fprintf('Loading data using load_sliding_window_data...\n');
-    dataStruct = load_sliding_window_data(sessionType, dataSource, ...
-        'sessionName', sessionName, 'opts', opts);
+    loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
+    dataStruct = load_sliding_window_data(sessionType, dataSource, loadArgs{:});
 else
     error('sessionType and dataSource must be defined, or data must be pre-loaded in workspace');
 end
 
 % Set up configuration from workspace variables
 % (These should be set before running this script)config = struct();
-config.slidingWindowSize = 6; % Default window size
-config.binSize = .03; % Default bin size
-config.stepSize = .2; % Default step size
+config.slidingWindowSize = 20; % Default window size
+config.binSize = .025; % Default bin size
+config.stepSize = .5; % Default step size
 config.minSpikesPerBin = 2.5;
 config.minBinsPerWindow = 1000;
 
@@ -237,17 +261,18 @@ config.enablePermutations = true;
 config.nShuffles = 20;
 config.analyzeModulation = false;
 config.makePlots = true;
-config.saveData = true;  % Set to false to skip saving results
+config.saveData = false;  % Set to false to skip saving results
 % Optional: lighter plotting to avoid export crash (plotResolution, maxPlotPoints, useSoftwareRenderer, saveEps)
 config.useOptimalBinWindowFunction = false;
 
 % Additional parameters
 config.pOrder = 10;
 config.critType = 2;
-config.normalizeD2 = true;  % Normalize d2 by shuffled d2 values
+config.normalizeD2 = false;  % Normalize d2 by shuffled d2 values
+config.useLog10D2 = true;  % If true, plot log10(d2); values <= 0 become NaN
 config.maxSpikesPerBin = 50;  % Maximum spikes per bin for filtering
 config.nMinNeurons = 10;  % Minimum number of neurons required per area (no subsampling)
-config.includeM2356 = true;  % Set to true to include combined M23+M56 area
+config.includeM2356 = false;  % Set to true to include combined M23+M56 area
 
 if strcmp(sessionType, 'spontaneous')
     config.behaviorNumeratorIDs = 5:10;
@@ -264,7 +289,7 @@ config.brainAreas = [];
 %   - nSubsamples controls how many random neuron subsets are analyzed
 %   - nNeuronsSubsample is the number of neurons per subset
 %   - Minimum neurons required per area becomes round(nNeuronsSubsample * minNeuronsMultiple)
-config.useSubsampling = true;       % Enable neural subsampling across windows
+config.useSubsampling = false;       % Enable neural subsampling across windows
 config.nSubsamples = 20;             % Number of subsampling iterations
 config.nNeuronsSubsample = 20;       % Neurons per subsample
 config.minNeuronsMultiple = 1.25;     % Multiplier for minimum neuron requirement

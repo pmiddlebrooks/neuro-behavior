@@ -12,7 +12,10 @@ function criticality_lfp_plot(results, plotConfig, config, dataStruct)
 %   to plot binned envelopes and/or raw LFP data.
 
 % Add path to utility functions
-utilsPath = fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils');
+srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
+addpath(srcRoot);
+add_figure_tools_path();
+utilsPath = fullfile(srcRoot, 'sliding_window_prep', 'utils');
 if exist(utilsPath, 'dir')
     addpath(utilsPath);
 end

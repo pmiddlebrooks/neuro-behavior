@@ -84,7 +84,11 @@ function ha = setup_subplots(numRows, numCols, varargin)
     addParameter(p, 'rightMargin', 0.04, @isnumeric);
     parse(p, varargin{:});
     
-    % Check if tight_subplot is available
+    srcPath = fullfile(fileparts(mfilename('fullpath')), '..', '..');
+    if exist(fullfile(srcPath, 'add_figure_tools_path.m'), 'file')
+        addpath(srcPath);
+    end
+    add_figure_tools_path();
     useTightSubplot = exist('tight_subplot', 'file');
     
     if useTightSubplot

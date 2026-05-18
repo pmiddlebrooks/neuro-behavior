@@ -99,7 +99,9 @@ end
 % User configuration
 % ---------------------------------------------------------------------
 
-% sessionType and sessionName should be set in the workspace before running:
+% sessionType and sessionName should be set in the workspace before running.
+% For spontaneous or interval sessions, also set subjectName (subject folder under
+% the task data root). For reach, schall, and hong, leave subjectName unset or empty.
 
 % ---------------------------------------------------------------------
 % Build opts and load spikes per area (match sliding-window loaders)
@@ -123,8 +125,21 @@ trialDur = 30;
 
 areas = {'M23', 'M56', 'DS', 'VS'};
 
-% Load spike times using the same infrastructure as sliding-window analyses
-fprintf('Loading spike times for %s session: %s\n', sessionType, sessionName);
+% subjectName: required for spontaneous/interval; empty when there is no subject folder
+if strcmpi(sessionType, 'spontaneous') || strcmpi(sessionType, 'interval')
+    if ~exist('subjectName', 'var') || isempty(subjectName)
+        error('subjectName must be set in the workspace for %s sessions.', sessionType);
+    end
+    opts.subjectName = subjectName;
+else
+    subjectName = '';
+end
+
+if isempty(subjectName)
+    fprintf('Loading spike times for %s session: %s\n', sessionType, sessionName);
+else
+    fprintf('Loading spike times for %s session: %s / %s\n', sessionType, subjectName, sessionName);
+end
 spikeDataStruct = load_spike_times(sessionType, paths, sessionName, opts);
 
 % Update opts with actual collection window used by loader
@@ -183,6 +198,9 @@ dataStruct.idList = idList;
 dataStruct.spikeData = spikeData;
 dataStruct.trialDur = trialDur;
 dataStruct.sessionName = sessionName;
+if ~isempty(subjectName)
+    dataStruct.subjectName = subjectName;
+end
 % For reach sessions, hmm_mazz_analysis will infer saving location from paths and sessionName
 
 % Unified analysis + HMM fit configuration (single struct)
@@ -264,6 +282,9 @@ if makeEthogramPlots
         configEthogram.brainArea = ethogramArea;
         configEthogram.paths = paths;
         configEthogram.sessionName = sessionName;
+        if ~isempty(subjectName)
+            configEthogram.subjectName = subjectName;
+        end
         configEthogram.exportEthogramCsvDir = fullfile(paths.dropPath, 'temp_data');
         collectStartSec = 0;
         if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)

@@ -27,7 +27,10 @@ function results = criticality_av_analysis(dataStruct, config)
 %   results - Structure with dcc, kappa, decades, tau, alpha, paramSD, startS, and params
 
     % Add paths
-    addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'sliding_window_prep', 'utils'));
+    srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
+    addpath(srcRoot);
+    add_figure_tools_path();
+    addpath(fullfile(srcRoot, 'sliding_window_prep', 'utils'));
     addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
     
     % Validate inputs
