@@ -47,7 +47,7 @@ end
 sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 
 sessionName =  'ag112321_1';
-% sessionName =  'ag112321_2';
+sessionName =  'ag112321_2';
 % sessionName =  'ey042822';  % Good M56, Bad DS
 % sessionName =  'kw092821';  % Bad M56, Good DS
 % sessionName =  'kw092121';  % Ok... few M56

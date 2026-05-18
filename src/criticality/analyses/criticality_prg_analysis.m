@@ -16,10 +16,13 @@ function results = criticality_prg_analysis(dataStruct, config)
 %
 % Variables:
 %   dataStruct - From load_session_data(); needs spikeTimes, spikeClusters, areas, idLabel
-%   config     - See set_prg_config_defaults() for paper-aligned defaults
+%   config     - See set_prg_config_defaults(); optional; kappaAxisMax caps PRG plot kurtosis axes (default 20).
 %
 % Returns:
 %   results - kappa (N/16), kappaByCutoff (RG flow), windowStartS, popCv, windowExcluded, ...
+%   When makePlots is true, criticality_prg_plot uses the same kappa axis limits on every
+%   area tile (y-axis on time series, x-axis and histogram bins on distribution figures),
+%   with upper bound results.params.kappaAxisMax (default 20).
 
     %% --- Paths and input validation ---
     addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'session_prep', 'utils'));
@@ -231,6 +234,7 @@ function config = set_prg_config_defaults(config)
     defaults.includeM2356 = false;
     defaults.nMinNeurons = 10;           % Paper used >128 units; lab minimum is configurable
     defaults.brainAreas = {};
+    defaults.kappaAxisMax = 20;          % Cap kurtosis axis (y time series, x histograms); use Inf for no cap
 
     fields = fieldnames(defaults);
     for i = 1:numel(fields)
@@ -332,6 +336,7 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
 %   kappaSurrogate{area}- optional null kappa (ISI-shuffled)
 %   windowExcluded{area}- logical; true if CV > cvThreshold
 %   nCutoffList{area}   - actual N_c values used (may differ when N is small)
+%   params.kappaAxisMax - upper cap on kurtosis axes in plots (mirrors config)
 
     results = struct();
     results.sessionType = dataStruct.sessionType;
@@ -353,5 +358,6 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
     results.params.nSurrogates = config.nSurrogates;
     results.params.nMinNeurons = config.nMinNeurons;
     results.params.windowStartTimes = windowStartTimes;
+    results.params.kappaAxisMax = config.kappaAxisMax;
     results.analysisType = 'criticality_prg';
 end

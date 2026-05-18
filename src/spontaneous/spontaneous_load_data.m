@@ -100,18 +100,12 @@ switch dataType
         % Flip the ci table so the "top" is M23 and "bottom" is VS
         ci = flipud(ci);
 
-        % Brain area regions as function of depth from surface
-        % 0 - 500  motor l2/3
-        % 500 - 1240 motor l5/6
-        % 1240 - 1540 corpus callosum, where little neural activity expected
-        % 1540 - 2700 dorsal striatum
-        % 2700 - 3840 ventral striatum
-
-        m23 = [0 500];
-        m56 = [501 1240];
-        cc = [1241 1540];
-        ds = [1541 2700];
-        vs = [2701 3840];
+        % Brain area regions as function of depth from surface (see
+        % get_brain_area_depth_ranges.m). Uses brain_area_depths.mat when present.
+        [m23, m56, cc, ds, vs, depthSource] = get_brain_area_depth_ranges(searchPath);
+        if strcmp(depthSource, 'session')
+            fprintf('Using brain_area_depths.mat for %s\n', opts.sessionName);
+        end
 
 
         area = cell(size(ci, 1), 1);

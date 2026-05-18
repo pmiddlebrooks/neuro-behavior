@@ -1,14 +1,26 @@
 function criticality_prg_plot(results, plotConfig, config, dataStruct)
 % CRITICALITY_PRG_PLOT Plot PRG kurtosis time series and real vs surrogate distributions
 %
+% Kurtosis axes are shared across all area tiles: Fig 1 uses one y-range for kappa vs
+% time; Fig 2 (when surrogates exist) uses one x-range and identical histogram bin edges.
+% Upper kurtosis limit is config.kappaAxisMax / results.params.kappaAxisMax (default 20; Inf = no cap).
+%
 % Variables:
 %   results - Output of criticality_prg_analysis()
 %   plotConfig - From setup_plotting()
-%   config - Analysis configuration
+%   config - Analysis configuration (optional field kappaAxisMax; default from results.params or 20)
 %   dataStruct - Loaded session data
 
     areas = results.areas;
     numAreas = numel(areas);
+
+    kappaAxisMax = prg_get_kappa_axis_max(results, config);
+
+    % Shared kurtosis (kappa) vertical scale across all area tiles (Fig 1)
+    allKappaTimeSeries = collect_prg_kappa_for_axis_limits(results, true);
+    [kappaYLimLo, kappaYLimHi] = prg_padded_kurtosis_limits(allKappaTimeSeries);
+    [kappaYLimLo, kappaYLimHi] = prg_apply_kappa_axis_max(kappaYLimLo, kappaYLimHi, kappaAxisMax);
+    hasSharedKappaY = isfinite(kappaYLimLo) && isfinite(kappaYLimHi);
 
     %% Figure 1: kappa along session (one trace per area)
     fig = figure('Color', 'w', 'Position', [80 80 1100 280 * numAreas]);
@@ -20,6 +32,9 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
 
         if isempty(results.windowStartS{a}) || isempty(results.kappa{a})
             title(sprintf('%s (no data)', areas{a}));
+            if hasSharedKappaY
+                ylim([kappaYLimLo, kappaYLimHi]);
+            end
             continue;
         end
 
@@ -45,6 +60,10 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
         if isfield(results, 'kappaSurrogate') && ~isempty(results.kappaSurrogate{a})
             surrMean = nanmean(results.kappaSurrogate{a}, 2);
             plot(tVec, surrMean, '--', 'Color', [0.55 0.55 0.55], 'LineWidth', 1);
+        end
+
+        if hasSharedKappaY
+            ylim([kappaYLimLo, kappaYLimHi]);
         end
     end
 
@@ -81,12 +100,27 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
         figDist = figure('Color', 'w', 'Position', [120 120 900 260 * numAreas]);
         tlDist = tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
 
+        % Same kurtosis horizontal range and bin edges for every area (Fig 2)
+        allKappaDist = collect_prg_kappa_for_axis_limits(results, true);
+        [distKappaLo, distKappaHi] = prg_padded_kurtosis_limits(allKappaDist);
+        [distKappaLo, distKappaHi] = prg_apply_kappa_axis_max(distKappaLo, distKappaHi, kappaAxisMax);
+        nBinsDist = 28;
+        if isfinite(distKappaLo) && isfinite(distKappaHi)
+            globalDistBinEdges = linspace(distKappaLo, distKappaHi, max(8, round(nBinsDist)) + 1);
+        else
+            globalDistBinEdges = [];
+        end
+        hasSharedKappaX = ~isempty(globalDistBinEdges);
+
         for a = 1:numAreas
             nexttile(tlDist);
             hold on;
 
             if isempty(results.kappa{a}) || isempty(results.windowExcluded{a})
                 title(sprintf('%s (no data)', areas{a}));
+                if hasSharedKappaX
+                    xlim([globalDistBinEdges(1), globalDistBinEdges(end)]);
+                end
                 continue;
             end
 
@@ -102,6 +136,9 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
                 grid on;
                 xlabel('Kurtosis \kappa');
                 ylabel('Probability density');
+                if hasSharedKappaX
+                    xlim([globalDistBinEdges(1), globalDistBinEdges(end)]);
+                end
                 continue;
             end
 
@@ -110,8 +147,12 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
                 surrKappa = surrMat(isfinite(surrMat));
             end
 
-            % Shared bin edges so both histograms are directly comparable (normalized PDF)
-            [binEdges, ~] = prg_kurtosis_bin_edges(realKappa, surrKappa, 28);
+            % Global bin edges so tiles share the same kappa axis and binning
+            if hasSharedKappaX
+                binEdges = globalDistBinEdges;
+            else
+                [binEdges, ~] = prg_kurtosis_bin_edges(realKappa, surrKappa, nBinsDist);
+            end
 
             histogram(realKappa, binEdges, 'Normalization', 'pdf', ...
                 'FaceColor', [0.15 0.45 0.75], 'FaceAlpha', 0.45, 'EdgeColor', 'none', ...
@@ -133,6 +174,10 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
             ylabel('Probability density');
             title(areas{a}, 'Interpreter', 'none');
             legend('Location', 'northeast');
+
+            if hasSharedKappaX
+                xlim([binEdges(1), binEdges(end)]);
+            end
         end
 
         sgtitle(tlDist, sprintf( ...
@@ -163,6 +208,115 @@ function tf = has_prg_surrogate_kappa(results)
             tf = true;
             return;
         end
+    end
+end
+
+function kappaAxisMax = prg_get_kappa_axis_max(results, config)
+% PRG_GET_KAPPA_AXIS_MAX Upper cap for kurtosis axes in PRG plots
+%
+% Variables:
+%   results - Saved or fresh analysis struct (optional: results.params.kappaAxisMax)
+%   config  - Run config (optional: config.kappaAxisMax); overrides results.params when set
+%
+% Goal:
+%   Return scalar limit; Inf means no cap. Default 20 when unset.
+
+    kappaAxisMax = 20;
+    if nargin >= 2 && isstruct(config) && isfield(config, 'kappaAxisMax')
+        v = config.kappaAxisMax;
+        if prg_is_valid_kappa_axis_max(v)
+            kappaAxisMax = v;
+            return;
+        end
+    end
+    if isfield(results, 'params') && isfield(results.params, 'kappaAxisMax')
+        v = results.params.kappaAxisMax;
+        if prg_is_valid_kappa_axis_max(v)
+            kappaAxisMax = v;
+        end
+    end
+end
+
+function tf = prg_is_valid_kappa_axis_max(v)
+% PRG_IS_VALID_KAPPA_AXIS_MAX True for positive scalar kurtosis cap (including Inf)
+    tf = isnumeric(v) && isscalar(v) && v > 0;
+end
+
+function [loOut, hiOut] = prg_apply_kappa_axis_max(lo, hi, kappaAxisMax)
+% PRG_APPLY_KAPPA_AXIS_MAX Cap upper kurtosis axis; ensure lo < hi
+%
+% Variables:
+%   lo, hi          - Axis limits from padded data range
+%   kappaAxisMax    - Upper cap; ignored if not finite (e.g. Inf)
+%
+% Goal:
+%   Match plot kurtosis max to config; if all data sit above the cap, widen downward slightly.
+
+    loOut = lo;
+    hiOut = hi;
+    if ~isfinite(loOut) || ~isfinite(hiOut)
+        return;
+    end
+    if isfinite(kappaAxisMax)
+        hiOut = min(hiOut, kappaAxisMax);
+    end
+    if hiOut <= loOut
+        spanBelow = max(0.5, 0.1 * abs(hiOut));
+        loOut = hiOut - spanBelow;
+    end
+end
+
+function allVals = collect_prg_kappa_for_axis_limits(results, includeSurrogate)
+% COLLECT_PRG_KAPPA_FOR_AXIS_LIMITS Pool finite kappa across areas (valid windows only)
+%
+% Variables:
+%   results          - Output of criticality_prg_analysis()
+%   includeSurrogate - If true, append finite surrogate kappa for the same valid windows
+%
+% Goal:
+%   Build one value list for shared kurtosis axis limits across all area tiles in a figure.
+
+    allVals = [];
+    for a = 1:numel(results.areas)
+        if isempty(results.kappa{a}) || isempty(results.windowExcluded{a})
+            continue;
+        end
+        validMask = isfinite(results.kappa{a}) & ~results.windowExcluded{a};
+        kappaVec = results.kappa{a}(validMask);
+        allVals = [allVals; kappaVec(:)]; %#ok<AGROW>
+        if includeSurrogate && isfield(results, 'kappaSurrogate') && ~isempty(results.kappaSurrogate{a})
+            surrMat = results.kappaSurrogate{a}(validMask, :);
+            allVals = [allVals; surrMat(isfinite(surrMat))]; %#ok<AGROW>
+        end
+    end
+end
+
+function [lo, hi] = prg_padded_kurtosis_limits(allVals)
+% PRG_PADDED_KURTOSIS_LIMITS Padded [min, max] for kurtosis axes
+%
+% Variables:
+%   allVals - Vector of kappa samples (may be empty)
+%
+% Goal:
+%   Match the padding rule in prg_kurtosis_bin_edges so time-series y and histogram x align.
+
+    allVals = allVals(isfinite(allVals(:)));
+    if isempty(allVals)
+        lo = NaN;
+        hi = NaN;
+        return;
+    end
+    lo = min(allVals);
+    hi = max(allVals);
+    span = hi - lo;
+    if span <= 0 || ~isfinite(span)
+        pad = max(0.5, abs(lo) * 0.05 + eps);
+        lo = lo - pad;
+        hi = hi + pad;
+    else
+        pad = 0.03 * span;
+        lo = lo - pad;
+        hi = hi + pad;
     end
 end
 
