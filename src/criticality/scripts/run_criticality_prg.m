@@ -103,10 +103,11 @@ config = struct();
 
 % Cambrainha et al. 2025 defaults: 50 ms bins, 30 s non-overlapping windows
 config.blockWindowSize = 30;
-config.binSize = 0.05;
+config.binSize = 0.2;
 config.cvThreshold = 5;
 config.cutoffDivisors = [1, 2, 4, 8, 16];
 config.finalCutoffDivisor = 16;
+config.kappaAxisMax = 20;
 
 config.enableSurrogates = true;
 config.nSurrogates = 1;
