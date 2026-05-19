@@ -429,36 +429,17 @@ end
 function [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
     filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts)
 % FILTER_BY_FIRING_RATE - Filter neurons based on firing rate criteria
-    
-    checkTime = opts.firingRateCheckTime;
-    collectTime = opts.collectEnd;
-    
-    % Calculate firing rates for each neuron
-    firingRatesStart = zeros(length(neuronIDs), 1);
-    firingRatesEnd = zeros(length(neuronIDs), 1);
-    
-    for i = 1:length(neuronIDs)
-        neuronID = neuronIDs(i);
-        neuronSpikes = spikeTimes(spikeClusters == neuronID);
-        
-        % Count spikes in first checkTime period
-        spikesStart = sum(neuronSpikes >= opts.collectStart & ...
-                          neuronSpikes <= opts.collectStart + checkTime);
-        firingRatesStart(i) = spikesStart / checkTime;
-        
-        % Count spikes in last checkTime period
-        spikesEnd = sum(neuronSpikes >= (collectTime - checkTime) & ...
-                       neuronSpikes <= collectTime);
-        firingRatesEnd(i) = spikesEnd / checkTime;
+
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        timeStart = 0;
+    else
+        timeStart = opts.collectStart;
     end
-    
-    % Apply firing rate filtering
-    keepStart = firingRatesStart >= opts.minFiringRate & ...
-                firingRatesStart <= opts.maxFiringRate;
-    keepEnd = firingRatesEnd >= opts.minFiringRate & ...
-              firingRatesEnd <= opts.maxFiringRate;
-    keepNeurons = keepStart & keepEnd;
-    
+    timeEnd = opts.collectEnd;
+
+    keepNeurons = neuron_firing_rate_filter_spikes(opts, neuronIDs, spikeTimes, ...
+        spikeClusters, timeStart, timeEnd);
+
     fprintf('\nKeeping %d of %d neurons after firing rate filtering\n', ...
         sum(keepNeurons), length(keepNeurons));
     

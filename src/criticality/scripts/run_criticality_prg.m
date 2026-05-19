@@ -45,9 +45,9 @@ addpath(basePath);
 
 opts = neuro_behavior_options;
 opts.firingRateCheckTime = 5 * 60;
-opts.collectStart = 0;
+opts.collectStart = 90*60;
 opts.collectEnd = [];
-opts.collectEnd = 40*60;
+opts.collectEnd = 150*60;
 if exist('sessionType', 'var') && (strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong'))
     opts.collectEnd = [];
 end

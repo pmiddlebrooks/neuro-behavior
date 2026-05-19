@@ -13,7 +13,7 @@ function [spikeData] = spike_times_per_area(opts)
 %       .removeSome      - Flag to filter out neurons based on firing rate
 %       .minFiringRate   - Minimum firing rate threshold (for removal if enabled)
 %       .maxFiringRate   - Maximum firing rate threshold (for removal if enabled)
-%       .firingRateCheckTime - Time period to check firing rates (for filtering)
+%       .firingRateCheckTime - Time period for start/end checks; empty uses full session
 %       .collectFor      - Number of seconds of data to collect
 %
 % OUTPUTS:
@@ -63,33 +63,15 @@ areaLabels = {};
 % First, determine which neurons pass the firing rate criteria
 rmvNeurons = [];
 if opts.removeSome
-    checkTime = opts.firingRateCheckTime;
-    collectTime = opts.collectEnd;
-    
-    % Calculate firing rates for each neuron directly from spike counts
-    firingRatesStart = zeros(length(idLabels), 1);
-    firingRatesEnd = zeros(length(idLabels), 1);
-    
-    for i = 1:length(idLabels)
-        iSpikeTime = data.spikeTimes(data.spikeClusters == idLabels(i));
-        
-        % Filter spikes to only include those within collectTime
-        validSpikes = iSpikeTime >= 0 & iSpikeTime <= collectTime;
-        iSpikeTime = iSpikeTime(validSpikes);
-        
-        % Count spikes in first checkTime period
-        spikesStart = sum(iSpikeTime >= 0 & iSpikeTime <= checkTime);
-        firingRatesStart(i) = spikesStart / checkTime;
-        
-        % Count spikes in last checkTime period of the collected data
-        spikesEnd = sum(iSpikeTime >= (collectTime - checkTime) & iSpikeTime <= collectTime);
-        firingRatesEnd(i) = spikesEnd / checkTime;
+    if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+        timeStart = opts.collectStart;
+    else
+        timeStart = 0;
     end
-    
-    % Apply firing rate filtering
-    keepStart = firingRatesStart >= opts.minFiringRate & firingRatesStart <= opts.maxFiringRate;
-    keepEnd = firingRatesEnd >= opts.minFiringRate & firingRatesEnd <= opts.maxFiringRate;
-    rmvNeurons = ~(keepStart & keepEnd);
+    timeEnd = opts.collectEnd;
+    keepNeurons = neuron_firing_rate_filter_spikes(opts, idLabels, data.spikeTimes, ...
+        data.spikeClusters, timeStart, timeEnd);
+    rmvNeurons = ~keepNeurons;
     fprintf('\nkeeping %d of %d neurons\n', sum(~rmvNeurons), length(rmvNeurons));
     
     % Update neuron lists to only include qualifying neurons

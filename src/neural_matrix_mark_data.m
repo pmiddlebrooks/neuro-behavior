@@ -160,18 +160,8 @@ end
 
 % Remove neurons that do not meet firing rate criteria
 if opts.removeSome
-    checkTime = 5 * 60; % Check 5min for now, convert to input variable later maybe
-    checkTime = opts.firingRateCheckTime; % Check 5min for now, convert to input variable later maybe
-    checkFrames = floor(checkTime / opts.frameSize);
-    if ~strcmp(opts.method, 'standard')
-        meanStart = mean(dataMat(1:checkFrames, :), 1);
-        meanEnd = mean(dataMat(end-checkFrames+1:end, :), 1);
-    else
-        meanStart = sum(dataMat(1:checkFrames, :), 1) ./ checkTime;
-        meanEnd = sum(dataMat(end-checkFrames+1:end, :), 1) ./ checkTime;
-    end
-    keepStart = meanStart >= opts.minFiringRate & meanStart <= opts.maxFiringRate;
-    keepEnd = meanEnd >= opts.minFiringRate & meanEnd <= opts.maxFiringRate;
+    dataMatDuration = numFrames * opts.frameSize;
+    keepNeurons = neuron_firing_rate_filter_binned(dataMat, opts, dataMatDuration);
 
     % Get rid of units that had crazy bursting during the recording (most
     % likely multi-units)
@@ -180,7 +170,7 @@ if opts.removeSome
     else
     tooCrazy = max(dataMat ./ opts.frameSize, [], 1) > 3000;
     end
-    rmvNeurons = ~(keepStart & keepEnd) | tooCrazy;
+    rmvNeurons = ~keepNeurons | tooCrazy;
     fprintf('\nkeeping %d of %d neurons\n', sum(~rmvNeurons), length(rmvNeurons));
     dataMat(:, rmvNeurons) = [];
     idLabels(rmvNeurons) = [];

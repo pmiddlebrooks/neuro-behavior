@@ -7,7 +7,9 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
 %   varargin - Optional name-value pairs:
 %       'subjectName' - Subject folder (required for spontaneous/interval)
 %       'sessionName' - Session identifier (required for reach/spontaneous/interval/schall)
-%       'opts' - Options structure (default: neuro_behavior_options)
+%       'opts' - Options structure (default: neuro_behavior_options).
+%           If opts.firingRateCheckTime is empty, firing-rate filtering uses
+%           the full session duration (opts.collectStart to opts.collectEnd).
 %       'lfpCleanParams' - LFP cleaning parameters
 %       'bands' - Frequency bands for LFP
 %       'minBinSize' - Minimum bin size for LFP bands (default 0.005)

@@ -7,7 +7,9 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
 %   varargin - Optional name-value pairs:
 %       'subjectName' - Subject folder (required for spontaneous/interval)
 %       'sessionName' - Session name (required for reach/spontaneous/interval/schall)
-%       'opts' - Options structure (if not provided, creates default)
+%       'opts' - Options structure (if not provided, creates default).
+%           If opts.firingRateCheckTime is empty, firing-rate filtering uses
+%           the full session duration (opts.collectStart to opts.collectEnd).
 %       'lfpCleanParams' - LFP cleaning parameters structure
 %       'bands' - Frequency bands for LFP (default: alpha, beta, lowGamma, highGamma)
 %       'minBinSize' - Minimum bin size for LFP bands (default: 0.005)

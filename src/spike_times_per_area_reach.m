@@ -10,7 +10,7 @@ function [spikeData] = spike_times_per_area_reach(opts)
 %       .collectStart         - Start time (s) of collection window (default 0)
 %       .collectFor           - Number of seconds to collect (required)
 %       .removeSome           - Whether to filter by firing rate (logical)
-%       .firingRateCheckTime  - Seconds for start/end firing rate checks
+%       .firingRateCheckTime  - Seconds for start/end checks; empty uses full session
 %       .minFiringRate        - Minimum allowed firing rate (Hz)
 %       .maxFiringRate        - Maximum allowed firing rate (Hz)
 %
@@ -44,26 +44,8 @@ areaNumeric = data.idchan(useNeuronsMask, end); % 1..4 already
 
 % Optional firing-rate filtering
 if opts.removeSome
-    checkTime = opts.firingRateCheckTime;
-    firingRatesStart = zeros(length(idLabels), 1);
-    firingRatesEnd = zeros(length(idLabels), 1);
-    
-    for i = 1:length(idLabels)
-        iSpikeTime = data.CSV(data.CSV(:,2) == idLabels(i), 1);
-        % restrict to collection window
-        iSpikeTime = iSpikeTime(iSpikeTime >= firstSecond & iSpikeTime <= lastSecond);
-        
-        % start window: [firstSecond, firstSecond+checkTime]
-        spikesStart = sum(iSpikeTime >= firstSecond & iSpikeTime <= (firstSecond + checkTime));
-        firingRatesStart(i) = spikesStart / checkTime;
-        
-        % end window: [lastSecond-checkTime, lastSecond]
-        spikesEnd = sum(iSpikeTime >= (lastSecond - checkTime) & iSpikeTime <= lastSecond);
-        firingRatesEnd(i) = spikesEnd / checkTime;
-    end
-    keepStart = firingRatesStart >= opts.minFiringRate & firingRatesStart <= opts.maxFiringRate;
-    keepEnd = firingRatesEnd >= opts.minFiringRate & firingRatesEnd <= opts.maxFiringRate;
-    keepMask = keepStart & keepEnd;
+    keepMask = neuron_firing_rate_filter_spikes(opts, idLabels, data.CSV(:, 1), ...
+        data.CSV(:, 2), firstSecond, lastSecond);
     idLabels = idLabels(keepMask);
     areaNumeric = areaNumeric(keepMask);
 end

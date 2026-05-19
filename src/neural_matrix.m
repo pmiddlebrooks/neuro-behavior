@@ -152,27 +152,9 @@ end
 % Remove neurons that do not meet firing rate criteria
 rmvNeurons = [];
 if opts.removeSome
-    checkTime = opts.firingRateCheckTime;
-    
-    % Calculate duration of dataMat
     dataMatDuration = numFrames * opts.frameSize;
-    
-    % If firingRateCheckTime is greater than dataMat duration, use dataMat duration
-    if checkTime > dataMatDuration
-        checkTime = dataMatDuration;
-    end
-    
-    checkFrames = floor(checkTime / opts.frameSize);
-    if ~strcmp(opts.method, 'standard')
-        meanStart = mean(dataMat(1:checkFrames, :), 1);
-        meanEnd = mean(dataMat(end-checkFrames+1:end, :), 1);
-    else
-        meanStart = sum(dataMat(1:checkFrames, :), 1) ./ checkTime;
-        meanEnd = sum(dataMat(end-checkFrames+1:end, :), 1) ./ checkTime;
-    end
-    keepStart = meanStart >= opts.minFiringRate & meanStart <= opts.maxFiringRate;
-    keepEnd = meanEnd >= opts.minFiringRate & meanEnd <= opts.maxFiringRate;
-    rmvNeurons = ~(keepStart & keepEnd);
+    keepNeurons = neuron_firing_rate_filter_binned(dataMat, opts, dataMatDuration);
+    rmvNeurons = ~keepNeurons;
     fprintf('\nkeeping %d of %d neurons\n', sum(~rmvNeurons), length(rmvNeurons));
     dataMat(:, rmvNeurons) = [];
     idLabels(rmvNeurons) = [];
