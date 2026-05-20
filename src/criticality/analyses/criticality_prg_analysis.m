@@ -9,7 +9,9 @@ function results = criticality_prg_analysis(dataStruct, config)
 %   1. Bin spike trains (50 ms) and segment into non-overlapping 30 s windows.
 %   2. Per window: compute population CV; exclude artefact windows (CV > 5).
 %   3. Per window: momentum-space coarse-graining + kurtosis (compute_prg_momentum_kurtosis).
-%   4. Optional: ISI-shuffled surrogate data for the same steps (Appendix, Surrogate data).
+%   4. Optional: surrogate null (config.surrogateMethod):
+%        'isi' (default) - ISI-shuffle per unit within window (Appendix, Surrogate data)
+%        'circular' - random circshift per neuron on binned activity within window
 %
 % Not implemented here (paper Appendix 4): real-space paired-correlation
 % coarse-graining and scaling exponents (alpha, beta, mu, z).
@@ -50,6 +52,9 @@ function results = criticality_prg_analysis(dataStruct, config)
         config.blockWindowSize, config.binSize);
     fprintf('Kurtosis at N/%d; cutoff divisors: %s\n', ...
         config.finalCutoffDivisor, mat2str(config.cutoffDivisors));
+    if config.enableSurrogates
+        fprintf('Surrogates: %d x %s\n', config.nSurrogates, config.surrogateMethod);
+    end
 
     if ~isfield(config, 'saveDir') || isempty(config.saveDir)
         config.saveDir = dataStruct.saveDir;
@@ -160,15 +165,13 @@ function results = criticality_prg_analysis(dataStruct, config)
             nCut = min(numel(prgOut.kappaByCutoff), size(kappaByCutoff{a}, 2));
             kappaByCutoff{a}(w, 1:nCut) = prgOut.kappaByCutoff(1:nCut);
 
-            %% Step 4 (optional): Surrogate / null comparison (Appendix, Surrogate data) ---
-            % Paper: shuffle inter-spike intervals independently per unit within each
-            % window, breaking cross-unit correlations. Surrogate kappa should stay
-            % nearer the Gaussian fixed point (lower kappa than real data on average).
+            %% Step 4 (optional): Surrogate / null comparison ---
+            % 'isi' (default): shuffle inter-spike intervals per unit (Cambrainha Appendix).
+            % 'circular': circshift each neuron's binned activity independently within the window.
             if config.enableSurrogates
                 for s = 1:config.nSurrogates
-                    [surrTimes, surrClusters] = shuffle_spike_isi_within_window( ...
-                        dataStruct.spikeTimes, dataStruct.spikeClusters, neuronIds, winRange);
-                    surrMat = bin_spikes(surrTimes, surrClusters, neuronIds, winRange, config.binSize);
+                    surrMat = build_prg_surrogate_data_mat(dataMat, dataStruct, ...
+                        neuronIds, winRange, config);
                     surrOut = compute_prg_momentum_kurtosis(surrMat, ...
                         'cutoffDivisors', config.cutoffDivisors, ...
                         'finalCutoffDivisor', config.finalCutoffDivisor);
@@ -227,7 +230,8 @@ function config = set_prg_config_defaults(config)
     defaults.cvThreshold = 5;            % CV exclusion (Appendix Eq. A1)
     defaults.cutoffDivisors = [1, 2, 4, 8, 16];  % N_c = N, N/2, ... N/16 (Fig. 1d)
     defaults.finalCutoffDivisor = 16;    % Report kappa at N/16 (Appendix 3)
-    defaults.enableSurrogates = false;   % ISI-shuffle null (Appendix, Surrogate data)
+    defaults.enableSurrogates = false;
+    defaults.surrogateMethod = 'isi';    % 'isi' (paper) or 'circular' (per-neuron circshift on binned data)
     defaults.nSurrogates = 1;
     defaults.makePlots = true;
     defaults.saveData = true;
@@ -241,6 +245,61 @@ function config = set_prg_config_defaults(config)
         if ~isfield(config, fields{i})
             config.(fields{i}) = defaults.(fields{i});
         end
+    end
+
+    config.surrogateMethod = lower(strtrim(config.surrogateMethod));
+    validSurrogateMethods = {'isi', 'circular'};
+    if ~ismember(config.surrogateMethod, validSurrogateMethods)
+        error('config.surrogateMethod must be ''isi'' or ''circular'', got "%s".', config.surrogateMethod);
+    end
+end
+
+function surrMat = build_prg_surrogate_data_mat(dataMat, dataStruct, neuronIds, winRange, config)
+% BUILD_PRG_SURROGATE_DATA_MAT Binned surrogate activity for one window
+%
+% Variables:
+%   dataMat - [timeBins x neurons] real binned activity for the window
+%   dataStruct - Session data (spikeTimes, spikeClusters for ISI method)
+%   neuronIds - Neuron IDs in this area
+%   winRange - [startTime, endTime] in seconds
+%   config - PRG config with surrogateMethod ('isi' or 'circular')
+%
+% Returns:
+%   surrMat - Binned surrogate spike counts, same size as dataMat
+
+    switch config.surrogateMethod
+        case 'isi'
+            [surrTimes, surrClusters] = shuffle_spike_isi_within_window( ...
+                dataStruct.spikeTimes, dataStruct.spikeClusters, neuronIds, winRange);
+            surrMat = bin_spikes(surrTimes, surrClusters, neuronIds, winRange, config.binSize);
+        case 'circular'
+            surrMat = apply_circular_permutation_per_neuron(dataMat);
+        otherwise
+            error('Unknown config.surrogateMethod: %s', config.surrogateMethod);
+    end
+end
+
+function permutedMat = apply_circular_permutation_per_neuron(dataMat)
+% APPLY_CIRCULAR_PERMUTATION_PER_NEURON Random circshift per neuron (time axis)
+%
+% Variables:
+%   dataMat - [timeBins x neurons] binned activity
+%
+% Returns:
+%   permutedMat - Same size; each column circshifted by a random amount in [1, T/2]
+
+    numTimeBins = size(dataMat, 1);
+    maxShift = floor(numTimeBins / 2);
+    if maxShift < 1
+        permutedMat = dataMat;
+        return;
+    end
+
+    permutedMat = zeros(size(dataMat));
+    numNeurons = size(dataMat, 2);
+    for n = 1:numNeurons
+        shiftAmount = randi([1, maxShift]);
+        permutedMat(:, n) = circshift(dataMat(:, n), shiftAmount);
     end
 end
 
@@ -333,7 +392,7 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
 % Key fields:
 %   kappa{area}         - N/16 kurtosis per window (paper's primary window statistic)
 %   kappaByCutoff{area} - kappa at each N_c (RG flow across momentum shells)
-%   kappaSurrogate{area}- optional null kappa (ISI-shuffled)
+%   kappaSurrogate{area}- optional null kappa (ISI or circular surrogate)
 %   windowExcluded{area}- logical; true if CV > cvThreshold
 %   nCutoffList{area}   - actual N_c values used (may differ when N is small)
 %   params.kappaAxisMax - upper cap on kurtosis axes in plots (mirrors config)
@@ -355,6 +414,7 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
     results.params.cutoffDivisors = config.cutoffDivisors;
     results.params.finalCutoffDivisor = config.finalCutoffDivisor;
     results.params.enableSurrogates = config.enableSurrogates;
+    results.params.surrogateMethod = config.surrogateMethod;
     results.params.nSurrogates = config.nSurrogates;
     results.params.nMinNeurons = config.nMinNeurons;
     results.params.windowStartTimes = windowStartTimes;

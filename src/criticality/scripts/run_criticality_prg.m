@@ -45,9 +45,9 @@ addpath(basePath);
 
 opts = neuro_behavior_options;
 opts.firingRateCheckTime = 5 * 60;
-opts.collectStart = 90*60;
+opts.collectStart = 0;
 opts.collectEnd = [];
-opts.collectEnd = 150*60;
+% opts.collectEnd = 150*60;
 if exist('sessionType', 'var') && (strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong'))
     opts.collectEnd = [];
 end
@@ -113,11 +113,12 @@ config.blockWindowSize = 30;
 config.binSize = 0.2;
 config.cvThreshold = 5;
 config.cutoffDivisors = [1, 2, 4, 8, 16];
-config.finalCutoffDivisor = 16;
+config.finalCutoffDivisor = 8;
 config.kappaAxisMax = 20;
 
 config.enableSurrogates = true;
 config.nSurrogates = 1;
+config.surrogateMethod = 'isi';      % 'isi' (paper default) or 'circular' (per-neuron circshift)
 config.makePlots = true;
 config.saveData = false;
 config.nMinNeurons = 20;

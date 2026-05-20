@@ -95,7 +95,7 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
 
     %% Figure 2: overlapping distributions of kappa (real vs surrogate), Cambrainha-style
     % Paper Fig. 3 compares real vs null; here we show probability density of
-    % window-wise kappa for data vs ISI-shuffled surrogates on the same axes per area.
+    % window-wise kappa for data vs surrogates on the same axes per area.
     if has_prg_surrogate_kappa(results)
         figDist = figure('Color', 'w', 'Position', [120 120 900 260 * numAreas]);
         tlDist = tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
@@ -180,9 +180,10 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
             end
         end
 
+        surrLabel = prg_surrogate_method_label(results);
         sgtitle(tlDist, sprintf( ...
-            'Distribution of PRG kurtosis | real vs surrogate | %s%s', ...
-            results.sessionType, prg_title_suffix(sessionLabel)), ...
+            'Distribution of PRG kurtosis | real vs %s | %s%s', ...
+            surrLabel, results.sessionType, prg_title_suffix(sessionLabel)), ...
             'FontSize', 12, 'Interpreter', 'none');
 
         if savePlots && ~isempty(saveDir)
@@ -207,6 +208,22 @@ function tf = has_prg_surrogate_kappa(results)
         if any(isfinite(s(:)))
             tf = true;
             return;
+        end
+    end
+end
+
+function label = prg_surrogate_method_label(results)
+% PRG_SURROGATE_METHOD_LABEL Short label for plot titles (ISI vs circular null)
+    label = 'surrogate';
+    if isfield(results, 'params') && isfield(results.params, 'surrogateMethod') ...
+            && ~isempty(results.params.surrogateMethod)
+        switch lower(results.params.surrogateMethod)
+            case 'isi'
+                label = 'ISI surrogate';
+            case 'circular'
+                label = 'circular surrogate';
+            otherwise
+                label = sprintf('%s surrogate', results.params.surrogateMethod);
         end
     end
 end
