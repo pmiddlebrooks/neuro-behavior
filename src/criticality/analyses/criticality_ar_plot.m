@@ -162,7 +162,7 @@ yLimShared = compute_shared_d2_ylim(d2ToPlot, areasToTest, normalizeD2, useLog10
     useSubsampling, d2SubsamplesAll, d2NormalizedSubsamples, results, enablePermutations);
 
 % Create figure
-figure(909); clf;
+figure(919); clf;
 set(gcf, 'Units', 'pixels');
 set(gcf, 'Position', plotConfig.targetPos);
 % Use software renderer to avoid OpenGL crashes

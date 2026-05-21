@@ -7,8 +7,9 @@
 // the serial port.
 //
 // CSV format (one line per event): timestamp_ms,event,value,
-// Events: B (beam), REWARD, ERROR, SYNC (external sync line on pin 5)
+// Events: B (beam), REWARD, ERROR, SYNC (sync line on pin 5 / breakout board)
 //   SYNC value 1 = line high (on), 2 = line low (off) — log on each transition
+//   Three 100 ms sync pulses run on the first solenoid open of each reward (not repeats).
 
 #include <string.h>
 
@@ -26,9 +27,8 @@ const unsigned long INTERVAL_DURATION = 5000;   // min wait time after confirmed
 const unsigned long MIN_LEAVE_TIME = 100;       // min leave time to confirm exit
 const unsigned long LED_PULSE = 100;            // reward LED duration
 
-const int BLINK_DURATION = 100; // ms
-const int INTER_SYNC_DURATION = 5000; // ms
-const int NUM_PULSES = 3;
+const int BLINK_DURATION = 100; // ms per sync pulse on/off phase
+const int NUM_SYNC_PULSES = 3;    // sync pulses per solenoid trigger
 const int SYNC_LED_PORT = 3;
 const int BREAKOUT_BOARD_PORT = 5;
 
@@ -40,26 +40,26 @@ bool givingReward = false;
 bool inBurst = false;
 bool leavePending = false;
 bool timerArmed = false;
+
 bool inSyncBurst = false;
 bool inSyncPulse = false;
+int syncPulsesCompleted = 0;
+unsigned long syncPulseStartTime = 0;
+unsigned long syncPulseEndTime = 0;
 
 int beamState = 0;
 int lastBeamState = 0;
-
-int lastSyncState = -1;  // initialized in setup from digitalRead(SYNC_PULSES_PORT)
 
 unsigned long initialExitTime = 0;
 unsigned long leaveConfirmStart = 0;
 unsigned long leaveTime = 0;
 unsigned long rewardStartTime = 0;
-unsigned long lastPulseEndTime = 0;
-unsigned long lastPulseStartTime = 0;
+unsigned long lastSolenoidPulseEndTime = 0;
 
-int pulsesGivenInBurst = 0;
+int solenoidPulsesInBurst = 0;
 
 bool ledActive = false;
 unsigned long ledStartTime = 0;
-
 
 /**
  * log_line
@@ -80,22 +80,78 @@ void write_error() { log_line("ERROR", 1); }
 
 /**
  * write_sync_edge
- *  - syncPinHigh: true if SYNC_PULSES_PORT reads HIGH after transition
+ *  - syncPinHigh: true for line high (on), false for low (off)
  *
  * Goal:
- *  Log external sync line edges for alignment with video (1 = on/high, 2 = off/low).
+ *  Log sync line edges for video alignment (1 = on, 2 = off).
  */
 void write_sync_edge(bool syncPinHigh) {
   log_line("SYNC", syncPinHigh ? 1 : 2);
 }
 
 /**
+ * start_sync_burst
+ *
+ * Goal:
+ *  Begin a 3-pulse sync train on SYNC_LED_PORT and BREAKOUT_BOARD_PORT.
+ *  Called whenever the solenoid is triggered.
+ */
+void start_sync_burst() {
+  inSyncBurst = true;
+  inSyncPulse = true;
+  syncPulsesCompleted = 0;
+  write_sync_edge(true);
+  digitalWrite(SYNC_LED_PORT, HIGH);
+  digitalWrite(BREAKOUT_BOARD_PORT, HIGH);
+  syncPulseStartTime = millis();
+}
+
+/**
+ * update_sync_burst
+ *  - now: current millis()
+ *
+ * Goal:
+ *  Advance the non-blocking sync pulse state machine (on/off phases).
+ */
+void update_sync_burst(unsigned long now) {
+  if (!inSyncBurst) return;
+
+  if (inSyncPulse) {
+    if (now - syncPulseStartTime >= (unsigned long)BLINK_DURATION) {
+      write_sync_edge(false);
+      digitalWrite(SYNC_LED_PORT, LOW);
+      digitalWrite(BREAKOUT_BOARD_PORT, LOW);
+      syncPulseEndTime = now;
+      syncPulsesCompleted++;
+      inSyncPulse = false;
+
+      if (syncPulsesCompleted >= NUM_SYNC_PULSES) {
+        inSyncBurst = false;
+        syncPulsesCompleted = 0;
+      }
+    }
+  } else {
+    if (now - syncPulseEndTime >= (unsigned long)BLINK_DURATION) {
+      write_sync_edge(true);
+      digitalWrite(SYNC_LED_PORT, HIGH);
+      digitalWrite(BREAKOUT_BOARD_PORT, HIGH);
+      syncPulseStartTime = now;
+      inSyncPulse = true;
+    }
+  }
+}
+
+/**
  * open_solenoid
+ *  - triggerSync: if true, start sync burst on this open (first pulse only)
  *
  * Goal:
  *  Activate solenoid and record reward start time.
  */
-void open_solenoid() {
+void open_solenoid(bool triggerSync) {
+  if (triggerSync) {
+    start_sync_burst();
+  }
   digitalWrite(SOLENOID_PORT, HIGH);
   givingReward = true;
   rewardStartTime = millis();
@@ -105,12 +161,12 @@ void open_solenoid() {
  * close_solenoid
  *
  * Goal:
- *  Deactivate solenoid and record pulse end time.
+ *  Deactivate solenoid and record pulse end time for burst spacing.
  */
 void close_solenoid() {
   digitalWrite(SOLENOID_PORT, LOW);
   givingReward = false;
-  lastPulseEndTime = millis();
+  lastSolenoidPulseEndTime = millis();
 }
 
 /**
@@ -145,81 +201,38 @@ void setup() {
 
   digitalWrite(SOLENOID_PORT, LOW);
   digitalWrite(LED_PORT, LOW);
+  digitalWrite(SYNC_LED_PORT, LOW);
+  digitalWrite(BREAKOUT_BOARD_PORT, LOW);
 
   Serial.begin(9600);
   wait_for_processing_start();
 
-  // CSV header
   Serial.println("timestamp_ms,event,value,");
 }
 
 void loop() {
   unsigned long now = millis();
-  if (inSyncBurst) {
-    if (inSyncPulse) {
-      unsigned long PulseTimeElapsed = now - lastPulseStartTime;
-      if (PulseTimeElapsed > BLINK_DURATION) {
-        write_sync_edge(false);
-        digitalWrite(SYNC_LED_PORT, LOW);
-        digitalWrite(BREAKOUT_BOARD_PORT, LOW);
-        lastPulseEndTime = millis();
-
-        pulsesGivenInBurst++;
-        inSyncPulse = false;
-
-        if (pulsesGivenInBurst >= NUM_PULSES) {
-          inSyncBurst = false;
-          pulsesGivenInBurst = 0;
-        }
-      }
-    }
-    else {
-      unsigned long OffPulseTimeElapsed = now - lastPulseEndTime;
-      if (OffPulseTimeElapsed > BLINK_DURATION) {
-        write_sync_edge(true);
-        digitalWrite(SYNC_LED_PORT, HIGH);
-        digitalWrite(BREAKOUT_BOARD_PORT, HIGH);
-        lastPulseStartTime = millis();
-
-        inSyncPulse = true;
-      }
-    }
-  }
-  else {
-    unsigned long OffPulseTimeElapsed = now - lastPulseEndTime;
-    if (OffPulseTimeElapsed > INTER_SYNC_DURATION) {
-      write_sync_edge(true);
-      digitalWrite(SYNC_LED_PORT, HIGH);
-      digitalWrite(BREAKOUT_BOARD_PORT, HIGH);
-      lastPulseStartTime = millis();
-
-      inSyncPulse = true;
-      inSyncBurst = true;
-    }
-  }
+  update_sync_burst(now);
 
   beamState = (digitalRead(BEAM_BREAK_PORT) == LOW);
-  // beamState = !digitalRead(BEAM_BREAK_PORT);
 
   if (beamState != lastBeamState) {
     write_beam(beamState);
     lastBeamState = beamState;
 
     if (beamState) {
-      unsigned long now = millis();
-
       if (firstPoke) {
         firstPoke = false;
         write_reward();
         inBurst = true;
-        pulsesGivenInBurst = 0;
-        open_solenoid();
+        solenoidPulsesInBurst = 0;
+        open_solenoid(true);
       } else if (timerArmed) {
         if (now - leaveTime >= INTERVAL_DURATION) {
           write_reward();
           inBurst = true;
-          pulsesGivenInBurst = 0;
-          open_solenoid();
+          solenoidPulsesInBurst = 0;
+          open_solenoid(true);
         } else {
           write_error();
         }
@@ -248,10 +261,10 @@ void loop() {
   }
 
   if (inBurst && !givingReward) {
-    if (pulsesGivenInBurst < SOLENOID_REPEATS) {
-      if (millis() - lastPulseEndTime >= SOLENOID_OFF_TIME) {
-        open_solenoid();
-        pulsesGivenInBurst++;
+    if (solenoidPulsesInBurst < SOLENOID_REPEATS) {
+      if (millis() - lastSolenoidPulseEndTime >= SOLENOID_OFF_TIME) {
+        open_solenoid(false);
+        solenoidPulsesInBurst++;
       }
     } else {
       inBurst = false;

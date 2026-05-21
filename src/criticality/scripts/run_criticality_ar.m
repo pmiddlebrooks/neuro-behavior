@@ -50,7 +50,7 @@ opts = neuro_behavior_options;
 opts.firingRateCheckTime = 20 * 60;
 opts.firingRateCheckTime = [];
 opts.collectStart = 0;
-opts.collectEnd = 30*60;
+opts.collectEnd = 45*60;
 opts.collectEnd = [];
 if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
 opts.collectEnd = [];
@@ -246,9 +246,10 @@ end
 
 % Set up configuration from workspace variables
 % (These should be set before running this script)config = struct();
-config.slidingWindowSize = 20; % Default window size
+config.slidingWindowSize = 30; % Default window size
 config.binSize = .025; % Default bin size
 config.stepSize = .5; % Default step size
+config.stepSize = 30; % Default step size
 config.minSpikesPerBin = 2.5;
 config.minBinsPerWindow = 1000;
 

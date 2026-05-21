@@ -444,7 +444,7 @@ function results = criticality_ar_analysis(dataStruct, config)
         end
         
         numNeuronsArea = size(aDataMat, 2);
-        popActivityLocal = mean(aDataMat, 2);
+        popActivityLocal = sum(aDataMat, 2);
         [startSLocal, mrBrLocal, d2Local, d2NormalizedLocal, popActivityWindowsLocal, popActivityFullLocal] = ...
             deal(nan(1, numWindows));
         
@@ -504,7 +504,7 @@ function results = criticality_ar_analysis(dataStruct, config)
             for s = 1:nSubsamples
                 thisIdx = neuronIdxSubsamples{s};
                 aDataMatSub = aDataMat(:, thisIdx);
-                popActivitySub = mean(aDataMatSub, 2);
+                popActivitySub = sum(aDataMatSub, 2);
                 
                 % Process each window using common centerTime
                 for w = 1:numWindows
@@ -1098,7 +1098,7 @@ function [d2Permuted, mrBrPermuted] = perform_circular_permutations(aDataMat, co
         end
         
         % Compute population activity from shuffled data
-        permutedPopActivity = mean(permutedDataMat, 2);
+        permutedPopActivity = sum(permutedDataMat, 2);
         
         for w = 1:numWindows
             centerTime = commonCenterTimes(w);
@@ -1185,7 +1185,7 @@ function [d2Permuted, mrBrPermuted] = perform_circular_permutations_pca(reconstr
         % Just use the permuted data directly
         
         % Compute population activity from shuffled data
-        permutedPopActivity = mean(permutedDataMat, 2);
+        permutedPopActivity = sum(permutedDataMat, 2);
         
         for w = 1:numWindows
             centerTime = commonCenterTimes(w);
