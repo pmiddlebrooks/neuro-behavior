@@ -1,9 +1,10 @@
-function logTable = interval_session_performance(subjectName, sessionName)
+function logTable = interval_session_performance(subjectName, sessionName, sessionInterval)
 % INTERVAL_SESSION_PERFORMANCE - Plot interval task performance for one session
 %
 % Variables:
 %   subjectName - Subject folder under interval_timing_task/data (e.g. 'ey9387')
 %   sessionName - Session folder under subject (e.g. 'ey9387_2026_05_21')
+%   sessionInterval - Target interval duration (sec); default 5 if omitted
 %
 % Goal: Load revised interval CSV logs, extract trial outcomes (ERROR / REWARD),
 % print accuracy (excluding fast errors and late corrects), count pokes near the
@@ -11,9 +12,11 @@ function logTable = interval_session_performance(subjectName, sessionName)
 % Accuracy excludes errors under excludeUnder (default 1 s) and corrects over excludeOver (default 9 s).
 %
 % Returns:
-%   fig - Figure handle for the session performance summary
+%   logTable - Parsed event table (timestampMs, event, value)
 
-    sessionInterval = 5;       % sec; matches INTERVAL_DURATION in Revised_Interval_Timing_Code_Processing.ino
+    if nargin < 3 || isempty(sessionInterval)
+        sessionInterval = 5;   % sec; default matches INTERVAL_DURATION in Revised_Interval_Timing_Code_Processing.ino
+    end
     minLeaveSec = 0.1;         % sec; MIN_LEAVE_TIME in Arduino sketch
     correctTimeMaxSec = 20;    % upper bound for correct poke-time histogram (sec)
     zoomHalfWidthSec = 3;      % half-width of zoomed trial-wise panel (sec)
@@ -36,6 +39,9 @@ function logTable = interval_session_performance(subjectName, sessionName)
     csvPath = find_interval_csv(sessionDir);
     fprintf('Loading interval log: %s\n', csvPath);
     logTable = parse_interval_log(csvPath);
+    sessionDurationMin = (max(logTable.timestampMs) - min(logTable.timestampMs)) / 1000 / 60;
+    fprintf('Session duration: %.1f min\n', sessionDurationMin);
+
     trials = extract_interval_trials(logTable, minLeaveSec);
     nError = sum(trials.type == "error");
     nCorrect = sum(trials.type == "correct");
@@ -65,7 +71,7 @@ function logTable = interval_session_performance(subjectName, sessionName)
         sessionInterval - rewardAttemptBeforeSec, sessionInterval + rewardAttemptAfterSec, ...
         sessionInterval, nRewardAttempt, nRewardAttemptCorrect, nRewardAttemptError);
 
-    fig = plot_interval_session_performance(logTable, trials, subjectName, sessionName, ...
+    plot_interval_session_performance(logTable, trials, subjectName, sessionName, ...
         sessionInterval, correctTimeMaxSec, zoomHalfWidthSec, movAvgWinSec, rateBinSec);
 end
 
@@ -209,7 +215,7 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
 %   movAvgWinSec - Moving-average window for reward rate (sec)
 %   rateBinSec - Bin width for reward-rate time series (sec)
 %
-% Goal: Five-panel figure of reward rate, trial outcomes, zoom, and distributions
+% Goal: Four-panel figure of reward rate, trial outcomes, zoom, and combined distribution
 
     rewardTimesSec = logTable.timestampMs(logTable.event == "REWARD") / 1000;
     sessionEndSec = max(logTable.timestampMs) / 1000;
@@ -223,15 +229,17 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     smoothWinBins = max(1, round(movAvgWinSec / rateBinSec));
     rewardsPerMinSmooth = movmean(rewardsPerMin, smoothWinBins);
 
+    plotErrorMinSec = 1;   % exclude fast errors from trial and histogram plots
     errorMask = trials.type == "error";
     correctMask = trials.type == "correct";
-    errorTimesSec = trials.pokeTimeSec(errorMask);
+    errorPlotMask = errorMask & trials.pokeTimeSec >= plotErrorMinSec;
+    errorTimesSec = trials.pokeTimeSec(errorPlotMask);
     correctTimesSec = trials.pokeTimeSec(correctMask);
     trialNumbers = (1:height(trials))';
 
     fig = figure('Name', sprintf('%s %s interval performance', subjectName, sessionName), ...
         'Position', [80, 80, 1100, 950]);
-    layout = tiledlayout(fig, 5, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+    layout = tiledlayout(fig, 4, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
 
     axReward = nexttile(layout);
     plot(axReward, timeBinsSec, rewardsPerMinSmooth, 'k-', 'LineWidth', 1.2);
@@ -243,8 +251,8 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
 
     axTrials = nexttile(layout);
     hold(axTrials, 'on');
-    if any(errorMask)
-        plot(axTrials, errorTimesSec, trialNumbers(errorMask), 'r.', 'MarkerSize', 15);
+    if any(errorPlotMask)
+        plot(axTrials, errorTimesSec, trialNumbers(errorPlotMask), 'r.', 'MarkerSize', 15);
     end
     if any(correctMask)
         plot(axTrials, correctTimesSec, trialNumbers(correctMask), '.', ...
@@ -260,8 +268,8 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
 
     axZoom = nexttile(layout);
     hold(axZoom, 'on');
-    if any(errorMask)
-        plot(axZoom, errorTimesSec, trialNumbers(errorMask), 'r.', 'MarkerSize', 15);
+    if any(errorPlotMask)
+        plot(axZoom, errorTimesSec, trialNumbers(errorPlotMask), 'r.', 'MarkerSize', 15);
     end
     if any(correctMask)
         plot(axZoom, correctTimesSec, trialNumbers(correctMask), '.', ...
@@ -276,30 +284,28 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     hold(axZoom, 'off');
 
     distBinWidthSec = 0.1;
-    errorBinEdges = 0:distBinWidthSec:sessionInterval;
-    correctBinEdges = sessionInterval:distBinWidthSec:correctTimeMaxSec;
+    histBinEdges = 0:distBinWidthSec:correctTimeMaxSec;
+    binCenters = histBinEdges(1:end-1) + distBinWidthSec / 2;
+    errorCounts = histcounts(errorTimesSec, histBinEdges);
+    correctCounts = histcounts(correctTimesSec, histBinEdges);
+    errorBarMask = binCenters < sessionInterval;
+    correctBarMask = binCenters >= sessionInterval;
 
-    axErrorHist = nexttile(layout);
-    errorCounts = histcounts(errorTimesSec, errorBinEdges);
-    bar(axErrorHist, errorBinEdges(1:end-1) + distBinWidthSec / 2, errorCounts, 1, ...
-        'FaceColor', [0.85, 0.2, 0.2], 'EdgeColor', 'none');
-    xlabel(axErrorHist, 'Poke time since leave (s)');
-    ylabel(axErrorHist, 'Count');
-    xlim(axErrorHist, [0, sessionInterval]);
-    grid(axErrorHist, 'on');
-
-    axCorrectHist = nexttile(layout);
-    correctCounts = histcounts(correctTimesSec, correctBinEdges);
-    bar(axCorrectHist, correctBinEdges(1:end-1) + distBinWidthSec / 2, correctCounts, 1, ...
-        'FaceColor', [0.2, 0.65, 0.25], 'EdgeColor', 'none');
-    xlabel(axCorrectHist, 'Poke time since leave (s)');
-    ylabel(axCorrectHist, 'Count');
-    xlim(axCorrectHist, [sessionInterval, correctTimeMaxSec]);
-    grid(axCorrectHist, 'on');
-
+    axHist = nexttile(layout);
+    hold(axHist, 'on');
+    bar(axHist, binCenters(errorBarMask), errorCounts(errorBarMask), 1, ...
+        'FaceColor', [0.85, 0.2, 0.2], 'EdgeColor', 'none', 'DisplayName', 'Error');
+    bar(axHist, binCenters(correctBarMask), correctCounts(correctBarMask), 1, ...
+        'FaceColor', [0.2, 0.65, 0.25], 'EdgeColor', 'none', 'DisplayName', 'Correct');
+    xline(axHist, sessionInterval, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+    xlabel(axHist, 'Poke time since leave (s)');
+    ylabel(axHist, 'Count');
+    xlim(axHist, [0, correctTimeMaxSec]);
     histYMax = max([errorCounts, correctCounts, 1]);
-    ylim(axErrorHist, [0, histYMax * 1.05]);
-    ylim(axCorrectHist, [0, histYMax * 1.05]);
+    ylim(axHist, [0, histYMax * 1.05]);
+    grid(axHist, 'on');
+    hold(axHist, 'off');
+    legend(axHist, 'Location', 'best');
 
     legend(axTrials, {'Error', 'Correct', sprintf('%g s interval', sessionInterval)}, ...
         'Location', 'best');
