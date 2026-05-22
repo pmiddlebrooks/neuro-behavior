@@ -56,7 +56,7 @@ sessionName =  'ag112321_1';
 % sessionName =  'kw092121';  % Ok... few M56
 
 
-%% =============================    Spontaneous Data Loading    =============================
+%% =============================    Interval Data Loading    =============================
 % Data type selection
 sessionType = 'interval';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'
 
@@ -64,7 +64,7 @@ subjectName = 'ey9166';
 sessionName =  'ey9166_2026_04_03';
 % sessionName =  'ey9166_2026_04_04';
 % sessionName =  'ey9166_2026_04_07';
-% sessionName =  'ey9166_2026_04_09';
+% sessionName =  'ey9166_2026_04_fig = interval_session_performance(subjectName, sessionName)09';
 
 subjectName = 'ey9387';
 sessionName =  'ey9387_2026_05_19';

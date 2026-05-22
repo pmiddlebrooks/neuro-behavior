@@ -1,4 +1,4 @@
-function fig = interval_session_performance(subjectName, sessionName)
+function logTable = interval_session_performance(subjectName, sessionName)
 % INTERVAL_SESSION_PERFORMANCE - Plot interval task performance for one session
 %
 % Variables:
@@ -6,7 +6,8 @@ function fig = interval_session_performance(subjectName, sessionName)
 %   sessionName - Session folder under subject (e.g. 'ey9387_2026_05_21')
 %
 % Goal: Load revised interval CSV logs, extract trial outcomes (ERROR / REWARD),
-% print accuracy (excluding fast errors and late corrects), and plot session performance.
+% print accuracy (excluding fast errors and late corrects), count pokes near the
+% target interval, and plot session performance.
 % Accuracy excludes errors under excludeUnder (default 1 s) and corrects over excludeOver (default 9 s).
 %
 % Returns:
@@ -20,6 +21,8 @@ function fig = interval_session_performance(subjectName, sessionName)
     rateBinSec = 1;            % time bin width for reward-rate estimation (sec)
     excludeUnder = 3;          % sec; exclude errors with poke time below this
     excludeOver = 7;           % sec; exclude corrects with poke time above this
+    rewardAttemptBeforeSec = 1;  % sec before sessionInterval for reward-seeking window
+    rewardAttemptAfterSec = 2;   % sec after sessionInterval for reward-seeking window
 
     addpath(fullfile(fileparts(mfilename('fullpath')), '..'));
     paths = get_paths();
@@ -51,6 +54,16 @@ function fig = interval_session_performance(subjectName, sessionName)
     end
     fprintf('Accuracy: %.1f%% (%d/%d trials; excludes errors < %.1f s, corrects > %.1f s)\n', ...
         accuracyPct, nCorrectForAccuracy, nAccuracyTrials, excludeUnder, excludeOver);
+
+    rewardAttemptMask = trials.pokeTimeSec >= sessionInterval - rewardAttemptBeforeSec & ...
+        trials.pokeTimeSec <= sessionInterval + rewardAttemptAfterSec;
+    nRewardAttempt = sum(rewardAttemptMask);
+    nRewardAttemptCorrect = sum(correctMask & rewardAttemptMask);
+    nRewardAttemptError = sum(errorMask & rewardAttemptMask);
+    fprintf(['Trials with poke %.1f–%.1f s since leave (around %.0f s interval): ', ...
+        '%d total (%d correct [solenoid], %d error)\n'], ...
+        sessionInterval - rewardAttemptBeforeSec, sessionInterval + rewardAttemptAfterSec, ...
+        sessionInterval, nRewardAttempt, nRewardAttemptCorrect, nRewardAttemptError);
 
     fig = plot_interval_session_performance(logTable, trials, subjectName, sessionName, ...
         sessionInterval, correctTimeMaxSec, zoomHalfWidthSec, movAvgWinSec, rateBinSec);
@@ -223,7 +236,7 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     axReward = nexttile(layout);
     plot(axReward, timeBinsSec, rewardsPerMinSmooth, 'k-', 'LineWidth', 1.2);
     xlabel(axReward, 'Session time (s)');
-    ylabel(axReward, 'Rewards/min (20 s avg)');
+    ylabel(axReward, 'Rewards/min (moving avg)');
     title(axReward, sprintf('%s | %s', subjectName, sessionName), 'interpreter', 'none');
     grid(axReward, 'on');
     xlim(axReward, [0, sessionEndSec]);
