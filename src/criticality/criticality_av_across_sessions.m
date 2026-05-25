@@ -57,21 +57,20 @@ reachData.areas = [];
 %% Process spontaneous sessions
 fprintf('\n=== Loading Spontaneous Session Results ===\n');
 for s = 1:length(spontaneousSessions)
-    sessionName = spontaneousSessions{s};
+    [sessionName, subjectName] = unpack_session_list_entry(spontaneousSessions, s);
     fprintf('\nLoading session %d/%d: %s\n', s, length(spontaneousSessions), sessionName);
     
     try
-        % Find results file
-        % Extract subjectID from sessionName (similar to how load_spontaneous_data does it)
-        pathParts = strsplit(sessionName, filesep);
-        if length(pathParts) > 1
-            subjectID = fullfile(pathParts{1}, pathParts{2});
-        else
-            subjectID = sessionName;
+        % Results saved under subject folder (see load_spontaneous_data)
+        if isempty(subjectName)
+            pathParts = strsplit(sessionName, filesep);
+            if length(pathParts) > 1
+                subjectName = pathParts{1};
+            else
+                subjectName = sessionName;
+            end
         end
-        
-        % Use dropPath/spontaneous/results/{subjectID}/
-        saveDir = fullfile(paths.dropPath, 'spontaneous/results', subjectID);
+        saveDir = fullfile(paths.dropPath, 'spontaneous/results', subjectName);
         
         % Find results file
         resultsPath = find_results_file('criticality_av', 'spontaneous', sessionName, saveDir, filenameSuffix, '');

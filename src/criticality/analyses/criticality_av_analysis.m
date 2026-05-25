@@ -37,10 +37,11 @@ function results = criticality_av_analysis(dataStruct, config)
     validate_workspace_vars({'sessionType', 'spikeTimes', 'spikeClusters', 'areas', 'idMatIdx'}, dataStruct, ...
         'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
     
-    % Set defaults only if config is not supplied or is empty
+    % Merge defaults for any missing config fields
     if nargin < 2 || isempty(config) || ~isstruct(config)
-        config = set_config_defaults(config);
+        config = struct();
     end
+    config = set_config_defaults(config);
     
     sessionType = dataStruct.sessionType;
     areas = dataStruct.areas;
@@ -335,24 +336,24 @@ function results = criticality_av_analysis(dataStruct, config)
             % Downsample reconstructed data to optimal bin size
             % Average across bins within each optimal bin
             binsPerOptimalBin = binSize(a) / tempBinSize;
-            aDataMat_dcc = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
+            aDataMat = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
             for b = 1:numBins_optimal
                 startIdx_1ms = round((b-1) * binsPerOptimalBin) + 1;
                 endIdx_1ms = min(round(b * binsPerOptimalBin), numBins_1ms);
                 if startIdx_1ms <= numBins_1ms
-                    aDataMat_dcc(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
+                    aDataMat(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
                 end
             end
-            numTimePoints_dcc = size(aDataMat_dcc, 1);
+            numTimePoints_dcc = size(aDataMat, 1);
         else
             % Bin spikes on-demand at area-specific bin size
-            aDataMat_dcc = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+            aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
                 neuronIDs, timeRange, binSize(a));
-            numTimePoints_dcc = size(aDataMat_dcc, 1);
+            numTimePoints_dcc = size(aDataMat, 1);
         end
         
         % Calculate population activity
-        aDataMat_dcc = sum(aDataMat_dcc, 2);
+        aDataMat = sum(aDataMat, 2);
         
         % Initialize arrays
         dcc{a} = nan(1, numWindows);
@@ -386,7 +387,7 @@ function results = criticality_av_analysis(dataStruct, config)
             end
             
             % Calculate population activity for this window
-            wPopActivity = aDataMat_dcc(startIdx:endIdx);
+            wPopActivity = aDataMat(startIdx:endIdx);
             
             % Apply thresholding using median of this window
             threshSpikes = median(wPopActivity);
@@ -398,8 +399,8 @@ function results = criticality_av_analysis(dataStruct, config)
                 [sizes, durs] = getAvalanches(wPopActivity', .5, 1);
                 gof = .8;
                 plotAv = 0;
-                [tauVal, plrS, minavS, maxavS, ~, ~, ~] = plfit2023(sizes, gof, plotAv, 0);
-                [alphaVal, plrD, minavD, maxavD, ~, ~, ~] = plfit2023(durs, gof, plotAv, 0);
+                [tauVal, plrS, minavS, maxavS, nSampS, ~, ~] = plfit2023(sizes, gof, plotAv, 0);
+                [alphaVal, plrD, minavD, maxavD, nSamD, ~, ~] = plfit2023(durs, gof, plotAv, 0);
                 [paramSDVal, sigmaNuZInvStd, logCoeff] = size_given_duration(sizes, durs, ...
                     'durmin', minavD, 'durmax', maxavD);
                 

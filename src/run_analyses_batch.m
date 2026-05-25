@@ -34,6 +34,7 @@ srcPath = basePath;
 reachPath = fullfile(srcPath, 'reach_task');
 schallPath = fullfile(srcPath, 'schall');
 openFieldPath = fullfile(srcPath, 'spontaneous');
+intervalPath = fullfile(srcPath, 'interval_timing_task');
 
 if exist(reachPath, 'dir')
     addpath(reachPath);
@@ -43,6 +44,9 @@ if exist(schallPath, 'dir')
 end
 if exist(openFieldPath, 'dir')
     addpath(openFieldPath);
+end
+if exist(intervalPath, 'dir')
+    addpath(intervalPath);
 end
 
 % Add paths for analysis scripts
@@ -80,8 +84,12 @@ switch lower(batchSessionType)
     case 'spontaneous'
         sessions = spontaneous_session_list();
         sessionType = 'spontaneous';
+    case 'interval'
+        sessions = interval_session_list();
+        sessionType = 'interval';
     otherwise
-        error('Invalid batchSessionType: %s. Must be ''reach'', ''schall'', or ''spontaneous''.', batchSessionType);
+        error(['Invalid batchSessionType: %s. Must be ''reach'', ''schall'', ', ...
+            '''spontaneous'', or ''interval''.'], batchSessionType);
 end
 
 numSessions = length(sessions);
@@ -124,11 +132,14 @@ sessionResults = repmat(templateStruct, numSessions, 1);
 % Loop through each session (parallel)
 % parfor s = 1:numSessions
 for s = 1 %:numSessions
-    sessionName = sessions{s};
+    [sessionName, subjectName] = unpack_session_list_entry(sessions, s);
     
     fprintf('\n');
     fprintf('%s\n', repmat('=', 1, 80));
     fprintf('Processing session %d/%d: %s\n', s, numSessions, sessionName);
+    if ~isempty(subjectName)
+        fprintf('Subject: %s\n', subjectName);
+    end
     fprintf('%s\n', repmat('=', 1, 80));
     fprintf('\n');
     
@@ -189,7 +200,7 @@ fprintf('\n');
 
 % Print summary for each session
 for s = 1:numSessions
-    sessionName = sessions{s};
+    [sessionName, ~] = unpack_session_list_entry(sessions, s);
     fprintf('\n--- Session %d/%d Summary: %s ---\n', s, numSessions, sessionName);
     for a = 1:length(activeAnalyses)
         analysisName = activeAnalyses{a};

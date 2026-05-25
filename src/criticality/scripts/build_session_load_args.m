@@ -8,7 +8,7 @@ function loadArgs = build_session_load_args(sessionType, sessionName, opts, subj
 %   subjectName  - Subject folder for spontaneous/interval; use '' otherwise
 %
 % Goal:
-%   Return varargin cell for load_session_data / load_sliding_window_data.
+%   Return varargin cell for load_session_data (or legacy load_sliding_window_data).
 
 if nargin < 4
     subjectName = '';
