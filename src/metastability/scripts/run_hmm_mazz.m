@@ -240,7 +240,7 @@ end
 
 %% Optional immediate plotting from in-memory results
 makePlots = true;
-checkArea = 'M56';
+checkArea = 'DS';
 configPlot = struct('brainArea', checkArea);
 if makePlots
     fprintf('Creating basic HMM plots from in-memory results...\n');

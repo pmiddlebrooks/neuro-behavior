@@ -397,26 +397,21 @@ function results = criticality_av_analysis(dataStruct, config)
             zeroBins = find(wPopActivity == 0);
             if length(zeroBins) > 1 && any(diff(zeroBins)>1)
                 [sizes, durs] = getAvalanches(wPopActivity', .5, 1);
-                gof = .8;
-                plotAv = 0;
-                [tauVal, plrS, minavS, maxavS, nSampS, ~, ~] = plfit2023(sizes, gof, plotAv, 0);
-                [alphaVal, plrD, minavD, maxavD, nSamD, ~, ~] = plfit2023(durs, gof, plotAv, 0);
-                [paramSDVal, sigmaNuZInvStd, logCoeff] = size_given_duration(sizes, durs, ...
-                    'durmin', minavD, 'durmax', maxavD);
+                plMetrics = avalanche_power_law_metrics(sizes, durs, config);
                 
                 % dcc (distance to criticality from avalanche analysis)
-                dcc{a}(w) = distance_to_criticality(tauVal, alphaVal, paramSDVal);
+                dcc{a}(w) = distance_to_criticality(plMetrics.tau, plMetrics.alpha, plMetrics.paramSD);
                 
                 % kappa (avalanche shape parameter)
                 kappa{a}(w) = compute_kappa(sizes);
                 
                 % decades (log10 of avalanche size range)
-                decades{a}(w) = plrS;
+                decades{a}(w) = plMetrics.decades;
                 
                 % Store tau, alpha, and paramSD
-                tau{a}(w) = tauVal;
-                alpha{a}(w) = alphaVal;
-                paramSD{a}(w) = paramSDVal;
+                tau{a}(w) = plMetrics.tau;
+                alpha{a}(w) = plMetrics.alpha;
+                paramSD{a}(w) = plMetrics.paramSD;
             end
         end
         
@@ -577,6 +572,12 @@ function config = set_config_defaults(config)
     defaults.thresholdPct = 1;
     defaults.normalizeMetrics = true;  % Normalize metrics by shuffled metric values
     defaults.includeM2356 = false;  % Include combined M23+M56 area (optional)
+    defaults.powerLawFitMethod = 'clauset';
+    repoRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..', '..');
+    defaults.clausetPlfitPath = fullfile(fileparts(repoRoot), 'toolboxes', ...
+      'Power-Law-Fit-Distribution-MATLAB-main', 'MATLAB Code');
+    defaults.gofThreshold = 0.8;
+    defaults.runClausetPlpva = false;
     
     % Apply defaults
     fields = fieldnames(defaults);
@@ -727,20 +728,16 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
             zeroBins = find(wPopActivityPerm == 0);
             if length(zeroBins) > 1 && any(diff(zeroBins)>1)
                 [sizesPerm, dursPerm] = getAvalanches(wPopActivityPerm', .5, 1);
-                gof = .8;
-                plotAv = 0;
-                [tauPerm, plrSPerm, minavSPerm, maxavSPerm, ~, ~, ~] = plfit2023(sizesPerm, gof, plotAv, 0);
-                [alphaPerm, plrDPerm, minavDPerm, maxavDPerm, ~, ~, ~] = plfit2023(dursPerm, gof, plotAv, 0);
-                [paramSDPerm, sigmaNuZInvStdPerm, logCoeffPerm] = size_given_duration(sizesPerm, dursPerm, ...
-                    'durmin', minavDPerm, 'durmax', maxavDPerm);
+                plMetricsPerm = avalanche_power_law_metrics(sizesPerm, dursPerm, config);
                 
                 % Calculate metrics for permuted data
-                dccPermuted(w, shuffle) = distance_to_criticality(tauPerm, alphaPerm, paramSDPerm);
+                dccPermuted(w, shuffle) = distance_to_criticality( ...
+                  plMetricsPerm.tau, plMetricsPerm.alpha, plMetricsPerm.paramSD);
                 kappaPermuted(w, shuffle) = compute_kappa(sizesPerm);
-                decadesPermuted(w, shuffle) = plrSPerm;
-                tauPermuted(w, shuffle) = tauPerm;
-                alphaPermuted(w, shuffle) = alphaPerm;
-                paramSDPermuted(w, shuffle) = paramSDPerm;
+                decadesPermuted(w, shuffle) = plMetricsPerm.decades;
+                tauPermuted(w, shuffle) = plMetricsPerm.tau;
+                alphaPermuted(w, shuffle) = plMetricsPerm.alpha;
+                paramSDPermuted(w, shuffle) = plMetricsPerm.paramSD;
             end
         end
         
@@ -845,20 +842,16 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
             zeroBins = find(wPopActivityPerm == 0);
             if length(zeroBins) > 1 && any(diff(zeroBins)>1)
                 [sizesPerm, dursPerm] = getAvalanches(wPopActivityPerm', .5, 1);
-                gof = .8;
-                plotAv = 0;
-                [tauPerm, plrSPerm, minavSPerm, maxavSPerm, ~, ~, ~] = plfit2023(sizesPerm, gof, plotAv, 0);
-                [alphaPerm, plrDPerm, minavDPerm, maxavDPerm, ~, ~, ~] = plfit2023(dursPerm, gof, plotAv, 0);
-                [paramSDPerm, sigmaNuZInvStdPerm, logCoeffPerm] = size_given_duration(sizesPerm, dursPerm, ...
-                    'durmin', minavDPerm, 'durmax', maxavDPerm);
+                plMetricsPerm = avalanche_power_law_metrics(sizesPerm, dursPerm, config);
                 
                 % Calculate metrics for permuted data
-                dccPermuted(w, shuffle) = distance_to_criticality(tauPerm, alphaPerm, paramSDPerm);
+                dccPermuted(w, shuffle) = distance_to_criticality( ...
+                  plMetricsPerm.tau, plMetricsPerm.alpha, plMetricsPerm.paramSD);
                 kappaPermuted(w, shuffle) = compute_kappa(sizesPerm);
-                decadesPermuted(w, shuffle) = plrSPerm;
-                tauPermuted(w, shuffle) = tauPerm;
-                alphaPermuted(w, shuffle) = alphaPerm;
-                paramSDPermuted(w, shuffle) = paramSDPerm;
+                decadesPermuted(w, shuffle) = plMetricsPerm.decades;
+                tauPermuted(w, shuffle) = plMetricsPerm.tau;
+                alphaPermuted(w, shuffle) = plMetricsPerm.alpha;
+                paramSDPermuted(w, shuffle) = plMetricsPerm.paramSD;
             end
         end
         
@@ -904,6 +897,12 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
     results.params.thresholdFlag = config.thresholdFlag;
     results.params.thresholdPct = config.thresholdPct;
     results.params.normalizeMetrics = config.normalizeMetrics;
+    if isfield(config, 'powerLawFitMethod')
+        results.params.powerLawFitMethod = config.powerLawFitMethod;
+    end
+    if isfield(config, 'gofThreshold')
+        results.params.gofThreshold = config.gofThreshold;
+    end
     
     if config.enablePermutations
         results.enablePermutations = true;

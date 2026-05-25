@@ -116,7 +116,7 @@ title(sprintf('Emission Matrix (%s)', areaLabel), 'Interpreter', 'none');
 xlabel('Neuron');
 ylabel('State');
 
-% Plot full sequence with probabilities
+% Plot first 10 minutes of sequence with probabilities
 figure;
 clf;
 hold on;
@@ -124,7 +124,12 @@ hold on;
 sequence = hmmResSingle.continuous_results.sequence;
 probabilities = hmmResSingle.continuous_results.pStates;
 
-timeAxis = (1:numel(sequence)) * HmmParam.BinSize;
+plotWindowSec = 10 * 60;
+maxBinIdx = min(numel(sequence), floor(plotWindowSec / HmmParam.BinSize));
+sequence = sequence(1:maxBinIdx);
+probabilities = probabilities(1:maxBinIdx, :);
+
+timeAxis = (1:maxBinIdx) * HmmParam.BinSize;
 numStatesProb = size(probabilities, 2);
 
 colors = distinguishable_colors(numStatesProb);
@@ -153,8 +158,9 @@ end
 
 xlabel('Time (s)');
 ylabel('State probability');
+xlim([0 plotWindowSec]);
 ylim([0 1]);
-title(sprintf('HMM State Probabilities (%s)', areaLabel), 'Interpreter', 'none');
+title(sprintf('HMM State Probabilities (first 10 min, %s)', areaLabel), 'Interpreter', 'none');
 hold off;
 
 fprintf('Basic HMM plots completed for %s.\n', areaLabel);

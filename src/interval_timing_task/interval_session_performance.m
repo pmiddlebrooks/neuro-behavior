@@ -9,7 +9,7 @@ function logTable = interval_session_performance(subjectName, sessionName, sessi
 % Goal: Load revised interval CSV logs, extract trial outcomes (ERROR / REWARD),
 % print accuracy (excluding fast errors and late corrects), count pokes near the
 % target interval, and plot session performance.
-% Accuracy excludes errors under excludeUnder (default 1 s) and corrects over excludeOver (default 9 s).
+% Narrowed accuracy uses trials with poke time in [sessionInterval - 2, sessionInterval + 3] s.
 %
 % Returns:
 %   logTable - Parsed event table (timestampMs, event, value)
@@ -22,8 +22,8 @@ function logTable = interval_session_performance(subjectName, sessionName, sessi
     zoomHalfWidthSec = 3;      % half-width of zoomed trial-wise panel (sec)
     movAvgWinSec = 60;         % moving-average window for rewards/min (sec)
     rateBinSec = 1;            % time bin width for reward-rate estimation (sec)
-    excludeUnder = 3;          % sec; exclude errors with poke time below this
-    excludeOver = 7;           % sec; exclude corrects with poke time above this
+    accuracyBeforeSec = 2;     % sec before sessionInterval for narrowed accuracy window
+    accuracyAfterSec = 3;      % sec after sessionInterval for narrowed accuracy window
     rewardAttemptBeforeSec = 1;  % sec before sessionInterval for reward-seeking window
     rewardAttemptAfterSec = 2;   % sec after sessionInterval for reward-seeking window
 
@@ -49,8 +49,9 @@ function logTable = interval_session_performance(subjectName, sessionName, sessi
 
     errorMask = trials.type == "error";
     correctMask = trials.type == "correct";
-    accuracyMask = (errorMask & trials.pokeTimeSec >= excludeUnder) | ...
-        (correctMask & trials.pokeTimeSec <= excludeOver);
+    accuracyLowSec = sessionInterval - accuracyBeforeSec;
+    accuracyHighSec = sessionInterval + accuracyAfterSec;
+    accuracyMask = trials.pokeTimeSec >= accuracyLowSec & trials.pokeTimeSec <= accuracyHighSec;
     nAccuracyTrials = sum(accuracyMask);
     nCorrectForAccuracy = sum(correctMask & accuracyMask);
     if nAccuracyTrials > 0
@@ -58,8 +59,14 @@ function logTable = interval_session_performance(subjectName, sessionName, sessi
     else
         accuracyPct = NaN;
     end
-    fprintf('Accuracy: %.1f%% (%d/%d trials; excludes errors < %.1f s, corrects > %.1f s)\n', ...
-        accuracyPct, nCorrectForAccuracy, nAccuracyTrials, excludeUnder, excludeOver);
+    fprintf(['Accuracy: %.1f%% (%d/%d trials; poke window %.1f–%.1f s ', ...
+        '(interval %.0f s, excludes < %.1f s before and > %.1f s after))\n'], ...
+        accuracyPct, nCorrectForAccuracy, nAccuracyTrials, accuracyLowSec, accuracyHighSec, ...
+        sessionInterval, accuracyBeforeSec, accuracyAfterSec);
+    if nAccuracyTrials > 0
+        medianAccuracyIntervalSec = median(trials.pokeTimeSec(accuracyMask));
+        fprintf('Median poke time (narrowed accuracy trials): %.2f s\n', medianAccuracyIntervalSec);
+    end
 
     rewardAttemptMask = trials.pokeTimeSec >= sessionInterval - rewardAttemptBeforeSec & ...
         trials.pokeTimeSec <= sessionInterval + rewardAttemptAfterSec;

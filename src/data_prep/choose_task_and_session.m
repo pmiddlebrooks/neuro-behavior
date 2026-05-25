@@ -64,15 +64,16 @@ subjectName = 'ey9290';
 
 subjectName = 'ey9166';
 sessionName =  'ey9166_2026_04_03';
-sessionName =  'ey9166_2026_04_04';
-sessionName =  'ey9166_2026_04_07';
-sessionName =  'ey9166_2026_04_09';
-
+% sessionName =  'ey9166_2026_04_04';
+% sessionName =  'ey9166_2026_04_07';
+% sessionName =  'ey9166_2026_04_09';
+% 
 subjectName = 'ey9387';
-sessionName =  'ey9387_2026_05_19';
-sessionName =  'ey9387_2026_05_20';
-sessionName =  'ey9387_2026_05_21';
-% sessionName =  'ey9387_2026_05_22';
+% sessionName =  'ey9387_2026_05_19';
+% sessionName =  'ey9387_2026_05_20';
+% sessionName =  'ey9387_2026_05_21';
+sessionName =  'ey9387_2026_05_22';
+sessionName =  'ey9387_2026_05_25';
 
 %% =============================    Reach Data Loading    =============================
 sessionType = 'reach';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
