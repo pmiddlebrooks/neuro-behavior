@@ -14,8 +14,9 @@
 %   areasToPlot   - Area names to plot; {} uses brainArea if set, else all areas
 %   runBatch             - If true, run criticality_av_analysis per session
 %   plotResults          - If true, create summary figures after batch
-%   powerLawFitMethod    - 'clauset' (default) or 'plfit2023'
+%   powerLawFitMethod    - 'clauset', 'plfit2023', or 'hybrid'
 %   clausetPlfitPath     - Path to Clauset toolbox MATLAB Code folder
+%   plfit2023Path        - Path to folder containing plfit2023.m
 %
 % Goal:
 %   Compare avalanche metrics (dcc, kappa, decades, tau, alpha, paramSD)
@@ -35,13 +36,9 @@ areasToPlot = {};              % optional override, e.g. {'M23'}; {} -> brainAre
 runBatch = true;
 plotResults = true;
 
-% Power-law fitting: 'clauset' (Clauset plfit) or 'plfit2023' (legacy)
+% Power-law fitting: 'clauset', 'plfit2023', or 'hybrid' (plfit2023 xmax + Clauset plfit)
 powerLawFitMethod = 'clauset';
-scriptDirForToolbox = fileparts(mfilename('fullpath'));
-repoRootForToolbox = fullfile(scriptDirForToolbox, '..', '..');
-clausetPlfitPath = fullfile(fileparts(repoRootForToolbox), 'toolboxes', ...
-  'Power-Law-Fit-Distribution-MATLAB-main', 'MATLAB Code');
-gofThreshold = 0.8;  % used only when powerLawFitMethod = 'plfit2023'
+gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 
 % Avalanche analysis settings (single full collect window per session)
 analysisConfig = struct();
@@ -55,15 +52,14 @@ analysisConfig.pcaFlag = 0;
 analysisConfig.pcaFirstFlag = 1;
 analysisConfig.nDim = 5;
 analysisConfig.enablePermutations = true;
-analysisConfig.nShuffles = 20;
+analysisConfig.nShuffles = 25;
 analysisConfig.makePlots = false;
-analysisConfig.saveData = true;
+analysisConfig.saveData = false;
 analysisConfig.thresholdFlag = 1;
 analysisConfig.thresholdPct = 1;
-analysisConfig.nMinNeurons = 20;
+analysisConfig.nMinNeurons = 25;
 analysisConfig.normalizeMetrics = true;
 analysisConfig.powerLawFitMethod = powerLawFitMethod;
-analysisConfig.clausetPlfitPath = clausetPlfitPath;
 analysisConfig.gofThreshold = gofThreshold;
 analysisConfig.runClausetPlpva = false;
 analysisConfig.includeM2356 = false;
@@ -73,14 +69,18 @@ end
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
+opts.firingRateCheckTime = [];
 opts.collectStart = collectStart;
 opts.collectEnd = collectEnd;
-opts.minFiringRate = 0.1;
+opts.minFiringRate = 0.05;
 opts.maxFiringRate = 100;
 
 %% Paths
 paths = get_paths();
 scriptDir = fileparts(mfilename('fullpath'));
+if contains(scriptDir, [filesep 'Editor_' filesep])
+  scriptDir = fileparts(which('criticality_av_across_tasks'));
+end
 srcPath = fullfile(scriptDir, '..');
 addpath(srcPath);
 addpath(fullfile(srcPath, 'reach_task'));
@@ -94,6 +94,10 @@ addpath(fullfile(srcPath, 'session_prep', 'utils'));
 addpath(fullfile(srcPath, 'data_prep'));
 addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
 addpath(fullfile(srcPath, 'criticality'));
+
+[clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
+analysisConfig.clausetPlfitPath = clausetPlfitPath;
+analysisConfig.plfit2023Path = plfit2023Path;
 
 fprintf('\n=== Criticality Avalanche Across Task Types ===\n');
 fprintf('Power-law fit method: %s\n', powerLawFitMethod);
@@ -589,11 +593,11 @@ for a = 1:numAreas
   sgtitle(fig, titleStr, 'FontWeight', 'bold');
 
   if ~isempty(brainArea)
-    plotBase = sprintf('criticality_av_across_tasks_%s_%s_%.0f-%.0fs', ...
-      brainArea, powerLawFitMethod, collectStart, collectEnd);
+    plotBase = sprintf('criticality_av_across_tasks_%s_%.0f-%.0fs', ...
+      brainArea, collectStart, collectEnd);
   else
-    plotBase = sprintf('criticality_av_across_tasks_%s_%s_%.0f-%.0fs', ...
-      areaName, powerLawFitMethod, collectStart, collectEnd);
+    plotBase = sprintf('criticality_av_across_tasks_%s_%.0f-%.0fs', ...
+      areaName, collectStart, collectEnd);
   end
   if numAreas > 1
     plotBase = sprintf('%s_area%s', plotBase, areaName);

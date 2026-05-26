@@ -13,8 +13,10 @@ function sessions = spontaneous_session_list()
 
 sessions = [
     struct('subjectName', 'ag', 'sessionName', 'ag112321_1')   % good
+    struct('subjectName', 'ag', 'sessionName', 'ag112321_2')   % good
     struct('subjectName', 'ey', 'sessionName', 'ey042822')     % good M56, bad DS
     struct('subjectName', 'kw', 'sessionName', 'kw092121')     % ok, few M56
+    struct('subjectName', 'kw', 'sessionName', 'kw092821')     % bad M56, good DS
     ];
 
 % I have these sessions but they generally have too few neurons for

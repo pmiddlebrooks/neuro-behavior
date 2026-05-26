@@ -14,8 +14,9 @@
 %   collectStart       - Window start (seconds from session onset)
 %   collectEnd         - Window end (seconds)
 %   brainArea          - Area to analyze (e.g. 'M56'); '' uses all valid areas
-%   powerLawFitMethod  - 'clauset' (plfit/plpva toolbox) or 'plfit2023'
+%   powerLawFitMethod  - 'clauset', 'plfit2023', or 'hybrid'
 %   clausetPlfitPath   - Path to .../Power-Law-Fit-Distribution-MATLAB-main/MATLAB Code
+%   plfit2023Path      - Path to folder containing plfit2023.m
 %   runClausetPlpva    - If true and method is 'clauset', run plpva (slow)
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
 %
@@ -36,15 +37,11 @@ windowDurationSec = collectEnd - collectStart;
 brainArea = 'M56';
 saveFigure = false;
 
-% Power-law fitting: 'clauset' uses Clauset et al. plfit (KS xmin); 'plfit2023' is legacy
-powerLawFitMethod = 'clauset';
-scriptDirForToolbox = fileparts(mfilename('fullpath'));
-repoRootForToolbox = fullfile(scriptDirForToolbox, '..', '..');
-clausetPlfitPath = fullfile(fileparts(repoRootForToolbox), 'toolboxes', ...
-  'Power-Law-Fit-Distribution-MATLAB-main', 'MATLAB Code');
+% Power-law fitting: 'clauset', 'plfit2023', 'hybrid' = plfit2023 xmax, then Clauset plfit on x <= xmax
+powerLawFitMethod = 'hybrid';
 runClausetPlpva = false;
 
-gofThreshold = 0.8;  % used only when powerLawFitMethod = 'plfit2023'
+gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
@@ -64,7 +61,6 @@ analysisConfig.nMinNeurons = 20;
 analysisConfig.pcaFlag = 0;
 analysisConfig.gofThreshold = gofThreshold;
 analysisConfig.powerLawFitMethod = powerLawFitMethod;
-analysisConfig.clausetPlfitPath = clausetPlfitPath;
 analysisConfig.runClausetPlpva = runClausetPlpva;
 analysisConfig.includeM2356 = false;
 if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
@@ -73,20 +69,27 @@ end
 
 %% Paths
 paths = get_paths();
-% scriptDir = fileparts(mfilename('fullpath'));
-% srcPath = fullfile(scriptDir, '..');
-% addpath(srcPath);
-% addpath(fullfile(srcPath, 'reach_task'));
-% addpath(fullfile(srcPath, 'schall'));
-% addpath(fullfile(srcPath, 'spontaneous'));
-% addpath(fullfile(srcPath, 'interval_timing_task'));
-% addpath(fullfile(srcPath, 'criticality', 'scripts'));
-% addpath(fullfile(srcPath, 'criticality', 'analyses'));
-% addpath(fullfile(srcPath, 'session_prep', 'data_prep'));
-% addpath(fullfile(srcPath, 'session_prep', 'utils'));
-% addpath(fullfile(srcPath, 'data_prep'));
-% addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
+scriptDir = fileparts(mfilename('fullpath'));
+if contains(scriptDir, [filesep 'Editor_' filesep])
+  scriptDir = fileparts(which('session_avalanche_distributions'));
+end
+srcPath = fullfile(scriptDir, '..');
+addpath(srcPath);
+addpath(fullfile(srcPath, 'reach_task'));
+addpath(fullfile(srcPath, 'schall'));
+addpath(fullfile(srcPath, 'spontaneous'));
+addpath(fullfile(srcPath, 'interval_timing_task'));
+addpath(fullfile(srcPath, 'criticality', 'scripts'));
+addpath(fullfile(srcPath, 'criticality', 'analyses'));
+addpath(fullfile(srcPath, 'session_prep', 'data_prep'));
+addpath(fullfile(srcPath, 'session_prep', 'utils'));
+addpath(fullfile(srcPath, 'data_prep'));
+addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
 addpath(fullfile(srcPath, 'criticality'));
+
+[clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
+analysisConfig.clausetPlfitPath = clausetPlfitPath;
+analysisConfig.plfit2023Path = plfit2023Path;
 
 fprintf('\n=== Session Avalanche Distributions ===\n');
 fprintf('Power-law fit method: %s\n', powerLawFitMethod);
@@ -132,10 +135,15 @@ for aIdx = 1:numel(areasToAnalyze)
   fprintf('  Size:  tau = %.3f, x in [%.3g, %.3g]', ...
     avData.tau, avData.minSizeFit, avData.maxSizeFit);
   print_fit_diagnostics(avData.sizeFitInfo);
+  print_hybrid_fit_diagnostics(avData.sizeFitInfo);
   fprintf('\n');
   fprintf('  Dur:   alpha = %.3f, x in [%.3g, %.3g]', ...
     avData.alpha, avData.minDurFit, avData.maxDurFit);
   print_fit_diagnostics(avData.durFitInfo);
+  print_hybrid_fit_diagnostics(avData.durFitInfo);
+  fprintf('\n');
+  fprintf('  Scaling relation (alpha-1)/(tau-1): ');
+  print_scaling_relation(avData.tau, avData.alpha);
   fprintf('\n');
   fprintf('  n = %d avalanches\n', avData.nAvalanches);
 
@@ -306,6 +314,45 @@ avData.maxDurFit = durFit.fitMax;
 avData.sizeFitInfo = sizeFit;
 avData.durFitInfo = durFit;
 avData.nAvalanches = numel(sizes);
+end
+
+function print_scaling_relation(tau, alpha)
+% PRINT_SCALING_RELATION - Size-duration scaling exponent (alpha-1)/(tau-1)
+%
+% Variables:
+%   tau   - Avalanche size power-law exponent
+%   alpha - Avalanche duration power-law exponent
+%
+% Goal:
+%   Print gamma_predicted from exponent relation (Ma et al. 2019 / distance_to_criticality).
+
+if ~isfinite(tau) || ~isfinite(alpha)
+  fprintf('nan (non-finite tau or alpha)');
+  return;
+end
+if tau <= 1
+  fprintf('nan (tau must be > 1)');
+  return;
+end
+
+scalingRelation = (alpha - 1) / (tau - 1);
+fprintf('%.4f', scalingRelation);
+end
+
+function print_hybrid_fit_diagnostics(fitInfo)
+% PRINT_HYBRID_FIT_DIAGNOSTICS - plfit2023 bounds used for hybrid xmax
+
+if isempty(fitInfo) || ~isstruct(fitInfo) || ~isfield(fitInfo, 'method') ...
+    || ~strcmpi(fitInfo.method, 'hybrid')
+  return;
+end
+if isfield(fitInfo, 'fitMaxPlfit2023') && isfinite(fitInfo.fitMaxPlfit2023)
+  fprintf(' [hybrid xmax=%.3g', fitInfo.fitMaxPlfit2023);
+  if isfield(fitInfo, 'exponentPlfit2023') && isfinite(fitInfo.exponentPlfit2023)
+    fprintf(', plfit2023 exp=%.2f', fitInfo.exponentPlfit2023);
+  end
+  fprintf(']');
+end
 end
 
 function print_fit_diagnostics(fitInfo)

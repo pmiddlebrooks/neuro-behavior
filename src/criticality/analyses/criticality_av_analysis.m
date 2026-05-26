@@ -32,6 +32,7 @@ function results = criticality_av_analysis(dataStruct, config)
     add_figure_tools_path();
     addpath(fullfile(srcRoot, 'sliding_window_prep', 'utils'));
     addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'data_prep'));
+    addpath(fullfile(fileparts(mfilename('fullpath')), '..'));
     
     % Validate inputs
     validate_workspace_vars({'sessionType', 'spikeTimes', 'spikeClusters', 'areas', 'idMatIdx'}, dataStruct, ...
@@ -573,9 +574,8 @@ function config = set_config_defaults(config)
     defaults.normalizeMetrics = true;  % Normalize metrics by shuffled metric values
     defaults.includeM2356 = false;  % Include combined M23+M56 area (optional)
     defaults.powerLawFitMethod = 'clauset';
-    repoRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..', '..');
-    defaults.clausetPlfitPath = fullfile(fileparts(repoRoot), 'toolboxes', ...
-      'Power-Law-Fit-Distribution-MATLAB-main', 'MATLAB Code');
+    defaults.clausetPlfitPath = '';
+    defaults.plfit2023Path = '';
     defaults.gofThreshold = 0.8;
     defaults.runClausetPlpva = false;
     
