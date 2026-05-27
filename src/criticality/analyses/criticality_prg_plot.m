@@ -8,7 +8,7 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
 % Variables:
 %   results - Output of criticality_prg_analysis()
 %   plotConfig - From setup_plotting()
-%   config - Analysis configuration (optional field kappaAxisMax; default from results.params or 20)
+%   config - Analysis configuration (optional kappaAxisMax, plotTimeSeries [default true])
 %   dataStruct - Loaded session data
 
     areas = results.areas;
@@ -16,13 +16,36 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
 
     kappaAxisMax = prg_get_kappa_axis_max(results, config);
 
+    plotTimeSeries = true;
+    if nargin >= 3 && isstruct(config) && isfield(config, 'plotTimeSeries')
+        plotTimeSeries = logical(config.plotTimeSeries);
+    end
+
     % Shared kurtosis (kappa) vertical scale across all area tiles (Fig 1)
     allKappaTimeSeries = collect_prg_kappa_for_axis_limits(results, true);
     [kappaYLimLo, kappaYLimHi] = prg_padded_kurtosis_limits(allKappaTimeSeries);
     [kappaYLimLo, kappaYLimHi] = prg_apply_kappa_axis_max(kappaYLimLo, kappaYLimHi, kappaAxisMax);
     hasSharedKappaY = isfinite(kappaYLimLo) && isfinite(kappaYLimHi);
 
+  sessionLabel = '';
+  if nargin >= 4 && isstruct(dataStruct) && isfield(dataStruct, 'sessionName') ...
+      && ~isempty(dataStruct.sessionName)
+    sessionLabel = dataStruct.sessionName;
+  end
+
+  savePlots = false;
+  saveDir = '';
+  if nargin >= 2 && isstruct(plotConfig) && isfield(plotConfig, 'savePlots') && plotConfig.savePlots
+    savePlots = true;
+  end
+  if nargin >= 2 && isstruct(plotConfig) && isfield(plotConfig, 'saveDir') && ~isempty(plotConfig.saveDir)
+    saveDir = plotConfig.saveDir;
+  elseif nargin >= 3 && isstruct(config) && isfield(config, 'saveDir') && ~isempty(config.saveDir)
+    saveDir = config.saveDir;
+  end
+
     %% Figure 1: kappa along session (one trace per area)
+  if plotTimeSeries
     fig = figure('Color', 'w', 'Position', [80 80 1100 280 * numAreas]);
     tiledLayoutObj = tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
 
@@ -67,37 +90,24 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
         end
     end
 
-    sessionLabel = '';
-    if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
-        sessionLabel = dataStruct.sessionName;
-    end
     sgtitle(tiledLayoutObj, sprintf('PRG kurtosis | %s | %.0f s blocks, %.0f ms bins%s', ...
         results.sessionType, results.params.blockWindowSize, ...
         results.params.binSize * 1000, prg_title_suffix(sessionLabel)), ...
         'FontSize', 12, 'Interpreter', 'none');
-
-    savePlots = false;
-    saveDir = '';
-    if isfield(plotConfig, 'savePlots') && plotConfig.savePlots
-        savePlots = true;
-    end
-    if isfield(plotConfig, 'saveDir') && ~isempty(plotConfig.saveDir)
-        saveDir = plotConfig.saveDir;
-    elseif isfield(config, 'saveDir') && ~isempty(config.saveDir)
-        saveDir = config.saveDir;
-    end
 
     if savePlots && ~isempty(saveDir)
         pngPath = fullfile(saveDir, sprintf('criticality_prg_%s.png', prg_safe_name(sessionLabel)));
         exportgraphics(fig, pngPath, 'Resolution', 200);
         fprintf('Saved PRG plot: %s\n', pngPath);
     end
+  end
 
     %% Figure 2: overlapping distributions of kappa (real vs surrogate), Cambrainha-style
     % Paper Fig. 3 compares real vs null; here we show probability density of
     % window-wise kappa for data vs surrogates on the same axes per area.
     if has_prg_surrogate_kappa(results)
-        figDist = figure('Color', 'w', 'Position', [120 120 900 260 * numAreas]);
+        figDist = figure('Color', 'w', 'Position', [120 120 900 260 * numAreas], ...
+            'Name', 'PRG kurtosis distributions');
         tlDist = tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
 
         % Same kurtosis horizontal range and bin edges for every area (Fig 2)
@@ -191,6 +201,9 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
             exportgraphics(figDist, distPath, 'Resolution', 200);
             fprintf('Saved PRG kappa distribution plot: %s\n', distPath);
         end
+    elseif ~plotTimeSeries
+        warning('criticality_prg_plot:NoSurrogateKappa', ...
+            'No surrogate kappa values; distribution figure not created.');
     end
 end
 
