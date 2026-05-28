@@ -290,7 +290,7 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     grid(axZoom, 'on');
     hold(axZoom, 'off');
 
-    distBinWidthSec = 0.1;
+    distBinWidthSec = 0.2;
     histBinEdges = 0:distBinWidthSec:correctTimeMaxSec;
     binCenters = histBinEdges(1:end-1) + distBinWidthSec / 2;
     errorCounts = histcounts(errorTimesSec, histBinEdges);

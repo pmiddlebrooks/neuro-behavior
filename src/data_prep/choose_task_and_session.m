@@ -75,8 +75,9 @@ subjectName = 'ey9387';
 % sessionName =  'ey9387_2026_05_21';
 % sessionName =  'ey9387_2026_05_22';
 % sessionName =  'ey9387_2026_05_25';
-sessionName =  'ey9387_2026_05_26';
-sessionName =  'ey9387_2026_05_27';
+% sessionName =  'ey9387_2026_05_26';
+% sessionName =  'ey9387_2026_05_27';
+sessionName =  'ey9387_2026_05_28';
 
 %% =============================    Reach Data Loading    =============================
 sessionType = 'reach';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
