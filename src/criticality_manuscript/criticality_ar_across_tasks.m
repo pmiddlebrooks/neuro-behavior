@@ -31,7 +31,7 @@ collectEnd = 45 * 60;
 
 d2Window = 30;  % seconds; non-overlapping windows (stepSize = d2Window)
 
-brainArea = 'M56';
+brainArea = 'DS';
 areasToPlot = {};
 runBatch = true;
 plotResults = true;
@@ -663,9 +663,9 @@ for t = 1:length(sessionTypes)
       'CapSize', 8, 'DisplayName', 'shuffled mean \pm SEM (across windows)');
   end
 
-  groupCenter = mean(xPos);
-  xticksCenters(end+1) = groupCenter; %#ok<AGROW>
-  xtickLabels{end+1} = sessionType; %#ok<AGROW>
+  barLabels = get_session_bar_labels(typeData, numBars, sessionType);
+  xticksCenters = [xticksCenters, xPos]; %#ok<AGROW>
+  xtickLabels = [xtickLabels, barLabels]; %#ok<AGROW>
 
   validMeans = d2Means(isfinite(d2Means));
   if ~isempty(validMeans)
@@ -680,6 +680,7 @@ end
 if ~isempty(xticksCenters)
   xticks(ax, xticksCenters);
   xticklabels(ax, xtickLabels);
+  xtickangle(ax, 45);
 end
 grid(ax, 'on');
 if legendShown
@@ -721,9 +722,9 @@ for t = 1:length(sessionTypes)
     'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 12, 'LineWidth', 1.2, ...
       'CapSize', 8);
 
-  groupCenter = mean(xPos);
-  xticksCenters(end+1) = groupCenter; %#ok<AGROW>
-  xtickLabels{end+1} = sessionType; %#ok<AGROW>
+  barLabels = get_session_bar_labels(typeData, numBars, sessionType);
+  xticksCenters = [xticksCenters, xPos]; %#ok<AGROW>
+  xtickLabels = [xtickLabels, barLabels]; %#ok<AGROW>
 
   validMeans = normMeans(isfinite(normMeans));
   if ~isempty(validMeans)
@@ -736,9 +737,31 @@ end
 if ~isempty(xticksCenters)
   xticks(ax, xticksCenters);
   xticklabels(ax, xtickLabels);
+  xtickangle(ax, 45);
 end
 grid(ax, 'on');
 hold(ax, 'off');
+end
+
+function barLabels = get_session_bar_labels(typeData, numBars, sessionType)
+% GET_SESSION_BAR_LABELS - One x-axis label per session bar (sessionName)
+%
+% Variables:
+%   typeData    - Aggregated metrics for one session type
+%   numBars     - Number of bars in the current group
+%   sessionType - Fallback label if sessionNames unavailable
+%
+% Returns:
+%   barLabels - 1 x numBars cell of char labels
+
+if isfield(typeData, 'sessionNames') && numel(typeData.sessionNames) >= numBars
+  barLabels = typeData.sessionNames(1:numBars);
+elseif isfield(typeData, 'sessionLabels') && numel(typeData.sessionLabels) >= numBars
+  barLabels = typeData.sessionLabels(1:numBars);
+else
+  barLabels = repmat({sessionType}, 1, numBars);
+end
+barLabels = cellfun(@char, barLabels, 'UniformOutput', false);
 end
 
 function plotBase = make_ar_plot_basename(prefix, areaName, brainArea, d2Window, collectStart, collectEnd, multiArea, useLog10D2)

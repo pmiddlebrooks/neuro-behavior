@@ -46,12 +46,19 @@ end
 % Data type selection
 sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'
 
-subjectName = 'ag';
-sessionName =  'ag112321_1';
+subjectName = 'ag25290';
+sessionName =  'ag112221';
+% sessionName =  'ag112321_1';
 % sessionName =  'ag112321_2';
-% subjectName = 'ey';
+% sessionName =  'ag112721';
+sessionName =  'ag112821';
+% sessionName =  'ag112921';
+
+% subjectName = 'ey4152';
 % sessionName =  'ey042822';  % Good M56, Bad DS
-% subjectName = 'kw';
+% sessionName =  'ey042922';  % Don't trust: OK M56, Bad everything else
+
+% subjectName = 'kw7193';
 % sessionName =  'kw092821';  % Bad M56, Good DS
 % sessionName =  'kw092121';  % Ok... few M56
 

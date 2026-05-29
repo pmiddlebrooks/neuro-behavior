@@ -31,7 +31,7 @@ collectStart = 0;              % seconds
 collectEnd = 45 * 60;           % seconds (40 minutes)
 windowDurationSec = collectEnd - collectStart;
 
-brainArea = 'M56';             % one area per run; '' = analyze/plot all areas
+brainArea = 'DS';             % one area per run; '' = analyze/plot all areas
 areasToPlot = {};              % optional override, e.g. {'M23'}; {} -> brainArea if set
 runBatch = true;
 plotResults = true;
@@ -557,9 +557,9 @@ for a = 1:numAreas
         yValuesForLim = [yValuesForLim, values(isfinite(values))]; %#ok<AGROW>
       end
 
-      groupCenter = mean(xPos);
-      xticksCenters(end+1) = groupCenter; %#ok<AGROW>
-      xtickLabels{end+1} = sessionType; %#ok<AGROW>
+      barLabels = get_session_bar_labels(typeData, numBars, sessionType);
+      xticksCenters = [xticksCenters, xPos]; %#ok<AGROW>
+      xtickLabels = [xtickLabels, barLabels]; %#ok<AGROW>
 
       validVals = values(isfinite(values));
       if ~isempty(validVals)
@@ -573,6 +573,7 @@ for a = 1:numAreas
     if ~isempty(xticksCenters)
       xticks(ax, xticksCenters);
       xticklabels(ax, xtickLabels);
+      xtickangle(ax, 45);
     end
     ylabel(ax, yLabelText);
     title(ax, sprintf('%s — %s', areaName, yLabelText));
@@ -609,6 +610,27 @@ for a = 1:numAreas
 end
 
 fprintf('\nAll figures saved to %s\n', saveDir);
+end
+
+function barLabels = get_session_bar_labels(typeData, numBars, sessionType)
+% GET_SESSION_BAR_LABELS - One x-axis label per session bar (sessionName)
+%
+% Variables:
+%   typeData    - Aggregated metrics for one session type
+%   numBars     - Number of bars in the current group
+%   sessionType - Fallback label if sessionNames unavailable
+%
+% Returns:
+%   barLabels - 1 x numBars cell of char labels
+
+if isfield(typeData, 'sessionNames') && numel(typeData.sessionNames) >= numBars
+  barLabels = typeData.sessionNames(1:numBars);
+elseif isfield(typeData, 'sessionLabels') && numel(typeData.sessionLabels) >= numBars
+  barLabels = typeData.sessionLabels(1:numBars);
+else
+  barLabels = repmat({sessionType}, 1, numBars);
+end
+barLabels = cellfun(@char, barLabels, 'UniformOutput', false);
 end
 
 function metricFields = get_av_metric_storage_fields()
