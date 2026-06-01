@@ -1,10 +1,11 @@
-function logTable = interval_session_performance(subjectName, sessionName, sessionInterval)
+function logTable = interval_session_performance(subjectName, sessionName, sessionInterval, nParts)
 % INTERVAL_SESSION_PERFORMANCE - Plot interval task performance for one session
 %
 % Variables:
 %   subjectName - Subject folder under interval_timing_task/data (e.g. 'ey9387')
 %   sessionName - Session folder under subject (e.g. 'ey9387_2026_05_21')
 %   sessionInterval - Target interval duration (sec); default 5 if omitted
+%   nParts - Number of equal sequential session windows for part-wise histograms; default 3
 %
 % Goal: Load revised interval CSV logs, extract trial outcomes (ERROR / REWARD),
 % print accuracy (excluding fast errors and late corrects), count pokes near the
@@ -16,6 +17,9 @@ function logTable = interval_session_performance(subjectName, sessionName, sessi
 
     if nargin < 3 || isempty(sessionInterval)
         sessionInterval = 5;   % sec; default matches INTERVAL_DURATION in Revised_Interval_Timing_Code_Processing.ino
+    end
+    if nargin < 4 || isempty(nParts)
+        nParts = 3;
     end
     minLeaveSec = 0.1;         % sec; MIN_LEAVE_TIME in Arduino sketch
     correctTimeMaxSec = 20;    % upper bound for correct poke-time histogram (sec)
@@ -80,6 +84,8 @@ function logTable = interval_session_performance(subjectName, sessionName, sessi
 
     plot_interval_session_performance(logTable, trials, subjectName, sessionName, ...
         sessionInterval, correctTimeMaxSec, zoomHalfWidthSec, movAvgWinSec, rateBinSec);
+    plot_interval_session_part_histograms(trials, subjectName, sessionName, sessionInterval, ...
+        correctTimeMaxSec, nParts);
 end
 
 function csvPath = find_interval_csv(sessionDir)
@@ -159,8 +165,10 @@ function trials = extract_interval_trials(logTable, minLeaveSec)
     beamState = 0;
     firstRewardSeen = false;
 
+    sessionOriginMs = min(logTable.timestampMs);
     trialTypes = strings(0, 1);
     pokeTimesSec = [];
+    outcomeTimesSec = [];
 
     eventNames = logTable.event;
     timestampsMs = logTable.timestampMs;
@@ -191,6 +199,7 @@ function trials = extract_interval_trials(logTable, minLeaveSec)
             if timerArmed && ~isnan(leaveTimeMs)
                 trialTypes(end + 1, 1) = "error"; %#ok<AGROW>
                 pokeTimesSec(end + 1, 1) = (eventTimeMs - leaveTimeMs) / 1000; %#ok<AGROW>
+                outcomeTimesSec(end + 1, 1) = (eventTimeMs - sessionOriginMs) / 1000; %#ok<AGROW>
             end
             timerArmed = false;
             leaveTimeMs = NaN;
@@ -200,13 +209,15 @@ function trials = extract_interval_trials(logTable, minLeaveSec)
             elseif timerArmed && ~isnan(leaveTimeMs)
                 trialTypes(end + 1, 1) = "correct"; %#ok<AGROW>
                 pokeTimesSec(end + 1, 1) = (eventTimeMs - leaveTimeMs) / 1000; %#ok<AGROW>
+                outcomeTimesSec(end + 1, 1) = (eventTimeMs - sessionOriginMs) / 1000; %#ok<AGROW>
             end
             timerArmed = false;
             leaveTimeMs = NaN;
         end
     end
 
-    trials = table(trialTypes, pokeTimesSec, 'VariableNames', {'type', 'pokeTimeSec'});
+    trials = table(trialTypes, pokeTimesSec, outcomeTimesSec, ...
+        'VariableNames', {'type', 'pokeTimeSec', 'outcomeTimeSec'});
 end
 
 function fig = plot_interval_session_performance(logTable, trials, subjectName, sessionName, ...
@@ -291,6 +302,105 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     hold(axZoom, 'off');
 
     distBinWidthSec = 0.2;
+    axHist = nexttile(layout);
+    histYMax = plot_poke_time_histogram_ax(axHist, errorTimesSec, correctTimesSec, ...
+        sessionInterval, correctTimeMaxSec, distBinWidthSec);
+    xlabel(axHist, 'Poke time since leave (s)');
+    ylabel(axHist, 'Count');
+    ylim(axHist, [0, histYMax * 1.05]);
+    grid(axHist, 'on');
+    legend(axHist, 'Location', 'best');
+
+    legend(axTrials, {'Error', 'Correct', sprintf('%g s interval', sessionInterval)}, ...
+        'Location', 'best');
+end
+
+function fig = plot_interval_session_part_histograms(trials, subjectName, sessionName, ...
+        sessionInterval, correctTimeMaxSec, nParts)
+% PLOT_INTERVAL_SESSION_PART_HISTOGRAMS - Poke-time distributions by session segment
+%
+% Variables:
+%   trials - Trial table with type, pokeTimeSec, outcomeTimeSec
+%   subjectName, sessionName - Session identifiers
+%   sessionInterval - Target interval (sec); vertical reference line
+%   correctTimeMaxSec - Upper x-limit for histograms (sec)
+%   nParts - Number of equal sequential session time windows
+%
+% Goal: One-column figure with poke-time histograms per session part (shared y-limits)
+
+    plotErrorMinSec = 1;
+    distBinWidthSec = 0.2;
+    if isempty(trials)
+        sessionEndSec = 1;
+    else
+        sessionEndSec = max(trials.outcomeTimeSec);
+    end
+    if sessionEndSec <= 0
+        sessionEndSec = 1;
+    end
+    partEdgesSec = linspace(0, sessionEndSec, nParts + 1);
+
+    fig = figure('Name', sprintf('%s %s interval by part', subjectName, sessionName), ...
+        'Position', [120, 120, 700, 280 * nParts]);
+    layout = tiledlayout(fig, nParts, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+    title(layout, sprintf('%s | %s — poke time by session part (n=%d)', ...
+        subjectName, sessionName, nParts), 'interpreter', 'none');
+
+    partAxes = gobjects(nParts, 1);
+    histYMaxAll = 1;
+
+    for partIdx = 1:nParts
+        if partIdx < nParts
+            partMask = trials.outcomeTimeSec >= partEdgesSec(partIdx) & ...
+                trials.outcomeTimeSec < partEdgesSec(partIdx + 1);
+        else
+            partMask = trials.outcomeTimeSec >= partEdgesSec(partIdx) & ...
+                trials.outcomeTimeSec <= partEdgesSec(partIdx + 1);
+        end
+
+        partTrials = trials(partMask, :);
+        errorMask = partTrials.type == "error";
+        correctMask = partTrials.type == "correct";
+        errorPlotMask = errorMask & partTrials.pokeTimeSec >= plotErrorMinSec;
+        errorTimesSec = partTrials.pokeTimeSec(errorPlotMask);
+        correctTimesSec = partTrials.pokeTimeSec(correctMask);
+
+        partAxes(partIdx) = nexttile(layout);
+        histYMax = plot_poke_time_histogram_ax(partAxes(partIdx), errorTimesSec, correctTimesSec, ...
+            sessionInterval, correctTimeMaxSec, distBinWidthSec);
+        histYMaxAll = max(histYMaxAll, histYMax);
+
+        partStartMin = partEdgesSec(partIdx) / 60;
+        partEndMin = partEdgesSec(partIdx + 1) / 60;
+        title(partAxes(partIdx), sprintf('Part %d (%.1f–%.1f min, %d trials)', ...
+            partIdx, partStartMin, partEndMin, height(partTrials)));
+        ylabel(partAxes(partIdx), 'Count');
+        grid(partAxes(partIdx), 'on');
+
+        if partIdx == nParts
+            xlabel(partAxes(partIdx), 'Poke time since leave (s)');
+        end
+    end
+
+    for partIdx = 1:nParts
+        ylim(partAxes(partIdx), [0, histYMaxAll * 1.05]);
+    end
+
+    legend(partAxes(1), 'Location', 'best');
+end
+
+function histYMax = plot_poke_time_histogram_ax(ax, errorTimesSec, correctTimesSec, ...
+        sessionInterval, correctTimeMaxSec, distBinWidthSec)
+% PLOT_POKE_TIME_HISTOGRAM_AX - Combined error/correct poke-time histogram on one axes
+%
+% Variables:
+%   ax - Target axes
+%   errorTimesSec, correctTimesSec - Poke times since leave (sec)
+%   sessionInterval - Target interval; errors plotted below, corrects at/above
+%   correctTimeMaxSec, distBinWidthSec - Histogram range and bin width
+%
+% Goal: Red error bars and green correct bars with interval reference line
+
     histBinEdges = 0:distBinWidthSec:correctTimeMaxSec;
     binCenters = histBinEdges(1:end-1) + distBinWidthSec / 2;
     errorCounts = histcounts(errorTimesSec, histBinEdges);
@@ -298,22 +408,13 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     errorBarMask = binCenters < sessionInterval;
     correctBarMask = binCenters >= sessionInterval;
 
-    axHist = nexttile(layout);
-    hold(axHist, 'on');
-    bar(axHist, binCenters(errorBarMask), errorCounts(errorBarMask), 1, ...
+    hold(ax, 'on');
+    bar(ax, binCenters(errorBarMask), errorCounts(errorBarMask), 1, ...
         'FaceColor', [0.85, 0.2, 0.2], 'EdgeColor', 'none', 'DisplayName', 'Error');
-    bar(axHist, binCenters(correctBarMask), correctCounts(correctBarMask), 1, ...
+    bar(ax, binCenters(correctBarMask), correctCounts(correctBarMask), 1, ...
         'FaceColor', [0.2, 0.65, 0.25], 'EdgeColor', 'none', 'DisplayName', 'Correct');
-    xline(axHist, sessionInterval, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
-    xlabel(axHist, 'Poke time since leave (s)');
-    ylabel(axHist, 'Count');
-    xlim(axHist, [0, correctTimeMaxSec]);
+    xline(ax, sessionInterval, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+    xlim(ax, [0, correctTimeMaxSec]);
     histYMax = max([errorCounts, correctCounts, 1]);
-    ylim(axHist, [0, histYMax * 1.05]);
-    grid(axHist, 'on');
-    hold(axHist, 'off');
-    legend(axHist, 'Location', 'best');
-
-    legend(axTrials, {'Error', 'Correct', sprintf('%g s interval', sessionInterval)}, ...
-        'Location', 'best');
+    hold(ax, 'off');
 end
