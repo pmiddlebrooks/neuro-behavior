@@ -31,7 +31,7 @@ collectStart = 0;              % seconds
 collectEnd = 45 * 60;           % seconds (40 minutes)
 windowDurationSec = collectEnd - collectStart;
 
-brainArea = 'DS';             % one area per run; '' = analyze/plot all areas
+brainArea = 'M56';             % one area per run; '' = analyze/plot all areas
 areasToPlot = {};              % optional override, e.g. {'M23'}; {} -> brainArea if set
 runBatch = true;
 plotResults = true;
@@ -491,7 +491,7 @@ for a = 1:numAreas
     continue;
   end
 
-  fig = figure(4000 + a);
+  fig = figure(8000 + a);
   clf(fig);
   position_figure_full_monitor(fig);
 
