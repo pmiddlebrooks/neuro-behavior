@@ -86,6 +86,7 @@ sessionName =  'ey9387_2026_05_21';
 % sessionName =  'ey9387_2026_05_27';
 % sessionName =  'ey9387_2026_05_28';
 % sessionName =  'ey9387_2026_06_01';
+sessionName =  'ey9387_2026_06_02';
 
 %% =============================    Reach Data Loading    =============================
 sessionType = 'reach';  % 'reach' , 'spontaneous' , 'schall' , 'hong'

@@ -26,6 +26,7 @@ sessions = [
     % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_27')
     % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_28')
     % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_06_01')
+    % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_06_02')
     ];
 
 end
