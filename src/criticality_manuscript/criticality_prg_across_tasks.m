@@ -15,12 +15,12 @@
 %   areasToPlot    - Area names to plot; {} uses brainArea if set
 %   runBatch       - If true, run criticality_prg_analysis per session
 %   plotResults    - If true, create summary figures after batch
+%   prgMethod      - 'pca' (momentum-space) or 'icg' (real-space ICG, Morales 2023)
 %
 % Goal:
-%   Compare PRG kurtosis (kappa at N/finalCutoffDivisor) across spontaneous,
-%   reach, interval, and other session types. Per session: mean and SEM of
-%   valid window kappa values; surrogate: mean across windows of (mean
-%   surrogate kappa per window), with SEM across those per-window surrogate means.
+%   Compare PRG kurtosis (kappa at N/finalCutoffDivisor) and Jensen-Shannon distance
+%   (D_JS vs Gaussian) across session types. Per session: mean and SEM across valid
+%   windows; surrogate: mean across windows of per-window surrogate means, with SEM.
 
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
@@ -38,6 +38,7 @@ plotResults = true;
 
 % PRG settings (aligned with run_criticality_prg.m)
 analysisConfig = struct();
+analysisConfig.prgMethod = 'pca';  % 'pca' or 'icg'
 analysisConfig.blockWindowSize = prgWindow;
 analysisConfig.binSize = 0.2;
 analysisConfig.cvThreshold = 5;
@@ -84,6 +85,7 @@ addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
 addpath(fullfile(srcPath, 'criticality'));
 
 fprintf('\n=== Criticality PRG Across Task Types ===\n');
+fprintf('PRG method: %s\n', analysisConfig.prgMethod);
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, (collectEnd - collectStart) / 60);
 fprintf('PRG blocks: %.1f s, non-overlapping\n', prgWindow);
 fprintf('Kappa at N/%d; bin size: %.3f s; surrogates: %s\n', ...
@@ -190,7 +192,7 @@ fprintf('  %s\n', strjoin(commonAreas, ', '));
 
 if plotResults
   plot_prg_across_tasks(plotData, commonAreas, sessionTypes, collectStart, collectEnd, ...
-    prgWindow, paths, brainArea);
+    prgWindow, paths, brainArea, analysisConfig.prgMethod);
 end
 
 fprintf('\n=== Done ===\n');
@@ -309,7 +311,7 @@ if isempty(areaIdx)
 end
 
 cellFields = {'kappa', 'kappaByCutoff', 'windowStartS', 'popCv', 'windowExcluded', ...
-  'nNeuronsPerWindow', 'kappaSurrogate', 'nCutoffList'};
+  'nNeuronsPerWindow', 'kappaSurrogate', 'djs', 'djsSurrogate', 'nCutoffList'};
 
 results.areas = results.areas(areaIdx);
 for f = 1:length(cellFields)
@@ -321,10 +323,10 @@ end
 end
 
 function plotData = aggregate_prg_metrics(batchResults, sessionTypes, finalCutoffDivisor)
-% AGGREGATE_PRG_METRICS - Per-session mean and SEM of window kappa and surrogate summary
+% AGGREGATE_PRG_METRICS - Per-session mean and SEM of window kappa / D_JS and surrogates
 %
 % Variables:
-%   finalCutoffDivisor - Reported in plot labels (N/divisor kurtosis)
+%   finalCutoffDivisor - Reported in plot labels (N/divisor)
 
 if nargin < 3 || isempty(finalCutoffDivisor)
   finalCutoffDivisor = 16;
@@ -336,7 +338,8 @@ plotData.sessionTypes = sessionTypes;
 plotData.byType = struct();
 plotData.finalCutoffDivisor = finalCutoffDivisor;
 
-metricFields = {'kappaMean', 'kappaSem', 'kappaShuffleMean', 'kappaShuffleSem'};
+metricFields = {'kappaMean', 'kappaSem', 'kappaShuffleMean', 'kappaShuffleSem', ...
+  'djsMean', 'djsSem', 'djsShuffleMean', 'djsShuffleSem'};
 
 for s = 1:length(batchResults)
   if ~batchResults(s).success || isempty(batchResults(s).results)
@@ -390,12 +393,14 @@ function summary = summarize_session_kappa_windows(results, areaIdx)
 %   areaIdx  - Index into results.areas
 %
 % Returns:
-%   summary - Struct with kappaMean, kappaSem, kappaShuffleMean, kappaShuffleSem
+%   summary - kappaMean, kappaSem, kappaShuffleMean, kappaShuffleSem,
+%             djsMean, djsSem, djsShuffleMean, djsShuffleSem
 %
-%   kappaShuffleSem - SEM across windows of (mean surrogate kappa in each window)
+%   *ShuffleSem - SEM across windows of per-window surrogate means
 
 summary = struct('kappaMean', nan, 'kappaSem', nan, 'kappaShuffleMean', nan, ...
-  'kappaShuffleSem', nan);
+  'kappaShuffleSem', nan, 'djsMean', nan, 'djsSem', nan, ...
+  'djsShuffleMean', nan, 'djsShuffleSem', nan);
 
 if areaIdx > length(results.kappa) || isempty(results.kappa{areaIdx})
   return;
@@ -423,6 +428,23 @@ if ~isempty(kappaValid)
   end
 end
 
+if isfield(results, 'djs') && areaIdx <= length(results.djs) && ~isempty(results.djs{areaIdx})
+  djsVec = results.djs{areaIdx}(:);
+  if numel(djsVec) == nWin
+    djsValid = djsVec(validMask);
+    djsValid = djsValid(isfinite(djsValid));
+    if ~isempty(djsValid)
+      summary.djsMean = mean(djsValid);
+      nD = numel(djsValid);
+      if nD > 1
+        summary.djsSem = std(djsValid) / sqrt(nD);
+      else
+        summary.djsSem = 0;
+      end
+    end
+  end
+end
+
 if isfield(results, 'kappaSurrogate') && areaIdx <= length(results.kappaSurrogate) ...
     && ~isempty(results.kappaSurrogate{areaIdx})
   surrMat = results.kappaSurrogate{areaIdx};
@@ -442,6 +464,29 @@ if isfield(results, 'kappaSurrogate') && areaIdx <= length(results.kappaSurrogat
       summary.kappaShuffleSem = std(perWindowShuffleMean) / sqrt(nSh);
     else
       summary.kappaShuffleSem = 0;
+    end
+  end
+end
+
+if isfield(results, 'djsSurrogate') && areaIdx <= length(results.djsSurrogate) ...
+    && ~isempty(results.djsSurrogate{areaIdx})
+  djsSurrMat = results.djsSurrogate{areaIdx};
+  if size(djsSurrMat, 1) == nWin
+    djsSurrMat = djsSurrMat(validMask, :);
+  end
+  if size(djsSurrMat, 2) > 1
+    perWindowDjsShuffleMean = nanmean(djsSurrMat, 2);
+  else
+    perWindowDjsShuffleMean = djsSurrMat(:);
+  end
+  perWindowDjsShuffleMean = perWindowDjsShuffleMean(isfinite(perWindowDjsShuffleMean));
+  if ~isempty(perWindowDjsShuffleMean)
+    summary.djsShuffleMean = mean(perWindowDjsShuffleMean);
+    nDjsSh = numel(perWindowDjsShuffleMean);
+    if nDjsSh > 1
+      summary.djsShuffleSem = std(perWindowDjsShuffleMean) / sqrt(nDjsSh);
+    else
+      summary.djsShuffleSem = 0;
     end
   end
 end
@@ -477,11 +522,14 @@ for m = 1:length(metricFields)
 end
 end
 
-function plot_prg_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, prgWindow, paths, brainArea)
-% PLOT_PRG_ACROSS_TASKS - Session kappa with surrogate summary, grouped by session type
+function plot_prg_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, prgWindow, paths, brainArea, prgMethod)
+% PLOT_PRG_ACROSS_TASKS - Session kappa and D_JS with surrogate summary, by session type
 
 if nargin < 8 || isempty(brainArea)
   brainArea = '';
+end
+if nargin < 9 || isempty(prgMethod)
+  prgMethod = 'pca';
 end
 
 finalCutoffDivisor = 16;
@@ -491,6 +539,8 @@ end
 
 kappaYLabel = sprintf('\\kappa (N/%d, mean \\pm SEM across windows)', finalCutoffDivisor);
 kappaTitleWord = sprintf('\\kappa (N/%d)', finalCutoffDivisor);
+djsYLabel = sprintf('D_{JS} (N/%d vs Gaussian, mean \\pm SEM across windows)', finalCutoffDivisor);
+djsTitleWord = sprintf('D_{JS} (N/%d)', finalCutoffDivisor);
 
 numSessionTypes = length(sessionTypes);
 typeColors = lines(max(numSessionTypes, 3));
@@ -518,19 +568,44 @@ for a = 1:length(areasToPlot)
   yline(axKappa, 3, '--', 'Color', [0.4, 0.4, 0.4], 'LineWidth', 1, 'HandleVisibility', 'off');
 
   if ~isempty(brainArea)
-    titleStr = sprintf('PRG %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-      kappaTitleWord, brainArea, collectStart, collectEnd, prgWindow);
+    titleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
+      prgMethod, kappaTitleWord, brainArea, collectStart, collectEnd, prgWindow);
   else
-    titleStr = sprintf('PRG %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-      kappaTitleWord, areaName, collectStart, collectEnd, prgWindow);
+    titleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
+      prgMethod, kappaTitleWord, areaName, collectStart, collectEnd, prgWindow);
   end
   sgtitle(figKappa, titleStr, 'FontWeight', 'bold');
 
   plotBase = make_prg_plot_basename('criticality_prg_across_tasks', areaName, brainArea, ...
-    prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor);
+    prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, prgMethod);
   exportgraphics(figKappa, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(figKappa, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
+
+  if area_has_prg_djs_plot_data(plotData, sessionTypes, areaIdx)
+    figDjs = figure(6100 + a);
+    clf(figDjs);
+    position_figure_full_monitor(figDjs);
+    axDjs = axes(figDjs);
+    plot_djs_with_shuffle(axDjs, plotData, sessionTypes, areaIdx, typeColors, shuffleBarColor);
+    ylabel(axDjs, djsYLabel);
+    title(axDjs, sprintf('%s — %s vs Gaussian', areaName, djsTitleWord));
+
+    if ~isempty(brainArea)
+      djsTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
+        prgMethod, djsTitleWord, brainArea, collectStart, collectEnd, prgWindow);
+    else
+      djsTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
+        prgMethod, djsTitleWord, areaName, collectStart, collectEnd, prgWindow);
+    end
+    sgtitle(figDjs, djsTitleStr, 'FontWeight', 'bold');
+
+    plotBaseDjs = make_prg_plot_basename('criticality_prg_djs_across_tasks', areaName, brainArea, ...
+      prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, prgMethod);
+    exportgraphics(figDjs, fullfile(saveDir, [plotBaseDjs, '.png']), 'Resolution', 300);
+    exportgraphics(figDjs, fullfile(saveDir, [plotBaseDjs, '.eps']), 'ContentType', 'vector');
+    fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseDjs));
+  end
 end
 
 fprintf('\nAll figures saved to %s\n', saveDir);
@@ -587,9 +662,9 @@ for t = 1:length(sessionTypes)
       'CapSize', 8, 'DisplayName', 'surrogate mean \pm SEM (across windows)');
   end
 
-  barLabels = get_session_bar_labels(typeData, numBars, sessionType);
-  xticksCenters = [xticksCenters, xPos]; %#ok<AGROW>
-  xtickLabels = [xtickLabels, barLabels]; %#ok<AGROW>
+  groupCenter = mean(xPos);
+  xticksCenters(end+1) = groupCenter; %#ok<AGROW>
+  xtickLabels{end+1} = sessionType; %#ok<AGROW>
 
   validMeans = kappaMeans(isfinite(kappaMeans));
   if ~isempty(validMeans)
@@ -604,7 +679,6 @@ end
 if ~isempty(xticksCenters)
   xticks(ax, xticksCenters);
   xticklabels(ax, xtickLabels);
-  xtickangle(ax, 45);
 end
 grid(ax, 'on');
 if legendShown
@@ -613,41 +687,117 @@ end
 hold(ax, 'off');
 end
 
-function barLabels = get_session_bar_labels(typeData, numBars, sessionType)
-% GET_SESSION_BAR_LABELS - One x-axis label per session bar (sessionName)
-%
-% Variables:
-%   typeData    - Aggregated metrics for one session type
-%   numBars     - Number of bars in the current group
-%   sessionType - Fallback label if sessionNames unavailable
-%
-% Returns:
-%   barLabels - 1 x numBars cell of char labels
+function plot_djs_with_shuffle(ax, plotData, sessionTypes, areaIdx, typeColors, shuffleBarColor)
+% PLOT_DJS_WITH_SHUFFLE - Session mean D_JS with SEM; surrogate mean with SEM beside each session
 
-if isfield(typeData, 'sessionNames') && numel(typeData.sessionNames) >= numBars
-  barLabels = typeData.sessionNames(1:numBars);
-elseif isfield(typeData, 'sessionLabels') && numel(typeData.sessionLabels) >= numBars
-  barLabels = typeData.sessionLabels(1:numBars);
-else
-  barLabels = repmat({sessionType}, 1, numBars);
-end
-barLabels = cellfun(@char, barLabels, 'UniformOutput', false);
+hold(ax, 'on');
+xCursor = 0;
+xticksCenters = [];
+xtickLabels = {};
+legendShown = false;
+
+for t = 1:length(sessionTypes)
+  sessionType = sessionTypes{t};
+  typeKey = matlab.lang.makeValidName(sessionType);
+  if ~isfield(plotData.byType, typeKey)
+    continue;
+  end
+  typeData = plotData.byType.(typeKey);
+  if ~isfield(typeData, 'djsMean') || areaIdx > length(typeData.djsMean)
+    continue;
+  end
+
+  djsMeans = typeData.djsMean{areaIdx};
+  djsSems = typeData.djsSem{areaIdx};
+  shuffleMeans = typeData.djsShuffleMean{areaIdx};
+  shuffleSems = typeData.djsShuffleSem{areaIdx};
+  djsMeans = djsMeans(:)';
+  djsSems = djsSems(:)';
+  shuffleMeans = shuffleMeans(:)';
+  shuffleSems = shuffleSems(:)';
+  if numel(shuffleSems) ~= numel(shuffleMeans)
+    shuffleSems = nan(size(shuffleMeans));
+  end
+  numBars = numel(djsMeans);
+  if numBars == 0
+    continue;
+  end
+
+  xPos = xCursor + (1:numBars);
+  errorbar(ax, xPos, djsMeans, djsSems, 'o', 'Color', typeColors(t, :), ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 12, 'LineWidth', 1.2, ...
+    'CapSize', 8, 'DisplayName', 'session D_{JS}');
+
+  if any(isfinite(shuffleMeans))
+    xShuffle = xPos + 0.22;
+    semPlot = shuffleSems(:)';
+    semPlot(~isfinite(semPlot)) = 0;
+    errorbar(ax, xShuffle, shuffleMeans, semPlot, 's', ...
+      'Color', shuffleBarColor, 'MarkerFaceColor', shuffleBarColor, ...
+      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 12, 'LineWidth', 1.2, ...
+      'CapSize', 8, 'DisplayName', 'surrogate mean \pm SEM (across windows)');
+  end
+
+  groupCenter = mean(xPos);
+  xticksCenters(end+1) = groupCenter; %#ok<AGROW>
+  xtickLabels{end+1} = sessionType; %#ok<AGROW>
+
+  validMeans = djsMeans(isfinite(djsMeans));
+  if ~isempty(validMeans)
+    yline(ax, mean(validMeans), '--', 'Color', typeColors(t, :), 'LineWidth', 1.5, ...
+      'HandleVisibility', 'off');
+  end
+
+  xCursor = xPos(end) + 1.5;
+  legendShown = true;
 end
 
-function plotBase = make_prg_plot_basename(prefix, areaName, brainArea, prgWindow, collectStart, collectEnd, multiArea, finalCutoffDivisor)
+if ~isempty(xticksCenters)
+  xticks(ax, xticksCenters);
+  xticklabels(ax, xtickLabels);
+end
+grid(ax, 'on');
+if legendShown
+  legend(ax, {'session D_{JS}', 'surrogate mean \pm SEM (across windows)'}, 'Location', 'best');
+end
+hold(ax, 'off');
+end
+
+function plotBase = make_prg_plot_basename(prefix, areaName, brainArea, prgWindow, collectStart, collectEnd, multiArea, finalCutoffDivisor, prgMethod)
 % MAKE_PRG_PLOT_BASENAME - Filename stem for saved figures
 
 if nargin < 8 || isempty(finalCutoffDivisor)
   finalCutoffDivisor = 16;
 end
+if nargin < 9 || isempty(prgMethod)
+  prgMethod = 'pca';
+end
 
 if ~isempty(brainArea)
-  plotBase = sprintf('%s_%s_win%.0fs_%.0f-%.0fs_N%d', prefix, brainArea, prgWindow, collectStart, collectEnd, finalCutoffDivisor);
+  plotBase = sprintf('%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d', prefix, prgMethod, brainArea, prgWindow, collectStart, collectEnd, finalCutoffDivisor);
 else
-  plotBase = sprintf('%s_%s_win%.0fs_%.0f-%.0fs_N%d', prefix, areaName, prgWindow, collectStart, collectEnd, finalCutoffDivisor);
+  plotBase = sprintf('%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d', prefix, prgMethod, areaName, prgWindow, collectStart, collectEnd, finalCutoffDivisor);
 end
 if multiArea
   plotBase = sprintf('%s_area%s', plotBase, areaName);
+end
+end
+
+function hasData = area_has_prg_djs_plot_data(plotData, sessionTypes, areaIdx)
+% AREA_HAS_PRG_DJS_PLOT_DATA - True if any session type has D_JS values for this area
+
+hasData = false;
+for t = 1:length(sessionTypes)
+  typeKey = matlab.lang.makeValidName(sessionTypes{t});
+  if ~isfield(plotData.byType, typeKey)
+    continue;
+  end
+  typeData = plotData.byType.(typeKey);
+  if isfield(typeData, 'djsMean') && areaIdx <= length(typeData.djsMean) ...
+      && ~isempty(typeData.djsMean{areaIdx})
+    hasData = true;
+    return;
+  end
 end
 end
 

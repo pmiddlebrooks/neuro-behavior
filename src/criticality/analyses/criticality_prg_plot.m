@@ -68,6 +68,15 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
         plot(tVec(validMask), kappaVec(validMask), '-o', ...
             'Color', [0.15 0.45 0.75], 'LineWidth', 1.1, 'MarkerSize', 4);
 
+        if isfield(results, 'djs') && ~isempty(results.djs{a})
+            yyaxis right;
+            djsVec = results.djs{a};
+            plot(tVec(validMask), djsVec(validMask), '-', ...
+                'Color', [0.85 0.35 0.15], 'LineWidth', 1.1);
+            ylabel('D_{JS} vs Gaussian');
+            yyaxis left;
+        end
+
         excludedMask = results.windowExcluded{a};
         if any(excludedMask)
             plot(tVec(excludedMask), nanmean(kappaVec(validMask)) * ones(1, sum(excludedMask)), ...
@@ -85,13 +94,20 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
             plot(tVec, surrMean, '--', 'Color', [0.55 0.55 0.55], 'LineWidth', 1);
         end
 
+        if isfield(results, 'djsSurrogate') && ~isempty(results.djsSurrogate{a})
+            yyaxis right;
+            djsSurrMean = nanmean(results.djsSurrogate{a}, 2);
+            plot(tVec, djsSurrMean, '--', 'Color', [0.75 0.55 0.45], 'LineWidth', 1);
+            yyaxis left;
+        end
+
         if hasSharedKappaY
             ylim([kappaYLimLo, kappaYLimHi]);
         end
     end
 
-    sgtitle(tiledLayoutObj, sprintf('PRG kurtosis | %s | %.0f s blocks, %.0f ms bins%s', ...
-        results.sessionType, results.params.blockWindowSize, ...
+    sgtitle(tiledLayoutObj, sprintf('PRG (%s) kurtosis | %s | %.0f s blocks, %.0f ms bins%s', ...
+        prg_method_label(results, config), results.sessionType, results.params.blockWindowSize, ...
         results.params.binSize * 1000, prg_title_suffix(sessionLabel)), ...
         'FontSize', 12, 'Interpreter', 'none');
 
@@ -192,7 +208,8 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
 
         surrLabel = prg_surrogate_method_label(results);
         sgtitle(tlDist, sprintf( ...
-            'Distribution of PRG kurtosis | real vs %s | %s%s', ...
+            'Distribution of PRG (%s) kurtosis | real vs %s | %s%s', ...
+            prg_method_label(results, config), ...
             surrLabel, results.sessionType, prg_title_suffix(sessionLabel)), ...
             'FontSize', 12, 'Interpreter', 'none');
 
@@ -205,6 +222,186 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
         warning('criticality_prg_plot:NoSurrogateKappa', ...
             'No surrogate kappa values; distribution figure not created.');
     end
+
+    %% Figure 3: overlapping distributions of D_JS (real vs surrogate)
+    if has_prg_surrogate_djs(results)
+        figDjsDist = figure('Color', 'w', 'Position', [140 140 900 260 * numAreas], ...
+            'Name', 'PRG Jensen-Shannon distance distributions');
+        tlDjs = tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+        allDjsDist = collect_prg_djs_for_axis_limits(results, true);
+        [distDjsLo, distDjsHi] = prg_padded_djs_limits(allDjsDist);
+        nBinsDjs = 28;
+        if isfinite(distDjsLo) && isfinite(distDjsHi)
+            globalDjsBinEdges = linspace(distDjsLo, distDjsHi, max(8, round(nBinsDjs)) + 1);
+        else
+            globalDjsBinEdges = [];
+        end
+        hasSharedDjsX = ~isempty(globalDjsBinEdges);
+
+        for a = 1:numAreas
+            nexttile(tlDjs);
+            hold on;
+
+            if isempty(results.djs{a}) || isempty(results.windowExcluded{a})
+                title(sprintf('%s (no data)', areas{a}));
+                if hasSharedDjsX
+                    xlim([globalDjsBinEdges(1), globalDjsBinEdges(end)]);
+                end
+                continue;
+            end
+
+            validMask = isfinite(results.djs{a}) & ~results.windowExcluded{a};
+            realDjs = results.djs{a}(validMask);
+            surrMat = [];
+            if isfield(results, 'djsSurrogate') && ~isempty(results.djsSurrogate{a})
+                surrMat = results.djsSurrogate{a}(validMask, :);
+            end
+
+            if isempty(realDjs)
+                title(sprintf('%s (no valid D_{JS})', areas{a}));
+                grid on;
+                xlabel('D_{JS} vs Gaussian');
+                ylabel('Probability density');
+                if hasSharedDjsX
+                    xlim([globalDjsBinEdges(1), globalDjsBinEdges(end)]);
+                end
+                continue;
+            end
+
+            surrDjs = [];
+            if ~isempty(surrMat)
+                surrDjs = surrMat(isfinite(surrMat));
+            end
+
+            if hasSharedDjsX
+                binEdges = globalDjsBinEdges;
+            else
+                binEdges = prg_djs_bin_edges(realDjs, surrDjs, nBinsDjs);
+            end
+
+            histogram(realDjs, binEdges, 'Normalization', 'pdf', ...
+                'FaceColor', [0.85 0.35 0.15], 'FaceAlpha', 0.45, 'EdgeColor', 'none', ...
+                'DisplayName', 'Data');
+
+            if ~isempty(surrDjs)
+                histogram(surrDjs, binEdges, 'Normalization', 'pdf', ...
+                    'FaceColor', [0.55 0.55 0.55], 'FaceAlpha', 0.4, 'EdgeColor', 'none', ...
+                    'DisplayName', 'Surrogate');
+            end
+
+            grid on;
+            xlabel(sprintf('D_{JS} (N/%d) vs Gaussian', results.params.finalCutoffDivisor));
+            ylabel('Probability density');
+            title(areas{a}, 'Interpreter', 'none');
+            legend('Location', 'northeast');
+
+            if hasSharedDjsX
+                xlim([binEdges(1), binEdges(end)]);
+            end
+        end
+
+        surrLabel = prg_surrogate_method_label(results);
+        sgtitle(tlDjs, sprintf( ...
+            'Distribution of PRG (%s) D_{JS} | real vs %s | %s%s', ...
+            prg_method_label(results, config), ...
+            surrLabel, results.sessionType, prg_title_suffix(sessionLabel)), ...
+            'FontSize', 12, 'Interpreter', 'none');
+
+        if savePlots && ~isempty(saveDir)
+            djsDistPath = fullfile(saveDir, sprintf('criticality_prg_djs_distribution_%s.png', prg_safe_name(sessionLabel)));
+            exportgraphics(figDjsDist, djsDistPath, 'Resolution', 200);
+            fprintf('Saved PRG D_JS distribution plot: %s\n', djsDistPath);
+        end
+    end
+end
+
+function tf = has_prg_surrogate_djs(results)
+% HAS_PRG_SURROGATE_DJS True if any area has finite surrogate D_JS values
+    tf = false;
+    if ~isfield(results, 'djsSurrogate')
+        return;
+    end
+    for a = 1:numel(results.djsSurrogate)
+        s = results.djsSurrogate{a};
+        if isempty(s)
+            continue;
+        end
+        if any(isfinite(s(:)))
+            tf = true;
+            return;
+        end
+    end
+end
+
+function allVals = collect_prg_djs_for_axis_limits(results, includeSurrogate)
+% COLLECT_PRG_DJS_FOR_AXIS_LIMITS Pool finite D_JS across areas (valid windows only)
+
+    allVals = [];
+    if ~isfield(results, 'djs')
+        return;
+    end
+    for a = 1:numel(results.areas)
+        if isempty(results.djs{a}) || isempty(results.windowExcluded{a})
+            continue;
+        end
+        validMask = isfinite(results.djs{a}) & ~results.windowExcluded{a};
+        djsVec = results.djs{a}(validMask);
+        allVals = [allVals; djsVec(:)]; %#ok<AGROW>
+        if includeSurrogate && isfield(results, 'djsSurrogate') && ~isempty(results.djsSurrogate{a})
+            surrMat = results.djsSurrogate{a}(validMask, :);
+            allVals = [allVals; surrMat(isfinite(surrMat))]; %#ok<AGROW>
+        end
+    end
+end
+
+function [lo, hi] = prg_padded_djs_limits(allVals)
+% PRG_PADDED_DJS_LIMITS Padded [min, max] for D_JS histogram axes
+
+    allVals = allVals(isfinite(allVals(:)));
+    if isempty(allVals)
+        lo = NaN;
+        hi = NaN;
+        return;
+    end
+    lo = min(allVals);
+    hi = max(allVals);
+    span = hi - lo;
+    if span <= 0 || ~isfinite(span)
+        pad = max(0.02, abs(lo) * 0.05 + eps);
+        lo = max(0, lo - pad);
+        hi = hi + pad;
+    else
+        pad = 0.03 * span;
+        lo = max(0, lo - pad);
+        hi = hi + pad;
+    end
+end
+
+function binEdges = prg_djs_bin_edges(realDjs, surrDjs, nBinsTarget)
+% PRG_DJS_BIN_EDGES Common histogram edges for real and surrogate D_JS
+
+    allVals = realDjs(:);
+    if ~isempty(surrDjs)
+        allVals = [allVals; surrDjs(:)];
+    end
+    allVals = allVals(isfinite(allVals));
+
+    lo = min(allVals);
+    hi = max(allVals);
+    span = hi - lo;
+    if span <= 0 || ~isfinite(span)
+        pad = max(0.02, abs(lo) * 0.05 + eps);
+        lo = max(0, lo - pad);
+        hi = hi + pad;
+    else
+        pad = 0.03 * span;
+        lo = max(0, lo - pad);
+        hi = hi + pad;
+    end
+
+    nBinsOut = max(8, round(nBinsTarget));
+    binEdges = linspace(lo, hi, nBinsOut + 1);
 end
 
 function tf = has_prg_surrogate_kappa(results)
@@ -222,6 +419,17 @@ function tf = has_prg_surrogate_kappa(results)
             tf = true;
             return;
         end
+    end
+end
+
+function label = prg_method_label(results, config)
+% PRG_METHOD_LABEL Short label for PCA vs ICG coarse-graining
+
+    label = 'pca';
+    if nargin >= 2 && isstruct(config) && isfield(config, 'prgMethod') && ~isempty(config.prgMethod)
+        label = lower(strtrim(config.prgMethod));
+    elseif isfield(results, 'params') && isfield(results.params, 'prgMethod') && ~isempty(results.params.prgMethod)
+        label = lower(strtrim(results.params.prgMethod));
     end
 end
 

@@ -15,8 +15,9 @@ function prgOut = compute_prg_momentum_kurtosis(dataMat, varargin)
 %
 % Returns:
 %   prgOut - Struct with fields:
-%     .kappaByCutoff, .nCutoffList, .kappaFinal, .finalCutoffDivisor,
+%     .kappaByCutoff, .nCutoffList, .kappaFinal, .djsFinal, .finalCutoffDivisor,
 %     .popCv, .nNeurons, .nTimeBins
+%     .djsFinal - Jensen-Shannon distance sqrt(JSD(P(psi)||N(0,1))) at final cutoff
 
     p = inputParser;
     addParameter(p, 'cutoffDivisors', [1, 2, 4, 8, 16], @(x) isnumeric(x) && isvector(x));
@@ -30,6 +31,7 @@ function prgOut = compute_prg_momentum_kurtosis(dataMat, varargin)
         'kappaByCutoff', nan(1, numel(cutoffDivisors)), ...
         'nCutoffList', nan(1, numel(cutoffDivisors)), ...
         'kappaFinal', nan, ...
+        'djsFinal', nan, ...
         'finalCutoffDivisor', finalCutoffDivisor, ...
         'popCv', nan, ...
         'nNeurons', 0, ...
@@ -82,15 +84,34 @@ function prgOut = compute_prg_momentum_kurtosis(dataMat, varargin)
     matchIdx = find(nCutoffList == nFinal, 1);
     if ~isempty(matchIdx)
         prgOut.kappaFinal = kappaByCutoff(matchIdx);
+        [~, psiValsFinal] = normalized_psi_at_cutoff(centeredMat, eigVecs, nFinal);
     else
-        prgOut.kappaFinal = kurtosis_at_cutoff(centeredMat, eigVecs, nFinal);
+        [prgOut.kappaFinal, psiValsFinal] = normalized_psi_at_cutoff(centeredMat, eigVecs, nFinal);
     end
+
+    prgOut.djsFinal = compute_js_distance_psi_gaussian(psiValsFinal);
 end
 
 function kappaVal = kurtosis_at_cutoff(centeredMat, eigVecs, nCutoff)
 % KURTOSIS_AT_CUTOFF Project onto top covariance modes and compute pooled kurtosis.
 
+    [kappaVal, ~] = normalized_psi_at_cutoff(centeredMat, eigVecs, nCutoff);
+end
+
+function [kappaVal, psiVals] = normalized_psi_at_cutoff(centeredMat, eigVecs, nCutoff)
+% NORMALIZED_PSI_AT_CUTOFF Coarse-grained, variance-normalized activity at N_cutoff
+%
+% Variables:
+%   centeredMat - Mean-centered binned activity [time x neurons]
+%   eigVecs     - Covariance eigenvectors (columns ranked by eigenvalue)
+%   nCutoff     - Number of top eigenmodes retained
+%
+% Returns:
+%   kappaVal - Pooled kurtosis <psi^4>/<psi^2>^2 over all finite samples
+%   psiVals  - Vector of normalized coarse-grained samples (for distribution metrics)
+
     kappaVal = nan;
+    psiVals = [];
     nNeurons = size(centeredMat, 2);
     nCutoff = min(max(1, round(nCutoff)), nNeurons);
 
@@ -107,11 +128,13 @@ function kappaVal = kurtosis_at_cutoff(centeredMat, eigVecs, nCutoff)
     psiVals = psiMat(:);
     psiVals = psiVals(isfinite(psiVals));
     if numel(psiVals) < 4
+        psiVals = [];
         return;
     end
 
     secondMoment = mean(psiVals .^ 2);
     if secondMoment <= 0 || ~isfinite(secondMoment)
+        psiVals = [];
         return;
     end
     kappaVal = mean(psiVals .^ 4) / (secondMoment ^ 2);

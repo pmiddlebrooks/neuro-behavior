@@ -1,14 +1,14 @@
 function results = criticality_prg_analysis(dataStruct, config)
-% CRITICALITY_PRG_ANALYSIS Momentum-space PRG kurtosis in non-overlapping windows
+% CRITICALITY_PRG_ANALYSIS PRG kurtosis in non-overlapping windows (PCA or ICG)
 %
-% Implements the momentum-space phenomenological renormalization group (PRG)
-% kurtosis pipeline from Cambrainha et al. 2025 PRX Life (building on Bradde &
-% Bialek 2017 J. Stat. Phys.), per brain area.
+% Implements phenomenological renormalization group (PRG) analyses per brain area:
+%   'pca' - Momentum-space eigenvector projection (Cambrainha et al. 2025 / Bradde & Bialek 2017)
+%   'icg' - Real-space iterative correlation grouping (Morales et al. 2023 PNAS)
 %
 % Paper pipeline (this file):
-%   1. Bin spike trains (50 ms) and segment into non-overlapping 30 s windows.
+%   1. Bin spike trains and segment into non-overlapping block windows.
 %   2. Per window: compute population CV; exclude artefact windows (CV > 5).
-%   3. Per window: momentum-space coarse-graining + kurtosis (compute_prg_momentum_kurtosis).
+%   3. Per window: coarse-grain (PCA or ICG) + kurtosis and D_JS to Gaussian.
 %   4. Optional: surrogate null (config.surrogateMethod):
 %        'isi' (default) - ISI-shuffle per unit within window (Appendix, Surrogate data)
 %        'circular' - random circshift per neuron on binned activity within window
@@ -21,7 +21,8 @@ function results = criticality_prg_analysis(dataStruct, config)
 %   config     - See set_prg_config_defaults(); optional; kappaAxisMax caps PRG plot kurtosis axes (default 20).
 %
 % Returns:
-%   results - kappa (N/16), kappaByCutoff (RG flow), windowStartS, popCv, windowExcluded, ...
+%   results - kappa (N/16), djs (Jensen-Shannon distance to Gaussian at final cutoff),
+%   kappaByCutoff (RG flow), windowStartS, popCv, windowExcluded, ...
 %   When makePlots is true, criticality_prg_plot uses the same kappa axis limits on every
 %   area tile (y-axis on time series, x-axis and histogram bins on distribution figures),
 %   with upper bound results.params.kappaAxisMax (default 20).
@@ -47,6 +48,7 @@ function results = criticality_prg_analysis(dataStruct, config)
     [areas, dataStruct, numAreas, areasToTest] = setup_prg_areas(dataStruct, config, areas, numAreas);
 
     fprintf('\n=== Criticality PRG Analysis Setup ===\n');
+    fprintf('PRG method: %s\n', config.prgMethod);
     fprintf('Data type: %s\n', sessionType);
     fprintf('Block window: %.1f s (non-overlapping), bin size: %.3f s\n', ...
         config.blockWindowSize, config.binSize);
@@ -92,7 +94,7 @@ function results = criticality_prg_analysis(dataStruct, config)
 
     % Preallocate per-area result cells (one vector/matrix per area index)
     [kappa, kappaByCutoff, windowStartS, popCv, windowExcluded, nNeuronsPerWindow, ...
-        kappaSurrogate, nCutoffListRef] = deal(cell(1, numAreas));
+        kappaSurrogate, djs, djsSurrogate, nCutoffListRef] = deal(cell(1, numAreas));
 
     areasToProcess = filter_prg_areas(dataStruct, areas, areasToTest, config);
 
@@ -106,6 +108,7 @@ function results = criticality_prg_analysis(dataStruct, config)
 
         neuronIds = dataStruct.idLabel{a};
         kappa{a} = nan(1, numWindows);
+        djs{a} = nan(1, numWindows);
         popCv{a} = nan(1, numWindows);
         windowExcluded{a} = false(1, numWindows);
         nNeuronsPerWindow{a} = repmat(numel(neuronIds), 1, numWindows);
@@ -115,8 +118,10 @@ function results = criticality_prg_analysis(dataStruct, config)
 
         if config.enableSurrogates
             kappaSurrogate{a} = nan(numWindows, config.nSurrogates);
+            djsSurrogate{a} = nan(numWindows, config.nSurrogates);
         else
             kappaSurrogate{a} = [];
+            djsSurrogate{a} = [];
         end
 
         for w = 1:numWindows
@@ -129,21 +134,8 @@ function results = criticality_prg_analysis(dataStruct, config)
             dataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
                 neuronIds, winRange, config.binSize);
 
-            %% Step 3: Momentum-space PRG + kurtosis (Appendix 3; Bradde & Bialek 2017)
-            % compute_prg_momentum_kurtosis implements, for each N_cutoff in
-            % {N, N/2, N/4, N/8, N/16}:
-            %   (i)  C_ij = <phi_i phi_j> - <phi_i><phi_j>           [Eq. A2]
-            %   (ii) Eigen-decompose C; rank eigenvalues lambda_1 >= ...
-            %   (iii) Projector P_ij(N_c) = sum_{mu=1}^{N_c} u_mu_i u_mu_j  [Eq. A4]
-            %   (iv) Coarse-grained psi_i = Z_i * sum_j P_ij (phi_j - <phi_j>) [Eq. A5]
-            %        with Z_i chosen so var(psi_i) = 1 (Fig. 1d normalization)
-            %   (v)  kappa = <psi^4> / <psi^2>^2 pooled over units and time bins
-            % Final reported kappa is at N_cutoff = N/16 (paper Fig. 2–3, Appendix 3).
-            % Gaussian fixed point has kappa = 3; noncritical windows flow toward
-            % Gaussian as N_c decreases; critical-like windows retain elevated kappa.
-            prgOut = compute_prg_momentum_kurtosis(dataMat, ...
-                'cutoffDivisors', config.cutoffDivisors, ...
-                'finalCutoffDivisor', config.finalCutoffDivisor);
+            %% Step 3: PRG coarse-graining + kurtosis / D_JS (PCA or ICG)
+            prgOut = compute_prg_window_metrics(dataMat, config);
 
             % kappaByCutoff stores the RG "flow" of kappa across cutoffs (one row per window)
             popCv{a}(w) = prgOut.popCv;
@@ -160,8 +152,9 @@ function results = criticality_prg_analysis(dataStruct, config)
                 continue;
             end
 
-            % Primary metric: kappa at finest coarse-graining step (N/16)
+            % Primary metrics at finest coarse-graining step (N/finalCutoffDivisor)
             kappa{a}(w) = prgOut.kappaFinal;
+            djs{a}(w) = prgOut.djsFinal;
             nCut = min(numel(prgOut.kappaByCutoff), size(kappaByCutoff{a}, 2));
             kappaByCutoff{a}(w, 1:nCut) = prgOut.kappaByCutoff(1:nCut);
 
@@ -172,10 +165,9 @@ function results = criticality_prg_analysis(dataStruct, config)
                 for s = 1:config.nSurrogates
                     surrMat = build_prg_surrogate_data_mat(dataMat, dataStruct, ...
                         neuronIds, winRange, config);
-                    surrOut = compute_prg_momentum_kurtosis(surrMat, ...
-                        'cutoffDivisors', config.cutoffDivisors, ...
-                        'finalCutoffDivisor', config.finalCutoffDivisor);
+                    surrOut = compute_prg_window_metrics(surrMat, config);
                     kappaSurrogate{a}(w, s) = surrOut.kappaFinal;
+                    djsSurrogate{a}(w, s) = surrOut.djsFinal;
                 end
             end
         end
@@ -189,17 +181,19 @@ function results = criticality_prg_analysis(dataStruct, config)
     for a = setdiff(1:numAreas, areasToProcess)
         kappa{a} = [];
         kappaByCutoff{a} = [];
+        djs{a} = [];
         windowStartS{a} = [];
         popCv{a} = [];
         windowExcluded{a} = [];
         nNeuronsPerWindow{a} = [];
         kappaSurrogate{a} = [];
+        djsSurrogate{a} = [];
         nCutoffListRef{a} = [];
     end
 
     results = build_prg_results_structure(dataStruct, config, areas, ...
         kappa, kappaByCutoff, windowStartS, popCv, windowExcluded, ...
-        nNeuronsPerWindow, kappaSurrogate, nCutoffListRef, windowStartTimes);
+        nNeuronsPerWindow, kappaSurrogate, djs, djsSurrogate, nCutoffListRef, windowStartTimes);
 
     if config.saveData
         save(resultsPath, 'results');
@@ -239,6 +233,7 @@ function config = set_prg_config_defaults(config)
     defaults.nMinNeurons = 10;           % Paper used >128 units; lab minimum is configurable
     defaults.brainAreas = {};
     defaults.kappaAxisMax = 20;          % Cap kurtosis axis (y time series, x histograms); use Inf for no cap
+    defaults.prgMethod = 'pca';        % 'pca' (momentum-space) or 'icg' (real-space ICG, Morales 2023)
 
     fields = fieldnames(defaults);
     for i = 1:numel(fields)
@@ -251,6 +246,12 @@ function config = set_prg_config_defaults(config)
     validSurrogateMethods = {'isi', 'circular'};
     if ~ismember(config.surrogateMethod, validSurrogateMethods)
         error('config.surrogateMethod must be ''isi'' or ''circular'', got "%s".', config.surrogateMethod);
+    end
+
+    config.prgMethod = lower(strtrim(config.prgMethod));
+    validPrgMethods = {'pca', 'icg'};
+    if ~ismember(config.prgMethod, validPrgMethods)
+        error('config.prgMethod must be ''pca'' or ''icg'', got "%s".', config.prgMethod);
     end
 end
 
@@ -386,13 +387,15 @@ end
 
 function results = build_prg_results_structure(dataStruct, config, areas, ...
     kappa, kappaByCutoff, windowStartS, popCv, windowExcluded, ...
-    nNeuronsPerWindow, kappaSurrogate, nCutoffListRef, windowStartTimes)
+    nNeuronsPerWindow, kappaSurrogate, djs, djsSurrogate, nCutoffListRef, windowStartTimes)
 % BUILD_PRG_RESULTS_STRUCTURE Package outputs for saving and downstream plots/stats.
 %
 % Key fields:
 %   kappa{area}         - N/16 kurtosis per window (paper's primary window statistic)
+%   djs{area}           - Jensen-Shannon distance to N(0,1) at final cutoff (Cambrainha 2026)
 %   kappaByCutoff{area} - kappa at each N_c (RG flow across momentum shells)
 %   kappaSurrogate{area}- optional null kappa (ISI or circular surrogate)
+%   djsSurrogate{area}  - optional null D_JS for the same windows
 %   windowExcluded{area}- logical; true if CV > cvThreshold
 %   nCutoffList{area}   - actual N_c values used (may differ when N is small)
 %   params.kappaAxisMax - upper cap on kurtosis axes in plots (mirrors config)
@@ -401,6 +404,7 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
     results.sessionType = dataStruct.sessionType;
     results.areas = areas;
     results.kappa = kappa;
+    results.djs = djs;
     results.kappaByCutoff = kappaByCutoff;
     results.windowStartS = windowStartS;
     results.popCv = popCv;
@@ -408,6 +412,7 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
     results.nNeuronsPerWindow = nNeuronsPerWindow;
     results.nCutoffList = nCutoffListRef;
     results.kappaSurrogate = kappaSurrogate;
+    results.djsSurrogate = djsSurrogate;
     results.params.blockWindowSize = config.blockWindowSize;
     results.params.binSize = config.binSize;
     results.params.cvThreshold = config.cvThreshold;
@@ -419,5 +424,6 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
     results.params.nMinNeurons = config.nMinNeurons;
     results.params.windowStartTimes = windowStartTimes;
     results.params.kappaAxisMax = config.kappaAxisMax;
+    results.params.prgMethod = config.prgMethod;
     results.analysisType = 'criticality_prg';
 end

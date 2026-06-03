@@ -15,6 +15,7 @@
 %   prgWindow          - Non-overlapping block length (seconds); blockWindowSize
 %   brainArea          - Area to analyze (e.g. 'M56'); '' uses all valid areas
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
+%   prgMethod          - 'pca' (momentum-space) or 'icg' (real-space ICG)
 %
 % Goal:
 %   Visualize real vs surrogate PRG kurtosis distributions for one session,
@@ -43,11 +44,12 @@ opts.minFiringRate = 0.05;
 opts.maxFiringRate = 100;
 
 analysisConfig = struct();
+analysisConfig.prgMethod = 'pca';  % 'pca' or 'icg'
 analysisConfig.blockWindowSize = prgWindow;
 analysisConfig.binSize = 0.2;
 analysisConfig.cvThreshold = 5;
 analysisConfig.cutoffDivisors = [1, 2, 4, 8, 16];
-analysisConfig.finalCutoffDivisor = 8;
+analysisConfig.finalCutoffDivisor = 16;
 analysisConfig.kappaAxisMax = 20;
 analysisConfig.enableSurrogates = true;
 analysisConfig.nSurrogates = 1;
@@ -82,6 +84,7 @@ addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
 addpath(fullfile(srcPath, 'criticality'));
 
 fprintf('\n=== Session Kurtosis Distributions ===\n');
+fprintf('PRG method: %s\n', analysisConfig.prgMethod);
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, (collectEnd - collectStart) / 60);
 fprintf('PRG blocks: %.1f s; kappa at N/%d; surrogates: %s\n', ...
@@ -129,8 +132,8 @@ figDist = figDist(1);
 
 if saveFigure
   areaTag = format_areas_label(results.areas);
-  plotBase = sprintf('session_kurtosis_distributions_%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d', ...
-    sessionName, areaTag, analysisConfig.surrogateMethod, prgWindow, ...
+  plotBase = sprintf('session_kurtosis_distributions_%s_%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d', ...
+    sessionName, areaTag, analysisConfig.prgMethod, analysisConfig.surrogateMethod, prgWindow, ...
     collectStart, collectEnd, analysisConfig.finalCutoffDivisor);
   exportgraphics(figDist, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(figDist, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
@@ -178,7 +181,7 @@ if isempty(areaIdx)
 end
 
 cellFields = {'kappa', 'kappaByCutoff', 'windowStartS', 'popCv', 'windowExcluded', ...
-  'nNeuronsPerWindow', 'kappaSurrogate', 'nCutoffList'};
+  'nNeuronsPerWindow', 'kappaSurrogate', 'djs', 'djsSurrogate', 'nCutoffList'};
 
 results.areas = results.areas(areaIdx);
 for f = 1:length(cellFields)
@@ -190,9 +193,9 @@ end
 end
 
 function print_session_kappa_summary(results)
-% PRINT_SESSION_KAPPA_SUMMARY - Window counts and mean kappa per area
+% PRINT_SESSION_KAPPA_SUMMARY - Window counts and mean kappa / D_JS per area
 
-fprintf('\n=== PRG kurtosis summary ===\n');
+fprintf('\n=== PRG kurtosis and D_{JS} summary ===\n');
 for a = 1:numel(results.areas)
   if isempty(results.kappa{a})
     fprintf('  %s: no kappa data\n', results.areas{a});
@@ -203,8 +206,16 @@ for a = 1:numel(results.areas)
   nValid = numel(kappaValid);
   nExcluded = sum(results.windowExcluded{a});
   if nValid > 0
-    fprintf('  %s: %d valid windows (%d CV-excluded), mean \\kappa = %.3f\n', ...
+    fprintf('  %s: %d valid windows (%d CV-excluded), mean \\kappa = %.3f', ...
       results.areas{a}, nValid, nExcluded, mean(kappaValid));
+    if isfield(results, 'djs') && ~isempty(results.djs{a})
+      djsValid = results.djs{a}(validMask);
+      djsValid = djsValid(isfinite(djsValid));
+      if ~isempty(djsValid)
+        fprintf(', mean D_{JS} = %.4f', mean(djsValid));
+      end
+    end
+    fprintf('\n');
   else
     fprintf('  %s: no valid windows (%d CV-excluded)\n', results.areas{a}, nExcluded);
   end
