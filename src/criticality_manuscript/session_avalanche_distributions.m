@@ -15,6 +15,7 @@
 %   collectEnd         - Window end (seconds)
 %   brainArea          - Area to analyze (e.g. 'M56'); '' uses all valid areas
 %   powerLawFitMethod  - 'clauset', 'plfit2023', or 'hybrid'
+%   avalancheDetectionMode - 'fixedBinMedian' or 'meanIsiZero'
 %   clausetPlfitPath   - Path to .../Power-Law-Fit-Distribution-MATLAB-main/MATLAB Code
 %   plfit2023Path      - Path to folder containing plfit2023.m
 %   runClausetPlpva    - If true and method is 'clauset', run plpva (slow)
@@ -43,6 +44,10 @@ runClausetPlpva = false;
 
 gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 
+% 'fixedBinMedian': analysisConfig.binSize + median cutoff
+% 'meanIsiZero': mean population ISI bin size + zero cutoff
+avalancheDetectionMode = 'fixedBinMedian';
+
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = collectStart;
@@ -54,7 +59,12 @@ analysisConfig = struct();
 analysisConfig.slidingWindowSize = windowDurationSec;
 analysisConfig.avStepSize = windowDurationSec;
 analysisConfig.useOptimalBinWindowFunction = false;
-analysisConfig.binSize = 0.05;
+analysisConfig.avalancheDetectionMode = avalancheDetectionMode;
+if strcmpi(avalancheDetectionMode, 'meanIsiZero')
+  % binSize resolved per area from spikes in collect window
+else
+  analysisConfig.binSize = 0.05;
+end
 analysisConfig.thresholdFlag = 1;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = 20;
@@ -93,6 +103,7 @@ analysisConfig.plfit2023Path = plfit2023Path;
 
 fprintf('\n=== Session Avalanche Distributions ===\n');
 fprintf('Power-law fit method: %s\n', powerLawFitMethod);
+fprintf('Avalanche detection mode: %s\n', avalancheDetectionMode);
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
 
@@ -277,15 +288,14 @@ avData = struct('hasAvalanches', false, 'sizes', [], 'durations', [], ...
   'durFitInfo', struct(), 'nAvalanches', 0);
 
 timeRange = [collectStart, collectEnd];
-binSize = analysisConfig.binSize;
 neuronIds = dataStruct.idLabel{areaIndex};
+binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analysisConfig);
+binSize = binSizeVec(areaIndex);
 
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
   neuronIds, timeRange, binSize);
 wPopActivity = sum(aDataMat, 2);
-
-threshSpikes = median(wPopActivity);
-wPopActivity(wPopActivity < threshSpikes) = 0;
+wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
 
 zeroBins = find(wPopActivity == 0);
 if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))

@@ -15,8 +15,13 @@
 %   runBatch             - If true, run criticality_av_analysis per session
 %   plotResults          - If true, create summary figures after batch
 %   powerLawFitMethod    - 'clauset', 'plfit2023', or 'hybrid'
+%   avalancheDetectionMode - 'fixedBinMedian' or 'meanIsiZero' (see below)
 %   clausetPlfitPath     - Path to Clauset toolbox MATLAB Code folder
 %   plfit2023Path        - Path to folder containing plfit2023.m
+%
+%   avalancheDetectionMode:
+%     'fixedBinMedian' - config.binSize (s) + per-window median cutoff (default)
+%     'meanIsiZero'    - bin size = mean population ISI; zero cutoff (literature)
 %
 % Goal:
 %   Compare avalanche metrics (dcc, kappa, decades, tau, alpha, paramSD)
@@ -40,12 +45,20 @@ plotResults = true;
 powerLawFitMethod = 'clauset';
 gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 
+% Avalanche binning / cutoff: 'fixedBinMedian' or 'meanIsiZero'
+avalancheDetectionMode = 'fixedBinMedian';
+
 % Avalanche analysis settings (single full collect window per session)
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = windowDurationSec;
 analysisConfig.avStepSize = windowDurationSec;
 analysisConfig.useOptimalBinWindowFunction = false;
-analysisConfig.binSize = 0.05;   % seconds; same bin size for all areas
+analysisConfig.avalancheDetectionMode = avalancheDetectionMode;
+if strcmpi(avalancheDetectionMode, 'meanIsiZero')
+  % Bin size set per area from mean population ISI in criticality_av_analysis
+else
+  analysisConfig.binSize = 0.05;   % seconds; same bin size for all areas
+end
 analysisConfig.analyzeDcc = true;
 analysisConfig.analyzeKappa = true;
 analysisConfig.pcaFlag = 0;
@@ -101,6 +114,7 @@ analysisConfig.plfit2023Path = plfit2023Path;
 
 fprintf('\n=== Criticality Avalanche Across Task Types ===\n');
 fprintf('Power-law fit method: %s\n', powerLawFitMethod);
+fprintf('Avalanche detection mode: %s\n', avalancheDetectionMode);
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 if ~isempty(brainArea)

@@ -13,7 +13,9 @@ function results = criticality_av_analysis(dataStruct, config)
 %     .nDim - Number of PCA dimensions (default: 4)
 %     .enablePermutations - Perform circular permutations (default: true)
 %     .nShuffles - Number of permutations (default: 3)
-%     .thresholdFlag - Use threshold method (default: 1)
+%     .avalancheDetectionMode - 'fixedBinMedian' (user binSize + median cutoff)
+%                               or 'meanIsiZero' (mean population ISI bins, zero cutoff)
+%     .thresholdFlag - Use median threshold when fixedBinMedian (default: 1)
 %     .thresholdPct - Threshold as percentage of median (default: 1)
 %     .makePlots - Create plots (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
@@ -43,6 +45,7 @@ function results = criticality_av_analysis(dataStruct, config)
         config = struct();
     end
     config = set_config_defaults(config);
+    config = validate_avalanche_detection_config(config);
     
     sessionType = dataStruct.sessionType;
     areas = dataStruct.areas;
@@ -95,6 +98,11 @@ function results = criticality_av_analysis(dataStruct, config)
     fprintf('Data type: %s\n', sessionType);
     fprintf('Number of areas: %d\n', numAreas);
     fprintf('Window size: %.2f s, Step size: %.2f s\n', config.slidingWindowSize, config.avStepSize);
+    if is_mean_isi_zero_avalanche_mode(config)
+      fprintf('Avalanche detection: mean population ISI bin size, zero cutoff\n');
+    else
+      fprintf('Avalanche detection: fixed bin size + median cutoff\n');
+    end
     
     % Create filename suffix based on PCA flag
     if config.pcaFlag
@@ -151,8 +159,20 @@ function results = criticality_av_analysis(dataStruct, config)
     end
     
     % Bin size / window size selection
-    % Either use automatic optimal bin/window search, or user-specified values
-    if config.useOptimalBinWindowFunction
+    if is_mean_isi_zero_avalanche_mode(config)
+        fprintf('\n--- Step 3: Mean population ISI bin size (literature mode) ---\n');
+        numAreas = length(areas);
+        slidingWindowSize = zeros(1, numAreas);
+        if isscalar(config.slidingWindowSize)
+            slidingWindowSize(:) = config.slidingWindowSize;
+        else
+            if numel(config.slidingWindowSize) ~= numAreas
+                error('config.slidingWindowSize must be scalar or length(numAreas).');
+            end
+            slidingWindowSize(:) = config.slidingWindowSize(:);
+        end
+        binSize = resolve_avalanche_bin_sizes(dataStruct, areasToTest, timeRange, config);
+    elseif config.useOptimalBinWindowFunction
         fprintf('\n--- Step 3: Finding optimal bin/window parameters ---\n');
         if config.pcaFlag
             % Use PCA-reconstructed data for parameter optimization
@@ -169,19 +189,7 @@ function results = criticality_av_analysis(dataStruct, config)
         binSize = zeros(1, numAreas);
         slidingWindowSize = zeros(1, numAreas);
 
-        % binSize: required when not using automatic optimization
-        if ~isfield(config, 'binSize') || isempty(config.binSize)
-            error(['config.binSize must be provided (scalar or per-area vector) when ', ...
-                   'config.useOptimalBinWindowFunction is false.']);
-        end
-        if isscalar(config.binSize)
-            binSize(:) = config.binSize;
-        else
-            if numel(config.binSize) ~= numAreas
-                error('config.binSize must be scalar or length(numAreas) when useOptimalBinWindowFunction is false.');
-            end
-            binSize(:) = config.binSize(:);
-        end
+        binSize = resolve_avalanche_bin_sizes(dataStruct, areasToTest, timeRange, config);
 
         % slidingWindowSize: can be scalar (applied to all areas) or vector
         if ~isfield(config, 'slidingWindowSize') || isempty(config.slidingWindowSize)
@@ -390,9 +398,7 @@ function results = criticality_av_analysis(dataStruct, config)
             % Calculate population activity for this window
             wPopActivity = aDataMat(startIdx:endIdx);
             
-            % Apply thresholding using median of this window
-            threshSpikes = median(wPopActivity);
-            wPopActivity(wPopActivity < threshSpikes) = 0;
+            wPopActivity = apply_avalanche_population_threshold(wPopActivity, config);
             
             % Avalanche analysis
             zeroBins = find(wPopActivity == 0);
@@ -551,6 +557,15 @@ function results = criticality_av_analysis(dataStruct, config)
     end
 end
 
+function config = validate_avalanche_detection_config(config)
+% VALIDATE_AVALANCHE_DETECTION_CONFIG - Check avalancheDetectionMode value
+
+validModes = {'fixedBinMedian', 'meanIsiZero'};
+if ~any(strcmpi(config.avalancheDetectionMode, validModes))
+  error('config.avalancheDetectionMode must be ''fixedBinMedian'' or ''meanIsiZero''.');
+end
+end
+
 function config = set_config_defaults(config)
 % SET_CONFIG_DEFAULTS Set default values for configuration structure
     
@@ -569,6 +584,7 @@ function config = set_config_defaults(config)
     defaults.minSpikesPerBin = 4;
     defaults.maxSpikesPerBin = 50;
     defaults.minBinsPerWindow = 1000;
+    defaults.avalancheDetectionMode = 'fixedBinMedian';
     defaults.thresholdFlag = 1;
     defaults.thresholdPct = 1;
     defaults.normalizeMetrics = true;  % Normalize metrics by shuffled metric values
@@ -720,9 +736,7 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
             % Calculate population activity for this permuted window
             wPopActivityPerm = sum(permutedWindowData, 2);
             
-            % Apply thresholding using median of this window
-            threshSpikes = median(wPopActivityPerm);
-            wPopActivityPerm(wPopActivityPerm < threshSpikes) = 0;
+            wPopActivityPerm = apply_avalanche_population_threshold(wPopActivityPerm, config);
             
             % Avalanche analysis for permuted data
             zeroBins = find(wPopActivityPerm == 0);
@@ -834,9 +848,7 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
             % Calculate population activity for this permuted window
             wPopActivityPerm = sum(permutedWindowData, 2);
             
-            % Apply thresholding using median of this window
-            threshSpikes = median(wPopActivityPerm);
-            wPopActivityPerm(wPopActivityPerm < threshSpikes) = 0;
+            wPopActivityPerm = apply_avalanche_population_threshold(wPopActivityPerm, config);
             
             % Avalanche analysis for permuted data
             zeroBins = find(wPopActivityPerm == 0);
@@ -894,6 +906,7 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
     results.params.pcaFlag = config.pcaFlag;
     results.params.pcaFirstFlag = config.pcaFirstFlag;
     results.params.nDim = config.nDim;
+    results.params.avalancheDetectionMode = config.avalancheDetectionMode;
     results.params.thresholdFlag = config.thresholdFlag;
     results.params.thresholdPct = config.thresholdPct;
     results.params.normalizeMetrics = config.normalizeMetrics;
