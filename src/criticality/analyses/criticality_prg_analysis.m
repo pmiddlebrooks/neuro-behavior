@@ -10,15 +10,17 @@ function results = criticality_prg_analysis(dataStruct, config)
 %   2. Per window: compute population CV; exclude artefact windows (CV > 5).
 %   3. Per window: coarse-grain (PCA or ICG) + kurtosis and D_JS to Gaussian.
 %   4. Optional: surrogate null (config.surrogateMethod):
-%        'isi' (default) - ISI-shuffle per unit within window (Appendix, Surrogate data)
+%        'isi' (default) - ISI-shuffle per unit within window, re-binned (Cambrainha Appendix)
 %        'circular' - random circshift per neuron on binned activity within window
+%                     (same circular-per-neuron null as criticality AR / svm_decoding_compare)
 %
 % Not implemented here (paper Appendix 4): real-space paired-correlation
 % coarse-graining and scaling exponents (alpha, beta, mu, z).
 %
 % Variables:
 %   dataStruct - From load_session_data(); needs spikeTimes, spikeClusters, areas, idLabel
-%   config     - See set_prg_config_defaults(); optional; kappaAxisMax caps PRG plot kurtosis axes (default 20).
+%   config     - See set_prg_config_defaults(); prgMethod ('pca'|'icg');
+%                surrogateMethod ('isi'|'circular') when enableSurrogates is true.
 %
 % Returns:
 %   results - kappa (N/16), djs (Jensen-Shannon distance to Gaussian at final cutoff),
@@ -342,13 +344,17 @@ function surrMat = build_prg_surrogate_data_mat(dataMat, dataStruct, neuronIds, 
 end
 
 function permutedMat = apply_circular_permutation_per_neuron(dataMat)
-% APPLY_CIRCULAR_PERMUTATION_PER_NEURON Random circshift per neuron (time axis)
+% APPLY_CIRCULAR_PERMUTATION_PER_NEURON Circular permutation per neuron (time axis)
 %
 % Variables:
-%   dataMat - [timeBins x neurons] binned activity
+%   dataMat - [timeBins x neurons] binned activity for one PRG window
+%
+% Goal:
+%   Destroy temporal correlations while preserving per-neuron rate structure within
+%   the window (circular-shift null used in AR decoding and d2 analyses).
 %
 % Returns:
-%   permutedMat - Same size; each column circshifted by a random amount in [1, T/2]
+%   permutedMat - Same size; each column circshifted by a random amount in [1, floor(T/2)]
 
     numTimeBins = size(dataMat, 1);
     maxShift = floor(numTimeBins / 2);

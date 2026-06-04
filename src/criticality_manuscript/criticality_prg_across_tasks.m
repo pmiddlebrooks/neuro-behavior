@@ -15,8 +15,9 @@
 %   areasToPlot    - Area names to plot; {} uses brainArea if set
 %   runBatch       - If true, run criticality_prg_analysis per session
 %   plotResults    - If true, create summary figures after batch
-%   prgMethod      - 'pca' (momentum-space) or 'icg' (real-space ICG, Morales 2023)
-%   useSubsampling - If true, kappa/D_JS per window = mean across neuron subsamples
+%   prgMethod        - 'pca' (momentum-space) or 'icg' (real-space ICG, Morales 2023)
+%   surrogateMethod  - 'isi' (ISI shuffle per unit) or 'circular' (circshift per neuron)
+%   useSubsampling   - If true, kappa/D_JS per window = mean across neuron subsamples
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
 %
 % Goal:
@@ -39,22 +40,25 @@ runBatch = true;
 plotResults = true;
 
 useSubsampling = false;
-nSubsamples = 20;
-nNeuronsSubsample = 20;
+nSubsamples = 30;
+nNeuronsSubsample = 32;
 minNeuronsMultiple = 1.25;
+
+% Surrogate null: 'isi' (Cambrainha paper) or 'circular' (per-neuron circshift on binned data)
+surrogateMethod = 'circular';
 
 % PRG settings (aligned with run_criticality_prg.m)
 analysisConfig = struct();
 analysisConfig.prgMethod = 'pca';  % 'pca' or 'icg'
 analysisConfig.blockWindowSize = prgWindow;
-analysisConfig.binSize = 0.2;
+analysisConfig.binSize = 0.05;
 analysisConfig.cvThreshold = 5;
 analysisConfig.cutoffDivisors = [1, 2, 4, 8, 16];
-analysisConfig.finalCutoffDivisor = 16;
+analysisConfig.finalCutoffDivisor = 8;
 analysisConfig.kappaAxisMax = 20;
 analysisConfig.enableSurrogates = true;
 analysisConfig.nSurrogates = 1;
-analysisConfig.surrogateMethod = 'isi';
+analysisConfig.surrogateMethod = surrogateMethod;
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.nMinNeurons = 32;

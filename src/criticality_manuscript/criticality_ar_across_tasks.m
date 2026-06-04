@@ -46,7 +46,7 @@ useLog10D2 = true;
 useSubsampling = false;
 nSubsamples = 20;
 nNeuronsSubsample = 20;
-minNeuronsMultiple = 1.25;
+minNeuronsMultiple = 1.5;
 
 % AR / d2 analysis settings (aligned with run_criticality_ar.m; no mrBr)
 analysisConfig = struct();
@@ -71,7 +71,7 @@ analysisConfig.critType = 2;
 analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 1000;
 analysisConfig.maxSpikesPerBin = 100;
-analysisConfig.nMinNeurons = 25;
+analysisConfig.nMinNeurons = 30;
 analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;

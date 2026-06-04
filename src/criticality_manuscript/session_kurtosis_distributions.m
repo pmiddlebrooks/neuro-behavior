@@ -16,6 +16,7 @@
 %   brainArea          - Area to analyze (e.g. 'M56'); '' uses all valid areas
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
 %   prgMethod          - 'pca' (momentum-space) or 'icg' (real-space ICG)
+%   surrogateMethod    - 'isi' (ISI shuffle per unit) or 'circular' (circshift per neuron)
 %   useSubsampling     - If true, kappa/D_JS per window = mean across neuron subsamples
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
 %
@@ -42,6 +43,9 @@ nSubsamples = 20;
 nNeuronsSubsample = 20;
 minNeuronsMultiple = 1.25;
 
+% Surrogate null: 'isi' (Cambrainha paper) or 'circular' (per-neuron circshift on binned data)
+surrogateMethod = 'isi';
+
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
 opts.firingRateCheckTime = [];
@@ -60,7 +64,7 @@ analysisConfig.finalCutoffDivisor = 16;
 analysisConfig.kappaAxisMax = 20;
 analysisConfig.enableSurrogates = true;
 analysisConfig.nSurrogates = 1;
-analysisConfig.surrogateMethod = 'isi';
+analysisConfig.surrogateMethod = surrogateMethod;
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.plotTimeSeries = false;  % distribution figure only (criticality_prg_plot)
