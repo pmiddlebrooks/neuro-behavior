@@ -90,13 +90,13 @@ function criticality_prg_plot(results, plotConfig, config, dataStruct)
         title(areas{a});
 
         if isfield(results, 'kappaSurrogate') && ~isempty(results.kappaSurrogate{a})
-            surrMean = nanmean(results.kappaSurrogate{a}, 2);
+            surrMean = get_per_window_shuffle_mean_matrix(results.kappaSurrogate{a}, results);
             plot(tVec, surrMean, '--', 'Color', [0.55 0.55 0.55], 'LineWidth', 1);
         end
 
         if isfield(results, 'djsSurrogate') && ~isempty(results.djsSurrogate{a})
             yyaxis right;
-            djsSurrMean = nanmean(results.djsSurrogate{a}, 2);
+            djsSurrMean = get_per_window_shuffle_mean_matrix(results.djsSurrogate{a}, results);
             plot(tVec, djsSurrMean, '--', 'Color', [0.75 0.55 0.45], 'LineWidth', 1);
             yyaxis left;
         end

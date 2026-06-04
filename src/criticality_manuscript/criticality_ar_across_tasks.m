@@ -15,6 +15,9 @@
 %   runBatch       - If true, run criticality_ar_analysis per session
 %   plotResults    - If true, create summary figures after batch
 %   useLog10D2     - If true, aggregate and plot log10(d2); values <= 0 become NaN (default true)
+%   useSubsampling - If true, d2 per window = mean across neuron subsamples; shuffled
+%                    summary = mean across subsamples of per-subsample shuffle means
+%   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings (see run_criticality_ar.m)
 %
 % Goal:
 %   Compare d2 (raw + shuffled) and normalized d2 across spontaneous, reach,
@@ -31,7 +34,7 @@ collectEnd = 45 * 60;
 
 d2Window = 30;  % seconds; non-overlapping windows (stepSize = d2Window)
 
-brainArea = 'DS';
+brainArea = 'M56';
 areasToPlot = {};
 runBatch = true;
 plotResults = true;
@@ -39,11 +42,18 @@ plotResults = true;
 % Display / summary scale (matches run_criticality_ar.m config.useLog10D2)
 useLog10D2 = true;
 
+% Neural subsampling (matches run_criticality_ar.m)
+useSubsampling = false;
+nSubsamples = 20;
+nNeuronsSubsample = 20;
+minNeuronsMultiple = 1.25;
+
 % AR / d2 analysis settings (aligned with run_criticality_ar.m; no mrBr)
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = d2Window;
 analysisConfig.stepSize = d2Window;
 analysisConfig.binSize = 0.025;
+analysisConfig.binSize = 0.05;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;
 analysisConfig.analyzeMrBr = false;
@@ -62,6 +72,10 @@ analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 1000;
 analysisConfig.maxSpikesPerBin = 100;
 analysisConfig.nMinNeurons = 25;
+analysisConfig.useSubsampling = useSubsampling;
+analysisConfig.nSubsamples = nSubsamples;
+analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
+analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 analysisConfig.includeM2356 = false;
 if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
   analysisConfig.includeM2356 = true;
@@ -99,6 +113,12 @@ fprintf('\n=== Criticality d2 Across Task Types ===\n');
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, (collectEnd - collectStart) / 60);
 fprintf('d2 windows: %.1f s, non-overlapping (step = window)\n', d2Window);
 fprintf('useLog10D2 (aggregate/plot): %d\n', useLog10D2);
+if useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+    nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
+else
+  fprintf('Subsampling: off\n');
+end
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 if ~isempty(brainArea)
   fprintf('Brain area: %s (single-area analysis)\n', brainArea);
@@ -411,7 +431,8 @@ function summary = summarize_session_d2_windows(results, areaIdx, useLog10D2)
 % Returns:
 %   summary - Struct with d2Mean, d2Sem, d2ShuffleMean, d2ShuffleSem, d2NormMean, d2NormSem
 %
-%   d2ShuffleSem - SEM across windows of (mean shuffle d2 in each window)
+%   d2ShuffleSem - SEM across windows of per-window shuffle summary
+%   (with subsampling: mean across subsamples of per-subsample shuffle means)
 
 if nargin < 3 || isempty(useLog10D2)
   useLog10D2 = false;
@@ -459,15 +480,7 @@ end
 
 if isfield(results, 'd2Permuted') && areaIdx <= length(results.d2Permuted) ...
     && ~isempty(results.d2Permuted{areaIdx})
-  d2Permuted = results.d2Permuted{areaIdx};
-  if useLog10D2
-    d2Permuted = log10_safe_numeric(d2Permuted);
-  end
-  if size(d2Permuted, 2) > 1
-    perWindowShuffleMean = nanmean(d2Permuted, 2);
-  else
-    perWindowShuffleMean = d2Permuted(:);
-  end
+  perWindowShuffleMean = get_per_window_shuffle_mean_d2(results, areaIdx, useLog10D2);
   perWindowShuffleMean = perWindowShuffleMean(isfinite(perWindowShuffleMean));
   if ~isempty(perWindowShuffleMean)
     summary.d2ShuffleMean = mean(perWindowShuffleMean);

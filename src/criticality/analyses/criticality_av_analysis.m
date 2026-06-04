@@ -207,7 +207,20 @@ function results = criticality_av_analysis(dataStruct, config)
     end
     
     % Filter areas based on valid optimal bin sizes and minimum neurons
-    if ~isfield(config, 'nMinNeurons')
+    if isfield(config, 'useSubsampling') && config.useSubsampling
+        if ~isfield(config, 'nNeuronsSubsample') || isempty(config.nNeuronsSubsample) || config.nNeuronsSubsample <= 0
+            error('When config.useSubsampling is true, config.nNeuronsSubsample must be a positive scalar.');
+        end
+        if ~isfield(config, 'nSubsamples') || isempty(config.nSubsamples) || config.nSubsamples <= 0
+            error('When config.useSubsampling is true, config.nSubsamples must be a positive scalar.');
+        end
+        if ~isfield(config, 'minNeuronsMultiple') || isempty(config.minNeuronsMultiple)
+            config.minNeuronsMultiple = 1.0;
+        end
+        config.nMinNeurons = round(config.nNeuronsSubsample * config.minNeuronsMultiple);
+        fprintf('Subsampling enabled: nSubsamples=%d, nNeuronsSubsample=%d, minNeuronsMultiple=%.2f -> min neurons=%d\n', ...
+            config.nSubsamples, config.nNeuronsSubsample, config.minNeuronsMultiple, config.nMinNeurons);
+    elseif ~isfield(config, 'nMinNeurons')
         config.nMinNeurons = 10;
     end
     
@@ -330,6 +343,13 @@ function results = criticality_av_analysis(dataStruct, config)
         % Get neuron IDs for this area
         neuronIDs = dataStruct.idLabel{a};
         
+        useSubsamplingArea = isfield(config, 'useSubsampling') && config.useSubsampling;
+        if useSubsamplingArea && config.pcaFlag
+            warning('criticality_av_analysis:SubsamplingPca', ...
+                'Subsampling with pcaFlag=1 is not supported; using full-area PCA path without subsampling.');
+            useSubsamplingArea = false;
+        end
+
         % Bin data at area-specific bin size
         if config.pcaFlag
             % Use PCA-reconstructed data: rebin from 1ms to optimal bin size
@@ -361,9 +381,11 @@ function results = criticality_av_analysis(dataStruct, config)
             numTimePoints_dcc = size(aDataMat, 1);
         end
         
-        % Calculate population activity
-        aDataMat = sum(aDataMat, 2);
-        
+        aDataMatNeurons = aDataMat;
+        if ~useSubsamplingArea
+            aDataMat = sum(aDataMatNeurons, 2);
+        end
+
         % Initialize arrays
         dcc{a} = nan(1, numWindows);
         kappa{a} = nan(1, numWindows);
@@ -378,6 +400,28 @@ function results = criticality_av_analysis(dataStruct, config)
         tauNormalized{a} = nan(1, numWindows);
         alphaNormalized{a} = nan(1, numWindows);
         paramSDNormalized{a} = nan(1, numWindows);
+
+        if useSubsamplingArea
+            numNeuronsArea = size(aDataMatNeurons, 2);
+            nSubsamplesArea = config.nSubsamples;
+            nNeuronsSubsampleArea = min(config.nNeuronsSubsample, numNeuronsArea);
+            neuronIdxSubsamples = cell(1, nSubsamplesArea);
+            for s = 1:nSubsamplesArea
+                if nNeuronsSubsampleArea == numNeuronsArea
+                    neuronIdxSubsamples{s} = 1:numNeuronsArea;
+                else
+                    neuronIdxSubsamples{s} = randperm(numNeuronsArea, nNeuronsSubsampleArea);
+                end
+            end
+            if config.enablePermutations
+                dccPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
+                kappaPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
+                decadesPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
+                tauPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
+                alphaPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
+                paramSDPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
+            end
+        end
         
         % Process each window using common centerTime
         for w = 1:numWindows
@@ -394,38 +438,63 @@ function results = criticality_av_analysis(dataStruct, config)
                 % Window is out of bounds for this area, skip
                 continue;
             end
-            
-            % Calculate population activity for this window
-            wPopActivity = aDataMat(startIdx:endIdx);
-            
-            wPopActivity = apply_avalanche_population_threshold(wPopActivity, config);
-            
-            % Avalanche analysis
-            zeroBins = find(wPopActivity == 0);
-            if length(zeroBins) > 1 && any(diff(zeroBins)>1)
-                [sizes, durs] = getAvalanches(wPopActivity', .5, 1);
-                plMetrics = avalanche_power_law_metrics(sizes, durs, config);
-                
-                % dcc (distance to criticality from avalanche analysis)
-                dcc{a}(w) = distance_to_criticality(plMetrics.tau, plMetrics.alpha, plMetrics.paramSD);
-                
-                % kappa (avalanche shape parameter)
-                kappa{a}(w) = compute_kappa(sizes);
-                
-                % decades (log10 of avalanche size range)
-                decades{a}(w) = plMetrics.decades;
-                
-                % Store tau, alpha, and paramSD
-                tau{a}(w) = plMetrics.tau;
-                alpha{a}(w) = plMetrics.alpha;
-                paramSD{a}(w) = plMetrics.paramSD;
+
+            if useSubsamplingArea
+                windowData = aDataMatNeurons(startIdx:endIdx, :);
+                dccSub = nan(1, nSubsamplesArea);
+                kappaSub = nan(1, nSubsamplesArea);
+                decadesSub = nan(1, nSubsamplesArea);
+                tauSub = nan(1, nSubsamplesArea);
+                alphaSub = nan(1, nSubsamplesArea);
+                paramSDSub = nan(1, nSubsamplesArea);
+                for s = 1:nSubsamplesArea
+                    wPopActivity = sum(windowData(:, neuronIdxSubsamples{s}), 2);
+                    avMetrics = compute_av_metrics_from_pop_activity(wPopActivity, config);
+                    dccSub(s) = avMetrics.dcc;
+                    kappaSub(s) = avMetrics.kappa;
+                    decadesSub(s) = avMetrics.decades;
+                    tauSub(s) = avMetrics.tau;
+                    alphaSub(s) = avMetrics.alpha;
+                    paramSDSub(s) = avMetrics.paramSD;
+
+                    if config.enablePermutations
+                        permMetrics = run_av_window_circular_shuffles( ...
+                            windowData(:, neuronIdxSubsamples{s}), config);
+                        colStart = (s - 1) * config.nShuffles + 1;
+                        colEnd = colStart + config.nShuffles - 1;
+                        for shuffle = 1:config.nShuffles
+                            dccPermuted{a}(w, colStart + shuffle - 1) = permMetrics(shuffle).dcc;
+                            kappaPermuted{a}(w, colStart + shuffle - 1) = permMetrics(shuffle).kappa;
+                            decadesPermuted{a}(w, colStart + shuffle - 1) = permMetrics(shuffle).decades;
+                            tauPermuted{a}(w, colStart + shuffle - 1) = permMetrics(shuffle).tau;
+                            alphaPermuted{a}(w, colStart + shuffle - 1) = permMetrics(shuffle).alpha;
+                            paramSDPermuted{a}(w, colStart + shuffle - 1) = permMetrics(shuffle).paramSD;
+                        end
+                    end
+                end
+                dcc{a}(w) = nanmean(dccSub);
+                kappa{a}(w) = nanmean(kappaSub);
+                decades{a}(w) = nanmean(decadesSub);
+                tau{a}(w) = nanmean(tauSub);
+                alpha{a}(w) = nanmean(alphaSub);
+                paramSD{a}(w) = nanmean(paramSDSub);
+            else
+                % Calculate population activity for this window
+                wPopActivity = aDataMat(startIdx:endIdx);
+                avMetrics = compute_av_metrics_from_pop_activity(wPopActivity, config);
+                dcc{a}(w) = avMetrics.dcc;
+                kappa{a}(w) = avMetrics.kappa;
+                decades{a}(w) = avMetrics.decades;
+                tau{a}(w) = avMetrics.tau;
+                alpha{a}(w) = avMetrics.alpha;
+                paramSD{a}(w) = avMetrics.paramSD;
             end
         end
         
         fprintf('Area %s completed in %.1f minutes\n', areas{a}, toc/60);
         
-        % Perform circular permutations if enabled
-        if config.enablePermutations
+        % Perform circular permutations if enabled (non-subsampling path)
+        if config.enablePermutations && ~useSubsamplingArea
             if config.pcaFlag
                 % Use PCA-reconstructed data for permutations
                 [dccPermuted{a}, kappaPermuted{a}, decadesPermuted{a}, ...
@@ -439,16 +508,20 @@ function results = criticality_av_analysis(dataStruct, config)
                     perform_circular_permutations_av(dataStruct, a, neuronIDs, binSize(a), ...
                     slidingWindowSize(a), config, commonCenterTimes, numTimePoints_dcc, timeRange);
             end
-            
+        end
+
+        if config.enablePermutations && ~isempty(dccPermuted{a})
+            shuffleParams = struct('useSubsampling', useSubsamplingArea, ...
+                'nShuffles', config.nShuffles, 'nSubsamples', config.nSubsamples);
+            dccPermutedMean = get_per_window_shuffle_mean_matrix(dccPermuted{a}, shuffleParams);
+            kappaPermutedMean = get_per_window_shuffle_mean_matrix(kappaPermuted{a}, shuffleParams);
+            decadesPermutedMean = get_per_window_shuffle_mean_matrix(decadesPermuted{a}, shuffleParams);
+            tauPermutedMean = get_per_window_shuffle_mean_matrix(tauPermuted{a}, shuffleParams);
+            alphaPermutedMean = get_per_window_shuffle_mean_matrix(alphaPermuted{a}, shuffleParams);
+            paramSDPermutedMean = get_per_window_shuffle_mean_matrix(paramSDPermuted{a}, shuffleParams);
+
             % Normalize metrics by shuffled metric values if requested
-            if config.normalizeMetrics && ~isempty(dccPermuted{a})
-                % Calculate mean shuffled metrics for each window
-                dccPermutedMean = nanmean(dccPermuted{a}, 2);
-                kappaPermutedMean = nanmean(kappaPermuted{a}, 2);
-                decadesPermutedMean = nanmean(decadesPermuted{a}, 2);
-                tauPermutedMean = nanmean(tauPermuted{a}, 2);
-                alphaPermutedMean = nanmean(alphaPermuted{a}, 2);
-                paramSDPermutedMean = nanmean(paramSDPermuted{a}, 2);
+            if config.normalizeMetrics
                 
                 % Normalize: metricNormalized = metric / mean(shuffled_metric)
                 for w = 1:numWindows
@@ -588,6 +661,10 @@ function config = set_config_defaults(config)
     defaults.thresholdFlag = 1;
     defaults.thresholdPct = 1;
     defaults.normalizeMetrics = true;  % Normalize metrics by shuffled metric values
+    defaults.useSubsampling = false;
+    defaults.nSubsamples = 10;
+    defaults.nNeuronsSubsample = 10;
+    defaults.minNeuronsMultiple = 1.0;
     defaults.includeM2356 = false;  % Include combined M23+M56 area (optional)
     defaults.powerLawFitMethod = 'clauset';
     defaults.clausetPlfitPath = '';
@@ -910,6 +987,16 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
     results.params.thresholdFlag = config.thresholdFlag;
     results.params.thresholdPct = config.thresholdPct;
     results.params.normalizeMetrics = config.normalizeMetrics;
+    if isfield(config, 'useSubsampling')
+        results.params.useSubsampling = config.useSubsampling;
+        results.useSubsampling = config.useSubsampling;
+    end
+    if isfield(config, 'nSubsamples')
+        results.params.nSubsamples = config.nSubsamples;
+    end
+    if isfield(config, 'nNeuronsSubsample')
+        results.params.nNeuronsSubsample = config.nNeuronsSubsample;
+    end
     if isfield(config, 'powerLawFitMethod')
         results.params.powerLawFitMethod = config.powerLawFitMethod;
     end
@@ -941,44 +1028,46 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
         paramSDPermutedMean = cell(1, length(areas));
         paramSDPermutedSEM = cell(1, length(areas));
         
+        shuffleParams = struct('useSubsampling', isfield(config, 'useSubsampling') && config.useSubsampling, ...
+            'nShuffles', config.nShuffles, 'nSubsamples', config.nSubsamples);
         for a = 1:length(areas)
             if ~isempty(dccPermuted{a})
-                dccPermutedMean{a} = nanmean(dccPermuted{a}, 2);
+                dccPermutedMean{a} = get_per_window_shuffle_mean_matrix(dccPermuted{a}, shuffleParams);
                 dccPermutedSEM{a} = nanstd(dccPermuted{a}, 0, 2) / sqrt(config.nShuffles);
             else
                 dccPermutedMean{a} = [];
                 dccPermutedSEM{a} = [];
             end
             if ~isempty(kappaPermuted{a})
-                kappaPermutedMean{a} = nanmean(kappaPermuted{a}, 2);
+                kappaPermutedMean{a} = get_per_window_shuffle_mean_matrix(kappaPermuted{a}, shuffleParams);
                 kappaPermutedSEM{a} = nanstd(kappaPermuted{a}, 0, 2) / sqrt(config.nShuffles);
             else
                 kappaPermutedMean{a} = [];
                 kappaPermutedSEM{a} = [];
             end
             if ~isempty(decadesPermuted{a})
-                decadesPermutedMean{a} = nanmean(decadesPermuted{a}, 2);
+                decadesPermutedMean{a} = get_per_window_shuffle_mean_matrix(decadesPermuted{a}, shuffleParams);
                 decadesPermutedSEM{a} = nanstd(decadesPermuted{a}, 0, 2) / sqrt(config.nShuffles);
             else
                 decadesPermutedMean{a} = [];
                 decadesPermutedSEM{a} = [];
             end
             if ~isempty(tauPermuted{a})
-                tauPermutedMean{a} = nanmean(tauPermuted{a}, 2);
+                tauPermutedMean{a} = get_per_window_shuffle_mean_matrix(tauPermuted{a}, shuffleParams);
                 tauPermutedSEM{a} = nanstd(tauPermuted{a}, 0, 2) / sqrt(config.nShuffles);
             else
                 tauPermutedMean{a} = [];
                 tauPermutedSEM{a} = [];
             end
             if ~isempty(alphaPermuted{a})
-                alphaPermutedMean{a} = nanmean(alphaPermuted{a}, 2);
+                alphaPermutedMean{a} = get_per_window_shuffle_mean_matrix(alphaPermuted{a}, shuffleParams);
                 alphaPermutedSEM{a} = nanstd(alphaPermuted{a}, 0, 2) / sqrt(config.nShuffles);
             else
                 alphaPermutedMean{a} = [];
                 alphaPermutedSEM{a} = [];
             end
             if ~isempty(paramSDPermuted{a})
-                paramSDPermutedMean{a} = nanmean(paramSDPermuted{a}, 2);
+                paramSDPermutedMean{a} = get_per_window_shuffle_mean_matrix(paramSDPermuted{a}, shuffleParams);
                 paramSDPermutedSEM{a} = nanstd(paramSDPermuted{a}, 0, 2) / sqrt(config.nShuffles);
             else
                 paramSDPermutedMean{a} = [];

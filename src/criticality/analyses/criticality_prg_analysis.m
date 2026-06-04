@@ -57,6 +57,23 @@ function results = criticality_prg_analysis(dataStruct, config)
     if config.enableSurrogates
         fprintf('Surrogates: %d x %s\n', config.nSurrogates, config.surrogateMethod);
     end
+    if isfield(config, 'useSubsampling') && config.useSubsampling
+        fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+            config.nSubsamples, config.nNeuronsSubsample, config.minNeuronsMultiple);
+    end
+
+    if isfield(config, 'useSubsampling') && config.useSubsampling
+        if ~isfield(config, 'nNeuronsSubsample') || isempty(config.nNeuronsSubsample) || config.nNeuronsSubsample <= 0
+            error('When config.useSubsampling is true, config.nNeuronsSubsample must be a positive scalar.');
+        end
+        if ~isfield(config, 'nSubsamples') || isempty(config.nSubsamples) || config.nSubsamples <= 0
+            error('When config.useSubsampling is true, config.nSubsamples must be a positive scalar.');
+        end
+        if ~isfield(config, 'minNeuronsMultiple') || isempty(config.minNeuronsMultiple)
+            config.minNeuronsMultiple = 1.0;
+        end
+        config.nMinNeurons = round(config.nNeuronsSubsample * config.minNeuronsMultiple);
+    end
 
     if ~isfield(config, 'saveDir') || isempty(config.saveDir)
         config.saveDir = dataStruct.saveDir;
@@ -116,12 +133,33 @@ function results = criticality_prg_analysis(dataStruct, config)
         kappaByCutoff{a} = nan(numWindows, numel(config.cutoffDivisors));
         nCutoffListRef{a} = [];
 
+        useSubsamplingArea = isfield(config, 'useSubsampling') && config.useSubsampling;
+        nSubsamplesArea = 1;
+        if useSubsamplingArea
+            nSubsamplesArea = config.nSubsamples;
+        end
+
         if config.enableSurrogates
-            kappaSurrogate{a} = nan(numWindows, config.nSurrogates);
-            djsSurrogate{a} = nan(numWindows, config.nSurrogates);
+            kappaSurrogate{a} = nan(numWindows, config.nSurrogates * nSubsamplesArea);
+            djsSurrogate{a} = nan(numWindows, config.nSurrogates * nSubsamplesArea);
         else
             kappaSurrogate{a} = [];
             djsSurrogate{a} = [];
+        end
+
+        numNeuronsArea = numel(neuronIds);
+        nNeuronsSubsampleArea = numNeuronsArea;
+        neuronIdxSubsamples = {};
+        if useSubsamplingArea
+            nNeuronsSubsampleArea = min(config.nNeuronsSubsample, numNeuronsArea);
+            neuronIdxSubsamples = cell(1, nSubsamplesArea);
+            for s = 1:nSubsamplesArea
+                if nNeuronsSubsampleArea == numNeuronsArea
+                    neuronIdxSubsamples{s} = 1:numNeuronsArea;
+                else
+                    neuronIdxSubsamples{s} = randperm(numNeuronsArea, nNeuronsSubsampleArea);
+                end
+            end
         end
 
         for w = 1:numWindows
@@ -134,40 +172,59 @@ function results = criticality_prg_analysis(dataStruct, config)
             dataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
                 neuronIds, winRange, config.binSize);
 
-            %% Step 3: PRG coarse-graining + kurtosis / D_JS (PCA or ICG)
-            prgOut = compute_prg_window_metrics(dataMat, config);
-
-            % kappaByCutoff stores the RG "flow" of kappa across cutoffs (one row per window)
-            popCv{a}(w) = prgOut.popCv;
-            if isempty(nCutoffListRef{a})
-                nCutoffListRef{a} = prgOut.nCutoffList;
-                kappaByCutoff{a} = nan(numWindows, numel(prgOut.nCutoffList));
-            end
-
             %% Step 2b: Artefact exclusion via population coefficient of variation ---
-            % Appendix Eq. (A1): CV = sigma/mu of population activity across the window.
-            % Windows with CV > 5 are excluded (likely artefacts at this window length).
-            if prgOut.popCv > config.cvThreshold
+            prgOutFull = compute_prg_window_metrics(dataMat, config);
+            popCv{a}(w) = prgOutFull.popCv;
+            if isempty(nCutoffListRef{a})
+                nCutoffListRef{a} = prgOutFull.nCutoffList;
+                kappaByCutoff{a} = nan(numWindows, numel(prgOutFull.nCutoffList));
+            end
+            if prgOutFull.popCv > config.cvThreshold
                 windowExcluded{a}(w) = true;
                 continue;
             end
 
-            % Primary metrics at finest coarse-graining step (N/finalCutoffDivisor)
-            kappa{a}(w) = prgOut.kappaFinal;
-            djs{a}(w) = prgOut.djsFinal;
-            nCut = min(numel(prgOut.kappaByCutoff), size(kappaByCutoff{a}, 2));
-            kappaByCutoff{a}(w, 1:nCut) = prgOut.kappaByCutoff(1:nCut);
+            if useSubsamplingArea
+                kappaSub = nan(1, nSubsamplesArea);
+                djsSub = nan(1, nSubsamplesArea);
+                kappaByCutoffSub = nan(nSubsamplesArea, size(kappaByCutoff{a}, 2));
+                for s = 1:nSubsamplesArea
+                    dataSub = dataMat(:, neuronIdxSubsamples{s});
+                    prgOut = compute_prg_window_metrics(dataSub, config);
+                    kappaSub(s) = prgOut.kappaFinal;
+                    djsSub(s) = prgOut.djsFinal;
+                    nCut = min(numel(prgOut.kappaByCutoff), size(kappaByCutoff{a}, 2));
+                    kappaByCutoffSub(s, 1:nCut) = prgOut.kappaByCutoff(1:nCut);
 
-            %% Step 4 (optional): Surrogate / null comparison ---
-            % 'isi' (default): shuffle inter-spike intervals per unit (Cambrainha Appendix).
-            % 'circular': circshift each neuron's binned activity independently within the window.
-            if config.enableSurrogates
-                for s = 1:config.nSurrogates
-                    surrMat = build_prg_surrogate_data_mat(dataMat, dataStruct, ...
-                        neuronIds, winRange, config);
-                    surrOut = compute_prg_window_metrics(surrMat, config);
-                    kappaSurrogate{a}(w, s) = surrOut.kappaFinal;
-                    djsSurrogate{a}(w, s) = surrOut.djsFinal;
+                    if config.enableSurrogates
+                        for surrIdx = 1:config.nSurrogates
+                            surrMat = build_prg_surrogate_data_mat(dataSub, dataStruct, ...
+                                neuronIds(neuronIdxSubsamples{s}), winRange, config);
+                            surrOut = compute_prg_window_metrics(surrMat, config);
+                            colIdx = (s - 1) * config.nSurrogates + surrIdx;
+                            kappaSurrogate{a}(w, colIdx) = surrOut.kappaFinal;
+                            djsSurrogate{a}(w, colIdx) = surrOut.djsFinal;
+                        end
+                    end
+                end
+                kappa{a}(w) = nanmean(kappaSub);
+                djs{a}(w) = nanmean(djsSub);
+                kappaByCutoff{a}(w, :) = nanmean(kappaByCutoffSub, 1);
+            else
+                %% Step 3: PRG coarse-graining + kurtosis / D_JS (PCA or ICG)
+                kappa{a}(w) = prgOutFull.kappaFinal;
+                djs{a}(w) = prgOutFull.djsFinal;
+                nCut = min(numel(prgOutFull.kappaByCutoff), size(kappaByCutoff{a}, 2));
+                kappaByCutoff{a}(w, 1:nCut) = prgOutFull.kappaByCutoff(1:nCut);
+
+                if config.enableSurrogates
+                    for s = 1:config.nSurrogates
+                        surrMat = build_prg_surrogate_data_mat(dataMat, dataStruct, ...
+                            neuronIds, winRange, config);
+                        surrOut = compute_prg_window_metrics(surrMat, config);
+                        kappaSurrogate{a}(w, s) = surrOut.kappaFinal;
+                        djsSurrogate{a}(w, s) = surrOut.djsFinal;
+                    end
                 end
             end
         end
@@ -231,6 +288,10 @@ function config = set_prg_config_defaults(config)
     defaults.saveData = true;
     defaults.includeM2356 = false;
     defaults.nMinNeurons = 10;           % Paper used >128 units; lab minimum is configurable
+    defaults.useSubsampling = false;
+    defaults.nSubsamples = 10;
+    defaults.nNeuronsSubsample = 10;
+    defaults.minNeuronsMultiple = 1.0;
     defaults.brainAreas = {};
     defaults.kappaAxisMax = 20;          % Cap kurtosis axis (y time series, x histograms); use Inf for no cap
     defaults.prgMethod = 'pca';        % 'pca' (momentum-space) or 'icg' (real-space ICG, Morales 2023)
@@ -422,6 +483,16 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
     results.params.surrogateMethod = config.surrogateMethod;
     results.params.nSurrogates = config.nSurrogates;
     results.params.nMinNeurons = config.nMinNeurons;
+    if isfield(config, 'useSubsampling')
+        results.params.useSubsampling = config.useSubsampling;
+        results.useSubsampling = config.useSubsampling;
+    end
+    if isfield(config, 'nSubsamples')
+        results.params.nSubsamples = config.nSubsamples;
+    end
+    if isfield(config, 'nNeuronsSubsample')
+        results.params.nNeuronsSubsample = config.nNeuronsSubsample;
+    end
     results.params.windowStartTimes = windowStartTimes;
     results.params.kappaAxisMax = config.kappaAxisMax;
     results.params.prgMethod = config.prgMethod;

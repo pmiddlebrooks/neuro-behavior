@@ -15,6 +15,8 @@
 %   d2Window         - Non-overlapping window length (seconds)
 %   brainArea        - Area to analyze (e.g. 'M56'); '' uses all valid areas
 %   useLog10D2       - If true, plot log10(d2) and log10(shuffled d2)
+%   useSubsampling   - If true, d2 per window = mean across neuron subsamples
+%   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling (run_criticality_ar.m)
 %   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled)
 %   behaviorLabelSets - Cell of structs (.name, .numeratorIDs, .denominatorIDs)
 %                       for d2 vs behavior proportion figure (spontaneous)
@@ -37,6 +39,10 @@ d2Window = 30;  % seconds; non-overlapping windows
 
 brainArea = 'M56';
 useLog10D2 = true;
+useSubsampling = false;
+nSubsamples = 20;
+nNeuronsSubsample = 20;
+minNeuronsMultiple = 1.25;
 plotD2PopActivity = true;
 saveFigure = false;
 
@@ -77,6 +83,10 @@ analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 1000;
 analysisConfig.maxSpikesPerBin = 100;
 analysisConfig.nMinNeurons = 25;
+analysisConfig.useSubsampling = useSubsampling;
+analysisConfig.nSubsamples = nSubsamples;
+analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
+analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 analysisConfig.includeM2356 = false;
 if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
   analysisConfig.includeM2356 = true;
@@ -108,6 +118,12 @@ fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd,
 fprintf('d2 windows: %.1f s; binSize: %.3f s; nShuffles: %d\n', ...
   d2Window, analysisConfig.binSize, analysisConfig.nShuffles);
 fprintf('useLog10D2: %d\n', useLog10D2);
+if useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+    nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
+else
+  fprintf('Subsampling: off\n');
+end
 
 %% Load session and run d2 analysis
 subjectNameForLoad = subjectName;
@@ -323,19 +339,8 @@ for a = 1:numel(results.areas)
     continue;
   end
 
-  shuffledVec = [];
-  if isfield(results, 'd2Permuted') && a <= numel(results.d2Permuted) && ~isempty(results.d2Permuted{a})
-    d2Perm = results.d2Permuted{a};
-    if useLog10D2
-      d2Perm = log10_safe_numeric(d2Perm);
-    end
-    if size(d2Perm, 2) > 1
-      shuffledVec = nanmean(d2Perm, 2);
-    else
-      shuffledVec = d2Perm(:);
-    end
-    shuffledVec = shuffledVec(isfinite(shuffledVec));
-  end
+  shuffledVec = get_per_window_shuffle_mean_d2(results, a, useLog10D2);
+  shuffledVec = shuffledVec(isfinite(shuffledVec));
 
   plotData.areas{end+1} = results.areas{a}; %#ok<AGROW>
   plotData.realD2{end+1} = d2Vec; %#ok<AGROW>
@@ -765,23 +770,9 @@ scatter(ax, x, y, markerSize, ...
 end
 
 function shufVec = get_shuffled_mean_d2_per_window(results, areaIdx, useLog10D2)
-% GET_SHUFFLED_MEAN_D2_PER_WINDOW - Mean shuffled d2 per window
+% GET_SHUFFLED_MEAN_D2_PER_WINDOW - Mean shuffled d2 per window (subsampling-aware)
 
-shufVec = [];
-if ~isfield(results, 'd2Permuted') || areaIdx > numel(results.d2Permuted) ...
-    || isempty(results.d2Permuted{areaIdx})
-  return;
-end
-
-d2Perm = results.d2Permuted{areaIdx};
-if useLog10D2
-  d2Perm = log10_safe_numeric(d2Perm);
-end
-if size(d2Perm, 2) > 1
-  shufVec = nanmean(d2Perm, 2);
-else
-  shufVec = d2Perm(:);
-end
+shufVec = get_per_window_shuffle_mean_d2(results, areaIdx, useLog10D2);
 end
 
 function rVal = pearson_r(x, y)

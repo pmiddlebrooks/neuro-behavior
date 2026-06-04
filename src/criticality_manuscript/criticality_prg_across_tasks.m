@@ -16,11 +16,13 @@
 %   runBatch       - If true, run criticality_prg_analysis per session
 %   plotResults    - If true, create summary figures after batch
 %   prgMethod      - 'pca' (momentum-space) or 'icg' (real-space ICG, Morales 2023)
+%   useSubsampling - If true, kappa/D_JS per window = mean across neuron subsamples
+%   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
 %
 % Goal:
 %   Compare PRG kurtosis (kappa at N/finalCutoffDivisor) and Jensen-Shannon distance
-%   (D_JS vs Gaussian) across session types. Per session: mean and SEM across valid
-%   windows; surrogate: mean across windows of per-window surrogate means, with SEM.
+%   (D_JS vs Gaussian) across session types, including values normalized by per-window
+%   surrogate means. Per session: mean and SEM across valid windows.
 
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
@@ -36,6 +38,11 @@ areasToPlot = {};
 runBatch = true;
 plotResults = true;
 
+useSubsampling = false;
+nSubsamples = 20;
+nNeuronsSubsample = 20;
+minNeuronsMultiple = 1.25;
+
 % PRG settings (aligned with run_criticality_prg.m)
 analysisConfig = struct();
 analysisConfig.prgMethod = 'pca';  % 'pca' or 'icg'
@@ -43,14 +50,18 @@ analysisConfig.blockWindowSize = prgWindow;
 analysisConfig.binSize = 0.2;
 analysisConfig.cvThreshold = 5;
 analysisConfig.cutoffDivisors = [1, 2, 4, 8, 16];
-analysisConfig.finalCutoffDivisor = 8;
+analysisConfig.finalCutoffDivisor = 16;
 analysisConfig.kappaAxisMax = 20;
 analysisConfig.enableSurrogates = true;
 analysisConfig.nSurrogates = 1;
 analysisConfig.surrogateMethod = 'isi';
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
-analysisConfig.nMinNeurons = 25;
+analysisConfig.nMinNeurons = 32;
+analysisConfig.useSubsampling = useSubsampling;
+analysisConfig.nSubsamples = nSubsamples;
+analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
+analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 analysisConfig.includeM2356 = false;
 if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
   analysisConfig.includeM2356 = true;
@@ -90,6 +101,12 @@ fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd,
 fprintf('PRG blocks: %.1f s, non-overlapping\n', prgWindow);
 fprintf('Kappa at N/%d; bin size: %.3f s; surrogates: %s\n', ...
   analysisConfig.finalCutoffDivisor, analysisConfig.binSize, analysisConfig.surrogateMethod);
+if useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+    nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
+else
+  fprintf('Subsampling: off\n');
+end
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 if ~isempty(brainArea)
   fprintf('Brain area: %s (single-area analysis)\n', brainArea);
@@ -339,7 +356,9 @@ plotData.byType = struct();
 plotData.finalCutoffDivisor = finalCutoffDivisor;
 
 metricFields = {'kappaMean', 'kappaSem', 'kappaShuffleMean', 'kappaShuffleSem', ...
-  'djsMean', 'djsSem', 'djsShuffleMean', 'djsShuffleSem'};
+  'kappaNormMean', 'kappaNormSem', ...
+  'djsMean', 'djsSem', 'djsShuffleMean', 'djsShuffleSem', ...
+  'djsNormMean', 'djsNormSem'};
 
 for s = 1:length(batchResults)
   if ~batchResults(s).success || isempty(batchResults(s).results)
@@ -394,13 +413,17 @@ function summary = summarize_session_kappa_windows(results, areaIdx)
 %
 % Returns:
 %   summary - kappaMean, kappaSem, kappaShuffleMean, kappaShuffleSem,
-%             djsMean, djsSem, djsShuffleMean, djsShuffleSem
+%             kappaNormMean, kappaNormSem,
+%             djsMean, djsSem, djsShuffleMean, djsShuffleSem,
+%             djsNormMean, djsNormSem
 %
-%   *ShuffleSem - SEM across windows of per-window surrogate means
+%   Normalized metrics: per-window value / mean(surrogate for that window), then
+%   mean and SEM across valid windows. *ShuffleSem - SEM across windows of per-window surrogate means
 
 summary = struct('kappaMean', nan, 'kappaSem', nan, 'kappaShuffleMean', nan, ...
-  'kappaShuffleSem', nan, 'djsMean', nan, 'djsSem', nan, ...
-  'djsShuffleMean', nan, 'djsShuffleSem', nan);
+  'kappaShuffleSem', nan, 'kappaNormMean', nan, 'kappaNormSem', nan, ...
+  'djsMean', nan, 'djsSem', nan, 'djsShuffleMean', nan, 'djsShuffleSem', nan, ...
+  'djsNormMean', nan, 'djsNormSem', nan);
 
 if areaIdx > length(results.kappa) || isempty(results.kappa{areaIdx})
   return;
@@ -449,47 +472,91 @@ if isfield(results, 'kappaSurrogate') && areaIdx <= length(results.kappaSurrogat
     && ~isempty(results.kappaSurrogate{areaIdx})
   surrMat = results.kappaSurrogate{areaIdx};
   if size(surrMat, 1) == nWin
-    surrMat = surrMat(validMask, :);
-  end
-  if size(surrMat, 2) > 1
-    perWindowShuffleMean = nanmean(surrMat, 2);
-  else
-    perWindowShuffleMean = surrMat(:);
-  end
-  perWindowShuffleMean = perWindowShuffleMean(isfinite(perWindowShuffleMean));
-  if ~isempty(perWindowShuffleMean)
-    summary.kappaShuffleMean = mean(perWindowShuffleMean);
-    nSh = numel(perWindowShuffleMean);
-    if nSh > 1
-      summary.kappaShuffleSem = std(perWindowShuffleMean) / sqrt(nSh);
-    else
-      summary.kappaShuffleSem = 0;
+    perWindowShuffleMean = get_per_window_shuffle_mean_matrix(surrMat, results);
+
+    normVec = normalize_prg_by_surrogate(kappaVec, perWindowShuffleMean);
+    normValid = normVec(validMask);
+    normValid = normValid(isfinite(normValid));
+    if ~isempty(normValid)
+      summary.kappaNormMean = mean(normValid);
+      nNorm = numel(normValid);
+      if nNorm > 1
+        summary.kappaNormSem = std(normValid) / sqrt(nNorm);
+      else
+        summary.kappaNormSem = 0;
+      end
+    end
+
+    perWindowShuffleMean = perWindowShuffleMean(validMask);
+    shuffleValid = perWindowShuffleMean(isfinite(perWindowShuffleMean));
+    if ~isempty(shuffleValid)
+      summary.kappaShuffleMean = mean(shuffleValid);
+      nSh = numel(shuffleValid);
+      if nSh > 1
+        summary.kappaShuffleSem = std(shuffleValid) / sqrt(nSh);
+      else
+        summary.kappaShuffleSem = 0;
+      end
     end
   end
 end
 
 if isfield(results, 'djsSurrogate') && areaIdx <= length(results.djsSurrogate) ...
-    && ~isempty(results.djsSurrogate{areaIdx})
+    && ~isempty(results.djsSurrogate{areaIdx}) ...
+    && isfield(results, 'djs') && areaIdx <= length(results.djs) ...
+    && ~isempty(results.djs{areaIdx})
+  djsVec = results.djs{areaIdx}(:);
   djsSurrMat = results.djsSurrogate{areaIdx};
-  if size(djsSurrMat, 1) == nWin
-    djsSurrMat = djsSurrMat(validMask, :);
-  end
-  if size(djsSurrMat, 2) > 1
-    perWindowDjsShuffleMean = nanmean(djsSurrMat, 2);
-  else
-    perWindowDjsShuffleMean = djsSurrMat(:);
-  end
-  perWindowDjsShuffleMean = perWindowDjsShuffleMean(isfinite(perWindowDjsShuffleMean));
-  if ~isempty(perWindowDjsShuffleMean)
-    summary.djsShuffleMean = mean(perWindowDjsShuffleMean);
-    nDjsSh = numel(perWindowDjsShuffleMean);
-    if nDjsSh > 1
-      summary.djsShuffleSem = std(perWindowDjsShuffleMean) / sqrt(nDjsSh);
-    else
-      summary.djsShuffleSem = 0;
+  if numel(djsVec) == nWin && size(djsSurrMat, 1) == nWin
+    perWindowDjsShuffleMean = get_per_window_shuffle_mean_matrix(djsSurrMat, results);
+
+    normVec = normalize_prg_by_surrogate(djsVec, perWindowDjsShuffleMean);
+    normValid = normVec(validMask);
+    normValid = normValid(isfinite(normValid));
+    if ~isempty(normValid)
+      summary.djsNormMean = mean(normValid);
+      nNorm = numel(normValid);
+      if nNorm > 1
+        summary.djsNormSem = std(normValid) / sqrt(nNorm);
+      else
+        summary.djsNormSem = 0;
+      end
+    end
+
+    perWindowDjsShuffleMean = perWindowDjsShuffleMean(validMask);
+    shuffleValid = perWindowDjsShuffleMean(isfinite(perWindowDjsShuffleMean));
+    if ~isempty(shuffleValid)
+      summary.djsShuffleMean = mean(shuffleValid);
+      nDjsSh = numel(shuffleValid);
+      if nDjsSh > 1
+        summary.djsShuffleSem = std(shuffleValid) / sqrt(nDjsSh);
+      else
+        summary.djsShuffleSem = 0;
+      end
     end
   end
 end
+end
+
+function normVec = normalize_prg_by_surrogate(dataVec, surrogateMeanVec)
+% NORMALIZE_PRG_BY_SURROGATE - Per-window ratio to mean surrogate value
+%
+% Variables:
+%   dataVec           - Metric per window (column vector)
+%   surrogateMeanVec  - Mean surrogate metric per window
+%
+% Goal:
+%   Match criticality_av_analysis normalization: metric / mean(surrogate).
+
+dataVec = dataVec(:);
+surrogateMeanVec = surrogateMeanVec(:);
+normVec = nan(size(dataVec));
+if numel(dataVec) ~= numel(surrogateMeanVec)
+  return;
+end
+
+validDenom = isfinite(dataVec) & isfinite(surrogateMeanVec) & surrogateMeanVec > 0;
+normVec(validDenom) = dataVec(validDenom) ./ surrogateMeanVec(validDenom);
 end
 
 function plotData = extend_prg_plot_data_areas(plotData, sessionTypes, metricFields, newAreaIdx)
@@ -582,6 +649,36 @@ for a = 1:length(areasToPlot)
   exportgraphics(figKappa, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
 
+  if area_has_prg_metric_plot_data(plotData, sessionTypes, areaIdx, 'kappaNormMean')
+    kappaNormYLabel = sprintf('\\kappa / surrogate (N/%d, mean \\pm SEM across windows)', finalCutoffDivisor);
+    kappaNormTitleWord = sprintf('\\kappa / surrogate (N/%d)', finalCutoffDivisor);
+
+    figKappaNorm = figure(6200 + a);
+    clf(figKappaNorm);
+    position_figure_full_monitor(figKappaNorm);
+    axKappaNorm = axes(figKappaNorm);
+    plot_prg_normalized_sessions(axKappaNorm, plotData, sessionTypes, areaIdx, ...
+      typeColors, 'kappaNormMean', 'kappaNormSem', 'session \kappa / surrogate');
+    ylabel(axKappaNorm, kappaNormYLabel);
+    title(axKappaNorm, sprintf('%s — %s', areaName, kappaNormTitleWord));
+    yline(axKappaNorm, 1, '--', 'Color', [0.4, 0.4, 0.4], 'LineWidth', 1, 'HandleVisibility', 'off');
+
+    if ~isempty(brainArea)
+      kappaNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
+        prgMethod, kappaNormTitleWord, brainArea, collectStart, collectEnd, prgWindow);
+    else
+      kappaNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
+        prgMethod, kappaNormTitleWord, areaName, collectStart, collectEnd, prgWindow);
+    end
+    sgtitle(figKappaNorm, kappaNormTitleStr, 'FontWeight', 'bold');
+
+    plotBaseNorm = make_prg_plot_basename('criticality_prg_kappa_norm_across_tasks', areaName, brainArea, ...
+      prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, prgMethod);
+    exportgraphics(figKappaNorm, fullfile(saveDir, [plotBaseNorm, '.png']), 'Resolution', 300);
+    exportgraphics(figKappaNorm, fullfile(saveDir, [plotBaseNorm, '.eps']), 'ContentType', 'vector');
+    fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseNorm));
+  end
+
   if area_has_prg_djs_plot_data(plotData, sessionTypes, areaIdx)
     figDjs = figure(6100 + a);
     clf(figDjs);
@@ -605,6 +702,36 @@ for a = 1:length(areasToPlot)
     exportgraphics(figDjs, fullfile(saveDir, [plotBaseDjs, '.png']), 'Resolution', 300);
     exportgraphics(figDjs, fullfile(saveDir, [plotBaseDjs, '.eps']), 'ContentType', 'vector');
     fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseDjs));
+  end
+
+  if area_has_prg_metric_plot_data(plotData, sessionTypes, areaIdx, 'djsNormMean')
+    djsNormYLabel = sprintf('D_{JS} / surrogate (N/%d vs Gaussian, mean \\pm SEM across windows)', finalCutoffDivisor);
+    djsNormTitleWord = sprintf('D_{JS} / surrogate (N/%d)', finalCutoffDivisor);
+
+    figDjsNorm = figure(6300 + a);
+    clf(figDjsNorm);
+    position_figure_full_monitor(figDjsNorm);
+    axDjsNorm = axes(figDjsNorm);
+    plot_prg_normalized_sessions(axDjsNorm, plotData, sessionTypes, areaIdx, ...
+      typeColors, 'djsNormMean', 'djsNormSem', 'session D_{JS} / surrogate');
+    ylabel(axDjsNorm, djsNormYLabel);
+    title(axDjsNorm, sprintf('%s — %s vs Gaussian', areaName, djsNormTitleWord));
+    yline(axDjsNorm, 1, '--', 'Color', [0.4, 0.4, 0.4], 'LineWidth', 1, 'HandleVisibility', 'off');
+
+    if ~isempty(brainArea)
+      djsNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
+        prgMethod, djsNormTitleWord, brainArea, collectStart, collectEnd, prgWindow);
+    else
+      djsNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
+        prgMethod, djsNormTitleWord, areaName, collectStart, collectEnd, prgWindow);
+    end
+    sgtitle(figDjsNorm, djsNormTitleStr, 'FontWeight', 'bold');
+
+    plotBaseDjsNorm = make_prg_plot_basename('criticality_prg_djs_norm_across_tasks', areaName, brainArea, ...
+      prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, prgMethod);
+    exportgraphics(figDjsNorm, fullfile(saveDir, [plotBaseDjsNorm, '.png']), 'Resolution', 300);
+    exportgraphics(figDjsNorm, fullfile(saveDir, [plotBaseDjsNorm, '.eps']), 'ContentType', 'vector');
+    fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseDjsNorm));
   end
 end
 
@@ -683,6 +810,72 @@ end
 grid(ax, 'on');
 if legendShown
   legend(ax, {'session \kappa', 'surrogate mean \pm SEM (across windows)'}, 'Location', 'best');
+end
+hold(ax, 'off');
+end
+
+function plot_prg_normalized_sessions(ax, plotData, sessionTypes, areaIdx, typeColors, meanField, semField, legendLabel)
+% PLOT_PRG_NORMALIZED_SESSIONS - Session mean normalized metric with SEM by session type
+%
+% Variables:
+%   meanField, semField - Fields in plotData.byType (e.g. kappaNormMean, kappaNormSem)
+%   legendLabel         - Display name for errorbar series
+
+hold(ax, 'on');
+xCursor = 0;
+xticksCenters = [];
+xtickLabels = {};
+legendShown = false;
+
+for t = 1:length(sessionTypes)
+  sessionType = sessionTypes{t};
+  typeKey = matlab.lang.makeValidName(sessionType);
+  if ~isfield(plotData.byType, typeKey)
+    continue;
+  end
+  typeData = plotData.byType.(typeKey);
+  if ~isfield(typeData, meanField) || areaIdx > length(typeData.(meanField))
+    continue;
+  end
+
+  metricMeans = typeData.(meanField){areaIdx};
+  metricSems = typeData.(semField){areaIdx};
+  metricMeans = metricMeans(:)';
+  metricSems = metricSems(:)';
+  if numel(metricSems) ~= numel(metricMeans)
+    metricSems = nan(size(metricMeans));
+  end
+  numBars = numel(metricMeans);
+  if numBars == 0
+    continue;
+  end
+
+  xPos = xCursor + (1:numBars);
+  errorbar(ax, xPos, metricMeans, metricSems, 'o', 'Color', typeColors(t, :), ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 12, 'LineWidth', 1.2, ...
+    'CapSize', 8, 'DisplayName', legendLabel);
+
+  groupCenter = mean(xPos);
+  xticksCenters(end+1) = groupCenter; %#ok<AGROW>
+  xtickLabels{end+1} = sessionType; %#ok<AGROW>
+
+  validMeans = metricMeans(isfinite(metricMeans));
+  if ~isempty(validMeans)
+    yline(ax, mean(validMeans), '--', 'Color', typeColors(t, :), 'LineWidth', 1.5, ...
+      'HandleVisibility', 'off');
+  end
+
+  xCursor = xPos(end) + 1.5;
+  legendShown = true;
+end
+
+if ~isempty(xticksCenters)
+  xticks(ax, xticksCenters);
+  xticklabels(ax, xtickLabels);
+end
+grid(ax, 'on');
+if legendShown
+  legend(ax, legendLabel, 'Location', 'best');
 end
 hold(ax, 'off');
 end
@@ -801,8 +994,8 @@ for t = 1:length(sessionTypes)
 end
 end
 
-function hasData = area_has_prg_plot_data(plotData, sessionTypes, areaIdx)
-% AREA_HAS_PRG_PLOT_DATA - True if any session type has kappa values for this area
+function hasData = area_has_prg_metric_plot_data(plotData, sessionTypes, areaIdx, metricField)
+% AREA_HAS_PRG_METRIC_PLOT_DATA - True if any session type has values for metricField
 
 hasData = false;
 for t = 1:length(sessionTypes)
@@ -811,12 +1004,18 @@ for t = 1:length(sessionTypes)
     continue;
   end
   typeData = plotData.byType.(typeKey);
-  if isfield(typeData, 'kappaMean') && areaIdx <= length(typeData.kappaMean) ...
-      && ~isempty(typeData.kappaMean{areaIdx})
+  if isfield(typeData, metricField) && areaIdx <= length(typeData.(metricField)) ...
+      && ~isempty(typeData.(metricField){areaIdx})
     hasData = true;
     return;
   end
 end
+end
+
+function hasData = area_has_prg_plot_data(plotData, sessionTypes, areaIdx)
+% AREA_HAS_PRG_PLOT_DATA - True if any session type has kappa values for this area
+
+hasData = area_has_prg_metric_plot_data(plotData, sessionTypes, areaIdx, 'kappaMean');
 end
 
 function position_figure_full_monitor(fig)

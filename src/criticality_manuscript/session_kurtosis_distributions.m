@@ -16,6 +16,8 @@
 %   brainArea          - Area to analyze (e.g. 'M56'); '' uses all valid areas
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
 %   prgMethod          - 'pca' (momentum-space) or 'icg' (real-space ICG)
+%   useSubsampling     - If true, kappa/D_JS per window = mean across neuron subsamples
+%   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
 %
 % Goal:
 %   Visualize real vs surrogate PRG kurtosis distributions for one session,
@@ -34,6 +36,11 @@ prgWindow = 30;  % seconds; non-overlapping blocks
 
 brainArea = 'M56';
 saveFigure = false;
+
+useSubsampling = false;
+nSubsamples = 20;
+nNeuronsSubsample = 20;
+minNeuronsMultiple = 1.25;
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
@@ -58,6 +65,10 @@ analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.plotTimeSeries = false;  % distribution figure only (criticality_prg_plot)
 analysisConfig.nMinNeurons = 20;
+analysisConfig.useSubsampling = useSubsampling;
+analysisConfig.nSubsamples = nSubsamples;
+analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
+analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 analysisConfig.includeM2356 = false;
 if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
   analysisConfig.includeM2356 = true;
@@ -89,6 +100,9 @@ fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, (collectEnd - collectStart) / 60);
 fprintf('PRG blocks: %.1f s; kappa at N/%d; surrogates: %s\n', ...
   prgWindow, analysisConfig.finalCutoffDivisor, analysisConfig.surrogateMethod);
+if useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons\n', nSubsamples, nNeuronsSubsample);
+end
 
 %% Load session and run PRG analysis
 subjectNameForLoad = subjectName;

@@ -18,6 +18,8 @@
 %   avalancheDetectionMode - 'fixedBinMedian' or 'meanIsiZero' (see below)
 %   clausetPlfitPath     - Path to Clauset toolbox MATLAB Code folder
 %   plfit2023Path        - Path to folder containing plfit2023.m
+%   useSubsampling       - If true, metrics = mean across neuron subsamples per window
+%   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
 %
 %   avalancheDetectionMode:
 %     'fixedBinMedian' - config.binSize (s) + per-window median cutoff (default)
@@ -48,6 +50,12 @@ gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 % Avalanche binning / cutoff: 'fixedBinMedian' or 'meanIsiZero'
 avalancheDetectionMode = 'fixedBinMedian';
 
+% Neural subsampling (matches run_criticality_ar.m)
+useSubsampling = false;
+nSubsamples = 20;
+nNeuronsSubsample = 20;
+minNeuronsMultiple = 1.25;
+
 % Avalanche analysis settings (single full collect window per session)
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = windowDurationSec;
@@ -71,6 +79,10 @@ analysisConfig.saveData = false;
 analysisConfig.thresholdFlag = 1;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = 25;
+analysisConfig.useSubsampling = useSubsampling;
+analysisConfig.nSubsamples = nSubsamples;
+analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
+analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 analysisConfig.normalizeMetrics = true;
 analysisConfig.powerLawFitMethod = powerLawFitMethod;
 analysisConfig.gofThreshold = gofThreshold;
@@ -115,6 +127,12 @@ analysisConfig.plfit2023Path = plfit2023Path;
 fprintf('\n=== Criticality Avalanche Across Task Types ===\n');
 fprintf('Power-law fit method: %s\n', powerLawFitMethod);
 fprintf('Avalanche detection mode: %s\n', avalancheDetectionMode);
+if useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+    nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
+else
+  fprintf('Subsampling: off\n');
+end
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 if ~isempty(brainArea)

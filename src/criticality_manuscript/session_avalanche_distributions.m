@@ -20,6 +20,8 @@
 %   plfit2023Path      - Path to folder containing plfit2023.m
 %   runClausetPlpva    - If true and method is 'clauset', run plpva (slow)
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
+%   useSubsampling     - If true, pool avalanches from neuron subsamples in the window
+%   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
 %
 % Goal:
 %   Visualize avalanche size and duration distributions for one session
@@ -48,6 +50,11 @@ gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 % 'meanIsiZero': mean population ISI bin size + zero cutoff
 avalancheDetectionMode = 'fixedBinMedian';
 
+useSubsampling = false;
+nSubsamples = 20;
+nNeuronsSubsample = 20;
+minNeuronsMultiple = 1.25;
+
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
 opts.collectStart = collectStart;
@@ -68,6 +75,10 @@ end
 analysisConfig.thresholdFlag = 1;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = 20;
+analysisConfig.useSubsampling = useSubsampling;
+analysisConfig.nSubsamples = nSubsamples;
+analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
+analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 analysisConfig.pcaFlag = 0;
 analysisConfig.gofThreshold = gofThreshold;
 analysisConfig.powerLawFitMethod = powerLawFitMethod;
@@ -104,6 +115,9 @@ analysisConfig.plfit2023Path = plfit2023Path;
 fprintf('\n=== Session Avalanche Distributions ===\n');
 fprintf('Power-law fit method: %s\n', powerLawFitMethod);
 fprintf('Avalanche detection mode: %s\n', avalancheDetectionMode);
+if useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons\n', nSubsamples, nNeuronsSubsample);
+end
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
 
@@ -294,15 +308,44 @@ binSize = binSizeVec(areaIndex);
 
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
   neuronIds, timeRange, binSize);
-wPopActivity = sum(aDataMat, 2);
-wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
 
-zeroBins = find(wPopActivity == 0);
-if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
-  return;
+useSubsampling = isfield(analysisConfig, 'useSubsampling') && analysisConfig.useSubsampling;
+sizes = [];
+durations = [];
+if useSubsampling
+  numNeuronsArea = size(aDataMat, 2);
+  nSubsamplesArea = analysisConfig.nSubsamples;
+  nNeuronsSubsampleArea = min(analysisConfig.nNeuronsSubsample, numNeuronsArea);
+  for s = 1:nSubsamplesArea
+    if nNeuronsSubsampleArea == numNeuronsArea
+      colIdx = 1:numNeuronsArea;
+    else
+      colIdx = randperm(numNeuronsArea, nNeuronsSubsampleArea);
+    end
+    wPopActivity = sum(aDataMat(:, colIdx), 2);
+    avMetrics = compute_av_metrics_from_pop_activity(wPopActivity, analysisConfig);
+    if ~isfinite(avMetrics.kappa)
+      continue;
+    end
+    wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
+    zeroBins = find(wPopActivity == 0);
+    if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
+      continue;
+    end
+    [sizesSub, dursSub] = getAvalanches(wPopActivity', 0.5, 1);
+    sizes = [sizes; sizesSub(:)]; %#ok<AGROW>
+    durations = [durations; dursSub(:)]; %#ok<AGROW>
+  end
+else
+  wPopActivity = sum(aDataMat, 2);
+  wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
+  zeroBins = find(wPopActivity == 0);
+  if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
+    return;
+  end
+  [sizes, durations] = getAvalanches(wPopActivity', 0.5, 1);
 end
 
-[sizes, durations] = getAvalanches(wPopActivity', 0.5, 1);
 sizes = sizes(:);
 durations = durations(:);
 if isempty(sizes) || isempty(durations)
