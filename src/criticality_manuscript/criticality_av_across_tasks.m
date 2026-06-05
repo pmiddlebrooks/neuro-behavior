@@ -38,13 +38,13 @@ collectStart = 0;              % seconds
 collectEnd = 45 * 60;           % seconds (40 minutes)
 windowDurationSec = collectEnd - collectStart;
 
-brainArea = 'M56';             % one area per run; '' = analyze/plot all areas
+brainArea = 'DS';             % one area per run; '' = analyze/plot all areas
 areasToPlot = {};              % optional override, e.g. {'M23'}; {} -> brainArea if set
 runBatch = true;
 plotResults = true;
 
 % Power-law fitting: 'clauset', 'plfit2023', or 'hybrid' (plfit2023 xmax + Clauset plfit)
-powerLawFitMethod = 'clauset';
+powerLawFitMethod = 'hybrid';
 gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 
 % Avalanche binning / cutoff: 'fixedBinMedian' or 'meanIsiZero'
@@ -68,12 +68,12 @@ else
   analysisConfig.binSize = 0.05;   % seconds; same bin size for all areas
 end
 analysisConfig.analyzeDcc = true;
-analysisConfig.analyzeKappa = true;
+analysisConfig.analyzeKappa = false;
 analysisConfig.pcaFlag = 0;
 analysisConfig.pcaFirstFlag = 1;
 analysisConfig.nDim = 5;
 analysisConfig.enablePermutations = true;
-analysisConfig.nShuffles = 25;
+analysisConfig.nShuffles = 5;
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.thresholdFlag = 1;
@@ -523,7 +523,7 @@ for a = 1:numAreas
     continue;
   end
 
-  fig = figure(8000 + a);
+  fig = figure(7000 + a);
   clf(fig);
   position_figure_full_monitor(fig);
 
