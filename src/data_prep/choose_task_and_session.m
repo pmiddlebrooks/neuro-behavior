@@ -76,7 +76,7 @@ sessionName =  'ey9166_2026_04_03';
 % sessionName =  'ey9166_2026_04_07';
 % sessionName =  'ey9166_2026_04_09';
 % 
-% subjectName = 'ey9387';
+subjectName = 'ey9387';
 % sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
 % sessionName =  'ey9387_2026_05_21';
@@ -86,7 +86,7 @@ sessionName =  'ey9166_2026_04_03';
 % sessionName =  'ey9387_2026_05_27';
 % sessionName =  'ey9387_2026_05_28';
 % sessionName =  'ey9387_2026_06_01';
-% sessionName =  'ey9387_2026_06_02';
+sessionName =  'ey9387_2026_06_02';
 % sessionName =  'ey9387_2026_06_05';
 
 %% =============================    Reach Data Loading    =============================
@@ -104,8 +104,8 @@ sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh';  % GOOD enough (only 4 m23 t
 sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh';  % GOOD
 % sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh';   % BAD (max is m56 with 19 neurons)
 % sessionName =  'Y15_27-Aug-2025 14_02_21_NeuroBeh';  % GOOD
-% % sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh';  % GOOD
-% sessionName =  'Y17_20o-Aug-2025 17_34_48_NeuroBeh';  % GOOD (but only 23 M56)
+% sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh';  % GOOD
+% sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh';  % GOOD (but only 23 M56)
 % sessionName =  'test/reach_test';
 
 

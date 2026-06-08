@@ -23,8 +23,7 @@ function logTable = interval_session_performance(subjectName, sessionName, sessi
     end
     minLeaveSec = 0.1;         % sec; MIN_LEAVE_TIME in Arduino sketch
     correctTimeMaxSec = 20;    % upper bound for correct poke-time histogram (sec)
-    zoomHalfWidthSec = 3;      % half-width of zoomed trial-wise panel (sec)
-    movAvgWinSec = 60;         % moving-average window for rewards/min (sec)
+    movAvgWinSec = 60;         % moving-average window for rewards/min and trials/min (sec)
     rateBinSec = 1;            % time bin width for reward-rate estimation (sec)
     accuracyBeforeSec = 3;     % sec before sessionInterval for narrowed accuracy window
     accuracyAfterSec = 3;      % sec after sessionInterval for narrowed accuracy window
@@ -83,7 +82,7 @@ function logTable = interval_session_performance(subjectName, sessionName, sessi
         sessionInterval, nRewardAttempt, nRewardAttemptCorrect, nRewardAttemptError);
 
     plot_interval_session_performance(logTable, trials, subjectName, sessionName, ...
-        sessionInterval, correctTimeMaxSec, zoomHalfWidthSec, movAvgWinSec, rateBinSec);
+        sessionInterval, correctTimeMaxSec, movAvgWinSec, rateBinSec, accuracyBeforeSec);
     plot_interval_session_part_histograms(trials, subjectName, sessionName, sessionInterval, ...
         correctTimeMaxSec, nParts);
 end
@@ -221,7 +220,7 @@ function trials = extract_interval_trials(logTable, minLeaveSec)
 end
 
 function fig = plot_interval_session_performance(logTable, trials, subjectName, sessionName, ...
-        sessionInterval, correctTimeMaxSec, zoomHalfWidthSec, movAvgWinSec, rateBinSec)
+        sessionInterval, correctTimeMaxSec, movAvgWinSec, rateBinSec, accuracyBeforeSec)
 % PLOT_INTERVAL_SESSION_PERFORMANCE - Build session performance figure
 %
 % Variables:
@@ -229,11 +228,11 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
 %   subjectName, sessionName - Session identifiers for title
 %   sessionInterval - Target interval (sec); vertical reference line
 %   correctTimeMaxSec - Upper x-limit for correct-time histogram
-%   zoomHalfWidthSec - Half-width of zoomed trial-wise panel
-%   movAvgWinSec - Moving-average window for reward rate (sec)
-%   rateBinSec - Bin width for reward-rate time series (sec)
+%   movAvgWinSec - Moving-average window for rate plots (sec)
+%   rateBinSec - Bin width for session time-series (sec)
+%   accuracyBeforeSec - Exclude errors with poke time earlier than interval minus this (sec)
 %
-% Goal: Four-panel figure of reward rate, trial outcomes, zoom, and combined distribution
+% Goal: Four-panel figure of reward rate, trial completion rate, trial outcomes, and distribution
 
     rewardTimesSec = logTable.timestampMs(logTable.event == "REWARD") / 1000;
     sessionEndSec = max(logTable.timestampMs) / 1000;
@@ -247,6 +246,14 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     smoothWinBins = max(1, round(movAvgWinSec / rateBinSec));
     rewardsPerMinSmooth = movmean(rewardsPerMin, smoothWinBins);
 
+    accuracyLowSec = sessionInterval - accuracyBeforeSec;
+    quickErrorMask = trials.type == "error" & trials.pokeTimeSec < accuracyLowSec;
+    completionMask = ~quickErrorMask;
+    completionTimesSec = trials.outcomeTimeSec(completionMask);
+    trialCounts = histcounts(completionTimesSec, binEdges);
+    trialsPerMin = trialCounts * (60 / rateBinSec);
+    trialsPerMinSmooth = movmean(trialsPerMin, smoothWinBins);
+
     plotErrorMinSec = 1;   % exclude fast errors from trial and histogram plots
     errorMask = trials.type == "error";
     correctMask = trials.type == "correct";
@@ -256,7 +263,7 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     trialNumbers = (1:height(trials))';
 
     fig = figure('Name', sprintf('%s %s interval performance', subjectName, sessionName), ...
-        'Position', [80, 80, 1100, 950]);
+        'Units', 'pixels');
     layout = tiledlayout(fig, 4, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
 
     axReward = nexttile(layout);
@@ -266,6 +273,15 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     title(axReward, sprintf('%s | %s', subjectName, sessionName), 'interpreter', 'none');
     grid(axReward, 'on');
     xlim(axReward, [0, sessionEndSec]);
+
+    axCompletion = nexttile(layout);
+    plot(axCompletion, timeBinsSec, trialsPerMinSmooth, 'k-', 'LineWidth', 1.2);
+    xlabel(axCompletion, 'Session time (s)');
+    ylabel(axCompletion, 'Trials/min (moving avg)');
+    title(axCompletion, sprintf('Trial completion (excludes errors < %.1f s; keeps late corrects)', ...
+        accuracyLowSec));
+    grid(axCompletion, 'on');
+    xlim(axCompletion, [0, sessionEndSec]);
 
     axTrials = nexttile(layout);
     hold(axTrials, 'on');
@@ -284,23 +300,6 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
     grid(axTrials, 'on');
     hold(axTrials, 'off');
 
-    axZoom = nexttile(layout);
-    hold(axZoom, 'on');
-    if any(errorPlotMask)
-        plot(axZoom, errorTimesSec, trialNumbers(errorPlotMask), 'r.', 'MarkerSize', 15);
-    end
-    if any(correctMask)
-        plot(axZoom, correctTimesSec, trialNumbers(correctMask), '.', ...
-            'Color', [0, 0.7, 0], 'MarkerSize', 15);
-    end
-    xline(axZoom, sessionInterval, 'k--', 'LineWidth', 1.2);
-    xlabel(axZoom, 'Poke time since leave (s)');
-    ylabel(axZoom, 'Trial');
-    xlim(axZoom, [sessionInterval - zoomHalfWidthSec, sessionInterval + zoomHalfWidthSec]);
-    ylim(axZoom, [0.5, max(height(trials) + 0.5, 1.5)]);
-    grid(axZoom, 'on');
-    hold(axZoom, 'off');
-
     distBinWidthSec = 0.2;
     axHist = nexttile(layout);
     histYMax = plot_poke_time_histogram_ax(axHist, errorTimesSec, correctTimesSec, ...
@@ -313,6 +312,7 @@ function fig = plot_interval_session_performance(logTable, trials, subjectName, 
 
     legend(axTrials, {'Error', 'Correct', sprintf('%g s interval', sessionInterval)}, ...
         'Location', 'best');
+    fit_figure_on_screen(fig, 1100, 950);
 end
 
 function fig = plot_interval_session_part_histograms(trials, subjectName, sessionName, ...
@@ -341,7 +341,7 @@ function fig = plot_interval_session_part_histograms(trials, subjectName, sessio
     partEdgesSec = linspace(0, sessionEndSec, nParts + 1);
 
     fig = figure('Name', sprintf('%s %s interval by part', subjectName, sessionName), ...
-        'Position', [120, 120, 700, 280 * nParts]);
+        'Units', 'pixels');
     layout = tiledlayout(fig, nParts, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
     title(layout, sprintf('%s | %s — poke time by session part (n=%d)', ...
         subjectName, sessionName, nParts), 'interpreter', 'none');
@@ -387,6 +387,38 @@ function fig = plot_interval_session_part_histograms(trials, subjectName, sessio
     end
 
     legend(partAxes(1), 'Location', 'best');
+    fit_figure_on_screen(fig, 700, 280 * nParts);
+end
+
+function fit_figure_on_screen(fig, prefWidth, prefHeight)
+% FIT_FIGURE_ON_SCREEN - Size and position a figure fully within the monitor
+%
+% Variables:
+%   fig - Figure handle
+%   prefWidth, prefHeight - Preferred inner size (pixels)
+%
+% Goal: Keep the title bar and menu bar on screen; shrink the figure if needed
+
+    screenSize = get(0, 'ScreenSize');
+    margin = 48;
+    maxOuterWidth = screenSize(3) - 2 * margin;
+    maxOuterHeight = screenSize(4) - 2 * margin;
+
+    set(fig, 'Units', 'pixels');
+    set(fig, 'Position', [screenSize(1) + margin, screenSize(2) + margin, prefWidth, prefHeight]);
+    drawnow;
+
+    outerPos = get(fig, 'OuterPosition');
+    scale = min([1, maxOuterWidth / outerPos(3), maxOuterHeight / outerPos(4)]);
+    if scale < 1
+        innerPos = get(fig, 'Position');
+        newWidth = max(300, round(innerPos(3) * scale));
+        newHeight = max(300, round(innerPos(4) * scale));
+        set(fig, 'Position', [innerPos(1), innerPos(2), newWidth, newHeight]);
+        drawnow;
+    end
+
+    movegui(fig, 'onscreen');
 end
 
 function histYMax = plot_poke_time_histogram_ax(ax, errorTimesSec, correctTimesSec, ...
