@@ -35,7 +35,7 @@ end
 p = inputParser;
 p.addParameter('SessionType', 'interval', @ischar);
 p.addParameter('DataSource', 'spikes', @ischar);
-p.addParameter('BrainArea', 'M56', @ischar);
+p.addParameter('BrainArea', 'VS', @ischar);
 p.addParameter('SaveFigure', false, @islogical);
 p.addParameter('OutputDir', '', @ischar);
 p.addParameter('D2Window', 30, @(x) isnumeric(x) && isscalar(x) && x > 0);
