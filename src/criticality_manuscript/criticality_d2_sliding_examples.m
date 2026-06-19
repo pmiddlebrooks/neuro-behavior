@@ -13,10 +13,12 @@
 %   collectEnd       - Analysis window end (seconds); [] = session end (reach)
 %   brainArea        - Area to plot (e.g. 'M56')
 %   saveFigure       - Export PNG to dropPath/criticality_manuscript
+%   plotD2PopActivity - If true, scatter d2 vs mean pop activity per window (3 panels)
 %
 % Goal:
 %   Illustrate session-wise d2 time courses across task types using the same
-%   overlapping sliding-window pipeline as run_criticality_ar.m.
+%   overlapping sliding-window pipeline as run_criticality_ar.m, plus optional
+%   d2 vs population-activity scatters (shared y-axis across example sessions).
 
 %% Configuration — three example sessions (one per condition)
 exampleSessions(1) = struct( ...
@@ -40,6 +42,7 @@ collectStart = 0;
 collectEnd = 45 * 60;
 brainArea = 'M56';
 saveFigure = false;
+plotD2PopActivity = true;
 
 % Overlapping sliding-window d2 settings (aligned with run_criticality_ar.m)
 slidingWindowSize = 30;   % seconds
@@ -152,6 +155,11 @@ end
 %% Plot all traces on one axis
 fig = plot_d2_sliding_examples(exampleResults, brainArea, slidingWindowSize, stepSize, useLog10D2);
 
+if plotD2PopActivity
+  figPop = plot_d2_popactivity_examples(exampleResults, brainArea, slidingWindowSize, useLog10D2);
+  print_d2_popactivity_example_correlations(exampleResults, useLog10D2);
+end
+
 if saveFigure
   saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
   if ~exist(saveDir, 'dir')
@@ -161,6 +169,12 @@ if saveFigure
     brainArea, slidingWindowSize, stepSize));
   exportgraphics(fig, plotPath, 'Resolution', 300);
   fprintf('\nSaved figure: %s\n', plotPath);
+  if plotD2PopActivity
+    plotPathPop = fullfile(saveDir, sprintf('criticality_d2_sliding_popactivity_%s_win%.0fs_step%.1fs.png', ...
+      brainArea, slidingWindowSize, stepSize));
+    exportgraphics(figPop, plotPathPop, 'Resolution', 300);
+    fprintf('Saved figure: %s\n', plotPathPop);
+  end
 end
 
 fprintf('\n=== Done ===\n');
@@ -397,4 +411,240 @@ function y = log10_safe_numeric(x)
 validMask = isfinite(x) & x > 0;
 y = nan(size(x));
 y(validMask) = log10(x(validMask));
+end
+
+function fig = plot_d2_popactivity_examples(exampleResults, brainArea, slidingWindowSize, useLog10D2)
+% PLOT_D2_POPACTIVITY_EXAMPLES - d2 vs mean pop activity for each example session
+%
+% Variables:
+%   exampleResults - Struct array with .results and .example per session
+%
+% Goal:
+%   Match session_d2_distributions pop-activity scatter; shared y-limits across panels.
+
+conditionColors = [ ...
+  0.15, 0.45, 0.75; ...
+  0.85, 0.35, 0.15; ...
+  0.20, 0.65, 0.35];
+shuffleColor = [0.55, 0.55, 0.55];
+
+numExamples = numel(exampleResults);
+fig = figure('Color', 'w', 'Position', [100 100 380 * numExamples 420], ...
+  'Name', 'd2 vs population activity (examples)');
+tileLayout = tiledlayout(fig, 1, numExamples, 'TileSpacing', 'compact', 'Padding', 'compact');
+d2YLabel = get_d2_axis_label(useLog10D2);
+
+yLo = inf;
+yHi = -inf;
+panelData = cell(1, numExamples);
+for e = 1:numExamples
+  if ~isfield(exampleResults(e), 'results') || isempty(exampleResults(e).results)
+    panelData{e} = [];
+    continue;
+  end
+  results = exampleResults(e).results;
+  if isempty(results.areas)
+    panelData{e} = [];
+    continue;
+  end
+  [d2Vec, popVec, validMask] = get_aligned_d2_popactivity(results, 1, useLog10D2);
+  shufVec = get_shuffled_mean_d2_per_window(results, 1, useLog10D2);
+  if ~isempty(shufVec)
+    shufVec = shufVec(1:numel(d2Vec));
+  end
+  panelData{e} = struct('d2Vec', d2Vec, 'popVec', popVec, 'validMask', validMask, ...
+    'shufVec', shufVec, 'example', exampleResults(e).example);
+
+  yVals = d2Vec(validMask);
+  if ~isempty(shufVec)
+    shufMask = validMask & isfinite(shufVec);
+    yVals = [yVals; shufVec(shufMask)]; %#ok<AGROW>
+  end
+  yVals = yVals(isfinite(yVals));
+  if ~isempty(yVals)
+    yLo = min(yLo, min(yVals));
+    yHi = max(yHi, max(yVals));
+  end
+end
+
+if isfinite(yLo) && isfinite(yHi) && yHi > yLo
+  yPad = 0.05 * (yHi - yLo);
+  sharedYLim = [yLo - yPad, yHi + yPad];
+else
+  sharedYLim = [];
+end
+
+for e = 1:numExamples
+  ax = nexttile(tileLayout);
+  hold(ax, 'on');
+
+  if isempty(panelData{e})
+    title(ax, sprintf('Example %d (no data)', e));
+    if ~isempty(sharedYLim)
+      ylim(ax, sharedYLim);
+    end
+    continue;
+  end
+
+  pd = panelData{e};
+  ex = pd.example;
+  dataColor = get_example_condition_color(ex.sessionType, conditionColors);
+  if isfield(ex, 'displayLabel') && ~isempty(ex.displayLabel)
+    panelTitle = ex.displayLabel;
+  else
+    panelTitle = ex.sessionType;
+  end
+
+  if ~any(pd.validMask)
+    title(ax, sprintf('%s (no data)', panelTitle), 'Interpreter', 'none');
+    if ~isempty(sharedYLim)
+      ylim(ax, sharedYLim);
+    end
+    continue;
+  end
+
+  scatter_open_translucent(ax, pd.popVec(pd.validMask), pd.d2Vec(pd.validMask), 24, ...
+    dataColor, 'Data');
+
+  rShuf = nan;
+  if ~isempty(pd.shufVec)
+    shufMask = pd.validMask & isfinite(pd.shufVec);
+    if any(shufMask)
+      scatter_open_translucent(ax, pd.popVec(shufMask), pd.shufVec(shufMask), 24, ...
+        shuffleColor, 'Shuffled mean');
+      rShuf = pearson_r(pd.popVec(shufMask), pd.shufVec(shufMask));
+    end
+  end
+
+  rData = pearson_r(pd.popVec(pd.validMask), pd.d2Vec(pd.validMask));
+  xlabel(ax, 'Mean pop activity (spikes/bin)');
+  if e == 1
+    ylabel(ax, d2YLabel);
+  end
+  title(ax, sprintf('%s | r_{data}=%.3f, r_{shuf}=%.3f, n=%d', ...
+    panelTitle, rData, rShuf, sum(pd.validMask)), 'Interpreter', 'none');
+  if ~isempty(sharedYLim)
+    ylim(ax, sharedYLim);
+  end
+  legend(ax, 'Location', 'best');
+  grid(ax, 'on');
+  hold(ax, 'off');
+end
+
+sgtitle(tileLayout, sprintf('%s d2 vs mean population activity | %.0fs windows', ...
+  brainArea, slidingWindowSize), 'FontSize', 12, 'Interpreter', 'none');
+end
+
+function print_d2_popactivity_example_correlations(exampleResults, useLog10D2)
+% PRINT_D2_POPACTIVITY_EXAMPLE_CORRELATIONS - Command-window summary per example
+
+fprintf('\n=== d2 vs mean pop activity (example sessions) ===\n');
+for e = 1:numel(exampleResults)
+  if ~isfield(exampleResults(e), 'results') || isempty(exampleResults(e).results) ...
+      || isempty(exampleResults(e).results.areas)
+    continue;
+  end
+  ex = exampleResults(e).example;
+  if isfield(ex, 'displayLabel') && ~isempty(ex.displayLabel)
+    label = ex.displayLabel;
+  else
+    label = ex.sessionType;
+  end
+  results = exampleResults(e).results;
+  [d2Vec, popVec, validMask] = get_aligned_d2_popactivity(results, 1, useLog10D2);
+  shufVec = get_shuffled_mean_d2_per_window(results, 1, useLog10D2);
+  if ~any(validMask)
+    fprintf('  %s: no data\n', label);
+    continue;
+  end
+  rData = pearson_r(popVec(validMask), d2Vec(validMask));
+  rShuf = nan;
+  if ~isempty(shufVec)
+    shufVec = shufVec(1:numel(d2Vec));
+    shufMask = validMask & isfinite(shufVec);
+    if any(shufMask)
+      rShuf = pearson_r(popVec(shufMask), shufVec(shufMask));
+    end
+  end
+  fprintf('  %s: r(data)=%.3f, r(shuffled)=%.3f, n=%d\n', label, rData, rShuf, sum(validMask));
+end
+end
+
+function d2Vec = get_aligned_d2_vector(results, areaIdx, useLog10D2)
+% GET_ALIGNED_D2_VECTOR - d2 per window for one area (optional log10)
+
+d2Vec = [];
+if areaIdx > numel(results.d2) || isempty(results.d2{areaIdx})
+  return;
+end
+d2Vec = results.d2{areaIdx}(:);
+if useLog10D2
+  d2Vec = log10_safe_numeric(d2Vec);
+end
+end
+
+function [d2Vec, popVec, validMask] = get_aligned_d2_popactivity(results, areaIdx, useLog10D2)
+% GET_ALIGNED_D2_POPACTIVITY - Window-aligned d2 and pop activity vectors
+
+d2Vec = [];
+popVec = [];
+validMask = false(0, 1);
+
+d2Vec = get_aligned_d2_vector(results, areaIdx, useLog10D2);
+if isempty(d2Vec)
+  return;
+end
+if ~isfield(results, 'popActivityWindows') || areaIdx > numel(results.popActivityWindows) ...
+    || isempty(results.popActivityWindows{areaIdx})
+  return;
+end
+
+popVec = results.popActivityWindows{areaIdx}(:);
+nWindows = min(numel(d2Vec), numel(popVec));
+d2Vec = d2Vec(1:nWindows);
+popVec = popVec(1:nWindows);
+validMask = isfinite(d2Vec) & isfinite(popVec);
+end
+
+function scatter_open_translucent(ax, x, y, markerSize, faceColor, displayName)
+% SCATTER_OPEN_TRANSLUCENT - Open circles with translucent fill
+
+if nargin < 6
+  displayName = '';
+end
+
+scatter(ax, x, y, markerSize, ...
+  'Marker', 'o', ...
+  'MarkerFaceColor', faceColor, ...
+  'MarkerEdgeColor', faceColor, ...
+  'MarkerFaceAlpha', 0.35, ...
+  'LineWidth', 1, ...
+  'DisplayName', displayName);
+end
+
+function shufVec = get_shuffled_mean_d2_per_window(results, areaIdx, useLog10D2)
+% GET_SHUFFLED_MEAN_D2_PER_WINDOW - Mean shuffled d2 per window (subsampling-aware)
+
+shufVec = get_per_window_shuffle_mean_d2(results, areaIdx, useLog10D2);
+end
+
+function rVal = pearson_r(x, y)
+% PEARSON_R - Pearson correlation or NaN when undefined
+
+rVal = nan;
+if numel(x) < 2 || numel(y) < 2
+  return;
+end
+cMat = corrcoef(x(:), y(:));
+rVal = cMat(1, 2);
+end
+
+function yLabelText = get_d2_axis_label(useLog10D2)
+% GET_D2_AXIS_LABEL - Y-axis label for d2 scatter plots
+
+if useLog10D2
+  yLabelText = 'log_{10}(d2)';
+else
+  yLabelText = 'd2';
+end
 end

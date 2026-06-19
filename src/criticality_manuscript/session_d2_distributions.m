@@ -49,7 +49,8 @@ saveFigure = false;
 % Behavior label sets for d2 correlation figure (proportion per window)
 % denominatorIDs empty -> fraction of all behavior frames in the window
 behaviorLabelSets = {
-  struct('name', 'Loco', 'numeratorIDs', [1 2 13:15], 'denominatorIDs', [])
+  struct('name', 'Inv', 'numeratorIDs', [0 1 2], 'denominatorIDs', [])
+  struct('name', 'Loco', 'numeratorIDs', [15], 'denominatorIDs', [])
   struct('name', 'Groom', 'numeratorIDs', 6:10, 'denominatorIDs', [])
   };
 
