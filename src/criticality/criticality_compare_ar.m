@@ -24,8 +24,8 @@ slidingWindowSize = 3;        % For d2, use a small window to try to optimize te
 % slidingWindowSize = 60;        % For d2, use a small window to try to optimize temporal resolution
 
 % Determine save directory based on loaded data file name
-% reachDataFile = fullfile(paths.dropPath, 'reach_data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
-reachDataFile = fullfile(paths.dropPath, 'reach_data/AB6_03-Apr-2025 13_34_09_NeuroBeh.mat');
+% reachDataFile = fullfile(paths.dropPath, 'reach_task/data/Copy_of_Y4_100623_Spiketimes_idchan_BEH.mat');
+reachDataFile = fullfile(paths.dropPath, 'reach_task/data/Y4_06-Oct-2023 14_14_53_NeuroBeh.mat');
 
 [~, dataBaseName, ~] = fileparts(reachDataFile);
 saveDir = fullfile(paths.dropPath, 'reach_data', dataBaseName);

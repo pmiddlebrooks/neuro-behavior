@@ -22,6 +22,8 @@
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
 %   useSubsampling     - If true, pool avalanches from neuron subsamples in the window
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
+%   splitExcitatoryInhibitory - If true, run separately for E and I units (waveforms.mat)
+%   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %
 % Goal:
 %   Visualize avalanche size and duration distributions for one session
@@ -54,6 +56,9 @@ useSubsampling = false;
 nSubsamples = 20;
 nNeuronsSubsample = 20;
 minNeuronsMultiple = 1.25;
+
+splitExcitatoryInhibitory = false;
+widthCutoff = 0.035;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
@@ -118,6 +123,9 @@ fprintf('Avalanche detection mode: %s\n', avalancheDetectionMode);
 if useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons\n', nSubsamples, nNeuronsSubsample);
 end
+if splitExcitatoryInhibitory
+  fprintf('E/I split: on (widthCutoff = %.3f ms)\n', widthCutoff);
+end
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
 
@@ -131,74 +139,90 @@ if ~areaOk
   error('Brain area "%s" not available in this session.', brainArea);
 end
 
-if config_include_m2356(analysisConfig)
-  dataStruct = maybe_add_m2356_area(dataStruct, analysisConfig.includeM2356);
-end
+cellTypesToRun = get_cell_types_to_run(splitExcitatoryInhibitory);
+for iCellRun = 1:numel(cellTypesToRun)
+  cellType = cellTypesToRun{iCellRun};
+  dataStructRun = copy_neuron_selection(dataStruct);
 
-areasToAnalyze = resolve_areas_to_analyze(dataStruct, brainArea, analysisConfig.nMinNeurons);
-if isempty(areasToAnalyze)
-  error('No areas meet minimum neuron count (%d).', analysisConfig.nMinNeurons);
-end
-
-%% Avalanche extraction and figure
-fig = figure('Name', 'Session avalanche distributions');
-clf(fig);
-tiledlayout(fig, 1, numel(areasToAnalyze) * 2, 'TileSpacing', 'compact', 'Padding', 'compact');
-
-for aIdx = 1:numel(areasToAnalyze)
-  areaIndex = areasToAnalyze(aIdx);
-  areaName = dataStruct.areas{areaIndex};
-
-  fprintf('\nArea %s...\n', areaName);
-  avData = extract_area_avalanches(dataStruct, areaIndex, analysisConfig, collectStart, collectEnd);
-
-  if ~avData.hasAvalanches
-    warning('No avalanches detected for area %s; skipping plots.', areaName);
-    continue;
+  if splitExcitatoryInhibitory
+    fprintf('\n--- Cell type: %s ---\n', cellType);
+    [dataStructRun, ~] = apply_session_cell_type_filter(dataStructRun, paths, cellType, widthCutoff);
   end
 
-  fprintf('  Size:  tau = %.3f, x in [%.3g, %.3g]', ...
-    avData.tau, avData.minSizeFit, avData.maxSizeFit);
-  print_fit_diagnostics(avData.sizeFitInfo);
-  print_hybrid_fit_diagnostics(avData.sizeFitInfo);
-  fprintf('\n');
-  fprintf('  Dur:   alpha = %.3f, x in [%.3g, %.3g]', ...
-    avData.alpha, avData.minDurFit, avData.maxDurFit);
-  print_fit_diagnostics(avData.durFitInfo);
-  print_hybrid_fit_diagnostics(avData.durFitInfo);
-  fprintf('\n');
-  fprintf('  Scaling relation (alpha-1)/(tau-1): ');
-  print_scaling_relation(avData.tau, avData.alpha);
-  fprintf('\n');
-  fprintf('  n = %d avalanches\n', avData.nAvalanches);
-
-  tileSize = (aIdx - 1) * 2 + 1;
-  tileDur = tileSize + 1;
-
-  axSize = nexttile(tileSize);
-  plot_avalanche_ccdf_with_fit(axSize, avData.sizes, avData.tau, ...
-    avData.minSizeFit, avData.maxSizeFit, 'Avalanche size', '\tau', avData.sizeFitInfo);
-
-  axDur = nexttile(tileDur);
-  plot_avalanche_ccdf_with_fit(axDur, avData.durations, avData.alpha, ...
-    avData.minDurFit, avData.maxDurFit, 'Avalanche duration (bins)', '\alpha', avData.durFitInfo);
-end
-
-sgtitle(fig, sprintf('%s — %s [%.0f–%.0f s]', sessionName, ...
-  format_areas_label(dataStruct.areas(areasToAnalyze)), collectStart, collectEnd), ...
-  'FontWeight', 'bold');
-
-if saveFigure
-  saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
-  if ~exist(saveDir, 'dir')
-    mkdir(saveDir);
+  if config_include_m2356(analysisConfig)
+    dataStructRun = maybe_add_m2356_area(dataStructRun, analysisConfig.includeM2356);
   end
-  areaTag = format_areas_label(dataStruct.areas(areasToAnalyze));
-  plotBase = sprintf('session_avalanche_distributions_%s_%s_%s_%.0f-%.0fs', ...
-    sessionName, areaTag, powerLawFitMethod, collectStart, collectEnd);
-  exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
-  exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
-  fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
+
+  areasToAnalyze = resolve_areas_to_analyze(dataStructRun, brainArea, analysisConfig.nMinNeurons);
+  if isempty(areasToAnalyze)
+    error('No areas meet minimum neuron count (%d) for %s.', ...
+      analysisConfig.nMinNeurons, cell_type_label(cellType));
+  end
+
+  %% Avalanche extraction and figure
+  fig = figure('Name', sprintf('Session avalanche distributions%s', cell_type_file_tag(cellType)));
+  clf(fig);
+  tiledlayout(fig, 1, numel(areasToAnalyze) * 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+  for aIdx = 1:numel(areasToAnalyze)
+    areaIndex = areasToAnalyze(aIdx);
+    areaName = dataStructRun.areas{areaIndex};
+
+    fprintf('\nArea %s (%s)...\n', areaName, cell_type_label(cellType));
+    avData = extract_area_avalanches(dataStructRun, areaIndex, analysisConfig, collectStart, collectEnd);
+
+    if ~avData.hasAvalanches
+      warning('No avalanches detected for area %s (%s); skipping plots.', areaName, cell_type_label(cellType));
+      continue;
+    end
+
+    fprintf('  Size:  tau = %.3f, x in [%.3g, %.3g]', ...
+      avData.tau, avData.minSizeFit, avData.maxSizeFit);
+    print_fit_diagnostics(avData.sizeFitInfo);
+    print_hybrid_fit_diagnostics(avData.sizeFitInfo);
+    fprintf('\n');
+    fprintf('  Dur:   alpha = %.3f, x in [%.3g, %.3g]', ...
+      avData.alpha, avData.minDurFit, avData.maxDurFit);
+    print_fit_diagnostics(avData.durFitInfo);
+    print_hybrid_fit_diagnostics(avData.durFitInfo);
+    fprintf('\n');
+    fprintf('  Scaling relation (alpha-1)/(tau-1): ');
+    print_scaling_relation(avData.tau, avData.alpha);
+    fprintf('\n');
+    fprintf('  n = %d avalanches\n', avData.nAvalanches);
+
+    tileSize = (aIdx - 1) * 2 + 1;
+    tileDur = tileSize + 1;
+
+    axSize = nexttile(tileSize);
+    plot_avalanche_ccdf_with_fit(axSize, avData.sizes, avData.tau, ...
+      avData.minSizeFit, avData.maxSizeFit, 'Avalanche size', '\tau', avData.sizeFitInfo);
+
+    axDur = nexttile(tileDur);
+    plot_avalanche_ccdf_with_fit(axDur, avData.durations, avData.alpha, ...
+      avData.minDurFit, avData.maxDurFit, 'Avalanche duration (bins)', '\alpha', avData.durFitInfo);
+  end
+
+  titleSuffix = '';
+  if splitExcitatoryInhibitory
+    titleSuffix = sprintf(' | %s | width cutoff %.3f ms', cellType, widthCutoff);
+  end
+  sgtitle(fig, sprintf('%s — %s [%.0f–%.0f s]%s', sessionName, ...
+    format_areas_label(dataStructRun.areas(areasToAnalyze)), collectStart, collectEnd, titleSuffix), ...
+    'FontWeight', 'bold', 'Interpreter', 'none');
+
+  if saveFigure
+    saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+    if ~exist(saveDir, 'dir')
+      mkdir(saveDir);
+    end
+    areaTag = format_areas_label(dataStructRun.areas(areasToAnalyze));
+    plotBase = sprintf('session_avalanche_distributions_%s_%s_%s_%.0f-%.0fs%s', ...
+      sessionName, areaTag, powerLawFitMethod, collectStart, collectEnd, cell_type_file_tag(cellType));
+    exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+    exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+    fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
+  end
 end
 
 fprintf('\n=== Done ===\n');
@@ -506,4 +530,44 @@ else
   label = char(areaNames);
 end
 label = matlab.lang.makeValidName(label);
+end
+
+function cellTypes = get_cell_types_to_run(splitExcitatoryInhibitory)
+% GET_CELL_TYPES_TO_RUN - Cell types to analyze when E/I split is enabled
+
+if splitExcitatoryInhibitory
+  cellTypes = {'excitatory', 'inhibitory'};
+else
+  cellTypes = {''};
+end
+end
+
+function dataStructCopy = copy_neuron_selection(dataStruct)
+% COPY_NEURON_SELECTION - Copy idLabel/idMatIdx before waveform filtering
+
+dataStructCopy = dataStruct;
+for a = 1:numel(dataStruct.areas)
+  dataStructCopy.idLabel{a} = dataStruct.idLabel{a}(:)';
+  dataStructCopy.idMatIdx{a} = dataStruct.idMatIdx{a}(:)';
+end
+end
+
+function tag = cell_type_file_tag(cellType)
+% CELL_TYPE_FILE_TAG - Filename suffix for E/I runs
+
+if isempty(cellType)
+  tag = '';
+else
+  tag = ['_' cellType];
+end
+end
+
+function label = cell_type_label(cellType)
+% CELL_TYPE_LABEL - Display label for command-window messages
+
+if isempty(cellType)
+  label = 'all units';
+else
+  label = cellType;
+end
 end

@@ -21,6 +21,8 @@
 %   behaviorLabelSets - Cell of structs (.name, .numeratorIDs, .denominatorIDs)
 %                       for d2 vs behavior proportion figure (spontaneous)
 %   saveFigure       - Export PNG/EPS to dropPath/criticality_manuscript
+%   splitExcitatoryInhibitory - If true, run separately for E and I units (waveforms.mat)
+%   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %
 % Goal:
 %   Visualize real d2 vs shuffled d2 distributions for one session across
@@ -45,6 +47,9 @@ nNeuronsSubsample = 20;
 minNeuronsMultiple = 1.25;
 plotD2PopActivity = true;
 saveFigure = false;
+
+splitExcitatoryInhibitory = true;
+widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 % Behavior label sets for d2 correlation figure (proportion per window)
 % denominatorIDs empty -> fraction of all behavior frames in the window
@@ -83,7 +88,7 @@ analysisConfig.critType = 2;
 analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 1000;
 analysisConfig.maxSpikesPerBin = 100;
-analysisConfig.nMinNeurons = 25;
+analysisConfig.nMinNeurons = 10;
 analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
@@ -125,6 +130,9 @@ if useSubsampling
 else
   fprintf('Subsampling: off\n');
 end
+if splitExcitatoryInhibitory
+  fprintf('E/I split: on (widthCutoff = %.3f ms)\n', widthCutoff);
+end
 
 %% Load session and run d2 analysis
 subjectNameForLoad = subjectName;
@@ -136,86 +144,109 @@ if ~areaOk
   error('Brain area "%s" not available in this session.', brainArea);
 end
 
-results = criticality_ar_analysis(dataStruct, analysisConfig);
+cellTypesToRun = get_cell_types_to_run(splitExcitatoryInhibitory);
+for iCellRun = 1:numel(cellTypesToRun)
+  cellType = cellTypesToRun{iCellRun};
+  dataStructRun = copy_neuron_selection(dataStruct);
 
-if ~isempty(brainArea)
-  results = filter_ar_results_to_brain_area(results, brainArea);
-  if isempty(results.areas)
-    error('No d2 results for brain area "%s".', brainArea);
+  if splitExcitatoryInhibitory
+    fprintf('\n--- Cell type: %s ---\n', cellType);
+    [dataStructRun, ~] = apply_session_cell_type_filter(dataStructRun, paths, cellType, widthCutoff);
   end
-end
 
-print_session_d2_summary(results, useLog10D2);
+  results = criticality_ar_analysis(dataStructRun, analysisConfig);
 
-%% Build distributions and plot
-plotData = build_d2_distribution_data(results, useLog10D2);
-if isempty(plotData.areas)
-  error(['No valid d2 distribution data found. Check d2 values and shuffled ' ...
-    'permutation outputs for this session.']);
-end
-
-fig = plot_d2_distributions(plotData, sessionType, sessionName, d2Window, collectStart, collectEnd, useLog10D2);
-
-if saveFigure
-  saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
-  if ~exist(saveDir, 'dir')
-    mkdir(saveDir);
+  if ~isempty(brainArea)
+    results = filter_ar_results_to_brain_area(results, brainArea);
+    if isempty(results.areas)
+      error('No d2 results for brain area "%s" (%s).', brainArea, cell_type_label(cellType));
+    end
   end
-  areaTag = format_areas_label(plotData.areas);
-  plotBase = sprintf('session_d2_distributions_%s_%s_win%.0fs_%.0f-%.0fs', ...
-    sessionName, areaTag, d2Window, collectStart, collectEnd);
-  if useLog10D2
-    plotBase = [plotBase, '_log10'];
-  end
-  exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
-  exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
-  fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
-end
 
-%% d2 vs mean population activity (real and shuffled mean per window)
-if plotD2PopActivity
-  figPop = plot_d2_vs_popactivity(results, useLog10D2, d2Window);
-  print_d2_popactivity_correlations(results, useLog10D2);
+  print_session_d2_summary(results, useLog10D2);
+
+  %% Build distributions and plot
+  plotData = build_d2_distribution_data(results, useLog10D2);
+  if isempty(plotData.areas)
+    error(['No valid d2 distribution data found (%s). Check d2 values and shuffled ' ...
+      'permutation outputs for this session.'], cell_type_label(cellType));
+  end
+
+  fig = plot_d2_distributions(plotData, sessionType, sessionName, d2Window, collectStart, collectEnd, useLog10D2);
+  if splitExcitatoryInhibitory
+    sgtitle(fig, sprintf('%s | %s cells | width cutoff %.3f ms', ...
+      sessionName, cellType, widthCutoff), 'Interpreter', 'none');
+  end
+
   if saveFigure
     saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
     if ~exist(saveDir, 'dir')
       mkdir(saveDir);
     end
     areaTag = format_areas_label(plotData.areas);
-    plotBase = sprintf('session_d2_vs_popactivity_%s_%s_win%.0fs_%.0f-%.0fs', ...
-      sessionName, areaTag, d2Window, collectStart, collectEnd);
+    plotBase = sprintf('session_d2_distributions_%s_%s_win%.0fs_%.0f-%.0fs%s', ...
+      sessionName, areaTag, d2Window, collectStart, collectEnd, cell_type_file_tag(cellType));
     if useLog10D2
       plotBase = [plotBase, '_log10'];
     end
-    exportgraphics(figPop, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
-    exportgraphics(figPop, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
-    fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
+    exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+    exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+    fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
   end
-end
 
-%% d2 vs behavior label-set proportions (one scatter per set)
-if ~isempty(behaviorLabelSets)
-  if ~isfield(dataStruct, 'bhvID') || isempty(dataStruct.bhvID)
-    warning(['behaviorLabelSets configured but bhvID is unavailable for this session; ', ...
-      'skipping behavior scatter figure.']);
-  else
-    figBhv = plot_d2_vs_behavior_sets(results, dataStruct, behaviorLabelSets, ...
-      d2Window, useLog10D2);
-    print_d2_behavior_correlations(results, dataStruct, behaviorLabelSets, d2Window, useLog10D2);
+  %% d2 vs mean population activity (real and shuffled mean per window)
+  if plotD2PopActivity
+    figPop = plot_d2_vs_popactivity(results, useLog10D2, d2Window);
+    if splitExcitatoryInhibitory
+      sgtitle(figPop, sprintf('%s | %s cells | width cutoff %.3f ms', ...
+        sessionName, cellType, widthCutoff), 'Interpreter', 'none');
+    end
+    print_d2_popactivity_correlations(results, useLog10D2);
     if saveFigure
       saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
       if ~exist(saveDir, 'dir')
         mkdir(saveDir);
       end
       areaTag = format_areas_label(plotData.areas);
-      plotBase = sprintf('session_d2_vs_behavior_%s_%s_win%.0fs_%.0f-%.0fs', ...
-        sessionName, areaTag, d2Window, collectStart, collectEnd);
+      plotBase = sprintf('session_d2_vs_popactivity_%s_%s_win%.0fs_%.0f-%.0fs%s', ...
+        sessionName, areaTag, d2Window, collectStart, collectEnd, cell_type_file_tag(cellType));
       if useLog10D2
         plotBase = [plotBase, '_log10'];
       end
-      exportgraphics(figBhv, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
-      exportgraphics(figBhv, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+      exportgraphics(figPop, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+      exportgraphics(figPop, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
       fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
+    end
+  end
+
+  %% d2 vs behavior label-set proportions (one scatter per set)
+  if ~isempty(behaviorLabelSets)
+    if ~isfield(dataStructRun, 'bhvID') || isempty(dataStructRun.bhvID)
+      warning(['behaviorLabelSets configured but bhvID is unavailable for this session; ', ...
+        'skipping behavior scatter figure.']);
+    else
+      figBhv = plot_d2_vs_behavior_sets(results, dataStructRun, behaviorLabelSets, ...
+        d2Window, useLog10D2);
+      if splitExcitatoryInhibitory
+        sgtitle(figBhv, sprintf('%s | %s cells | width cutoff %.3f ms', ...
+          sessionName, cellType, widthCutoff), 'Interpreter', 'none');
+      end
+      print_d2_behavior_correlations(results, dataStructRun, behaviorLabelSets, d2Window, useLog10D2);
+      if saveFigure
+        saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+        if ~exist(saveDir, 'dir')
+          mkdir(saveDir);
+        end
+        areaTag = format_areas_label(plotData.areas);
+        plotBase = sprintf('session_d2_vs_behavior_%s_%s_win%.0fs_%.0f-%.0fs%s', ...
+          sessionName, areaTag, d2Window, collectStart, collectEnd, cell_type_file_tag(cellType));
+        if useLog10D2
+          plotBase = [plotBase, '_log10'];
+        end
+        exportgraphics(figBhv, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+        exportgraphics(figBhv, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+        fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
+      end
     end
   end
 end
@@ -803,5 +834,45 @@ function refAreaIdx = find_first_area_with_start_times(results)
 refAreaIdx = find(~cellfun(@isempty, results.startS), 1);
 if isempty(refAreaIdx)
   error('No window center times (startS) found in results.');
+end
+end
+
+function cellTypes = get_cell_types_to_run(splitExcitatoryInhibitory)
+% GET_CELL_TYPES_TO_RUN - Cell types to analyze when E/I split is enabled
+
+if splitExcitatoryInhibitory
+  cellTypes = {'excitatory', 'inhibitory'};
+else
+  cellTypes = {''};
+end
+end
+
+function dataStructCopy = copy_neuron_selection(dataStruct)
+% COPY_NEURON_SELECTION - Copy idLabel/idMatIdx before waveform filtering
+
+dataStructCopy = dataStruct;
+for a = 1:numel(dataStruct.areas)
+  dataStructCopy.idLabel{a} = dataStruct.idLabel{a}(:)';
+  dataStructCopy.idMatIdx{a} = dataStruct.idMatIdx{a}(:)';
+end
+end
+
+function tag = cell_type_file_tag(cellType)
+% CELL_TYPE_FILE_TAG - Filename suffix for E/I runs
+
+if isempty(cellType)
+  tag = '';
+else
+  tag = ['_' cellType];
+end
+end
+
+function label = cell_type_label(cellType)
+% CELL_TYPE_LABEL - Display label for command-window messages
+
+if isempty(cellType)
+  label = 'all units';
+else
+  label = cellType;
 end
 end
