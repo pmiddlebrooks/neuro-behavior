@@ -11,7 +11,8 @@
 %   dataSource       - 'spikes' or 'lfp'
 %   collectStart     - Analysis window start (seconds from session onset)
 %   collectEnd       - Analysis window end (seconds); [] = session end (reach)
-%   brainArea        - Area to plot (e.g. 'M56')
+%   brainArea              - Single or merged area to plot (e.g. 'M56', 'M23M56')
+%   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   saveFigure       - Export PNG to dropPath/criticality_manuscript
 %   plotD2PopActivity - If true, scatter d2 vs mean pop activity per window (3 panels)
 %
@@ -41,6 +42,7 @@ dataSource = 'spikes';
 collectStart = 0;
 collectEnd = 45 * 60;
 brainArea = 'M56';
+brainAreaCombinations = default_manuscript_brain_area_combinations();
 saveFigure = false;
 plotD2PopActivity = true;
 
@@ -80,11 +82,6 @@ analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-analysisConfig.includeM2356 = false;
-if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
-  analysisConfig.includeM2356 = true;
-end
-
 %% Paths
 paths = get_paths();
 scriptDir = fileparts(mfilename('fullpath'));
@@ -126,7 +123,7 @@ for e = 1:numExamples
   loadArgs = build_session_load_args(ex.sessionType, ex.sessionName, opts, subjectNameForLoad);
   dataStruct = load_sliding_window_data(ex.sessionType, dataSource, loadArgs{:});
 
-  [dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea);
+  [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations);
   if ~areaOk
     warning('criticality_d2_sliding_examples:MissingArea', ...
       'Brain area "%s" not available for %s; skipping.', brainArea, ex.sessionName);
@@ -220,25 +217,6 @@ if strcmpi(sessionType, 'reach') || strcmpi(sessionType, 'hong')
 else
   opts.collectEnd = collectEnd;
 end
-end
-
-function [dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea)
-% APPLY_BRAIN_AREA_SELECTION - Restrict analysis to one brain area
-
-areaOk = true;
-if isempty(brainArea)
-  return;
-end
-if strcmpi(brainArea, 'M2356')
-  areaOk = any(strcmp(dataStruct.areas, 'M23')) && any(strcmp(dataStruct.areas, 'M56'));
-  return;
-end
-areaIdx = find(strcmp(dataStruct.areas, brainArea), 1);
-if isempty(areaIdx)
-  areaOk = false;
-  return;
-end
-dataStruct.areasToTest = areaIdx;
 end
 
 function results = filter_ar_results_to_brain_area(results, brainArea)

@@ -1,0 +1,33 @@
+function dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, widthCutoff, splitExcitatoryInhibitory)
+% PREPARE_SESSION_DATA_FOR_CELL_TYPE - Copy session data and optional E/I filter
+%
+% Variables:
+%   dataStruct                  - Base session struct after brain-area validation
+%   paths                       - From get_paths
+%   cellType                    - '', 'all', 'excitatory', or 'inhibitory'
+%   widthCutoff                 - Waveform width threshold (ms)
+%   splitExcitatoryInhibitory   - Whether E/I split mode is active
+%
+% Goal:
+%   When split is on, 'all' keeps E+I combined; E and I apply waveform filter.
+
+dataStructRun = copy_neuron_selection(dataStruct);
+
+if ~splitExcitatoryInhibitory || isempty(cellType) || strcmpi(cellType, 'all')
+  if splitExcitatoryInhibitory && strcmpi(cellType, 'all')
+    fprintf('\n--- Cell type: %s ---\n', cell_type_label(cellType));
+  end
+  return;
+end
+
+fprintf('\n--- Cell type: %s ---\n', cell_type_label(cellType));
+[dataStructRun, ~] = apply_session_cell_type_filter(dataStructRun, paths, cellType, widthCutoff);
+end
+
+function dataStructCopy = copy_neuron_selection(dataStruct)
+dataStructCopy = dataStruct;
+for a = 1:numel(dataStruct.areas)
+  dataStructCopy.idLabel{a} = dataStruct.idLabel{a}(:)';
+  dataStructCopy.idMatIdx{a} = dataStruct.idMatIdx{a}(:)';
+end
+end

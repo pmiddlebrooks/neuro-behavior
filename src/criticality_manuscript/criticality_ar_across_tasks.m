@@ -10,8 +10,9 @@
 %   collectStart   - Analysis window start (seconds from session onset)
 %   collectEnd     - Analysis window end (seconds)
 %   d2Window       - Non-overlapping window length (seconds); stepSize = d2Window
-%   brainArea      - Single area to analyze (e.g. 'M56'); '' = all valid areas
-%   areasToPlot    - Area names to plot; {} uses brainArea if set
+%   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' = all areas
+%   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
+%   areasToPlot            - Area names to plot; {} uses brainArea if set
 %   runBatch       - If true, run criticality_ar_analysis per session
 %   plotResults    - If true, create summary figures after batch
 %   useLog10D2     - If true, aggregate and plot log10(d2); values <= 0 become NaN (default true)
@@ -34,7 +35,9 @@ collectEnd = 45 * 60;
 
 d2Window = 30;  % seconds; non-overlapping windows (stepSize = d2Window)
 
-brainArea = 'M56';
+brainArea = 'M23M56';
+brainAreaCombinations = default_manuscript_brain_area_combinations();
+% brainArea = 'M23M56';  % merge M23+M56 (preset in brainAreaCombinations)
 areasToPlot = {};
 runBatch = true;
 plotResults = true;
@@ -76,11 +79,6 @@ analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-analysisConfig.includeM2356 = false;
-if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
-  analysisConfig.includeM2356 = true;
-end
-
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
 opts.firingRateCheckTime = [];
@@ -162,7 +160,7 @@ if runBatch
       loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectName);
       dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 
-      [dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea);
+      [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations);
       if ~areaOk
         fprintf('  Brain area "%s" not available in this session; skipping.\n', brainArea);
         continue;
@@ -297,33 +295,6 @@ end
 function label = make_session_label(~, entry)
 % MAKE_SESSION_LABEL - Short display label for plots
 label = entry.sessionName;
-end
-
-function [dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea)
-% APPLY_BRAIN_AREA_SELECTION - Restrict analysis to one brain area
-
-areaOk = true;
-if isempty(brainArea)
-  return;
-end
-
-if strcmpi(brainArea, 'M2356')
-  areaOk = any(strcmp(dataStruct.areas, 'M23')) && any(strcmp(dataStruct.areas, 'M56'));
-  if ~areaOk
-    return;
-  end
-  fprintf('  Brain area M2356 (requires includeM2356 during analysis)\n');
-  return;
-end
-
-areaIdx = find(strcmp(dataStruct.areas, brainArea), 1);
-if isempty(areaIdx)
-  areaOk = false;
-  return;
-end
-
-dataStruct.areasToTest = areaIdx;
-fprintf('  Restricting analysis to area: %s\n', brainArea);
 end
 
 function results = filter_ar_results_to_brain_area(results, brainArea)
@@ -663,7 +634,7 @@ for t = 1:length(sessionTypes)
 
   xPos = xCursor + (1:numBars);
   errorbar(ax, xPos, d2Means, d2Sems, 'o', 'Color', typeColors(t, :), ...
-    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 32, 'LineWidth', 1.2, ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 24, 'LineWidth', 1.2, ...
     'CapSize', 8, 'DisplayName', 'session d2');
 
   if any(isfinite(shuffleMeans))
@@ -672,7 +643,7 @@ for t = 1:length(sessionTypes)
     semPlot(~isfinite(semPlot)) = 0;
     errorbar(ax, xShuffle, shuffleMeans, semPlot, 's', ...
       'Color', shuffleBarColor, 'MarkerFaceColor', shuffleBarColor, ...
-      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 32, 'LineWidth', 1.2, ...
+      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 24, 'LineWidth', 1.2, ...
       'CapSize', 8, 'DisplayName', 'shuffled mean \pm SEM (across windows)');
   end
 
@@ -732,7 +703,7 @@ for t = 1:length(sessionTypes)
 
   xPos = xCursor + (1:numBars);
   errorbar(ax, xPos, normMeans, normSems, 'o', 'Color', typeColors(t, :), ...
-    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 32, 'LineWidth', 1.2, ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 24, 'LineWidth', 1.2, ...
       'CapSize', 8);
 
   barLabels = get_session_bar_labels(typeData, numBars, sessionType);

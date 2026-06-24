@@ -11,8 +11,9 @@
 %   collectStart   - Analysis window start (seconds from session onset)
 %   collectEnd     - Analysis window end (seconds)
 %   prgWindow      - Non-overlapping block length (seconds); blockWindowSize
-%   brainArea      - Single area to analyze (e.g. 'M56'); '' = all valid areas
-%   areasToPlot    - Area names to plot; {} uses brainArea if set
+%   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' = all valid areas
+%   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
+%   areasToPlot            - Area names to plot; {} uses brainArea if set
 %   runBatch       - If true, run criticality_prg_analysis per session
 %   plotResults    - If true, create summary figures after batch
 %   prgMethod        - 'pca' (momentum-space) or 'icg' (real-space ICG, Morales 2023)
@@ -34,7 +35,8 @@ collectEnd = 45 * 60;
 
 prgWindow = 30;  % seconds; non-overlapping blocks (blockWindowSize)
 
-brainArea = 'M56';
+brainArea = 'M23M56';
+brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 runBatch = true;
 plotResults = true;
@@ -54,7 +56,7 @@ analysisConfig.blockWindowSize = prgWindow;
 analysisConfig.binSize = 0.05;
 analysisConfig.cvThreshold = 5;
 analysisConfig.cutoffDivisors = [1, 2, 4, 8, 16];
-analysisConfig.finalCutoffDivisor = 8;
+analysisConfig.finalCutoffDivisor = 16;
 analysisConfig.kappaAxisMax = 20;
 analysisConfig.enableSurrogates = true;
 analysisConfig.nSurrogates = 10;
@@ -66,11 +68,6 @@ analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-analysisConfig.includeM2356 = false;
-if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
-  analysisConfig.includeM2356 = true;
-end
-
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
 opts.firingRateCheckTime = [];
@@ -154,7 +151,7 @@ if runBatch
       loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectName);
       dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 
-      [dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea);
+      [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations);
       if ~areaOk
         fprintf('  Brain area "%s" not available in this session; skipping.\n', brainArea);
         continue;
@@ -289,33 +286,6 @@ end
 function label = make_session_label(~, entry)
 % MAKE_SESSION_LABEL - Short display label for plots
 label = entry.sessionName;
-end
-
-function [dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea)
-% APPLY_BRAIN_AREA_SELECTION - Restrict analysis to one brain area
-
-areaOk = true;
-if isempty(brainArea)
-  return;
-end
-
-if strcmpi(brainArea, 'M2356')
-  areaOk = any(strcmp(dataStruct.areas, 'M23')) && any(strcmp(dataStruct.areas, 'M56'));
-  if ~areaOk
-    return;
-  end
-  fprintf('  Brain area M2356 (requires includeM2356 during analysis)\n');
-  return;
-end
-
-areaIdx = find(strcmp(dataStruct.areas, brainArea), 1);
-if isempty(areaIdx)
-  areaOk = false;
-  return;
-end
-
-dataStruct.areasToTest = areaIdx;
-fprintf('  Restricting analysis to area: %s\n', brainArea);
 end
 
 function results = filter_prg_results_to_brain_area(results, brainArea)
@@ -780,7 +750,7 @@ for t = 1:length(sessionTypes)
 
   xPos = xCursor + (1:numBars);
   errorbar(ax, xPos, kappaMeans, kappaSems, 'o', 'Color', typeColors(t, :), ...
-    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 32, 'LineWidth', 1.2, ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 24, 'LineWidth', 1.2, ...
     'CapSize', 8, 'DisplayName', 'session \kappa');
 
   if any(isfinite(shuffleMeans))
@@ -789,7 +759,7 @@ for t = 1:length(sessionTypes)
     semPlot(~isfinite(semPlot)) = 0;
     errorbar(ax, xShuffle, shuffleMeans, semPlot, 's', ...
       'Color', shuffleBarColor, 'MarkerFaceColor', shuffleBarColor, ...
-      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 32, 'LineWidth', 1.2, ...
+      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 24, 'LineWidth', 1.2, ...
       'CapSize', 8, 'DisplayName', 'surrogate mean \pm SEM (across windows)');
   end
 
@@ -856,7 +826,7 @@ for t = 1:length(sessionTypes)
 
   xPos = xCursor + (1:numBars);
   errorbar(ax, xPos, metricMeans, metricSems, 'o', 'Color', typeColors(t, :), ...
-    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 32, 'LineWidth', 1.2, ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 24, 'LineWidth', 1.2, ...
     'CapSize', 8, 'DisplayName', legendLabel);
 
   groupCenter = mean(xPos);
@@ -922,7 +892,7 @@ for t = 1:length(sessionTypes)
 
   xPos = xCursor + (1:numBars);
   errorbar(ax, xPos, djsMeans, djsSems, 'o', 'Color', typeColors(t, :), ...
-    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 32, 'LineWidth', 1.2, ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 24, 'LineWidth', 1.2, ...
     'CapSize', 8, 'DisplayName', 'session D_{JS}');
 
   if any(isfinite(shuffleMeans))
@@ -931,7 +901,7 @@ for t = 1:length(sessionTypes)
     semPlot(~isfinite(semPlot)) = 0;
     errorbar(ax, xShuffle, shuffleMeans, semPlot, 's', ...
       'Color', shuffleBarColor, 'MarkerFaceColor', shuffleBarColor, ...
-      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 32, 'LineWidth', 1.2, ...
+      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 24, 'LineWidth', 1.2, ...
       'CapSize', 8, 'DisplayName', 'surrogate mean \pm SEM (across windows)');
   end
 

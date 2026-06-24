@@ -13,7 +13,8 @@
 %   dataSource         - 'spikes' or 'lfp'
 %   collectStart       - Window start (seconds from session onset)
 %   collectEnd         - Window end (seconds)
-%   brainArea          - Area to analyze (e.g. 'M56'); '' uses all valid areas
+%   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' uses all valid areas
+%   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   powerLawFitMethod  - 'clauset', 'plfit2023', or 'hybrid'
 %   avalancheDetectionMode - 'fixedBinMedian' or 'meanIsiZero'
 %   clausetPlfitPath   - Path to .../Power-Law-Fit-Distribution-MATLAB-main/MATLAB Code
@@ -22,7 +23,8 @@
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
 %   useSubsampling     - If true, pool avalanches from neuron subsamples in the window
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
-%   splitExcitatoryInhibitory - If true, run separately for E and I units (waveforms.mat)
+%   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory;
+%                               also plots summary of tau and alpha fits
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %
 % Goal:
@@ -40,6 +42,7 @@ collectEnd = 45 * 60;
 windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M56';
+brainAreaCombinations = default_manuscript_brain_area_combinations();
 saveFigure = false;
 
 % Power-law fitting: 'clauset', 'plfit2023', 'hybrid' = plfit2023 xmax, then Clauset plfit on x <= xmax
@@ -88,10 +91,6 @@ analysisConfig.pcaFlag = 0;
 analysisConfig.gofThreshold = gofThreshold;
 analysisConfig.powerLawFitMethod = powerLawFitMethod;
 analysisConfig.runClausetPlpva = runClausetPlpva;
-analysisConfig.includeM2356 = false;
-if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
-  analysisConfig.includeM2356 = true;
-end
 
 %% Paths
 paths = get_paths();
@@ -134,24 +133,21 @@ subjectNameForLoad = subjectName;
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 
-[dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea);
+[dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations, false);
 if ~areaOk
   error('Brain area "%s" not available in this session.', brainArea);
 end
 
-cellTypesToRun = get_cell_types_to_run(splitExcitatoryInhibitory);
+cellTypesToRun = get_session_cell_types_to_run(splitExcitatoryInhibitory);
+if splitExcitatoryInhibitory
+  eiSummary = init_session_ei_summary({'tau', 'alpha'}, {'\tau', '\alpha'});
+end
+
 for iCellRun = 1:numel(cellTypesToRun)
   cellType = cellTypesToRun{iCellRun};
-  dataStructRun = copy_neuron_selection(dataStruct);
+  dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, widthCutoff, splitExcitatoryInhibitory);
 
-  if splitExcitatoryInhibitory
-    fprintf('\n--- Cell type: %s ---\n', cellType);
-    [dataStructRun, ~] = apply_session_cell_type_filter(dataStructRun, paths, cellType, widthCutoff);
-  end
-
-  if config_include_m2356(analysisConfig)
-    dataStructRun = maybe_add_m2356_area(dataStructRun, analysisConfig.includeM2356);
-  end
+  [dataStructRun, ~] = apply_manuscript_brain_area_selection(dataStructRun, brainArea, brainAreaCombinations);
 
   areasToAnalyze = resolve_areas_to_analyze(dataStructRun, brainArea, analysisConfig.nMinNeurons);
   if isempty(areasToAnalyze)
@@ -164,6 +160,7 @@ for iCellRun = 1:numel(cellTypesToRun)
   clf(fig);
   tiledlayout(fig, 1, numel(areasToAnalyze) * 2, 'TileSpacing', 'compact', 'Padding', 'compact');
 
+  avSummaryMetrics = struct('tau', nan, 'alpha', nan);
   for aIdx = 1:numel(areasToAnalyze)
     areaIndex = areasToAnalyze(aIdx);
     areaName = dataStructRun.areas{areaIndex};
@@ -201,11 +198,20 @@ for iCellRun = 1:numel(cellTypesToRun)
     axDur = nexttile(tileDur);
     plot_avalanche_ccdf_with_fit(axDur, avData.durations, avData.alpha, ...
       avData.minDurFit, avData.maxDurFit, 'Avalanche duration (bins)', '\alpha', avData.durFitInfo);
+
+    if ~isfinite(avSummaryMetrics.tau)
+      avSummaryMetrics.tau = avData.tau;
+      avSummaryMetrics.alpha = avData.alpha;
+    end
+  end
+
+  if splitExcitatoryInhibitory && isfinite(avSummaryMetrics.tau)
+    eiSummary = set_session_ei_summary_population(eiSummary, cellType, avSummaryMetrics);
   end
 
   titleSuffix = '';
   if splitExcitatoryInhibitory
-    titleSuffix = sprintf(' | %s | width cutoff %.3f ms', cellType, widthCutoff);
+    titleSuffix = sprintf(' | %s | width cutoff %.3f ms', cell_type_label(cellType), widthCutoff);
   end
   sgtitle(fig, sprintf('%s — %s [%.0f–%.0f s]%s', sessionName, ...
     format_areas_label(dataStructRun.areas(areasToAnalyze)), collectStart, collectEnd, titleSuffix), ...
@@ -225,60 +231,30 @@ for iCellRun = 1:numel(cellTypesToRun)
   end
 end
 
+if splitExcitatoryInhibitory
+  areaTag = format_areas_label(brainArea);
+  if isempty(areaTag)
+    areaTag = 'all_areas';
+  end
+  summaryTitle = sprintf('%s | %s | avalanche exponents [%.0f–%.0f s]', ...
+    sessionName, areaTag, collectStart, collectEnd);
+  figEiSummary = plot_session_ei_summary(eiSummary, summaryTitle, 'Exponent');
+  if saveFigure
+    saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+    if ~exist(saveDir, 'dir')
+      mkdir(saveDir);
+    end
+    plotBase = sprintf('session_avalanche_ei_summary_%s_%s_%s_%.0f-%.0fs%s', ...
+      sessionName, areaTag, powerLawFitMethod, collectStart, collectEnd, session_ei_summary_file_tag());
+    exportgraphics(figEiSummary, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+    exportgraphics(figEiSummary, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+    fprintf('\nSaved E/I summary figure: %s\n', fullfile(saveDir, plotBase));
+  end
+end
+
 fprintf('\n=== Done ===\n');
 
 %% Local functions
-
-function tf = config_include_m2356(analysisConfig)
-% CONFIG_INCLUDE_M2356 - True when M2356 merge flag is set
-tf = isfield(analysisConfig, 'includeM2356') && analysisConfig.includeM2356;
-end
-
-function [dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea)
-% APPLY_BRAIN_AREA_SELECTION - Restrict analysis to one brain area
-
-areaOk = true;
-if isempty(brainArea)
-  return;
-end
-
-if strcmpi(brainArea, 'M2356')
-  areaOk = any(strcmp(dataStruct.areas, 'M23')) && any(strcmp(dataStruct.areas, 'M56'));
-  return;
-end
-
-areaIdx = find(strcmp(dataStruct.areas, brainArea), 1);
-if isempty(areaIdx)
-  areaOk = false;
-  return;
-end
-
-dataStruct.areasToTest = areaIdx;
-fprintf('  Restricting analysis to area: %s\n', brainArea);
-end
-
-function dataStruct = maybe_add_m2356_area(dataStruct, includeM2356)
-% MAYBE_ADD_M2356_AREA - Add combined M23+M56 when requested
-
-if ~includeM2356
-  return;
-end
-
-areas = dataStruct.areas;
-idxM23 = find(strcmp(areas, 'M23'), 1);
-idxM56 = find(strcmp(areas, 'M56'), 1);
-if isempty(idxM23) || isempty(idxM56) || any(strcmp(areas, 'M2356'))
-  return;
-end
-
-areas{end+1} = 'M2356';
-dataStruct.areas = areas;
-dataStruct.idMatIdx{end+1} = [dataStruct.idMatIdx{idxM23}(:); dataStruct.idMatIdx{idxM56}(:)];
-if isfield(dataStruct, 'idLabel')
-  dataStruct.idLabel{end+1} = [dataStruct.idLabel{idxM23}(:); dataStruct.idLabel{idxM56}(:)];
-end
-fprintf('  Added combined M2356 area\n');
-end
 
 function areasToAnalyze = resolve_areas_to_analyze(dataStruct, brainArea, nMinNeurons)
 % RESOLVE_AREAS_TO_ANALYZE - Area indices to process
@@ -530,44 +506,4 @@ else
   label = char(areaNames);
 end
 label = matlab.lang.makeValidName(label);
-end
-
-function cellTypes = get_cell_types_to_run(splitExcitatoryInhibitory)
-% GET_CELL_TYPES_TO_RUN - Cell types to analyze when E/I split is enabled
-
-if splitExcitatoryInhibitory
-  cellTypes = {'excitatory', 'inhibitory'};
-else
-  cellTypes = {''};
-end
-end
-
-function dataStructCopy = copy_neuron_selection(dataStruct)
-% COPY_NEURON_SELECTION - Copy idLabel/idMatIdx before waveform filtering
-
-dataStructCopy = dataStruct;
-for a = 1:numel(dataStruct.areas)
-  dataStructCopy.idLabel{a} = dataStruct.idLabel{a}(:)';
-  dataStructCopy.idMatIdx{a} = dataStruct.idMatIdx{a}(:)';
-end
-end
-
-function tag = cell_type_file_tag(cellType)
-% CELL_TYPE_FILE_TAG - Filename suffix for E/I runs
-
-if isempty(cellType)
-  tag = '';
-else
-  tag = ['_' cellType];
-end
-end
-
-function label = cell_type_label(cellType)
-% CELL_TYPE_LABEL - Display label for command-window messages
-
-if isempty(cellType)
-  label = 'all units';
-else
-  label = cellType;
-end
 end

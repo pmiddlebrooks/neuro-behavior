@@ -13,13 +13,15 @@
 %   collectStart       - Window start (seconds from session onset)
 %   collectEnd         - Window end (seconds)
 %   prgWindow          - Non-overlapping block length (seconds); blockWindowSize
-%   brainArea          - Area to analyze (e.g. 'M56'); '' uses all valid areas
+%   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' uses all valid areas
+%   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
 %   prgMethod          - 'pca' (momentum-space) or 'icg' (real-space ICG)
 %   surrogateMethod    - 'isi' (ISI shuffle per unit) or 'circular' (circshift per neuron)
 %   useSubsampling     - If true, kappa/D_JS per window = mean across neuron subsamples
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
-%   splitExcitatoryInhibitory - If true, run separately for E and I units (waveforms.mat)
+%   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory;
+%                               also plots mean +/- SEM summary across windows
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %
 % Goal:
@@ -38,6 +40,7 @@ collectEnd = 45 * 60;
 prgWindow = 30;  % seconds; non-overlapping blocks
 
 brainArea = 'M56';
+brainAreaCombinations = default_manuscript_brain_area_combinations();
 saveFigure = false;
 
 useSubsampling = false;
@@ -78,10 +81,6 @@ analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-analysisConfig.includeM2356 = false;
-if ~isempty(brainArea) && strcmpi(brainArea, 'M2356')
-  analysisConfig.includeM2356 = true;
-end
 
 %% Paths
 paths = get_paths();
@@ -121,20 +120,22 @@ subjectNameForLoad = subjectName;
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 
-[dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea);
+[dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations, false);
 if ~areaOk
   error('Brain area "%s" not available in this session.', brainArea);
 end
 
-cellTypesToRun = get_cell_types_to_run(splitExcitatoryInhibitory);
+cellTypesToRun = get_session_cell_types_to_run(splitExcitatoryInhibitory);
+if splitExcitatoryInhibitory
+  kappaLabel = sprintf('\\kappa (N/%d)', analysisConfig.finalCutoffDivisor);
+  eiSummary = init_session_ei_summary({'kappa'}, {kappaLabel});
+end
+
 for iCellRun = 1:numel(cellTypesToRun)
   cellType = cellTypesToRun{iCellRun};
-  dataStructRun = copy_neuron_selection(dataStruct);
+  dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, widthCutoff, splitExcitatoryInhibitory);
 
-  if splitExcitatoryInhibitory
-    fprintf('\n--- Cell type: %s ---\n', cellType);
-    [dataStructRun, ~] = apply_session_cell_type_filter(dataStructRun, paths, cellType, widthCutoff);
-  end
+  [dataStructRun, ~] = apply_manuscript_brain_area_selection(dataStructRun, brainArea, brainAreaCombinations);
 
   results = criticality_prg_analysis(dataStructRun, analysisConfig);
 
@@ -146,6 +147,11 @@ for iCellRun = 1:numel(cellTypesToRun)
   end
 
   print_session_kappa_summary(results);
+
+  if splitExcitatoryInhibitory
+    eiSummary = set_session_ei_summary_population(eiSummary, cellType, ...
+      extract_kappa_summary_metric_values(results));
+  end
 
   %% Overlapping kurtosis distributions (real vs surrogate)
   plotConfig = struct('savePlots', false);
@@ -167,8 +173,8 @@ for iCellRun = 1:numel(cellTypesToRun)
   figDist = figDist(1);
 
   if splitExcitatoryInhibitory
-    sgtitle(figDist, sprintf('%s | %s cells | width cutoff %.3f ms', ...
-      sessionName, cellType, widthCutoff), 'Interpreter', 'none');
+    sgtitle(figDist, sprintf('%s | %s | width cutoff %.3f ms', ...
+      sessionName, cell_type_label(cellType), widthCutoff), 'Interpreter', 'none');
   end
 
   if saveFigure
@@ -182,31 +188,42 @@ for iCellRun = 1:numel(cellTypesToRun)
   end
 end
 
+if splitExcitatoryInhibitory
+  areaTag = format_areas_label(brainArea);
+  if isempty(areaTag)
+    areaTag = 'all_areas';
+  end
+  kappaLabel = sprintf('\\kappa (N/%d)', analysisConfig.finalCutoffDivisor);
+  summaryTitle = sprintf('%s | %s | %s mean +/- SEM across windows', sessionName, areaTag, kappaLabel);
+  figEiSummary = plot_session_ei_summary(eiSummary, summaryTitle, kappaLabel);
+  if saveFigure
+    saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+    if ~exist(saveDir, 'dir')
+      mkdir(saveDir);
+    end
+    plotBase = sprintf('session_kurtosis_ei_summary_%s_%s_%s_%s_win%.0fs_%.0f-%.0fs%s', ...
+      sessionName, areaTag, analysisConfig.prgMethod, analysisConfig.surrogateMethod, prgWindow, ...
+      collectStart, collectEnd, session_ei_summary_file_tag());
+    exportgraphics(figEiSummary, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+    exportgraphics(figEiSummary, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+    fprintf('\nSaved E/I summary figure: %s\n', fullfile(saveDir, plotBase));
+  end
+end
+
 fprintf('\n=== Done ===\n');
 
 %% Local functions
 
-function [dataStruct, areaOk] = apply_brain_area_selection(dataStruct, brainArea)
-% APPLY_BRAIN_AREA_SELECTION - Restrict analysis to one brain area
+function metricValues = extract_kappa_summary_metric_values(results)
+% EXTRACT_KAPPA_SUMMARY_METRIC_VALUES - Window-wise kappa for E/I summary plot
 
-areaOk = true;
-if isempty(brainArea)
+metricValues = struct('kappa', []);
+if isempty(results.areas) || isempty(results.kappa)
   return;
 end
 
-if strcmpi(brainArea, 'M2356')
-  areaOk = any(strcmp(dataStruct.areas, 'M23')) && any(strcmp(dataStruct.areas, 'M56'));
-  return;
-end
-
-areaIdx = find(strcmp(dataStruct.areas, brainArea), 1);
-if isempty(areaIdx)
-  areaOk = false;
-  return;
-end
-
-dataStruct.areasToTest = areaIdx;
-fprintf('  Restricting analysis to area: %s\n', brainArea);
+validMask = isfinite(results.kappa{1}) & ~results.windowExcluded{1};
+metricValues.kappa = results.kappa{1}(validMask);
 end
 
 function results = filter_prg_results_to_brain_area(results, brainArea)
@@ -274,44 +291,4 @@ else
   label = char(areaNames);
 end
 label = matlab.lang.makeValidName(label);
-end
-
-function cellTypes = get_cell_types_to_run(splitExcitatoryInhibitory)
-% GET_CELL_TYPES_TO_RUN - Cell types to analyze when E/I split is enabled
-
-if splitExcitatoryInhibitory
-  cellTypes = {'excitatory', 'inhibitory'};
-else
-  cellTypes = {''};
-end
-end
-
-function dataStructCopy = copy_neuron_selection(dataStruct)
-% COPY_NEURON_SELECTION - Copy idLabel/idMatIdx before waveform filtering
-
-dataStructCopy = dataStruct;
-for a = 1:numel(dataStruct.areas)
-  dataStructCopy.idLabel{a} = dataStruct.idLabel{a}(:)';
-  dataStructCopy.idMatIdx{a} = dataStruct.idMatIdx{a}(:)';
-end
-end
-
-function tag = cell_type_file_tag(cellType)
-% CELL_TYPE_FILE_TAG - Filename suffix for E/I runs
-
-if isempty(cellType)
-  tag = '';
-else
-  tag = ['_' cellType];
-end
-end
-
-function label = cell_type_label(cellType)
-% CELL_TYPE_LABEL - Display label for command-window messages
-
-if isempty(cellType)
-  label = 'all units';
-else
-  label = cellType;
-end
 end
