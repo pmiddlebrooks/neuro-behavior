@@ -33,7 +33,7 @@ dataSource = 'spikes';
 collectStart = 0;
 collectEnd = 45 * 60;
 
-prgWindow = 30;  % seconds; non-overlapping blocks (blockWindowSize)
+prgWindow = 45*60;  % seconds; non-overlapping blocks (blockWindowSize)
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
@@ -55,8 +55,8 @@ analysisConfig.prgMethod = 'pca';  % 'pca' or 'icg'
 analysisConfig.blockWindowSize = prgWindow;
 analysisConfig.binSize = 0.05;
 analysisConfig.cvThreshold = 5;
-analysisConfig.cutoffDivisors = [1, 2, 4, 8, 16];
-analysisConfig.finalCutoffDivisor = 16;
+analysisConfig.cutoffDivisors = [1, 2, 4, 8, 16, 32];
+analysisConfig.finalCutoffDivisor = 32;
 analysisConfig.kappaAxisMax = 20;
 analysisConfig.enableSurrogates = true;
 analysisConfig.nSurrogates = 10;
@@ -750,7 +750,7 @@ for t = 1:length(sessionTypes)
 
   xPos = xCursor + (1:numBars);
   errorbar(ax, xPos, kappaMeans, kappaSems, 'o', 'Color', typeColors(t, :), ...
-    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 24, 'LineWidth', 1.2, ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 20, 'LineWidth', 1.2, ...
     'CapSize', 8, 'DisplayName', 'session \kappa');
 
   if any(isfinite(shuffleMeans))
@@ -759,13 +759,13 @@ for t = 1:length(sessionTypes)
     semPlot(~isfinite(semPlot)) = 0;
     errorbar(ax, xShuffle, shuffleMeans, semPlot, 's', ...
       'Color', shuffleBarColor, 'MarkerFaceColor', shuffleBarColor, ...
-      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 24, 'LineWidth', 1.2, ...
+      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 20, 'LineWidth', 1.2, ...
       'CapSize', 8, 'DisplayName', 'surrogate mean \pm SEM (across windows)');
   end
 
-  groupCenter = mean(xPos);
-  xticksCenters(end+1) = groupCenter; %#ok<AGROW>
-  xtickLabels{end+1} = sessionType; %#ok<AGROW>
+  barLabels = get_session_bar_labels(typeData, numBars, sessionType);
+  xticksCenters = [xticksCenters, xPos]; %#ok<AGROW>
+  xtickLabels = [xtickLabels, barLabels]; %#ok<AGROW>
 
   validMeans = kappaMeans(isfinite(kappaMeans));
   if ~isempty(validMeans)
@@ -780,6 +780,7 @@ end
 if ~isempty(xticksCenters)
   xticks(ax, xticksCenters);
   xticklabels(ax, xtickLabels);
+  xtickangle(ax, 45);
 end
 grid(ax, 'on');
 if legendShown
@@ -826,12 +827,12 @@ for t = 1:length(sessionTypes)
 
   xPos = xCursor + (1:numBars);
   errorbar(ax, xPos, metricMeans, metricSems, 'o', 'Color', typeColors(t, :), ...
-    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 24, 'LineWidth', 1.2, ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 20, 'LineWidth', 1.2, ...
     'CapSize', 8, 'DisplayName', legendLabel);
 
-  groupCenter = mean(xPos);
-  xticksCenters(end+1) = groupCenter; %#ok<AGROW>
-  xtickLabels{end+1} = sessionType; %#ok<AGROW>
+  barLabels = get_session_bar_labels(typeData, numBars, sessionType);
+  xticksCenters = [xticksCenters, xPos]; %#ok<AGROW>
+  xtickLabels = [xtickLabels, barLabels]; %#ok<AGROW>
 
   validMeans = metricMeans(isfinite(metricMeans));
   if ~isempty(validMeans)
@@ -846,6 +847,7 @@ end
 if ~isempty(xticksCenters)
   xticks(ax, xticksCenters);
   xticklabels(ax, xtickLabels);
+  xtickangle(ax, 45);
 end
 grid(ax, 'on');
 if legendShown
@@ -892,7 +894,7 @@ for t = 1:length(sessionTypes)
 
   xPos = xCursor + (1:numBars);
   errorbar(ax, xPos, djsMeans, djsSems, 'o', 'Color', typeColors(t, :), ...
-    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 24, 'LineWidth', 1.2, ...
+    'MarkerFaceColor', typeColors(t, :), 'MarkerSize', 20, 'LineWidth', 1.2, ...
     'CapSize', 8, 'DisplayName', 'session D_{JS}');
 
   if any(isfinite(shuffleMeans))
@@ -901,13 +903,13 @@ for t = 1:length(sessionTypes)
     semPlot(~isfinite(semPlot)) = 0;
     errorbar(ax, xShuffle, shuffleMeans, semPlot, 's', ...
       'Color', shuffleBarColor, 'MarkerFaceColor', shuffleBarColor, ...
-      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 24, 'LineWidth', 1.2, ...
+      'MarkerEdgeColor', [0.2, 0.2, 0.2], 'MarkerSize', 20, 'LineWidth', 1.2, ...
       'CapSize', 8, 'DisplayName', 'surrogate mean \pm SEM (across windows)');
   end
 
-  groupCenter = mean(xPos);
-  xticksCenters(end+1) = groupCenter; %#ok<AGROW>
-  xtickLabels{end+1} = sessionType; %#ok<AGROW>
+  barLabels = get_session_bar_labels(typeData, numBars, sessionType);
+  xticksCenters = [xticksCenters, xPos]; %#ok<AGROW>
+  xtickLabels = [xtickLabels, barLabels]; %#ok<AGROW>
 
   validMeans = djsMeans(isfinite(djsMeans));
   if ~isempty(validMeans)
@@ -922,12 +924,34 @@ end
 if ~isempty(xticksCenters)
   xticks(ax, xticksCenters);
   xticklabels(ax, xtickLabels);
+  xtickangle(ax, 45);
 end
 grid(ax, 'on');
 if legendShown
   legend(ax, {'session D_{JS}', 'surrogate mean \pm SEM (across windows)'}, 'Location', 'best');
 end
 hold(ax, 'off');
+end
+
+function barLabels = get_session_bar_labels(typeData, numBars, sessionType)
+% GET_SESSION_BAR_LABELS - One x-axis label per session bar (sessionName)
+%
+% Variables:
+%   typeData    - Aggregated metrics for one session type
+%   numBars     - Number of bars in the current group
+%   sessionType - Fallback label if sessionNames unavailable
+%
+% Returns:
+%   barLabels - 1 x numBars cell of char labels
+
+if isfield(typeData, 'sessionNames') && numel(typeData.sessionNames) >= numBars
+  barLabels = typeData.sessionNames(1:numBars);
+elseif isfield(typeData, 'sessionLabels') && numel(typeData.sessionLabels) >= numBars
+  barLabels = typeData.sessionLabels(1:numBars);
+else
+  barLabels = repmat({sessionType}, 1, numBars);
+end
+barLabels = cellfun(@char, barLabels, 'UniformOutput', false);
 end
 
 function plotBase = make_prg_plot_basename(prefix, areaName, brainArea, prgWindow, collectStart, collectEnd, multiArea, finalCutoffDivisor, prgMethod)

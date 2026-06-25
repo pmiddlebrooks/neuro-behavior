@@ -22,35 +22,46 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
     opts.subjectName = subjectName;
     
     if strcmp(dataSource, 'spikes')
-        % Load spontaneous spike data
-        % First load behavior data (needed for neural_matrix)
-        dataBhv = load_data(opts, 'behavior');
-        
-        % Create bhvID vector using behavior sampling frequency (opts.fsBhv)
-        % This creates bhvID at behavior sampling rate, not neural data frame rate
-        if ~isfield(opts, 'fsBhv')
-            error('behavior needs a sampling frequency, opts.fsBhv, in the opts struct')
-        end
-        bhvBinSize = 1 / opts.fsBhv;  % Behavior bin size in seconds
-        nBhvBins = ceil(opts.collectEnd / bhvBinSize);
-        dataBhv.StartFrame = 1 + round(dataBhv.StartTime / bhvBinSize);
-        bhvID = zeros(nBhvBins, 1);
-        for i = 1:size(dataBhv, 1) - 1
-            iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
-            bhvID(iInd) = dataBhv.ID(i);
-        end
-        if ~isempty(dataBhv)
-            iInd = dataBhv.StartFrame(end):nBhvBins;
-            if ~isempty(iInd)
-                bhvID(iInd) = dataBhv.ID(end);
+        sessionFolder = fullfile(opts.dataPath, opts.sessionName);
+        hasBehaviorLabels = behavior_labels_available(sessionFolder);
+
+        if hasBehaviorLabels
+            dataBhv = load_data(opts, 'behavior');
+
+            % Create bhvID vector using behavior sampling frequency (opts.fsBhv)
+            if ~isfield(opts, 'fsBhv')
+                error('behavior needs a sampling frequency, opts.fsBhv, in the opts struct')
+            end
+            bhvBinSize = 1 / opts.fsBhv;  % Behavior bin size in seconds
+            nBhvBins = ceil(opts.collectEnd / bhvBinSize);
+            dataBhv.StartFrame = 1 + round(dataBhv.StartTime / bhvBinSize);
+            bhvID = zeros(nBhvBins, 1);
+            for i = 1:size(dataBhv, 1) - 1
+                iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
+                bhvID(iInd) = dataBhv.ID(i);
+            end
+            if ~isempty(dataBhv)
+                iInd = dataBhv.StartFrame(end):nBhvBins;
+                if ~isempty(iInd)
+                    bhvID(iInd) = dataBhv.ID(end);
+                end
+            end
+
+            dataStruct.bhvID = bhvID;
+            dataStruct.dataBhv = dataBhv;
+            dataStruct.fsBhv = opts.fsBhv;
+        else
+            warning('load_spontaneous_data:NoBehaviorLabels', ...
+                'No behavior_labels CSV in %s; skipping behavior data.', sessionFolder);
+            dataStruct.bhvID = [];
+            dataStruct.dataBhv = [];
+            if isfield(opts, 'fsBhv') && ~isempty(opts.fsBhv)
+                dataStruct.fsBhv = opts.fsBhv;
+            else
+                dataStruct.fsBhv = [];
             end
         end
-        
-        % Store bhvID in dataStruct for behavior proportion calculations
-        dataStruct.bhvID = bhvID;
-        dataStruct.dataBhv = dataBhv;  % Also store full behavior data for reference
-        dataStruct.fsBhv = opts.fsBhv;  % Store behavior sampling frequency for window calculations
-        
+
         % Check if we should use spike times approach (new) or dataMat (old)
         % Default to spike times if not specified
         if ~isfield(opts, 'useSpikeTimes') || isempty(opts.useSpikeTimes)
@@ -98,9 +109,10 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
             fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
         else
             % Load using old approach (dataMat)
-            % Load spike data
             spikeDataRaw = load_data(opts, 'spikes');
-            spikeDataRaw.bhvDur = dataBhv.Dur;
+            if hasBehaviorLabels
+                spikeDataRaw.bhvDur = dataBhv.Dur;
+            end
             
             % Find the neuron clusters (ids) in each brain region
             useMulti = 1;
@@ -194,4 +206,11 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
     dataStruct.startBlock2 = [];
     dataStruct.reachStart = [];
     dataStruct.reachClass = [];
+end
+
+function tf = behavior_labels_available(sessionFolder)
+% BEHAVIOR_LABELS_AVAILABLE - True when a behavior_labels*.csv exists
+
+csvFiles = dir(fullfile(sessionFolder, 'behavior_labels*.csv'));
+tf = ~isempty(csvFiles);
 end
