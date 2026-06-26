@@ -25,8 +25,18 @@ fprintf('\n--- Cell type: %s ---\n', cell_type_label(cellType));
 end
 
 function dataStructCopy = copy_neuron_selection(dataStruct)
+% COPY_NEURON_SELECTION - Deep copy of per-area neuron id fields
+%
+% Variables:
+%   dataStruct - Session struct with idLabel and idMatIdx cell arrays
+%
+% Goal: Copy neuron selections without sharing cell arrays with the source struct
+
 dataStructCopy = dataStruct;
-for a = 1:numel(dataStruct.areas)
+nAreas = numel(dataStruct.areas);
+dataStructCopy.idLabel = cell(1, nAreas);
+dataStructCopy.idMatIdx = cell(1, nAreas);
+for a = 1:nAreas
   dataStructCopy.idLabel{a} = dataStruct.idLabel{a}(:)';
   dataStructCopy.idMatIdx{a} = dataStruct.idMatIdx{a}(:)';
 end

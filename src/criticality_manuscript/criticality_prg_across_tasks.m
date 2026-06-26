@@ -25,6 +25,7 @@
 %   Compare PRG kurtosis (kappa at N/finalCutoffDivisor) and Jensen-Shannon distance
 %   (D_JS vs Gaussian) across session types, including values normalized by per-window
 %   surrogate means. Per session: mean and SEM across valid windows.
+%   See: CambrainhaC_etal_2025_PRXLife; CambrainhaC_etal_2026_arXiv
 
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
@@ -33,7 +34,7 @@ dataSource = 'spikes';
 collectStart = 0;
 collectEnd = 45 * 60;
 
-prgWindow = 45*60;  % seconds; non-overlapping blocks (blockWindowSize)
+prgWindow = 30;  % seconds; non-overlapping blocks (blockWindowSize)
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
@@ -42,12 +43,12 @@ runBatch = true;
 plotResults = true;
 
 useSubsampling = false;
-nSubsamples = 30;
-nNeuronsSubsample = 32;
+nSubsamples = 10;
+nNeuronsSubsample = 40;
 minNeuronsMultiple = 1.25;
 
 % Surrogate null: 'isi' (Cambrainha paper) or 'circular' (per-neuron circshift on binned data)
-surrogateMethod = 'circular';
+surrogateMethod = 'isi';
 
 % PRG settings (aligned with run_criticality_prg.m)
 analysisConfig = struct();
@@ -56,7 +57,7 @@ analysisConfig.blockWindowSize = prgWindow;
 analysisConfig.binSize = 0.05;
 analysisConfig.cvThreshold = 5;
 analysisConfig.cutoffDivisors = [1, 2, 4, 8, 16, 32];
-analysisConfig.finalCutoffDivisor = 32;
+analysisConfig.finalCutoffDivisor = 4;
 analysisConfig.kappaAxisMax = 20;
 analysisConfig.enableSurrogates = true;
 analysisConfig.nSurrogates = 10;
