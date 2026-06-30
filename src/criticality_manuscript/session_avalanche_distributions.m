@@ -28,6 +28,12 @@
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %   enableCircularPermutations - If true, circular-shift each neuron and overlay shuffle CCDFs
 %   nShuffles          - Number of independent circular permutations per area
+%   saveAnalysisResults - If true, save sessionResults after %% Analysis
+%   analysisResultsFile - Path to .mat cache; '' = default under dropPath/criticality_manuscript
+%
+% Sections:
+%   %% Analysis  - load session, extract avalanches, optionally save sessionResults
+%   %% Plotting  - figures from sessionResults (loads .mat if not in workspace)
 %
 % Goal:
 %   Visualize avalanche size and duration distributions for one session
@@ -45,7 +51,7 @@ windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
-saveFigure = false;
+saveFigure = true;
 
 % Power-law fitting: 'clauset', 'plfit2023', 'hybrid' = plfit2023 xmax, then Clauset plfit on x <= xmax
 powerLawFitMethod = 'hybrid';
@@ -68,8 +74,23 @@ widthCutoff = 0.035;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 enableCircularPermutations = true;
 nShuffles = 5;
 
+saveAnalysisResults = false;
+analysisResultsFile = '';  % default: dropPath/criticality_manuscript/session_avalanche_results_<session>.mat
+
+% Plot formatting (edit and re-run %% Plotting)
+plotConfig = struct();
+plotConfig.observedMarkerSize = 5;
+plotConfig.shuffleMarkerSize = 4;
+plotConfig.fitLineWidth = 2.5;
+plotConfig.tileSpacing = 'compact';
+plotConfig.tilePadding = 'compact';
+plotConfig.legendLocation = 'southwest';
+plotConfig.axisLabelFontSize = 14;
+plotConfig.tickLabelFontSize = 12;
+plotConfig.axesLineWidth = 1.5;
+
 opts = neuro_behavior_options();
-opts.firingRateCheckTime = 5 * 60;
+opts.firingRateCheckTime = []; %5 * 60;
 opts.collectStart = collectStart;
 opts.collectEnd = collectEnd;
 opts.minFiringRate = 0.1;
@@ -99,13 +120,14 @@ analysisConfig.runClausetPlpva = runClausetPlpva;
 analysisConfig.enableCircularPermutations = enableCircularPermutations;
 analysisConfig.nShuffles = nShuffles;
 
-%% Paths
+% Paths
 paths = get_paths();
 scriptDir = fileparts(mfilename('fullpath'));
 if contains(scriptDir, [filesep 'Editor_' filesep])
   scriptDir = fileparts(which('session_avalanche_distributions'));
 end
 srcPath = fullfile(scriptDir, '..');
+addpath(scriptDir, '-begin');
 addpath(srcPath);
 addpath(fullfile(srcPath, 'reach_task'));
 addpath(fullfile(srcPath, 'schall'));
@@ -138,7 +160,7 @@ end
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
 
-%% Load and run session
+%% Analysis — load session, extract avalanches, optionally cache results
 subjectNameForLoad = subjectName;
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
@@ -148,138 +170,281 @@ if ~areaOk
   error('Brain area "%s" not available in this session.', brainArea);
 end
 
-cellTypesToRun = get_session_cell_types_to_run(splitExcitatoryInhibitory);
-if splitExcitatoryInhibitory
-  eiSummary = init_session_ei_summary({'tau', 'alpha'}, {'\tau', '\alpha'});
+runMeta = struct( ...
+  'sessionType', sessionType, ...
+  'sessionName', sessionName, ...
+  'subjectName', subjectName, ...
+  'dataSource', dataSource, ...
+  'collectStart', collectStart, ...
+  'collectEnd', collectEnd, ...
+  'brainArea', brainArea, ...
+  'brainAreaCombinations', {brainAreaCombinations}, ...
+  'powerLawFitMethod', powerLawFitMethod, ...
+  'avalancheDetectionMode', avalancheDetectionMode, ...
+  'enableCircularPermutations', enableCircularPermutations, ...
+  'nShuffles', nShuffles, ...
+  'useSubsampling', useSubsampling, ...
+  'splitExcitatoryInhibitory', splitExcitatoryInhibitory, ...
+  'widthCutoff', widthCutoff, ...
+  'saveFigure', saveFigure);
+sessionResults = build_session_avalanche_results(dataStruct, paths, analysisConfig, runMeta, plotConfig);
+
+if saveAnalysisResults
+  resultsFile = resolve_avalanche_results_file(paths, sessionName, analysisResultsFile);
+  save(resultsFile, 'sessionResults', '-v7.3');
+  fprintf('\nSaved analysis results: %s\n', resultsFile);
+end
+
+%% Plotting — figures from sessionResults (re-run this section to tweak formatting)
+if ~exist('sessionResults', 'var') || isempty(sessionResults)
+  resultsFile = resolve_avalanche_results_file(paths, sessionName, analysisResultsFile);
+  if ~isfile(resultsFile)
+    error(['sessionResults not in workspace and results file not found: %s. ', ...
+      'Run %% Analysis first or set analysisResultsFile.'], resultsFile);
+  end
+  loaded = load(resultsFile, 'sessionResults');
+  sessionResults = loaded.sessionResults;
+  fprintf('\nLoaded analysis results: %s\n', resultsFile);
+end
+
+sessionResults.plotConfig = plotConfig;
+plot_session_avalanche_results(sessionResults, paths, plotConfig);
+
+fprintf('\n=== Done ===\n');
+
+%% Local functions
+
+function resultsFile = resolve_avalanche_results_file(paths, sessionName, analysisResultsFile)
+% RESOLVE_AVALANCHE_RESULTS_FILE - Default path for cached session avalanche results
+
+if ~isempty(analysisResultsFile)
+  resultsFile = analysisResultsFile;
+  return;
+end
+
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+sessionTag = matlab.lang.makeValidName(sessionName);
+resultsFile = fullfile(saveDir, sprintf('session_avalanche_results_%s.mat', sessionTag));
+end
+
+function sessionResults = build_session_avalanche_results(dataStruct, paths, analysisConfig, runMeta, plotConfig)
+% BUILD_SESSION_AVALANCHE_RESULTS - Run avalanche extraction for all cell-type runs
+
+runMeta = runMeta(1);
+cellTypesToRun = get_session_cell_types_to_run(runMeta.splitExcitatoryInhibitory);
+sessionResults = struct();
+sessionResults.meta = runMeta;
+sessionResults.plotConfig = plotConfig;
+sessionResults.runs = cell(1, numel(cellTypesToRun));
+sessionResults.eiSummary = [];
+
+if runMeta.splitExcitatoryInhibitory
+  sessionResults.eiSummary = init_session_ei_summary({'tau', 'alpha'}, {'\tau', '\alpha'});
 end
 
 for iCellRun = 1:numel(cellTypesToRun)
   cellType = cellTypesToRun{iCellRun};
-  dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, widthCutoff, splitExcitatoryInhibitory);
+  dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, ...
+    runMeta.widthCutoff, runMeta.splitExcitatoryInhibitory);
+  [dataStructRun, ~] = apply_manuscript_brain_area_selection(dataStructRun, ...
+    runMeta.brainArea, runMeta.brainAreaCombinations);
 
-  [dataStructRun, ~] = apply_manuscript_brain_area_selection(dataStructRun, brainArea, brainAreaCombinations);
-
-  areasToAnalyze = resolve_areas_to_analyze(dataStructRun, brainArea, analysisConfig.nMinNeurons);
+  areasToAnalyze = resolve_areas_to_analyze(dataStructRun, runMeta.brainArea, analysisConfig.nMinNeurons);
   if isempty(areasToAnalyze)
     error('No areas meet minimum neuron count (%d) for %s.', ...
       analysisConfig.nMinNeurons, cell_type_label(cellType));
   end
 
-  %% Avalanche extraction and figure
-  fig = figure('Name', sprintf('Session avalanche distributions%s', cell_type_file_tag(cellType)));
-  clf(fig);
-  tiledlayout(fig, 1, numel(areasToAnalyze) * 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+  runResult = struct();
+  runResult.cellType = cellType;
+  runResult.areasToAnalyze = areasToAnalyze;
+  runResult.areaNames = dataStructRun.areas(areasToAnalyze);
+  runResult.areaResults = {};
+  runResult.eiSummaryMetrics = struct('tau', nan, 'alpha', nan);
 
-  avSummaryMetrics = struct('tau', nan, 'alpha', nan);
   for aIdx = 1:numel(areasToAnalyze)
     areaIndex = areasToAnalyze(aIdx);
     areaName = dataStructRun.areas{areaIndex};
 
     fprintf('\nArea %s (%s)...\n', areaName, cell_type_label(cellType));
-    avData = extract_area_avalanches(dataStructRun, areaIndex, analysisConfig, collectStart, collectEnd);
+    avData = extract_area_avalanches(dataStructRun, areaIndex, analysisConfig, ...
+      runMeta.collectStart, runMeta.collectEnd);
+    avData.areaName = areaName;
 
     if ~avData.hasAvalanches
-      warning('No avalanches detected for area %s (%s); skipping plots.', areaName, cell_type_label(cellType));
+      warning('No avalanches detected for area %s (%s).', areaName, cell_type_label(cellType));
       continue;
     end
 
-    fprintf('  Size:  tau = %.3f, x in [%.3g, %.3g]', ...
-      avData.tau, avData.minSizeFit, avData.maxSizeFit);
-    print_fit_diagnostics(avData.sizeFitInfo);
-    print_hybrid_fit_diagnostics(avData.sizeFitInfo);
-    fprintf('\n');
-    fprintf('  Dur:   alpha = %.3f, x in [%.3g, %.3g]', ...
-      avData.alpha, avData.minDurFit, avData.maxDurFit);
-    print_fit_diagnostics(avData.durFitInfo);
-    print_hybrid_fit_diagnostics(avData.durFitInfo);
-    fprintf('\n');
-    fprintf('  Scaling relation (alpha-1)/(tau-1): ');
-    print_scaling_relation(avData.tau, avData.alpha);
-    fprintf('\n');
-    fprintf('  n = %d avalanches\n', avData.nAvalanches);
-    if enableCircularPermutations && ~isempty(avData.shuffleSizes)
-      fprintf('  Shuffle (pooled): n = %d avalanches over %d shuffles\n', ...
-        numel(avData.shuffleSizes), avData.nShufflesCompleted);
-      if isfinite(avData.shuffleTau)
-        fprintf('  Shuffle size:  tau = %.3f\n', avData.shuffleTau);
-      end
-      if isfinite(avData.shuffleAlpha)
-        fprintf('  Shuffle dur:   alpha = %.3f\n', avData.shuffleAlpha);
-      end
-    end
+    print_area_avalanche_summary(avData, runMeta.enableCircularPermutations);
+    runResult.areaResults{end+1} = avData; %#ok<AGROW>
 
-    tileSize = (aIdx - 1) * 2 + 1;
-    tileDur = tileSize + 1;
-
-    axSize = nexttile(tileSize);
-    plot_avalanche_ccdf_with_fit(axSize, avData.sizes, avData.tau, ...
-      avData.minSizeFit, avData.maxSizeFit, 'Avalanche size', '\tau', avData.sizeFitInfo, ...
-      avData.shuffleSizes);
-
-    axDur = nexttile(tileDur);
-    plot_avalanche_ccdf_with_fit(axDur, avData.durations, avData.alpha, ...
-      avData.minDurFit, avData.maxDurFit, 'Avalanche duration (bins)', '\alpha', avData.durFitInfo, ...
-      avData.shuffleDurations);
-
-    if ~isfinite(avSummaryMetrics.tau)
-      avSummaryMetrics.tau = avData.tau;
-      avSummaryMetrics.alpha = avData.alpha;
+    if ~isfinite(runResult.eiSummaryMetrics.tau)
+      runResult.eiSummaryMetrics.tau = avData.tau;
+      runResult.eiSummaryMetrics.alpha = avData.alpha;
     end
   end
 
-  if splitExcitatoryInhibitory && isfinite(avSummaryMetrics.tau)
-    eiSummary = set_session_ei_summary_population(eiSummary, cellType, avSummaryMetrics);
+  if runMeta.splitExcitatoryInhibitory && isfinite(runResult.eiSummaryMetrics.tau)
+    sessionResults.eiSummary = set_session_ei_summary_population( ...
+      sessionResults.eiSummary, cellType, runResult.eiSummaryMetrics);
+  end
+
+  sessionResults.runs{iCellRun} = runResult;
+end
+end
+
+function plot_session_avalanche_results(sessionResults, paths, plotConfig)
+% PLOT_SESSION_AVALANCHE_RESULTS - Figures from cached avalanche extraction results
+
+runMeta = sessionResults.meta;
+if nargin < 3 || isempty(plotConfig)
+  if isfield(sessionResults, 'plotConfig') && ~isempty(sessionResults.plotConfig)
+    plotConfig = sessionResults.plotConfig;
+  else
+    plotConfig = struct();
+  end
+end
+plotConfig = fill_default_avalanche_plot_config(plotConfig);
+
+for iCellRun = 1:numel(sessionResults.runs)
+  runResult = sessionResults.runs{iCellRun};
+  if isempty(runResult.areaResults)
+    warning('No avalanche results to plot for cell type "%s".', cell_type_label(runResult.cellType));
+    continue;
+  end
+
+  fig = figure('Name', sprintf('Session avalanche distributions%s', cell_type_file_tag(runResult.cellType)));
+  clf(fig);
+  tiledlayout(fig, 1, numel(runResult.areaResults) * 2, ...
+    'TileSpacing', plotConfig.tileSpacing, 'Padding', plotConfig.tilePadding);
+
+  for aIdx = 1:numel(runResult.areaResults)
+    avData = runResult.areaResults{aIdx};
+
+    axSize = nexttile((aIdx - 1) * 2 + 1);
+    plot_avalanche_ccdf_with_fit(axSize, avData.sizes, avData.tau, ...
+      avData.minSizeFit, avData.maxSizeFit, 'Sizes', '\tau', avData.sizeFitInfo, ...
+      avData.shuffleSizes, plotConfig);
+
+    axDur = nexttile((aIdx - 1) * 2 + 2);
+    binSize = resolve_avalanche_duration_bin_size(avData);
+    plot_avalanche_ccdf_with_fit(axDur, avData.durations * binSize * 1000, avData.alpha, ...
+      avData.minDurFit * binSize, avData.maxDurFit * binSize, 'Durations (ms)', '\alpha', ...
+      avData.durFitInfo, avData.shuffleDurations * binSize * 1000, plotConfig);
   end
 
   titleSuffix = '';
-  if splitExcitatoryInhibitory
-    titleSuffix = sprintf(' | %s | width cutoff %.3f ms', cell_type_label(cellType), widthCutoff);
+  if runMeta.splitExcitatoryInhibitory
+    titleSuffix = sprintf(' | %s | width cutoff %.3f ms', ...
+      cell_type_label(runResult.cellType), runMeta.widthCutoff);
   end
-  sgtitle(fig, sprintf('%s — %s [%.0f–%.0f s]%s', sessionName, ...
-    format_areas_label(dataStructRun.areas(areasToAnalyze)), collectStart, collectEnd, titleSuffix), ...
+  sgtitle(fig, sprintf('%s — %s [%.0f–%.0f s]%s', runMeta.sessionName, ...
+    format_areas_label(runResult.areaNames), runMeta.collectStart, runMeta.collectEnd, titleSuffix), ...
     'FontWeight', 'bold', 'Interpreter', 'none');
 
-  if saveFigure
-    saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
-    if ~exist(saveDir, 'dir')
-      mkdir(saveDir);
-    end
-    areaTag = format_areas_label(dataStructRun.areas(areasToAnalyze));
-    plotBase = sprintf('session_avalanche_distributions_%s_%s_%s_%.0f-%.0fs%s', ...
-      sessionName, areaTag, powerLawFitMethod, collectStart, collectEnd, cell_type_file_tag(cellType));
-    if enableCircularPermutations
-      plotBase = sprintf('%s_circ%d', plotBase, nShuffles);
-    end
-    exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
-    exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
-    fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
+  if runMeta.saveFigure
+    save_session_avalanche_distribution_figure(fig, paths, runMeta, runResult);
   end
 end
 
-if splitExcitatoryInhibitory
-  areaTag = format_areas_label(brainArea);
+if runMeta.splitExcitatoryInhibitory && ~isempty(sessionResults.eiSummary)
+  areaTag = format_areas_label(runMeta.brainArea);
   if isempty(areaTag)
     areaTag = 'all_areas';
   end
   summaryTitle = sprintf('%s | %s | avalanche exponents [%.0f–%.0f s]', ...
-    sessionName, areaTag, collectStart, collectEnd);
-  figEiSummary = plot_session_ei_summary(eiSummary, summaryTitle, 'Exponent');
-  if saveFigure
+    runMeta.sessionName, areaTag, runMeta.collectStart, runMeta.collectEnd);
+  figEiSummary = plot_session_ei_summary(sessionResults.eiSummary, summaryTitle, 'Exponent');
+  if runMeta.saveFigure
     saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
     if ~exist(saveDir, 'dir')
       mkdir(saveDir);
     end
     plotBase = sprintf('session_avalanche_ei_summary_%s_%s_%s_%.0f-%.0fs%s', ...
-      sessionName, areaTag, powerLawFitMethod, collectStart, collectEnd, session_ei_summary_file_tag());
+      runMeta.sessionName, areaTag, runMeta.powerLawFitMethod, ...
+      runMeta.collectStart, runMeta.collectEnd, session_ei_summary_file_tag());
     exportgraphics(figEiSummary, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
     exportgraphics(figEiSummary, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
     fprintf('\nSaved E/I summary figure: %s\n', fullfile(saveDir, plotBase));
   end
 end
+end
 
-fprintf('\n=== Done ===\n');
+function save_session_avalanche_distribution_figure(fig, paths, runMeta, runResult)
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+if ~exist(saveDir, 'dir')
+  mkdir(saveDir);
+end
+areaTag = format_areas_label(runResult.areaNames);
+plotBase = sprintf('session_avalanche_distributions_%s_%s_%s_%.0f-%.0fs%s', ...
+  runMeta.sessionName, areaTag, runMeta.powerLawFitMethod, ...
+  runMeta.collectStart, runMeta.collectEnd, cell_type_file_tag(runResult.cellType));
+if runMeta.enableCircularPermutations
+  plotBase = sprintf('%s_circ%d', plotBase, runMeta.nShuffles);
+end
+exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
+end
 
-%% Local functions
+function print_area_avalanche_summary(avData, enableCircularPermutations)
+fprintf('  Size:  tau = %.3f, x in [%.3g, %.3g]', ...
+  avData.tau, avData.minSizeFit, avData.maxSizeFit);
+print_fit_diagnostics(avData.sizeFitInfo);
+print_hybrid_fit_diagnostics(avData.sizeFitInfo);
+fprintf('\n');
+binSize = resolve_avalanche_duration_bin_size(avData);
+fprintf('  Dur:   alpha = %.3f, x in [%.3g, %.3g] s', ...
+  avData.alpha, avData.minDurFit * binSize, avData.maxDurFit * binSize);
+print_fit_diagnostics(avData.durFitInfo);
+print_hybrid_fit_diagnostics(avData.durFitInfo);
+fprintf('\n');
+fprintf('  Scaling relation (alpha-1)/(tau-1): ');
+print_scaling_relation(avData.tau, avData.alpha);
+fprintf('\n');
+fprintf('  n = %d avalanches\n', avData.nAvalanches);
+if enableCircularPermutations && ~isempty(avData.shuffleSizes)
+  fprintf('  Shuffle (pooled): n = %d avalanches over %d shuffles\n', ...
+    numel(avData.shuffleSizes), avData.nShufflesCompleted);
+  if isfinite(avData.shuffleTau)
+    fprintf('  Shuffle size:  tau = %.3f\n', avData.shuffleTau);
+  end
+  if isfinite(avData.shuffleAlpha)
+    fprintf('  Shuffle dur:   alpha = %.3f\n', avData.shuffleAlpha);
+  end
+end
+end
+
+function plotConfig = fill_default_avalanche_plot_config(plotConfig)
+if ~isfield(plotConfig, 'observedMarkerSize') || isempty(plotConfig.observedMarkerSize)
+  plotConfig.observedMarkerSize = 5;
+end
+if ~isfield(plotConfig, 'shuffleMarkerSize') || isempty(plotConfig.shuffleMarkerSize)
+  plotConfig.shuffleMarkerSize = 4;
+end
+if ~isfield(plotConfig, 'fitLineWidth') || isempty(plotConfig.fitLineWidth)
+  plotConfig.fitLineWidth = 2.5;
+end
+if ~isfield(plotConfig, 'tileSpacing') || isempty(plotConfig.tileSpacing)
+  plotConfig.tileSpacing = 'compact';
+end
+if ~isfield(plotConfig, 'tilePadding') || isempty(plotConfig.tilePadding)
+  plotConfig.tilePadding = 'compact';
+end
+if ~isfield(plotConfig, 'legendLocation') || isempty(plotConfig.legendLocation)
+  plotConfig.legendLocation = 'southwest';
+end
+if ~isfield(plotConfig, 'axisLabelFontSize') || isempty(plotConfig.axisLabelFontSize)
+  plotConfig.axisLabelFontSize = 14;
+end
+if ~isfield(plotConfig, 'tickLabelFontSize') || isempty(plotConfig.tickLabelFontSize)
+  plotConfig.tickLabelFontSize = 12;
+end
+if ~isfield(plotConfig, 'axesLineWidth') || isempty(plotConfig.axesLineWidth)
+  plotConfig.axesLineWidth = 1.5;
+end
+end
 
 function areasToAnalyze = resolve_areas_to_analyze(dataStruct, brainArea, nMinNeurons)
 % RESOLVE_AREAS_TO_ANALYZE - Area indices to process
@@ -324,7 +489,7 @@ function avData = extract_area_avalanches(dataStruct, areaIndex, analysisConfig,
 avData = struct('hasAvalanches', false, 'sizes', [], 'durations', [], ...
   'tau', nan, 'alpha', nan, 'minSizeFit', nan, 'maxSizeFit', nan, ...
   'minDurFit', nan, 'maxDurFit', nan, 'sizeFitInfo', struct(), ...
-  'durFitInfo', struct(), 'nAvalanches', 0, ...
+  'durFitInfo', struct(), 'nAvalanches', 0, 'binSize', nan, ...
   'shuffleSizes', [], 'shuffleDurations', [], 'shuffleTau', nan, 'shuffleAlpha', nan, ...
   'nShufflesCompleted', 0);
 
@@ -332,6 +497,7 @@ timeRange = [collectStart, collectEnd];
 neuronIds = dataStruct.idLabel{areaIndex};
 binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analysisConfig);
 binSize = binSizeVec(areaIndex);
+avData.binSize = binSize;
 
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
   neuronIds, timeRange, binSize);
@@ -524,7 +690,7 @@ if ~isempty(extras)
 end
 end
 
-function plot_avalanche_ccdf_with_fit(ax, values, exponent, fitMin, fitMax, xLabelText, exponentLabel, fitInfo, shuffleValues)
+function plot_avalanche_ccdf_with_fit(ax, values, exponent, fitMin, fitMax, xLabelText, exponentLabel, fitInfo, shuffleValues, plotConfig)
 % PLOT_AVALANCHE_CCDF_WITH_FIT - Log-log CCDF with power-law fit segment
 %
 % Variables:
@@ -536,6 +702,7 @@ function plot_avalanche_ccdf_with_fit(ax, values, exponent, fitMin, fitMax, xLab
 %   exponentLabel - Display name for exponent ('\tau' or '\alpha')
 %   fitInfo       - Optional struct from fit_avalanche_power_law (method, pValue)
 %   shuffleValues - Optional pooled shuffle avalanches for overlay CCDF
+%   plotConfig    - Optional struct with observedMarkerSize, shuffleMarkerSize, etc.
 %
 % Goal:
 %   Plot empirical CCDF with log x-axis and overlay fit slope on [fitMin, fitMax].
@@ -546,6 +713,10 @@ end
 if nargin < 9
   shuffleValues = [];
 end
+if nargin < 10 || isempty(plotConfig)
+  plotConfig = struct();
+end
+plotConfig = fill_default_avalanche_plot_config(plotConfig);
 
 values = values(values > 0 & isfinite(values));
 if isempty(values)
@@ -559,8 +730,8 @@ cdfY = arrayfun(@(x) mean(values >= x), uniqueVals);
 
 hold(ax, 'on');
 plot(ax, uniqueVals, cdfY, 'o', 'Color', [0.15, 0.35, 0.75], ...
-  'MarkerFaceColor', [0.15, 0.35, 0.75], 'MarkerSize', 5, ...
-  'DisplayName', 'Observed CCDF');
+  'MarkerFaceColor', [0.15, 0.35, 0.75], 'MarkerSize', plotConfig.observedMarkerSize, ...
+  'DisplayName', 'Obs');
 
 shufflePlotted = false;
 shuffleValues = shuffleValues(shuffleValues > 0 & isfinite(shuffleValues));
@@ -568,8 +739,8 @@ if ~isempty(shuffleValues)
   uniqueShuffle = unique(shuffleValues);
   cdfShuffle = arrayfun(@(x) mean(shuffleValues >= x), uniqueShuffle);
   plot(ax, uniqueShuffle, cdfShuffle, 'o', 'Color', [0.55, 0.55, 0.55], ...
-    'MarkerFaceColor', [0.75, 0.75, 0.75], 'MarkerSize', 4, ...
-    'DisplayName', 'Circular shuffle CCDF');
+    'MarkerFaceColor', [0.75, 0.75, 0.75], 'MarkerSize', plotConfig.shuffleMarkerSize, ...
+    'DisplayName', 'Shuff');
   shufflePlotted = true;
 end
 
@@ -578,23 +749,24 @@ if isfinite(exponent) && exponent > 1 && isfinite(fitMin) && isfinite(fitMax) ..
     && fitMin > 0 && fitMax > fitMin
   xFit = logspace(log10(fitMin), log10(fitMax), 100);
   yAtMin = mean(values >= fitMin);
-  % CCDF for p(x) ~ x^{-exponent}: P(X >= x) ~ (x / xMin)^{-(exponent - 1)}
   yFit = (xFit / fitMin) .^ (-(exponent - 1)) * yAtMin;
   methodTag = '';
   if isstruct(fitInfo) && isfield(fitInfo, 'method') && ~isempty(fitInfo.method)
     methodTag = sprintf(', %s', fitInfo.method);
   end
-  plot(ax, xFit, yFit, '-', 'Color', [0.85, 0.2, 0.15], 'LineWidth', 2.5, ...
-    'DisplayName', sprintf('Observed fit (%s=%.2f%s)', exponentLabel, exponent, methodTag));
-  fitPlotted = true;
+  % plot(ax, xFit, yFit, '-', 'Color', [0.85, 0.2, 0.15], 'LineWidth', plotConfig.fitLineWidth, ...
+  %   'DisplayName', sprintf('Observed fit (%s=%.2f%s)', exponentLabel, exponent, methodTag));
+  % fitPlotted = true;
 end
 
-set(ax, 'XScale', 'log', 'YScale', 'log');
-xlabel(ax, xLabelText);
-ylabel(ax, 'P(X \geq x)');
-grid(ax, 'on');
+set(ax, 'XScale', 'log', 'YScale', 'log', 'FontSize', plotConfig.tickLabelFontSize, ...
+  'LineWidth', plotConfig.axesLineWidth);
+axis(ax, 'square');
+xlabel(ax, xLabelText, 'FontSize', plotConfig.axisLabelFontSize);
+ylabel(ax, 'P(X \geq x)', 'FontSize', plotConfig.axisLabelFontSize);
+% grid(ax, 'on');
 if shufflePlotted || fitPlotted
-  legend(ax, 'Location', 'southwest');
+  legend(ax, 'Location', plotConfig.legendLocation, 'FontSize', plotConfig.tickLabelFontSize);
 end
 
 pText = '';
@@ -621,4 +793,22 @@ else
   label = char(areaNames);
 end
 label = matlab.lang.makeValidName(label);
+end
+
+function binSize = resolve_avalanche_duration_bin_size(avData)
+% RESOLVE_AVALANCHE_DURATION_BIN_SIZE - Bin width (s) for duration conversion
+%
+% Variables:
+%   avData - Area avalanche result struct with optional .binSize
+%
+% Returns:
+%   binSize - Spike bin width in seconds
+
+if isfield(avData, 'binSize') && isscalar(avData.binSize) && isfinite(avData.binSize) && avData.binSize > 0
+  binSize = avData.binSize;
+else
+  binSize = 0.05;
+  warning('session_avalanche_distributions:missingBinSize', ...
+    'avData.binSize missing; assuming %.3f s for duration conversion.', binSize);
+end
 end
