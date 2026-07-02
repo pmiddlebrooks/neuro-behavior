@@ -1,4 +1,4 @@
-function fig = plot_session_ei_summary(summary, plotTitle, yLabelText, metricNamesToPlot)
+function fig = plot_session_ei_summary(summary, plotTitle, yLabelText, metricNamesToPlot, parentFig)
 % PLOT_SESSION_EI_SUMMARY - Bar summary of mean +/- SEM for combined, E, and I
 %
 % Variables:
@@ -6,11 +6,19 @@ function fig = plot_session_ei_summary(summary, plotTitle, yLabelText, metricNam
 %   plotTitle         - Figure title
 %   yLabelText        - Y-axis label (e.g. 'log_{10}(d2)')
 %   metricNamesToPlot - Optional subset of summary.metricNames (default: all)
+%   parentFig         - Optional existing figure to replot into
 %
 % Goal:
 %   Combined = black, excitatory = blue, inhibitory = red.
 
-if nargin < 4 || isempty(metricNamesToPlot)
+if nargin < 4
+  metricNamesToPlot = [];
+end
+if nargin < 5
+  parentFig = [];
+end
+
+if isempty(metricNamesToPlot)
   metricIdx = 1:numel(summary.metricNames);
 else
   metricNamesToPlot = metricNamesToPlot(:)';
@@ -33,7 +41,12 @@ metricNames = summary.metricNames(metricIdx);
 metricLabels = summary.metricLabels(metricIdx);
 nMetrics = numel(metricNames);
 
-fig = figure('Name', 'Session E/I summary', 'Color', 'w');
+if nargin >= 5 && ~isempty(parentFig) && isgraphics(parentFig)
+  fig = parentFig;
+  clf(fig);
+else
+  fig = figure('Name', 'Session E/I summary', 'Color', 'w');
+end
 ax = axes(fig); %#ok<LAXES>
 hold(ax, 'on');
 

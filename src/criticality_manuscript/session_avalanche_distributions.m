@@ -61,7 +61,7 @@ gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 
 % 'fixedBinMedian': analysisConfig.binSize + median cutoff
 % 'meanIsiZero': mean population ISI bin size + zero cutoff
-avalancheDetectionMode = 'fixedBinMedian';
+avalancheDetectionMode = 'meanIsiZero';
 
 useSubsampling = false;
 nSubsamples = 20;
@@ -88,6 +88,8 @@ plotConfig.legendLocation = 'southwest';
 plotConfig.axisLabelFontSize = 14;
 plotConfig.tickLabelFontSize = 12;
 plotConfig.axesLineWidth = 1.5;
+plotConfig.observedMarkerFaceAlpha = 0.35;
+plotConfig.figureWidthInches = 6.5;  % fits portrait PDF (A4/Letter) with margins
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = []; %5 * 60;
@@ -297,12 +299,17 @@ end
 function plot_session_avalanche_results(sessionResults, paths, plotConfig)
 % PLOT_SESSION_AVALANCHE_RESULTS - Figures from cached avalanche extraction results
 
-runMeta = sessionResults.meta;
+runMeta = sessionResults.meta(1);
 if nargin < 3 || isempty(plotConfig)
   if isfield(sessionResults, 'plotConfig') && ~isempty(sessionResults.plotConfig)
     plotConfig = sessionResults.plotConfig;
   else
     plotConfig = struct();
+  end
+end
+if ~isfield(plotConfig, 'sessionType') || isempty(plotConfig.sessionType)
+  if isfield(runMeta, 'sessionType') && ~isempty(runMeta.sessionType)
+    plotConfig.sessionType = runMeta.sessionType;
   end
 end
 plotConfig = fill_default_avalanche_plot_config(plotConfig);
@@ -314,9 +321,10 @@ for iCellRun = 1:numel(sessionResults.runs)
     continue;
   end
 
-  fig = figure('Name', sprintf('Session avalanche distributions%s', cell_type_file_tag(runResult.cellType)));
-  clf(fig);
-  tiledlayout(fig, 1, numel(runResult.areaResults) * 2, ...
+  figName = sprintf('Session avalanche distributions%s', cell_type_file_tag(runResult.cellType));
+  fig = get_task_figure_handle(plotConfig.sessionType, 'distributions', runResult.cellType, figName);
+  nAreas = numel(runResult.areaResults);
+  tiledlayout(fig, nAreas, 2, ...
     'TileSpacing', plotConfig.tileSpacing, 'Padding', plotConfig.tilePadding);
 
   for aIdx = 1:numel(runResult.areaResults)
@@ -343,6 +351,8 @@ for iCellRun = 1:numel(sessionResults.runs)
     format_areas_label(runResult.areaNames), runMeta.collectStart, runMeta.collectEnd, titleSuffix), ...
     'FontWeight', 'bold', 'Interpreter', 'none');
 
+  apply_portrait_figure_size(fig, plotConfig.figureWidthInches, nAreas, 2);
+
   if runMeta.saveFigure
     save_session_avalanche_distribution_figure(fig, paths, runMeta, runResult);
   end
@@ -355,7 +365,10 @@ if runMeta.splitExcitatoryInhibitory && ~isempty(sessionResults.eiSummary)
   end
   summaryTitle = sprintf('%s | %s | avalanche exponents [%.0f–%.0f s]', ...
     runMeta.sessionName, areaTag, runMeta.collectStart, runMeta.collectEnd);
-  figEiSummary = plot_session_ei_summary(sessionResults.eiSummary, summaryTitle, 'Exponent');
+  figEiSummary = get_task_figure_handle(plotConfig.sessionType, 'ei_summary', '', ...
+    'Session avalanche E/I summary');
+  figEiSummary = plot_session_ei_summary(sessionResults.eiSummary, summaryTitle, 'Exponent', [], figEiSummary);
+  apply_portrait_figure_size(figEiSummary, plotConfig.figureWidthInches, 1, 1);
   if runMeta.saveFigure
     saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
     if ~exist(saveDir, 'dir')
@@ -443,6 +456,15 @@ if ~isfield(plotConfig, 'tickLabelFontSize') || isempty(plotConfig.tickLabelFont
 end
 if ~isfield(plotConfig, 'axesLineWidth') || isempty(plotConfig.axesLineWidth)
   plotConfig.axesLineWidth = 1.5;
+end
+if ~isfield(plotConfig, 'observedMarkerFaceAlpha') || isempty(plotConfig.observedMarkerFaceAlpha)
+  plotConfig.observedMarkerFaceAlpha = 0.35;
+end
+if ~isfield(plotConfig, 'sessionType')
+  plotConfig.sessionType = '';
+end
+if ~isfield(plotConfig, 'figureWidthInches') || isempty(plotConfig.figureWidthInches)
+  plotConfig.figureWidthInches = 6.5;
 end
 end
 
@@ -728,9 +750,13 @@ end
 uniqueVals = unique(values);
 cdfY = arrayfun(@(x) mean(values >= x), uniqueVals);
 
+observedColor = colors_for_tasks(plotConfig.sessionType);
+markerArea = plotConfig.observedMarkerSize .^ 2;
+
 hold(ax, 'on');
-plot(ax, uniqueVals, cdfY, 'o', 'Color', [0.15, 0.35, 0.75], ...
-  'MarkerFaceColor', [0.15, 0.35, 0.75], 'MarkerSize', plotConfig.observedMarkerSize, ...
+scatter(ax, uniqueVals, cdfY, markerArea, 'filled', ...
+  'MarkerEdgeColor', observedColor, 'MarkerFaceColor', observedColor, ...
+  'MarkerFaceAlpha', plotConfig.observedMarkerFaceAlpha, ...
   'DisplayName', 'Obs');
 
 shufflePlotted = false;
@@ -777,7 +803,7 @@ if fitPlotted
   title(ax, sprintf('%s (%s = %.2f, x_{min}=%.3g, x_{max}=%.3g%s)', ...
     xLabelText, exponentLabel, exponent, fitMin, fitMax, pText));
 else
-  title(ax, sprintf('%s (%s = %.2f, fit range n/a%s)', xLabelText, exponentLabel, exponent, pText));
+  title(ax, sprintf('%s (%s = %.2f %s)', xLabelText, exponentLabel, exponent, pText));
 end
 
 hold(ax, 'off');
@@ -811,4 +837,47 @@ else
   warning('session_avalanche_distributions:missingBinSize', ...
     'avData.binSize missing; assuming %.3f s for duration conversion.', binSize);
 end
+end
+
+function fig = get_task_figure_handle(sessionType, plotKind, cellType, figName)
+% GET_TASK_FIGURE_HANDLE - Reuse or create a task-specific figure window
+%
+% Variables:
+%   sessionType - Task name for figure_number_for_task
+%   plotKind    - 'distributions' or 'ei_summary'
+%   cellType    - Population tag for distributions figures
+%   figName     - Figure window title
+%
+% Returns:
+%   fig - Figure handle (cleared and ready for new content)
+
+figNumber = figure_number_for_task(sessionType, plotKind, cellType);
+fig = figure(figNumber);
+set(fig, 'Color', 'w', 'Name', figName);
+clf(fig);
+end
+
+function apply_portrait_figure_size(fig, figureWidthInches, nRows, nCols)
+% APPLY_PORTRAIT_FIGURE_SIZE - Size figure for portrait PDF export
+%
+% Variables:
+%   fig               - Figure handle
+%   figureWidthInches - Target width in inches (portrait page with margins)
+%   nRows, nCols      - tiledlayout grid for height estimate
+%
+% Goal:
+%   Keep exported figure width within a portrait PDF page.
+
+layoutPadIn = 0.55;
+titlePadIn = 0.45;
+usableWidth = max(figureWidthInches - layoutPadIn, 1);
+panelWidth = usableWidth / max(nCols, 1);
+panelHeight = panelWidth;
+figHeight = nRows * panelHeight + layoutPadIn + titlePadIn;
+maxPortraitHeightIn = 9.5;
+figHeight = min(figHeight, maxPortraitHeightIn);
+
+set(fig, 'Units', 'inches', 'Position', [1, 1, figureWidthInches, figHeight]);
+set(fig, 'PaperUnits', 'inches', 'PaperSize', [figureWidthInches, figHeight], ...
+  'PaperPositionMode', 'auto');
 end

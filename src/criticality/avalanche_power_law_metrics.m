@@ -26,8 +26,9 @@ metrics.maxavS = sizeFit.fitMax;
 metrics.minavD = durFit.fitMin;
 metrics.maxavD = durFit.fitMax;
 
-if isfinite(durFit.fitMin) && isfinite(durFit.fitMax)
-  [metrics.paramSD, ~, ~] = size_given_duration(sizes, durs, ...
+if isfinite(durFit.fitMin) && isfinite(durFit.fitMax) && durFit.fitMin <= durFit.fitMax ...
+    && numel(sizes) >= 2 && numel(durs) >= 2
+  [metrics.paramSD, ~, ~] = size_given_duration(sizes(:), durs(:), ...
     'durmin', durFit.fitMin, 'durmax', durFit.fitMax);
 end
 end

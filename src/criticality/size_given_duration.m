@@ -104,15 +104,26 @@ end
 
 durMaxInd = find(unqDurations <= durMax, 1, 'last');
 if isempty(durMaxInd)
-    durMaxInd = length(unqDurations);
+  durMaxInd = length(unqDurations);
 end
 
+if durMin > durMax || durMinInd > durMaxInd
+  sigmaNuZInv = nan;
+  sigmaNuZInvStd = nan;
+  logCoeff = nan;
+  return;
+end
+
+nFit = durMaxInd - durMinInd + 1;
+logDurSlice = logUnqDurs(durMinInd:durMaxInd);
+logSizeSlice = logSizeGivDur(durMinInd:durMaxInd);
+weightSlice = durHist(durMinInd:durMaxInd);
+
 % create the design matrix for least squares
-X = [logUnqDurs(durMinInd:durMaxInd), ones([durMaxInd - durMinInd + 1, 1])];
+X = [logDurSlice(:), ones(nFit, 1)];
 
 %% Perform the weighted least squares fit
-[B, S] = lscov(X, logSizeGivDur(durMinInd:durMaxInd), ...
-    durHist(durMinInd:durMaxInd));
+[B, S] = lscov(X, logSizeSlice(:), weightSlice(:));
 
 % extract parameter values
 sigmaNuZInv = B(1);
