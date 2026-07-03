@@ -48,7 +48,7 @@ sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'interval' , 'schall' 
 
 subjectName = 'ag25290';
 sessionName =  'ag112221';
-sessionName =  'ag112321_1';
+% sessionName =  'ag112321_1';
 % sessionName =  'ag112321_2';
 % sessionName =  'ag112721';
 % sessionName =  'ag112821';
@@ -105,7 +105,7 @@ sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh';  % GOOD enough (only 4 m23 t
 sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh';  % GOOD
 % sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh';   % BAD (max is m56 with 19 neurons)
 % sessionName =  'Y15_27-Aug-2025 14_02_21_NeuroBeh';  % GOOD
-sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh';  % GOOD
+% sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh';  % GOOD
 % sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh';  % GOOD (but only 23 M56)
 % sessionName =  'test/reach_test';
 

@@ -16,7 +16,7 @@
 %   binSizes           - Vector of bin widths (seconds) to test
 %   powerLawFitMethods - Which fits to sweep (subset of 'clauset', 'plfit2023', 'hybrid')
 %                          e.g. {'hybrid'} or {'clauset', 'hybrid'}
-%   useSubsampling     - If true, metrics = mean across neuron subsamples
+%   useSubsampling     - If true, metrics = mean ± SEM across neuron subsamples
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
 %   saveAnalysisResults - If true, save binSizeResults after %% Analysis
@@ -43,19 +43,19 @@ windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
-binSizes = 0.01:0.005:0.1;
+binSizes = 0.01:0.01:0.1;
 saveFigure = true;
 
 % Which power-law fit methods to sweep (any non-empty subset):
 % powerLawFitMethods = {'hybrid'};
-% powerLawFitMethods = {'clauset', 'hybrid'};
-powerLawFitMethods = {'clauset', 'plfit2023', 'hybrid'};
+powerLawFitMethods = {'clauset', 'plfit2023'};
+% powerLawFitMethods = {'clauset', 'plfit2023', 'hybrid'};
 powerLawFitMethods = normalize_power_law_fit_methods(powerLawFitMethods);
 gofThreshold = 0.8;
 runClausetPlpva = false;
 
 useSubsampling = true;
-nSubsamples = 20;
+nSubsamples = 15;
 nNeuronsSubsample = 50;
 minNeuronsMultiple = 1.25;
 
@@ -68,7 +68,9 @@ plotConfig.tickLabelFontSize = 12;
 plotConfig.axesLineWidth = 1.5;
 plotConfig.markerSize = 6;
 plotConfig.markerFaceAlpha = 0.35;
+plotConfig.errorCapSize = 5;
 plotConfig.figureWidthInches = 6.5;
+plotConfig.useSubsampling = useSubsampling;
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = [];
@@ -89,7 +91,15 @@ analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 analysisConfig.gofThreshold = gofThreshold;
 analysisConfig.runClausetPlpva = runClausetPlpva;
 
-% Paths
+fprintf('\n=== Session Avalanche Metrics vs Bin Size ===\n');
+fprintf('Power-law fit methods: %s\n', strjoin(powerLawFitMethods, ', '));
+fprintf('Avalanche detection mode: fixedBinMedian\n');
+fprintf('Bin sizes (s): %s\n', mat2str(binSizes, 3));
+fprintf('Session [%s]: %s\n', sessionType, sessionName);
+fprintf('Brain area: %s\n', brainArea);
+fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
+
+%% Paths
 paths = get_paths();
 scriptDir = fileparts(mfilename('fullpath'));
 if contains(scriptDir, [filesep 'Editor_' filesep])
@@ -114,16 +124,12 @@ addpath(fullfile(srcPath, 'criticality'));
 analysisConfig.clausetPlfitPath = clausetPlfitPath;
 analysisConfig.plfit2023Path = plfit2023Path;
 
-fprintf('\n=== Session Avalanche Metrics vs Bin Size ===\n');
-fprintf('Power-law fit methods: %s\n', strjoin(powerLawFitMethods, ', '));
-fprintf('Avalanche detection mode: fixedBinMedian\n');
-fprintf('Bin sizes (s): %s\n', mat2str(binSizes, 3));
-fprintf('Session [%s]: %s\n', sessionType, sessionName);
-fprintf('Brain area: %s\n', brainArea);
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
 
 %% Analysis — load session, sweep bin sizes, optionally cache results
-subjectNameForLoad = subjectName;
+subjectNameForLoad = '';
+if exist('subjectName', 'var') && ~isempty(subjectName)
+  subjectNameForLoad = subjectName;
+end
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 
@@ -135,7 +141,7 @@ end
 runMeta = struct( ...
   'sessionType', sessionType, ...
   'sessionName', sessionName, ...
-  'subjectName', subjectName, ...
+  'subjectName', subjectNameForLoad, ...
   'dataSource', dataSource, ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
@@ -230,6 +236,16 @@ for iMethod = 1:nMethods
     binSizeResults.metricsByMethod.(methodTag).(metricNames{iMetric}) = nan(1, nBins);
   end
 end
+if runMeta.useSubsampling
+  binSizeResults.metricsSemByMethod = struct();
+  for iMethod = 1:nMethods
+    methodTag = matlab.lang.makeValidName(fitMethods{iMethod});
+    binSizeResults.metricsSemByMethod.(methodTag) = struct();
+    for iMetric = 1:numel(metricNames)
+      binSizeResults.metricsSemByMethod.(methodTag).(metricNames{iMetric}) = nan(1, nBins);
+    end
+  end
+end
 
 fprintf('\nSweeping %d bin sizes x %d fit methods for area %s...\n', ...
   nBins, nMethods, binSizeResults.areaName);
@@ -250,6 +266,10 @@ for iBin = 1:nBins
     for iMetric = 1:numel(metricNames)
       metricName = metricNames{iMetric};
       binSizeResults.metricsByMethod.(methodTag).(metricName)(iBin) = areaMetrics.(metricName);
+      if runMeta.useSubsampling
+        semField = [metricName, 'Sem'];
+        binSizeResults.metricsSemByMethod.(methodTag).(metricName)(iBin) = areaMetrics.(semField);
+      end
     end
 
     fprintf('  [%s] tau = %.3f, alpha = %.3f, paramSD = %.3f, decades = %.3f, dcc = %.3f\n', ...
@@ -322,7 +342,21 @@ end
 
 for iMetric = 1:numel(metricNames)
   metricName = metricNames{iMetric};
-  areaMetrics.(metricName) = nanmean(metricSweeps.(metricName));
+  sweepValues = metricSweeps.(metricName);
+  areaMetrics.(metricName) = nanmean(sweepValues);
+  areaMetrics.([metricName, 'Sem']) = sem_from_sample_values(sweepValues);
+end
+end
+
+function semValue = sem_from_sample_values(values)
+% SEM_FROM_SAMPLE_VALUES - SEM across finite subsample metric values
+
+values = values(isfinite(values));
+nValues = numel(values);
+if nValues <= 1
+  semValue = 0;
+else
+  semValue = std(values, 0) / sqrt(nValues);
 end
 end
 
@@ -395,6 +429,8 @@ runMeta = binSizeResults.meta(1);
 plotConfig = fill_default_bin_size_plot_config(plotConfig);
 binSizesMs = binSizeResults.binSizes * 1000;
 fitMethods = normalize_power_law_fit_methods(binSizeResults.fitMethods);
+useSubsampling = isfield(runMeta, 'useSubsampling') && runMeta.useSubsampling ...
+  && isfield(binSizeResults, 'metricsSemByMethod');
 
 metricPanels = {
   'tau', '\tau'
@@ -421,19 +457,31 @@ for iPanel = 1:size(metricPanels, 1)
     methodColor = get_power_law_fit_method_color(fitMethods{iMethod});
     metricValues = binSizeResults.metricsByMethod.(methodTag).(metricName);
 
-    legendHandles(iMethod) = scatter(ax, binSizesMs, metricValues, plotConfig.markerSize .^ 2, ...
-      'filled', 'MarkerEdgeColor', methodColor, 'MarkerFaceColor', methodColor, ...
-      'MarkerFaceAlpha', plotConfig.markerFaceAlpha, 'DisplayName', fitMethods{iMethod});
-    plot(ax, binSizesMs, metricValues, '-', 'Color', methodColor, 'LineWidth', 1.5, ...
-      'HandleVisibility', 'off');
+    if useSubsampling
+      metricSems = binSizeResults.metricsSemByMethod.(methodTag).(metricName);
+      semPlot = metricSems;
+      semPlot(~isfinite(semPlot)) = 0;
+      legendHandles(iMethod) = errorbar(ax, binSizesMs, metricValues, semPlot, '-o', ...
+        'Color', methodColor, 'MarkerFaceColor', methodColor, ...
+        'MarkerSize', plotConfig.markerSize, 'LineWidth', 1.5, ...
+        'CapSize', plotConfig.errorCapSize, 'DisplayName', fitMethods{iMethod});
+    else
+      legendHandles(iMethod) = scatter(ax, binSizesMs, metricValues, plotConfig.markerSize .^ 2, ...
+        'filled', 'MarkerEdgeColor', methodColor, 'MarkerFaceColor', methodColor, ...
+        'MarkerFaceAlpha', plotConfig.markerFaceAlpha, 'DisplayName', fitMethods{iMethod});
+      plot(ax, binSizesMs, metricValues, '-', 'Color', methodColor, 'LineWidth', 1.5, ...
+        'HandleVisibility', 'off');
+    end
   end
 
   set(ax, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth);
   xlabel(ax, 'Bin size (ms)', 'FontSize', plotConfig.axisLabelFontSize);
   ylabel(ax, yLabelText, 'FontSize', plotConfig.axisLabelFontSize);
   title(ax, yLabelText);
-  legend(ax, legendHandles, fitMethods, 'Location', 'best', ...
-    'FontSize', plotConfig.tickLabelFontSize);
+  if iPanel == 1
+    legend(ax, legendHandles, fitMethods, 'Location', 'best', ...
+      'FontSize', plotConfig.tickLabelFontSize);
+  end
   grid(ax, 'on');
   hold(ax, 'off');
 end
@@ -450,9 +498,14 @@ if runMeta.saveFigure
     mkdir(saveDir);
   end
   areaTag = matlab.lang.makeValidName(binSizeResults.areaName);
-  methodTag = strjoin(cellfun(@matlab.lang.makeValidName, fitMethods, 'UniformOutput', false), '_');
+  if useSubsampling
+      subTag = 'subsample';
+  else
+      subTag = [];
+  end
+  % methodTag = strjoin(cellfun(@matlab.lang.makeValidName, fitMethods, 'UniformOutput', false), '_');
   plotBase = sprintf('session_avalanche_bin_size_%s_%s_%s_%.0f-%.0fs', ...
-    runMeta.sessionName, areaTag, methodTag, runMeta.collectStart, runMeta.collectEnd);
+    runMeta.sessionName, areaTag, subTag, runMeta.collectStart, runMeta.collectEnd);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
@@ -538,6 +591,9 @@ if ~isfield(plotConfig, 'markerSize') || isempty(plotConfig.markerSize)
 end
 if ~isfield(plotConfig, 'markerFaceAlpha') || isempty(plotConfig.markerFaceAlpha)
   plotConfig.markerFaceAlpha = 0.35;
+end
+if ~isfield(plotConfig, 'errorCapSize') || isempty(plotConfig.errorCapSize)
+  plotConfig.errorCapSize = 5;
 end
 if ~isfield(plotConfig, 'figureWidthInches') || isempty(plotConfig.figureWidthInches)
   plotConfig.figureWidthInches = 6.5;

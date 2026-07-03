@@ -117,7 +117,10 @@ if splitExcitatoryInhibitory
 end
 
 %% Load session and run PRG analysis
-subjectNameForLoad = subjectName;
+subjectNameForLoad = '';
+if exist('subjectName', 'var') && ~isempty(subjectName)
+  subjectNameForLoad = subjectName;
+end
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 
