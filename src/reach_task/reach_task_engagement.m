@@ -66,7 +66,7 @@ if ~isfield(opts, 'nonengagedNumExcepts')
     opts.nonengagedNumExcepts = 1;
 end
 if ~isfield(opts, 'plotSegments')
-    opts.plotSegments = false;
+    opts.plotSegments = true;
 end
 
 % Load reach data

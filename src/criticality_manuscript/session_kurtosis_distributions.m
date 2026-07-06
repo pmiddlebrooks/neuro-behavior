@@ -37,6 +37,7 @@
 
 collectStart = 0;
 collectEnd = 45 * 60;
+% collectEnd = [];
 
 prgWindow = 30;  % seconds; non-overlapping blocks
 
@@ -49,7 +50,7 @@ nSubsamples = 20;
 nNeuronsSubsample = 20;
 minNeuronsMultiple = 1.25;
 
-splitExcitatoryInhibitory = true;
+splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 % Surrogate null: 'isi' (Cambrainha paper) or 'circular' (per-neuron circshift on binned data)

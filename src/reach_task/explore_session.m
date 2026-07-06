@@ -10,7 +10,7 @@ opts.collectStart = 0;
 opts.minFiringRate = .05;
 opts.maxFiringRate = 200;
 
-sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh.mat';
+sessionName =  'AB19_31-Mar-2026 15_46_45_NeuroBeh';
 
 % Load reach data
 reachDataFile = fullfile(paths.reachDataPath, sessionName);
@@ -56,8 +56,8 @@ timePoints = opts.frameSize * (1:length(popAct));
  %     - 20 - block 2 error above
 
  reachClass = dataR.Block(:,3);
-startBlock2Idx = reachStart(find(ismember(reachClass, [3 4]), 1));
 reachStart = dataR.R(:,1);
+startBlock2Idx = reachStart(find(ismember(reachClass, [3 4]), 1));
 reachStop = dataR.R(:,2);
 reachAmp = dataR.R(:,3); % Amplitude of each reach (distance from 0)
 

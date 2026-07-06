@@ -93,24 +93,24 @@ sessionName =  'ey9166_2026_04_03';
 sessionType = 'reach';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 
 % For reach data: specify session name (uncomment and set one)
-% sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh';  % GOOD (only 4 m23)
+sessionName =  'AB2_28-Apr-2023 17_50_02_NeuroBeh';  % GOOD (only 4 m23)
 sessionName =  'AB2_01-May-2023 15_34_59_NeuroBeh';  % GOOD (only 6 m23)
 % sessionName =  'AB2_11-May-2023 17_31_00_NeuroBeh';  % OK (21 M56, 11 M23)
 % sessionName =  'AB2_30-May-2023 12_49_52_NeuroBeh';  %  GOOD
-sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh';  % GOOD enough (only 4 m23 though)
+% sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh';  % GOOD enough (only 4 m23 though)
 % sessionName =  'AB6_29-Mar-2025 15_21_05_NeuroBeh';    % BAD (few neurons)
 % sessionName =  'AB6_02-Apr-2025 14_18_54_NeuroBeh';   % Few M56 neurons (good DS)
 % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh';  % BAD (few neurons)
-% sessionName =  'AB19_09-Apr-2026 14_28_19_NeuroBeh';  % 
+sessionName =  'AB19_09-Apr-2026 14_28_19_NeuroBeh';  % 
 % sessionName =  'AB19_31-Mar-2026 15_46_45_NeuroBeh';  % 
 % sessionName =  'AB21_06-Apr-2026 18_07_42_NeuroBeh';  % 
 sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh';  % GOOD
-sessionName =  'Y12_20-Jan-2026 16_16_42_NeuroBeh';  % 
-sessionName =  'Y16_23-Dec-2025 16_07_49_NeuroBeh';  % 
-sessionName =  'Y16_31-Dec-2025 13_50_49_NeuroBeh';  % 
+% sessionName =  'Y12_20-Jan-2026 16_16_42_NeuroBeh';  % 
 % sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh';   % BAD (max is m56 with 19 neurons)
 % sessionName =  'Y15_27-Aug-2025 14_02_21_NeuroBeh';  % GOOD
 % sessionName =  'Y15_28-Aug-2025 19_47_07_NeuroBeh';  % GOOD
+% sessionName =  'Y16_23-Dec-2025 16_07_49_NeuroBeh';  % 
+% sessionName =  'Y16_31-Dec-2025 13_50_49_NeuroBeh';  % 
 % sessionName =  'Y17_20-Aug-2025 17_34_48_NeuroBeh';  % GOOD (but only 23 M56)
 % sessionName =  'test/reach_test';
 

@@ -54,14 +54,14 @@ brainAreaCombinations = default_manuscript_brain_area_combinations();
 saveFigure = true;
 
 % Power-law fitting: 'clauset', 'plfit2023', 'hybrid' = plfit2023 xmax, then Clauset plfit on x <= xmax
-powerLawFitMethod = 'hybrid';
+powerLawFitMethod = 'plfit2023';
 runClausetPlpva = false;
 
 gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 
 % 'fixedBinMedian': analysisConfig.binSize + median cutoff
 % 'meanIsiZero': mean population ISI bin size + zero cutoff
-avalancheDetectionMode = 'meanIsiZero';
+avalancheDetectionMode = 'fixedBinMedian';
 
 useSubsampling = false;
 nSubsamples = 20;
