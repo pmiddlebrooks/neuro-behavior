@@ -59,7 +59,6 @@ sessionName =  'ag112221';
 % sessionName =  'ey042922';  % Don't trust: OK M56, Bad everything else
 
 % subjectName = 'kw7193';
-% sessionName =  'kw091321';  % 
 % sessionName =  'kw092821';  % Bad M56, Good DS
 % sessionName =  'kw092921';  % Ok... few M56
 
