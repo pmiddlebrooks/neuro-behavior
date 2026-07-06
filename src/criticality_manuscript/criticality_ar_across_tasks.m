@@ -31,7 +31,7 @@ sessionTypes = {'spontaneous', 'interval', 'reach'};
 dataSource = 'spikes';
 
 collectStart = 0;
-collectEnd = 45 * 60;
+collectEnd = 10 * 60;
 
 d2Window = 30;  % seconds; non-overlapping windows (stepSize = d2Window)
 

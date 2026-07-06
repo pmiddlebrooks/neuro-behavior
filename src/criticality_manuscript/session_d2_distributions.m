@@ -38,6 +38,7 @@
 
 collectStart = 0;
 collectEnd = 45 * 60;
+collectEnd = [];
 
 d2Window = 30;  % seconds; non-overlapping windows
 
@@ -51,7 +52,7 @@ minNeuronsMultiple = 1.25;
 plotD2PopActivity = true;
 saveFigure = false;
 
-splitExcitatoryInhibitory = true;
+splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 % Behavior label sets for d2 correlation figure (proportion per window)
