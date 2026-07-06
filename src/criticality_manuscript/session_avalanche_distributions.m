@@ -26,6 +26,8 @@
 %   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory;
 %                               also plots summary of tau and alpha fits
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
+%                        Waveforms: spontaneous/interval waveforms.mat; reach
+%                        reach_task/data/WaveformDATA/*_Neural_WFs.mat
 %   enableCircularPermutations - If true, circular-shift each neuron and overlay shuffle CCDFs
 %   nShuffles          - Number of independent circular permutations per area
 %   saveAnalysisResults - If true, save sessionResults after %% Analysis

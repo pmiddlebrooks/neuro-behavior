@@ -8,7 +8,9 @@ function [dataStruct, meta] = apply_session_cell_type_filter(dataStruct, paths, 
 %   widthCutoff  - Peak-to-trough width threshold in ms (narrow <= cutoff = inhibitory)
 %
 % Goal:
-%   Load waveforms.mat, match unit IDs to analysis neurons, and subset each area.
+%   Load session waveforms, match unit IDs to analysis neurons, and subset each area.
+%   Spontaneous/interval: waveforms.mat in the spike session folder (Kilosort/Phy).
+%   Reach: *_Neural_WFs.mat in paths.reachDataPath/WaveformDATA (from GetWFs_AmpChange.m).
 %
 % Returns:
 %   meta - Struct with cellType, widthCutoff, unitWidths, keptPerArea, nKept, nTotal
@@ -27,9 +29,6 @@ end
 if ~isfield(dataStruct, 'sessionType') || isempty(dataStruct.sessionType)
     error('dataStruct.sessionType is required for waveform-based cell-type filtering.');
 end
-if ~isfield(dataStruct, 'subjectName') || isempty(dataStruct.subjectName)
-    error('dataStruct.subjectName is required for waveform-based cell-type filtering.');
-end
 if ~isfield(dataStruct, 'sessionName') || isempty(dataStruct.sessionName)
     error('dataStruct.sessionName is required for waveform-based cell-type filtering.');
 end
@@ -42,21 +41,7 @@ if isfield(dataStruct, 'opts') && isstruct(dataStruct.opts) && isfield(dataStruc
     opts.fsSpike = dataStruct.opts.fsSpike;
 end
 
-sessionFolder = get_waveform_session_folder(dataStruct.sessionType, paths, ...
-    dataStruct.subjectName, dataStruct.sessionName);
-waveformsFile = fullfile(sessionFolder, 'waveforms.mat');
-if ~isfile(waveformsFile)
-    error('waveforms.mat not found in %s (required for E/I split).', sessionFolder);
-end
-
-waveformData = load(waveformsFile);
-if ~isfield(waveformData, 'sp_waveforms')
-    error('Expected variable sp_waveforms in %s', waveformsFile);
-end
-
-ci = readtable(fullfile(sessionFolder, 'cluster_info.tsv'), ...
-    'FileType', 'text', 'Delimiter', '\t');
-unitWidths = build_unit_width_lookup(waveformData.sp_waveforms, ci, opts.fsSpike);
+[unitWidths, waveformMeta] = load_session_unit_widths(dataStruct, paths, opts.fsSpike);
 
 numAreas = numel(dataStruct.areas);
 keptPerArea = zeros(numAreas, 1);
@@ -77,22 +62,50 @@ end
 meta = struct();
 meta.cellType = cellType;
 meta.widthCutoff = widthCutoff;
-meta.sessionFolder = sessionFolder;
 meta.unitWidths = unitWidths;
 meta.keptPerArea = keptPerArea;
 meta.totalPerArea = totalPerArea;
 meta.nKept = sum(keptPerArea);
 meta.nTotal = sum(totalPerArea);
+meta.waveformSource = waveformMeta.source;
+meta.waveformsFile = waveformMeta.waveformsFile;
 
-fprintf('  Waveform E/I filter (%s): kept %d / %d units (cutoff = %.3f ms)\n', ...
-    cellType, meta.nKept, meta.nTotal, widthCutoff);
+fprintf('  Waveform E/I filter (%s, %s): kept %d / %d units (cutoff = %.3f ms)\n', ...
+    cellType, waveformMeta.source, meta.nKept, meta.nTotal, widthCutoff);
 for a = 1:numAreas
     fprintf('    %s: %d / %d\n', dataStruct.areas{a}, keptPerArea(a), totalPerArea(a));
 end
 end
 
-function sessionFolder = get_waveform_session_folder(sessionType, paths, subjectName, sessionName)
-% GET_WAVEFORM_SESSION_FOLDER - Folder with cluster_info.tsv and waveforms.mat
+function [unitWidths, meta] = load_session_unit_widths(dataStruct, paths, fsSpike)
+% LOAD_SESSION_UNIT_WIDTHS - Map cluster id to peak-to-trough width (ms)
+
+switch lower(dataStruct.sessionType)
+    case 'spontaneous'
+        if ~isfield(dataStruct, 'subjectName') || isempty(dataStruct.subjectName)
+            error('dataStruct.subjectName is required for spontaneous waveform loading.');
+        end
+        sessionFolder = get_kilosort_session_folder(paths, dataStruct.subjectName, dataStruct.sessionName, 'spontaneous');
+        [unitWidths, meta] = load_kilosort_unit_widths(sessionFolder, fsSpike);
+
+    case 'interval'
+        if ~isfield(dataStruct, 'subjectName') || isempty(dataStruct.subjectName)
+            error('dataStruct.subjectName is required for interval waveform loading.');
+        end
+        sessionFolder = get_kilosort_session_folder(paths, dataStruct.subjectName, dataStruct.sessionName, 'interval');
+        [unitWidths, meta] = load_kilosort_unit_widths(sessionFolder, fsSpike);
+
+    case 'reach'
+        [unitWidths, meta] = load_reach_unit_widths(dataStruct, paths, fsSpike);
+
+    otherwise
+        error(['Waveform-based E/I split supports spontaneous, interval, and reach sessions. ', ...
+            'Got sessionType = %s.'], dataStruct.sessionType);
+end
+end
+
+function sessionFolder = get_kilosort_session_folder(paths, subjectName, sessionName, sessionType)
+% GET_KILOSORT_SESSION_FOLDER - Folder with cluster_info.tsv and waveforms.mat
 
 switch lower(sessionType)
     case 'spontaneous'
@@ -100,8 +113,7 @@ switch lower(sessionType)
     case 'interval'
         basePath = paths.intervalDataPath;
     otherwise
-        error(['Waveform-based E/I split supports spontaneous and interval sessions. ', ...
-            'Got sessionType = %s.'], sessionType);
+        error('Unsupported Kilosort session type: %s', sessionType);
 end
 
 sessionFolder = fullfile(basePath, subjectName, sessionName);
@@ -110,16 +122,119 @@ if ~isfolder(sessionFolder)
 end
 end
 
-function unitWidths = build_unit_width_lookup(spWaveforms, ci, fsSpike)
-% BUILD_UNIT_WIDTH_LOOKUP - Map cluster id to peak-to-trough width (ms)
+function [unitWidths, meta] = load_kilosort_unit_widths(sessionFolder, fsSpike)
+% LOAD_KILOSORT_UNIT_WIDTHS - Widths from waveforms.mat / sp_waveforms
+
+waveformsFile = fullfile(sessionFolder, 'waveforms.mat');
+if ~isfile(waveformsFile)
+    error('waveforms.mat not found in %s (required for E/I split).', sessionFolder);
+end
+
+waveformData = load(waveformsFile);
+if ~isfield(waveformData, 'sp_waveforms')
+    error('Expected variable sp_waveforms in %s', waveformsFile);
+end
+
+ci = readtable(fullfile(sessionFolder, 'cluster_info.tsv'), ...
+    'FileType', 'text', 'Delimiter', '\t');
+unitWidths = build_kilosort_unit_width_lookup(waveformData.sp_waveforms, ci, fsSpike);
+
+meta = struct('source', 'kilosort', 'waveformsFile', waveformsFile);
+end
+
+function [unitWidths, meta] = load_reach_unit_widths(dataStruct, paths, fsSpike)
+% LOAD_REACH_UNIT_WIDTHS - Widths from reach_task/data/WaveformDATA/*_Neural_WFs.mat
+
+waveformsFile = get_reach_waveform_file(paths, dataStruct.sessionName);
+wfData = load(waveformsFile, 'WFs');
+if ~isfield(wfData, 'WFs') || isempty(wfData.WFs)
+    error('Expected non-empty variable WFs in %s', waveformsFile);
+end
+
+idchan = get_reach_idchan(dataStruct, paths);
+unitWidths = build_reach_unit_width_lookup(wfData.WFs, idchan, fsSpike);
+
+meta = struct('source', 'reach', 'waveformsFile', waveformsFile);
+end
+
+function waveformsFile = get_reach_waveform_file(paths, sessionName)
+% GET_REACH_WAVEFORM_FILE - Resolve *_Neural_WFs.mat from a reach session name
+
+waveformDataDir = fullfile(paths.reachDataPath, 'WaveformDATA');
+if ~isfolder(waveformDataDir)
+    error('Reach waveform folder not found: %s', waveformDataDir);
+end
+
+if contains(sessionName, '_NeuroBeh')
+    wfSessionName = strrep(sessionName, '_NeuroBeh', '_Neural_WFs');
+else
+    error(['Reach sessionName must contain ''_NeuroBeh'' for waveform lookup. Got: %s'], sessionName);
+end
+
+waveformsFile = fullfile(waveformDataDir, [wfSessionName, '.mat']);
+if ~isfile(waveformsFile)
+    error('Reach waveform file not found: %s', waveformsFile);
+end
+end
+
+function idchan = get_reach_idchan(dataStruct, paths)
+% GET_REACH_IDCHAN - Unit metadata table for row alignment with WFs
+
+if isfield(dataStruct, 'dataR') && isstruct(dataStruct.dataR) && isfield(dataStruct.dataR, 'idchan')
+    idchan = dataStruct.dataR.idchan;
+elseif isfield(dataStruct, 'idchan')
+    idchan = dataStruct.idchan;
+else
+    reachDataFile = fullfile(paths.reachDataPath, [dataStruct.sessionName, '.mat']);
+    if ~isfile(reachDataFile)
+        error('Reach session file not found: %s', reachDataFile);
+    end
+    reachData = load(reachDataFile, 'idchan');
+    idchan = reachData.idchan;
+end
+
+idchan = orient_idchan_units_as_rows(idchan);
+end
+
+function idchan = orient_idchan_units_as_rows(idchan)
+% ORIENT_IDCHAN_UNITS_AS_ROWS - Ensure one row per unit (Nx7)
+
+if size(idchan, 1) < size(idchan, 2)
+    idchan = idchan';
+end
+end
+
+function unitWidths = build_kilosort_unit_width_lookup(spWaveforms, ci, fsSpike)
+% BUILD_KILOSORT_UNIT_WIDTH_LOOKUP - Map cluster id to peak-to-trough width (ms)
 
 unitWidths = containers.Map('KeyType', 'double', 'ValueType', 'double');
 for iUnit = 1:numel(spWaveforms)
-    meanWf = get_unit_mean_waveform(spWaveforms(iUnit), ci);
+    meanWf = get_kilosort_unit_mean_waveform(spWaveforms(iUnit), ci);
     if isempty(meanWf)
         continue;
     end
     unitWidths(spWaveforms(iUnit).unitID) = compute_peak_to_trough(meanWf, fsSpike);
+end
+end
+
+function unitWidths = build_reach_unit_width_lookup(wfs, idchan, fsSpike)
+% BUILD_REACH_UNIT_WIDTH_LOOKUP - Map reach unit id to width from mean WFs
+%
+% Variables:
+%   wfs     - [nUnits x nSamples x nWaveforms] from GetWFs_AmpChange.m
+%   idchan  - [nUnits x 7], column 1 = unit id
+
+idchan = orient_idchan_units_as_rows(idchan);
+nUnits = min(size(wfs, 1), size(idchan, 1));
+unitWidths = containers.Map('KeyType', 'double', 'ValueType', 'double');
+
+for iUnit = 1:nUnits
+    meanWf = mean(wfs(iUnit, :, :), 3);
+    meanWf = meanWf(:)';
+    if isempty(meanWf) || all(meanWf == 0) || ~any(isfinite(meanWf))
+        continue;
+    end
+    unitWidths(idchan(iUnit, 1)) = compute_peak_to_trough(meanWf, fsSpike);
 end
 end
 
@@ -144,8 +259,8 @@ for i = 1:numel(unitIds)
 end
 end
 
-function meanWf = get_unit_mean_waveform(unitEntry, ci)
-% GET_UNIT_MEAN_WAVEFORM - Mean waveform on the cluster's assigned channel
+function meanWf = get_kilosort_unit_mean_waveform(unitEntry, ci)
+% GET_KILOSORT_UNIT_MEAN_WAVEFORM - Mean waveform on the cluster's assigned channel
 
 ciIdx = find(ci.cluster_id == unitEntry.unitID, 1, 'first');
 if isempty(ciIdx)

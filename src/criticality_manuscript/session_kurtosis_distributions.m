@@ -24,6 +24,8 @@
 %                               plot kurtosis and D_JS distributions for each population;
 %                               also plots mean +/- SEM kappa and D_JS summaries across windows
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
+%                        Waveforms: spontaneous/interval waveforms.mat; reach
+%                        reach_task/data/WaveformDATA/*_Neural_WFs.mat
 %
 % Goal:
 %   Visualize real vs surrogate PRG kurtosis distributions for one session,

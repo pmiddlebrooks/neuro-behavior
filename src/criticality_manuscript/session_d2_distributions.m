@@ -25,6 +25,8 @@
 %   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory;
 %                               also plots mean +/- SEM summary across windows
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
+%                        Waveforms: spontaneous/interval waveforms.mat; reach
+%                        reach_task/data/WaveformDATA/*_Neural_WFs.mat
 %
 % Goal:
 %   Visualize real d2 vs shuffled d2 distributions for one session across

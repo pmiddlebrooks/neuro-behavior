@@ -10,6 +10,7 @@ function dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, c
 %
 % Goal:
 %   When split is on, 'all' keeps E+I combined; E and I apply waveform filter.
+%   Reach waveforms load from reach_task/data/WaveformDATA (see apply_session_cell_type_filter).
 
 dataStructRun = copy_neuron_selection(dataStruct);
 
