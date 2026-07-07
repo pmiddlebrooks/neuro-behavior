@@ -132,6 +132,14 @@ if ~areaOk
   error('Brain area "%s" not available in this session.', brainArea);
 end
 
+if splitExcitatoryInhibitory
+  eiCheck = check_session_ei_neuron_counts(dataStruct, paths, widthCutoff, brainArea, ...
+    brainAreaCombinations, analysisConfig.nMinNeurons);
+  if ~eiCheck.isOk
+    return;
+  end
+end
+
 cellTypesToRun = get_session_cell_types_to_run(splitExcitatoryInhibitory);
 if splitExcitatoryInhibitory
   kappaLabel = sprintf('\\kappa (N/%d)', analysisConfig.finalCutoffDivisor);

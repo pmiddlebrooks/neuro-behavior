@@ -29,6 +29,8 @@ function out = reach_criticality_metrics_engagement(sessionName, opts)
 %       .d2Window, .useLog10D2, .nShufflesD2
 %       .runD2AccuracyCorrelation - If true (default), correlate d2 with reach
 %                                   accuracy across total and engaged windows
+%       .runD2ReachRateCorrelation - If true (default), correlate d2 with reach
+%                                    count/rate across all d2 windows (total only)
 %     Kurtosis (PRG):
 %       .prgWindow, .prgMethod, .surrogateMethod, .nSurrogates
 %     Avalanches:
@@ -176,6 +178,7 @@ out.segments = struct('engaged', engagedSegs, 'nonEngaged', nonEngagedSegs);
 out.durations = struct();
 out.d2 = [];
 out.d2AccuracyCorrelation = [];
+out.d2ReachRateCorrelation = [];
 out.kurtosis = [];
 out.avalanches = [];
 out.figHandles = struct();
@@ -228,6 +231,18 @@ if ismember('d2', opts.analyses)
         out.figHandles.d2AccuracyCorrelation = plot_d2_accuracy_correlation( ...
           d2AccCorr, sessionName, opts.d2Window, opts.useLog10D2, plotConfig);
       end
+    end
+  end
+
+  if opts.runD2ReachRateCorrelation
+    fprintf('\n--- d2 vs reach rate (all windows) ---\n');
+    d2RateCorr = build_d2_reach_rate_correlation(resultsD2, reachStart, ...
+      collectStart, opts.d2Window, opts.useLog10D2);
+    out.d2ReachRateCorrelation = d2RateCorr;
+    print_d2_reach_rate_correlation(d2RateCorr, opts.d2Window);
+    if opts.makePlots
+      out.figHandles.d2ReachRateCorrelation = plot_d2_reach_rate_correlation( ...
+        d2RateCorr, sessionName, opts.d2Window, opts.useLog10D2, plotConfig);
     end
   end
 end
@@ -454,6 +469,9 @@ if ~isfield(opts, 'nShufflesD2') || isempty(opts.nShufflesD2)
 end
 if ~isfield(opts, 'runD2AccuracyCorrelation') || isempty(opts.runD2AccuracyCorrelation)
   opts.runD2AccuracyCorrelation = true;
+end
+if ~isfield(opts, 'runD2ReachRateCorrelation') || isempty(opts.runD2ReachRateCorrelation)
+  opts.runD2ReachRateCorrelation = true;
 end
 
 if ~isfield(opts, 'prgWindow') || isempty(opts.prgWindow)
@@ -1606,6 +1624,181 @@ for a = 1:numAreas
 end
 
 sgtitle(tileLayout, sprintf('%s — d2 vs reach accuracy | %.0fs windows', ...
+  sessionName, d2Window), 'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
+end
+
+function corrResult = build_d2_reach_rate_correlation(results, reachStart, ...
+    collectStart, d2Window, useLog10D2)
+% BUILD_D2_REACH_RATE_CORRELATION - d2 and reach count/rate per window (total)
+%
+% Variables:
+%   results      - Output of criticality_ar_analysis
+%   reachStart   - All reach onsets in collect window (absolute s)
+%   collectStart - Collect window start (s); startS is relative to this
+%   d2Window     - Non-overlapping window length (s)
+%   useLog10D2   - If true, use log10(d2) for correlation
+%
+% Goal:
+%   For each d2 window, count reach onsets and compute reach rate (count /
+%   d2Window). Correlate d2 with reach count across all windows (zero-reach
+%   windows included).
+
+reachStart = reachStart(:);
+
+corrResult = struct();
+corrResult.d2Window = d2Window;
+corrResult.areas = {};
+corrResult.byArea = {};
+
+for a = 1:numel(results.areas)
+  if a > numel(results.startS) || isempty(results.startS{a})
+    continue;
+  end
+
+  centerRel = results.startS{a}(:);
+  d2Vec = results.d2{a}(:);
+  nWindows = min(numel(centerRel), numel(d2Vec));
+  if nWindows == 0
+    continue;
+  end
+
+  centerRel = centerRel(1:nWindows);
+  d2Vec = d2Vec(1:nWindows);
+  if useLog10D2
+    d2Vec = log10_safe_numeric(d2Vec);
+  end
+
+  winStartAbs = collectStart + centerRel - d2Window / 2;
+  winEndAbs = collectStart + centerRel + d2Window / 2;
+  reachCountVec = compute_window_reach_count(reachStart, winStartAbs, winEndAbs);
+  reachRateVec = reachCountVec / d2Window;
+
+  validMask = isfinite(d2Vec);
+  areaResult = struct();
+  areaResult.areaName = results.areas{a};
+  areaResult.d2 = d2Vec;
+  areaResult.nReaches = reachCountVec;
+  areaResult.reachRate = reachRateVec;
+  areaResult.validMask = validMask;
+  areaResult.nWindows = nWindows;
+  areaResult.nValidWindows = sum(validMask);
+  areaResult.rPearson = pearson_r(d2Vec(validMask), reachCountVec(validMask));
+  areaResult.rPearsonRate = pearson_r(d2Vec(validMask), reachRateVec(validMask));
+  corrResult.byArea{end + 1} = areaResult; %#ok<AGROW>
+  corrResult.areas{end + 1} = results.areas{a}; %#ok<AGROW>
+end
+end
+
+function reachCountVec = compute_window_reach_count(reachStart, winStartAbs, winEndAbs)
+% COMPUTE_WINDOW_REACH_COUNT - Reach onsets per d2 window
+%
+% Variables:
+%   reachStart     - Reach onset times (s)
+%   winStartAbs    - Window start times (s), one per window
+%   winEndAbs      - Window end times (s); interval is [winStart, winEnd)
+%
+% Goal:
+%   For each window, return the number of reach onsets in [winStart, winEnd).
+
+nWindows = numel(winStartAbs);
+reachCountVec = zeros(nWindows, 1);
+reachStart = reachStart(:);
+for w = 1:nWindows
+  reachCountVec(w) = sum(reachStart >= winStartAbs(w) & reachStart < winEndAbs(w));
+end
+end
+
+function print_d2_reach_rate_correlation(corrResult, d2Window)
+% PRINT_D2_REACH_RATE_CORRELATION - Command-window summary per area (all windows)
+
+fprintf('Reach count = number of reach onsets in each d2 window; rate = count / %.0f s\n', d2Window);
+if isempty(corrResult.areas)
+  fprintf('  No areas with d2 window data.\n');
+  return;
+end
+for a = 1:numel(corrResult.byArea)
+  areaResult = corrResult.byArea{a};
+  if areaResult.nValidWindows == 0
+    fprintf('  %s: no windows with finite d2\n', areaResult.areaName);
+    continue;
+  end
+  nReachVals = areaResult.nReaches(areaResult.validMask);
+  fprintf(['  %s: r=%.3f (count), r=%.3f (rate), n=%d windows ', ...
+    '(reach count %.0f-%.0f, mean %.2f)\n'], ...
+    areaResult.areaName, areaResult.rPearson, areaResult.rPearsonRate, ...
+    areaResult.nValidWindows, min(nReachVals), max(nReachVals), mean(nReachVals));
+end
+end
+
+function fig = plot_d2_reach_rate_correlation(corrResult, sessionName, d2Window, ...
+    useLog10D2, plotConfig)
+% PLOT_D2_REACH_RATE_CORRELATION - Scatter of reach count vs d2 (all windows)
+%
+% Variables:
+%   corrResult   - Output of build_d2_reach_rate_correlation
+%   sessionName  - Session identifier for title
+%   d2Window     - Window length (s)
+%   useLog10D2   - If true, y-axis uses log10(d2)
+%   plotConfig   - Axis fonts and line widths
+%
+% Goal:
+%   One panel per area with scatter of reaches per window vs d2 and Pearson r.
+
+plotConfig = fill_default_engagement_plot_config(plotConfig);
+classColors = engagement_class_colors();
+totalColor = classColors(1, :);
+numAreas = numel(corrResult.areas);
+if numAreas == 0
+  warning('reach_criticality_metrics_engagement:NoD2ReachRateData', ...
+    'No areas available for d2-reach-rate correlation plot.');
+  fig = gobjects(0);
+  return;
+end
+
+if useLog10D2
+  d2YLabel = 'log_{10}(d2)';
+else
+  d2YLabel = 'd2';
+end
+labelInterpreter = 'none';
+if useLog10D2
+  labelInterpreter = 'tex';
+end
+
+fig = figure('Color', 'w', 'Name', 'd2 vs reach rate', ...
+  'Position', [120 120 420 * numAreas 340]);
+tileLayout = tiledlayout(fig, 1, numAreas, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+for a = 1:numAreas
+  areaResult = corrResult.byArea{a};
+  ax = nexttile(tileLayout);
+  hold(ax, 'on');
+
+  validMask = areaResult.validMask;
+  if ~any(validMask)
+    title(ax, sprintf('%s (no finite d2)', areaResult.areaName), 'Interpreter', 'none');
+    apply_engagement_axes_style(ax, plotConfig);
+    hold(ax, 'off');
+    continue;
+  end
+
+  nReachPlot = areaResult.nReaches(validMask);
+  d2Plot = areaResult.d2(validMask);
+  scatter(ax, nReachPlot, d2Plot, 48, totalColor, 'filled', ...
+    'MarkerFaceAlpha', 0.55, 'MarkerEdgeColor', 'none');
+
+  rVal = areaResult.rPearson;
+  apply_engagement_axes_style(ax, plotConfig, 'Reaches per window', d2YLabel, ...
+    sprintf('%s | r=%.3f, n=%d', areaResult.areaName, rVal, sum(validMask)), ...
+    labelInterpreter);
+  if max(nReachPlot) > min(nReachPlot)
+    xlim(ax, [min(nReachPlot) - 0.5, max(nReachPlot) + 0.5]);
+  end
+  grid(ax, 'on');
+  hold(ax, 'off');
+end
+
+sgtitle(tileLayout, sprintf('%s — d2 vs reach count | %.0fs windows', ...
   sessionName, d2Window), 'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 

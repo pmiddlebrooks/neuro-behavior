@@ -26,8 +26,6 @@
 %   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory;
 %                               also plots summary of tau and alpha fits
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
-%                        Waveforms: spontaneous/interval waveforms.mat; reach
-%                        reach_task/data/WaveformDATA/*_Neural_WFs.mat
 %   enableCircularPermutations - If true, circular-shift each neuron and overlay shuffle CCDFs
 %   nShuffles          - Number of independent circular permutations per area
 %   saveAnalysisResults - If true, save sessionResults after %% Analysis
@@ -49,11 +47,12 @@
 
 collectStart = 0;
 collectEnd = 45 * 60;
+collectEnd = [];
 windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
-saveFigure = true;
+saveFigure = false;
 
 % Power-law fitting: 'clauset', 'plfit2023', 'hybrid' = plfit2023 xmax, then Clauset plfit on x <= xmax
 powerLawFitMethod = 'plfit2023';
@@ -70,8 +69,8 @@ nSubsamples = 20;
 nNeuronsSubsample = 20;
 minNeuronsMultiple = 1.25;
 
-splitExcitatoryInhibitory = false;
-widthCutoff = 0.035;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
+splitExcitatoryInhibitory = true;
+widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 enableCircularPermutations = true;
 nShuffles = 5;
@@ -125,25 +124,6 @@ analysisConfig.enableCircularPermutations = enableCircularPermutations;
 analysisConfig.nShuffles = nShuffles;
 
 % Paths
-paths = get_paths();
-scriptDir = fileparts(mfilename('fullpath'));
-if contains(scriptDir, [filesep 'Editor_' filesep])
-  scriptDir = fileparts(which('session_avalanche_distributions'));
-end
-srcPath = fullfile(scriptDir, '..');
-addpath(scriptDir, '-begin');
-addpath(srcPath);
-addpath(fullfile(srcPath, 'reach_task'));
-addpath(fullfile(srcPath, 'schall'));
-addpath(fullfile(srcPath, 'spontaneous'));
-addpath(fullfile(srcPath, 'interval_timing_task'));
-addpath(fullfile(srcPath, 'criticality', 'scripts'));
-addpath(fullfile(srcPath, 'criticality', 'analyses'));
-addpath(fullfile(srcPath, 'session_prep', 'data_prep'));
-addpath(fullfile(srcPath, 'session_prep', 'utils'));
-addpath(fullfile(srcPath, 'data_prep'));
-addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
-addpath(fullfile(srcPath, 'criticality'));
 
 [clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
 analysisConfig.clausetPlfitPath = clausetPlfitPath;
@@ -162,7 +142,6 @@ if enableCircularPermutations
   fprintf('Circular permutations: %d shuffles per area\n', nShuffles);
 end
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
 
 %% Analysis — load session, extract avalanches, optionally cache results
 subjectNameForLoad = '';
@@ -172,9 +151,26 @@ end
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 
+% Resolve collectEnd to full session when empty (uses loaded spike times)
+if isempty(collectEnd)
+  collectEnd = resolve_session_collect_end(dataStruct, collectStart);
+end
+windowDurationSec = collectEnd - collectStart;
+analysisConfig.slidingWindowSize = windowDurationSec;
+analysisConfig.avStepSize = windowDurationSec;
+fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
+
 [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations, false);
 if ~areaOk
   error('Brain area "%s" not available in this session.', brainArea);
+end
+
+if splitExcitatoryInhibitory
+  eiCheck = check_session_ei_neuron_counts(dataStruct, paths, widthCutoff, brainArea, ...
+    brainAreaCombinations, analysisConfig.nMinNeurons);
+  if ~eiCheck.isOk
+    return;
+  end
 end
 
 runMeta = struct( ...
@@ -220,6 +216,31 @@ plot_session_avalanche_results(sessionResults, paths, plotConfig);
 fprintf('\n=== Done ===\n');
 
 %% Local functions
+
+function collectEnd = resolve_session_collect_end(dataStruct, collectStart)
+% RESOLVE_SESSION_COLLECT_END - Full-session end time (s) when collectEnd is empty
+%
+% Variables:
+%   dataStruct   - Session struct from load_session_data
+%   collectStart - Window start (s)
+%
+% Goal:
+%   Mirror the loaders: use the loaded spike extent (falling back to opts.collectEnd)
+%   so an empty collectEnd analyzes the entire session.
+
+collectEnd = [];
+if isfield(dataStruct, 'spikeTimes') && ~isempty(dataStruct.spikeTimes)
+  collectEnd = max(dataStruct.spikeTimes);
+elseif isfield(dataStruct, 'opts') && isstruct(dataStruct.opts) ...
+    && isfield(dataStruct.opts, 'collectEnd') && ~isempty(dataStruct.opts.collectEnd)
+  collectEnd = dataStruct.opts.collectEnd;
+end
+
+if isempty(collectEnd) || ~isfinite(collectEnd) || collectEnd <= collectStart
+  error(['Could not resolve collectEnd for the full session. ', ...
+    'Set collectEnd explicitly in the configuration.']);
+end
+end
 
 function resultsFile = resolve_avalanche_results_file(paths, sessionName, analysisResultsFile)
 % RESOLVE_AVALANCHE_RESULTS_FILE - Default path for cached session avalanche results

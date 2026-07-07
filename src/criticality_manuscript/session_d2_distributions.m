@@ -54,7 +54,7 @@ minNeuronsMultiple = 1.25;
 plotD2PopActivity = true;
 saveFigure = false;
 
-splitExcitatoryInhibitory = false;
+splitExcitatoryInhibitory = true;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 % Behavior label sets for d2 correlation figure (proportion per window)
@@ -100,25 +100,7 @@ analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 
-%% Paths
-paths = get_paths();
-scriptDir = fileparts(mfilename('fullpath'));
-if contains(scriptDir, [filesep 'Editor_' filesep])
-  scriptDir = fileparts(which('session_d2_distributions'));
-end
-srcPath = fullfile(scriptDir, '..');
-addpath(srcPath);
-addpath(fullfile(srcPath, 'reach_task'));
-addpath(fullfile(srcPath, 'schall'));
-addpath(fullfile(srcPath, 'spontaneous'));
-addpath(fullfile(srcPath, 'interval_timing_task'));
-addpath(fullfile(srcPath, 'criticality', 'scripts'));
-addpath(fullfile(srcPath, 'criticality', 'analyses'));
-addpath(fullfile(srcPath, 'session_prep', 'data_prep'));
-addpath(fullfile(srcPath, 'session_prep', 'utils'));
-addpath(fullfile(srcPath, 'data_prep'));
-addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
-addpath(fullfile(srcPath, 'criticality'));
+% Paths
 
 fprintf('\n=== Session d2 Distributions ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
@@ -147,6 +129,14 @@ dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations, false);
 if ~areaOk
   error('Brain area "%s" not available in this session.', brainArea);
+end
+
+if splitExcitatoryInhibitory
+  eiCheck = check_session_ei_neuron_counts(dataStruct, paths, widthCutoff, brainArea, ...
+    brainAreaCombinations, analysisConfig.nMinNeurons);
+  if ~eiCheck.isOk
+    return;
+  end
 end
 
 cellTypesToRun = get_session_cell_types_to_run(splitExcitatoryInhibitory);
