@@ -48,7 +48,7 @@ sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'interval' , 'schall' 
 
 subjectName = 'ag25290';
 sessionName =  'ag112221';
-% sessionName =  'ag112321_1';
+sessionName =  'ag112321_1';
 % sessionName =  'ag112321_2';
 % sessionName =  'ag112721';
 % sessionName =  'ag112821';

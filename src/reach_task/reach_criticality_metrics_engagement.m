@@ -208,6 +208,7 @@ if ismember('d2', opts.analyses)
   d2Split = split_d2_by_reach_engagement(resultsD2, reachStartEngaged, collectStart, ...
     opts.d2Window, opts.useLog10D2, opts.reachBuffer);
   out.d2 = d2Split;
+  out.arResultsD2 = resultsD2;
   out.durations.d2 = d2Split.durations;
   print_engagement_durations('d2', d2Split.durations);
 
@@ -514,67 +515,13 @@ end
 function plotConfig = fill_default_engagement_plot_config(plotConfig)
 % FILL_DEFAULT_ENGAGEMENT_PLOT_CONFIG - Manuscript-style axis fonts and line widths
 
-if nargin < 1 || isempty(plotConfig)
-  plotConfig = struct();
-end
-if ~isfield(plotConfig, 'axisLabelFontSize') || isempty(plotConfig.axisLabelFontSize)
-  plotConfig.axisLabelFontSize = 14;
-end
-if ~isfield(plotConfig, 'tickLabelFontSize') || isempty(plotConfig.tickLabelFontSize)
-  plotConfig.tickLabelFontSize = 12;
-end
-if ~isfield(plotConfig, 'titleFontSize') || isempty(plotConfig.titleFontSize)
-  plotConfig.titleFontSize = 13;
-end
-if ~isfield(plotConfig, 'sgtitleFontSize') || isempty(plotConfig.sgtitleFontSize)
-  plotConfig.sgtitleFontSize = 14;
-end
-if ~isfield(plotConfig, 'axesLineWidth') || isempty(plotConfig.axesLineWidth)
-  plotConfig.axesLineWidth = 1.5;
-end
-if ~isfield(plotConfig, 'markerSize') || isempty(plotConfig.markerSize)
-  plotConfig.markerSize = 6;
-end
-if ~isfield(plotConfig, 'lineWidth') || isempty(plotConfig.lineWidth)
-  plotConfig.lineWidth = 1.5;
-end
-if ~isfield(plotConfig, 'errorCapSize') || isempty(plotConfig.errorCapSize)
-  plotConfig.errorCapSize = 8;
-end
-if ~isfield(plotConfig, 'legendFontSize') || isempty(plotConfig.legendFontSize)
-  plotConfig.legendFontSize = 11;
-end
-if ~isfield(plotConfig, 'shuffleMarkerSize') || isempty(plotConfig.shuffleMarkerSize)
-  plotConfig.shuffleMarkerSize = 4;
-end
+plotConfig = fill_manuscript_plot_config(plotConfig);
 end
 
 function apply_engagement_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter)
 % APPLY_ENGAGEMENT_AXES_STYLE - Thicker axes and larger fonts (manuscript style)
-%
-% Variables:
-%   ax              - Axes handle
-%   plotConfig      - Font/line-width settings
-%   xLabelText      - X label ('' or omit to skip)
-%   yLabelText      - Y label ('' or omit to skip)
-%   titleText       - Title ('' or omit to skip)
-%   textInterpreter - Optional interpreter for labels/title (default 'none')
 
-if nargin < 6 || isempty(textInterpreter)
-  textInterpreter = 'none';
-end
-
-set(ax, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
-  'Box', 'off', 'TickDir', 'out');
-if nargin >= 3 && ~isempty(xLabelText)
-  xlabel(ax, xLabelText, 'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', textInterpreter);
-end
-if nargin >= 4 && ~isempty(yLabelText)
-  ylabel(ax, yLabelText, 'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', textInterpreter);
-end
-if nargin >= 5 && ~isempty(titleText)
-  title(ax, titleText, 'FontSize', plotConfig.titleFontSize, 'Interpreter', textInterpreter);
-end
+apply_manuscript_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter);
 end
 
 function setup_reach_criticality_metrics_engagement_paths()
@@ -2347,7 +2294,7 @@ end
 function colors = engagement_class_colors()
 % ENGAGEMENT_CLASS_COLORS - Total (gray), engaged (blue), non-engaged (orange)
 
-colors = [0.45, 0.45, 0.45; 0.15, 0.45, 0.75; 0.85, 0.35, 0.15];
+colors = manuscript_plot_colors().engagementClasses;
 end
 
 function isEngaged = window_overlaps_reach_buffer(winStartAbs, winEndAbs, reachStart, reachBuffer)
@@ -2432,36 +2379,7 @@ function [binEdges, xMin, xMax] = build_shared_bin_edges(allVals, nBinsTarget, f
 if nargin < 3
   forcedLimits = [];
 end
-if isempty(allVals)
-  if ~isempty(forcedLimits)
-    xMin = forcedLimits(1);
-    xMax = forcedLimits(2);
-  else
-    xMin = 0;
-    xMax = 1;
-  end
-else
-  xMin = min(allVals);
-  xMax = max(allVals);
-  if ~isempty(forcedLimits)
-    xMin = min(xMin, forcedLimits(1));
-    xMax = max(xMax, forcedLimits(2));
-  end
-end
-
-xSpan = xMax - xMin;
-if xSpan <= 0 || ~isfinite(xSpan)
-  pad = max(0.5, abs(xMin) * 0.05 + eps);
-  xMin = xMin - pad;
-  xMax = xMax + pad;
-else
-  pad = 0.03 * xSpan;
-  xMin = xMin - pad;
-  xMax = xMax + pad;
-end
-
-nBins = max(8, round(nBinsTarget));
-binEdges = linspace(xMin, xMax, nBins + 1);
+[binEdges, xMin, xMax] = build_shared_histogram_bin_edges(allVals, nBinsTarget, forcedLimits);
 end
 
 function y = log10_safe_numeric(x)

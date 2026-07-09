@@ -1,4 +1,4 @@
-function fig = plot_session_ei_summary(summary, plotTitle, yLabelText, metricNamesToPlot, parentFig)
+function fig = plot_session_ei_summary(summary, plotTitle, yLabelText, metricNamesToPlot, parentFig, plotConfig)
 % PLOT_SESSION_EI_SUMMARY - Bar summary of mean +/- SEM for combined, E, and I
 %
 % Variables:
@@ -7,6 +7,7 @@ function fig = plot_session_ei_summary(summary, plotTitle, yLabelText, metricNam
 %   yLabelText        - Y-axis label (e.g. 'log_{10}(d2)')
 %   metricNamesToPlot - Optional subset of summary.metricNames (default: all)
 %   parentFig         - Optional existing figure to replot into
+%   plotConfig        - From fill_manuscript_plot_config
 %
 % Goal:
 %   Combined = black, excitatory = blue, inhibitory = red.
@@ -16,6 +17,9 @@ if nargin < 4
 end
 if nargin < 5
   parentFig = [];
+end
+if nargin < 6 || isempty(plotConfig)
+  plotConfig = fill_manuscript_plot_config();
 end
 
 if isempty(metricNamesToPlot)
@@ -45,7 +49,8 @@ if nargin >= 5 && ~isempty(parentFig) && isgraphics(parentFig)
   fig = parentFig;
   clf(fig);
 else
-  fig = figure('Name', 'Session E/I summary', 'Color', 'w');
+  fig = figure('Name', 'Session E/I summary', 'Color', 'w', ...
+    'Position', [140 140 max(420, 220 * nMetrics) 420]);
 end
 ax = axes(fig); %#ok<LAXES>
 hold(ax, 'on');
@@ -71,17 +76,18 @@ for m = 1:nMetrics
     end
     if isfinite(stats.sem) && stats.sem > 0
       errorbar(ax, xPos, stats.mean, stats.sem, 'Color', popColors(p, :), ...
-        'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 8, ...
-        'HandleVisibility', 'off');
+        'LineStyle', 'none', 'LineWidth', plotConfig.lineWidth, ...
+        'CapSize', plotConfig.errorCapSize, 'HandleVisibility', 'off');
     end
   end
 end
 
-set(ax, 'XTick', xCenters, 'XTickLabel', metricLabels, 'Box', 'off');
-ylabel(ax, yLabelText);
-title(ax, plotTitle, 'Interpreter', 'none');
+set(ax, 'XTick', xCenters, 'XTickLabel', metricLabels);
+apply_manuscript_axes_style(ax, plotConfig, '', yLabelText, '', 'tex');
+title(ax, plotTitle, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
 legendMask = isgraphics(legendHandles);
-legend(ax, legendHandles(legendMask), popLabels(legendMask), 'Location', 'best');
+legend(ax, legendHandles(legendMask), popLabels(legendMask), ...
+  'Location', 'best', 'FontSize', plotConfig.legendFontSize);
 grid(ax, 'on');
 hold(ax, 'off');
 end

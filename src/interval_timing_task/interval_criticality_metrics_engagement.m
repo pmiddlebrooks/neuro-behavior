@@ -28,6 +28,11 @@ function out = interval_criticality_metrics_engagement(subjectName, sessionName,
 %       .useSubsampling, .nSubsamples, .nNeuronsSubsample, .minNeuronsMultiple
 %     d2:
 %       .d2Window, .useLog10D2, .nShufflesD2
+%       .sessionInterval - Target interval duration (s; default 5)
+%       .rewardAttemptBeforeSec - Exclude error trials with poke time before
+%                                 sessionInterval - this value (default 1)
+%       .runD2TrialRateCorrelation - If true (default), correlate d2 with trial
+%                                    count/rate across all d2 windows
 %     Kurtosis (PRG):
 %       .prgWindow, .prgMethod, .surrogateMethod, .nSurrogates
 %     Avalanches:
@@ -126,6 +131,15 @@ if opts.absorbSingleEvents && numel(eventTimesEngaged) < numel(eventTimes)
     numel(eventTimes) - numel(eventTimesEngaged));
 end
 
+[eventTimesForRate, nExcludedEarlyErrors] = filter_interval_events_for_trial_rate( ...
+  trials, opts.sessionInterval, opts.rewardAttemptBeforeSec);
+eventInCollectRate = eventTimesForRate >= collectStart & eventTimesForRate <= collectEnd;
+eventTimesForRate = eventTimesForRate(eventInCollectRate);
+fprintf(['Trial-rate analysis: %d beam-break events in collect window ', ...
+  '(%d early errors excluded; poke < %.1f s)\n'], ...
+  numel(eventTimesForRate), nExcludedEarlyErrors, ...
+  opts.sessionInterval - opts.rewardAttemptBeforeSec);
+
 [clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
 
 % Continuous engagement segments (avalanche definition; also used for overview plot)
@@ -141,20 +155,25 @@ out.sessionName = sessionName;
 out.config = opts;
 out.eventTimes = eventTimes;
 out.eventTimesEngaged = eventTimesEngaged;
+out.eventTimesForRate = eventTimesForRate;
+out.nExcludedEarlyErrors = nExcludedEarlyErrors;
 out.eventTypes = eventTypes;
 out.trials = trials;
 out.segments = struct('engaged', engagedSegs, 'nonEngaged', nonEngagedSegs);
 out.durations = struct();
 out.d2 = [];
+out.d2TrialRateCorrelation = [];
 out.kurtosis = [];
 out.avalanches = [];
 out.figHandles = struct();
 
 plotConfig = opts.plotConfig;
 
-out.figHandles.segments = plot_beam_break_engagement_segments( ...
-  eventTimes, eventTypes, engagedSegs, nonEngagedSegs, sessionName, ...
-  collectStart, collectEnd, opts.minNonEngagedWindow, opts.eventBuffer, plotConfig);
+if opts.makePlots
+  out.figHandles.segments = plot_beam_break_engagement_segments( ...
+    eventTimes, eventTypes, engagedSegs, nonEngagedSegs, sessionName, ...
+    collectStart, collectEnd, opts.minNonEngagedWindow, opts.eventBuffer, plotConfig);
+end
 
 %% d2: classify non-overlapping windows by beam-break buffer overlap
 if ismember('d2', opts.analyses)
@@ -173,12 +192,28 @@ if ismember('d2', opts.analyses)
   d2Split = split_d2_by_reach_engagement(resultsD2, eventTimesEngaged, collectStart, ...
     opts.d2Window, opts.useLog10D2, opts.eventBuffer);
   out.d2 = d2Split;
+  out.arResultsD2 = resultsD2;
   out.durations.d2 = d2Split.durations;
   print_engagement_durations('d2', d2Split.durations);
 
-  out.figHandles.d2 = plot_engagement_d2_distributions( ...
-    d2Split, sessionType, sessionName, opts.d2Window, collectStart, collectEnd, ...
-    opts.useLog10D2, plotConfig);
+  if opts.makePlots
+    out.figHandles.d2 = plot_engagement_d2_distributions( ...
+      d2Split, sessionType, sessionName, opts.d2Window, collectStart, collectEnd, ...
+      opts.useLog10D2, plotConfig);
+  end
+
+  if opts.runD2TrialRateCorrelation
+    fprintf('\n--- d2 vs trial rate (all windows) ---\n');
+    d2RateCorr = build_d2_trial_rate_correlation(resultsD2, eventTimesForRate, ...
+      collectStart, opts.d2Window, opts.useLog10D2);
+    out.d2TrialRateCorrelation = d2RateCorr;
+    print_d2_trial_rate_correlation(d2RateCorr, opts.d2Window, opts.sessionInterval, ...
+      opts.rewardAttemptBeforeSec);
+    if opts.makePlots
+      out.figHandles.d2TrialRateCorrelation = plot_d2_trial_rate_correlation( ...
+        d2RateCorr, sessionName, opts.d2Window, opts.useLog10D2, plotConfig);
+    end
+  end
 end
 
 %% Kurtosis (PRG): classify non-overlapping blocks by beam-break buffer overlap
@@ -201,9 +236,11 @@ if ismember('kurtosis', opts.analyses)
   out.durations.kurtosis = prgSplit.durations;
   print_engagement_durations('kurtosis', prgSplit.durations);
 
-  out.figHandles.kurtosis = plot_engagement_kurtosis_distributions( ...
-    prgSplit, sessionType, sessionName, opts.prgWindow, collectStart, collectEnd, ...
-    prgConfig.finalCutoffDivisor, prgConfig.prgMethod, plotConfig);
+  if opts.makePlots
+    out.figHandles.kurtosis = plot_engagement_kurtosis_distributions( ...
+      prgSplit, sessionType, sessionName, opts.prgWindow, collectStart, collectEnd, ...
+      prgConfig.finalCutoffDivisor, prgConfig.prgMethod, plotConfig);
+  end
 end
 
 %% Avalanches: pool across engaged / non-engaged continuous segments
@@ -256,8 +293,10 @@ if ismember('avalanches', opts.analyses)
   out.avalanches.byClass = avByClass;
   out.avalanches.durations = avDurations;
 
-  out.figHandles.avalanches = plot_engagement_avalanche_distributions( ...
-    avByClass, areaNames, sessionName, collectStart, collectEnd, avDurations, plotConfig);
+  if opts.makePlots
+    out.figHandles.avalanches = plot_engagement_avalanche_distributions( ...
+      avByClass, areaNames, sessionName, collectStart, collectEnd, avDurations, plotConfig);
+  end
 end
 
 %% Summary bar plots (mean +/- SEM) for d2, decades, dcc, kappa, D_JS
@@ -268,13 +307,15 @@ end
 if ~isempty(out.d2) || ~isempty(out.kurtosis) || ~isempty(avByClass)
   summaryStats = build_engagement_metric_summary(out.d2, out.kurtosis, avByClass, opts.useLog10D2);
   out.summary = summaryStats;
-  out.figHandles.summary = plot_engagement_metric_summary( ...
-    summaryStats, sessionName, collectStart, collectEnd, plotConfig);
+  if opts.makePlots
+    out.figHandles.summary = plot_engagement_metric_summary( ...
+      summaryStats, sessionName, collectStart, collectEnd, plotConfig);
+  end
   print_engagement_metric_summary(summaryStats);
 end
 
 %% Optional figure export
-if opts.saveFigure
+if opts.saveFigure && opts.makePlots
   saveDir = opts.outputDir;
   if isempty(saveDir)
     saveDir = fullfile(paths.dropPath, 'interval_timing_task', 'results', ...
@@ -374,6 +415,9 @@ end
 if ~isfield(opts, 'saveFigure') || isempty(opts.saveFigure)
   opts.saveFigure = false;
 end
+if ~isfield(opts, 'makePlots') || isempty(opts.makePlots)
+  opts.makePlots = true;
+end
 if ~isfield(opts, 'outputDir')
   opts.outputDir = '';
 end
@@ -399,6 +443,15 @@ if ~isfield(opts, 'useLog10D2') || isempty(opts.useLog10D2)
 end
 if ~isfield(opts, 'nShufflesD2') || isempty(opts.nShufflesD2)
   opts.nShufflesD2 = 50;
+end
+if ~isfield(opts, 'sessionInterval') || isempty(opts.sessionInterval)
+  opts.sessionInterval = 5;
+end
+if ~isfield(opts, 'rewardAttemptBeforeSec') || isempty(opts.rewardAttemptBeforeSec)
+  opts.rewardAttemptBeforeSec = 1;
+end
+if ~isfield(opts, 'runD2TrialRateCorrelation') || isempty(opts.runD2TrialRateCorrelation)
+  opts.runD2TrialRateCorrelation = true;
 end
 
 if ~isfield(opts, 'prgWindow') || isempty(opts.prgWindow)
@@ -441,67 +494,13 @@ end
 function plotConfig = fill_default_engagement_plot_config(plotConfig)
 % FILL_DEFAULT_ENGAGEMENT_PLOT_CONFIG - Manuscript-style axis fonts and line widths
 
-if nargin < 1 || isempty(plotConfig)
-  plotConfig = struct();
-end
-if ~isfield(plotConfig, 'axisLabelFontSize') || isempty(plotConfig.axisLabelFontSize)
-  plotConfig.axisLabelFontSize = 14;
-end
-if ~isfield(plotConfig, 'tickLabelFontSize') || isempty(plotConfig.tickLabelFontSize)
-  plotConfig.tickLabelFontSize = 12;
-end
-if ~isfield(plotConfig, 'titleFontSize') || isempty(plotConfig.titleFontSize)
-  plotConfig.titleFontSize = 13;
-end
-if ~isfield(plotConfig, 'sgtitleFontSize') || isempty(plotConfig.sgtitleFontSize)
-  plotConfig.sgtitleFontSize = 14;
-end
-if ~isfield(plotConfig, 'axesLineWidth') || isempty(plotConfig.axesLineWidth)
-  plotConfig.axesLineWidth = 1.5;
-end
-if ~isfield(plotConfig, 'markerSize') || isempty(plotConfig.markerSize)
-  plotConfig.markerSize = 6;
-end
-if ~isfield(plotConfig, 'lineWidth') || isempty(plotConfig.lineWidth)
-  plotConfig.lineWidth = 1.5;
-end
-if ~isfield(plotConfig, 'errorCapSize') || isempty(plotConfig.errorCapSize)
-  plotConfig.errorCapSize = 8;
-end
-if ~isfield(plotConfig, 'legendFontSize') || isempty(plotConfig.legendFontSize)
-  plotConfig.legendFontSize = 11;
-end
-if ~isfield(plotConfig, 'shuffleMarkerSize') || isempty(plotConfig.shuffleMarkerSize)
-  plotConfig.shuffleMarkerSize = 4;
-end
+plotConfig = fill_manuscript_plot_config(plotConfig);
 end
 
 function apply_engagement_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter)
 % APPLY_ENGAGEMENT_AXES_STYLE - Thicker axes and larger fonts (manuscript style)
-%
-% Variables:
-%   ax              - Axes handle
-%   plotConfig      - Font/line-width settings
-%   xLabelText      - X label ('' or omit to skip)
-%   yLabelText      - Y label ('' or omit to skip)
-%   titleText       - Title ('' or omit to skip)
-%   textInterpreter - Optional interpreter for labels/title (default 'none')
 
-if nargin < 6 || isempty(textInterpreter)
-  textInterpreter = 'none';
-end
-
-set(ax, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
-  'Box', 'off', 'TickDir', 'out');
-if nargin >= 3 && ~isempty(xLabelText)
-  xlabel(ax, xLabelText, 'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', textInterpreter);
-end
-if nargin >= 4 && ~isempty(yLabelText)
-  ylabel(ax, yLabelText, 'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', textInterpreter);
-end
-if nargin >= 5 && ~isempty(titleText)
-  title(ax, titleText, 'FontSize', plotConfig.titleFontSize, 'Interpreter', textInterpreter);
-end
+apply_manuscript_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter);
 end
 
 function setup_interval_criticality_metrics_engagement_paths()
@@ -1516,6 +1515,205 @@ sgtitle(tileLayout, sprintf( ...
   'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
+function [eventTimesFiltered, nExcludedEarlyErrors] = filter_interval_events_for_trial_rate( ...
+    trials, sessionInterval, rewardAttemptBeforeSec)
+% FILTER_INTERVAL_EVENTS_FOR_TRIAL_RATE - Beam-break times for trial-rate correlation
+%
+% Variables:
+%   trials                 - Output of extract_interval_trials (type, pokeTimeSec, ...)
+%   sessionInterval        - Target interval (s)
+%   rewardAttemptBeforeSec - Exclude errors with poke earlier than interval minus this
+%
+% Goal:
+%   Return outcome times for correct trials and errors in the reward-seeking
+%   window (poke >= sessionInterval - rewardAttemptBeforeSec), matching
+%   interval_session_performance reward-attempt filtering.
+
+pokeMinSec = sessionInterval - rewardAttemptBeforeSec;
+earlyErrorMask = trials.type == "error" & trials.pokeTimeSec < pokeMinSec;
+nExcludedEarlyErrors = sum(earlyErrorMask);
+keepMask = ~earlyErrorMask;
+eventTimesFiltered = trials.outcomeTimeSec(keepMask);
+end
+
+function corrResult = build_d2_trial_rate_correlation(results, eventTimes, ...
+    collectStart, d2Window, useLog10D2)
+% BUILD_D2_TRIAL_RATE_CORRELATION - d2 and trial count/rate per window (total)
+%
+% Variables:
+%   results      - Output of criticality_ar_analysis
+%   eventTimes   - Filtered beam-break outcome times in collect window (absolute s)
+%   collectStart - Collect window start (s); startS is relative to this
+%   d2Window     - Non-overlapping window length (s)
+%   useLog10D2   - If true, use log10(d2) for correlation
+%
+% Goal:
+%   For each d2 window, count beam-break events and compute trial rate (count /
+%   d2Window). Correlate d2 with trial count across all windows.
+
+eventTimes = eventTimes(:);
+
+corrResult = struct();
+corrResult.d2Window = d2Window;
+corrResult.areas = {};
+corrResult.byArea = {};
+
+for a = 1:numel(results.areas)
+  if a > numel(results.startS) || isempty(results.startS{a})
+    continue;
+  end
+
+  centerRel = results.startS{a}(:);
+  d2Vec = results.d2{a}(:);
+  nWindows = min(numel(centerRel), numel(d2Vec));
+  if nWindows == 0
+    continue;
+  end
+
+  centerRel = centerRel(1:nWindows);
+  d2Vec = d2Vec(1:nWindows);
+  if useLog10D2
+    d2Vec = log10_safe_numeric(d2Vec);
+  end
+
+  winStartAbs = collectStart + centerRel - d2Window / 2;
+  winEndAbs = collectStart + centerRel + d2Window / 2;
+  trialCountVec = compute_window_event_count(eventTimes, winStartAbs, winEndAbs);
+  trialRateVec = trialCountVec / d2Window;
+
+  validMask = isfinite(d2Vec);
+  areaResult = struct();
+  areaResult.areaName = results.areas{a};
+  areaResult.d2 = d2Vec;
+  areaResult.nTrials = trialCountVec;
+  areaResult.trialRate = trialRateVec;
+  areaResult.validMask = validMask;
+  areaResult.nWindows = nWindows;
+  areaResult.nValidWindows = sum(validMask);
+  areaResult.rPearson = pearson_r(d2Vec(validMask), trialCountVec(validMask));
+  areaResult.rPearsonRate = pearson_r(d2Vec(validMask), trialRateVec(validMask));
+  corrResult.byArea{end + 1} = areaResult; %#ok<AGROW>
+  corrResult.areas{end + 1} = results.areas{a}; %#ok<AGROW>
+end
+end
+
+function eventCountVec = compute_window_event_count(eventTimes, winStartAbs, winEndAbs)
+% COMPUTE_WINDOW_EVENT_COUNT - Beam-break events per d2 window
+%
+% Variables:
+%   eventTimes  - Outcome times (s)
+%   winStartAbs - Window start times (s), one per window
+%   winEndAbs   - Window end times (s); interval is [winStart, winEnd)
+%
+% Goal:
+%   For each window, return the number of events in [winStart, winEnd).
+
+nWindows = numel(winStartAbs);
+eventCountVec = zeros(nWindows, 1);
+eventTimes = eventTimes(:);
+for w = 1:nWindows
+  eventCountVec(w) = sum(eventTimes >= winStartAbs(w) & eventTimes < winEndAbs(w));
+end
+end
+
+function print_d2_trial_rate_correlation(corrResult, d2Window, sessionInterval, ...
+    rewardAttemptBeforeSec)
+% PRINT_D2_TRIAL_RATE_CORRELATION - Command-window summary per area (all windows)
+
+fprintf(['Trial count = beam breaks per d2 window; rate = count / %.0f s\n', ...
+  'Early errors excluded: poke < %.1f s (interval %.0f s, buffer %.1f s before)\n'], ...
+  d2Window, sessionInterval - rewardAttemptBeforeSec, sessionInterval, rewardAttemptBeforeSec);
+if isempty(corrResult.areas)
+  fprintf('  No areas with d2 window data.\n');
+  return;
+end
+for a = 1:numel(corrResult.byArea)
+  areaResult = corrResult.byArea{a};
+  if areaResult.nValidWindows == 0
+    fprintf('  %s: no windows with finite d2\n', areaResult.areaName);
+    continue;
+  end
+  nTrialVals = areaResult.nTrials(areaResult.validMask);
+  fprintf(['  %s: r=%.3f (count), r=%.3f (rate), n=%d windows ', ...
+    '(trial count %.0f-%.0f, mean %.2f)\n'], ...
+    areaResult.areaName, areaResult.rPearson, areaResult.rPearsonRate, ...
+    areaResult.nValidWindows, min(nTrialVals), max(nTrialVals), mean(nTrialVals));
+end
+end
+
+function fig = plot_d2_trial_rate_correlation(corrResult, sessionName, d2Window, ...
+    useLog10D2, plotConfig)
+% PLOT_D2_TRIAL_RATE_CORRELATION - Scatter of trial count vs d2 (all windows)
+
+plotConfig = fill_default_engagement_plot_config(plotConfig);
+classColors = engagement_class_colors();
+totalColor = classColors(1, :);
+numAreas = numel(corrResult.areas);
+if numAreas == 0
+  warning('interval_criticality_metrics_engagement:NoD2TrialRateData', ...
+    'No areas available for d2-trial-rate correlation plot.');
+  fig = gobjects(0);
+  return;
+end
+
+if useLog10D2
+  d2YLabel = 'log_{10}(d2)';
+else
+  d2YLabel = 'd2';
+end
+labelInterpreter = 'none';
+if useLog10D2
+  labelInterpreter = 'tex';
+end
+
+fig = figure('Color', 'w', 'Name', 'd2 vs trial rate', ...
+  'Position', [120 120 420 * numAreas 340]);
+tileLayout = tiledlayout(fig, 1, numAreas, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+for a = 1:numAreas
+  areaResult = corrResult.byArea{a};
+  ax = nexttile(tileLayout);
+  hold(ax, 'on');
+
+  validMask = areaResult.validMask;
+  if ~any(validMask)
+    title(ax, sprintf('%s (no finite d2)', areaResult.areaName), 'Interpreter', 'none');
+    apply_engagement_axes_style(ax, plotConfig);
+    hold(ax, 'off');
+    continue;
+  end
+
+  nTrialPlot = areaResult.nTrials(validMask);
+  d2Plot = areaResult.d2(validMask);
+  scatter(ax, nTrialPlot, d2Plot, 48, totalColor, 'filled', ...
+    'MarkerFaceAlpha', 0.55, 'MarkerEdgeColor', 'none');
+
+  rVal = areaResult.rPearson;
+  apply_engagement_axes_style(ax, plotConfig, 'Trials per window', d2YLabel, ...
+    sprintf('%s | r=%.3f, n=%d', areaResult.areaName, rVal, sum(validMask)), ...
+    labelInterpreter);
+  if max(nTrialPlot) > min(nTrialPlot)
+    xlim(ax, [min(nTrialPlot) - 0.5, max(nTrialPlot) + 0.5]);
+  end
+  grid(ax, 'on');
+  hold(ax, 'off');
+end
+
+sgtitle(tileLayout, sprintf('%s — d2 vs trial count | %.0fs windows', ...
+  sessionName, d2Window), 'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
+end
+
+function rVal = pearson_r(x, y)
+% PEARSON_R - Pearson correlation or NaN when undefined
+
+rVal = nan;
+if numel(x) < 2 || numel(y) < 2
+  return;
+end
+cMat = corrcoef(x(:), y(:));
+rVal = cMat(1, 2);
+end
+
 %% -------------------------------------------------------------------------
 %% Kurtosis (PRG) split and plot
 %% -------------------------------------------------------------------------
@@ -2051,7 +2249,7 @@ end
 function colors = engagement_class_colors()
 % ENGAGEMENT_CLASS_COLORS - Total (gray), engaged (blue), non-engaged (orange)
 
-colors = [0.45, 0.45, 0.45; 0.15, 0.45, 0.75; 0.85, 0.35, 0.15];
+colors = manuscript_plot_colors().engagementClasses;
 end
 
 function isEngaged = window_overlaps_event_buffer(winStartAbs, winEndAbs, reachStart, eventBuffer)
@@ -2136,36 +2334,7 @@ function [binEdges, xMin, xMax] = build_shared_bin_edges(allVals, nBinsTarget, f
 if nargin < 3
   forcedLimits = [];
 end
-if isempty(allVals)
-  if ~isempty(forcedLimits)
-    xMin = forcedLimits(1);
-    xMax = forcedLimits(2);
-  else
-    xMin = 0;
-    xMax = 1;
-  end
-else
-  xMin = min(allVals);
-  xMax = max(allVals);
-  if ~isempty(forcedLimits)
-    xMin = min(xMin, forcedLimits(1));
-    xMax = max(xMax, forcedLimits(2));
-  end
-end
-
-xSpan = xMax - xMin;
-if xSpan <= 0 || ~isfinite(xSpan)
-  pad = max(0.5, abs(xMin) * 0.05 + eps);
-  xMin = xMin - pad;
-  xMax = xMax + pad;
-else
-  pad = 0.03 * xSpan;
-  xMin = xMin - pad;
-  xMax = xMax + pad;
-end
-
-nBins = max(8, round(nBinsTarget));
-binEdges = linspace(xMin, xMax, nBins + 1);
+[binEdges, xMin, xMax] = build_shared_histogram_bin_edges(allVals, nBinsTarget, forcedLimits);
 end
 
 function y = log10_safe_numeric(x)
