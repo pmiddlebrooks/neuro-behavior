@@ -14,23 +14,30 @@ function out = spontaneous_criticality_metrics_behaviors(subjectName, sessionNam
 %       .useSubsampling, .nSubsamples, .nNeuronsSubsample, .minNeuronsMultiple
 %     Behavior labels:
 %       .smoothBehaviorLabels, .behaviorSmoothingWindow
-%       .useBehaviorRecoding, .behaviorRecodingRules
-%       .behaviorLabelSets - Cell of structs (.name, .numeratorIDs, .denominatorIDs)
-%                            for d2 vs behavior proportion scatters
-%       .useRawLabelsForLabelSets - Use raw B-SOiD IDs for label sets (default true)
-%       .runD2BehaviorLabelSetCorrelation - d2 vs label-set proportions (default true)
+%       .entropyGroups - Cell of structs (.name, .sourceIDs, optional .code)
+%                         for entropy/switch-rate label stream
+%       .useEntropyGroups - If true, entropy/switch use entropyGroups recoding;
+%                           if false, use smoothed raw labels (default false)
+%       .behaviorPropGroups - Cell of structs for d2 vs behavior proportion
+%                             scatters (matched on smoothed raw labels)
+%       .runD2BehaviorGroupCorrelation - d2 vs behaviorPropGroups (default true)
 %     d2:
 %       .d2Window, .useLog10D2, .normalizeD2, .nShufflesD2
 %       .runD2EntropyCorrelation   - Correlate d2 with label entropy (default true)
 %       .runD2SwitchRateCorrelation - Correlate d2 with switch rate (default true)
+%       .d2BehaviorNonzeroMin - Fixed min behavior x for intensity (Spearman) part
+%                              of hurdle stats on group proportions (default 0.1)
+%       .d2BehaviorIntensityMaxFraction - For entropy and switch rate, intensity
+%                              cutoff is this fraction of the session max x among
+%                              valid windows (default 0.1 = 10% of max)
 %     Output:
 %       .makePlots, .saveFigure, .saveResults, .outputDir, .plotConfig
 %
 % Goal:
 %   For each non-overlapping d2 window, compute behavior switch rate and label-
 %   distribution entropy from frame-wise behavior labels. Correlate d2 with each
-%   feature per brain area (all windows). Optionally correlate d2 with predefined
-%   behavior label-set proportions (Inv, Loco, Itch, Groom by default). Future
+%   feature per brain area (all windows). Optionally correlate d2 with behavior
+%   group proportions (Inv, Groom, Itch, Loco, etc. by default). Future
 %   extensions may target windows with specific sequences or clusters (see criticality_spontaneous_sequences_d2,
 %   criticality_spontaneous_clusters).
 %
@@ -114,7 +121,7 @@ out.behavior = behaviorData;
 out.d2 = [];
 out.d2EntropyCorrelation = [];
 out.d2SwitchRateCorrelation = [];
-out.d2BehaviorLabelSetCorrelation = [];
+out.d2BehaviorGroupCorrelation = [];
 out.behaviorPerWindow = [];
 out.figHandles = struct();
 
@@ -147,43 +154,53 @@ if ismember('d2', opts.analyses)
   if opts.runD2EntropyCorrelation
     fprintf('\n--- d2 vs behavior entropy (all windows) ---\n');
     d2EntropyCorr = build_d2_behavior_feature_correlation(resultsD2, ...
-      behaviorPerWindow.entropy, collectStart, opts.d2Window, opts.useLog10D2, 'entropy');
+      behaviorPerWindow.entropy, collectStart, opts.d2Window, opts.useLog10D2, ...
+      'entropy', opts.d2BehaviorIntensityMaxFraction);
     out.d2EntropyCorrelation = d2EntropyCorr;
     print_d2_behavior_correlation(d2EntropyCorr, 'Label entropy (bits)', opts.d2Window);
-    if opts.makePlots
-      out.figHandles.d2EntropyCorrelation = plot_d2_behavior_correlation( ...
-        d2EntropyCorr, sessionName, opts.d2Window, opts.useLog10D2, ...
-        'Label entropy (bits)', plotConfig);
-    end
   end
 
   if opts.runD2SwitchRateCorrelation
     fprintf('\n--- d2 vs behavior switch rate (all windows) ---\n');
     d2SwitchCorr = build_d2_behavior_feature_correlation(resultsD2, ...
-      behaviorPerWindow.switchRate, collectStart, opts.d2Window, opts.useLog10D2, 'switchRate');
+      behaviorPerWindow.switchRate, collectStart, opts.d2Window, opts.useLog10D2, ...
+      'switchRate', opts.d2BehaviorIntensityMaxFraction);
     out.d2SwitchRateCorrelation = d2SwitchCorr;
     print_d2_behavior_correlation(d2SwitchCorr, 'Switch rate (switches/s)', opts.d2Window);
-    if opts.makePlots
-      out.figHandles.d2SwitchRateCorrelation = plot_d2_behavior_correlation( ...
-        d2SwitchCorr, sessionName, opts.d2Window, opts.useLog10D2, ...
-        'Switch rate (switches/s)', plotConfig);
-    end
   end
 
-  if opts.runD2BehaviorLabelSetCorrelation && ~isempty(opts.behaviorLabelSets)
-    fprintf('\n--- d2 vs behavior label-set proportions ---\n');
-    labelSetCorr = build_d2_behavior_label_set_correlation(resultsD2, behaviorData, ...
-      collectStart, opts.d2Window, opts.useLog10D2, opts.behaviorLabelSets, ...
-      opts.useRawLabelsForLabelSets);
-    out.d2BehaviorLabelSetCorrelation = labelSetCorr;
-    print_d2_behavior_label_set_correlations(labelSetCorr, opts.d2Window);
+  if opts.makePlots && (opts.runD2EntropyCorrelation || opts.runD2SwitchRateCorrelation)
+    entropyCorr = [];
+    switchCorr = [];
+    if opts.runD2EntropyCorrelation
+      entropyCorr = out.d2EntropyCorrelation;
+    end
+    if opts.runD2SwitchRateCorrelation
+      switchCorr = out.d2SwitchRateCorrelation;
+    end
+    out.figHandles.d2BehaviorFeatures = plot_d2_behavior_features_combined( ...
+      entropyCorr, switchCorr, sessionName, opts.d2Window, opts.useLog10D2, plotConfig, ...
+      behavior_plot_uses_combined_labels(opts, false));
+  end
+
+  if opts.runD2BehaviorGroupCorrelation && ~isempty(opts.behaviorPropGroups)
+    fprintf('\n--- d2 vs behavior group proportions ---\n');
+    groupCorr = build_d2_behavior_group_correlation(resultsD2, behaviorData, ...
+      collectStart, opts.d2Window, opts.useLog10D2, opts.behaviorPropGroups, ...
+      opts.d2BehaviorNonzeroMin);
+    out.d2BehaviorGroupCorrelation = groupCorr;
+    print_d2_behavior_group_correlations(groupCorr, opts.d2Window);
     if opts.makePlots
-      out.figHandles.d2BehaviorLabelSets = plot_d2_vs_behavior_label_sets( ...
-        resultsD2, behaviorData, collectStart, opts.behaviorLabelSets, ...
-        opts.d2Window, opts.useLog10D2, opts.useRawLabelsForLabelSets, ...
-        sessionName, plotConfig);
+      out.figHandles.d2BehaviorGroups = plot_d2_vs_behavior_groups( ...
+        groupCorr, sessionName, opts.d2Window, opts.useLog10D2, plotConfig, ...
+        behavior_plot_uses_combined_labels(opts, true));
     end
   end
+end
+
+% Legacy output field name for saved scripts/results.
+if ~isempty(out.d2BehaviorGroupCorrelation)
+  out.d2BehaviorLabelSetCorrelation = out.d2BehaviorGroupCorrelation;
 end
 
 out.saveDir = saveDir;
@@ -205,7 +222,12 @@ if opts.saveFigure && ~isempty(fieldnames(out.figHandles))
     if ~isgraphics(fig)
       continue;
     end
-    plotBase = fullfile(saveDir, sprintf('%s_%s', baseName, figName));
+    plotSuffix = '';
+    if strcmp(figName, 'd2BehaviorGroups') ...
+        && behavior_plot_uses_combined_labels(opts, true)
+      plotSuffix = combined_labels_filename_tag(true);
+    end
+    plotBase = fullfile(saveDir, sprintf('%s_%s%s', baseName, figName, plotSuffix));
     exportgraphics(fig, [plotBase, '.png'], 'Resolution', 300);
     exportgraphics(fig, [plotBase, '.eps'], 'ContentType', 'vector');
     fprintf('Saved figure: %s\n', plotBase);
@@ -278,7 +300,7 @@ if ~isfield(opts, 'brainAreaCombinations') || isempty(opts.brainAreaCombinations
 end
 
 if ~isfield(opts, 'useSubsampling') || isempty(opts.useSubsampling)
-  opts.useSubsampling = true;
+  opts.useSubsampling = false;
 end
 if ~isfield(opts, 'nSubsamples') || isempty(opts.nSubsamples)
   opts.nSubsamples = 30;
@@ -296,23 +318,26 @@ end
 if ~isfield(opts, 'behaviorSmoothingWindow') || isempty(opts.behaviorSmoothingWindow)
   opts.behaviorSmoothingWindow = 0.25;
 end
-if ~isfield(opts, 'useBehaviorRecoding') || isempty(opts.useBehaviorRecoding)
-  opts.useBehaviorRecoding = false;
+opts = migrate_legacy_behavior_opts(opts);
+if ~isfield(opts, 'entropyGroups') || isempty(opts.entropyGroups)
+  opts.entropyGroups = default_spontaneous_entropy_groups();
 end
-if ~isfield(opts, 'behaviorRecodingRules') || isempty(opts.behaviorRecodingRules)
-  opts.behaviorRecodingRules = default_spontaneous_behavior_recoding_rules();
+if ~isfield(opts, 'behaviorPropGroups') || isempty(opts.behaviorPropGroups)
+  opts.behaviorPropGroups = default_spontaneous_behavior_prop_groups();
 end
-if ~isfield(opts, 'behaviorLabelSets')
-  opts.behaviorLabelSets = default_spontaneous_behavior_label_sets();
+opts.entropyGroups = normalize_behavior_groups(opts.entropyGroups);
+opts.behaviorPropGroups = normalize_behavior_groups(opts.behaviorPropGroups);
+if isstruct(opts.entropyGroups)
+  opts.entropyGroups = {opts.entropyGroups};
 end
-if isstruct(opts.behaviorLabelSets)
-  opts.behaviorLabelSets = {opts.behaviorLabelSets};
+if isstruct(opts.behaviorPropGroups)
+  opts.behaviorPropGroups = {opts.behaviorPropGroups};
 end
-if ~isfield(opts, 'useRawLabelsForLabelSets') || isempty(opts.useRawLabelsForLabelSets)
-  opts.useRawLabelsForLabelSets = true;
+if ~isfield(opts, 'useEntropyGroups') || isempty(opts.useEntropyGroups)
+  opts.useEntropyGroups = false;
 end
-if ~isfield(opts, 'runD2BehaviorLabelSetCorrelation') || isempty(opts.runD2BehaviorLabelSetCorrelation)
-  opts.runD2BehaviorLabelSetCorrelation = true;
+if ~isfield(opts, 'runD2BehaviorGroupCorrelation') || isempty(opts.runD2BehaviorGroupCorrelation)
+  opts.runD2BehaviorGroupCorrelation = true;
 end
 
 if ~isfield(opts, 'd2Window') || isempty(opts.d2Window)
@@ -333,6 +358,12 @@ end
 if ~isfield(opts, 'runD2SwitchRateCorrelation') || isempty(opts.runD2SwitchRateCorrelation)
   opts.runD2SwitchRateCorrelation = true;
 end
+if ~isfield(opts, 'd2BehaviorNonzeroMin') || isempty(opts.d2BehaviorNonzeroMin)
+  opts.d2BehaviorNonzeroMin = 0.1;
+end
+if ~isfield(opts, 'd2BehaviorIntensityMaxFraction') || isempty(opts.d2BehaviorIntensityMaxFraction)
+  opts.d2BehaviorIntensityMaxFraction = 0.1;
+end
 
 if ~isfield(opts, 'makePlots') || isempty(opts.makePlots)
   opts.makePlots = true;
@@ -352,29 +383,151 @@ end
 opts.plotConfig = fill_default_behavior_plot_config(opts.plotConfig);
 end
 
-function rules = default_spontaneous_behavior_recoding_rules()
-% DEFAULT_SPONTANEOUS_BEHAVIOR_RECODING_RULES - Super-category labels (behavior_vs_d2)
+function groups = default_spontaneous_entropy_groups()
+% DEFAULT_SPONTANEOUS_ENTROPY_GROUPS - Coarse combos for entropy/switch rate
+%
+% Goal:
+%   Super-category grouping (behavior_vs_d2 style) when useEntropyGroups is true.
 
-rules = {...
-  [0 1 2], 1;
-  [3], 2;
-  4, 3;
-  5:12, 4;
-  13:15, 5;
+groups = {
+  struct('name', 'Inv', 'sourceIDs', [0 1 2])
+  struct('name', 'GroomItch', 'sourceIDs', 5:12)
+  struct('name', 'Loco', 'sourceIDs', [13:15])
   };
+groups = normalize_behavior_groups(groups);
 end
 
-function labelSets = default_spontaneous_behavior_label_sets()
-% DEFAULT_SPONTANEOUS_BEHAVIOR_LABEL_SETS - Raw B-SOiD label groups for proportion scatters
+function groups = default_spontaneous_behavior_prop_groups()
+% DEFAULT_SPONTANEOUS_BEHAVIOR_PROP_GROUPS - Groups for proportion scatters
 %
-% denominatorIDs empty -> fraction of all behavior frames in the window.
+% Goal:
+%   Finer behavior categories for d2 vs group proportion analyses on raw IDs.
 
-labelSets = {
-  struct('name', 'Inv', 'numeratorIDs', [0 1 2], 'denominatorIDs', [])
-  struct('name', 'Loco', 'numeratorIDs', [15], 'denominatorIDs', [])
-  struct('name', 'Itch', 'numeratorIDs', [11:12], 'denominatorIDs', [])
-  struct('name', 'Groom', 'numeratorIDs', 5:10, 'denominatorIDs', [])
+groups = {
+  struct('name', 'Inv', 'sourceIDs', [0 1 2])
+  struct('name', 'Groom', 'sourceIDs', 5:10)
+  struct('name', 'Itch', 'sourceIDs', [11 12])
+  struct('name', 'Loco', 'sourceIDs', [13:15])
   };
+groups = normalize_behavior_groups(groups);
+end
+
+function opts = migrate_legacy_behavior_opts(opts)
+% MIGRATE_LEGACY_BEHAVIOR_OPTS - Map deprecated behavior opts to split groups
+
+if (~isfield(opts, 'behaviorPropGroups') || isempty(opts.behaviorPropGroups)) ...
+    && isfield(opts, 'behaviorLabelSets') && ~isempty(opts.behaviorLabelSets)
+  opts.behaviorPropGroups = label_sets_to_behavior_groups(opts.behaviorLabelSets);
+end
+if (~isfield(opts, 'entropyGroups') || isempty(opts.entropyGroups)) ...
+    && isfield(opts, 'behaviorRecodingRules') && ~isempty(opts.behaviorRecodingRules)
+  opts.entropyGroups = recoding_rules_to_behavior_groups(opts.behaviorRecodingRules);
+end
+if (~isfield(opts, 'entropyGroups') || isempty(opts.entropyGroups)) ...
+    && (~isfield(opts, 'behaviorPropGroups') || isempty(opts.behaviorPropGroups)) ...
+    && isfield(opts, 'behaviorGroups') && ~isempty(opts.behaviorGroups)
+  opts.entropyGroups = opts.behaviorGroups;
+  opts.behaviorPropGroups = opts.behaviorGroups;
+elseif (~isfield(opts, 'entropyGroups') || isempty(opts.entropyGroups)) ...
+    && isfield(opts, 'behaviorGroups') && ~isempty(opts.behaviorGroups)
+  opts.entropyGroups = opts.behaviorGroups;
+elseif (~isfield(opts, 'behaviorPropGroups') || isempty(opts.behaviorPropGroups)) ...
+    && isfield(opts, 'behaviorGroups') && ~isempty(opts.behaviorGroups)
+  opts.behaviorPropGroups = opts.behaviorGroups;
+end
+if (~isfield(opts, 'useEntropyGroups') || isempty(opts.useEntropyGroups)) ...
+    && isfield(opts, 'useBehaviorGroups') && ~isempty(opts.useBehaviorGroups)
+  opts.useEntropyGroups = opts.useBehaviorGroups;
+elseif (~isfield(opts, 'useEntropyGroups') || isempty(opts.useEntropyGroups)) ...
+    && isfield(opts, 'useBehaviorRecoding') && ~isempty(opts.useBehaviorRecoding)
+  opts.useEntropyGroups = opts.useBehaviorRecoding;
+end
+if (~isfield(opts, 'runD2BehaviorGroupCorrelation') ...
+    || isempty(opts.runD2BehaviorGroupCorrelation)) ...
+    && isfield(opts, 'runD2BehaviorLabelSetCorrelation') ...
+    && ~isempty(opts.runD2BehaviorLabelSetCorrelation)
+  opts.runD2BehaviorGroupCorrelation = opts.runD2BehaviorLabelSetCorrelation;
+end
+end
+
+function groups = label_sets_to_behavior_groups(labelSets)
+% LABEL_SETS_TO_BEHAVIOR_GROUPS - Convert legacy label-set structs
+
+if isstruct(labelSets)
+  labelSets = {labelSets};
+end
+groups = cell(1, numel(labelSets));
+for iGroup = 1:numel(labelSets)
+  labelSet = labelSets{iGroup};
+  groups{iGroup} = struct('name', labelSet.name);
+  if isfield(labelSet, 'numeratorIDs')
+    groups{iGroup}.sourceIDs = labelSet.numeratorIDs;
+  else
+    groups{iGroup}.sourceIDs = [];
+  end
+  if isfield(labelSet, 'denominatorIDs') && ~isempty(labelSet.denominatorIDs)
+    groups{iGroup}.denominatorIDs = labelSet.denominatorIDs;
+  end
+end
+end
+
+function groups = recoding_rules_to_behavior_groups(recodingRules)
+% RECODING_RULES_TO_BEHAVIOR_GROUPS - Convert legacy Nx2 recoding rules
+
+if isempty(recodingRules)
+  groups = {};
+  return;
+end
+if ~iscell(recodingRules) || size(recodingRules, 2) ~= 2
+  error('behaviorRecodingRules must be an Nx2 cell array: { [oldLabels], newLabel }.');
+end
+groups = cell(size(recodingRules, 1), 1);
+for iRule = 1:size(recodingRules, 1)
+  oldLabels = recodingRules{iRule, 1};
+  newLabel = recodingRules{iRule, 2};
+  groups{iRule} = struct( ...
+    'name', sprintf('Group%d', newLabel), ...
+    'sourceIDs', oldLabels, ...
+    'code', newLabel);
+end
+groups = normalize_behavior_groups(groups);
+end
+
+function groups = normalize_behavior_groups(groups)
+% NORMALIZE_BEHAVIOR_GROUPS - Validate groups and assign sequential codes
+
+if isstruct(groups)
+  groups = {groups};
+end
+if isempty(groups)
+  return;
+end
+for iGroup = 1:numel(groups)
+  group = groups{iGroup};
+  if ~isstruct(group) || ~isfield(group, 'name') || isempty(group.name)
+    error('Each behavior group must be a struct with a non-empty .name field.');
+  end
+  if ~isfield(group, 'sourceIDs') || isempty(group.sourceIDs)
+    error('Behavior group "%s" must define .sourceIDs.', group.name);
+  end
+  group.sourceIDs = group.sourceIDs(:)';
+  if ~isfield(group, 'code') || isempty(group.code)
+    group.code = iGroup;
+  end
+  groups{iGroup} = group;
+end
+end
+
+function recodingRules = behavior_groups_to_recoding_rules(behaviorGroups)
+% BEHAVIOR_GROUPS_TO_RECODING_RULES - Frame recoding rules from behaviorGroups
+
+behaviorGroups = normalize_behavior_groups(behaviorGroups);
+recodingRules = cell(numel(behaviorGroups), 2);
+for iGroup = 1:numel(behaviorGroups)
+  group = behaviorGroups{iGroup};
+  recodingRules{iGroup, 1} = group.sourceIDs;
+  recodingRules{iGroup, 2} = group.code;
+end
 end
 
 function plotConfig = fill_default_behavior_plot_config(plotConfig)
@@ -488,18 +641,25 @@ if opts.smoothBehaviorLabels
   smoothOpts.fsBhv = opts.fsBhv;
   smoothOpts.smoothingWindow = opts.behaviorSmoothingWindow;
   smoothOpts.summarize = false;
-  labelsUsed = behavior_label_smoothing(labelsRaw, smoothOpts);
+  labelsSmooth = behavior_label_smoothing(labelsRaw, smoothOpts);
 else
-  labelsUsed = labelsRaw;
+  labelsSmooth = labelsRaw;
 end
 
-if opts.useBehaviorRecoding
-  labelsUsed = recode_behavior_labels(labelsUsed, opts.behaviorRecodingRules);
+if opts.useEntropyGroups
+  labelsEntropy = recode_behavior_labels(labelsSmooth, ...
+    behavior_groups_to_recoding_rules(opts.entropyGroups));
+else
+  labelsEntropy = labelsSmooth;
 end
 
 behaviorData = struct();
-behaviorData.labels = labelsUsed;
+behaviorData.labels = labelsSmooth;
+behaviorData.labelsEntropy = labelsEntropy;
 behaviorData.labelsRaw = labelsRaw;
+behaviorData.entropyGroups = opts.entropyGroups;
+behaviorData.behaviorPropGroups = opts.behaviorPropGroups;
+behaviorData.useEntropyGroups = opts.useEntropyGroups;
 behaviorData.fsBhv = opts.fsBhv;
 behaviorData.csvPath = fullfile(sessionFolder, csvFiles(1).name);
 behaviorData.sessionFolder = sessionFolder;
@@ -516,6 +676,9 @@ nFrames = numel(labels);
 timeAxisSec = collectStart + (0:(nFrames - 1))' ./ fsBhv;
 inCollect = timeAxisSec >= collectStart & timeAxisSec <= collectEnd;
 behaviorData.labels = labels(inCollect);
+if isfield(behaviorData, 'labelsEntropy')
+  behaviorData.labelsEntropy = behaviorData.labelsEntropy(inCollect);
+end
 if isfield(behaviorData, 'labelsRaw')
   behaviorData.labelsRaw = behaviorData.labelsRaw(inCollect);
 end
@@ -543,7 +706,11 @@ winCenterAbs = collectStart + centerRel;
 switchRate = nan(nWindows, 1);
 entropyBits = nan(nWindows, 1);
 timeAxisSec = behaviorData.timeAxisSec;
-labels = behaviorData.labels;
+if isfield(behaviorData, 'labelsEntropy') && ~isempty(behaviorData.labelsEntropy)
+  labels = behaviorData.labelsEntropy;
+else
+  labels = behaviorData.labels;
+end
 
 for w = 1:nWindows
   inWindow = timeAxisSec >= winStartAbs(w) & timeAxisSec < winEndAbs(w);
@@ -622,13 +789,27 @@ end
 %% d2 vs behavior correlations and plots
 %% -------------------------------------------------------------------------
 
-function corrResult = build_d2_behavior_label_set_correlation(results, behaviorData, ...
-    collectStart, d2Window, useLog10D2, behaviorLabelSets, useRawLabels)
-% BUILD_D2_BEHAVIOR_LABEL_SET_CORRELATION - Pearson r for each behavior label set
+function corrResult = build_d2_behavior_group_correlation(results, behaviorData, ...
+    collectStart, d2Window, useLog10D2, behaviorPropGroups, nonzeroMin)
+% BUILD_D2_BEHAVIOR_GROUP_CORRELATION - Two-part hurdle stats per behavior group
+%
+% Variables:
+%   results, behaviorData, collectStart, d2Window, useLog10D2, behaviorPropGroups
+%   nonzeroMin - Min proportion for Spearman intensity part (x > nonzeroMin)
+%
+% Goal:
+%   Part A: Wilcoxon rank-sum on d2 for windows with x=0 vs x>0.
+%   Part B: Spearman rho between d2 and x for windows with x > nonzeroMin.
 
+if nargin < 7 || isempty(nonzeroMin)
+  nonzeroMin = 0.1;
+end
+
+behaviorPropGroups = normalize_behavior_groups(behaviorPropGroups);
 corrResult = struct();
-corrResult.behaviorLabelSets = behaviorLabelSets;
+corrResult.behaviorPropGroups = behaviorPropGroups;
 corrResult.d2Window = d2Window;
+corrResult.nonzeroMin = nonzeroMin;
 corrResult.areas = {};
 corrResult.byArea = {};
 
@@ -650,23 +831,24 @@ for a = 1:numel(results.areas)
     d2Vec = log10_safe_numeric(d2Vec);
   end
 
-  bhvProportions = compute_behavior_proportions_by_set( ...
-    behaviorData, centerRel, collectStart, d2Window, behaviorLabelSets, useRawLabels);
+  bhvProportions = compute_behavior_proportions_by_group( ...
+    behaviorData, centerRel, collectStart, d2Window, behaviorPropGroups);
 
   areaResult = struct();
   areaResult.areaName = results.areas{a};
   areaResult.d2 = d2Vec;
   areaResult.proportions = bhvProportions;
-  areaResult.labelSetNames = cell(1, numel(behaviorLabelSets));
-  areaResult.rPearson = nan(1, numel(behaviorLabelSets));
-  areaResult.nValidWindows = zeros(1, numel(behaviorLabelSets));
+  areaResult.groupNames = cell(1, numel(behaviorPropGroups));
+  areaResult.nValidWindows = zeros(1, numel(behaviorPropGroups));
+  areaResult.hurdle = repmat(empty_d2_behavior_hurdle_stats(), 1, numel(behaviorPropGroups));
 
-  for s = 1:numel(behaviorLabelSets)
-    areaResult.labelSetNames{s} = behaviorLabelSets{s}.name;
-    [d2Plot, propPlot, validMask] = align_window_vectors(d2Vec, bhvProportions{s}, nWindows);
-    areaResult.nValidWindows(s) = sum(validMask);
-    if any(validMask)
-      areaResult.rPearson(s) = pearson_r(propPlot(validMask), d2Plot(validMask));
+  for g = 1:numel(behaviorPropGroups)
+    areaResult.groupNames{g} = behaviorPropGroups{g}.name;
+    [d2Plot, propPlot, validMask] = align_window_vectors(d2Vec, bhvProportions{g}, nWindows);
+    areaResult.nValidWindows(g) = sum(validMask);
+    if areaResult.nValidWindows(g) >= 1
+      areaResult.hurdle(g) = compute_d2_behavior_hurdle_stats( ...
+        propPlot(validMask), d2Plot(validMask), nonzeroMin);
     end
   end
 
@@ -675,41 +857,49 @@ for a = 1:numel(results.areas)
 end
 end
 
-function print_d2_behavior_label_set_correlations(corrResult, d2Window)
-% PRINT_D2_BEHAVIOR_LABEL_SET_CORRELATIONS - Command-window summary per label set
+function print_d2_behavior_group_correlations(corrResult, d2Window)
+% PRINT_D2_BEHAVIOR_GROUP_CORRELATIONS - Command-window hurdle summary
 
-fprintf('Behavior label-set proportions per %.0f s d2 window\n', d2Window);
+fprintf('Behavior group proportions per %.0f s d2 window', d2Window);
+if isfield(corrResult, 'nonzeroMin') && isfinite(corrResult.nonzeroMin)
+  fprintf(' (intensity cutoff x > %.2f)', corrResult.nonzeroMin);
+end
+fprintf('\n');
 if isempty(corrResult.areas)
   fprintf('  No areas with d2 window data.\n');
   return;
 end
 for a = 1:numel(corrResult.byArea)
   areaResult = corrResult.byArea{a};
-  for s = 1:numel(areaResult.labelSetNames)
-    if areaResult.nValidWindows(s) == 0
-      fprintf('  %s | %s: no data\n', areaResult.areaName, areaResult.labelSetNames{s});
+  for g = 1:numel(areaResult.groupNames)
+    if areaResult.nValidWindows(g) == 0
+      fprintf('  %s | %s: no data\n', areaResult.areaName, areaResult.groupNames{g});
       continue;
     end
-    fprintf('  %s | %s: r=%.3f, n=%d\n', areaResult.areaName, ...
-      areaResult.labelSetNames{s}, areaResult.rPearson(s), areaResult.nValidWindows(s));
+    print_d2_behavior_hurdle_line(sprintf('%s | %s', areaResult.areaName, ...
+      areaResult.groupNames{g}), areaResult.hurdle(g));
   end
 end
 end
 
-function fig = plot_d2_vs_behavior_label_sets(results, behaviorData, collectStart, ...
-    behaviorLabelSets, d2Window, useLog10D2, useRawLabels, sessionName, plotConfig)
-% PLOT_D2_VS_BEHAVIOR_LABEL_SETS - One scatter per behavior label set
+function fig = plot_d2_vs_behavior_groups(groupCorr, sessionName, d2Window, ...
+    useLog10D2, plotConfig, useCombinedLabels)
+% PLOT_D2_VS_BEHAVIOR_GROUPS - One scatter per behavior group
 
-if nargin < 9 || isempty(plotConfig)
+if nargin < 5 || isempty(plotConfig)
   plotConfig = fill_default_behavior_plot_config();
+end
+if nargin < 6 || isempty(useCombinedLabels)
+  useCombinedLabels = false;
 end
 
 plotColors = manuscript_plot_colors();
-numSets = numel(behaviorLabelSets);
-numAreas = numel(results.areas);
-fig = figure('Color', 'w', 'Position', [120 120 380 * numSets 420], ...
+behaviorPropGroups = groupCorr.behaviorPropGroups;
+numGroups = numel(behaviorPropGroups);
+numAreas = numel(groupCorr.areas);
+fig = figure('Color', 'w', 'Position', [120 120 380 * numGroups 420], ...
   'Name', 'd2 vs behavior proportions');
-tileLayout = tiledlayout(fig, numAreas, numSets, 'TileSpacing', 'compact', 'Padding', 'compact');
+tileLayout = tiledlayout(fig, numAreas, numGroups, 'TileSpacing', 'compact', 'Padding', 'compact');
 if useLog10D2
   d2YLabel = 'log_{10}(d2)';
   labelInterpreter = 'tex';
@@ -719,91 +909,75 @@ else
 end
 
 for a = 1:numAreas
-  if a > numel(results.startS) || isempty(results.startS{a})
-    continue;
-  end
-  centerRel = results.startS{a}(:);
-  d2Vec = results.d2{a}(:);
-  nWindows = min(numel(d2Vec), numel(centerRel));
-  if nWindows == 0
-    warning('No windows for area %s; skipping behavior scatters.', results.areas{a});
-    continue;
-  end
-  centerRel = centerRel(1:nWindows);
-  d2Vec = d2Vec(1:nWindows);
-  if useLog10D2
-    d2Vec = log10_safe_numeric(d2Vec);
-  end
-
-  bhvProportions = compute_behavior_proportions_by_set( ...
-    behaviorData, centerRel, collectStart, d2Window, behaviorLabelSets, useRawLabels);
-
-  for s = 1:numSets
+  areaResult = groupCorr.byArea{a};
+  for g = 1:numGroups
     ax = nexttile(tileLayout);
     hold(ax, 'on');
 
-    [d2Plot, propPlot, validMask] = align_window_vectors(d2Vec, bhvProportions{s}, nWindows);
+    [d2Plot, propPlot, validMask] = align_window_vectors( ...
+      areaResult.d2, areaResult.proportions{g}, numel(areaResult.d2));
     if ~any(validMask)
       apply_behavior_axes_style(ax, plotConfig, 'Behavior proportion', d2YLabel, ...
-        sprintf('%s — %s (no data)', results.areas{a}, behaviorLabelSets{s}.name), ...
-        labelInterpreter);
+        sprintf('%s (no data)', behaviorPropGroups{g}.name), labelInterpreter);
       hold(ax, 'off');
       continue;
     end
 
     xVals = propPlot(validMask);
     yVals = d2Plot(validMask);
-    scatter_manuscript_open(ax, xVals, yVals, plotConfig, plotColors.data);
-    add_manuscript_scatter_trendline(ax, xVals, yVals, plotConfig);
+    scatter_manuscript_filled(ax, xVals, yVals, plotConfig, plotColors.data);
+    add_behavior_nonzero_cutoff_line(ax, areaResult.hurdle(g).effectiveNonzeroMin);
+    xlim(ax, [0, 1]);
 
-    rVal = pearson_r(xVals, yVals);
-    titleText = sprintf('%s | r=%.3f, n=%d', behaviorLabelSets{s}.name, rVal, sum(validMask));
-    if s == 1
+    if numAreas > 1
+      add_behavior_area_row_label(ax, areaResult.areaName, plotConfig);
+    end
+    if g == 1
       apply_behavior_axes_style(ax, plotConfig, 'Behavior proportion', d2YLabel, ...
-        titleText, labelInterpreter);
+        behaviorPropGroups{g}.name, labelInterpreter);
     else
       apply_behavior_axes_style(ax, plotConfig, 'Behavior proportion', '', ...
-        titleText, labelInterpreter);
+        behaviorPropGroups{g}.name, labelInterpreter);
     end
     grid(ax, 'on');
-    xlim(ax, [0, 1]);
+    add_hurdle_stats_textbox(ax, xVals, yVals, areaResult.hurdle(g), plotConfig, numAreas > 1);
     hold(ax, 'off');
   end
 end
 
 if numAreas == 1
-  rowTitle = results.areas{1};
+  rowTitle = groupCorr.areas{1};
 else
-  rowTitle = strjoin(results.areas, ', ');
+  rowTitle = strjoin(groupCorr.areas, ', ');
 end
-sgtitle(tileLayout, sprintf('%s — d2 vs behavior proportions | %s | %.0fs windows', ...
-  sessionName, rowTitle, d2Window), ...
+sgtitle(tileLayout, sprintf('%s — d2 vs behavior proportions%s | %s | %.0fs windows', ...
+  sessionName, combined_labels_title_suffix(useCombinedLabels), rowTitle, d2Window), ...
   'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
-function bhvProportions = compute_behavior_proportions_by_set( ...
-    behaviorData, centerTimesRel, collectStart, winSize, behaviorLabelSets, useRawLabels)
-% COMPUTE_BEHAVIOR_PROPORTIONS_BY_SET - Per-window proportion for each label set
+function bhvProportions = compute_behavior_proportions_by_group( ...
+    behaviorData, centerTimesRel, collectStart, winSize, behaviorPropGroups)
+% COMPUTE_BEHAVIOR_PROPORTIONS_BY_GROUP - Per-window proportion for each group
+%
+% Variables:
+%   behaviorData, centerTimesRel, collectStart, winSize, behaviorPropGroups
+%
+% Goal:
+%   Fraction of window frames in each behaviorPropGroups category using smoothed
+%   raw labels (behaviorData.labels) and each group's sourceIDs.
 
-if nargin < 6 || isempty(useRawLabels)
-  useRawLabels = true;
-end
-
-numSets = numel(behaviorLabelSets);
+behaviorPropGroups = normalize_behavior_groups(behaviorPropGroups);
+numGroups = numel(behaviorPropGroups);
 numWindows = numel(centerTimesRel);
-bhvProportions = cell(1, numSets);
-for s = 1:numSets
-  bhvProportions{s} = nan(numWindows, 1);
+bhvProportions = cell(1, numGroups);
+for g = 1:numGroups
+  bhvProportions{g} = nan(numWindows, 1);
 end
 
 if ~isfield(behaviorData, 'timeAxisSec') || isempty(behaviorData.timeAxisSec)
   return;
 end
-if useRawLabels && isfield(behaviorData, 'labelsRaw') && ~isempty(behaviorData.labelsRaw)
-  labels = behaviorData.labelsRaw(:);
-else
-  labels = behaviorData.labels(:);
-end
+labels = behaviorData.labels(:);
 timeAxisSec = behaviorData.timeAxisSec(:);
 labels(labels < 0) = nan;
 
@@ -818,21 +992,21 @@ for w = 1:numWindows
     continue;
   end
 
-  for s = 1:numSets
-    labelSet = behaviorLabelSets{s};
-    numerIds = labelSet.numeratorIDs(:)';
-    if isfield(labelSet, 'denominatorIDs') && ~isempty(labelSet.denominatorIDs)
-      denomIds = labelSet.denominatorIDs(:)';
+  for g = 1:numGroups
+    group = behaviorPropGroups{g};
+    numerIds = group.sourceIDs(:)';
+    if isfield(group, 'denominatorIDs') && ~isempty(group.denominatorIDs)
+      denomIds = group.denominatorIDs(:)';
       denomMask = ismember(windowBhvID, denomIds);
       denominatorCount = sum(denomMask);
       if denominatorCount == 0
         continue;
       end
       numeratorCount = sum(ismember(windowBhvID(denomMask), numerIds));
-      bhvProportions{s}(w) = numeratorCount / denominatorCount;
+      bhvProportions{g}(w) = numeratorCount / denominatorCount;
     else
       numeratorCount = sum(ismember(windowBhvID, numerIds));
-      bhvProportions{s}(w) = numeratorCount / numel(windowBhvID);
+      bhvProportions{g}(w) = numeratorCount / numel(windowBhvID);
     end
   end
 end
@@ -853,13 +1027,26 @@ validMask = isfinite(vecA) & isfinite(vecB);
 end
 
 function corrResult = build_d2_behavior_feature_correlation(results, featureVec, ...
-    collectStart, d2Window, useLog10D2, featureName)
-% BUILD_D2_BEHAVIOR_FEATURE_CORRELATION - Pearson r between d2 and behavior feature
+    collectStart, d2Window, useLog10D2, featureName, intensityMaxFraction)
+% BUILD_D2_BEHAVIOR_FEATURE_CORRELATION - Two-part hurdle stats for d2 vs feature
+%
+% Variables:
+%   results, featureVec, collectStart, d2Window, useLog10D2, featureName
+%   intensityMaxFraction - Intensity cutoff = fraction * max(x) among valid windows
+%
+% Goal:
+%   Part A: Wilcoxon rank-sum on d2 for x=0 vs x>0 windows.
+%   Part B: Spearman rho between d2 and x for x > intensityMaxFraction * max(x).
+
+if nargin < 7 || isempty(intensityMaxFraction)
+  intensityMaxFraction = 0.1;
+end
 
 featureVec = featureVec(:);
 corrResult = struct();
 corrResult.featureName = featureName;
 corrResult.d2Window = d2Window;
+corrResult.intensityMaxFraction = intensityMaxFraction;
 corrResult.areas = {};
 corrResult.byArea = {};
 
@@ -888,16 +1075,25 @@ for a = 1:numel(results.areas)
   areaResult.validMask = validMask;
   areaResult.nWindows = nWindows;
   areaResult.nValidWindows = sum(validMask);
-  areaResult.rPearson = pearson_r(d2Vec(validMask), featVec(validMask));
+  if areaResult.nValidWindows >= 1
+    areaResult.hurdle = compute_d2_behavior_hurdle_stats( ...
+      featVec(validMask), d2Vec(validMask), [], intensityMaxFraction);
+  else
+    areaResult.hurdle = empty_d2_behavior_hurdle_stats();
+  end
   corrResult.byArea{end + 1} = areaResult; %#ok<AGROW>
   corrResult.areas{end + 1} = results.areas{a}; %#ok<AGROW>
 end
 end
 
 function print_d2_behavior_correlation(corrResult, featureLabel, d2Window)
-% PRINT_D2_BEHAVIOR_CORRELATION - Command-window summary per area
+% PRINT_D2_BEHAVIOR_CORRELATION - Command-window hurdle summary per area
 
-fprintf('%s per %.0f s d2 window\n', featureLabel, d2Window);
+fprintf('%s per %.0f s d2 window', featureLabel, d2Window);
+if isfield(corrResult, 'intensityMaxFraction') && isfinite(corrResult.intensityMaxFraction)
+  fprintf(' (intensity cutoff x > %.0f%% of max)', 100 * corrResult.intensityMaxFraction);
+end
+fprintf('\n');
 if isempty(corrResult.areas)
   fprintf('  No areas with d2 window data.\n');
   return;
@@ -909,10 +1105,107 @@ for a = 1:numel(corrResult.byArea)
     continue;
   end
   featVals = areaResult.feature(areaResult.validMask);
-  fprintf('  %s: r=%.3f, n=%d windows (%s %.3f-%.3f, mean %.3f)\n', ...
-    areaResult.areaName, areaResult.rPearson, areaResult.nValidWindows, ...
+  fprintf('  %s (%s %.3f-%.3f, mean %.3f): ', areaResult.areaName, ...
     corrResult.featureName, min(featVals), max(featVals), mean(featVals));
+  print_d2_behavior_hurdle_line('', areaResult.hurdle, false);
 end
+end
+
+function fig = plot_d2_behavior_features_combined(entropyCorr, switchCorr, sessionName, ...
+    d2Window, useLog10D2, plotConfig, useCombinedLabels)
+% PLOT_D2_BEHAVIOR_FEATURES_COMBINED - Entropy and switch-rate scatters (1 x 2)
+%
+% Variables:
+%   entropyCorr, switchCorr - Outputs of build_d2_behavior_feature_correlation ([] to skip)
+%   sessionName, d2Window, useLog10D2, plotConfig
+%   useCombinedLabels       - If true, title notes smoothed/recoded labels
+%
+% Goal:
+%   One figure with label entropy (left) and switch rate (right) when both are
+%   available; otherwise a single panel. One row per brain area.
+
+if nargin < 7 || isempty(useCombinedLabels)
+  useCombinedLabels = false;
+end
+
+plotConfig = fill_default_behavior_plot_config(plotConfig);
+panels = {};
+if ~isempty(entropyCorr) && isstruct(entropyCorr) && ~isempty(entropyCorr.areas)
+  panels{end + 1} = struct('corrResult', entropyCorr, 'xLabel', 'Label entropy (bits)'); %#ok<AGROW>
+end
+if ~isempty(switchCorr) && isstruct(switchCorr) && ~isempty(switchCorr.areas)
+  panels{end + 1} = struct('corrResult', switchCorr, 'xLabel', 'Switch rate (switches/s)'); %#ok<AGROW>
+end
+if isempty(panels)
+  warning('spontaneous_criticality_metrics_behaviors:NoD2BehaviorData', ...
+    'No behavior-feature correlations available for combined plot.');
+  fig = gobjects(0);
+  return;
+end
+
+numPanels = numel(panels);
+numAreas = numel(panels{1}.corrResult.areas);
+for p = 2:numPanels
+  numAreas = max(numAreas, numel(panels{p}.corrResult.areas));
+end
+
+if useLog10D2
+  d2YLabel = 'log_{10}(d2)';
+  labelInterpreter = 'tex';
+else
+  d2YLabel = 'd2';
+  labelInterpreter = 'none';
+end
+
+fig = figure('Color', 'w', 'Name', 'd2 vs behavior entropy and switch rate', ...
+  'Position', [120 120 420 * numPanels 340 * max(1, numAreas)]);
+tileLayout = tiledlayout(fig, max(1, numAreas), numPanels, ...
+  'TileSpacing', 'compact', 'Padding', 'compact');
+plotColors = manuscript_plot_colors();
+
+for a = 1:numAreas
+  for p = 1:numPanels
+    corrResult = panels{p}.corrResult;
+    if a > numel(corrResult.byArea)
+      continue;
+    end
+    areaResult = corrResult.byArea{a};
+    ax = nexttile(tileLayout);
+    hold(ax, 'on');
+
+    validMask = areaResult.validMask;
+    if ~any(validMask)
+      apply_behavior_axes_style(ax, plotConfig, panels{p}.xLabel, d2YLabel, ...
+        '(no finite data)', labelInterpreter);
+      hold(ax, 'off');
+      continue;
+    end
+
+    xVals = areaResult.feature(validMask);
+    yVals = areaResult.d2(validMask);
+    scatter_manuscript_filled(ax, xVals, yVals, plotConfig, plotColors.data);
+    add_behavior_nonzero_cutoff_line(ax, areaResult.hurdle.effectiveNonzeroMin);
+
+    if numAreas > 1
+      add_behavior_area_row_label(ax, areaResult.areaName, plotConfig);
+    end
+    if p == 1
+      apply_behavior_axes_style(ax, plotConfig, panels{p}.xLabel, d2YLabel, '', ...
+        labelInterpreter);
+    else
+      apply_behavior_axes_style(ax, plotConfig, panels{p}.xLabel, '', '', ...
+        labelInterpreter);
+    end
+    grid(ax, 'on');
+    add_hurdle_stats_textbox(ax, xVals, yVals, areaResult.hurdle, plotConfig, numAreas > 1);
+    hold(ax, 'off');
+  end
+end
+
+featureNames = cellfun(@(panel) panel.xLabel, panels, 'UniformOutput', false);
+sgtitle(tileLayout, sprintf('%s — d2 vs %s%s | %.0fs windows', ...
+  sessionName, strjoin(featureNames, ' and '), combined_labels_title_suffix(useCombinedLabels), ...
+  d2Window), 'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
 function fig = plot_d2_behavior_correlation(corrResult, sessionName, d2Window, ...
@@ -948,8 +1241,8 @@ for a = 1:numAreas
 
   validMask = areaResult.validMask;
   if ~any(validMask)
-    title(ax, sprintf('%s (no finite data)', areaResult.areaName), 'Interpreter', 'none');
-    apply_behavior_axes_style(ax, plotConfig);
+    apply_behavior_axes_style(ax, plotConfig, xLabelText, d2YLabel, ...
+      '(no finite data)', labelInterpreter);
     hold(ax, 'off');
     continue;
   end
@@ -957,13 +1250,14 @@ for a = 1:numAreas
   xVals = areaResult.feature(validMask);
   yVals = areaResult.d2(validMask);
   scatter_manuscript_filled(ax, xVals, yVals, plotConfig, plotColors.data);
-  add_manuscript_scatter_trendline(ax, xVals, yVals, plotConfig);
+  add_behavior_nonzero_cutoff_line(ax, areaResult.hurdle.effectiveNonzeroMin);
 
-  rVal = areaResult.rPearson;
-  apply_behavior_axes_style(ax, plotConfig, xLabelText, d2YLabel, ...
-    sprintf('%s | r=%.3f, n=%d', areaResult.areaName, rVal, sum(validMask)), ...
-    labelInterpreter);
+  if numAreas > 1
+    add_behavior_area_row_label(ax, areaResult.areaName, plotConfig);
+  end
+  apply_behavior_axes_style(ax, plotConfig, xLabelText, d2YLabel, '', labelInterpreter);
   grid(ax, 'on');
+  add_hurdle_stats_textbox(ax, xVals, yVals, areaResult.hurdle, plotConfig, numAreas > 1);
   hold(ax, 'off');
 end
 
@@ -976,6 +1270,49 @@ function apply_behavior_axes_style(ax, plotConfig, xLabelText, yLabelText, title
 % APPLY_BEHAVIOR_AXES_STYLE - Manuscript-style axis formatting
 
 apply_manuscript_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter);
+end
+
+function useCombinedLabels = behavior_plot_uses_combined_labels(opts, forProportions)
+% BEHAVIOR_PLOT_USES_COMBINED_LABELS - True when plot uses non-raw B-SOiD labels
+%
+% Variables:
+%   opts            - Behavior options struct
+%   forProportions  - If true, tag proportion plots (smoothing only); else
+%                     entropy/switch plots (smoothing or entropyGroups)
+%
+% Goal:
+%   Raw labels = unsmoothed IDs from behavior_labels CSV.
+%   Entropy/switch combined = smoothing and/or entropyGroups recoding.
+%   Proportion combined = temporal smoothing only.
+
+if nargin < 2 || isempty(forProportions)
+  forProportions = false;
+end
+if forProportions
+  useCombinedLabels = opts.smoothBehaviorLabels;
+else
+  useCombinedLabels = opts.smoothBehaviorLabels || opts.useEntropyGroups;
+end
+end
+
+function suffix = combined_labels_title_suffix(useCombinedLabels)
+% COMBINED_LABELS_TITLE_SUFFIX - Figure title tag for non-raw behavior labels
+
+if useCombinedLabels
+  suffix = ' | combined';
+else
+  suffix = '';
+end
+end
+
+function tag = combined_labels_filename_tag(useCombinedLabels)
+% COMBINED_LABELS_FILENAME_TAG - Filesystem tag for non-raw behavior labels
+
+if useCombinedLabels
+  tag = '_combined';
+else
+  tag = '';
+end
 end
 
 %% -------------------------------------------------------------------------
@@ -993,12 +1330,351 @@ end
 function rVal = pearson_r(x, y)
 % PEARSON_R - Pearson correlation or NaN when undefined
 
+[rVal, ~] = pearson_rp(x, y);
+end
+
+function [rVal, pVal] = pearson_rp(x, y)
+% PEARSON_RP - Pearson correlation and two-tailed p-value
+%
+% Variables:
+%   x, y - Paired sample vectors
+%
+% Goal:
+%   corr(x, y) returns scalars for two vectors (not a 2x2 matrix). Fall back
+%   to a t-test on r when the p-value is unavailable.
+
 rVal = nan;
-if numel(x) < 2 || numel(y) < 2
+pVal = nan;
+x = x(:);
+y = y(:);
+n = min(numel(x), numel(y));
+if n < 2
   return;
 end
-cMat = corrcoef(x(:), y(:));
-rVal = cMat(1, 2);
+x = x(1:n);
+y = y(1:n);
+valid = isfinite(x) & isfinite(y);
+x = x(valid);
+y = y(valid);
+n = numel(x);
+if n < 2 || std(x, 0) == 0 || std(y, 0) == 0
+  return;
+end
+
+[rOut, pOut] = corr(x, y, 'Type', 'Pearson');
+if isscalar(rOut)
+  rVal = rOut;
+  if isscalar(pOut)
+    pVal = pOut;
+  end
+elseif isequal(size(rOut), [2, 2])
+  rVal = rOut(1, 2);
+  if isequal(size(pOut), [2, 2])
+    pVal = pOut(1, 2);
+  end
+end
+
+if ~isfinite(pVal) && isfinite(rVal) && n >= 3 && abs(rVal) < 1
+  tStat = rVal * sqrt((n - 2) / (1 - rVal^2));
+  pVal = 2 * tcdf(-abs(tStat), n - 2);
+end
+end
+
+function pStr = format_correlation_p(pVal)
+% FORMAT_CORRELATION_P - Title-friendly p-value string
+
+if ~isfinite(pVal)
+  pStr = 'p=n/a';
+elseif pVal < 0.001
+  pStr = sprintf('p=%.1e', pVal);
+else
+  pStr = sprintf('p=%.3f', pVal);
+end
+end
+
+function hurdle = empty_d2_behavior_hurdle_stats()
+% EMPTY_D2_BEHAVIOR_HURDLE_STATS - NaN-filled hurdle struct template
+
+hurdle = struct();
+hurdle.cutoffMode = '';
+hurdle.nonzeroMin = nan;
+hurdle.intensityMaxFraction = nan;
+hurdle.xMax = nan;
+hurdle.effectiveNonzeroMin = nan;
+hurdle.nZero = 0;
+hurdle.nNonzero = 0;
+hurdle.nAboveMin = 0;
+hurdle.pPresence = nan;
+hurdle.medianD2Zero = nan;
+hurdle.medianD2Nonzero = nan;
+hurdle.rhoSpearman = nan;
+hurdle.pSpearman = nan;
+end
+
+function hurdle = compute_d2_behavior_hurdle_stats(x, y, nonzeroMin, intensityMaxFraction)
+% COMPUTE_D2_BEHAVIOR_HURDLE_STATS - Two-part hurdle: presence + intensity
+%
+% Variables:
+%   x, y                   - Paired behavior feature (x) and d2 (y)
+%   nonzeroMin             - Fixed intensity cutoff when intensityMaxFraction empty
+%   intensityMaxFraction   - If set, intensity cutoff = fraction * max(x) among valid
+%
+% Goal:
+%   Part A: Wilcoxon rank-sum on d2 for windows with x == 0 vs x > 0.
+%   Part B: Spearman rho between d2 and x for windows above the intensity cutoff.
+
+hurdle = empty_d2_behavior_hurdle_stats();
+x = x(:);
+y = y(:);
+n = min(numel(x), numel(y));
+if n < 1
+  return;
+end
+x = x(1:n);
+y = y(1:n);
+valid = isfinite(x) & isfinite(y);
+x = x(valid);
+y = y(valid);
+if isempty(x)
+  return;
+end
+
+if nargin >= 4 && ~isempty(intensityMaxFraction) && isfinite(intensityMaxFraction) ...
+    && intensityMaxFraction > 0
+  hurdle.cutoffMode = 'maxFraction';
+  hurdle.intensityMaxFraction = intensityMaxFraction;
+  hurdle.xMax = max(x);
+  if isfinite(hurdle.xMax) && hurdle.xMax > 0
+    hurdle.effectiveNonzeroMin = intensityMaxFraction * hurdle.xMax;
+  else
+    hurdle.effectiveNonzeroMin = 0;
+  end
+else
+  if nargin < 3 || isempty(nonzeroMin)
+    nonzeroMin = 0.1;
+  end
+  hurdle.cutoffMode = 'fixed';
+  hurdle.nonzeroMin = nonzeroMin;
+  hurdle.effectiveNonzeroMin = nonzeroMin;
+end
+
+zeroMask = x == 0;
+nonzeroMask = x > 0;
+aboveMinMask = x > hurdle.effectiveNonzeroMin;
+hurdle.nZero = sum(zeroMask);
+hurdle.nNonzero = sum(nonzeroMask);
+hurdle.nAboveMin = sum(aboveMinMask);
+
+if hurdle.nZero >= 1 && hurdle.nNonzero >= 1
+  d2Zero = y(zeroMask);
+  d2Nonzero = y(nonzeroMask);
+  hurdle.medianD2Zero = median(d2Zero);
+  hurdle.medianD2Nonzero = median(d2Nonzero);
+  hurdle.pPresence = ranksum_test_safe(d2Zero, d2Nonzero);
+end
+
+if hurdle.nAboveMin >= 2
+  [hurdle.rhoSpearman, hurdle.pSpearman] = spearman_rp(x(aboveMinMask), y(aboveMinMask));
+end
+end
+
+function statText = format_hurdle_stats_box_text(hurdle)
+% FORMAT_HURDLE_STATS_BOX_TEXT - Multi-line hurdle stats for in-axes text box
+
+if isfinite(hurdle.rhoSpearman)
+  rhoStr = sprintf('ρ=%.2f', hurdle.rhoSpearman);
+else
+  rhoStr = 'ρ=n/a';
+end
+statText = sprintf('x=0 vs >0: %s\nx>%.2f: %s %s', ...
+  format_correlation_p(hurdle.pPresence), hurdle.effectiveNonzeroMin, ...
+  rhoStr, format_correlation_p(hurdle.pSpearman));
+end
+
+function add_hurdle_stats_textbox(ax, xVals, yVals, hurdle, plotConfig, reserveTopLeft)
+% ADD_HURDLE_STATS_TEXTBOX - Hurdle stats in boxed text at least-crowded corner
+%
+% Variables:
+%   ax, xVals, yVals - Axes and plotted data
+%   hurdle           - Output of compute_d2_behavior_hurdle_stats
+%   plotConfig       - Manuscript plot config
+%   reserveTopLeft   - If true, avoid NW corner (e.g. when area label is there)
+
+if nargin < 6 || isempty(reserveTopLeft)
+  reserveTopLeft = false;
+end
+excludeCornerIdx = 0;
+if reserveTopLeft
+  excludeCornerIdx = 1;
+end
+corner = pick_least_crowded_corner(ax, xVals, yVals, excludeCornerIdx);
+fontSize = plotConfig.tickLabelFontSize;
+if isfield(plotConfig, 'titleFontSize') && ~isempty(plotConfig.titleFontSize)
+  fontSize = max(fontSize, plotConfig.titleFontSize - 1);
+end
+text(ax, corner.x, corner.y, format_hurdle_stats_box_text(hurdle), ...
+  'Units', 'normalized', 'VerticalAlignment', corner.vertAlign, ...
+  'HorizontalAlignment', corner.horizAlign, 'FontSize', fontSize, ...
+  'Interpreter', 'none', 'BackgroundColor', [1, 1, 1], ...
+  'EdgeColor', [0.35, 0.35, 0.35], 'Margin', 4, 'Clipping', 'on');
+end
+
+function add_behavior_area_row_label(ax, areaName, plotConfig)
+% ADD_BEHAVIOR_AREA_ROW_LABEL - Brain-area tag for multi-row behavior figures
+
+text(ax, 0.03, 0.97, areaName, 'Units', 'normalized', ...
+  'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
+  'FontSize', plotConfig.tickLabelFontSize, 'FontWeight', 'bold', ...
+  'Interpreter', 'none', 'Clipping', 'on');
+end
+
+function corner = pick_least_crowded_corner(ax, xVals, yVals, excludeCornerIdx)
+% PICK_LEAST_CROWDED_CORNER - Corner with fewest scatter points (normalized axes)
+%
+% Variables:
+%   ax               - Target axes
+%   xVals, yVals     - Plotted data in data coordinates
+%   excludeCornerIdx - Optional 1-4 to skip NW, NE, SW, SE
+
+if nargin < 4 || isempty(excludeCornerIdx)
+  excludeCornerIdx = 0;
+end
+xl = xlim(ax);
+yl = ylim(ax);
+if ~all(isfinite(xl)) || diff(xl) <= 0
+  xPad = 0.05 * max(range(xVals), eps);
+  xl = [min(xVals) - xPad, max(xVals) + xPad];
+  xlim(ax, xl);
+end
+if ~all(isfinite(yl)) || diff(yl) <= 0
+  yPad = 0.05 * max(range(yVals), eps);
+  yl = [min(yVals) - yPad, max(yVals) + yPad];
+  ylim(ax, yl);
+end
+xNorm = (xVals - xl(1)) / diff(xl);
+yNorm = (yVals - yl(1)) / diff(yl);
+counts = [ ...
+  sum(xNorm < 0.5 & yNorm >= 0.5); ...
+  sum(xNorm >= 0.5 & yNorm >= 0.5); ...
+  sum(xNorm < 0.5 & yNorm < 0.5); ...
+  sum(xNorm >= 0.5 & yNorm < 0.5)];
+if excludeCornerIdx >= 1 && excludeCornerIdx <= 4
+  counts(excludeCornerIdx) = inf;
+end
+[~, cornerIdx] = min(counts);
+cornerSpecs = { ...
+  0.03, 0.97, 'left', 'top'; ...
+  0.97, 0.97, 'right', 'top'; ...
+  0.03, 0.03, 'left', 'bottom'; ...
+  0.97, 0.03, 'right', 'bottom'};
+corner = struct();
+corner.x = cornerSpecs{cornerIdx, 1};
+corner.y = cornerSpecs{cornerIdx, 2};
+corner.horizAlign = cornerSpecs{cornerIdx, 3};
+corner.vertAlign = cornerSpecs{cornerIdx, 4};
+end
+
+function print_d2_behavior_hurdle_line(prefix, hurdle, includePrefix)
+% PRINT_D2_BEHAVIOR_HURDLE_LINE - Command-window line for hurdle stats
+%
+% Variables:
+%   prefix         - Optional leading label (e.g. area name)
+%   hurdle         - Output of compute_d2_behavior_hurdle_stats
+%   includePrefix  - If false, omit prefix and leading spaces (default true)
+
+if nargin < 3 || isempty(includePrefix)
+  includePrefix = true;
+end
+if strcmp(hurdle.cutoffMode, 'maxFraction') && isfinite(hurdle.xMax)
+  cutoffNote = sprintf('x>%.2f (%.0f%% of max %.3f)', hurdle.effectiveNonzeroMin, ...
+    100 * hurdle.intensityMaxFraction, hurdle.xMax);
+else
+  cutoffNote = sprintf('x>%.2f', hurdle.effectiveNonzeroMin);
+end
+lineText = sprintf(['presence x=0 vs >0 %s (n0=%d, n>0=%d, ' ...
+  'median d2 %.3f vs %.3f) | intensity %s %s %s (n=%d)'], ...
+  format_correlation_p(hurdle.pPresence), hurdle.nZero, hurdle.nNonzero, ...
+  hurdle.medianD2Zero, hurdle.medianD2Nonzero, cutoffNote, ...
+  format_spearman_rho(hurdle.rhoSpearman), format_correlation_p(hurdle.pSpearman), ...
+  hurdle.nAboveMin);
+if includePrefix && ~isempty(prefix)
+  fprintf('  %s: %s\n', prefix, lineText);
+else
+  fprintf('%s\n', lineText);
+end
+end
+
+function rhoStr = format_spearman_rho(rhoVal)
+% FORMAT_SPEARMAN_RHO - Command-window Spearman rho string
+
+if isfinite(rhoVal)
+  rhoStr = sprintf('ρ=%.3f', rhoVal);
+else
+  rhoStr = 'ρ=n/a';
+end
+end
+
+function add_behavior_nonzero_cutoff_line(ax, nonzeroMin)
+% ADD_BEHAVIOR_NONZERO_CUTOFF_LINE - Vertical marker at intensity cutoff
+
+if ~isfinite(nonzeroMin) || nonzeroMin <= 0
+  return;
+end
+xline(ax, nonzeroMin, '--', 'Color', [0.45, 0.45, 0.45], 'LineWidth', 0.9, ...
+  'HandleVisibility', 'off');
+end
+
+function [rhoVal, pVal] = spearman_rp(x, y)
+% SPEARMAN_RP - Spearman correlation and two-tailed p-value
+%
+% Variables:
+%   x, y - Paired sample vectors
+%
+% Goal:
+%   Rank-based association for the intensity (x > cutoff) subset.
+
+rhoVal = nan;
+pVal = nan;
+x = x(:);
+y = y(:);
+n = min(numel(x), numel(y));
+if n < 2
+  return;
+end
+x = x(1:n);
+y = y(1:n);
+valid = isfinite(x) & isfinite(y);
+x = x(valid);
+y = y(valid);
+n = numel(x);
+if n < 2 || numel(unique(x)) < 2 || numel(unique(y)) < 2
+  return;
+end
+
+[rhoOut, pOut] = corr(x, y, 'Type', 'Spearman');
+if isscalar(rhoOut)
+  rhoVal = rhoOut;
+  if isscalar(pOut)
+    pVal = pOut;
+  end
+elseif isequal(size(rhoOut), [2, 2])
+  rhoVal = rhoOut(1, 2);
+  if isequal(size(pOut), [2, 2])
+    pVal = pOut(1, 2);
+  end
+end
+end
+
+function pVal = ranksum_test_safe(x, y)
+% RANKSUM_TEST_SAFE - Wilcoxon rank-sum; NaN if either group is empty
+
+pVal = nan;
+x = x(isfinite(x));
+y = y(isfinite(y));
+if numel(x) < 1 || numel(y) < 1
+  return;
+end
+pVal = ranksum(x, y);
 end
 
 function label = format_areas_label(areaNames)
