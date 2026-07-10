@@ -252,6 +252,19 @@ function results = criticality_ar_analysis(dataStruct, config)
     % This ensures all areas have aligned windows regardless of their optimized window sizes
     % Total time from spike data
     totalTime = timeRange(2) - timeRange(1);
+
+    % If session is meaningfully shorter than requested window, use full session
+    % (e.g. d2Window = collectEnd on a session shorter than collectEnd)
+    windowToleranceSec = 1;
+    if config.slidingWindowSize > (totalTime + windowToleranceSec)
+        fprintf(['  slidingWindowSize %.1f s exceeds session duration %.1f s; ', ...
+            'using full session for d2 window.\n'], config.slidingWindowSize, totalTime);
+        config.slidingWindowSize = totalTime;
+        config.stepSize = totalTime;
+    end
+    if config.stepSize > (totalTime + windowToleranceSec)
+        config.stepSize = totalTime;
+    end
     
     % Generate common centerTime values
     % Start from slidingWindowSize/2, end at totalTime - slidingWindowSize/2

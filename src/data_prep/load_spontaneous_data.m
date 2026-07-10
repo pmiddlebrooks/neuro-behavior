@@ -71,6 +71,8 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
         if opts.useSpikeTimes
             % Load spike times using new approach
             spikeData = load_spike_times('spontaneous', paths, sessionName, opts);
+            opts.collectEnd = spikeData.collectEnd;
+            opts.collectStart = spikeData.collectStart;
             
             % Extract area information
             dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
@@ -105,6 +107,7 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
             dataStruct.spikeData = spikeData;  % Store full structure for reference
             dataStruct.dataMat = [];  % Not used in new approach
             dataStruct.areaLabels = spikeData.neuronAreas;
+            dataStruct.opts = opts;
             
             fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
         else

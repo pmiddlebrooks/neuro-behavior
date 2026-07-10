@@ -54,12 +54,12 @@ sessionName =  'ag112321_1';
 % sessionName =  'ag112821';
 % sessionName =  'ag112921';
 
-% subjectName = 'ey4152';
-% sessionName =  'ey042822';  % Good M56, Bad DS
+subjectName = 'ey4152';
+sessionName =  'ey042822';  % Good M56, Bad DS
 % sessionName =  'ey042922';  % Don't trust: OK M56, Bad everything else
 
-% subjectName = 'kw7193';
-% sessionName =  'kw092821';  % Bad M56, Good DS
+subjectName = 'kw7193';
+sessionName =  'kw092821';  % Bad M56, Good DS
 % sessionName =  'kw092921';  % Ok... few M56
 
 

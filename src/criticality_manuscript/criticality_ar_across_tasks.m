@@ -26,36 +26,250 @@
 %   shuffled: mean across windows of (mean shuffle d2 per window), with SEM across
 %   windows of those per-window shuffle means.
 
-%% Configuration
-sessionTypes = {'spontaneous', 'interval', 'reach'};
-dataSource = 'spikes';
+function out = criticality_ar_across_tasks(opts)
+% CRITICALITY_AR_ACROSS_TASKS - Batch and plot d2 across session types (manuscript)
+%
+% Usage:
+%   out = criticality_ar_across_tasks();                  % defaults
+%   out = criticality_ar_across_tasks(struct('plotResults', false));
+%
+% Options (see fill_criticality_ar_across_tasks_opts):
+%   sessionTypes, dataSource, collectStart, collectEnd, d2Window, brainArea, ...
+%   runBatch, plotResults, saveBatchResults, batchResultsFile, useLog10D2, ...
+%
+% Returns:
+%   out.batchResults, out.plotData, out.batchMeta, out.paths
 
-collectStart = 0;
-collectEnd = 10 * 60;
+if nargin < 1 || isempty(opts)
+  opts = struct();
+end
+opts = fill_criticality_ar_across_tasks_opts(opts);
+setup_criticality_manuscript_paths('criticality_ar_across_tasks');
+paths = get_paths();
 
-d2Window = 30;  % seconds; non-overlapping windows (stepSize = d2Window)
+if isempty(opts.batchResultsFile)
+  opts.batchResultsFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
+    'criticality_ar_across_tasks_batch.mat');
+end
 
-brainArea = 'M23M56';
-brainAreaCombinations = default_manuscript_brain_area_combinations();
-% brainArea = 'M23M56';  % merge M23+M56 (preset in brainAreaCombinations)
-areasToPlot = {};
-runBatch = true;
-plotResults = true;
+fprintf('\n=== Criticality d2 Across Task Types ===\n');
+fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
+  (opts.collectEnd - opts.collectStart) / 60);
+fprintf('d2 windows: %.1f s, non-overlapping (step = window)\n', opts.d2Window);
+fprintf('useLog10D2 (aggregate/plot): %d\n', opts.useLog10D2);
+if opts.useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+    opts.nSubsamples, opts.nNeuronsSubsample, opts.minNeuronsMultiple);
+else
+  fprintf('Subsampling: off\n');
+end
+fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
+if ~isempty(opts.brainArea)
+  fprintf('Brain area: %s (single-area analysis)\n', opts.brainArea);
+else
+  fprintf('Brain area: all areas in each session\n');
+end
 
-% Display / summary scale (matches run_criticality_ar.m config.useLog10D2)
-useLog10D2 = true;
+sessionTable = build_session_table(opts.sessionTypes);
+numSessions = size(sessionTable, 1);
+fprintf('Total sessions: %d\n', numSessions);
+if numSessions == 0
+  error('No sessions found for the requested session types.');
+end
 
-% Neural subsampling (matches run_criticality_ar.m)
-useSubsampling = false;
-nSubsamples = 20;
-nNeuronsSubsample = 20;
-minNeuronsMultiple = 1.5;
+if opts.runBatch
+  batchResults = run_ar_across_tasks_batch(sessionTable, opts);
+  plotData = aggregate_ar_metrics(batchResults, opts.sessionTypes, opts.useLog10D2);
+  batchMeta = pack_ar_across_tasks_batch_meta(opts);
+  if opts.saveBatchResults
+    save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
+    fprintf('\nSaved batch results: %s\n', opts.batchResultsFile);
+  end
+else
+  if ~isfile(opts.batchResultsFile)
+    error('criticality_ar_across_tasks:NoBatchFile', ...
+      'Batch file not found: %s. Set runBatch true to compute.', opts.batchResultsFile);
+  end
+  loaded = load(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta');
+  batchResults = loaded.batchResults;
+  plotData = loaded.plotData;
+  batchMeta = loaded.batchMeta;
+  fprintf('\nLoaded batch results: %s\n', opts.batchResultsFile);
+end
 
-% AR / d2 analysis settings (aligned with run_criticality_ar.m; no mrBr)
+if isempty(plotData.areas)
+  error('No d2 metrics extracted. Check that batch analyses succeeded.');
+end
+
+areasToPlot = opts.areasToPlot;
+if isempty(areasToPlot) && ~isempty(opts.brainArea)
+  areasToPlot = {opts.brainArea};
+end
+commonAreas = resolve_areas_to_plot(plotData.areas, areasToPlot, opts.brainArea);
+
+fprintf('\n=== Areas for plotting ===\n');
+fprintf('  %s\n', strjoin(commonAreas, ', '));
+
+if opts.plotResults
+  plot_ar_across_tasks(plotData, commonAreas, opts.sessionTypes, opts.collectStart, ...
+    opts.collectEnd, opts.d2Window, paths, opts.brainArea, opts.useLog10D2);
+end
+
+fprintf('\n=== Done ===\n');
+
+out = struct();
+out.batchResults = batchResults;
+out.plotData = plotData;
+out.batchMeta = batchMeta;
+out.paths = paths;
+out.areasToPlot = commonAreas;
+end
+
+function opts = fill_criticality_ar_across_tasks_opts(opts)
+% FILL_CRITICALITY_AR_ACROSS_TASKS_OPTS - Defaults for criticality_ar_across_tasks
+
+defaults = struct();
+defaults.sessionTypes = {'spontaneous', 'interval', 'reach'};
+defaults.dataSource = 'spikes';
+defaults.collectStart = 0;
+defaults.collectEnd = 10 * 60;
+defaults.d2Window = 30;
+defaults.brainArea = 'M23M56';
+defaults.brainAreaCombinations = default_manuscript_brain_area_combinations();
+defaults.areasToPlot = {};
+defaults.runBatch = true;
+defaults.plotResults = true;
+defaults.saveBatchResults = false;
+defaults.batchResultsFile = '';
+defaults.useLog10D2 = true;
+defaults.useSubsampling = false;
+defaults.nSubsamples = 20;
+defaults.nNeuronsSubsample = 20;
+defaults.minNeuronsMultiple = 1.5;
+defaults.firingRateCheckTime = [];
+defaults.minFiringRate = 0.05;
+defaults.maxFiringRate = 150;
+defaults.enablePermutations = true;
+defaults.nShuffles = 10;
+opts = merge_struct_defaults(opts, defaults);
+end
+
+function batchMeta = pack_ar_across_tasks_batch_meta(opts)
+batchMeta = struct( ...
+  'sessionTypes', {opts.sessionTypes}, ...
+  'useLog10D2', opts.useLog10D2, ...
+  'collectStart', opts.collectStart, ...
+  'collectEnd', opts.collectEnd, ...
+  'd2Window', opts.d2Window, ...
+  'brainArea', opts.brainArea, ...
+  'areasToPlot', {opts.areasToPlot});
+end
+
+function batchResults = run_ar_across_tasks_batch(sessionTable, opts)
+% RUN_AR_ACROSS_TASKS_BATCH - Per-session d2 analysis
+
+analysisConfig = build_ar_analysis_config(opts);
+loadOpts = neuro_behavior_options();
+loadOpts.firingRateCheckTime = opts.firingRateCheckTime;
+loadOpts.collectStart = opts.collectStart;
+loadOpts.collectEnd = opts.collectEnd;
+loadOpts.minFiringRate = opts.minFiringRate;
+loadOpts.maxFiringRate = opts.maxFiringRate;
+
+numSessions = size(sessionTable, 1);
+batchResults = repmat(struct(), numSessions, 1);
+fprintf('\n=== Running d2 analysis (%.0f s non-overlapping windows) ===\n', opts.d2Window);
+
+for s = 1:numSessions
+  sessionType = sessionTable.sessionType{s};
+  sessionName = sessionTable.sessionName{s};
+  subjectName = sessionTable.subjectName{s};
+
+  fprintf('\n%s\n', repmat('=', 1, 80));
+  fprintf('Session %d/%d [%s]: %s\n', s, numSessions, sessionType, sessionName);
+  if ~isempty(subjectName)
+    fprintf('  subjectName: %s\n', subjectName);
+  end
+
+  batchResults(s).sessionType = sessionType;
+  batchResults(s).sessionName = sessionName;
+  batchResults(s).subjectName = subjectName;
+  batchResults(s).label = sessionTable.label{s};
+  batchResults(s).success = false;
+  batchResults(s).results = [];
+
+  try
+    loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
+    dataStruct = load_session_data(sessionType, opts.dataSource, loadArgs{:});
+    [dataStruct, areaOk] = apply_manuscript_brain_area_selection( ...
+      dataStruct, opts.brainArea, opts.brainAreaCombinations);
+    if ~areaOk
+      fprintf('  Brain area "%s" not available in this session; skipping.\n', opts.brainArea);
+      continue;
+    end
+
+    sessionConfig = analysisConfig;
+    sessionDuration = get_session_collect_duration(dataStruct, opts);
+    durationToleranceSec = 1;
+    if sessionDuration < (opts.d2Window - durationToleranceSec)
+      fprintf('  Session duration %.1f s < requested d2Window %.1f s; using full session window.\n', ...
+        sessionDuration, opts.d2Window);
+      sessionConfig.slidingWindowSize = sessionDuration;
+      sessionConfig.stepSize = sessionDuration;
+    end
+
+    arResults = criticality_ar_analysis(dataStruct, sessionConfig);
+    if ~isempty(opts.brainArea)
+      arResults = filter_ar_results_to_brain_area(arResults, opts.brainArea);
+      if isempty(arResults.areas)
+        fprintf('  No results for brain area "%s"; skipping.\n', opts.brainArea);
+        continue;
+      end
+    end
+
+    batchResults(s).success = true;
+    batchResults(s).results = arResults;
+    fprintf('  Analysis completed.\n');
+  catch ME
+    fprintf('  Error: %s\n', ME.message);
+    for st = 1:length(ME.stack)
+      fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
+    end
+    error('criticality_ar_across_tasks:SessionFailed', ...
+      'Batch stopped at session %d/%d [%s] %s: %s', ...
+      s, numSessions, sessionType, sessionName, ME.message);
+  end
+end
+end
+
+function sessionDuration = get_session_collect_duration(dataStruct, opts)
+% GET_SESSION_COLLECT_DURATION - Actual loaded collect window length (s)
+
+if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectEnd') ...
+    && isfield(dataStruct.spikeData, 'collectStart')
+  sessionDuration = dataStruct.spikeData.collectEnd - dataStruct.spikeData.collectStart;
+elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectEnd') ...
+    && ~isempty(dataStruct.opts.collectEnd)
+  collectStart = 0;
+  if isfield(dataStruct.opts, 'collectStart') && ~isempty(dataStruct.opts.collectStart)
+    collectStart = dataStruct.opts.collectStart;
+  end
+  sessionDuration = dataStruct.opts.collectEnd - collectStart;
+elseif isfield(dataStruct, 'spikeTimes') && ~isempty(dataStruct.spikeTimes)
+  collectStart = opts.collectStart;
+  if isempty(collectStart)
+    collectStart = 0;
+  end
+  sessionDuration = max(dataStruct.spikeTimes) - collectStart;
+else
+  sessionDuration = opts.collectEnd - opts.collectStart;
+end
+end
+
+function analysisConfig = build_ar_analysis_config(opts)
 analysisConfig = struct();
-analysisConfig.slidingWindowSize = d2Window;
-analysisConfig.stepSize = d2Window;
-analysisConfig.binSize = 0.025;
+analysisConfig.slidingWindowSize = opts.d2Window;
+analysisConfig.stepSize = opts.d2Window;
 analysisConfig.binSize = 0.05;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;
@@ -63,10 +277,10 @@ analysisConfig.analyzeMrBr = false;
 analysisConfig.pcaFlag = 0;
 analysisConfig.pcaFirstFlag = 1;
 analysisConfig.nDim = 4;
-analysisConfig.enablePermutations = true;
-analysisConfig.nShuffles = 10;
-analysisConfig.normalizeD2 = true;
-analysisConfig.useLog10D2 = useLog10D2;
+analysisConfig.enablePermutations = opts.enablePermutations;
+analysisConfig.nShuffles = opts.nShuffles;
+analysisConfig.normalizeD2 = opts.enablePermutations;
+analysisConfig.useLog10D2 = opts.useLog10D2;
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.pOrder = 10;
@@ -75,133 +289,17 @@ analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 1000;
 analysisConfig.maxSpikesPerBin = 100;
 analysisConfig.nMinNeurons = 30;
-analysisConfig.useSubsampling = useSubsampling;
-analysisConfig.nSubsamples = nSubsamples;
-analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
-analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-opts = neuro_behavior_options();
-opts.firingRateCheckTime = 5 * 60;
-opts.firingRateCheckTime = [];
-opts.collectStart = collectStart;
-opts.collectEnd = collectEnd;
-opts.minFiringRate = 0.05;
-opts.maxFiringRate = 150;
-
-%% Paths
-paths = get_paths();
-scriptDir = fileparts(mfilename('fullpath'));
-if contains(scriptDir, [filesep 'Editor_' filesep])
-  scriptDir = fileparts(which('criticality_ar_across_tasks'));
-end
-srcPath = fullfile(scriptDir, '..');
-addpath(srcPath);
-addpath(fullfile(srcPath, 'reach_task'));
-addpath(fullfile(srcPath, 'schall'));
-addpath(fullfile(srcPath, 'spontaneous'));
-addpath(fullfile(srcPath, 'interval_timing_task'));
-addpath(fullfile(srcPath, 'criticality', 'scripts'));
-addpath(fullfile(srcPath, 'criticality', 'analyses'));
-addpath(fullfile(srcPath, 'session_prep', 'data_prep'));
-addpath(fullfile(srcPath, 'session_prep', 'utils'));
-addpath(fullfile(srcPath, 'data_prep'));
-addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
-addpath(fullfile(srcPath, 'criticality'));
-
-fprintf('\n=== Criticality d2 Across Task Types ===\n');
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, (collectEnd - collectStart) / 60);
-fprintf('d2 windows: %.1f s, non-overlapping (step = window)\n', d2Window);
-fprintf('useLog10D2 (aggregate/plot): %d\n', useLog10D2);
-if useSubsampling
-  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
-    nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
-else
-  fprintf('Subsampling: off\n');
-end
-fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
-if ~isempty(brainArea)
-  fprintf('Brain area: %s (single-area analysis)\n', brainArea);
-else
-  fprintf('Brain area: all areas in each session\n');
+analysisConfig.useSubsampling = opts.useSubsampling;
+analysisConfig.nSubsamples = opts.nSubsamples;
+analysisConfig.nNeuronsSubsample = opts.nNeuronsSubsample;
+analysisConfig.minNeuronsMultiple = opts.minNeuronsMultiple;
 end
 
-%% Build flat session table
-sessionTable = build_session_table(sessionTypes);
-numSessions = size(sessionTable, 1);
-fprintf('Total sessions: %d\n', numSessions);
-
-if numSessions == 0
-  error('No sessions found for the requested session types.');
-end
-
-%% Batch d2 analysis
-batchResults = repmat(struct(), numSessions, 1);
-
-if runBatch
-  fprintf('\n=== Running d2 analysis (%.0f s non-overlapping windows) ===\n', d2Window);
-  for s = 1:numSessions
-    sessionType = sessionTable.sessionType{s};
-    sessionName = sessionTable.sessionName{s};
-    subjectName = sessionTable.subjectName{s};
-
-    fprintf('\n%s\n', repmat('=', 1, 80));
-    fprintf('Session %d/%d [%s]: %s\n', s, numSessions, sessionType, sessionName);
-    if ~isempty(subjectName)
-      fprintf('  subjectName: %s\n', subjectName);
-    end
-
-    batchResults(s).sessionType = sessionType;
-    batchResults(s).sessionName = sessionName;
-    batchResults(s).subjectName = subjectName;
-    batchResults(s).label = sessionTable.label{s};
-    batchResults(s).success = false;
-    batchResults(s).results = [];
-
-    try
-      loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectName);
-      dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
-
-      [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations);
-      if ~areaOk
-        fprintf('  Brain area "%s" not available in this session; skipping.\n', brainArea);
-        continue;
-      end
-
-      config = analysisConfig;
-      arResults = criticality_ar_analysis(dataStruct, config);
-
-      if ~isempty(brainArea)
-        arResults = filter_ar_results_to_brain_area(arResults, brainArea);
-        if isempty(arResults.areas)
-          fprintf('  No results for brain area "%s"; skipping.\n', brainArea);
-          continue;
-        end
-      end
-
-      batchResults(s).success = true;
-      batchResults(s).results = arResults;
-      fprintf('  Analysis completed.\n');
-    catch ME
-      fprintf('  Error: %s\n', ME.message);
-      for st = 1:length(ME.stack)
-        fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
-      end
-    end
-  end
-else
-  error('runBatch must be true; loading precomputed results is not implemented in this script.');
-end
-
-%% Aggregate and plot
-plotData = aggregate_ar_metrics(batchResults, sessionTypes, useLog10D2);
-
-if isempty(plotData.areas)
-  error('No d2 metrics extracted. Check that batch analyses succeeded.');
-end
-
+function commonAreas = resolve_areas_to_plot(plotAreas, areasToPlot, brainArea)
 if isempty(areasToPlot) && ~isempty(brainArea)
   areasToPlot = {brainArea};
 end
-commonAreas = plotData.areas;
+commonAreas = plotAreas;
 if ~isempty(areasToPlot)
   commonAreas = intersect(commonAreas, areasToPlot, 'stable');
   if isempty(commonAreas)
@@ -213,18 +311,7 @@ elseif ~isempty(brainArea)
     error('No results for brainArea "%s". Check that sessions include this area.', brainArea);
   end
 end
-
-fprintf('\n=== Areas for plotting ===\n');
-fprintf('  %s\n', strjoin(commonAreas, ', '));
-
-if plotResults
-  plot_ar_across_tasks(plotData, commonAreas, sessionTypes, collectStart, collectEnd, ...
-    d2Window, paths, brainArea, useLog10D2);
 end
-
-fprintf('\n=== Done ===\n');
-
-%% Local functions
 
 function sessionTable = build_session_table(sessionTypes)
 % BUILD_SESSION_TABLE - Flatten session lists from each session type

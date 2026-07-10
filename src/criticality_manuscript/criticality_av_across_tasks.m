@@ -31,192 +31,276 @@
 %   across spontaneous, reach, interval, and other session types using
 %   load_session_data and a common analysis window per session.
 
-%% Configuration
-sessionTypes = {'spontaneous', 'interval', 'reach'};
-dataSource = 'spikes';
+function out = criticality_av_across_tasks(opts)
+% CRITICALITY_AV_ACROSS_TASKS - Batch and plot avalanche metrics across session types
+%
+% Usage:
+%   out = criticality_av_across_tasks();
+%   out = criticality_av_across_tasks(struct('plotResults', false, 'saveBatchResults', true));
 
-collectStart = 0;              % seconds
-collectEnd = 45 * 60;           % seconds (40 minutes)
-windowDurationSec = collectEnd - collectStart;
+if nargin < 1 || isempty(opts)
+  opts = struct();
+end
+opts = fill_criticality_av_across_tasks_opts(opts);
+setup_criticality_manuscript_paths('criticality_av_across_tasks');
+paths = get_paths();
 
-brainArea = 'M23M56';             % one area per run; '' = analyze/plot all areas
-brainAreaCombinations = default_manuscript_brain_area_combinations();
-areasToPlot = {};              % optional override, e.g. {'M23'}; {} -> brainArea if set
-runBatch = true;
-plotResults = true;
+if isempty(opts.batchResultsFile)
+  opts.batchResultsFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
+    'criticality_av_across_tasks_batch.mat');
+end
 
-% Power-law fitting: 'clauset', 'plfit2023', or 'hybrid' (plfit2023 xmax + Clauset plfit)
-powerLawFitMethod = 'hybrid';
-gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
+windowDurationSec = opts.collectEnd - opts.collectStart;
+[clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
 
-% Avalanche binning / cutoff: 'fixedBinMedian' or 'meanIsiZero'
-avalancheDetectionMode = 'fixedBinMedian';
+fprintf('\n=== Criticality Avalanche Across Task Types ===\n');
+fprintf('Power-law fit method: %s\n', opts.powerLawFitMethod);
+fprintf('Avalanche detection mode: %s\n', opts.avalancheDetectionMode);
+if opts.useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+    opts.nSubsamples, opts.nNeuronsSubsample, opts.minNeuronsMultiple);
+else
+  fprintf('Subsampling: off\n');
+end
+fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
+  windowDurationSec / 60);
+fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
+if ~isempty(opts.brainArea)
+  fprintf('Brain area: %s (single-area analysis)\n', opts.brainArea);
+else
+  fprintf('Brain area: all areas in each session\n');
+end
 
-% Neural subsampling (matches run_criticality_ar.m)
-useSubsampling = false;
-nSubsamples = 20;
-nNeuronsSubsample = 20;
-minNeuronsMultiple = 1.25;
+sessionTable = build_session_table(opts.sessionTypes);
+numSessions = size(sessionTable, 1);
+fprintf('Total sessions: %d\n', numSessions);
+if numSessions == 0
+  error('No sessions found for the requested session types.');
+end
 
-% Avalanche analysis settings (single full collect window per session)
+if opts.runBatch
+  batchResults = run_av_across_tasks_batch(sessionTable, opts, clausetPlfitPath, plfit2023Path);
+  plotData = aggregate_av_metrics(batchResults, opts.sessionTypes);
+  batchMeta = pack_av_across_tasks_batch_meta(opts);
+  if opts.saveBatchResults
+    save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
+    fprintf('\nSaved batch results: %s\n', opts.batchResultsFile);
+  end
+else
+  if ~isfile(opts.batchResultsFile)
+    error('criticality_av_across_tasks:NoBatchFile', ...
+      'Batch file not found: %s. Set runBatch true to compute.', opts.batchResultsFile);
+  end
+  loaded = load(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta');
+  batchResults = loaded.batchResults;
+  plotData = loaded.plotData;
+  batchMeta = loaded.batchMeta;
+  fprintf('\nLoaded batch results: %s\n', opts.batchResultsFile);
+end
+
+if isempty(plotData.areas)
+  error('No avalanche metrics extracted. Check that batch analyses succeeded.');
+end
+
+commonAreas = resolve_areas_to_plot(plotData.areas, opts.areasToPlot, opts.brainArea);
+
+fprintf('\n=== Areas for plotting ===\n');
+fprintf('  %s\n', strjoin(commonAreas, ', '));
+
+if opts.plotResults
+  plot_av_across_tasks(plotData, commonAreas, opts.sessionTypes, opts.collectStart, ...
+    opts.collectEnd, paths, opts.brainArea);
+end
+
+fprintf('\n=== Done ===\n');
+
+out = struct();
+out.batchResults = batchResults;
+out.plotData = plotData;
+out.batchMeta = batchMeta;
+out.paths = paths;
+out.areasToPlot = commonAreas;
+end
+
+function opts = fill_criticality_av_across_tasks_opts(opts)
+defaults = struct();
+defaults.sessionTypes = {'spontaneous', 'interval', 'reach'};
+defaults.dataSource = 'spikes';
+defaults.collectStart = 0;
+defaults.collectEnd = 45 * 60;
+defaults.brainArea = 'M23M56';
+defaults.brainAreaCombinations = default_manuscript_brain_area_combinations();
+defaults.areasToPlot = {};
+defaults.runBatch = true;
+defaults.plotResults = true;
+defaults.saveBatchResults = false;
+defaults.batchResultsFile = '';
+defaults.powerLawFitMethod = 'hybrid';
+defaults.gofThreshold = 0.8;
+defaults.avalancheDetectionMode = 'fixedBinMedian';
+defaults.useSubsampling = false;
+defaults.nSubsamples = 20;
+defaults.nNeuronsSubsample = 20;
+defaults.minNeuronsMultiple = 1.25;
+defaults.firingRateCheckTime = [];
+defaults.minFiringRate = 0.05;
+defaults.maxFiringRate = 100;
+defaults.enablePermutations = true;
+defaults.nShuffles = 5;
+opts = merge_struct_defaults(opts, defaults);
+end
+
+function batchMeta = pack_av_across_tasks_batch_meta(opts)
+batchMeta = struct( ...
+  'sessionTypes', {opts.sessionTypes}, ...
+  'collectStart', opts.collectStart, ...
+  'collectEnd', opts.collectEnd, ...
+  'brainArea', opts.brainArea, ...
+  'areasToPlot', {opts.areasToPlot}, ...
+  'powerLawFitMethod', opts.powerLawFitMethod, ...
+  'avalancheDetectionMode', opts.avalancheDetectionMode);
+end
+
+function batchResults = run_av_across_tasks_batch(sessionTable, opts, clausetPlfitPath, plfit2023Path)
+windowDurationSec = opts.collectEnd - opts.collectStart;
+analysisConfig = build_av_analysis_config(opts, windowDurationSec, clausetPlfitPath, plfit2023Path);
+loadOpts = neuro_behavior_options();
+loadOpts.firingRateCheckTime = opts.firingRateCheckTime;
+loadOpts.collectStart = opts.collectStart;
+loadOpts.collectEnd = opts.collectEnd;
+loadOpts.minFiringRate = opts.minFiringRate;
+loadOpts.maxFiringRate = opts.maxFiringRate;
+
+numSessions = size(sessionTable, 1);
+batchResults = repmat(struct(), numSessions, 1);
+fprintf('\n=== Running avalanche analysis (single window per session) ===\n');
+
+for s = 1:numSessions
+  sessionType = sessionTable.sessionType{s};
+  sessionName = sessionTable.sessionName{s};
+  subjectName = sessionTable.subjectName{s};
+
+  fprintf('\n%s\n', repmat('=', 1, 80));
+  fprintf('Session %d/%d [%s]: %s\n', s, numSessions, sessionType, sessionName);
+  if ~isempty(subjectName)
+    fprintf('  subjectName: %s\n', subjectName);
+  end
+
+  batchResults(s).sessionType = sessionType;
+  batchResults(s).sessionName = sessionName;
+  batchResults(s).subjectName = subjectName;
+  batchResults(s).label = sessionTable.label{s};
+  batchResults(s).success = false;
+  batchResults(s).results = [];
+
+  try
+    loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
+    dataStruct = load_session_data(sessionType, opts.dataSource, loadArgs{:});
+    [dataStruct, areaOk] = apply_manuscript_brain_area_selection( ...
+      dataStruct, opts.brainArea, opts.brainAreaCombinations);
+    if ~areaOk
+      fprintf('  Brain area "%s" not available in this session; skipping.\n', opts.brainArea);
+      continue;
+    end
+
+    sessionConfig = analysisConfig;
+    sessionDuration = get_session_collect_duration(dataStruct, opts);
+    durationToleranceSec = 1;
+    if sessionDuration < (windowDurationSec - durationToleranceSec)
+      fprintf('  Session duration %.1f s < requested %.1f s; using full session window.\n', ...
+        sessionDuration, windowDurationSec);
+      sessionConfig.slidingWindowSize = sessionDuration;
+      sessionConfig.avStepSize = sessionDuration;
+    end
+
+    avResults = criticality_av_analysis(dataStruct, sessionConfig);
+    if ~isempty(opts.brainArea)
+      avResults = filter_av_results_to_brain_area(avResults, opts.brainArea);
+      if isempty(avResults.areas)
+        fprintf('  No results for brain area "%s"; skipping.\n', opts.brainArea);
+        continue;
+      end
+    end
+
+    batchResults(s).success = true;
+    batchResults(s).results = avResults;
+    fprintf('  Analysis completed.\n');
+  catch ME
+    fprintf('  Error: %s\n', ME.message);
+    for st = 1:length(ME.stack)
+      fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
+    end
+    error('criticality_av_across_tasks:SessionFailed', ...
+      'Batch stopped at session %d/%d [%s] %s: %s', ...
+      s, numSessions, sessionType, sessionName, ME.message);
+  end
+end
+end
+
+function analysisConfig = build_av_analysis_config(opts, windowDurationSec, clausetPlfitPath, plfit2023Path)
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = windowDurationSec;
 analysisConfig.avStepSize = windowDurationSec;
 analysisConfig.useOptimalBinWindowFunction = false;
-analysisConfig.avalancheDetectionMode = avalancheDetectionMode;
-if strcmpi(avalancheDetectionMode, 'meanIsiZero')
-  % Bin size set per area from mean population ISI in criticality_av_analysis
+analysisConfig.avalancheDetectionMode = opts.avalancheDetectionMode;
+if strcmpi(opts.avalancheDetectionMode, 'meanIsiZero')
+  % bin size set per area in criticality_av_analysis
 else
-  analysisConfig.binSize = 0.05;   % seconds; same bin size for all areas
+  analysisConfig.binSize = 0.05;
 end
 analysisConfig.analyzeDcc = true;
 analysisConfig.analyzeKappa = false;
 analysisConfig.pcaFlag = 0;
 analysisConfig.pcaFirstFlag = 1;
 analysisConfig.nDim = 5;
-analysisConfig.enablePermutations = true;
-analysisConfig.nShuffles = 5;
+analysisConfig.enablePermutations = opts.enablePermutations;
+analysisConfig.nShuffles = opts.nShuffles;
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.thresholdFlag = 1;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = 25;
-analysisConfig.useSubsampling = useSubsampling;
-analysisConfig.nSubsamples = nSubsamples;
-analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
-analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-analysisConfig.normalizeMetrics = true;
-analysisConfig.powerLawFitMethod = powerLawFitMethod;
-analysisConfig.gofThreshold = gofThreshold;
+analysisConfig.useSubsampling = opts.useSubsampling;
+analysisConfig.nSubsamples = opts.nSubsamples;
+analysisConfig.nNeuronsSubsample = opts.nNeuronsSubsample;
+analysisConfig.minNeuronsMultiple = opts.minNeuronsMultiple;
+analysisConfig.normalizeMetrics = opts.enablePermutations;
+analysisConfig.powerLawFitMethod = opts.powerLawFitMethod;
+analysisConfig.gofThreshold = opts.gofThreshold;
 analysisConfig.runClausetPlpva = false;
-opts = neuro_behavior_options();
-opts.firingRateCheckTime = 5 * 60;
-opts.firingRateCheckTime = [];
-opts.collectStart = collectStart;
-opts.collectEnd = collectEnd;
-opts.minFiringRate = 0.05;
-opts.maxFiringRate = 100;
-
-%% Paths
-paths = get_paths();
-scriptDir = fileparts(mfilename('fullpath'));
-if contains(scriptDir, [filesep 'Editor_' filesep])
-  scriptDir = fileparts(which('criticality_av_across_tasks'));
-end
-srcPath = fullfile(scriptDir, '..');
-addpath(srcPath);
-addpath(fullfile(srcPath, 'reach_task'));
-addpath(fullfile(srcPath, 'schall'));
-addpath(fullfile(srcPath, 'spontaneous'));
-addpath(fullfile(srcPath, 'interval_timing_task'));
-addpath(fullfile(srcPath, 'criticality', 'scripts'));
-addpath(fullfile(srcPath, 'criticality', 'analyses'));
-addpath(fullfile(srcPath, 'session_prep', 'data_prep'));
-addpath(fullfile(srcPath, 'session_prep', 'utils'));
-addpath(fullfile(srcPath, 'data_prep'));
-addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
-addpath(fullfile(srcPath, 'criticality'));
-
-[clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
 analysisConfig.clausetPlfitPath = clausetPlfitPath;
 analysisConfig.plfit2023Path = plfit2023Path;
-
-fprintf('\n=== Criticality Avalanche Across Task Types ===\n');
-fprintf('Power-law fit method: %s\n', powerLawFitMethod);
-fprintf('Avalanche detection mode: %s\n', avalancheDetectionMode);
-if useSubsampling
-  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
-    nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
-else
-  fprintf('Subsampling: off\n');
-end
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
-fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
-if ~isempty(brainArea)
-  fprintf('Brain area: %s (single-area analysis)\n', brainArea);
-else
-  fprintf('Brain area: all areas in each session\n');
 end
 
-%% Build flat session table
-sessionTable = build_session_table(sessionTypes);
-numSessions = size(sessionTable, 1);
-fprintf('Total sessions: %d\n', numSessions);
+function sessionDuration = get_session_collect_duration(dataStruct, opts)
+% GET_SESSION_COLLECT_DURATION - Actual loaded collect window length (s)
 
-if numSessions == 0
-  error('No sessions found for the requested session types.');
-end
-
-%% Batch avalanche analysis
-batchResults = repmat(struct(), numSessions, 1);
-
-if runBatch
-  fprintf('\n=== Running avalanche analysis (single window per session) ===\n');
-  for s = 1:numSessions
-    sessionType = sessionTable.sessionType{s};
-    sessionName = sessionTable.sessionName{s};
-    subjectName = sessionTable.subjectName{s};
-
-    fprintf('\n%s\n', repmat('=', 1, 80));
-    fprintf('Session %d/%d [%s]: %s\n', s, numSessions, sessionType, sessionName);
-    if ~isempty(subjectName)
-      fprintf('  subjectName: %s\n', subjectName);
-    end
-
-    batchResults(s).sessionType = sessionType;
-    batchResults(s).sessionName = sessionName;
-    batchResults(s).subjectName = subjectName;
-    batchResults(s).label = sessionTable.label{s};
-    batchResults(s).success = false;
-    batchResults(s).results = [];
-
-    try
-      subjectNameForLoad = subjectName;
-      loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
-      dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
-
-      [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations);
-      if ~areaOk
-        fprintf('  Brain area "%s" not available in this session; skipping.\n', brainArea);
-        continue;
-      end
-
-      config = analysisConfig;
-      avResults = criticality_av_analysis(dataStruct, config);
-
-      if ~isempty(brainArea)
-        avResults = filter_av_results_to_brain_area(avResults, brainArea);
-        if isempty(avResults.areas)
-          fprintf('  No results for brain area "%s"; skipping.\n', brainArea);
-          continue;
-        end
-      end
-
-      batchResults(s).success = true;
-      batchResults(s).results = avResults;
-      fprintf('  Analysis completed.\n');
-    catch ME
-      fprintf('  Error: %s\n', ME.message);
-      for st = 1:length(ME.stack)
-        fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
-      end
-    end
+if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectEnd') ...
+    && isfield(dataStruct.spikeData, 'collectStart')
+  sessionDuration = dataStruct.spikeData.collectEnd - dataStruct.spikeData.collectStart;
+elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectEnd') ...
+    && ~isempty(dataStruct.opts.collectEnd)
+  collectStart = 0;
+  if isfield(dataStruct.opts, 'collectStart') && ~isempty(dataStruct.opts.collectStart)
+    collectStart = dataStruct.opts.collectStart;
   end
+  sessionDuration = dataStruct.opts.collectEnd - collectStart;
+elseif isfield(dataStruct, 'spikeTimes') && ~isempty(dataStruct.spikeTimes)
+  collectStart = opts.collectStart;
+  if isempty(collectStart)
+    collectStart = 0;
+  end
+  sessionDuration = max(dataStruct.spikeTimes) - collectStart;
 else
-  error('runBatch must be true; loading precomputed results is not implemented in this script.');
+  sessionDuration = opts.collectEnd - opts.collectStart;
+end
 end
 
-%% Plotting: Aggregate metrics for plotting
-plotData = aggregate_av_metrics(batchResults, sessionTypes);
-
-if isempty(plotData.areas)
-  error('No avalanche metrics extracted. Check that batch analyses succeeded.');
-end
-
+function commonAreas = resolve_areas_to_plot(plotAreas, areasToPlot, brainArea)
 if isempty(areasToPlot) && ~isempty(brainArea)
   areasToPlot = {brainArea};
 end
-commonAreas = plotData.areas;
+commonAreas = plotAreas;
 if ~isempty(areasToPlot)
   commonAreas = intersect(commonAreas, areasToPlot, 'stable');
   if isempty(commonAreas)
@@ -228,18 +312,7 @@ elseif ~isempty(brainArea)
     error('No results for brainArea "%s". Check that sessions include this area.', brainArea);
   end
 end
-
-fprintf('\n=== Areas for plotting ===\n');
-fprintf('  %s\n', strjoin(commonAreas, ', '));
-
-% Summary figures grouped by session type
-if plotResults
-  plot_av_across_tasks(plotData, commonAreas, sessionTypes, collectStart, collectEnd, paths, brainArea);
 end
-
-fprintf('\n=== Done ===\n');
-
-%% Local functions
 
 function sessionTable = build_session_table(sessionTypes)
 % BUILD_SESSION_TABLE - Flatten session lists from each session type

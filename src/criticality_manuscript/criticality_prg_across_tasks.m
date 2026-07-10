@@ -27,173 +27,233 @@
 %   surrogate means. Per session: mean and SEM across valid windows.
 %   See: CambrainhaC_etal_2025_PRXLife; CambrainhaC_etal_2026_arXiv
 
-%% Configuration
-sessionTypes = {'spontaneous', 'interval', 'reach'};
-dataSource = 'spikes';
+function out = criticality_prg_across_tasks(opts)
+% CRITICALITY_PRG_ACROSS_TASKS - Batch and plot PRG kurtosis across session types
+%
+% Usage:
+%   out = criticality_prg_across_tasks();
+%   out = criticality_prg_across_tasks(struct('plotResults', false));
 
-collectStart = 0;
-collectEnd = 45 * 60;
-
-prgWindow = 30;  % seconds; non-overlapping blocks (blockWindowSize)
-
-brainArea = 'M23M56';
-brainAreaCombinations = default_manuscript_brain_area_combinations();
-areasToPlot = {};
-runBatch = true;
-plotResults = true;
-
-useSubsampling = false;
-nSubsamples = 10;
-nNeuronsSubsample = 40;
-minNeuronsMultiple = 1.25;
-
-% Surrogate null: 'isi' (Cambrainha paper) or 'circular' (per-neuron circshift on binned data)
-surrogateMethod = 'isi';
-
-% PRG settings (aligned with run_criticality_prg.m)
-analysisConfig = struct();
-analysisConfig.prgMethod = 'pca';  % 'pca' or 'icg'
-analysisConfig.blockWindowSize = prgWindow;
-analysisConfig.binSize = 0.05;
-analysisConfig.cvThreshold = 5;
-analysisConfig.cutoffDivisors = [1, 2, 4, 8, 16, 32];
-analysisConfig.finalCutoffDivisor = 4;
-analysisConfig.kappaAxisMax = 20;
-analysisConfig.enableSurrogates = true;
-analysisConfig.nSurrogates = 10;
-analysisConfig.surrogateMethod = surrogateMethod;
-analysisConfig.makePlots = false;
-analysisConfig.saveData = false;
-analysisConfig.nMinNeurons = 32;
-analysisConfig.useSubsampling = useSubsampling;
-analysisConfig.nSubsamples = nSubsamples;
-analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
-analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-opts = neuro_behavior_options();
-opts.firingRateCheckTime = 5 * 60;
-opts.firingRateCheckTime = [];
-opts.collectStart = collectStart;
-opts.collectEnd = collectEnd;
-opts.minFiringRate = 0.05;
-opts.maxFiringRate = 100;
-
-%% Paths
-paths = get_paths();
-scriptDir = fileparts(mfilename('fullpath'));
-if contains(scriptDir, [filesep 'Editor_' filesep])
-  scriptDir = fileparts(which('criticality_prg_across_tasks'));
+if nargin < 1 || isempty(opts)
+  opts = struct();
 end
-srcPath = fullfile(scriptDir, '..');
-addpath(srcPath);
-addpath(fullfile(srcPath, 'reach_task'));
-addpath(fullfile(srcPath, 'schall'));
-addpath(fullfile(srcPath, 'spontaneous'));
-addpath(fullfile(srcPath, 'interval_timing_task'));
-addpath(fullfile(srcPath, 'criticality', 'scripts'));
-addpath(fullfile(srcPath, 'criticality', 'analyses'));
-addpath(fullfile(srcPath, 'session_prep', 'data_prep'));
-addpath(fullfile(srcPath, 'session_prep', 'utils'));
-addpath(fullfile(srcPath, 'data_prep'));
-addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
-addpath(fullfile(srcPath, 'criticality'));
+opts = fill_criticality_prg_across_tasks_opts(opts);
+setup_criticality_manuscript_paths('criticality_prg_across_tasks');
+paths = get_paths();
+
+if isempty(opts.batchResultsFile)
+  opts.batchResultsFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
+    'criticality_prg_across_tasks_batch.mat');
+end
 
 fprintf('\n=== Criticality PRG Across Task Types ===\n');
-fprintf('PRG method: %s\n', analysisConfig.prgMethod);
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, (collectEnd - collectStart) / 60);
-fprintf('PRG blocks: %.1f s, non-overlapping\n', prgWindow);
+fprintf('PRG method: %s\n', opts.prgMethod);
+fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
+  (opts.collectEnd - opts.collectStart) / 60);
+fprintf('PRG blocks: %.1f s, non-overlapping\n', opts.prgWindow);
 fprintf('Kappa at N/%d; bin size: %.3f s; surrogates: %s\n', ...
-  analysisConfig.finalCutoffDivisor, analysisConfig.binSize, analysisConfig.surrogateMethod);
-if useSubsampling
+  opts.finalCutoffDivisor, opts.binSize, opts.surrogateMethod);
+if opts.useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
-    nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
+    opts.nSubsamples, opts.nNeuronsSubsample, opts.minNeuronsMultiple);
 else
   fprintf('Subsampling: off\n');
 end
-fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
-if ~isempty(brainArea)
-  fprintf('Brain area: %s (single-area analysis)\n', brainArea);
+fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
+if ~isempty(opts.brainArea)
+  fprintf('Brain area: %s (single-area analysis)\n', opts.brainArea);
 else
   fprintf('Brain area: all areas in each session\n');
 end
 
-%% Build flat session table
-sessionTable = build_session_table(sessionTypes);
+sessionTable = build_session_table(opts.sessionTypes);
 numSessions = size(sessionTable, 1);
 fprintf('Total sessions: %d\n', numSessions);
-
 if numSessions == 0
   error('No sessions found for the requested session types.');
 end
 
-%% Batch PRG analysis
-batchResults = repmat(struct(), numSessions, 1);
-
-if runBatch
-  fprintf('\n=== Running PRG analysis (%.0f s non-overlapping blocks) ===\n', prgWindow);
-  for s = 1:numSessions
-    sessionType = sessionTable.sessionType{s};
-    sessionName = sessionTable.sessionName{s};
-    subjectName = sessionTable.subjectName{s};
-
-    fprintf('\n%s\n', repmat('=', 1, 80));
-    fprintf('Session %d/%d [%s]: %s\n', s, numSessions, sessionType, sessionName);
-    if ~isempty(subjectName)
-      fprintf('  subjectName: %s\n', subjectName);
-    end
-
-    batchResults(s).sessionType = sessionType;
-    batchResults(s).sessionName = sessionName;
-    batchResults(s).subjectName = subjectName;
-    batchResults(s).label = sessionTable.label{s};
-    batchResults(s).success = false;
-    batchResults(s).results = [];
-
-    try
-      loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectName);
-      dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
-
-      [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations);
-      if ~areaOk
-        fprintf('  Brain area "%s" not available in this session; skipping.\n', brainArea);
-        continue;
-      end
-
-      config = analysisConfig;
-      prgResults = criticality_prg_analysis(dataStruct, config);
-
-      if ~isempty(brainArea)
-        prgResults = filter_prg_results_to_brain_area(prgResults, brainArea);
-        if isempty(prgResults.areas)
-          fprintf('  No results for brain area "%s"; skipping.\n', brainArea);
-          continue;
-        end
-      end
-
-      batchResults(s).success = true;
-      batchResults(s).results = prgResults;
-      fprintf('  Analysis completed.\n');
-    catch ME
-      fprintf('  Error: %s\n', ME.message);
-      for st = 1:length(ME.stack)
-        fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
-      end
-    end
+if opts.runBatch
+  batchResults = run_prg_across_tasks_batch(sessionTable, opts);
+  plotData = aggregate_prg_metrics(batchResults, opts.sessionTypes, opts.finalCutoffDivisor);
+  batchMeta = pack_prg_across_tasks_batch_meta(opts);
+  if opts.saveBatchResults
+    save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
+    fprintf('\nSaved batch results: %s\n', opts.batchResultsFile);
   end
 else
-  error('runBatch must be true; loading precomputed results is not implemented in this script.');
+  if ~isfile(opts.batchResultsFile)
+    error('criticality_prg_across_tasks:NoBatchFile', ...
+      'Batch file not found: %s. Set runBatch true to compute.', opts.batchResultsFile);
+  end
+  loaded = load(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta');
+  batchResults = loaded.batchResults;
+  plotData = loaded.plotData;
+  batchMeta = loaded.batchMeta;
+  fprintf('\nLoaded batch results: %s\n', opts.batchResultsFile);
 end
-
-%% Aggregate and plot
-plotData = aggregate_prg_metrics(batchResults, sessionTypes, analysisConfig.finalCutoffDivisor);
 
 if isempty(plotData.areas)
   error('No PRG metrics extracted. Check that batch analyses succeeded.');
 end
 
+commonAreas = resolve_areas_to_plot(plotData.areas, opts.areasToPlot, opts.brainArea);
+
+fprintf('\n=== Areas for plotting ===\n');
+fprintf('  %s\n', strjoin(commonAreas, ', '));
+
+if opts.plotResults
+  plot_prg_across_tasks(plotData, commonAreas, opts.sessionTypes, opts.collectStart, ...
+    opts.collectEnd, opts.prgWindow, paths, opts.brainArea, opts.prgMethod);
+end
+
+fprintf('\n=== Done ===\n');
+
+out = struct();
+out.batchResults = batchResults;
+out.plotData = plotData;
+out.batchMeta = batchMeta;
+out.paths = paths;
+out.areasToPlot = commonAreas;
+end
+
+function opts = fill_criticality_prg_across_tasks_opts(opts)
+defaults = struct();
+defaults.sessionTypes = {'spontaneous', 'interval', 'reach'};
+defaults.dataSource = 'spikes';
+defaults.collectStart = 0;
+defaults.collectEnd = 45 * 60;
+defaults.prgWindow = 30;
+defaults.brainArea = 'M23M56';
+defaults.brainAreaCombinations = default_manuscript_brain_area_combinations();
+defaults.areasToPlot = {};
+defaults.runBatch = true;
+defaults.plotResults = true;
+defaults.saveBatchResults = false;
+defaults.batchResultsFile = '';
+defaults.useSubsampling = false;
+defaults.nSubsamples = 10;
+defaults.nNeuronsSubsample = 40;
+defaults.minNeuronsMultiple = 1.25;
+defaults.surrogateMethod = 'isi';
+defaults.prgMethod = 'pca';
+defaults.binSize = 0.05;
+defaults.cvThreshold = 5;
+defaults.cutoffDivisors = [1, 2, 4, 8, 16, 32];
+defaults.finalCutoffDivisor = 4;
+defaults.kappaAxisMax = 20;
+defaults.enableSurrogates = true;
+defaults.nSurrogates = 10;
+defaults.nMinNeurons = 32;
+defaults.firingRateCheckTime = [];
+defaults.minFiringRate = 0.05;
+defaults.maxFiringRate = 100;
+opts = merge_struct_defaults(opts, defaults);
+end
+
+function batchMeta = pack_prg_across_tasks_batch_meta(opts)
+batchMeta = struct( ...
+  'sessionTypes', {opts.sessionTypes}, ...
+  'collectStart', opts.collectStart, ...
+  'collectEnd', opts.collectEnd, ...
+  'prgWindow', opts.prgWindow, ...
+  'brainArea', opts.brainArea, ...
+  'areasToPlot', {opts.areasToPlot}, ...
+  'prgMethod', opts.prgMethod, ...
+  'finalCutoffDivisor', opts.finalCutoffDivisor);
+end
+
+function batchResults = run_prg_across_tasks_batch(sessionTable, opts)
+analysisConfig = build_prg_analysis_config(opts);
+loadOpts = neuro_behavior_options();
+loadOpts.firingRateCheckTime = opts.firingRateCheckTime;
+loadOpts.collectStart = opts.collectStart;
+loadOpts.collectEnd = opts.collectEnd;
+loadOpts.minFiringRate = opts.minFiringRate;
+loadOpts.maxFiringRate = opts.maxFiringRate;
+
+numSessions = size(sessionTable, 1);
+batchResults = repmat(struct(), numSessions, 1);
+fprintf('\n=== Running PRG analysis (%.0f s non-overlapping blocks) ===\n', opts.prgWindow);
+
+for s = 1:numSessions
+  sessionType = sessionTable.sessionType{s};
+  sessionName = sessionTable.sessionName{s};
+  subjectName = sessionTable.subjectName{s};
+
+  fprintf('\n%s\n', repmat('=', 1, 80));
+  fprintf('Session %d/%d [%s]: %s\n', s, numSessions, sessionType, sessionName);
+  if ~isempty(subjectName)
+    fprintf('  subjectName: %s\n', subjectName);
+  end
+
+  batchResults(s).sessionType = sessionType;
+  batchResults(s).sessionName = sessionName;
+  batchResults(s).subjectName = subjectName;
+  batchResults(s).label = sessionTable.label{s};
+  batchResults(s).success = false;
+  batchResults(s).results = [];
+
+  try
+    loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
+    dataStruct = load_session_data(sessionType, opts.dataSource, loadArgs{:});
+    [dataStruct, areaOk] = apply_manuscript_brain_area_selection( ...
+      dataStruct, opts.brainArea, opts.brainAreaCombinations);
+    if ~areaOk
+      fprintf('  Brain area "%s" not available in this session; skipping.\n', opts.brainArea);
+      continue;
+    end
+
+    prgResults = criticality_prg_analysis(dataStruct, analysisConfig);
+    if ~isempty(opts.brainArea)
+      prgResults = filter_prg_results_to_brain_area(prgResults, opts.brainArea);
+      if isempty(prgResults.areas)
+        fprintf('  No results for brain area "%s"; skipping.\n', opts.brainArea);
+        continue;
+      end
+    end
+
+    batchResults(s).success = true;
+    batchResults(s).results = prgResults;
+    fprintf('  Analysis completed.\n');
+  catch ME
+    fprintf('  Error: %s\n', ME.message);
+    for st = 1:length(ME.stack)
+      fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
+    end
+    error('criticality_prg_across_tasks:SessionFailed', ...
+      'Batch stopped at session %d/%d [%s] %s: %s', ...
+      s, numSessions, sessionType, sessionName, ME.message);
+  end
+end
+end
+
+function analysisConfig = build_prg_analysis_config(opts)
+analysisConfig = struct();
+analysisConfig.prgMethod = opts.prgMethod;
+analysisConfig.blockWindowSize = opts.prgWindow;
+analysisConfig.binSize = opts.binSize;
+analysisConfig.cvThreshold = opts.cvThreshold;
+analysisConfig.cutoffDivisors = opts.cutoffDivisors;
+analysisConfig.finalCutoffDivisor = opts.finalCutoffDivisor;
+analysisConfig.kappaAxisMax = opts.kappaAxisMax;
+analysisConfig.enableSurrogates = opts.enableSurrogates;
+analysisConfig.nSurrogates = opts.nSurrogates;
+analysisConfig.surrogateMethod = opts.surrogateMethod;
+analysisConfig.makePlots = false;
+analysisConfig.saveData = false;
+analysisConfig.nMinNeurons = opts.nMinNeurons;
+analysisConfig.useSubsampling = opts.useSubsampling;
+analysisConfig.nSubsamples = opts.nSubsamples;
+analysisConfig.nNeuronsSubsample = opts.nNeuronsSubsample;
+analysisConfig.minNeuronsMultiple = opts.minNeuronsMultiple;
+end
+
+function commonAreas = resolve_areas_to_plot(plotAreas, areasToPlot, brainArea)
 if isempty(areasToPlot) && ~isempty(brainArea)
   areasToPlot = {brainArea};
 end
-commonAreas = plotData.areas;
+commonAreas = plotAreas;
 if ~isempty(areasToPlot)
   commonAreas = intersect(commonAreas, areasToPlot, 'stable');
   if isempty(commonAreas)
@@ -205,18 +265,7 @@ elseif ~isempty(brainArea)
     error('No results for brainArea "%s". Check that sessions include this area.', brainArea);
   end
 end
-
-fprintf('\n=== Areas for plotting ===\n');
-fprintf('  %s\n', strjoin(commonAreas, ', '));
-
-if plotResults
-  plot_prg_across_tasks(plotData, commonAreas, sessionTypes, collectStart, collectEnd, ...
-    prgWindow, paths, brainArea, analysisConfig.prgMethod);
 end
-
-fprintf('\n=== Done ===\n');
-
-%% Local functions
 
 function sessionTable = build_session_table(sessionTypes)
 % BUILD_SESSION_TABLE - Flatten session lists from each session type

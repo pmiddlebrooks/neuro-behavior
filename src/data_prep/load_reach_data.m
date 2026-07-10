@@ -32,10 +32,15 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
     dataStruct.reachStart = dataR.R(:,1) / 1000;  % Convert from ms to seconds
     dataStruct.startBlock2 = dataStruct.reachStart(find(ismember(dataStruct.reachClass, [3 4]), 1));
     
-    % Set collectEnd
-    if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
-        opts.collectEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
+    % Set collectEnd; clamp only if session is meaningfully shorter
+    sessionEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        opts.collectStart = 0;
     end
+    if ~isfield(opts, 'collectEnd')
+        opts.collectEnd = [];
+    end
+    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, sessionEnd, opts.collectStart);
     dataStruct.opts = opts;
     
     if strcmp(dataSource, 'spikes')
@@ -48,6 +53,9 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
         if opts.useSpikeTimes
             % Load spike times using new approach
             spikeData = load_spike_times('reach', paths, sessionName, opts);
+            opts.collectEnd = spikeData.collectEnd;
+            opts.collectStart = spikeData.collectStart;
+            dataStruct.opts = opts;
             
             % Extract area information
             dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};

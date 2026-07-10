@@ -28,6 +28,8 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
 
         if opts.useSpikeTimes
             spikeData = load_spike_times('interval', paths, sessionName, opts);
+            opts.collectEnd = spikeData.collectEnd;
+            opts.collectStart = spikeData.collectStart;
 
             dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
             idM23 = [];
@@ -57,6 +59,7 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
             dataStruct.spikeData = spikeData;
             dataStruct.dataMat = [];
             dataStruct.areaLabels = spikeData.neuronAreas;
+            dataStruct.opts = opts;
 
             fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
         else

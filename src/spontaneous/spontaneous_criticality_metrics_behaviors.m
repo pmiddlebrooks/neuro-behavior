@@ -223,7 +223,9 @@ if opts.saveFigure && ~isempty(fieldnames(out.figHandles))
       continue;
     end
     plotSuffix = '';
-    if strcmp(figName, 'd2BehaviorGroups') ...
+    if strcmp(figName, 'd2BehaviorFeatures')
+      plotSuffix = entropy_groups_filename_tag(opts.useEntropyGroups);
+    elseif strcmp(figName, 'd2BehaviorGroups') ...
         && behavior_plot_uses_combined_labels(opts, true)
       plotSuffix = combined_labels_filename_tag(true);
     end
@@ -1312,6 +1314,22 @@ if useCombinedLabels
   tag = '_combined';
 else
   tag = '';
+end
+end
+
+function tag = entropy_groups_filename_tag(useEntropyGroups)
+% ENTROPY_GROUPS_FILENAME_TAG - Filename tag for entropy/switch-rate label stream
+%
+% Variables:
+%   useEntropyGroups - If true, entropy/switch used entropyGroups recoding
+%
+% Goal:
+%   Distinguish raw per-label IDs vs grouped label stream in saved figure names.
+
+if useEntropyGroups
+  tag = '_GroupedLabels';
+else
+  tag = '_RawLabels';
 end
 end
 

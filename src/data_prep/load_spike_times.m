@@ -50,11 +50,13 @@ function spikeData = load_spike_times_reach(paths, sessionName, opts)
     if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
         opts.collectStart = 0;
     end
-    
-    % Set collectEnd if not set
-    if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
-        opts.collectEnd = round(min((dataR.R(end,1) + 5000)/1000, max(dataR.CSV(:,1))));
+
+    % Session end from reach events / last spike; clamp requested collectEnd if longer
+    sessionEnd = round(min((dataR.R(end,1) + 5000)/1000, max(dataR.CSV(:,1))));
+    if ~isfield(opts, 'collectEnd')
+        opts.collectEnd = [];
     end
+    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, sessionEnd, opts.collectStart);
     
     % Extract spike data from CSV (CSV(:,1) is in seconds)
     spikeTimes = dataR.CSV(:,1);  % Convert from ms to seconds
@@ -140,10 +142,14 @@ function spikeData = load_spike_times_spontaneous(paths, sessionName, opts)
     % Extract all spike times and clusters
     spikeTimes = data.spikeTimes;
     spikeClusters = data.spikeClusters;
-    
-        if isempty(opts.collectEnd)
-    opts.collectEnd = spikeTimes(end);
-end
+
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        opts.collectStart = 0;
+    end
+    if ~isfield(opts, 'collectEnd')
+        opts.collectEnd = [];
+    end
+    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, max(spikeTimes), opts.collectStart);
     
     % Filter to qualifying neurons and time range
     validSpikes = ismember(spikeClusters, neuronIDs) & ...
@@ -210,9 +216,13 @@ function spikeData = load_spike_times_interval(paths, sessionName, opts)
     spikeTimes = data.spikeTimes;
     spikeClusters = data.spikeClusters;
 
-    if isempty(opts.collectEnd)
-        opts.collectEnd = spikeTimes(end);
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        opts.collectStart = 0;
     end
+    if ~isfield(opts, 'collectEnd')
+        opts.collectEnd = [];
+    end
+    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, max(spikeTimes), opts.collectStart);
 
     validSpikes = ismember(spikeClusters, neuronIDs) & ...
         spikeTimes >= opts.collectStart & ...
@@ -277,6 +287,9 @@ function spikeData = load_spike_times_schall(paths, sessionName, opts)
     if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
         opts.collectStart = 0;
     end
+    if ~isfield(opts, 'collectEnd')
+        opts.collectEnd = [];
+    end
 
     % Extract spike data using same approach as neural_matrix_schall_fef.m
     % Get spike unit array from SessionData
@@ -287,7 +300,7 @@ function spikeData = load_spike_times_schall(paths, sessionName, opts)
     spikeUnitArray = dataS.SessionData.spikeUnitArray;
     nUnits = length(spikeUnitArray);
     
-    % Collect all spike times and cluster IDs
+    % Collect all spike times and cluster IDs (full session first, then clamp collectEnd)
     allSpikeTimes = [];
     allSpikeClusters = [];
     
@@ -299,17 +312,25 @@ function spikeData = load_spike_times_schall(paths, sessionName, opts)
         % Convert spike times to session time (matching neural_matrix_schall_fef.m line 101)
         iSpikeTime = convert_to_session_time(iSpikeTimeCell, dataS.trialOnset) / 1000;  % Convert to seconds
         
-        % Filter to collection window
-        validSpikes = iSpikeTime >= opts.collectStart;
-        if isfield(opts, 'collectEnd') && ~isempty(opts.collectEnd)
-            validSpikes = validSpikes & (iSpikeTime <= opts.collectEnd);
-        end
-        iSpikeTime = iSpikeTime(validSpikes);
-        
         % Append to arrays
         allSpikeTimes = [allSpikeTimes; iSpikeTime(:)];
         allSpikeClusters = [allSpikeClusters; repmat(i, length(iSpikeTime), 1)];
     end
+
+    if isempty(allSpikeTimes)
+        sessionEnd = opts.collectStart;
+    else
+        sessionEnd = max(allSpikeTimes);
+    end
+    if isfield(dataS, 'trialOnset') && isfield(dataS, 'trialDuration') ...
+        && ~isempty(dataS.trialOnset) && ~isempty(dataS.trialDuration)
+        sessionEnd = max(sessionEnd, ceil(max(dataS.trialOnset(end) + dataS.trialDuration(end)) / 1000));
+    end
+    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, sessionEnd, opts.collectStart);
+
+    validSpikes = allSpikeTimes >= opts.collectStart & allSpikeTimes <= opts.collectEnd;
+    allSpikeTimes = allSpikeTimes(validSpikes);
+    allSpikeClusters = allSpikeClusters(validSpikes);
     
     % Create neuron IDs (matching neural_matrix_schall_fef.m line 63)
     neuronIDs = 1:nUnits;
@@ -319,15 +340,6 @@ function spikeData = load_spike_times_schall(paths, sessionName, opts)
     if opts.removeSome
         [allSpikeTimes, allSpikeClusters, neuronIDs, neuronAreas] = ...
             filter_by_firing_rate(allSpikeTimes, allSpikeClusters, neuronIDs, neuronAreas, opts);
-    end
-
-    % If collectEnd was empty, set it to last spike time
-    if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
-        if ~isempty(allSpikeTimes)
-            opts.collectEnd = max(allSpikeTimes);
-        else
-            opts.collectEnd = opts.collectStart;
-        end
     end
 
     % Build output structure

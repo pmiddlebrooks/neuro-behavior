@@ -295,6 +295,18 @@ function results = criticality_av_analysis(dataStruct, config)
     % This ensures all areas have aligned windows regardless of their optimized window sizes
     % Total time from spike data
     totalTime = timeRange(2) - timeRange(1);
+
+    % If session is meaningfully shorter than requested window, use full session
+    windowToleranceSec = 1;
+    if config.slidingWindowSize > (totalTime + windowToleranceSec)
+        fprintf(['  slidingWindowSize %.1f s exceeds session duration %.1f s; ', ...
+            'using full session for avalanche window.\n'], config.slidingWindowSize, totalTime);
+        config.slidingWindowSize = totalTime;
+        config.avStepSize = totalTime;
+    end
+    if config.avStepSize > (totalTime + windowToleranceSec)
+        config.avStepSize = totalTime;
+    end
     
     % Generate common centerTime values
     % Start from slidingWindowSize/2, end at totalTime - slidingWindowSize/2
@@ -315,21 +327,19 @@ function results = criticality_av_analysis(dataStruct, config)
     [dccNormalized, kappaNormalized, decadesNormalized, tauNormalized, alphaNormalized, paramSDNormalized] = ...
         deal(cell(1, numAreas));
     
-    if config.enablePermutations
-        dccPermuted = cell(1, numAreas);
-        kappaPermuted = cell(1, numAreas);
-        decadesPermuted = cell(1, numAreas);
-        tauPermuted = cell(1, numAreas);
-        alphaPermuted = cell(1, numAreas);
-        paramSDPermuted = cell(1, numAreas);
-        for a = 1:numAreas
-            dccPermuted{a} = [];
-            kappaPermuted{a} = [];
-            decadesPermuted{a} = [];
-            tauPermuted{a} = [];
-            alphaPermuted{a} = [];
-            paramSDPermuted{a} = [];
-        end
+    dccPermuted = cell(1, numAreas);
+    kappaPermuted = cell(1, numAreas);
+    decadesPermuted = cell(1, numAreas);
+    tauPermuted = cell(1, numAreas);
+    alphaPermuted = cell(1, numAreas);
+    paramSDPermuted = cell(1, numAreas);
+    for a = 1:numAreas
+        dccPermuted{a} = [];
+        kappaPermuted{a} = [];
+        decadesPermuted{a} = [];
+        tauPermuted{a} = [];
+        alphaPermuted{a} = [];
+        paramSDPermuted{a} = [];
     end
     
     % Main analysis loop
@@ -571,26 +581,7 @@ function results = criticality_av_analysis(dataStruct, config)
                 paramSDNormalized{a}(:) = nan;
             end
         else
-            % Initialize empty if permutations disabled
-            if isempty(dccPermuted{a})
-                dccPermuted{a} = [];
-            end
-            if isempty(kappaPermuted{a})
-                kappaPermuted{a} = [];
-            end
-            if isempty(decadesPermuted{a})
-                decadesPermuted{a} = [];
-            end
-            if isempty(tauPermuted{a})
-                tauPermuted{a} = [];
-            end
-            if isempty(alphaPermuted{a})
-                alphaPermuted{a} = [];
-            end
-            if isempty(paramSDPermuted{a})
-                paramSDPermuted{a} = [];
-            end
-            % If no permutations, normalization not possible
+            % Permutations disabled or empty: no normalization possible
             dccNormalized{a}(:) = nan;
             kappaNormalized{a}(:) = nan;
             decadesNormalized{a}(:) = nan;
