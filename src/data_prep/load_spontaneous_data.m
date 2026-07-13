@@ -12,6 +12,10 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
 %   bands - Frequency bands (if dataSource == 'lfp')
 %
 % Goal: Load from paths.spontaneousDataPath/subjectName/sessionName
+%
+% Notes:
+%   opts.collectEnd = [] means analyze the full session (resolved from spikes
+%   before behavior labels are loaded).
 
     if ~isfield(opts, 'collectEnd')
         opts.collectEnd = 10 * 60;
@@ -25,43 +29,6 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
         sessionFolder = fullfile(opts.dataPath, opts.sessionName);
         hasBehaviorLabels = behavior_labels_available(sessionFolder);
 
-        if hasBehaviorLabels
-            dataBhv = load_data(opts, 'behavior');
-
-            % Create bhvID vector using behavior sampling frequency (opts.fsBhv)
-            if ~isfield(opts, 'fsBhv')
-                error('behavior needs a sampling frequency, opts.fsBhv, in the opts struct')
-            end
-            bhvBinSize = 1 / opts.fsBhv;  % Behavior bin size in seconds
-            nBhvBins = ceil(opts.collectEnd / bhvBinSize);
-            dataBhv.StartFrame = 1 + round(dataBhv.StartTime / bhvBinSize);
-            bhvID = zeros(nBhvBins, 1);
-            for i = 1:size(dataBhv, 1) - 1
-                iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
-                bhvID(iInd) = dataBhv.ID(i);
-            end
-            if ~isempty(dataBhv)
-                iInd = dataBhv.StartFrame(end):nBhvBins;
-                if ~isempty(iInd)
-                    bhvID(iInd) = dataBhv.ID(end);
-                end
-            end
-
-            dataStruct.bhvID = bhvID;
-            dataStruct.dataBhv = dataBhv;
-            dataStruct.fsBhv = opts.fsBhv;
-        else
-            warning('load_spontaneous_data:NoBehaviorLabels', ...
-                'No behavior_labels CSV in %s; skipping behavior data.', sessionFolder);
-            dataStruct.bhvID = [];
-            dataStruct.dataBhv = [];
-            if isfield(opts, 'fsBhv') && ~isempty(opts.fsBhv)
-                dataStruct.fsBhv = opts.fsBhv;
-            else
-                dataStruct.fsBhv = [];
-            end
-        end
-
         % Check if we should use spike times approach (new) or dataMat (old)
         % Default to spike times if not specified
         if ~isfield(opts, 'useSpikeTimes') || isempty(opts.useSpikeTimes)
@@ -69,7 +36,7 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
         end
         
         if opts.useSpikeTimes
-            % Load spike times using new approach
+            % Resolve collectEnd from spikes first ([] = full session), then load behavior
             spikeData = load_spike_times('spontaneous', paths, sessionName, opts);
             opts.collectEnd = spikeData.collectEnd;
             opts.collectStart = spikeData.collectStart;
@@ -113,6 +80,51 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
         else
             % Load using old approach (dataMat)
             spikeDataRaw = load_data(opts, 'spikes');
+            % opts.collectEnd may still be [] here; load_data resolves it from spikes
+            if isempty(opts.collectEnd) && isfield(spikeDataRaw, 'spikeTimes') ...
+                    && ~isempty(spikeDataRaw.spikeTimes)
+                opts.collectEnd = max(spikeDataRaw.spikeTimes);
+            end
+        end
+
+        if hasBehaviorLabels
+            dataBhv = load_data(opts, 'behavior');
+
+            % Create bhvID vector using behavior sampling frequency (opts.fsBhv)
+            if ~isfield(opts, 'fsBhv')
+                error('behavior needs a sampling frequency, opts.fsBhv, in the opts struct')
+            end
+            bhvBinSize = 1 / opts.fsBhv;  % Behavior bin size in seconds
+            nBhvBins = ceil(opts.collectEnd / bhvBinSize);
+            dataBhv.StartFrame = 1 + round(dataBhv.StartTime / bhvBinSize);
+            bhvID = zeros(nBhvBins, 1);
+            for i = 1:size(dataBhv, 1) - 1
+                iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
+                bhvID(iInd) = dataBhv.ID(i);
+            end
+            if ~isempty(dataBhv)
+                iInd = dataBhv.StartFrame(end):nBhvBins;
+                if ~isempty(iInd)
+                    bhvID(iInd) = dataBhv.ID(end);
+                end
+            end
+
+            dataStruct.bhvID = bhvID;
+            dataStruct.dataBhv = dataBhv;
+            dataStruct.fsBhv = opts.fsBhv;
+        else
+            warning('load_spontaneous_data:NoBehaviorLabels', ...
+                'No behavior_labels CSV in %s; skipping behavior data.', sessionFolder);
+            dataStruct.bhvID = [];
+            dataStruct.dataBhv = [];
+            if isfield(opts, 'fsBhv') && ~isempty(opts.fsBhv)
+                dataStruct.fsBhv = opts.fsBhv;
+            else
+                dataStruct.fsBhv = [];
+            end
+        end
+
+        if ~opts.useSpikeTimes
             if hasBehaviorLabels
                 spikeDataRaw.bhvDur = dataBhv.Dur;
             end

@@ -28,31 +28,37 @@ switch dataType
         
         fileName = csvFiles(1).name;
         dataFull = readtable(fullfile(searchPath, fileName));
-if isempty(opts.collectEnd)
-    opts.collectEnd = dataFull.Time(end);
-end
+        if isempty(opts.collectEnd)
+            opts.collectEnd = dataFull.Time(end);
+        end
 
-        % Use a time window of recorded data
-        getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectEnd));
+        % Use a time window of recorded data (integer frame indices)
+        nFrames = height(dataFull);
+        startFrame = max(1, 1 + round(opts.fsBhv * opts.collectStart));
+        endFrame = min(nFrames, max(startFrame, round(opts.fsBhv * opts.collectEnd)));
+        getWindow = startFrame:endFrame;
         dataWindow = dataFull(getWindow,:);
         dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
         bhvID = dataWindow.Code;
 
-
-
-
         changeBhv = [0; diff(bhvID)]; % nonzeros at all the indices when a new behavior begins
         changeBhvIdx = find(changeBhv);
 
-
-
         data = table();
-        data.Dur = [diff([0; dataWindow.Time(changeBhvIdx)]); opts.collectEnd - dataWindow.Time(changeBhvIdx(end))];
-        data.ID = [bhvID(1); bhvID(changeBhvIdx)];
-        % data.Name = bhvName;
-        data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
-        data.StartTime = [0; dataWindow.Time(changeBhvIdx)];
-        % data.StartFrame = bhvStartFrame;
+        % After rezeroing Time, last segment end is the window duration (not absolute collectEnd)
+        windowDur = dataWindow.Time(end);
+        if isempty(changeBhvIdx)
+            data.Dur = windowDur;
+            data.ID = bhvID(1);
+            data.Name = dataWindow.Behavior(1);
+            data.StartTime = 0;
+        else
+            data.Dur = [diff([0; dataWindow.Time(changeBhvIdx)]); ...
+                windowDur - dataWindow.Time(changeBhvIdx(end))];
+            data.ID = [bhvID(1); bhvID(changeBhvIdx)];
+            data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
+            data.StartTime = [0; dataWindow.Time(changeBhvIdx)];
+        end
 
         data.Valid = behavior_selection(data, opts);
 

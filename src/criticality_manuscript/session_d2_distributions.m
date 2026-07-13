@@ -52,7 +52,7 @@ nSubsamples = 20;
 nNeuronsSubsample = 32;
 minNeuronsMultiple = 1.25;
 plotD2PopActivity = true;
-saveFigure = false;
+saveFigure = true;
 plotConfig = fill_manuscript_plot_config();
 
 splitExcitatoryInhibitory = true;

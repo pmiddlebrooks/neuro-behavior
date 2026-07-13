@@ -9,7 +9,7 @@
 %   sessionTypes  - Cell array of session types to include
 %   dataSource    - 'spikes' or 'lfp'
 %   collectStart  - Window start (seconds from session onset), default 0
-%   collectEnd    - Window end (seconds), default 40*60
+%   collectEnd    - Window end (seconds); [] = full session; default 40*60
 %   brainArea              - Single or merged area (e.g. 'M23', 'M23M56'); '' = all areas
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   areasToPlot            - Area names to plot; {} uses brainArea if set, else all areas
@@ -50,7 +50,11 @@ if isempty(opts.batchResultsFile)
     'criticality_av_across_tasks_batch.mat');
 end
 
-windowDurationSec = opts.collectEnd - opts.collectStart;
+if isempty(opts.collectEnd)
+  windowDurationSec = [];
+else
+  windowDurationSec = opts.collectEnd - opts.collectStart;
+end
 [clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
 
 fprintf('\n=== Criticality Avalanche Across Task Types ===\n');
@@ -62,8 +66,12 @@ if opts.useSubsampling
 else
   fprintf('Subsampling: off\n');
 end
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
-  windowDurationSec / 60);
+if isempty(opts.collectEnd)
+  fprintf('Collect window: [%.1f, full] s\n', opts.collectStart);
+else
+  fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
+    windowDurationSec / 60);
+end
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
 if ~isempty(opts.brainArea)
   fprintf('Brain area: %s (single-area analysis)\n', opts.brainArea);
@@ -147,7 +155,11 @@ defaults.minFiringRate = 0.05;
 defaults.maxFiringRate = 100;
 defaults.enablePermutations = true;
 defaults.nShuffles = 5;
+preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 opts = merge_struct_defaults(opts, defaults);
+if preserveCollectEndEmpty
+  opts.collectEnd = [];
+end
 end
 
 function batchMeta = pack_av_across_tasks_batch_meta(opts)
@@ -162,7 +174,11 @@ batchMeta = struct( ...
 end
 
 function batchResults = run_av_across_tasks_batch(sessionTable, opts, clausetPlfitPath, plfit2023Path)
-windowDurationSec = opts.collectEnd - opts.collectStart;
+if isempty(opts.collectEnd)
+  windowDurationSec = [];
+else
+  windowDurationSec = opts.collectEnd - opts.collectStart;
+end
 analysisConfig = build_av_analysis_config(opts, windowDurationSec, clausetPlfitPath, plfit2023Path);
 loadOpts = neuro_behavior_options();
 loadOpts.firingRateCheckTime = opts.firingRateCheckTime;
@@ -206,9 +222,15 @@ for s = 1:numSessions
     sessionConfig = analysisConfig;
     sessionDuration = get_session_collect_duration(dataStruct, opts);
     durationToleranceSec = 1;
-    if sessionDuration < (windowDurationSec - durationToleranceSec)
-      fprintf('  Session duration %.1f s < requested %.1f s; using full session window.\n', ...
-        sessionDuration, windowDurationSec);
+    useFullSessionWindow = isempty(windowDurationSec) ...
+      || sessionDuration < (windowDurationSec - durationToleranceSec);
+    if useFullSessionWindow
+      if isempty(windowDurationSec)
+        fprintf('  Using full session window (%.1f s).\n', sessionDuration);
+      else
+        fprintf('  Session duration %.1f s < requested %.1f s; using full session window.\n', ...
+          sessionDuration, windowDurationSec);
+      end
       sessionConfig.slidingWindowSize = sessionDuration;
       sessionConfig.avStepSize = sessionDuration;
     end
@@ -226,6 +248,11 @@ for s = 1:numSessions
     batchResults(s).results = avResults;
     fprintf('  Analysis completed.\n');
   catch ME
+    if is_skippable_session_analysis_error(ME)
+      fprintf('  Skipping session (insufficient neurons / no valid areas): %s\n', ME.message);
+      batchResults(s).skipReason = ME.message;
+      continue;
+    end
     fprintf('  Error: %s\n', ME.message);
     for st = 1:length(ME.stack)
       fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
@@ -237,10 +264,21 @@ for s = 1:numSessions
 end
 end
 
+function tf = is_skippable_session_analysis_error(ME)
+% IS_SKIPPABLE_SESSION_ANALYSIS_ERROR - True for expected per-session skip cases
+tf = contains(ME.message, 'No valid areas to process') ...
+  || contains(ME.message, 'insufficient neurons');
+end
+
 function analysisConfig = build_av_analysis_config(opts, windowDurationSec, clausetPlfitPath, plfit2023Path)
 analysisConfig = struct();
-analysisConfig.slidingWindowSize = windowDurationSec;
-analysisConfig.avStepSize = windowDurationSec;
+if isempty(windowDurationSec)
+  analysisConfig.slidingWindowSize = 1;
+  analysisConfig.avStepSize = 1;
+else
+  analysisConfig.slidingWindowSize = windowDurationSec;
+  analysisConfig.avStepSize = windowDurationSec;
+end
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.avalancheDetectionMode = opts.avalancheDetectionMode;
 if strcmpi(opts.avalancheDetectionMode, 'meanIsiZero')
@@ -293,6 +331,10 @@ elseif isfield(dataStruct, 'spikeTimes') && ~isempty(dataStruct.spikeTimes)
   sessionDuration = max(dataStruct.spikeTimes) - collectStart;
 else
   sessionDuration = opts.collectEnd - opts.collectStart;
+  if isempty(sessionDuration)
+    error('criticality_av_across_tasks:UnknownSessionDuration', ...
+      'Could not determine session collect duration.');
+  end
 end
 end
 
@@ -650,19 +692,18 @@ for a = 1:numAreas
     end
   end
 
+  collectTag = format_av_collect_window_tag(collectStart, collectEnd);
   if ~isempty(brainArea)
-    titleStr = sprintf('Avalanche criticality — %s [%.0f–%.0f s]', brainArea, collectStart, collectEnd);
+    titleStr = sprintf('Avalanche criticality — %s [%s]', brainArea, collectTag);
   else
-    titleStr = sprintf('Avalanche criticality — %s [%.0f–%.0f s]', areaName, collectStart, collectEnd);
+    titleStr = sprintf('Avalanche criticality — %s [%s]', areaName, collectTag);
   end
   sgtitle(fig, titleStr, 'FontWeight', 'bold');
 
   if ~isempty(brainArea)
-    plotBase = sprintf('criticality_av_across_tasks_%s_%.0f-%.0fs', ...
-      brainArea, collectStart, collectEnd);
+    plotBase = sprintf('criticality_av_across_tasks_%s_%s', brainArea, collectTag);
   else
-    plotBase = sprintf('criticality_av_across_tasks_%s_%.0f-%.0fs', ...
-      areaName, collectStart, collectEnd);
+    plotBase = sprintf('criticality_av_across_tasks_%s_%s', areaName, collectTag);
   end
   if numAreas > 1
     plotBase = sprintf('%s_area%s', plotBase, areaName);
@@ -789,5 +830,14 @@ for t = 1:length(sessionTypes)
       return;
     end
   end
+end
+end
+
+function tag = format_av_collect_window_tag(collectStart, collectEnd)
+% FORMAT_AV_COLLECT_WINDOW_TAG - Filename/title fragment for collect window
+if isempty(collectEnd)
+  tag = sprintf('%.0f-full', collectStart);
+else
+  tag = sprintf('%.0f-%.0fs', collectStart, collectEnd);
 end
 end

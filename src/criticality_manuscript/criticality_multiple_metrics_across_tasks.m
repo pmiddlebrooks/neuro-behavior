@@ -21,10 +21,11 @@
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 0;
-collectEnd = 40 * 60;
+collectEnd = 60 * 60;
+% collectEnd = [];  % [] = full session
 d2Window = 30;
-% One d2 estimate for the full collect window (short sessions clamp to session length)
-d2Window = collectEnd;
+% One d2 estimate for the full collect window ([] when collectEnd is [])
+% d2Window = collectEnd;
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
@@ -39,10 +40,10 @@ enablePermutations = false;
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha'
 
 useLog10D2 = true;
-useSubsampling = false;
+useSubsampling = true;
 nSubsamples = 20;
-nNeuronsSubsample = 20;
-minNeuronsMultiple = 1.5;
+nNeuronsSubsample = 45;
+minNeuronsMultiple = 1.2;
 
 powerLawFitMethod = 'plfit2023';
 avalancheDetectionMode = 'fixedBinMedian';
@@ -61,8 +62,16 @@ avBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
 
 fprintf('\n=== Criticality Multiple Metrics Across Tasks ===\n');
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
-fprintf('Collect window: [%.1f, %.1f] s\n', collectStart, collectEnd);
-fprintf('d2 windows: %.0f s\n', d2Window);
+if isempty(collectEnd)
+  fprintf('Collect window: [%.1f, full] s\n', collectStart);
+else
+  fprintf('Collect window: [%.1f, %.1f] s\n', collectStart, collectEnd);
+end
+if isempty(d2Window)
+  fprintf('d2 windows: full collect duration (one window per session)\n');
+else
+  fprintf('d2 windows: %.0f s\n', d2Window);
+end
 fprintf('enablePermutations: %d (observed metrics only when false)\n', enablePermutations);
 fprintf('anchorMetric: %s\n', anchorMetric);
 
@@ -290,7 +299,7 @@ for a = 1:numel(areasToPlot)
   ylim(axMain, yLimPlot);
   xlim(axMain, [min(xticksCenters) - 0.8, max(xticksCenters) + 0.8]);
   set(axMain, 'XTick', xticksCenters, 'XTickLabel', xtickLabels, 'XTickLabelRotation', 45);
-  grid(axMain, 'on');
+  grid(axMain, 'off');
   xlabel(axMain, 'Session', 'FontSize', plotConfig.axisLabelFontSize);
   ylabel(axMain, anchorLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
     'Interpreter', ternary_metric_label_interpreter(anchorLabel));
@@ -321,12 +330,18 @@ for a = 1:numel(areasToPlot)
     fprintf('    %s: gain=%.4g, offset=%.4g\n', name, maps.(name).gain, maps.(name).offset);
   end
 
-  if ~isempty(brainArea)
-    titleStr = sprintf('d2, tau, alpha (anchor=%s) — %s [%.0f–%.0f s, %.0fs d2 windows]', ...
-      anchorMetric, brainArea, collectStart, collectEnd, d2Window);
+  collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
+  if isempty(d2Window)
+    winTag = 'full';
   else
-    titleStr = sprintf('d2, tau, alpha (anchor=%s) — %s [%.0f–%.0f s, %.0fs d2 windows]', ...
-      anchorMetric, areaName, collectStart, collectEnd, d2Window);
+    winTag = sprintf('%.0fs', d2Window);
+  end
+  if ~isempty(brainArea)
+    titleStr = sprintf('d2, tau, alpha (anchor=%s) — %s [%s, %s d2 windows]', ...
+      anchorMetric, brainArea, collectTag, winTag);
+  else
+    titleStr = sprintf('d2, tau, alpha (anchor=%s) — %s [%s, %s d2 windows]', ...
+      anchorMetric, areaName, collectTag, winTag);
   end
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
@@ -547,16 +562,30 @@ function plotBase = make_multimetric_plot_basename(areaName, brainArea, d2Window
 if nargin < 7 || isempty(anchorMetric)
   anchorMetric = 'd2';
 end
-if ~isempty(brainArea)
-  plotBase = sprintf('criticality_multiple_metrics_d2_tau_alpha_%s_win%.0fs_%.0f-%.0fs', ...
-    brainArea, d2Window, collectStart, collectEnd);
+collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
+if isempty(d2Window)
+  winTag = 'full';
 else
-  plotBase = sprintf('criticality_multiple_metrics_d2_tau_alpha_%s_win%.0fs_%.0f-%.0fs', ...
-    areaName, d2Window, collectStart, collectEnd);
+  winTag = sprintf('%.0fs', d2Window);
+end
+if ~isempty(brainArea)
+  plotBase = sprintf('criticality_multiple_metrics_d2_tau_alpha_%s_win%s_%s', ...
+    brainArea, winTag, collectTag);
+else
+  plotBase = sprintf('criticality_multiple_metrics_d2_tau_alpha_%s_win%s_%s', ...
+    areaName, winTag, collectTag);
 end
 plotBase = sprintf('%s_anchor%s', plotBase, anchorMetric);
 if useLog10D2
   plotBase = [plotBase, '_log10'];
+end
+end
+
+function tag = format_multimetric_collect_tag(collectStart, collectEnd)
+if isempty(collectEnd)
+  tag = sprintf('%.0f-full', collectStart);
+else
+  tag = sprintf('%.0f-%.0f', collectStart, collectEnd);
 end
 end
 

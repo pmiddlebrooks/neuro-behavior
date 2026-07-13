@@ -8,8 +8,9 @@
 %   sessionTypes   - Cell array of session types to include
 %   dataSource     - 'spikes' or 'lfp'
 %   collectStart   - Analysis window start (seconds from session onset)
-%   collectEnd     - Analysis window end (seconds)
-%   d2Window       - Non-overlapping window length (seconds); stepSize = d2Window
+%   collectEnd     - Analysis window end (seconds); [] = full session
+%   d2Window       - Non-overlapping window length (seconds); stepSize = d2Window.
+%                    [] = one window over the loaded collect duration
 %   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' = all areas
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   areasToPlot            - Area names to plot; {} uses brainArea if set
@@ -53,9 +54,12 @@ if isempty(opts.batchResultsFile)
 end
 
 fprintf('\n=== Criticality d2 Across Task Types ===\n');
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
-  (opts.collectEnd - opts.collectStart) / 60);
-fprintf('d2 windows: %.1f s, non-overlapping (step = window)\n', opts.d2Window);
+fprintf('Collect window: [%.1f, %s] s\n', opts.collectStart, format_collect_end_label(opts.collectEnd));
+if isempty(opts.d2Window)
+  fprintf('d2 windows: full collect duration (one window per session)\n');
+else
+  fprintf('d2 windows: %.1f s, non-overlapping (step = window)\n', opts.d2Window);
+end
 fprintf('useLog10D2 (aggregate/plot): %d\n', opts.useLog10D2);
 if opts.useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
@@ -151,7 +155,16 @@ defaults.minFiringRate = 0.05;
 defaults.maxFiringRate = 150;
 defaults.enablePermutations = true;
 defaults.nShuffles = 10;
+% Empty collectEnd / d2Window are sentinels for "full session" — do not replace
+preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
+preserveD2WindowEmpty = isfield(opts, 'd2Window') && isempty(opts.d2Window);
 opts = merge_struct_defaults(opts, defaults);
+if preserveCollectEndEmpty
+  opts.collectEnd = [];
+end
+if preserveD2WindowEmpty
+  opts.d2Window = [];
+end
 end
 
 function batchMeta = pack_ar_across_tasks_batch_meta(opts)
@@ -178,7 +191,11 @@ loadOpts.maxFiringRate = opts.maxFiringRate;
 
 numSessions = size(sessionTable, 1);
 batchResults = repmat(struct(), numSessions, 1);
-fprintf('\n=== Running d2 analysis (%.0f s non-overlapping windows) ===\n', opts.d2Window);
+if isempty(opts.d2Window)
+  fprintf('\n=== Running d2 analysis (one window over full collect duration) ===\n');
+else
+  fprintf('\n=== Running d2 analysis (%.0f s non-overlapping windows) ===\n', opts.d2Window);
+end
 
 for s = 1:numSessions
   sessionType = sessionTable.sessionType{s};
@@ -211,9 +228,15 @@ for s = 1:numSessions
     sessionConfig = analysisConfig;
     sessionDuration = get_session_collect_duration(dataStruct, opts);
     durationToleranceSec = 1;
-    if sessionDuration < (opts.d2Window - durationToleranceSec)
-      fprintf('  Session duration %.1f s < requested d2Window %.1f s; using full session window.\n', ...
-        sessionDuration, opts.d2Window);
+    useFullSessionWindow = isempty(opts.d2Window) ...
+      || sessionDuration < (opts.d2Window - durationToleranceSec);
+    if useFullSessionWindow
+      if isempty(opts.d2Window)
+        fprintf('  Using full session window (%.1f s).\n', sessionDuration);
+      else
+        fprintf('  Session duration %.1f s < requested d2Window %.1f s; using full session window.\n', ...
+          sessionDuration, opts.d2Window);
+      end
       sessionConfig.slidingWindowSize = sessionDuration;
       sessionConfig.stepSize = sessionDuration;
     end
@@ -231,6 +254,11 @@ for s = 1:numSessions
     batchResults(s).results = arResults;
     fprintf('  Analysis completed.\n');
   catch ME
+    if is_skippable_session_analysis_error(ME)
+      fprintf('  Skipping session (insufficient neurons / no valid areas): %s\n', ME.message);
+      batchResults(s).skipReason = ME.message;
+      continue;
+    end
     fprintf('  Error: %s\n', ME.message);
     for st = 1:length(ME.stack)
       fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
@@ -240,6 +268,12 @@ for s = 1:numSessions
       s, numSessions, sessionType, sessionName, ME.message);
   end
 end
+end
+
+function tf = is_skippable_session_analysis_error(ME)
+% IS_SKIPPABLE_SESSION_ANALYSIS_ERROR - True for expected per-session skip cases
+tf = contains(ME.message, 'No valid areas to process') ...
+  || contains(ME.message, 'insufficient neurons');
 end
 
 function sessionDuration = get_session_collect_duration(dataStruct, opts)
@@ -263,13 +297,23 @@ elseif isfield(dataStruct, 'spikeTimes') && ~isempty(dataStruct.spikeTimes)
   sessionDuration = max(dataStruct.spikeTimes) - collectStart;
 else
   sessionDuration = opts.collectEnd - opts.collectStart;
+  if isempty(sessionDuration)
+    error('criticality_ar_across_tasks:UnknownSessionDuration', ...
+      'Could not determine session collect duration.');
+  end
 end
 end
 
 function analysisConfig = build_ar_analysis_config(opts)
 analysisConfig = struct();
-analysisConfig.slidingWindowSize = opts.d2Window;
-analysisConfig.stepSize = opts.d2Window;
+if isempty(opts.d2Window)
+  % Placeholder; per-session loop replaces with actual collect duration
+  analysisConfig.slidingWindowSize = 1;
+  analysisConfig.stepSize = 1;
+else
+  analysisConfig.slidingWindowSize = opts.d2Window;
+  analysisConfig.stepSize = opts.d2Window;
+end
 analysisConfig.binSize = 0.05;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;
@@ -641,12 +685,18 @@ for a = 1:length(areasToPlot)
   plot_d2_raw_with_shuffle(axRaw, plotData, sessionTypes, areaIdx, typeColors, shuffleBarColor);
   ylabel(axRaw, rawYLabel);
   title(axRaw, sprintf('%s — %s', areaName, rawTitleWord));
-  if ~isempty(brainArea)
-    titleStrRaw = sprintf('%s (raw) — %s [%.0f–%.0f s, %.0fs windows]', ...
-      rawTitleWord, brainArea, collectStart, collectEnd, d2Window);
+  collectTag = format_collect_window_tag(collectStart, collectEnd);
+  if isempty(d2Window)
+    winTag = 'full';
   else
-    titleStrRaw = sprintf('%s (raw) — %s [%.0f–%.0f s, %.0fs windows]', ...
-      rawTitleWord, areaName, collectStart, collectEnd, d2Window);
+    winTag = sprintf('%.0fs', d2Window);
+  end
+  if ~isempty(brainArea)
+    titleStrRaw = sprintf('%s (raw) — %s [%s, %s windows]', ...
+      rawTitleWord, brainArea, collectTag, winTag);
+  else
+    titleStrRaw = sprintf('%s (raw) — %s [%s, %s windows]', ...
+      rawTitleWord, areaName, collectTag, winTag);
   end
   sgtitle(figRaw, titleStrRaw, 'FontWeight', 'bold');
 
@@ -665,11 +715,11 @@ for a = 1:length(areasToPlot)
   ylabel(axNorm, normYLabel);
   title(axNorm, sprintf('%s — %s', areaName, normTitleWord));
   if ~isempty(brainArea)
-    titleStrNorm = sprintf('%s — %s [%.0f–%.0f s, %.0fs windows]', ...
-      normTitleWord, brainArea, collectStart, collectEnd, d2Window);
+    titleStrNorm = sprintf('%s — %s [%s, %s windows]', ...
+      normTitleWord, brainArea, collectTag, winTag);
   else
-    titleStrNorm = sprintf('%s — %s [%.0f–%.0f s, %.0fs windows]', ...
-      normTitleWord, areaName, collectStart, collectEnd, d2Window);
+    titleStrNorm = sprintf('%s — %s [%s, %s windows]', ...
+      normTitleWord, areaName, collectTag, winTag);
   end
   sgtitle(figNorm, titleStrNorm, 'FontWeight', 'bold');
 
@@ -844,16 +894,40 @@ else
   useLog10D2 = logical(useLog10D2);
 end
 
-if ~isempty(brainArea)
-  plotBase = sprintf('%s_%s_win%.0fs_%.0f-%.0fs', prefix, brainArea, d2Window, collectStart, collectEnd);
+collectTag = format_collect_window_tag(collectStart, collectEnd);
+if isempty(d2Window)
+  winTag = 'full';
 else
-  plotBase = sprintf('%s_%s_win%.0fs_%.0f-%.0fs', prefix, areaName, d2Window, collectStart, collectEnd);
+  winTag = sprintf('%.0fs', d2Window);
+end
+if ~isempty(brainArea)
+  plotBase = sprintf('%s_%s_win%s_%s', prefix, brainArea, winTag, collectTag);
+else
+  plotBase = sprintf('%s_%s_win%s_%s', prefix, areaName, winTag, collectTag);
 end
 if multiArea
   plotBase = sprintf('%s_area%s', plotBase, areaName);
 end
 if useLog10D2
   plotBase = [plotBase, '_log10'];
+end
+end
+
+function tag = format_collect_window_tag(collectStart, collectEnd)
+% FORMAT_COLLECT_WINDOW_TAG - Filename fragment for collect window
+if isempty(collectEnd)
+  tag = sprintf('%.0f-full', collectStart);
+else
+  tag = sprintf('%.0f-%.0f', collectStart, collectEnd);
+end
+end
+
+function label = format_collect_end_label(collectEnd)
+% FORMAT_COLLECT_END_LABEL - Display string for collectEnd ([] = full)
+if isempty(collectEnd)
+  label = 'full';
+else
+  label = sprintf('%.1f', collectEnd);
 end
 end
 
