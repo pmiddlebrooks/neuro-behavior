@@ -21,7 +21,7 @@
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 0;
-collectEnd = 60 * 60;
+collectEnd = 40 * 60;
 d2Window = 30;
 % One d2 estimate for the full collect window (short sessions clamp to session length)
 d2Window = collectEnd;

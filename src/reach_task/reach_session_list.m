@@ -32,7 +32,7 @@ sessions = {
 %     'Y15_28-Aug-2025 19_47_07_NeuroBeh'
 %     'Y17_20-Aug-2025 17_34_48_NeuroBeh'
 %     };
-% 
+%  
 % Excluded (generally too few neurons for reliable population analyses):
 
 end
