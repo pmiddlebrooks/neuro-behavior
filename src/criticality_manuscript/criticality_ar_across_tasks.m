@@ -883,6 +883,19 @@ else
   barLabels = repmat({sessionType}, 1, numBars);
 end
 barLabels = cellfun(@char, barLabels, 'UniformOutput', false);
+barLabels = cellfun(@(s) truncate_session_xtick_label(s, 7), barLabels, ...
+  'UniformOutput', false);
+end
+
+function label = truncate_session_xtick_label(label, maxChars)
+% TRUNCATE_SESSION_XTICK_LABEL - Cap session-name tick text length
+if nargin < 2 || isempty(maxChars)
+  maxChars = 7;
+end
+label = char(label);
+if numel(label) > maxChars
+  label = label(1:maxChars);
+end
 end
 
 function plotBase = make_ar_plot_basename(prefix, areaName, brainArea, d2Window, collectStart, collectEnd, multiArea, useLog10D2)

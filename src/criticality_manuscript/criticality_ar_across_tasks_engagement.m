@@ -1218,6 +1218,18 @@ elseif isfield(typeData, 'sessionLabels') && numel(typeData.sessionLabels) >= se
 else
   label = sessionType;
 end
+label = truncate_session_xtick_label(label, 7);
+end
+
+function label = truncate_session_xtick_label(label, maxChars)
+% TRUNCATE_SESSION_XTICK_LABEL - Cap session-name tick text length
+if nargin < 2 || isempty(maxChars)
+  maxChars = 7;
+end
+label = char(label);
+if numel(label) > maxChars
+  label = label(1:maxChars);
+end
 end
 
 function hasData = area_has_engagement_plot_data(plotData, sessionTypes, areaIdx)
