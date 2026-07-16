@@ -48,8 +48,12 @@ end
 
 fprintf('\n=== Criticality PRG Across Task Types ===\n');
 fprintf('PRG method: %s\n', opts.prgMethod);
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
-  (opts.collectEnd - opts.collectStart) / 60);
+if isempty(opts.collectEnd)
+  fprintf('Collect window: [%.1f, full] s\n', opts.collectStart);
+else
+  fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
+    (opts.collectEnd - opts.collectStart) / 60);
+end
 fprintf('PRG blocks: %.1f s, non-overlapping\n', opts.prgWindow);
 fprintf('Kappa at N/%d; bin size: %.3f s; surrogates: %s\n', ...
   opts.finalCutoffDivisor, opts.binSize, opts.surrogateMethod);
@@ -148,7 +152,12 @@ defaults.nMinNeurons = 32;
 defaults.firingRateCheckTime = [];
 defaults.minFiringRate = 0.05;
 defaults.maxFiringRate = 100;
+% Empty collectEnd is a sentinel for "full session" — do not replace
+preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 opts = merge_struct_defaults(opts, defaults);
+if preserveCollectEndEmpty
+  opts.collectEnd = [];
+end
 end
 
 function batchMeta = pack_prg_across_tasks_batch_meta(opts)

@@ -49,7 +49,7 @@ plotD2PopActivity = true;
 % Overlapping sliding-window d2 settings (aligned with run_criticality_ar.m)
 slidingWindowSize = 30;   % seconds
 stepSize = 0.5;           % seconds; overlap when step < window
-stepSize = 30;           % seconds; overlap when step < window
+stepSize = 1;           % seconds; overlap when step < window
 useLog10D2 = true;
 useSubsampling = false;
 nSubsamples = 20;

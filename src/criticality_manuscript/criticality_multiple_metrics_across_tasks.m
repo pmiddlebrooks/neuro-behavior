@@ -1,27 +1,41 @@
 %%
 % Criticality Multiple Metrics Across Task Types (Manuscript)
 %
-% Runs d2 (AR) and avalanche tau/alpha (AV) batch analyses, saves outputs,
-% and plots aligned multi-metric session summaries on shared axes.
+% Runs d2 (AR), avalanche (AV), and PRG batch analyses, saves outputs,
+% plots aligned multi-metric session summaries on shared axes, and optionally
+% a cross-session metric correlation matrix (pooled across task types).
 %
 % Variables:
 %   sessionTypes, collectStart, collectEnd, d2Window, brainArea, areasToPlot
-%   runArBatch, runAvBatch - Run each analysis pipeline
+%   runArBatch, runAvBatch, runPrgBatch - Run each analysis pipeline
 %   loadSavedResults   - If true, load saved .mat outputs when run*Batch false
 %   plotResults        - Create combined d2/tau/alpha figure(s)
+%   plotMetricPairScatters - 1x3 figure: d2 vs tau, d2 vs alpha, tau vs alpha
+%   plotCorrelationMatrix - Pearson corr heatmap across sessions (all tasks)
 %   saveCombinedBatch  - Save merged outputs for plot-only reruns
 %   enablePermutations - If false, observed metrics only (no shuffles; faster)
-%   anchorMetric       - 'd2', 'tau', or 'alpha'; others affine-map onto this scale
+%   useAnchorAffineMap - If true, non-anchor metrics LS-affine-map onto
+%                        anchorMetric (minimize within-session differences).
+%                        If false, markers still share one x-axis (slight
+%                        offsets); secondary metrics use independent range
+%                        maps onto the primary display ylim, with right-side
+%                        axes showing native tau/alpha ticks.
+%   plotSeparatedMetrics - 2x3 figure: d2/tau/alpha (top) and
+%                          decades/kurtosis/D_JS (bottom); consecutive sessions
+%                          linked within each task type on each panel.
+%   anchorMetric       - 'd2', 'tau', or 'alpha' (primary / left axis)
 %   metricsToPlot      - Subset of {'d2','tau','alpha'} markers to draw
 %   splitByEngagement  - If true, interval/reach use engaged vs non-engaged
 %                        analyses; make two plots (engaged and non-engaged),
 %                        each including spontaneous alongside that class.
 %                        Paired plots share d2-aligned y-limits for comparison.
+%                        Correlation matrix always uses full-session metrics.
 %
 % Goal:
 %   One session-grouped plot per brain area with d2, tau, and alpha per session.
-%   Plot is anchored on the chosen metric's native y-limits; the other metrics
-%   are affine-mapped into that space to minimize within-session differences.
+%   Optionally anchor non-anchor metrics onto the chosen metric's y-scale via
+%   affine maps. Optional pair scatters, separated metric panels, and
+%   correlation matrix across sessions.
 
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
@@ -38,12 +52,17 @@ areasToPlot = {};
 
 runArBatch = true;
 runAvBatch = true;
+runPrgBatch = true;
 runEngagementBatch = true;
 loadSavedResults = true;
 plotResults = true;
+plotMetricPairScatters = true;
+plotSeparatedMetrics = true;
+plotCorrelationMatrix = true;
 saveCombinedBatch = false;
 enablePermutations = false;
-anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha'
+useAnchorAffineMap = false;  % false: native scales with independent right axes
+anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % any non-empty subset
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
 splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
@@ -57,6 +76,13 @@ minNeuronsMultiple = 1.2;
 powerLawFitMethod = 'plfit2023';
 avalancheDetectionMode = 'fixedBinMedian';
 
+prgWindow = d2Window;
+if isempty(prgWindow)
+  prgWindow = 30;
+end
+finalCutoffDivisor = 16;
+prgMethod = 'pca';
+
 plotConfig = fill_manuscript_plot_config();
 
 setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
@@ -68,14 +94,10 @@ arBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
   'criticality_ar_across_tasks_batch.mat');
 avBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
   'criticality_av_across_tasks_batch.mat');
+prgBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
+  'criticality_prg_across_tasks_batch.mat');
 engBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
   'criticality_multiple_metrics_engagement_batch.mat');
-if splitByEngagement
-  arBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
-    'criticality_ar_across_tasks_spontaneous_for_engagement_batch.mat');
-  avBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
-    'criticality_av_across_tasks_spontaneous_for_engagement_batch.mat');
-end
 
 fprintf('\n=== Criticality Multiple Metrics Across Tasks ===\n');
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
@@ -90,22 +112,17 @@ else
   fprintf('d2 windows: %.0f s\n', d2Window);
 end
 fprintf('enablePermutations: %d (observed metrics only when false)\n', enablePermutations);
+fprintf('useAnchorAffineMap: %d\n', useAnchorAffineMap);
 fprintf('anchorMetric: %s\n', anchorMetric);
 fprintf('metricsToPlot: %s\n', strjoin(metricsToPlot, ', '));
 fprintf('splitByEngagement: %d\n', splitByEngagement);
+fprintf('plotMetricPairScatters: %d\n', plotMetricPairScatters);
+fprintf('plotSeparatedMetrics: %d\n', plotSeparatedMetrics);
+fprintf('plotCorrelationMatrix: %d\n', plotCorrelationMatrix);
 
-%% AR batch (d2) — full-session / all-window metrics (used for spontaneous, or all types)
-arSessionTypes = sessionTypes;
-if splitByEngagement
-  % Interval/reach come from engagement batch; keep spontaneous (and any other
-  % non-engagement types) on the shared AR pipeline.
-  arSessionTypes = setdiff(sessionTypes, {'interval', 'reach'}, 'stable');
-  if isempty(arSessionTypes)
-    arSessionTypes = {'spontaneous'};
-  end
-end
+% AR batch (d2) — full-session metrics across all requested session types
 arOpts = struct( ...
-  'sessionTypes', {arSessionTypes}, ...
+  'sessionTypes', {sessionTypes}, ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
   'd2Window', d2Window, ...
@@ -132,10 +149,9 @@ else
   error('AR batch required. Set runArBatch true or provide %s', arBatchFile);
 end
 
-%% AV batch (tau, alpha)
-avSessionTypes = arSessionTypes;
+% AV batch (tau, alpha, paramSD, decades, dcc)
 avOpts = struct( ...
-  'sessionTypes', {avSessionTypes}, ...
+  'sessionTypes', {sessionTypes}, ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
   'brainArea', brainArea, ...
@@ -162,7 +178,40 @@ else
   error('AV batch required. Set runAvBatch true or provide %s', avBatchFile);
 end
 
-%% Engagement batch (interval/reach engaged vs non-engaged d2 + tau/alpha)
+% PRG batch (kurtosis / kappaMean, Jensen-Shannon / djsMean)
+prgOpts = struct( ...
+  'sessionTypes', {sessionTypes}, ...
+  'collectStart', collectStart, ...
+  'collectEnd', collectEnd, ...
+  'prgWindow', prgWindow, ...
+  'brainArea', brainArea, ...
+  'brainAreaCombinations', {brainAreaCombinations}, ...
+  'areasToPlot', {areasToPlot}, ...
+  'useSubsampling', useSubsampling, ...
+  'nSubsamples', nSubsamples, ...
+  'nNeuronsSubsample', nNeuronsSubsample, ...
+  'minNeuronsMultiple', minNeuronsMultiple, ...
+  'enableSurrogates', enablePermutations, ...
+  'finalCutoffDivisor', finalCutoffDivisor, ...
+  'prgMethod', prgMethod, ...
+  'plotResults', false, ...
+  'saveBatchResults', true, ...
+  'batchResultsFile', prgBatchFile);
+
+if runPrgBatch
+  prgOut = criticality_prg_across_tasks(prgOpts);
+elseif loadSavedResults && isfile(prgBatchFile)
+  prgOptsLoad = prgOpts;
+  prgOptsLoad.runBatch = false;
+  prgOut = criticality_prg_across_tasks(prgOptsLoad);
+elseif plotCorrelationMatrix
+  error('PRG batch required for correlation matrix. Set runPrgBatch true or provide %s', prgBatchFile);
+else
+  prgOut = [];
+  fprintf('Skipping PRG batch (plotCorrelationMatrix false and runPrgBatch false).\n');
+end
+
+% Engagement batch (interval/reach engaged vs non-engaged d2 + tau/alpha)
 engOut = [];
 if splitByEngagement
   engSessionTypes = intersect(sessionTypes, {'interval', 'reach'}, 'stable');
@@ -205,35 +254,52 @@ end
 combinedOut = struct();
 combinedOut.ar = arOut;
 combinedOut.av = avOut;
+combinedOut.prg = prgOut;
 combinedOut.engagement = engOut;
 combinedOut.sessionTypes = sessionTypes;
 combinedOut.collectStart = collectStart;
 combinedOut.collectEnd = collectEnd;
 combinedOut.d2Window = d2Window;
+combinedOut.prgWindow = prgWindow;
 combinedOut.brainArea = brainArea;
 combinedOut.useLog10D2 = useLog10D2;
 combinedOut.enablePermutations = enablePermutations;
 combinedOut.anchorMetric = anchorMetric;
+combinedOut.useAnchorAffineMap = useAnchorAffineMap;
 combinedOut.metricsToPlot = metricsToPlot;
 combinedOut.splitByEngagement = splitByEngagement;
+combinedOut.plotMetricPairScatters = plotMetricPairScatters;
+combinedOut.plotSeparatedMetrics = plotSeparatedMetrics;
+combinedOut.plotCorrelationMatrix = plotCorrelationMatrix;
 
 if saveCombinedBatch
   save(combinedBatchFile, '-struct', 'combinedOut', '-v7.3');
   fprintf('\nSaved combined batch: %s\n', combinedBatchFile);
 end
 
-%% Combined plotting
+% Combined plotting
 if plotResults
+  if ~exist('plotSeparatedMetrics', 'var') || isempty(plotSeparatedMetrics)
+    plotSeparatedMetrics = true;
+  end
+  if ~exist('plotMetricPairScatters', 'var') || isempty(plotMetricPairScatters)
+    plotMetricPairScatters = true;
+  end
   if isempty(areasToPlot) && ~isempty(brainArea)
     areasToPlot = {brainArea};
   end
   metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
-  if ~ismember(anchorMetric, metricsToPlot)
-    error('anchorMetric "%s" must be included in metricsToPlot.', anchorMetric);
+  if useAnchorAffineMap && ~ismember(anchorMetric, metricsToPlot)
+    error('anchorMetric "%s" must be included in metricsToPlot when useAnchorAffineMap is true.', ...
+      anchorMetric);
   end
 
   fprintf('\n=== Combined plotting ===\n');
-  fprintf('Anchor metric: %s\n', anchorMetric);
+  if useAnchorAffineMap
+    fprintf('Anchor metric: %s (affine map onto this scale)\n', anchorMetric);
+  else
+    fprintf('Anchor affine map: off (native metric scales)\n');
+  end
   fprintf('Markers: %s\n', strjoin(metricsToPlot, ', '));
 
   if ~splitByEngagement
@@ -247,7 +313,21 @@ if plotResults
     fprintf('Areas: %s\n', strjoin(plotAreas, ', '));
     plot_multimetric_d2_tau_alpha_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
       sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-      plotConfig, anchorMetric, '', metricsToPlot, struct());
+      plotConfig, anchorMetric, '', metricsToPlot, struct(), useAnchorAffineMap);
+    if plotSeparatedMetrics
+      if isempty(prgOut) || ~isfield(prgOut, 'plotData')
+        error('PRG plotData required for separated metrics (kurtosis / D_{JS}). Set runPrgBatch true.');
+      end
+      plot_multimetric_separated_axes_across_tasks(arOut.plotData, avOut.plotData, ...
+        prgOut.plotData, plotAreas, sessionTypes, collectStart, collectEnd, d2Window, ...
+        paths, brainArea, useLog10D2, plotConfig, '', metricsToPlot, avOut.plotData, ...
+        finalCutoffDivisor);
+    end
+    if plotMetricPairScatters
+      plot_multimetric_pair_scatters_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
+        sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
+        plotConfig, '');
+    end
   else
     engagementClasses = {'engaged', 'nonEngaged'};
     classViews = struct();
@@ -274,7 +354,7 @@ if plotResults
 
     % Shared maps + y-limits across engaged/non-engaged so d2 axes match
     sharedByArea = compute_shared_engagement_plot_scales(classViews, plotAreas, ...
-      sessionTypes, metricsToPlot, anchorMetric);
+      sessionTypes, metricsToPlot, anchorMetric, useAnchorAffineMap);
 
     for iClass = 1:numel(engagementClasses)
       engClass = engagementClasses{iClass};
@@ -282,19 +362,390 @@ if plotResults
       plot_multimetric_d2_tau_alpha_across_tasks( ...
         classViews.(engClass).ar, classViews.(engClass).av, plotAreas, ...
         sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-        plotConfig, anchorMetric, engClass, metricsToPlot, sharedByArea);
+        plotConfig, anchorMetric, engClass, metricsToPlot, sharedByArea, useAnchorAffineMap);
+      if plotSeparatedMetrics
+        if isempty(prgOut) || ~isfield(prgOut, 'plotData')
+          error('PRG plotData required for separated metrics (kurtosis / D_{JS}).');
+        end
+        % Top row: engagement d2/tau/alpha; bottom: full-session decades + PRG
+        plot_multimetric_separated_axes_across_tasks( ...
+          classViews.(engClass).ar, classViews.(engClass).av, prgOut.plotData, plotAreas, ...
+          sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
+          plotConfig, engClass, metricsToPlot, avOut.plotData, finalCutoffDivisor);
+      end
+      if plotMetricPairScatters
+        plot_multimetric_pair_scatters_across_tasks( ...
+          classViews.(engClass).ar, classViews.(engClass).av, plotAreas, ...
+          sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
+          plotConfig, engClass);
+      end
     end
   end
+end
+
+%% Cross-session metric correlation matrix (pooled across task types)
+if plotCorrelationMatrix
+  if isempty(prgOut) || ~isfield(prgOut, 'plotData')
+    error('PRG plotData required for correlation matrix.');
+  end
+  if isempty(areasToPlot) && ~isempty(brainArea)
+    areasToPlot = {brainArea};
+  end
+  corrAreas = intersect(arOut.plotData.areas, avOut.plotData.areas, 'stable');
+  corrAreas = intersect(corrAreas, prgOut.plotData.areas, 'stable');
+  if ~isempty(areasToPlot)
+    corrAreas = intersect(corrAreas, areasToPlot, 'stable');
+  end
+  if isempty(corrAreas)
+    error('No common brain areas among AR, AV, and PRG for correlation matrix.');
+  end
+  fprintf('\n=== Metric correlation matrix (sessions pooled across tasks) ===\n');
+  fprintf('Areas: %s\n', strjoin(corrAreas, ', '));
+  plot_metric_correlation_matrix_across_sessions( ...
+    arOut, avOut, prgOut, corrAreas, sessionTypes, collectStart, collectEnd, ...
+    d2Window, paths, brainArea, useLog10D2, plotConfig);
 end
 
 fprintf('\n=== Done ===\n');
 
 %% Local functions
 
+function plot_metric_correlation_matrix_across_sessions(arOut, avOut, prgOut, areasToPlot, ...
+    sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, plotConfig)
+% PLOT_METRIC_CORRELATION_MATRIX_ACROSS_SESSIONS - Pearson corr heatmap per area
+%
+% Variables:
+%   arOut/avOut/prgOut - Batch outputs with plotData (and AR batchResults fallback)
+%   areasToPlot        - Brain areas to plot
+%   sessionTypes       - Session types pooled into one correlation
+%
+% Goal:
+%   Each matrix entry is corr(metric_i, metric_j) across sessions (all tasks).
+
+if nargin < 12 || isempty(plotConfig)
+  plotConfig = fill_manuscript_plot_config();
+end
+
+metricKeys = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', 'djs', ...
+  'meanSpikesPerBinPerNeuron'};
+metricLabels = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', ...
+  'JS distance', 'spikes/bin/neuron'};
+
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript', 'figures');
+if ~exist(saveDir, 'dir')
+  mkdir(saveDir);
+end
+
+for iArea = 1:numel(areasToPlot)
+  areaName = areasToPlot{iArea};
+  areaIdxAr = find(strcmp(arOut.plotData.areas, areaName), 1);
+  areaIdxAv = find(strcmp(avOut.plotData.areas, areaName), 1);
+  areaIdxPrg = find(strcmp(prgOut.plotData.areas, areaName), 1);
+  if isempty(areaIdxAr) || isempty(areaIdxAv) || isempty(areaIdxPrg)
+    warning('Skipping correlation for area %s (missing in one pipeline).', areaName);
+    continue;
+  end
+
+  sessionTable = build_correlation_metric_session_table( ...
+    arOut, avOut, prgOut, sessionTypes, areaIdxAr, areaIdxAv, areaIdxPrg, areaName);
+  if height(sessionTable) < 3
+    warning('Skipping correlation for area %s: only %d sessions with metrics.', ...
+      areaName, height(sessionTable));
+    continue;
+  end
+
+  metricMat = nan(height(sessionTable), numel(metricKeys));
+  for iMetric = 1:numel(metricKeys)
+    metricMat(:, iMetric) = sessionTable.(metricKeys{iMetric});
+  end
+
+  corrMat = corrcoef(metricMat, 'Rows', 'pairwise');
+  nPair = count_pairwise_session_counts(metricMat);
+
+  fprintf('  %s: %d sessions in correlation table\n', areaName, height(sessionTable));
+  for iMetric = 1:numel(metricKeys)
+    nValid = sum(isfinite(metricMat(:, iMetric)));
+    fprintf('    %s: %d finite\n', metricLabels{iMetric}, nValid);
+  end
+
+  fig = figure('Color', 'w', 'Position', [100 100 780 700]);
+  ax = axes(fig);
+  imagesc(ax, corrMat);
+  axis(ax, 'image');
+  set(ax, 'YDir', 'normal');
+  colormap(ax, correlation_blue_white_red_colormap(256));
+  caxis(ax, [-1 1]); %#ok<CAXIS>
+  cb = colorbar(ax);
+  cb.Label.String = 'Pearson r (across sessions)';
+  cb.Label.FontSize = plotConfig.axisLabelFontSize;
+
+  nMetric = numel(metricLabels);
+  set(ax, 'XTick', 1:nMetric, 'XTickLabel', metricLabels, ...
+    'YTick', 1:nMetric, 'YTickLabel', metricLabels, ...
+    'TickLabelInterpreter', 'none', 'FontSize', plotConfig.tickLabelFontSize);
+  xtickangle(ax, 45);
+  xlabel(ax, 'Metric', 'FontSize', plotConfig.axisLabelFontSize);
+  ylabel(ax, 'Metric', 'FontSize', plotConfig.axisLabelFontSize);
+
+  for iRow = 1:nMetric
+    for iCol = 1:nMetric
+      rVal = corrMat(iRow, iCol);
+      if ~isfinite(rVal)
+        continue;
+      end
+      if abs(rVal) > 0.55
+        textColor = [1 1 1];
+      else
+        textColor = [0.1 0.1 0.1];
+      end
+      text(ax, iCol, iRow, sprintf('%.2f\nn=%d', rVal, nPair(iRow, iCol)), ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+        'FontSize', max(7, plotConfig.tickLabelFontSize - 2), 'Color', textColor);
+    end
+  end
+
+  titleStr = sprintf('Metric correlations across sessions (%s)', areaName);
+  if useLog10D2
+    titleStr = [titleStr, '; d2 = log10(d2)']; %#ok<AGROW>
+  end
+  title(ax, titleStr, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
+
+  plotBase = make_correlation_matrix_plot_basename(areaName, brainArea, d2Window, ...
+    collectStart, collectEnd, useLog10D2);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+  fprintf('Saved correlation matrix: %s\n', fullfile(saveDir, plotBase));
+end
+end
+
+function sessionTable = build_correlation_metric_session_table(arOut, avOut, prgOut, ...
+    sessionTypes, areaIdxAr, areaIdxAv, areaIdxPrg, areaName)
+% BUILD_CORRELATION_METRIC_SESSION_TABLE - One row per session, metrics joined by name
+%
+% Variables:
+%   arOut/avOut/prgOut - Pipeline outputs
+%   sessionTypes       - Types to pool
+%   areaIdx*           - Area indices in each plotData
+%   areaName           - Area name (for AR batchResults rate fallback)
+%
+% Goal:
+%   Align d2, AV exponents, PRG kurtosis/JS, and mean spikes/bin/neuron.
+
+arPlotData = arOut.plotData;
+avPlotData = avOut.plotData;
+prgPlotData = prgOut.plotData;
+
+sessionTypeCol = {};
+sessionNameCol = {};
+d2Col = [];
+tauCol = [];
+alphaCol = [];
+paramSDCol = [];
+decadesCol = [];
+dccCol = [];
+kurtosisCol = [];
+djsCol = [];
+meanSpikesCol = [];
+
+for t = 1:numel(sessionTypes)
+  sessionType = sessionTypes{t};
+  typeKey = matlab.lang.makeValidName(sessionType);
+  if ~isfield(arPlotData.byType, typeKey) || ~isfield(avPlotData.byType, typeKey) ...
+      || ~isfield(prgPlotData.byType, typeKey)
+    continue;
+  end
+  arType = arPlotData.byType.(typeKey);
+  avType = avPlotData.byType.(typeKey);
+  prgType = prgPlotData.byType.(typeKey);
+  arNames = get_type_session_names(arType);
+  if areaIdxAr > numel(arType.d2Mean) || isempty(arType.d2Mean{areaIdxAr})
+    continue;
+  end
+  numAr = numel(arType.d2Mean{areaIdxAr});
+
+  for i = 1:numAr
+    sessionName = arNames{min(i, numel(arNames))};
+    avIdx = find_matching_session_index(avType, sessionName, i);
+    prgIdx = find_matching_session_index(prgType, sessionName, i);
+    if isempty(avIdx) || isempty(prgIdx)
+      continue;
+    end
+
+    d2Val = get_metric_series_value(arType.d2Mean{areaIdxAr}, i);
+    tauVal = get_type_cell_metric(avType, 'tau', areaIdxAv, avIdx);
+    alphaVal = get_type_cell_metric(avType, 'alpha', areaIdxAv, avIdx);
+    paramSDVal = get_type_cell_metric(avType, 'paramSD', areaIdxAv, avIdx);
+    decadesVal = get_type_cell_metric(avType, 'decades', areaIdxAv, avIdx);
+    dccVal = get_type_cell_metric(avType, 'dcc', areaIdxAv, avIdx);
+    kurtosisVal = get_type_cell_metric(prgType, 'kappaMean', areaIdxPrg, prgIdx);
+    djsVal = get_type_cell_metric(prgType, 'djsMean', areaIdxPrg, prgIdx);
+    meanSpikesVal = get_mean_spikes_per_bin_per_neuron_session( ...
+      arType, arOut, sessionType, sessionName, areaIdxAr, i, areaName);
+
+    % Keep session if at least two metrics are finite (pairwise corr handles the rest)
+    metricVec = [d2Val, tauVal, alphaVal, paramSDVal, decadesVal, dccVal, ...
+      kurtosisVal, djsVal, meanSpikesVal];
+    if sum(isfinite(metricVec)) < 2
+      continue;
+    end
+
+    sessionTypeCol{end + 1, 1} = sessionType; %#ok<AGROW>
+    sessionNameCol{end + 1, 1} = sessionName; %#ok<AGROW>
+    d2Col(end + 1, 1) = d2Val; %#ok<AGROW>
+    tauCol(end + 1, 1) = tauVal; %#ok<AGROW>
+    alphaCol(end + 1, 1) = alphaVal; %#ok<AGROW>
+    paramSDCol(end + 1, 1) = paramSDVal; %#ok<AGROW>
+    decadesCol(end + 1, 1) = decadesVal; %#ok<AGROW>
+    dccCol(end + 1, 1) = dccVal; %#ok<AGROW>
+    kurtosisCol(end + 1, 1) = kurtosisVal; %#ok<AGROW>
+    djsCol(end + 1, 1) = djsVal; %#ok<AGROW>
+    meanSpikesCol(end + 1, 1) = meanSpikesVal; %#ok<AGROW>
+  end
+end
+
+sessionTable = table(sessionTypeCol, sessionNameCol, d2Col, tauCol, alphaCol, ...
+  paramSDCol, decadesCol, dccCol, kurtosisCol, djsCol, meanSpikesCol, ...
+  'VariableNames', {'sessionType', 'sessionName', 'd2', 'tau', 'alpha', ...
+  'paramSD', 'decades', 'dcc', 'kurtosis', 'djs', 'meanSpikesPerBinPerNeuron'});
+end
+
+function val = get_type_cell_metric(typeData, fieldName, areaIdx, sessionIdx)
+% GET_TYPE_CELL_METRIC - Scalar from plotData.byType cell series
+val = nan;
+if ~isfield(typeData, fieldName) || areaIdx > numel(typeData.(fieldName))
+  return;
+end
+series = typeData.(fieldName){areaIdx};
+val = get_metric_series_value(series, sessionIdx);
+end
+
+function rateVal = get_mean_spikes_per_bin_per_neuron_session(arType, arOut, sessionType, ...
+    sessionName, areaIdxAr, sessionIdx, areaName)
+% GET_MEAN_SPIKES_PER_BIN_PER_NEURON_SESSION - Prefer plotData; else batchResults
+%
+% Variables:
+%   arType      - AR plotData.byType entry
+%   arOut       - Full AR output (batchResults for fallback)
+%   sessionType - Session type string
+%   sessionName - Session name for batch lookup
+%   areaIdxAr   - Area index in plotData
+%   sessionIdx  - Index within type series
+%   areaName    - Area name for batchResults lookup
+%
+% Goal:
+%   Session mean of (pop spikes/bin) / nNeurons.
+
+rateVal = nan;
+if isfield(arType, 'meanSpikesPerBinPerNeuron') ...
+    && areaIdxAr <= numel(arType.meanSpikesPerBinPerNeuron) ...
+    && ~isempty(arType.meanSpikesPerBinPerNeuron{areaIdxAr})
+  rateVal = get_metric_series_value(arType.meanSpikesPerBinPerNeuron{areaIdxAr}, sessionIdx);
+  if isfinite(rateVal)
+    return;
+  end
+end
+
+if ~isfield(arOut, 'batchResults') || isempty(arOut.batchResults)
+  return;
+end
+batchResults = arOut.batchResults;
+for s = 1:numel(batchResults)
+  if ~batchResults(s).success || isempty(batchResults(s).results)
+    continue;
+  end
+  if ~strcmp(batchResults(s).sessionType, sessionType)
+    continue;
+  end
+  if ~strcmp(char(batchResults(s).sessionName), char(sessionName))
+    continue;
+  end
+  results = batchResults(s).results;
+  areaIdxRes = find(strcmp(results.areas, areaName), 1);
+  if isempty(areaIdxRes)
+    return;
+  end
+  rateVal = summarize_mean_spikes_from_ar_results(results, areaIdxRes);
+  return;
+end
+end
+
+function rateVal = summarize_mean_spikes_from_ar_results(results, areaIdx)
+% SUMMARIZE_MEAN_SPIKES_FROM_AR_RESULTS - mean(popActivityWindows) / nNeurons
+rateVal = nan;
+if ~isfield(results, 'popActivityWindows') || areaIdx > numel(results.popActivityWindows) ...
+    || isempty(results.popActivityWindows{areaIdx})
+  return;
+end
+popWin = results.popActivityWindows{areaIdx}(:);
+popWin = popWin(isfinite(popWin));
+if isempty(popWin)
+  return;
+end
+nNeurons = nan;
+if isfield(results, 'nNeurons') && numel(results.nNeurons) >= areaIdx
+  nNeurons = results.nNeurons(areaIdx);
+end
+if ~(isfinite(nNeurons) && nNeurons > 0)
+  return;
+end
+rateVal = mean(popWin) / nNeurons;
+end
+
+function nPair = count_pairwise_session_counts(metricMat)
+% COUNT_PAIRWISE_SESSION_COUNTS - Finite-pair counts for each metric pair
+nMetric = size(metricMat, 2);
+nPair = zeros(nMetric, nMetric);
+for i = 1:nMetric
+  for j = 1:nMetric
+    nPair(i, j) = sum(isfinite(metricMat(:, i)) & isfinite(metricMat(:, j)));
+  end
+end
+end
+
+function cmap = correlation_blue_white_red_colormap(nLevels)
+% CORRELATION_BLUE_WHITE_RED_COLORMAP - Diverging map centered at 0
+if nargin < 1 || isempty(nLevels)
+  nLevels = 256;
+end
+halfN = floor(nLevels / 2);
+blueToWhite = [linspace(0.15, 1, halfN)', linspace(0.35, 1, halfN)', linspace(0.75, 1, halfN)'];
+whiteToRed = [linspace(1, 0.75, nLevels - halfN)', linspace(1, 0.15, nLevels - halfN)', ...
+  linspace(1, 0.15, nLevels - halfN)'];
+cmap = [blueToWhite; whiteToRed];
+end
+
+function plotBase = make_correlation_matrix_plot_basename(areaName, brainArea, d2Window, ...
+    collectStart, collectEnd, useLog10D2)
+% MAKE_CORRELATION_MATRIX_PLOT_BASENAME - File stem for correlation heatmap
+if isempty(brainArea)
+  areaTag = areaName;
+else
+  areaTag = brainArea;
+end
+if isempty(d2Window)
+  winTag = 'full';
+else
+  winTag = sprintf('win%.0fs', d2Window);
+end
+if isempty(collectEnd)
+  timeTag = sprintf('%.0f-full', collectStart);
+else
+  timeTag = sprintf('%.0f-%.0fs', collectStart, collectEnd);
+end
+logTag = '';
+if useLog10D2
+  logTag = '_log10d2';
+end
+plotBase = sprintf('metric_corr_across_sessions_%s_%s_%s%s', areaTag, winTag, timeTag, logTag);
+end
+
 function plot_multimetric_d2_tau_alpha_across_tasks(arPlotData, avPlotData, areasToPlot, ...
     sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-    plotConfig, anchorMetric, engagementTag, metricsToPlot, sharedByArea)
+    plotConfig, anchorMetric, engagementTag, metricsToPlot, sharedByArea, useAnchorAffineMap)
 % PLOT_MULTIMETRIC_D2_TAU_ALPHA_ACROSS_TASKS - Aligned d2/tau/alpha session plot
+%
+% Variables:
+%   useAnchorAffineMap - If true, affine-map non-anchor metrics onto anchorMetric
 
 if nargin < 11 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
@@ -311,14 +762,24 @@ end
 if nargin < 15 || isempty(sharedByArea)
   sharedByArea = struct();
 end
+if nargin < 16 || isempty(useAnchorAffineMap)
+  useAnchorAffineMap = true;
+end
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
 anchorMetric = lower(char(anchorMetric));
 validAnchors = {'d2', 'tau', 'alpha'};
-if ~ismember(anchorMetric, validAnchors)
-  error('anchorMetric must be one of: %s', strjoin(validAnchors, ', '));
-end
-if ~ismember(anchorMetric, metricsToPlot)
-  error('anchorMetric "%s" must be included in metricsToPlot.', anchorMetric);
+if useAnchorAffineMap
+  if ~ismember(anchorMetric, validAnchors)
+    error('anchorMetric must be one of: %s', strjoin(validAnchors, ', '));
+  end
+  if ~ismember(anchorMetric, metricsToPlot)
+    error('anchorMetric "%s" must be included in metricsToPlot.', anchorMetric);
+  end
+else
+  % Primary ylabel uses first plotted metric when not anchoring
+  if ~ismember(anchorMetric, metricsToPlot)
+    anchorMetric = metricsToPlot{1};
+  end
 end
 engagementTag = char(engagementTag);
 
@@ -363,28 +824,64 @@ for a = 1:numel(areasToPlot)
     maps = sharedByArea.(areaKey).maps;
   else
     maps = compute_anchored_metric_maps(anchorMetric, sessionTable.d2Mean, ...
-      sessionTable.tauMean, sessionTable.alphaMean, metricsToPlot);
+      sessionTable.tauMean, sessionTable.alphaMean, metricsToPlot, useAnchorAffineMap);
   end
 
+  % Native metric values (always); display values use affine maps when anchoring
+  nativeVals = struct( ...
+    'd2', sessionTable.d2Mean, ...
+    'tau', sessionTable.tauMean, ...
+    'alpha', sessionTable.alphaMean);
+  nativeSems = struct( ...
+    'd2', sessionTable.d2Sem, ...
+    'tau', sessionTable.tauSem, ...
+    'alpha', sessionTable.alphaSem);
   yVals = struct();
   ySems = struct();
-  yVals.d2 = apply_metric_affine_map(sessionTable.d2Mean, maps.d2);
-  yVals.tau = apply_metric_affine_map(sessionTable.tauMean, maps.tau);
-  yVals.alpha = apply_metric_affine_map(sessionTable.alphaMean, maps.alpha);
-  ySems.d2 = abs(maps.d2.gain) * sessionTable.d2Sem;
-  ySems.tau = abs(maps.tau.gain) * sessionTable.tauSem;
-  ySems.alpha = abs(maps.alpha.gain) * sessionTable.alphaSem;
+  yVals.d2 = apply_metric_affine_map(nativeVals.d2, maps.d2);
+  yVals.tau = apply_metric_affine_map(nativeVals.tau, maps.tau);
+  yVals.alpha = apply_metric_affine_map(nativeVals.alpha, maps.alpha);
+  ySems.d2 = abs(maps.d2.gain) * nativeSems.d2;
+  ySems.tau = abs(maps.tau.gain) * nativeSems.tau;
+  ySems.alpha = abs(maps.alpha.gain) * nativeSems.alpha;
 
   fig = figure('Color', 'w', 'Name', sprintf('%s — %s', strjoin(metricsToPlot, ' '), areaName));
   position_figure_full_monitor(fig);
   axMain = axes(fig);
   hold(axMain, 'on');
 
+  % When not affine-anchoring, still plot all markers on one axes so x positions
+  % align (with slight per-metric offset). Secondary metrics are independently
+  % range-mapped onto the primary display ylim; right axes show native ticks.
+  if ~useAnchorAffineMap
+    if isfield(sharedByArea, areaKey) && isfield(sharedByArea.(areaKey), 'maps') ...
+        && isfield(sharedByArea.(areaKey), 'yLim') ...
+        && numel(sharedByArea.(areaKey).yLim) == 2
+      maps = sharedByArea.(areaKey).maps;
+      yLimPrimary = sharedByArea.(areaKey).yLim;
+    else
+      yLimPrimary = compute_native_ylim_for_metric(nativeVals.(anchorMetric));
+      if isempty(yLimPrimary)
+        close(fig);
+        continue;
+      end
+      maps = compute_independent_range_maps(anchorMetric, nativeVals, metricsToPlot, yLimPrimary);
+    end
+    yVals.d2 = apply_metric_affine_map(nativeVals.d2, maps.d2);
+    yVals.tau = apply_metric_affine_map(nativeVals.tau, maps.tau);
+    yVals.alpha = apply_metric_affine_map(nativeVals.alpha, maps.alpha);
+    ySems.d2 = abs(maps.d2.gain) * nativeSems.d2;
+    ySems.tau = abs(maps.tau.gain) * nativeSems.tau;
+    ySems.alpha = abs(maps.alpha.gain) * nativeSems.alpha;
+  end
+
   legendHandles = [];
   legendLabels = {};
   xCursor = 0;
   xticksCenters = [];
   xtickLabels = {};
+  % Per-session marker positions for within-session connector lines
+  sessionConnect = struct('x', {{}}, 'y', {{}}, 'ax', {{}}, 'color', {{}});
 
   for t = 1:numel(sessionTypes)
     sessionType = sessionTypes{t};
@@ -397,18 +894,37 @@ for a = 1:numel(areasToPlot)
     numSessions = numel(rowIdx);
     xPos = xCursor + (1:numSessions);
 
-    for m = 1:nMetrics
-      metricName = metricsToPlot{m};
-      faceColor = taskColor;
-      if ~metricFill.(metricName)
-        faceColor = 'none';
+    for iSess = 1:numSessions
+      connectX = [];
+      connectY = [];
+      connectAx = {};
+      for m = 1:nMetrics
+        metricName = metricsToPlot{m};
+        faceColor = taskColor;
+        if ~metricFill.(metricName)
+          faceColor = 'none';
+        end
+        % Shared x center per session; slight metric offset for visibility
+        xMetric = xPos(iSess) + xOffsets(m);
+        yMetric = yVals.(metricName)(rowIdx(iSess));
+        ySem = ySems.(metricName)(rowIdx(iSess));
+        hMetric = plot_metric_errorbar_group(axMain, xMetric, yMetric, ySem, ...
+          metricMarkers.(metricName), taskColor, faceColor, plotConfig);
+        if isempty(legendHandles) || ~ismember(metricLabels.(metricName), legendLabels)
+          legendHandles(end + 1) = hMetric; %#ok<AGROW>
+          legendLabels{end + 1} = metricLabels.(metricName); %#ok<AGROW>
+        end
+        if isfinite(xMetric) && isfinite(yMetric)
+          connectX(end + 1) = xMetric; %#ok<AGROW>
+          connectY(end + 1) = yMetric; %#ok<AGROW>
+          connectAx{end + 1} = axMain; %#ok<AGROW>
+        end
       end
-      hMetric = plot_metric_errorbar_group(axMain, xPos + xOffsets(m), ...
-        yVals.(metricName)(rowIdx), ySems.(metricName)(rowIdx), ...
-        metricMarkers.(metricName), taskColor, faceColor, plotConfig);
-      if isempty(legendHandles) || ~ismember(metricLabels.(metricName), legendLabels)
-        legendHandles(end + 1) = hMetric; %#ok<AGROW>
-        legendLabels{end + 1} = metricLabels.(metricName); %#ok<AGROW>
+      if numel(connectX) >= 2
+        sessionConnect.x{end + 1} = connectX; %#ok<AGROW>
+        sessionConnect.y{end + 1} = connectY; %#ok<AGROW>
+        sessionConnect.ax{end + 1} = connectAx; %#ok<AGROW>
+        sessionConnect.color{end + 1} = taskColor; %#ok<AGROW>
       end
     end
 
@@ -419,18 +935,33 @@ for a = 1:numel(areasToPlot)
     xCursor = xPos(end) + 1.5;
   end
 
-  if isfield(sharedByArea, areaKey) && isfield(sharedByArea.(areaKey), 'yLim') ...
-      && numel(sharedByArea.(areaKey).yLim) == 2
-    yLimPlot = sharedByArea.(areaKey).yLim;
+  if isempty(xticksCenters)
+    close(fig);
+    continue;
+  end
+  xLimPlot = [min(xticksCenters) - 0.8, max(xticksCenters) + 0.8];
+
+  if useAnchorAffineMap
+    if isfield(sharedByArea, areaKey) && isfield(sharedByArea.(areaKey), 'yLim') ...
+        && numel(sharedByArea.(areaKey).yLim) == 2
+      yLimPlot = sharedByArea.(areaKey).yLim;
+    else
+      yLimPlot = compute_display_ylim_for_metrics(yVals, metricsToPlot, anchorMetric);
+    end
   else
-    yLimPlot = compute_display_ylim_for_metrics(yVals, metricsToPlot, anchorMetric);
+    if isfield(sharedByArea, areaKey) && isfield(sharedByArea.(areaKey), 'yLim') ...
+        && numel(sharedByArea.(areaKey).yLim) == 2
+      yLimPlot = sharedByArea.(areaKey).yLim;
+    else
+      yLimPlot = compute_native_ylim_for_metric(nativeVals.(anchorMetric));
+    end
   end
   if isempty(yLimPlot) || ~all(isfinite(yLimPlot))
     close(fig);
     continue;
   end
   ylim(axMain, yLimPlot);
-  xlim(axMain, [min(xticksCenters) - 0.8, max(xticksCenters) + 0.8]);
+  xlim(axMain, xLimPlot);
   set(axMain, 'XTick', xticksCenters, 'XTickLabel', xtickLabels, 'XTickLabelRotation', 45);
   grid(axMain, 'off');
   xlabel(axMain, 'Session', 'FontSize', plotConfig.axisLabelFontSize);
@@ -439,6 +970,7 @@ for a = 1:numel(areasToPlot)
   set(axMain, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
     'Box', 'off', 'TickDir', 'out');
 
+  % Right-side native axes for non-primary metrics (affine or independent range maps)
   rightOffset = 1.0;
   for m = 1:nMetrics
     metricName = metricsToPlot{m};
@@ -450,13 +982,21 @@ for a = 1:numel(areasToPlot)
     rightOffset = rightOffset + 0.1;
   end
 
+  % Within-session lines linking that session's metric markers
+  draw_within_session_metric_connectors(fig, sessionConnect, plotConfig);
+
   if ~isempty(legendHandles)
     legend(axMain, legendHandles, legendLabels, 'Location', 'best', ...
       'FontSize', plotConfig.legendFontSize);
   end
   hold(axMain, 'off');
 
-  fprintf('  Anchor: %s | maps (display = gain * metric + offset):\n', anchorMetric);
+  if useAnchorAffineMap
+    fprintf('  Anchor: %s | maps (display = gain * metric + offset):\n', anchorMetric);
+  else
+    fprintf('  Native scales (independent range maps onto %s display; right axes):\n', ...
+      anchorMetric);
+  end
   for m = 1:nMetrics
     metricName = metricsToPlot{m};
     fprintf('    %s: gain=%.4g, offset=%.4g\n', metricName, maps.(metricName).gain, ...
@@ -471,23 +1011,418 @@ for a = 1:numel(areasToPlot)
   end
   engTitle = format_engagement_title_tag(engagementTag);
   metricTitle = strjoin(metricsToPlot, ', ');
-  if ~isempty(brainArea)
-    titleStr = sprintf('%s (anchor=%s)%s — %s [%s, %s d2 windows]', ...
-      metricTitle, anchorMetric, engTitle, brainArea, collectTag, winTag);
+  if useAnchorAffineMap
+    scaleTag = sprintf('anchor=%s', anchorMetric);
   else
-    titleStr = sprintf('%s (anchor=%s)%s — %s [%s, %s d2 windows]', ...
-      metricTitle, anchorMetric, engTitle, areaName, collectTag, winTag);
+    scaleTag = 'native scales';
+  end
+  if ~isempty(brainArea)
+    titleStr = sprintf('%s (%s)%s — %s [%s, %s d2 windows]', ...
+      metricTitle, scaleTag, engTitle, brainArea, collectTag, winTag);
+  else
+    titleStr = sprintf('%s (%s)%s — %s [%s, %s d2 windows]', ...
+      metricTitle, scaleTag, engTitle, areaName, collectTag, winTag);
   end
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
   plotBase = make_multimetric_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2, anchorMetric, engagementTag, metricsToPlot);
+    collectStart, collectEnd, useLog10D2, anchorMetric, engagementTag, metricsToPlot, ...
+    useAnchorAffineMap);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
 end
 
 fprintf('\nAll combined figures saved to %s\n', saveDir);
+end
+
+function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, prgPlotData, ...
+    areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
+    useLog10D2, plotConfig, engagementTag, metricsToPlot, avPlotDataDecades, ...
+    finalCutoffDivisor)
+% PLOT_MULTIMETRIC_SEPARATED_AXES_ACROSS_TASKS - 2x3 panels of session metrics
+%
+% Layout:
+%   Top:    d2 | tau | alpha
+%   Bottom: decades | kurtosis | D_JS
+%
+% Variables:
+%   arPlotData / avPlotData - Sources for d2 / tau / alpha (may be engagement views)
+%   prgPlotData             - PRG plotData for kurtosis (kappaMean) and D_JS
+%   avPlotDataDecades       - AV plotData used for decades (full-session when
+%                             engagement av views lack decades); defaults to avPlotData
+%   metricsToPlot           - Controls which of d2/tau/alpha appear in the top row
+%   finalCutoffDivisor      - PRG kappa reported at N/finalCutoffDivisor (ylabel)
+%
+% Goal:
+%   Same session-level data as the combined plot, each metric on its own axis.
+%   Within each task type, consecutive session markers are connected by a line.
+
+if nargin < 12 || isempty(plotConfig)
+  plotConfig = fill_manuscript_plot_config();
+end
+if nargin < 13 || isempty(engagementTag)
+  engagementTag = '';
+end
+if nargin < 14 || isempty(metricsToPlot)
+  metricsToPlot = {'d2', 'tau', 'alpha'};
+end
+if nargin < 15 || isempty(avPlotDataDecades)
+  avPlotDataDecades = avPlotData;
+end
+if nargin < 16 || isempty(finalCutoffDivisor)
+  if isfield(prgPlotData, 'finalCutoffDivisor') && ~isempty(prgPlotData.finalCutoffDivisor)
+    finalCutoffDivisor = prgPlotData.finalCutoffDivisor;
+  else
+    finalCutoffDivisor = 4;
+  end
+end
+metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
+engagementTag = char(engagementTag);
+
+if useLog10D2
+  d2Label = 'log_{10}(d2)';
+else
+  d2Label = 'd2';
+end
+kurtosisLabel = sprintf('kurtosis (N = %d)', finalCutoffDivisor);
+djsLabel = sprintf('D_{JS} (N = %d)', finalCutoffDivisor);
+
+% Fixed 2x3 panel order
+panelMetricKeys = {'d2', 'tau', 'alpha', 'decades', 'kurtosis', 'djs'};
+labelByKey = struct('d2', d2Label, 'tau', 'tau', 'alpha', 'alpha', ...
+  'decades', 'decades', 'kurtosis', kurtosisLabel, 'djs', djsLabel);
+fieldByKey = struct('d2', 'd2Mean', 'tau', 'tauMean', 'alpha', 'alphaMean', ...
+  'decades', 'decades', 'kurtosis', 'kurtosis', 'djs', 'djs');
+semByKey = struct('d2', 'd2Sem', 'tau', 'tauSem', 'alpha', 'alphaSem', ...
+  'decades', 'decadesSem', 'kurtosis', 'kurtosisSem', 'djs', 'djsSem');
+% d2 / decades / kurtosis / Djs: filled circles; tau: open square; alpha: open diamond
+markerByKey = struct('d2', 'o', 'tau', 's', 'alpha', 'd', ...
+  'decades', 'o', 'kurtosis', 'o', 'djs', 'o');
+fillByKey = struct('d2', true, 'tau', false, 'alpha', false, ...
+  'decades', true, 'kurtosis', true, 'djs', true);
+
+panelYFields = cell(1, 6);
+panelSemFields = cell(1, 6);
+panelLabels = cell(1, 6);
+for iPanel = 1:6
+  key = panelMetricKeys{iPanel};
+  panelYFields{iPanel} = fieldByKey.(key);
+  panelSemFields{iPanel} = semByKey.(key);
+  panelLabels{iPanel} = labelByKey.(key);
+end
+
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+if ~exist(saveDir, 'dir')
+  mkdir(saveDir);
+end
+
+for a = 1:numel(areasToPlot)
+  areaName = areasToPlot{a};
+  areaIdxAr = find(strcmp(arPlotData.areas, areaName), 1);
+  areaIdxAv = find(strcmp(avPlotData.areas, areaName), 1);
+  areaIdxAvDec = find(strcmp(avPlotDataDecades.areas, areaName), 1);
+  areaIdxPrg = find(strcmp(prgPlotData.areas, areaName), 1);
+  if isempty(areaIdxAr) || isempty(areaIdxAv)
+    continue;
+  end
+  if isempty(areaIdxAvDec)
+    areaIdxAvDec = areaIdxAv;
+    avPlotDataDecades = avPlotData;
+  end
+  if isempty(areaIdxPrg)
+    warning('Skipping separated metrics for %s: area missing in PRG plotData.', areaName);
+    continue;
+  end
+
+  sessionTable = build_separated_metrics_session_table( ...
+    arPlotData, avPlotData, prgPlotData, avPlotDataDecades, sessionTypes, ...
+    areaIdxAr, areaIdxAv, areaIdxPrg, areaIdxAvDec, {'d2', 'tau', 'alpha'});
+  if isempty(sessionTable)
+    fprintf('Skipping separated metrics for %s: no aligned sessions.\n', areaName);
+    continue;
+  end
+
+  fig = figure('Color', 'w', 'Name', sprintf('Separated metrics — %s', areaName));
+  position_figure_full_monitor(fig);
+
+  for iPanel = 1:6
+    metricKey = panelMetricKeys{iPanel};
+    ax = subplot(2, 3, iPanel, 'Parent', fig);
+    hold(ax, 'on');
+    xCursor = 0;
+    xticksCenters = [];
+    xtickLabels = {};
+    yField = panelYFields{iPanel};
+    semField = panelSemFields{iPanel};
+
+    for t = 1:numel(sessionTypes)
+      sessionType = sessionTypes{t};
+      rowMask = strcmp(sessionTable.sessionType, sessionType);
+      if ~any(rowMask)
+        continue;
+      end
+      taskColor = colors_for_tasks(sessionType);
+      rowIdx = find(rowMask);
+      numSessions = numel(rowIdx);
+      xPos = xCursor + (1:numSessions);
+      yPos = sessionTable.(yField)(rowIdx);
+      ySem = sessionTable.(semField)(rowIdx);
+
+      faceColor = taskColor;
+      if ~fillByKey.(metricKey)
+        faceColor = 'none';
+      end
+
+      validLine = isfinite(xPos(:)) & isfinite(yPos(:));
+      if sum(validLine) >= 2
+        plot(ax, xPos(validLine), yPos(validLine), '-', ...
+          'Color', 0.55 * taskColor + 0.45 * [1 1 1], ...
+          'LineWidth', max(1, plotConfig.lineWidth - 0.25), 'HandleVisibility', 'off');
+      end
+
+      plot_metric_errorbar_group(ax, xPos, yPos, ySem, ...
+        markerByKey.(metricKey), taskColor, faceColor, plotConfig);
+
+      for i = 1:numSessions
+        xticksCenters(end + 1) = xPos(i); %#ok<AGROW>
+        xtickLabels{end + 1} = char(sessionTable.sessionLabel(rowIdx(i))); %#ok<AGROW>
+      end
+      xCursor = xPos(end) + 1.5;
+    end
+
+    yLimPlot = compute_native_ylim_for_metric(sessionTable.(yField));
+    if ~isempty(yLimPlot)
+      ylim(ax, yLimPlot);
+    end
+    if ~isempty(xticksCenters)
+      xlim(ax, [min(xticksCenters) - 0.8, max(xticksCenters) + 0.8]);
+      set(ax, 'XTick', xticksCenters, 'XTickLabel', xtickLabels, 'XTickLabelRotation', 45);
+    end
+    xlabel(ax, 'Session', 'FontSize', plotConfig.axisLabelFontSize);
+    ylabel(ax, panelLabels{iPanel}, 'FontSize', plotConfig.axisLabelFontSize, ...
+      'Interpreter', ternary_metric_label_interpreter(panelLabels{iPanel}));
+    set(ax, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
+      'Box', 'off', 'TickDir', 'out');
+    hold(ax, 'off');
+  end
+
+  collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
+  if isempty(d2Window)
+    winTag = 'full';
+  else
+    winTag = sprintf('%.0fs', d2Window);
+  end
+  engTitle = format_engagement_title_tag(engagementTag);
+  if ~isempty(brainArea)
+    titleStr = sprintf('Separated metrics%s — %s [%s, %s d2 windows]', ...
+      engTitle, brainArea, collectTag, winTag);
+  else
+    titleStr = sprintf('Separated metrics%s — %s [%s, %s d2 windows]', ...
+      engTitle, areaName, collectTag, winTag);
+  end
+  sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
+
+  plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
+    collectStart, collectEnd, useLog10D2, engagementTag, panelMetricKeys);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+  fprintf('Saved separated metrics: %s\n', fullfile(saveDir, plotBase));
+end
+end
+
+function sessionTable = build_separated_metrics_session_table(arPlotData, avPlotData, ...
+    prgPlotData, avPlotDataDecades, sessionTypes, areaIdxAr, areaIdxAv, areaIdxPrg, ...
+    areaIdxAvDec, topMetrics)
+% BUILD_SEPARATED_METRICS_SESSION_TABLE - d2/tau/alpha + decades/kurtosis/djs
+%
+% Variables:
+%   avPlotDataDecades - AV source for decades (may differ from avPlotData)
+%   topMetrics        - Which of d2/tau/alpha must be finite to keep a session
+%
+% Goal:
+%   Align top-row metrics with bottom-row decades (AV) and PRG kurtosis / D_JS.
+
+if nargin < 10 || isempty(topMetrics)
+  topMetrics = {'d2', 'tau', 'alpha'};
+end
+topMetrics = normalize_metrics_to_plot(topMetrics);
+
+baseTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
+  areaIdxAr, areaIdxAv, topMetrics);
+if isempty(baseTable)
+  sessionTable = baseTable;
+  return;
+end
+
+nRow = height(baseTable);
+decadesCol = nan(nRow, 1);
+decadesSemCol = zeros(nRow, 1);
+kurtosisCol = nan(nRow, 1);
+kurtosisSemCol = zeros(nRow, 1);
+djsCol = nan(nRow, 1);
+djsSemCol = zeros(nRow, 1);
+
+for i = 1:nRow
+  sessionType = baseTable.sessionType{i};
+  sessionName = baseTable.sessionName{i};
+  typeKey = matlab.lang.makeValidName(sessionType);
+  % Within-type index for fallback (not the global table row)
+  typeRows = find(strcmp(baseTable.sessionType, sessionType));
+  withinTypeIdx = find(typeRows == i, 1);
+
+  if isfield(avPlotDataDecades.byType, typeKey)
+    avDecType = avPlotDataDecades.byType.(typeKey);
+    avDecIdx = find_matching_session_index(avDecType, sessionName, withinTypeIdx);
+    if ~isempty(avDecIdx)
+      decadesCol(i) = get_type_cell_metric(avDecType, 'decades', areaIdxAvDec, avDecIdx);
+    end
+  end
+
+  if isfield(prgPlotData.byType, typeKey)
+    prgType = prgPlotData.byType.(typeKey);
+    prgIdx = find_matching_session_index(prgType, sessionName, withinTypeIdx);
+    if ~isempty(prgIdx)
+      kurtosisCol(i) = get_type_cell_metric(prgType, 'kappaMean', areaIdxPrg, prgIdx);
+      kurtosisSemCol(i) = get_type_cell_metric(prgType, 'kappaSem', areaIdxPrg, prgIdx);
+      djsCol(i) = get_type_cell_metric(prgType, 'djsMean', areaIdxPrg, prgIdx);
+      djsSemCol(i) = get_type_cell_metric(prgType, 'djsSem', areaIdxPrg, prgIdx);
+      if ~isfinite(kurtosisSemCol(i)), kurtosisSemCol(i) = 0; end
+      if ~isfinite(djsSemCol(i)), djsSemCol(i) = 0; end
+    end
+  end
+end
+
+sessionTable = [baseTable, table(decadesCol, decadesSemCol, kurtosisCol, kurtosisSemCol, ...
+  djsCol, djsSemCol, 'VariableNames', {'decades', 'decadesSem', 'kurtosis', 'kurtosisSem', ...
+  'djs', 'djsSem'})];
+end
+
+function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, areasToPlot, ...
+    sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
+    plotConfig, engagementTag)
+% PLOT_MULTIMETRIC_PAIR_SCATTERS_ACROSS_TASKS - 1x3 scatters: d2-tau, d2-alpha, tau-alpha
+%
+% Variables:
+%   arPlotData / avPlotData - Aggregated plotData from AR / AV batches
+%   areasToPlot             - Brain areas to plot (one figure each)
+%   sessionTypes            - Session types (points colored by type)
+%   engagementTag           - Optional engaged / nonEngaged suffix
+%
+% Goal:
+%   One figure per area with three session-level scatter panels.
+
+if nargin < 11 || isempty(plotConfig)
+  plotConfig = fill_manuscript_plot_config();
+end
+if nargin < 12 || isempty(engagementTag)
+  engagementTag = '';
+end
+engagementTag = char(engagementTag);
+
+if useLog10D2
+  d2Label = 'log_{10}(d2)';
+else
+  d2Label = 'd2';
+end
+
+pairXFields = {'d2Mean', 'd2Mean', 'tauMean'};
+pairYFields = {'tauMean', 'alphaMean', 'alphaMean'};
+pairXLabels = {d2Label, d2Label, 'tau'};
+pairYLabels = {'tau', 'alpha', 'alpha'};
+
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+if ~exist(saveDir, 'dir')
+  mkdir(saveDir);
+end
+
+for a = 1:numel(areasToPlot)
+  areaName = areasToPlot{a};
+  areaIdxAr = find(strcmp(arPlotData.areas, areaName), 1);
+  areaIdxAv = find(strcmp(avPlotData.areas, areaName), 1);
+  if isempty(areaIdxAr) || isempty(areaIdxAv)
+    continue;
+  end
+
+  sessionTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
+    areaIdxAr, areaIdxAv, {'d2', 'tau', 'alpha'});
+  if isempty(sessionTable)
+    fprintf('Skipping pair scatters for %s: no aligned d2/tau/alpha sessions.\n', areaName);
+    continue;
+  end
+
+  fig = figure('Color', 'w', 'Name', sprintf('Metric pair scatters — %s', areaName));
+  position_figure_full_monitor(fig);
+  legendHandles = gobjects(0);
+  legendLabels = {};
+
+  for iPair = 1:3
+    ax = subplot(1, 3, iPair, 'Parent', fig);
+    hold(ax, 'on');
+    xField = pairXFields{iPair};
+    yField = pairYFields{iPair};
+    xLabel = pairXLabels{iPair};
+    yLabel = pairYLabels{iPair};
+
+    for t = 1:numel(sessionTypes)
+      sessionType = sessionTypes{t};
+      rowMask = strcmp(sessionTable.sessionType, sessionType);
+      if ~any(rowMask)
+        continue;
+      end
+      xVals = sessionTable.(xField)(rowMask);
+      yVals = sessionTable.(yField)(rowMask);
+      valid = isfinite(xVals) & isfinite(yVals);
+      if ~any(valid)
+        continue;
+      end
+      taskColor = colors_for_tasks(sessionType);
+      plotConfig.scatterMarkerSize = 120;
+      plotConfig.markerFaceAlpha = .8;
+      hSc = scatter_manuscript_filled(ax, xVals(valid), yVals(valid), plotConfig, ...
+        taskColor, sessionType);
+      if iPair == 1 && (isempty(legendLabels) || ~ismember(sessionType, legendLabels))
+        legendHandles(end + 1) = hSc; %#ok<AGROW>
+        legendLabels{end + 1} = sessionType; %#ok<AGROW>
+      end
+    end
+
+    xlabel(ax, xLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
+      'Interpreter', ternary_metric_label_interpreter(xLabel));
+    ylabel(ax, yLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
+      'Interpreter', ternary_metric_label_interpreter(yLabel));
+    set(ax, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
+      'Box', 'off', 'TickDir', 'out');
+    hold(ax, 'off');
+  end
+
+  if ~isempty(legendHandles)
+    legend(legendHandles, legendLabels, 'Location', 'best', ...
+      'FontSize', plotConfig.legendFontSize);
+  end
+
+  collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
+  if isempty(d2Window)
+    winTag = 'full';
+  else
+    winTag = sprintf('%.0fs', d2Window);
+  end
+  engTitle = format_engagement_title_tag(engagementTag);
+  if ~isempty(brainArea)
+    titleStr = sprintf('Session metric pairs%s — %s [%s, %s d2 windows]', ...
+      engTitle, brainArea, collectTag, winTag);
+  else
+    titleStr = sprintf('Session metric pairs%s — %s [%s, %s d2 windows]', ...
+      engTitle, areaName, collectTag, winTag);
+  end
+  sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
+
+  plotBase = make_pair_scatter_plot_basename(areaName, brainArea, d2Window, ...
+    collectStart, collectEnd, useLog10D2, engagementTag);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+  fprintf('Saved pair scatters: %s\n', fullfile(saveDir, plotBase));
+end
 end
 
 function sessionTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
@@ -599,14 +1534,44 @@ else
 end
 end
 
-function avIdx = find_matching_session_index(avType, sessionName, fallbackIdx)
-avIdx = [];
-if isfield(avType, 'sessionNames') && fallbackIdx <= numel(avType.sessionNames)
-  names = get_type_session_names(avType);
-  avIdx = find(strcmp(names, sessionName), 1);
+function idx = find_matching_session_index(typeData, sessionName, fallbackIdx)
+% FIND_MATCHING_SESSION_INDEX - Match by session name; optional within-type fallback
+%
+% Variables:
+%   typeData     - plotData.byType.(sessionType) struct
+%   sessionName  - Session name to find
+%   fallbackIdx  - Optional 1-based index within this type's series (not a
+%                  global table row). Used only if name match fails.
+%
+% Goal:
+%   Always try name matching first. Do not gate name search on fallbackIdx,
+%   otherwise later session-types (interval/reach) fail when the global row
+%   index exceeds that type's session count.
+
+idx = [];
+if nargin < 3
+  fallbackIdx = [];
 end
-if isempty(avIdx) && fallbackIdx <= numel(avType.sessionLabels)
-  avIdx = fallbackIdx;
+
+names = {};
+if isfield(typeData, 'sessionNames') && ~isempty(typeData.sessionNames)
+  names = get_type_session_names(typeData);
+elseif isfield(typeData, 'sessionLabels') && ~isempty(typeData.sessionLabels)
+  names = cellfun(@char, typeData.sessionLabels, 'UniformOutput', false);
+end
+
+if ~isempty(names) && ~isempty(sessionName)
+  idx = find(strcmp(names, char(sessionName)), 1);
+end
+
+if isempty(idx) && ~isempty(fallbackIdx) && isfinite(fallbackIdx) && fallbackIdx >= 1
+  nSeries = numel(names);
+  if nSeries == 0 && isfield(typeData, 'sessionLabels')
+    nSeries = numel(typeData.sessionLabels);
+  end
+  if fallbackIdx <= nSeries
+    idx = fallbackIdx;
+  end
 end
 end
 
@@ -648,11 +1613,18 @@ end
 val = metricSeries(idx);
 end
 
-function maps = compute_anchored_metric_maps(anchorMetric, d2Vals, tauVals, alphaVals, metricsToPlot)
+function maps = compute_anchored_metric_maps(anchorMetric, d2Vals, tauVals, alphaVals, ...
+    metricsToPlot, useAnchorAffineMap)
 % COMPUTE_ANCHORED_METRIC_MAPS - Affine maps of non-anchor metrics into anchor space
+%
+% Variables:
+%   useAnchorAffineMap - If false, all maps are identity (native scales)
 
 if nargin < 5 || isempty(metricsToPlot)
   metricsToPlot = {'d2', 'tau', 'alpha'};
+end
+if nargin < 6 || isempty(useAnchorAffineMap)
+  useAnchorAffineMap = true;
 end
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
 
@@ -663,14 +1635,56 @@ maps = struct();
 metricNames = {'d2', 'tau', 'alpha'};
 for i = 1:numel(metricNames)
   name = metricNames{i};
-  if ~ismember(name, metricsToPlot)
-    maps.(name) = struct('gain', 1, 'offset', 0);
-  elseif strcmp(name, anchorMetric)
+  if ~useAnchorAffineMap || ~ismember(name, metricsToPlot) || strcmp(name, anchorMetric)
     maps.(name) = struct('gain', 1, 'offset', 0);
   else
     maps.(name) = fit_metric_affine_map_to_anchor(metricVals.(name), anchorVals);
   end
 end
+end
+
+function maps = compute_independent_range_maps(anchorMetric, nativeVals, metricsToPlot, displayYLim)
+% COMPUTE_INDEPENDENT_RANGE_MAPS - Map each metric's native range onto displayYLim
+%
+% Variables:
+%   anchorMetric  - Primary metric (identity map; displayYLim is its native ylim)
+%   nativeVals    - Struct with .d2 / .tau / .alpha vectors
+%   metricsToPlot - Metrics included in the figure
+%   displayYLim   - [ymin ymax] display limits (usually primary native ylim)
+%
+% Goal:
+%   Keep markers on one axes (aligned x) while right-side axes report native
+%   units. Unlike session-wise LS anchoring, each metric uses its own min/max.
+
+metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
+maps = struct();
+metricNames = {'d2', 'tau', 'alpha'};
+for i = 1:numel(metricNames)
+  name = metricNames{i};
+  if ~ismember(name, metricsToPlot) || strcmp(name, anchorMetric)
+    maps.(name) = struct('gain', 1, 'offset', 0);
+  else
+    maps.(name) = fit_metric_range_map_to_display(nativeVals.(name), displayYLim);
+  end
+end
+end
+
+function map = fit_metric_range_map_to_display(metricVals, displayYLim)
+% FIT_METRIC_RANGE_MAP_TO_DISPLAY - Linear map native [min max] -> displayYLim
+map = struct('gain', 1, 'offset', 0);
+vals = metricVals(isfinite(metricVals));
+if isempty(vals) || numel(displayYLim) ~= 2 || ~all(isfinite(displayYLim))
+  return;
+end
+mMin = min(vals);
+mMax = max(vals);
+if mMax == mMin
+  map.gain = 1;
+  map.offset = mean(displayYLim) - mMin;
+  return;
+end
+map.gain = (displayYLim(2) - displayYLim(1)) / (mMax - mMin);
+map.offset = displayYLim(1) - map.gain * mMin;
 end
 
 function map = fit_metric_affine_map_to_anchor(metricVals, anchorVals)
@@ -744,6 +1758,173 @@ set(axNative, 'FontSize', plotConfig.tickLabelFontSize, 'TickDir', 'out');
 uistack(axRef, 'top');
 end
 
+function axOverlay = create_native_overlay_yaxis(axRef, rightOffset, plotConfig)
+% CREATE_NATIVE_OVERLAY_YAXIS - Transparent axes sharing x with independent y
+%
+% Variables:
+%   axRef       - Primary axes (left metric)
+%   rightOffset - Extra right margin fraction for stacked right axes
+%   plotConfig  - Manuscript plot config
+%
+% Goal:
+%   Plot a second metric in native units with its own right y-axis.
+
+axPos = axRef.Position;
+if rightOffset > 0
+  shrink = min(0.12, rightOffset);
+  axPos = [axPos(1), axPos(2), max(0.2, axPos(3) - shrink), axPos(4)];
+  axRef.Position = axPos;
+end
+axOverlay = axes('Parent', axRef.Parent, 'Position', axRef.Position, ...
+  'Color', 'none', 'XColor', 'none', 'YAxisLocation', 'right', ...
+  'Box', 'off', 'HitTest', 'off', 'FontSize', plotConfig.tickLabelFontSize, ...
+  'LineWidth', plotConfig.axesLineWidth, 'TickDir', 'out');
+hold(axOverlay, 'on');
+linkprop([axRef, axOverlay], 'Position');
+end
+
+function yLimPlot = compute_native_ylim_for_metric(metricVals)
+% COMPUTE_NATIVE_YLIM_FOR_METRIC - Padded y-limits from one metric series
+yLimPlot = [];
+vals = metricVals(isfinite(metricVals));
+if isempty(vals)
+  return;
+end
+yPad = max(0.05 * max(range(vals), eps), 0.02 * max(abs(vals)));
+if yPad == 0
+  yPad = max(0.05, 0.05 * abs(vals(1)));
+end
+yLimPlot = [min(vals) - yPad, max(vals) + yPad];
+end
+
+function draw_within_session_metric_connectors(fig, sessionConnect, plotConfig)
+% DRAW_WITHIN_SESSION_METRIC_CONNECTORS - Line linking a session's metric markers
+%
+% Variables:
+%   fig            - Figure handle
+%   sessionConnect - Struct arrays of x/y/ax/color per session
+%   plotConfig     - Line width styling
+%
+% Goal:
+%   Connect d2/tau/alpha markers that belong to the same session. Uses a
+%   figure-normalized overlay axes so points on independent y-axes still link.
+
+if nargin < 3 || isempty(plotConfig)
+  plotConfig = fill_manuscript_plot_config();
+end
+if ~isfield(sessionConnect, 'x') || isempty(sessionConnect.x)
+  return;
+end
+
+lineWidth = max(0.75, plotConfig.lineWidth - 0.5);
+drawnow;
+
+% Overlay axes in figure-normalized units (for cross-axes connectors)
+axNorm = axes( ...
+  'Parent', fig, ...
+  'Position', [0 0 1 1], ...
+  'Color', 'none', ...
+  'XLim', [0 1], ...
+  'YLim', [0 1], ...
+  'Visible', 'off', ...
+  'HitTest', 'off', ...
+  'HandleVisibility', 'off');
+hold(axNorm, 'on');
+
+for iSess = 1:numel(sessionConnect.x)
+  xPts = sessionConnect.x{iSess};
+  yPts = sessionConnect.y{iSess};
+  axList = sessionConnect.ax{iSess};
+  lineColor = sessionConnect.color{iSess};
+  if numel(xPts) < 2
+    continue;
+  end
+
+  % Same axes: draw in data coordinates
+  sameAx = true;
+  for i = 2:numel(axList)
+    if axList{i} ~= axList{1}
+      sameAx = false;
+      break;
+    end
+  end
+  if sameAx
+    plot(axList{1}, xPts, yPts, '-', 'Color', lineColor, ...
+      'LineWidth', lineWidth, 'HandleVisibility', 'off');
+    continue;
+  end
+
+  % Independent axes: polyline in figure-normalized units
+  nxy = zeros(numel(xPts), 2);
+  valid = true(numel(xPts), 1);
+  for i = 1:numel(xPts)
+    [nx, ny] = axes_data_to_figure_norm(axList{i}, xPts(i), yPts(i));
+    if ~isfinite(nx) || ~isfinite(ny)
+      valid(i) = false;
+      continue;
+    end
+    nxy(i, :) = [nx, ny];
+  end
+  nxy = nxy(valid, :);
+  if size(nxy, 1) < 2
+    continue;
+  end
+  plot(axNorm, nxy(:, 1), nxy(:, 2), '-', 'Color', lineColor, ...
+    'LineWidth', lineWidth, 'HandleVisibility', 'off');
+end
+
+uistack(axNorm, 'top');
+end
+
+function [nx, ny] = axes_data_to_figure_norm(ax, xData, yData)
+% AXES_DATA_TO_FIGURE_NORM - Convert axes data coords to figure normalized units
+axPos = get(ax, 'Position');
+xl = xlim(ax);
+yl = ylim(ax);
+if diff(xl) == 0 || diff(yl) == 0
+  nx = nan;
+  ny = nan;
+  return;
+end
+nx = axPos(1) + ((xData - xl(1)) / diff(xl)) * axPos(3);
+ny = axPos(2) + ((yData - yl(1)) / diff(yl)) * axPos(4);
+end
+
+function plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
+    collectStart, collectEnd, useLog10D2, engagementTag, metricsToPlot)
+% MAKE_SEPARATED_METRICS_PLOT_BASENAME - File stem for 2x3 separated metric panels
+if nargin < 7 || isempty(engagementTag)
+  engagementTag = '';
+end
+if nargin < 8 || isempty(metricsToPlot)
+  metricsToPlot = {'d2', 'tau', 'alpha', 'decades', 'kurtosis', 'djs'};
+end
+if ischar(metricsToPlot) || isstring(metricsToPlot)
+  metricsToPlot = cellstr(metricsToPlot);
+end
+metricsToPlot = metricsToPlot(:)';
+collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
+if isempty(d2Window)
+  winTag = 'full';
+else
+  winTag = sprintf('%.0fs', d2Window);
+end
+if ~isempty(brainArea)
+  areaTag = brainArea;
+else
+  areaTag = areaName;
+end
+metricTag = strjoin(metricsToPlot, '-');
+plotBase = sprintf('criticality_separated_metrics_%s_%s_win%s_%s', ...
+  metricTag, areaTag, winTag, collectTag);
+if ~isempty(engagementTag)
+  plotBase = sprintf('%s_%s', plotBase, engagementTag);
+end
+if useLog10D2
+  plotBase = [plotBase, '_log10'];
+end
+end
+
 function interp = ternary_metric_label_interpreter(labelText)
 if contains(labelText, '_{')
   interp = 'tex';
@@ -753,7 +1934,8 @@ end
 end
 
 function plotBase = make_multimetric_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2, anchorMetric, engagementTag, metricsToPlot)
+    collectStart, collectEnd, useLog10D2, anchorMetric, engagementTag, metricsToPlot, ...
+    useAnchorAffineMap)
 if nargin < 7 || isempty(anchorMetric)
   anchorMetric = 'd2';
 end
@@ -762,6 +1944,9 @@ if nargin < 8 || isempty(engagementTag)
 end
 if nargin < 9 || isempty(metricsToPlot)
   metricsToPlot = {'d2', 'tau', 'alpha'};
+end
+if nargin < 10 || isempty(useAnchorAffineMap)
+  useAnchorAffineMap = true;
 end
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
 collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
@@ -778,7 +1963,37 @@ else
   plotBase = sprintf('criticality_multiple_metrics_%s_%s_win%s_%s', ...
     metricTag, areaName, winTag, collectTag);
 end
-plotBase = sprintf('%s_anchor%s', plotBase, anchorMetric);
+if useAnchorAffineMap
+  plotBase = sprintf('%s_anchor%s', plotBase, anchorMetric);
+else
+  plotBase = [plotBase, '_native'];
+end
+if ~isempty(engagementTag)
+  plotBase = sprintf('%s_%s', plotBase, engagementTag);
+end
+if useLog10D2
+  plotBase = [plotBase, '_log10'];
+end
+end
+
+function plotBase = make_pair_scatter_plot_basename(areaName, brainArea, d2Window, ...
+    collectStart, collectEnd, useLog10D2, engagementTag)
+% MAKE_PAIR_SCATTER_PLOT_BASENAME - File stem for 1x3 metric pair scatters
+if nargin < 7 || isempty(engagementTag)
+  engagementTag = '';
+end
+collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
+if isempty(d2Window)
+  winTag = 'full';
+else
+  winTag = sprintf('%.0fs', d2Window);
+end
+if ~isempty(brainArea)
+  areaTag = brainArea;
+else
+  areaTag = areaName;
+end
+plotBase = sprintf('criticality_metric_pair_scatters_%s_win%s_%s', areaTag, winTag, collectTag);
 if ~isempty(engagementTag)
   plotBase = sprintf('%s_%s', plotBase, engagementTag);
 end
@@ -854,13 +2069,16 @@ end
 end
 
 function sharedByArea = compute_shared_engagement_plot_scales(classViews, plotAreas, ...
-    sessionTypes, metricsToPlot, anchorMetric)
+    sessionTypes, metricsToPlot, anchorMetric, useAnchorAffineMap)
 % COMPUTE_SHARED_ENGAGEMENT_PLOT_SCALES - Common maps + ylim for engaged/non-engaged
 %
 % Goal:
 %   Fit affine maps on pooled engaged+non-engaged sessions and use one y-limit
 %   per area so the primary (usually d2) axis matches across the pair of plots.
 
+if nargin < 6 || isempty(useAnchorAffineMap)
+  useAnchorAffineMap = true;
+end
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
 sharedByArea = struct();
 engClasses = fieldnames(classViews);
@@ -897,7 +2115,8 @@ for a = 1:numel(plotAreas)
     continue;
   end
 
-  maps = compute_anchored_metric_maps(anchorMetric, d2All, tauAll, alphaAll, metricsToPlot);
+  maps = compute_anchored_metric_maps(anchorMetric, d2All, tauAll, alphaAll, ...
+    metricsToPlot, useAnchorAffineMap);
 
   % Prefer shared native d2 limits when d2 is plotted (comparison across classes)
   if ismember('d2', metricsToPlot)
@@ -908,7 +2127,11 @@ for a = 1:numel(plotAreas)
     yPad = max(0.05 * max(range(d2Finite), eps), 0.02 * max(abs(d2Finite)));
     yLimD2 = [min(d2Finite) - yPad, max(d2Finite) + yPad];
 
-    if strcmp(anchorMetric, 'd2')
+    if ~useAnchorAffineMap
+      nativePool = struct('d2', d2All, 'tau', tauAll, 'alpha', alphaAll);
+      yLimPlot = compute_native_ylim_for_metric(nativePool.(anchorMetric));
+      maps = compute_independent_range_maps(anchorMetric, nativePool, metricsToPlot, yLimPlot);
+    elseif useAnchorAffineMap && strcmp(anchorMetric, 'd2')
       yLimPlot = yLimD2;
       % Expand slightly if other mapped markers fall outside
       yValsPool = struct( ...
@@ -928,17 +2151,24 @@ for a = 1:numel(plotAreas)
       yLimPlot = compute_display_ylim_for_metrics(yValsPool, metricsToPlot, anchorMetric);
     end
   else
-    yValsPool = struct( ...
-      'd2', apply_metric_affine_map(d2All, maps.d2), ...
-      'tau', apply_metric_affine_map(tauAll, maps.tau), ...
-      'alpha', apply_metric_affine_map(alphaAll, maps.alpha));
-    yLimPlot = compute_display_ylim_for_metrics(yValsPool, metricsToPlot, anchorMetric);
+    if ~useAnchorAffineMap
+      nativePool = struct('d2', d2All, 'tau', tauAll, 'alpha', alphaAll);
+      yLimPlot = compute_native_ylim_for_metric(nativePool.(anchorMetric));
+      maps = compute_independent_range_maps(anchorMetric, nativePool, metricsToPlot, yLimPlot);
+    else
+      yValsPool = struct( ...
+        'd2', apply_metric_affine_map(d2All, maps.d2), ...
+        'tau', apply_metric_affine_map(tauAll, maps.tau), ...
+        'alpha', apply_metric_affine_map(alphaAll, maps.alpha));
+      yLimPlot = compute_display_ylim_for_metrics(yValsPool, metricsToPlot, anchorMetric);
+    end
   end
 
   if isempty(yLimPlot) || ~all(isfinite(yLimPlot))
     continue;
   end
-  sharedByArea.(areaKey) = struct('maps', maps, 'yLim', yLimPlot);
+  sharedByArea.(areaKey).maps = maps;
+  sharedByArea.(areaKey).yLim = yLimPlot;
 end
 end
 

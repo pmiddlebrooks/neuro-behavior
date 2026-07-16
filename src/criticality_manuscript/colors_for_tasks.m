@@ -14,7 +14,7 @@ switch lower(strtrim(char(sessionType)))
   case 'spontaneous'
     colorRgb = [0.15, 0.45, 0.85];
   case 'interval'
-    colorRgb = [0.90, 0.40, 0.15];
+    colorRgb = [0.90, 0.60, 0.15];
   case 'reach'
     colorRgb = [0.20, 0.65, 0.30];
   otherwise

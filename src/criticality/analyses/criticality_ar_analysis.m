@@ -283,6 +283,7 @@ function results = criticality_ar_analysis(dataStruct, config)
     % Initialize results
     [popActivity, mrBr, d2, d2Normalized, startS, popActivityWindows, popActivityFull] = ...
         deal(cell(1, numAreas));
+    nNeuronsPerArea = nan(1, numAreas);
     
     % Initialize behavior proportion for spontaneous sessions if configured
     if strcmp(sessionType, 'spontaneous') && isfield(config, 'behaviorNumeratorIDs') && ...
@@ -355,6 +356,7 @@ function results = criticality_ar_analysis(dataStruct, config)
         
         aID = dataStruct.idMatIdx{a};
         nNeurons = length(aID);
+        nNeuronsPerArea(a) = nNeurons;
         
         % Check minimum number of neurons (supports subsampling rule)
         if nNeurons < minNeuronsRequired
@@ -787,7 +789,7 @@ function results = criticality_ar_analysis(dataStruct, config)
         popActivityWindowsUnmodulated, popActivityFullUnmodulated, ...
         binSizeModulated, binSizeUnmodulated, ...
         slidingWindowSizeModulated, slidingWindowSizeUnmodulated, ...
-        behaviorProportion);
+        behaviorProportion, nNeuronsPerArea);
     
     % Save results if requested
     if config.saveData
@@ -1240,7 +1242,7 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     popActivityWindowsUnmodulated, popActivityFullUnmodulated, ...
     binSizeModulated, binSizeUnmodulated, ...
     slidingWindowSizeModulated, slidingWindowSizeUnmodulated, ...
-    behaviorProportion)
+    behaviorProportion, nNeuronsPerArea)
 % BUILD_RESULTS_STRUCTURE Build results structure
     
     results = struct();
@@ -1253,6 +1255,7 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.popActivity = popActivity;
     results.popActivityWindows = popActivityWindows;
     results.popActivityFull = popActivityFull;
+    results.nNeurons = nNeuronsPerArea;
     results.binSize = binSize;
     results.slidingWindowSize = slidingWindowSize;
     results.d2WindowSize = slidingWindowSize;

@@ -96,7 +96,12 @@ else
   end
   loaded = load(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta');
   batchResults = loaded.batchResults;
-  plotData = loaded.plotData;
+  % Re-aggregate so new fields (e.g. meanSpikesPerBinPerNeuron) stay current
+  useLog10D2Load = opts.useLog10D2;
+  if isfield(loaded, 'batchMeta') && isfield(loaded.batchMeta, 'useLog10D2')
+    useLog10D2Load = loaded.batchMeta.useLog10D2;
+  end
+  plotData = aggregate_ar_metrics(batchResults, opts.sessionTypes, useLog10D2Load);
   batchMeta = loaded.batchMeta;
   fprintf('\nLoaded batch results: %s\n', opts.batchResultsFile);
 end
@@ -458,6 +463,9 @@ end
 if isfield(results, 'slidingWindowSize') && numel(results.slidingWindowSize) >= areaIdx
   results.slidingWindowSize = results.slidingWindowSize(areaIdx);
 end
+if isfield(results, 'nNeurons') && numel(results.nNeurons) >= areaIdx
+  results.nNeurons = results.nNeurons(areaIdx);
+end
 end
 
 function plotData = aggregate_ar_metrics(batchResults, sessionTypes, useLog10D2)
@@ -476,7 +484,8 @@ plotData.sessionTypes = sessionTypes;
 plotData.byType = struct();
 plotData.useLog10D2 = useLog10D2;
 
-metricFields = {'d2Mean', 'd2Sem', 'd2ShuffleMean', 'd2ShuffleSem', 'd2NormMean', 'd2NormSem'};
+metricFields = {'d2Mean', 'd2Sem', 'd2ShuffleMean', 'd2ShuffleSem', 'd2NormMean', 'd2NormSem', ...
+  'meanSpikesPerBinPerNeuron'};
 
 for s = 1:length(batchResults)
   if ~batchResults(s).success || isempty(batchResults(s).results)
@@ -512,7 +521,12 @@ for s = 1:length(batchResults)
     summary = summarize_session_d2_windows(results, a, useLog10D2);
     for m = 1:length(metricFields)
       fieldName = metricFields{m};
-      typeData.(fieldName){areaIdx} = [typeData.(fieldName){areaIdx}, summary.(fieldName)];
+      if strcmp(fieldName, 'meanSpikesPerBinPerNeuron')
+        typeData.(fieldName){areaIdx} = [typeData.(fieldName){areaIdx}, ...
+          summarize_mean_spikes_per_bin_per_neuron(results, a)];
+      else
+        typeData.(fieldName){areaIdx} = [typeData.(fieldName){areaIdx}, summary.(fieldName)];
+      end
     end
   end
 
@@ -520,6 +534,37 @@ for s = 1:length(batchResults)
   typeData.sessionNames{end+1} = batchResults(s).sessionName;
   plotData.byType.(typeKey) = typeData;
 end
+end
+
+function rateVal = summarize_mean_spikes_per_bin_per_neuron(results, areaIdx)
+% SUMMARIZE_MEAN_SPIKES_PER_BIN_PER_NEURON - Session mean of pop spikes/bin / nNeurons
+%
+% Variables:
+%   results  - Output from criticality_ar_analysis (popActivity = sum across neurons)
+%   areaIdx  - Index into results.areas
+%
+% Goal:
+%   One scalar balancing sessions with different neuron counts.
+
+rateVal = nan;
+if ~isfield(results, 'popActivityWindows') || areaIdx > numel(results.popActivityWindows) ...
+    || isempty(results.popActivityWindows{areaIdx})
+  return;
+end
+popWin = results.popActivityWindows{areaIdx}(:);
+popWin = popWin(isfinite(popWin));
+if isempty(popWin)
+  return;
+end
+
+nNeurons = nan;
+if isfield(results, 'nNeurons') && numel(results.nNeurons) >= areaIdx
+  nNeurons = results.nNeurons(areaIdx);
+end
+if ~(isfinite(nNeurons) && nNeurons > 0)
+  return;
+end
+rateVal = mean(popWin) / nNeurons;
 end
 
 function summary = summarize_session_d2_windows(results, areaIdx, useLog10D2)
