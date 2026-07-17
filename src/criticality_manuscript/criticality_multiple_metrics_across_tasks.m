@@ -1043,8 +1043,8 @@ function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, pr
 % PLOT_MULTIMETRIC_SEPARATED_AXES_ACROSS_TASKS - 2x3 panels of session metrics
 %
 % Layout:
-%   Top:    d2 | tau | alpha
-%   Bottom: decades | kurtosis | D_JS
+%   Top:    D2 | Avalanche Sizes | Avalanche Durations
+%   Bottom: Scale Range | Renorm: Kurtosis | Renorm: JS-Distance
 %
 % Variables:
 %   arPlotData / avPlotData - Sources for d2 / tau / alpha (may be engagement views)
@@ -1092,6 +1092,13 @@ djsLabel = sprintf('D_{JS} (N = %d)', finalCutoffDivisor);
 panelMetricKeys = {'d2', 'tau', 'alpha', 'decades', 'kurtosis', 'djs'};
 labelByKey = struct('d2', d2Label, 'tau', 'tau', 'alpha', 'alpha', ...
   'decades', 'decades', 'kurtosis', kurtosisLabel, 'djs', djsLabel);
+titleByKey = struct( ...
+  'd2', 'D2', ...
+  'tau', 'Avalanche Sizes', ...
+  'alpha', 'Avalanche Durations', ...
+  'decades', 'Scale-Free Range', ...
+  'kurtosis', 'Renorm: Kurtosis', ...
+  'djs', 'Renorm: JS-Distance');
 fieldByKey = struct('d2', 'd2Mean', 'tau', 'tauMean', 'alpha', 'alphaMean', ...
   'decades', 'decades', 'kurtosis', 'kurtosis', 'djs', 'djs');
 semByKey = struct('d2', 'd2Sem', 'tau', 'tauSem', 'alpha', 'alphaSem', ...
@@ -1105,11 +1112,13 @@ fillByKey = struct('d2', true, 'tau', false, 'alpha', false, ...
 panelYFields = cell(1, 6);
 panelSemFields = cell(1, 6);
 panelLabels = cell(1, 6);
+panelTitles = cell(1, 6);
 for iPanel = 1:6
   key = panelMetricKeys{iPanel};
   panelYFields{iPanel} = fieldByKey.(key);
   panelSemFields{iPanel} = semByKey.(key);
   panelLabels{iPanel} = labelByKey.(key);
+  panelTitles{iPanel} = titleByKey.(key);
 end
 
 saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
@@ -1202,6 +1211,7 @@ for a = 1:numel(areasToPlot)
     xlabel(ax, 'Session', 'FontSize', plotConfig.axisLabelFontSize);
     ylabel(ax, panelLabels{iPanel}, 'FontSize', plotConfig.axisLabelFontSize, ...
       'Interpreter', ternary_metric_label_interpreter(panelLabels{iPanel}));
+    title(ax, panelTitles{iPanel}, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
     set(ax, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
       'Box', 'off', 'TickDir', 'out');
     hold(ax, 'off');

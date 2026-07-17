@@ -31,8 +31,14 @@ function out = criticality_prg_across_tasks(opts)
 % CRITICALITY_PRG_ACROSS_TASKS - Batch and plot PRG kurtosis across session types
 %
 % Usage:
-%   out = criticality_prg_across_tasks();
+%   opts = criticality_prg_across_tasks();
+%   out = criticality_prg_across_tasks(opts);
 %   out = criticality_prg_across_tasks(struct('plotResults', false));
+
+if nargin == 0
+  out = fill_criticality_prg_across_tasks_opts(struct());
+  return;
+end
 
 if nargin < 1 || isempty(opts)
   opts = struct();
@@ -80,6 +86,7 @@ end
 if opts.runBatch
   batchResults = run_prg_across_tasks_batch(sessionTable, opts);
   plotData = aggregate_prg_metrics(batchResults, opts.sessionTypes, opts.finalCutoffDivisor);
+  plotData.surrogateMethod = opts.surrogateMethod;
   batchMeta = pack_prg_across_tasks_batch_meta(opts);
   if opts.saveBatchResults
     save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
@@ -94,6 +101,12 @@ else
   batchResults = loaded.batchResults;
   plotData = loaded.plotData;
   batchMeta = loaded.batchMeta;
+  if (~isfield(plotData, 'surrogateMethod') || isempty(plotData.surrogateMethod)) ...
+      && isfield(batchMeta, 'surrogateMethod')
+    plotData.surrogateMethod = batchMeta.surrogateMethod;
+  elseif ~isfield(plotData, 'surrogateMethod') || isempty(plotData.surrogateMethod)
+    plotData.surrogateMethod = opts.surrogateMethod;
+  end
   fprintf('\nLoaded batch results: %s\n', opts.batchResultsFile);
 end
 
@@ -108,7 +121,8 @@ fprintf('  %s\n', strjoin(commonAreas, ', '));
 
 if opts.plotResults
   plot_prg_across_tasks(plotData, commonAreas, opts.sessionTypes, opts.collectStart, ...
-    opts.collectEnd, opts.prgWindow, paths, opts.brainArea, opts.prgMethod);
+    opts.collectEnd, opts.prgWindow, paths, opts.brainArea, opts.prgMethod, ...
+    opts.surrogateMethod);
 end
 
 fprintf('\n=== Done ===\n');
@@ -169,6 +183,7 @@ batchMeta = struct( ...
   'brainArea', opts.brainArea, ...
   'areasToPlot', {opts.areasToPlot}, ...
   'prgMethod', opts.prgMethod, ...
+  'surrogateMethod', opts.surrogateMethod, ...
   'finalCutoffDivisor', opts.finalCutoffDivisor);
 end
 
@@ -387,6 +402,7 @@ plotData.areas = {};
 plotData.sessionTypes = sessionTypes;
 plotData.byType = struct();
 plotData.finalCutoffDivisor = finalCutoffDivisor;
+plotData.surrogateMethod = '';
 
 metricFields = {'kappaMean', 'kappaSem', 'kappaShuffleMean', 'kappaShuffleSem', ...
   'kappaNormMean', 'kappaNormSem', ...
@@ -622,7 +638,7 @@ for m = 1:length(metricFields)
 end
 end
 
-function plot_prg_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, prgWindow, paths, brainArea, prgMethod)
+function plot_prg_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, prgWindow, paths, brainArea, prgMethod, surrogateMethod)
 % PLOT_PRG_ACROSS_TASKS - Session kappa and D_JS with surrogate summary, by session type
 
 if nargin < 8 || isempty(brainArea)
@@ -630,6 +646,13 @@ if nargin < 8 || isempty(brainArea)
 end
 if nargin < 9 || isempty(prgMethod)
   prgMethod = 'pca';
+end
+if nargin < 10 || isempty(surrogateMethod)
+  if isfield(plotData, 'surrogateMethod') && ~isempty(plotData.surrogateMethod)
+    surrogateMethod = plotData.surrogateMethod;
+  else
+    surrogateMethod = 'isi';
+  end
 end
 
 finalCutoffDivisor = 16;
@@ -677,7 +700,8 @@ for a = 1:length(areasToPlot)
   sgtitle(figKappa, titleStr, 'FontWeight', 'bold');
 
   plotBase = make_prg_plot_basename('criticality_prg_across_tasks', areaName, brainArea, ...
-    prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, prgMethod);
+    prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, ...
+    prgMethod, surrogateMethod);
   exportgraphics(figKappa, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(figKappa, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
@@ -706,7 +730,8 @@ for a = 1:length(areasToPlot)
     sgtitle(figKappaNorm, kappaNormTitleStr, 'FontWeight', 'bold');
 
     plotBaseNorm = make_prg_plot_basename('criticality_prg_kappa_norm_across_tasks', areaName, brainArea, ...
-      prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, prgMethod);
+      prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, ...
+      prgMethod, surrogateMethod);
     exportgraphics(figKappaNorm, fullfile(saveDir, [plotBaseNorm, '.png']), 'Resolution', 300);
     exportgraphics(figKappaNorm, fullfile(saveDir, [plotBaseNorm, '.eps']), 'ContentType', 'vector');
     fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseNorm));
@@ -731,7 +756,8 @@ for a = 1:length(areasToPlot)
     sgtitle(figDjs, djsTitleStr, 'FontWeight', 'bold');
 
     plotBaseDjs = make_prg_plot_basename('criticality_prg_djs_across_tasks', areaName, brainArea, ...
-      prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, prgMethod);
+      prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, ...
+      prgMethod, surrogateMethod);
     exportgraphics(figDjs, fullfile(saveDir, [plotBaseDjs, '.png']), 'Resolution', 300);
     exportgraphics(figDjs, fullfile(saveDir, [plotBaseDjs, '.eps']), 'ContentType', 'vector');
     fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseDjs));
@@ -761,7 +787,8 @@ for a = 1:length(areasToPlot)
     sgtitle(figDjsNorm, djsNormTitleStr, 'FontWeight', 'bold');
 
     plotBaseDjsNorm = make_prg_plot_basename('criticality_prg_djs_norm_across_tasks', areaName, brainArea, ...
-      prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, prgMethod);
+      prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, ...
+      prgMethod, surrogateMethod);
     exportgraphics(figDjsNorm, fullfile(saveDir, [plotBaseDjsNorm, '.png']), 'Resolution', 300);
     exportgraphics(figDjsNorm, fullfile(saveDir, [plotBaseDjsNorm, '.eps']), 'ContentType', 'vector');
     fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseDjsNorm));
@@ -1013,7 +1040,7 @@ end
 barLabels = cellfun(@char, barLabels, 'UniformOutput', false);
 end
 
-function plotBase = make_prg_plot_basename(prefix, areaName, brainArea, prgWindow, collectStart, collectEnd, multiArea, finalCutoffDivisor, prgMethod)
+function plotBase = make_prg_plot_basename(prefix, areaName, brainArea, prgWindow, collectStart, collectEnd, multiArea, finalCutoffDivisor, prgMethod, surrogateMethod)
 % MAKE_PRG_PLOT_BASENAME - Filename stem for saved figures
 
 if nargin < 8 || isempty(finalCutoffDivisor)
@@ -1022,11 +1049,16 @@ end
 if nargin < 9 || isempty(prgMethod)
   prgMethod = 'pca';
 end
+if nargin < 10 || isempty(surrogateMethod)
+  surrogateMethod = 'isi';
+end
 
 if ~isempty(brainArea)
-  plotBase = sprintf('%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d', prefix, prgMethod, brainArea, prgWindow, collectStart, collectEnd, finalCutoffDivisor);
+  plotBase = sprintf('%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d_%s', prefix, prgMethod, brainArea, ...
+    prgWindow, collectStart, collectEnd, finalCutoffDivisor, surrogateMethod);
 else
-  plotBase = sprintf('%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d', prefix, prgMethod, areaName, prgWindow, collectStart, collectEnd, finalCutoffDivisor);
+  plotBase = sprintf('%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d_%s', prefix, prgMethod, areaName, ...
+    prgWindow, collectStart, collectEnd, finalCutoffDivisor, surrogateMethod);
 end
 if multiArea
   plotBase = sprintf('%s_area%s', plotBase, areaName);
