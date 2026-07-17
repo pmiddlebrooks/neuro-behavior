@@ -51,12 +51,12 @@ function spikeData = load_spike_times_reach(paths, sessionName, opts)
         opts.collectStart = 0;
     end
 
-    % Session end from reach events / last spike; clamp requested collectEnd if longer
+    % Session end from reach events / last spike; [] omits final 180 s
     sessionEnd = round(min((dataR.R(end,1) + 5000)/1000, max(dataR.CSV(:,1))));
     if ~isfield(opts, 'collectEnd')
         opts.collectEnd = [];
     end
-    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, sessionEnd, opts.collectStart);
+    opts.collectEnd = resolve_reach_collect_end(opts.collectEnd, sessionEnd, opts.collectStart);
     
     % Extract spike data from CSV (CSV(:,1) is in seconds)
     spikeTimes = dataR.CSV(:,1);  % Convert from ms to seconds

@@ -27,7 +27,8 @@
 %     'meanIsiZero'    - bin size = mean population ISI; zero cutoff (literature)
 %
 % Goal:
-%   Compare avalanche metrics (dcc, kappa, decades, tau, alpha, paramSD)
+%   Compare avalanche metrics (dcc, kappa, decades, tau, alpha,
+%   paramSD = crackling 1/σνz from ⟨S⟩~T^γ)
 %   across spontaneous, reach, interval, and other session types using
 %   load_session_data and a common analysis window per session.
 
@@ -118,6 +119,8 @@ fprintf('  %s\n', strjoin(commonAreas, ', '));
 if opts.plotResults
   plot_av_across_tasks(plotData, commonAreas, opts.sessionTypes, opts.collectStart, ...
     opts.collectEnd, paths, opts.brainArea);
+  plot_av_crackling_relation_across_tasks(plotData, commonAreas, opts.sessionTypes, ...
+    opts.collectStart, opts.collectEnd, paths, opts.brainArea);
 end
 
 fprintf('\n=== Done ===\n');
@@ -681,8 +684,9 @@ for a = 1:numAreas
       xticklabels(ax, xtickLabels);
       xtickangle(ax, 45);
     end
-    ylabel(ax, yLabelText);
-    title(ax, sprintf('%s — %s', areaName, yLabelText));
+    ylabel(ax, yLabelText, 'Interpreter', av_ylabel_interpreter(yLabelText));
+    title(ax, sprintf('%s — %s', areaName, yLabelText), ...
+      'Interpreter', av_ylabel_interpreter(yLabelText));
     apply_buffered_ylim(ax, yValuesForLim);
     grid(ax, 'on');
     hold(ax, 'off');
@@ -764,6 +768,7 @@ function metricPlotSpec = get_av_metric_plot_spec()
 % GET_AV_METRIC_PLOT_SPEC - row, col, field, ylabel, shuffledField, plotShuffled
 %
 % Top row: dcc and kappa (raw + normalized). Bottom row: decades and exponents.
+% paramSD is the crackling exponent 1/σνz from ⟨S⟩~T^γ (size_given_duration).
 % Shuffled means are shown only on raw panels (same axes as session values).
 
 metricPlotSpec = {
@@ -774,8 +779,198 @@ metricPlotSpec = {
   2, 1, 'decades', 'decades', 'decadesPermutedMean', true
   2, 2, 'tau', 'tau', 'tauPermutedMean', true
   2, 3, 'alpha', 'alpha', 'alphaPermutedMean', true
-  2, 4, 'paramSD', 'paramSD', 'paramSDPermutedMean', true
+  2, 4, 'paramSD', '1/\sigma\nu z (crackling)', 'paramSDPermutedMean', true
   };
+end
+
+function interp = av_ylabel_interpreter(labelText)
+% AV_YLABEL_INTERPRETER - tex when label uses TeX escapes
+if contains(labelText, '\')
+  interp = 'tex';
+else
+  interp = 'none';
+end
+end
+
+function plot_av_crackling_relation_across_tasks(plotData, areasToPlot, sessionTypes, ...
+    collectStart, collectEnd, paths, brainArea)
+% PLOT_AV_CRACKLING_RELATION_ACROSS_TASKS - paramSD vs γ_pred + dcc histogram
+%
+% Variables:
+%   plotData      - Aggregated AV plotData (tau, alpha, paramSD, dcc cells)
+%   areasToPlot   - Areas to figure
+%   sessionTypes  - Session types (point / bar color)
+%
+% Goal:
+%   Companion crackling-noise diagnostics: (1) measured 1/σνz vs γ_pred with
+%   identity line; (2) session dcc distribution by task type.
+
+if nargin < 7
+  brainArea = '';
+end
+
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+if ~exist(saveDir, 'dir')
+  mkdir(saveDir);
+end
+typeColors = lines(max(numel(sessionTypes), 3));
+collectTag = format_av_collect_window_tag(collectStart, collectEnd);
+
+for a = 1:numel(areasToPlot)
+  areaName = areasToPlot{a};
+  areaIdx = find(strcmp(plotData.areas, areaName), 1);
+  if isempty(areaIdx)
+    continue;
+  end
+
+  fig = figure(7100 + a);
+  clf(fig);
+  position_figure_full_monitor(fig);
+  axScatter = subplot(1, 2, 1, 'Parent', fig);
+  axDcc = subplot(1, 2, 2, 'Parent', fig);
+  hold(axScatter, 'on');
+  hold(axDcc, 'on');
+  legendHandles = gobjects(0);
+  legendLabels = {};
+  nPlotted = 0;
+  dccByType = cell(1, numel(sessionTypes));
+
+  for t = 1:numel(sessionTypes)
+    sessionType = sessionTypes{t};
+    typeKey = matlab.lang.makeValidName(sessionType);
+    if ~isfield(plotData.byType, typeKey)
+      continue;
+    end
+    typeData = plotData.byType.(typeKey);
+    tauVals = get_av_type_metric_vector(typeData, 'tau', areaIdx);
+    alphaVals = get_av_type_metric_vector(typeData, 'alpha', areaIdx);
+    paramSDVals = get_av_type_metric_vector(typeData, 'paramSD', areaIdx);
+    dccVals = get_av_type_metric_vector(typeData, 'dcc', areaIdx);
+    if isempty(tauVals) || isempty(alphaVals) || isempty(paramSDVals)
+      continue;
+    end
+    n = min([numel(tauVals), numel(alphaVals), numel(paramSDVals)]);
+    tauVals = tauVals(1:n);
+    alphaVals = alphaVals(1:n);
+    paramSDVals = paramSDVals(1:n);
+    if numel(dccVals) >= n
+      dccVals = dccVals(1:n);
+    else
+      dccVals = nan(1, n);
+    end
+    gammaPred = nan(size(tauVals));
+    validTau = isfinite(tauVals) & isfinite(alphaVals) & (tauVals > 1);
+    gammaPred(validTau) = (alphaVals(validTau) - 1) ./ (tauVals(validTau) - 1);
+    valid = isfinite(gammaPred) & isfinite(paramSDVals);
+    if any(valid)
+      hSc = scatter(axScatter, gammaPred(valid), paramSDVals(valid), 60, ...
+        'filled', 'MarkerFaceColor', typeColors(t, :), 'MarkerEdgeColor', 'k', ...
+        'LineWidth', 0.5, 'DisplayName', sessionType);
+      legendHandles(end + 1) = hSc; %#ok<AGROW>
+      legendLabels{end + 1} = sessionType; %#ok<AGROW>
+      nPlotted = nPlotted + sum(valid);
+      % Prefer stored dcc; else |γ_pred - paramSD|
+      dccUse = dccVals;
+      missingDcc = valid & ~isfinite(dccUse);
+      dccUse(missingDcc) = abs(gammaPred(missingDcc) - paramSDVals(missingDcc));
+      dccByType{t} = dccUse(valid & isfinite(dccUse));
+    end
+  end
+
+  if nPlotted == 0
+    close(fig);
+    fprintf('Skipping crackling relation for %s: no finite sessions.\n', areaName);
+    continue;
+  end
+
+  add_av_identity_line(axScatter);
+  xlabel(axScatter, '(\alpha-1)/(\tau-1)', 'Interpreter', 'tex');
+  ylabel(axScatter, '1/\sigma\nu z (paramSD)', 'Interpreter', 'tex');
+  title(axScatter, sprintf('%s — crackling relation', areaName), 'Interpreter', 'none');
+  if ~isempty(legendHandles)
+    legend(axScatter, legendHandles, legendLabels, 'Location', 'best');
+  end
+  grid(axScatter, 'on');
+  axis(axScatter, 'square');
+  hold(axScatter, 'off');
+
+  % dcc histogram / grouped counts by session type
+  allDcc = [];
+  for t = 1:numel(sessionTypes)
+    allDcc = [allDcc, dccByType{t}(:)']; %#ok<AGROW>
+  end
+  if ~isempty(allDcc)
+    nBins = max(5, min(15, ceil(sqrt(numel(allDcc)))));
+    edges = linspace(min(allDcc), max(allDcc) + eps, nBins + 1);
+    binCenters = edges(1:end-1) + diff(edges) / 2;
+    barWidth = 0.8 * mean(diff(edges)) / max(numel(sessionTypes), 1);
+    for t = 1:numel(sessionTypes)
+      vals = dccByType{t};
+      if isempty(vals)
+        continue;
+      end
+      counts = histcounts(vals, edges);
+      xPos = binCenters + (t - (numel(sessionTypes) + 1) / 2) * barWidth;
+      bar(axDcc, xPos, counts, barWidth, 'FaceColor', typeColors(t, :), ...
+        'EdgeColor', 'k', 'LineWidth', 0.5, 'DisplayName', sessionTypes{t});
+    end
+    xlabel(axDcc, 'dcc = |\gamma_{pred} - 1/\sigma\nu z|', 'Interpreter', 'tex');
+    ylabel(axDcc, 'Session count');
+    title(axDcc, sprintf('%s — dcc distribution', areaName), 'Interpreter', 'none');
+    legend(axDcc, 'Location', 'best');
+    grid(axDcc, 'on');
+  end
+  hold(axDcc, 'off');
+
+  if ~isempty(brainArea)
+    titleStr = sprintf('Crackling diagnostics — %s [%s]', brainArea, collectTag);
+    plotBase = sprintf('criticality_av_crackling_relation_%s_%s', brainArea, collectTag);
+  else
+    titleStr = sprintf('Crackling diagnostics — %s [%s]', areaName, collectTag);
+    plotBase = sprintf('criticality_av_crackling_relation_%s_%s', areaName, collectTag);
+  end
+  if numel(areasToPlot) > 1
+    plotBase = sprintf('%s_area%s', plotBase, areaName);
+  end
+  sgtitle(fig, titleStr, 'FontWeight', 'bold', 'Interpreter', 'none');
+
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+  fprintf('Saved crackling relation: %s\n', fullfile(saveDir, plotBase));
+end
+end
+
+function vals = get_av_type_metric_vector(typeData, fieldName, areaIdx)
+% GET_AV_TYPE_METRIC_VECTOR - Pull one area's metric vector from typeData
+vals = [];
+if ~isfield(typeData, fieldName) || areaIdx > numel(typeData.(fieldName))
+  return;
+end
+vals = typeData.(fieldName){areaIdx};
+vals = vals(:)';
+end
+
+function add_av_identity_line(ax)
+% ADD_AV_IDENTITY_LINE - y=x over finite scatter children
+hold(ax, 'on');
+sc = findobj(ax, 'Type', 'Scatter');
+xAll = [];
+yAll = [];
+for i = 1:numel(sc)
+  xAll = [xAll; sc(i).XData(:)]; %#ok<AGROW>
+  yAll = [yAll; sc(i).YData(:)]; %#ok<AGROW>
+end
+valid = isfinite(xAll) & isfinite(yAll);
+if ~any(valid)
+  return;
+end
+lo = min([xAll(valid); yAll(valid)]);
+hi = max([xAll(valid); yAll(valid)]);
+pad = 0.05 * max(hi - lo, eps);
+lim = [lo - pad, hi + pad];
+xlim(ax, lim);
+ylim(ax, lim);
+plot(ax, lim, lim, 'k--', 'LineWidth', 1.25, 'HandleVisibility', 'off');
 end
 
 function position_figure_full_monitor(fig)

@@ -4,7 +4,8 @@
 % For one session and brain area, runs the same avalanche pipeline as
 % criticality_av_across_tasks.m (single full collect window) and plots
 % complementary CCDFs on log-log axes with power-law fits over the viable
-% cutoff range (tau for size, alpha for duration).
+% cutoff range (tau for size, alpha for duration), plus ⟨S⟩(T) with the
+% crackling WLS slope (paramSD = 1/σνz) and printed dcc.
 %
 % Variables (configure in this section):
 %   sessionType        - 'spontaneous', 'interval', 'reach', 'schall'
@@ -37,7 +38,7 @@
 %
 % Goal:
 %   Visualize avalanche size and duration distributions for one session
-%   with log-scaled x-axes and fitted slopes within the fitted cutoff range.
+%   with log-scaled x-axes, fitted slopes, and the crackling ⟨S⟩(T) relation.
 
 %% Configuration
 % sessionType = 'interval';
@@ -350,22 +351,25 @@ for iCellRun = 1:numel(sessionResults.runs)
   figName = sprintf('Session avalanche distributions%s', cell_type_file_tag(runResult.cellType));
   fig = get_task_figure_handle(plotConfig.sessionType, 'distributions', runResult.cellType, figName);
   nAreas = numel(runResult.areaResults);
-  tiledlayout(fig, nAreas, 2, ...
+  tiledlayout(fig, nAreas, 3, ...
     'TileSpacing', plotConfig.tileSpacing, 'Padding', plotConfig.tilePadding);
 
   for aIdx = 1:numel(runResult.areaResults)
     avData = runResult.areaResults{aIdx};
 
-    axSize = nexttile((aIdx - 1) * 2 + 1);
+    axSize = nexttile((aIdx - 1) * 3 + 1);
     plot_avalanche_ccdf_with_fit(axSize, avData.sizes, avData.tau, ...
       avData.minSizeFit, avData.maxSizeFit, 'Sizes', '\tau', avData.sizeFitInfo, ...
       avData.shuffleSizes, plotConfig);
 
-    axDur = nexttile((aIdx - 1) * 2 + 2);
+    axDur = nexttile((aIdx - 1) * 3 + 2);
     binSize = resolve_avalanche_duration_bin_size(avData);
     plot_avalanche_ccdf_with_fit(axDur, avData.durations * binSize * 1000, avData.alpha, ...
       avData.minDurFit * binSize, avData.maxDurFit * binSize, 'Durations (ms)', '\alpha', ...
       avData.durFitInfo, avData.shuffleDurations * binSize * 1000, plotConfig);
+
+    axCrack = nexttile((aIdx - 1) * 3 + 3);
+    plot_size_given_duration_with_fit(axCrack, avData, plotConfig);
   end
 
   titleSuffix = '';
@@ -377,7 +381,7 @@ for iCellRun = 1:numel(sessionResults.runs)
     format_areas_label(runResult.areaNames), runMeta.collectStart, runMeta.collectEnd, titleSuffix), ...
     'FontWeight', 'bold', 'Interpreter', 'none');
 
-  apply_portrait_figure_size(fig, plotConfig.figureWidthInches, nAreas, 2);
+  apply_portrait_figure_size(fig, plotConfig.figureWidthInches, nAreas, 3);
 
   if runMeta.saveFigure
     save_session_avalanche_distribution_figure(fig, paths, runMeta, runResult);
@@ -442,6 +446,16 @@ fprintf('\n');
 fprintf('  Scaling relation (alpha-1)/(tau-1): ');
 print_scaling_relation(avData.tau, avData.alpha);
 fprintf('\n');
+if isfield(avData, 'paramSD') && isfinite(avData.paramSD)
+  fprintf('  Crackling 1/σνz (paramSD from ⟨S⟩|T): %.4f\n', avData.paramSD);
+else
+  fprintf('  Crackling 1/σνz (paramSD from ⟨S⟩|T): nan\n');
+end
+if isfield(avData, 'dcc') && isfinite(avData.dcc)
+  fprintf('  dcc = |γ_pred - paramSD|: %.4f\n', avData.dcc);
+else
+  fprintf('  dcc = |γ_pred - paramSD|: nan\n');
+end
 fprintf('  n = %d avalanches\n', avData.nAvalanches);
 if enableCircularPermutations && ~isempty(avData.shuffleSizes)
   fprintf('  Shuffle (pooled): n = %d avalanches over %d shuffles\n', ...
@@ -535,7 +549,8 @@ function avData = extract_area_avalanches(dataStruct, areaIndex, analysisConfig,
 %   avData - Struct with sizes, durations, tau, alpha, fit bounds, flags
 
 avData = struct('hasAvalanches', false, 'sizes', [], 'durations', [], ...
-  'tau', nan, 'alpha', nan, 'minSizeFit', nan, 'maxSizeFit', nan, ...
+  'tau', nan, 'alpha', nan, 'paramSD', nan, 'dcc', nan, 'scalingRelation', nan, ...
+  'minSizeFit', nan, 'maxSizeFit', nan, ...
   'minDurFit', nan, 'maxDurFit', nan, 'sizeFitInfo', struct(), ...
   'durFitInfo', struct(), 'nAvalanches', 0, 'binSize', nan, ...
   'shuffleSizes', [], 'shuffleDurations', [], 'shuffleTau', nan, 'shuffleAlpha', nan, ...
@@ -571,6 +586,19 @@ avData.maxDurFit = durFit.fitMax;
 avData.sizeFitInfo = sizeFit;
 avData.durFitInfo = durFit;
 avData.nAvalanches = numel(sizes);
+
+% Crackling / size-given-duration exponent (1/σνz) and DCC vs (α-1)/(τ-1)
+if isfinite(durFit.fitMin) && isfinite(durFit.fitMax) && durFit.fitMin <= durFit.fitMax ...
+    && numel(sizes) >= 2 && numel(durations) >= 2
+  [avData.paramSD, ~, ~] = size_given_duration(sizes(:), durations(:), ...
+    'durmin', durFit.fitMin, 'durmax', durFit.fitMax);
+end
+if isfinite(avData.tau) && isfinite(avData.alpha) && avData.tau > 1
+  avData.scalingRelation = (avData.alpha - 1) / (avData.tau - 1);
+end
+if isfinite(avData.paramSD) && isfinite(avData.scalingRelation)
+  avData.dcc = abs(avData.scalingRelation - avData.paramSD);
+end
 
 if isfield(analysisConfig, 'enableCircularPermutations') && analysisConfig.enableCircularPermutations
   nShufflesArea = 10;
@@ -832,6 +860,107 @@ else
   title(ax, sprintf('%s (%s = %.2f %s)', xLabelText, exponentLabel, exponent, pText));
 end
 
+hold(ax, 'off');
+end
+
+function plot_size_given_duration_with_fit(ax, avData, plotConfig)
+% PLOT_SIZE_GIVEN_DURATION_WITH_FIT - log⟨S⟩ vs log T with crackling WLS slope
+%
+% Variables:
+%   ax         - Axes handle
+%   avData     - Area avalanche struct (sizes, durations, fit range, paramSD)
+%   plotConfig - Marker / font options
+%
+% Goal:
+%   Show mean size given duration and the fitted crackling exponent 1/σνz.
+
+if nargin < 3 || isempty(plotConfig)
+  plotConfig = struct();
+end
+plotConfig = fill_default_avalanche_plot_config(plotConfig);
+
+cla(ax);
+if ~isstruct(avData) || ~isfield(avData, 'hasAvalanches') || ~avData.hasAvalanches
+  title(ax, '⟨S⟩(T) (no data)');
+  return;
+end
+
+sizes = avData.sizes(:);
+durations = avData.durations(:);
+valid = isfinite(sizes) & isfinite(durations) & sizes > 0 & durations > 0;
+sizes = sizes(valid);
+durations = durations(valid);
+if numel(sizes) < 2
+  title(ax, '⟨S⟩(T) (insufficient data)');
+  return;
+end
+
+unqDurations = unique(durations);
+meanSize = nan(size(unqDurations));
+for iDur = 1:numel(unqDurations)
+  meanSize(iDur) = mean(sizes(durations == unqDurations(iDur)));
+end
+validMean = isfinite(meanSize) & meanSize > 0;
+unqDurations = unqDurations(validMean);
+meanSize = meanSize(validMean);
+
+observedColor = colors_for_tasks(plotConfig.sessionType);
+markerArea = plotConfig.observedMarkerSize .^ 2;
+
+hold(ax, 'on');
+scatter(ax, unqDurations, meanSize, markerArea, 'filled', ...
+  'MarkerEdgeColor', observedColor, 'MarkerFaceColor', observedColor, ...
+  'MarkerFaceAlpha', plotConfig.observedMarkerFaceAlpha, ...
+  'DisplayName', '⟨S⟩|T');
+
+paramSD = nan;
+logCoeff = nan;
+durMin = nan;
+durMax = nan;
+if isfield(avData, 'minDurFit')
+  durMin = avData.minDurFit;
+end
+if isfield(avData, 'maxDurFit')
+  durMax = avData.maxDurFit;
+end
+if isfinite(durMin) && isfinite(durMax) && durMin <= durMax
+  [paramSD, ~, logCoeff] = size_given_duration(sizes, durations, ...
+    'durmin', durMin, 'durmax', durMax);
+elseif isfield(avData, 'paramSD') && isfinite(avData.paramSD)
+  paramSD = avData.paramSD;
+end
+
+fitPlotted = false;
+if isfinite(paramSD) && isfinite(logCoeff) && isfinite(durMin) && isfinite(durMax) ...
+    && durMin > 0 && durMax > durMin
+  xFit = logspace(log10(durMin), log10(durMax), 80);
+  yFit = 10 .^ (paramSD * log10(xFit) + logCoeff);
+  plot(ax, xFit, yFit, '-', 'Color', [0.85, 0.2, 0.15], ...
+    'LineWidth', plotConfig.fitLineWidth, ...
+    'DisplayName', sprintf('1/\\sigma\\nu z=%.2f', paramSD));
+  fitPlotted = true;
+end
+
+set(ax, 'XScale', 'log', 'YScale', 'log', 'FontSize', plotConfig.tickLabelFontSize, ...
+  'LineWidth', plotConfig.axesLineWidth);
+axis(ax, 'square');
+xlabel(ax, 'Duration (bins)', 'FontSize', plotConfig.axisLabelFontSize);
+ylabel(ax, '\langleS\rangle(T)', 'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', 'tex');
+if fitPlotted
+  legend(ax, 'Location', plotConfig.legendLocation, 'FontSize', plotConfig.tickLabelFontSize, ...
+    'Interpreter', 'tex');
+end
+
+dccText = '';
+if isfield(avData, 'dcc') && isfinite(avData.dcc)
+  dccText = sprintf(', dcc=%.3f', avData.dcc);
+end
+if isfinite(paramSD)
+  title(ax, sprintf('\\langleS\\rangle(T) (1/\\sigma\\nu z = %.2f%s)', paramSD, dccText), ...
+    'Interpreter', 'tex');
+else
+  title(ax, '⟨S⟩(T)');
+end
 hold(ax, 'off');
 end
 

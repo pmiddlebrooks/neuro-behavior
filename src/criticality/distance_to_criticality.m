@@ -1,13 +1,12 @@
 function dcc = distance_to_criticality(tauFitted, alphaFitted, gammaFitted)
-    % computeDCC calculates the Distance to Criticality Coefficient
-    % from Ma et al 2019
+    % DISTANCE_TO_CRITICALITY - |γ_pred - γ_meas| (Ma et al. 2019 dcc)
     %
     % INPUTS:
-    %   alpha_fitted  - avalanche duration exponent
-    %   tau_fitted    - avalanche size exponent
-    %   gamma_fitted  - exponent from size-duration scaling
+    %   tauFitted    - avalanche size exponent τ
+    %   alphaFitted  - avalanche duration exponent α
+    %   gammaFitted  - measured crackling exponent 1/σνz (paramSD from ⟨S⟩~T^γ)
     % OUTPUT:
-    %   dcc - distance to criticality coefficient
+    %   dcc - | (α-1)/(τ-1) - gammaFitted |
 
     % Check for valid input to avoid division by zero
     if tauFitted <= 1

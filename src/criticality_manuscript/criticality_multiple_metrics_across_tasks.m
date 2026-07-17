@@ -10,7 +10,9 @@
 %   runArBatch, runAvBatch, runPrgBatch - Run each analysis pipeline
 %   loadSavedResults   - If true, load saved .mat outputs when run*Batch false
 %   plotResults        - Create combined d2/tau/alpha figure(s)
-%   plotMetricPairScatters - 1x3 figure: d2 vs tau, d2 vs alpha, tau vs alpha
+%   plotMetricPairScatters - 2x2 figure: d2 vs tau, d2 vs alpha,
+%                            paramSD (crackling 1/σνz) vs (α-1)/(τ-1),
+%                            d2 vs paramSD
 %   plotCorrelationMatrix - Pearson corr heatmap across sessions (all tasks)
 %   saveCombinedBatch  - Save merged outputs for plot-only reruns
 %   enablePermutations - If false, observed metrics only (no shuffles; faster)
@@ -20,8 +22,8 @@
 %                        offsets); secondary metrics use independent range
 %                        maps onto the primary display ylim, with right-side
 %                        axes showing native tau/alpha ticks.
-%   plotSeparatedMetrics - 2x3 figure: d2/tau/alpha (top) and
-%                          decades/kurtosis/D_JS (bottom); consecutive sessions
+%   plotSeparatedMetrics - 2x4 figure: d2/tau/alpha/paramSD (top) and
+%                          decades/dcc/kurtosis/D_JS (bottom); consecutive sessions
 %                          linked within each task type on each panel.
 %   anchorMetric       - 'd2', 'tau', or 'alpha' (primary / left axis)
 %   metricsToPlot      - Subset of {'d2','tau','alpha'} markers to draw
@@ -42,7 +44,7 @@ sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 0;
 collectEnd = 45 * 60;
 collectEnd = [];  % [] = full session
-d2Window = 30;
+d2Window = [];
 % One d2 estimate for the full collect window ([] when collectEnd is [])
 % d2Window = collectEnd;
 
@@ -428,7 +430,7 @@ end
 
 metricKeys = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', 'djs', ...
   'meanSpikesPerBinPerNeuron'};
-metricLabels = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', ...
+metricLabels = {'d2', 'tau', 'alpha', '1/\sigma\nu z', 'decades', 'dcc', 'kurtosis', ...
   'JS distance', 'spikes/bin/neuron'};
 
 saveDir = fullfile(paths.dropPath, 'criticality_manuscript', 'figures');
@@ -482,7 +484,7 @@ for iArea = 1:numel(areasToPlot)
   nMetric = numel(metricLabels);
   set(ax, 'XTick', 1:nMetric, 'XTickLabel', metricLabels, ...
     'YTick', 1:nMetric, 'YTickLabel', metricLabels, ...
-    'TickLabelInterpreter', 'none', 'FontSize', plotConfig.tickLabelFontSize);
+    'TickLabelInterpreter', 'tex', 'FontSize', plotConfig.tickLabelFontSize);
   xtickangle(ax, 45);
   xlabel(ax, 'Metric', 'FontSize', plotConfig.axisLabelFontSize);
   ylabel(ax, 'Metric', 'FontSize', plotConfig.axisLabelFontSize);
@@ -880,8 +882,6 @@ for a = 1:numel(areasToPlot)
   xCursor = 0;
   xticksCenters = [];
   xtickLabels = {};
-  % Per-session marker positions for within-session connector lines
-  sessionConnect = struct('x', {{}}, 'y', {{}}, 'ax', {{}}, 'color', {{}});
 
   for t = 1:numel(sessionTypes)
     sessionType = sessionTypes{t};
@@ -894,10 +894,27 @@ for a = 1:numel(areasToPlot)
     numSessions = numel(rowIdx);
     xPos = xCursor + (1:numSessions);
 
+    % Collect per-metric positions to join across sessions within this task
+    metricLineX = struct('d2', [], 'tau', [], 'alpha', []);
+    metricLineY = struct('d2', [], 'tau', [], 'alpha', []);
+
     for iSess = 1:numSessions
-      connectX = [];
-      connectY = [];
-      connectAx = {};
+      for m = 1:nMetrics
+        metricName = metricsToPlot{m};
+        xMetric = xPos(iSess) + xOffsets(m);
+        yMetric = yVals.(metricName)(rowIdx(iSess));
+        if isfinite(xMetric) && isfinite(yMetric)
+          metricLineX.(metricName)(end + 1) = xMetric; %#ok<AGROW>
+          metricLineY.(metricName)(end + 1) = yMetric; %#ok<AGROW>
+        end
+      end
+    end
+
+    % Draw across-session lines first so markers sit on top
+    draw_across_session_metric_lines(axMain, metricLineX, metricLineY, metricsToPlot, ...
+      taskColor, plotConfig);
+
+    for iSess = 1:numSessions
       for m = 1:nMetrics
         metricName = metricsToPlot{m};
         faceColor = taskColor;
@@ -914,17 +931,6 @@ for a = 1:numel(areasToPlot)
           legendHandles(end + 1) = hMetric; %#ok<AGROW>
           legendLabels{end + 1} = metricLabels.(metricName); %#ok<AGROW>
         end
-        if isfinite(xMetric) && isfinite(yMetric)
-          connectX(end + 1) = xMetric; %#ok<AGROW>
-          connectY(end + 1) = yMetric; %#ok<AGROW>
-          connectAx{end + 1} = axMain; %#ok<AGROW>
-        end
-      end
-      if numel(connectX) >= 2
-        sessionConnect.x{end + 1} = connectX; %#ok<AGROW>
-        sessionConnect.y{end + 1} = connectY; %#ok<AGROW>
-        sessionConnect.ax{end + 1} = connectAx; %#ok<AGROW>
-        sessionConnect.color{end + 1} = taskColor; %#ok<AGROW>
       end
     end
 
@@ -982,9 +988,6 @@ for a = 1:numel(areasToPlot)
     rightOffset = rightOffset + 0.1;
   end
 
-  % Within-session lines linking that session's metric markers
-  draw_within_session_metric_connectors(fig, sessionConnect, plotConfig);
-
   if ~isempty(legendHandles)
     legend(axMain, legendHandles, legendLabels, 'Location', 'best', ...
       'FontSize', plotConfig.legendFontSize);
@@ -1040,14 +1043,15 @@ function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, pr
     areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
     useLog10D2, plotConfig, engagementTag, metricsToPlot, avPlotDataDecades, ...
     finalCutoffDivisor)
-% PLOT_MULTIMETRIC_SEPARATED_AXES_ACROSS_TASKS - 2x3 panels of session metrics
+% PLOT_MULTIMETRIC_SEPARATED_AXES_ACROSS_TASKS - 2x4 panels of session metrics
 %
 % Layout:
-%   Top:    D2 | Avalanche Sizes | Avalanche Durations
-%   Bottom: Scale Range | Renorm: Kurtosis | Renorm: JS-Distance
+%   Top:    D2 | Avalanche Sizes | Avalanche Durations | Crackling 1/σνz
+%   Bottom: Scale Range | dcc | Renorm: Kurtosis | Renorm: JS-Distance
 %
 % Variables:
-%   arPlotData / avPlotData - Sources for d2 / tau / alpha (may be engagement views)
+%   arPlotData / avPlotData - Sources for d2 / tau / alpha / paramSD / dcc
+%                             (may be engagement views)
 %   prgPlotData             - PRG plotData for kurtosis (kappaMean) and D_JS
 %   avPlotDataDecades       - AV plotData used for decades (full-session when
 %                             engagement av views lack decades); defaults to avPlotData
@@ -1087,33 +1091,42 @@ else
 end
 kurtosisLabel = sprintf('kurtosis (N = %d)', finalCutoffDivisor);
 djsLabel = sprintf('D_{JS} (N = %d)', finalCutoffDivisor);
+paramSdLabel = '1/\sigma\nu z';
 
-% Fixed 2x3 panel order
-panelMetricKeys = {'d2', 'tau', 'alpha', 'decades', 'kurtosis', 'djs'};
+% Fixed 2x4 panel order (crackling next to exponents / decades)
+panelMetricKeys = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', 'djs'};
 labelByKey = struct('d2', d2Label, 'tau', 'tau', 'alpha', 'alpha', ...
-  'decades', 'decades', 'kurtosis', kurtosisLabel, 'djs', djsLabel);
+  'paramSD', paramSdLabel, 'decades', 'decades', 'dcc', 'dcc', ...
+  'kurtosis', kurtosisLabel, 'djs', djsLabel);
 titleByKey = struct( ...
   'd2', 'D2', ...
   'tau', 'Avalanche Sizes', ...
   'alpha', 'Avalanche Durations', ...
+  'paramSD', 'Crackling 1/\sigma\nu z', ...
   'decades', 'Scale-Free Range', ...
+  'dcc', 'Distance to Criticality', ...
   'kurtosis', 'Renorm: Kurtosis', ...
   'djs', 'Renorm: JS-Distance');
 fieldByKey = struct('d2', 'd2Mean', 'tau', 'tauMean', 'alpha', 'alphaMean', ...
-  'decades', 'decades', 'kurtosis', 'kurtosis', 'djs', 'djs');
+  'paramSD', 'paramSD', 'decades', 'decades', 'dcc', 'dcc', ...
+  'kurtosis', 'kurtosis', 'djs', 'djs');
 semByKey = struct('d2', 'd2Sem', 'tau', 'tauSem', 'alpha', 'alphaSem', ...
-  'decades', 'decadesSem', 'kurtosis', 'kurtosisSem', 'djs', 'djsSem');
-% d2 / decades / kurtosis / Djs: filled circles; tau: open square; alpha: open diamond
+  'paramSD', 'paramSDSem', 'decades', 'decadesSem', 'dcc', 'dccSem', ...
+  'kurtosis', 'kurtosisSem', 'djs', 'djsSem');
+% d2 / paramSD / decades / dcc / kurtosis / Djs: filled circles; tau square; alpha diamond
 markerByKey = struct('d2', 'o', 'tau', 's', 'alpha', 'd', ...
-  'decades', 'o', 'kurtosis', 'o', 'djs', 'o');
+  'paramSD', 'o', 'decades', 'o', 'dcc', 'o', 'kurtosis', 'o', 'djs', 'o');
 fillByKey = struct('d2', true, 'tau', false, 'alpha', false, ...
-  'decades', true, 'kurtosis', true, 'djs', true);
+  'paramSD', true, 'decades', true, 'dcc', true, 'kurtosis', true, 'djs', true);
 
-panelYFields = cell(1, 6);
-panelSemFields = cell(1, 6);
-panelLabels = cell(1, 6);
-panelTitles = cell(1, 6);
-for iPanel = 1:6
+nPanels = numel(panelMetricKeys);
+nCols = 4;
+nRows = 2;
+panelYFields = cell(1, nPanels);
+panelSemFields = cell(1, nPanels);
+panelLabels = cell(1, nPanels);
+panelTitles = cell(1, nPanels);
+for iPanel = 1:nPanels
   key = panelMetricKeys{iPanel};
   panelYFields{iPanel} = fieldByKey.(key);
   panelSemFields{iPanel} = semByKey.(key);
@@ -1155,9 +1168,9 @@ for a = 1:numel(areasToPlot)
   fig = figure('Color', 'w', 'Name', sprintf('Separated metrics — %s', areaName));
   position_figure_full_monitor(fig);
 
-  for iPanel = 1:6
+  for iPanel = 1:nPanels
     metricKey = panelMetricKeys{iPanel};
-    ax = subplot(2, 3, iPanel, 'Parent', fig);
+    ax = subplot(nRows, nCols, iPanel, 'Parent', fig);
     hold(ax, 'on');
     xCursor = 0;
     xticksCenters = [];
@@ -1211,7 +1224,8 @@ for a = 1:numel(areasToPlot)
     xlabel(ax, 'Session', 'FontSize', plotConfig.axisLabelFontSize);
     ylabel(ax, panelLabels{iPanel}, 'FontSize', plotConfig.axisLabelFontSize, ...
       'Interpreter', ternary_metric_label_interpreter(panelLabels{iPanel}));
-    title(ax, panelTitles{iPanel}, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
+    title(ax, panelTitles{iPanel}, 'FontSize', plotConfig.titleFontSize, ...
+      'Interpreter', ternary_metric_label_interpreter(panelTitles{iPanel}));
     set(ax, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
       'Box', 'off', 'TickDir', 'out');
     hold(ax, 'off');
@@ -1244,14 +1258,14 @@ end
 function sessionTable = build_separated_metrics_session_table(arPlotData, avPlotData, ...
     prgPlotData, avPlotDataDecades, sessionTypes, areaIdxAr, areaIdxAv, areaIdxPrg, ...
     areaIdxAvDec, topMetrics)
-% BUILD_SEPARATED_METRICS_SESSION_TABLE - d2/tau/alpha + decades/kurtosis/djs
+% BUILD_SEPARATED_METRICS_SESSION_TABLE - d2/tau/alpha + crackling + PRG metrics
 %
 % Variables:
 %   avPlotDataDecades - AV source for decades (may differ from avPlotData)
 %   topMetrics        - Which of d2/tau/alpha must be finite to keep a session
 %
 % Goal:
-%   Align top-row metrics with bottom-row decades (AV) and PRG kurtosis / D_JS.
+%   Align top-row metrics with paramSD/dcc (AV), decades (AV), and PRG kurtosis / D_JS.
 
 if nargin < 10 || isempty(topMetrics)
   topMetrics = {'d2', 'tau', 'alpha'};
@@ -1266,6 +1280,10 @@ if isempty(baseTable)
 end
 
 nRow = height(baseTable);
+paramSDCol = nan(nRow, 1);
+paramSDSemCol = zeros(nRow, 1);
+dccCol = nan(nRow, 1);
+dccSemCol = zeros(nRow, 1);
 decadesCol = nan(nRow, 1);
 decadesSemCol = zeros(nRow, 1);
 kurtosisCol = nan(nRow, 1);
@@ -1280,6 +1298,15 @@ for i = 1:nRow
   % Within-type index for fallback (not the global table row)
   typeRows = find(strcmp(baseTable.sessionType, sessionType));
   withinTypeIdx = find(typeRows == i, 1);
+
+  if isfield(avPlotData.byType, typeKey)
+    avType = avPlotData.byType.(typeKey);
+    avIdx = find_matching_session_index(avType, sessionName, withinTypeIdx);
+    if ~isempty(avIdx)
+      paramSDCol(i) = get_type_cell_metric(avType, 'paramSD', areaIdxAv, avIdx);
+      dccCol(i) = get_type_cell_metric(avType, 'dcc', areaIdxAv, avIdx);
+    end
+  end
 
   if isfield(avPlotDataDecades.byType, typeKey)
     avDecType = avPlotDataDecades.byType.(typeKey);
@@ -1303,15 +1330,27 @@ for i = 1:nRow
   end
 end
 
-sessionTable = [baseTable, table(decadesCol, decadesSemCol, kurtosisCol, kurtosisSemCol, ...
-  djsCol, djsSemCol, 'VariableNames', {'decades', 'decadesSem', 'kurtosis', 'kurtosisSem', ...
-  'djs', 'djsSem'})];
+sessionTable = [baseTable, table(paramSDCol, paramSDSemCol, dccCol, dccSemCol, ...
+  decadesCol, decadesSemCol, kurtosisCol, kurtosisSemCol, djsCol, djsSemCol, ...
+  'VariableNames', {'paramSD', 'paramSDSem', 'dcc', 'dccSem', ...
+  'decades', 'decadesSem', 'kurtosis', 'kurtosisSem', 'djs', 'djsSem'})];
 end
 
 function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, areasToPlot, ...
     sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
     plotConfig, engagementTag)
-% PLOT_MULTIMETRIC_PAIR_SCATTERS_ACROSS_TASKS - 1x3 scatters: d2-tau, d2-alpha, tau-alpha
+% PLOT_MULTIMETRIC_PAIR_SCATTERS_ACROSS_TASKS - 2x2 session metric scatters
+%
+% Panels (titles are Y vs X):
+%   (1,1) Avalanche Sizes vs D2
+%   (1,2) Avalanche Durations vs D2
+%   (2,1) Measured vs Predicted Crackling Exponent
+%   (2,2) Crackling Exponent vs D2
+%
+% Crackling naming:
+%   Measured / observed crackling exponent = paramSD = 1/σνz from WLS ⟨S⟩(T)
+%   Predicted crackling exponent = (α-1)/(τ-1) from the size/duration PDFs
+%   dcc = |predicted - measured|
 %
 % Variables:
 %   arPlotData / avPlotData - Aggregated plotData from AR / AV batches
@@ -1320,7 +1359,7 @@ function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, are
 %   engagementTag           - Optional engaged / nonEngaged suffix
 %
 % Goal:
-%   One figure per area with three session-level scatter panels.
+%   Cross-session relationships among d2 and avalanche / crackling exponents.
 
 if nargin < 11 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
@@ -1335,11 +1374,9 @@ if useLog10D2
 else
   d2Label = 'd2';
 end
-
-pairXFields = {'d2Mean', 'd2Mean', 'tauMean'};
-pairYFields = {'tauMean', 'alphaMean', 'alphaMean'};
-pairXLabels = {d2Label, d2Label, 'tau'};
-pairYLabels = {'tau', 'alpha', 'alpha'};
+% Measured γ from ⟨S⟩~T^γ (size_given_duration); predicted γ from τ, α
+measuredCracklingLabel = 'Measured 1/\sigma\nu z';
+predictedCracklingLabel = 'Predicted (\alpha-1)/(\tau-1)';
 
 saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
 if ~exist(saveDir, 'dir')
@@ -1354,10 +1391,10 @@ for a = 1:numel(areasToPlot)
     continue;
   end
 
-  sessionTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
-    areaIdxAr, areaIdxAv, {'d2', 'tau', 'alpha'});
+  sessionTable = build_pair_scatter_session_table(arPlotData, avPlotData, sessionTypes, ...
+    areaIdxAr, areaIdxAv);
   if isempty(sessionTable)
-    fprintf('Skipping pair scatters for %s: no aligned d2/tau/alpha sessions.\n', areaName);
+    fprintf('Skipping pair scatters for %s: no aligned sessions.\n', areaName);
     continue;
   end
 
@@ -1366,13 +1403,25 @@ for a = 1:numel(areasToPlot)
   legendHandles = gobjects(0);
   legendLabels = {};
 
-  for iPair = 1:3
-    ax = subplot(1, 3, iPair, 'Parent', fig);
+  % Columns: tile, xField, yField, xLabel, yLabel, drawIdentity, title (Y vs X)
+  panelSpecs = { ...
+    1, 'd2Mean', 'tauMean', d2Label, 'tau', false, 'Avalanche Sizes vs D2'
+    2, 'd2Mean', 'alphaMean', d2Label, 'alpha', false, 'Avalanche Durations vs D2'
+    3, 'gammaPred', 'paramSD', predictedCracklingLabel, measuredCracklingLabel, true, ...
+      'Measured vs Predicted Crackling Exponent'
+    4, 'd2Mean', 'paramSD', d2Label, measuredCracklingLabel, false, ...
+      'Crackling Exponent vs D2'
+    };
+
+  for iPair = 1:4
+    ax = subplot(2, 2, iPair, 'Parent', fig);
     hold(ax, 'on');
-    xField = pairXFields{iPair};
-    yField = pairYFields{iPair};
-    xLabel = pairXLabels{iPair};
-    yLabel = pairYLabels{iPair};
+    xField = panelSpecs{iPair, 2};
+    yField = panelSpecs{iPair, 3};
+    xLabel = panelSpecs{iPair, 4};
+    yLabel = panelSpecs{iPair, 5};
+    drawIdentity = panelSpecs{iPair, 6};
+    panelTitle = panelSpecs{iPair, 7};
 
     for t = 1:numel(sessionTypes)
       sessionType = sessionTypes{t};
@@ -1388,7 +1437,7 @@ for a = 1:numel(areasToPlot)
       end
       taskColor = colors_for_tasks(sessionType);
       plotConfig.scatterMarkerSize = 120;
-      plotConfig.markerFaceAlpha = .8;
+      plotConfig.markerFaceAlpha = 0.8;
       hSc = scatter_manuscript_filled(ax, xVals(valid), yVals(valid), plotConfig, ...
         taskColor, sessionType);
       if iPair == 1 && (isempty(legendLabels) || ~ismember(sessionType, legendLabels))
@@ -1397,10 +1446,15 @@ for a = 1:numel(areasToPlot)
       end
     end
 
+    if drawIdentity
+      add_identity_line_to_axes(ax);
+    end
+
     xlabel(ax, xLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
       'Interpreter', ternary_metric_label_interpreter(xLabel));
     ylabel(ax, yLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
       'Interpreter', ternary_metric_label_interpreter(yLabel));
+    title(ax, panelTitle, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
     set(ax, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
       'Box', 'off', 'TickDir', 'out');
     hold(ax, 'off');
@@ -1432,6 +1486,84 @@ for a = 1:numel(areasToPlot)
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved pair scatters: %s\n', fullfile(saveDir, plotBase));
+end
+end
+
+function sessionTable = build_pair_scatter_session_table(arPlotData, avPlotData, sessionTypes, ...
+    areaIdxAr, areaIdxAv)
+% BUILD_PAIR_SCATTER_SESSION_TABLE - d2/tau/alpha + paramSD and γ_pred
+%
+% Goal:
+%   Align AR d2 with AV tau, alpha, and crackling paramSD (1/σνz). Also store
+%   predicted crackling exponent (α-1)/(τ-1) for the identity-line panel.
+
+baseTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
+  areaIdxAr, areaIdxAv, {'d2', 'tau', 'alpha'});
+if isempty(baseTable)
+  sessionTable = baseTable;
+  return;
+end
+
+nRow = height(baseTable);
+paramSDCol = nan(nRow, 1);
+gammaPredCol = nan(nRow, 1);
+
+for i = 1:nRow
+  sessionType = baseTable.sessionType{i};
+  sessionName = baseTable.sessionName{i};
+  typeKey = matlab.lang.makeValidName(sessionType);
+  typeRows = find(strcmp(baseTable.sessionType, sessionType));
+  withinTypeIdx = find(typeRows == i, 1);
+
+  if isfield(avPlotData.byType, typeKey)
+    avType = avPlotData.byType.(typeKey);
+    avIdx = find_matching_session_index(avType, sessionName, withinTypeIdx);
+    if ~isempty(avIdx)
+      paramSDCol(i) = get_type_cell_metric(avType, 'paramSD', areaIdxAv, avIdx);
+    end
+  end
+
+  tauVal = baseTable.tauMean(i);
+  alphaVal = baseTable.alphaMean(i);
+  if isfinite(tauVal) && isfinite(alphaVal) && tauVal > 1
+    gammaPredCol(i) = (alphaVal - 1) / (tauVal - 1);
+  end
+end
+
+sessionTable = [baseTable, table(paramSDCol, gammaPredCol, ...
+  'VariableNames', {'paramSD', 'gammaPred'})];
+end
+
+function add_identity_line_to_axes(ax)
+% ADD_IDENTITY_LINE_TO_AXES - y=x reference over current finite data limits
+hold(ax, 'on');
+xLim = xlim(ax);
+yLim = ylim(ax);
+% Expand to include data children if limits are still default
+lineChildren = findobj(ax, 'Type', 'Scatter');
+if ~isempty(lineChildren)
+  xAll = [];
+  yAll = [];
+  for i = 1:numel(lineChildren)
+    xAll = [xAll; lineChildren(i).XData(:)]; %#ok<AGROW>
+    yAll = [yAll; lineChildren(i).YData(:)]; %#ok<AGROW>
+  end
+  valid = isfinite(xAll) & isfinite(yAll);
+  if any(valid)
+    lo = min([xAll(valid); yAll(valid)]);
+    hi = max([xAll(valid); yAll(valid)]);
+    pad = 0.05 * max(hi - lo, eps);
+    lim = [lo - pad, hi + pad];
+    xlim(ax, lim);
+    ylim(ax, lim);
+    xLim = lim;
+    yLim = lim;
+  end
+end
+lo = max(xLim(1), yLim(1));
+hi = min(xLim(2), yLim(2));
+if isfinite(lo) && isfinite(hi) && hi > lo
+  plot(ax, [lo, hi], [lo, hi], 'k--', 'LineWidth', 1.25, 'HandleVisibility', 'off');
 end
 end
 
@@ -1807,107 +1939,58 @@ end
 yLimPlot = [min(vals) - yPad, max(vals) + yPad];
 end
 
-function draw_within_session_metric_connectors(fig, sessionConnect, plotConfig)
-% DRAW_WITHIN_SESSION_METRIC_CONNECTORS - Line linking a session's metric markers
+function draw_across_session_metric_lines(ax, metricLineX, metricLineY, metricsToPlot, ...
+    taskColor, plotConfig)
+% DRAW_ACROSS_SESSION_METRIC_LINES - Join each metric across sessions within a task
 %
 % Variables:
-%   fig            - Figure handle
-%   sessionConnect - Struct arrays of x/y/ax/color per session
-%   plotConfig     - Line width styling
+%   ax             - Axes handle
+%   metricLineX/Y  - Structs with .d2 / .tau / .alpha session x/y vectors
+%   metricsToPlot  - Which metrics are present
+%   taskColor      - RGB for this session type (used for d2 and tau)
+%   plotConfig     - Line-width baseline
 %
 % Goal:
-%   Connect d2/tau/alpha markers that belong to the same session. Uses a
-%   figure-normalized overlay axes so points on independent y-axes still link.
+%   d2: thick solid task-colored line
+%   tau: thinner dashed task-colored line
+%   alpha: solid gray line
 
-if nargin < 3 || isempty(plotConfig)
+if nargin < 6 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
 end
-if ~isfield(sessionConnect, 'x') || isempty(sessionConnect.x)
-  return;
-end
 
-lineWidth = max(0.75, plotConfig.lineWidth - 0.5);
-drawnow;
+baseWidth = plotConfig.lineWidth;
+lineStyleByMetric = struct( ...
+  'd2', struct('LineStyle', '-', 'LineWidth', baseWidth + 1.25, 'Color', taskColor), ...
+  'tau', struct('LineStyle', '--', 'LineWidth', max(0.75, baseWidth - 0.5), 'Color', taskColor), ...
+  'alpha', struct('LineStyle', '-', 'LineWidth', baseWidth, 'Color', [0.55, 0.55, 0.55]));
 
-% Overlay axes in figure-normalized units (for cross-axes connectors)
-axNorm = axes( ...
-  'Parent', fig, ...
-  'Position', [0 0 1 1], ...
-  'Color', 'none', ...
-  'XLim', [0 1], ...
-  'YLim', [0 1], ...
-  'Visible', 'off', ...
-  'HitTest', 'off', ...
-  'HandleVisibility', 'off');
-hold(axNorm, 'on');
-
-for iSess = 1:numel(sessionConnect.x)
-  xPts = sessionConnect.x{iSess};
-  yPts = sessionConnect.y{iSess};
-  axList = sessionConnect.ax{iSess};
-  lineColor = sessionConnect.color{iSess};
-  if numel(xPts) < 2
+hold(ax, 'on');
+for m = 1:numel(metricsToPlot)
+  metricName = metricsToPlot{m};
+  if ~isfield(metricLineX, metricName) || ~isfield(lineStyleByMetric, metricName)
     continue;
   end
-
-  % Same axes: draw in data coordinates
-  sameAx = true;
-  for i = 2:numel(axList)
-    if axList{i} ~= axList{1}
-      sameAx = false;
-      break;
-    end
-  end
-  if sameAx
-    plot(axList{1}, xPts, yPts, '-', 'Color', lineColor, ...
-      'LineWidth', lineWidth, 'HandleVisibility', 'off');
+  xPts = metricLineX.(metricName)(:);
+  yPts = metricLineY.(metricName)(:);
+  valid = isfinite(xPts) & isfinite(yPts);
+  if sum(valid) < 2
     continue;
   end
-
-  % Independent axes: polyline in figure-normalized units
-  nxy = zeros(numel(xPts), 2);
-  valid = true(numel(xPts), 1);
-  for i = 1:numel(xPts)
-    [nx, ny] = axes_data_to_figure_norm(axList{i}, xPts(i), yPts(i));
-    if ~isfinite(nx) || ~isfinite(ny)
-      valid(i) = false;
-      continue;
-    end
-    nxy(i, :) = [nx, ny];
-  end
-  nxy = nxy(valid, :);
-  if size(nxy, 1) < 2
-    continue;
-  end
-  plot(axNorm, nxy(:, 1), nxy(:, 2), '-', 'Color', lineColor, ...
-    'LineWidth', lineWidth, 'HandleVisibility', 'off');
+  style = lineStyleByMetric.(metricName);
+  plot(ax, xPts(valid), yPts(valid), style.LineStyle, ...
+    'Color', style.Color, 'LineWidth', style.LineWidth, 'HandleVisibility', 'off');
 end
-
-uistack(axNorm, 'top');
-end
-
-function [nx, ny] = axes_data_to_figure_norm(ax, xData, yData)
-% AXES_DATA_TO_FIGURE_NORM - Convert axes data coords to figure normalized units
-axPos = get(ax, 'Position');
-xl = xlim(ax);
-yl = ylim(ax);
-if diff(xl) == 0 || diff(yl) == 0
-  nx = nan;
-  ny = nan;
-  return;
-end
-nx = axPos(1) + ((xData - xl(1)) / diff(xl)) * axPos(3);
-ny = axPos(2) + ((yData - yl(1)) / diff(yl)) * axPos(4);
 end
 
 function plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, engagementTag, metricsToPlot)
-% MAKE_SEPARATED_METRICS_PLOT_BASENAME - File stem for 2x3 separated metric panels
+% MAKE_SEPARATED_METRICS_PLOT_BASENAME - File stem for separated metric panels
 if nargin < 7 || isempty(engagementTag)
   engagementTag = '';
 end
 if nargin < 8 || isempty(metricsToPlot)
-  metricsToPlot = {'d2', 'tau', 'alpha', 'decades', 'kurtosis', 'djs'};
+  metricsToPlot = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', 'djs'};
 end
 if ischar(metricsToPlot) || isstring(metricsToPlot)
   metricsToPlot = cellstr(metricsToPlot);
@@ -1936,7 +2019,7 @@ end
 end
 
 function interp = ternary_metric_label_interpreter(labelText)
-if contains(labelText, '_{')
+if contains(labelText, '_{') || contains(labelText, '\')
   interp = 'tex';
 else
   interp = 'none';
@@ -2376,7 +2459,8 @@ plotData.useLog10D2 = useLog10D2;
 
 metricFields = { ...
   'd2EngagedMean', 'd2EngagedSem', 'd2NonEngagedMean', 'd2NonEngagedSem', ...
-  'tauEngaged', 'tauNonEngaged', 'alphaEngaged', 'alphaNonEngaged'};
+  'tauEngaged', 'tauNonEngaged', 'alphaEngaged', 'alphaNonEngaged', ...
+  'paramSDEngaged', 'paramSDNonEngaged', 'dccEngaged', 'dccNonEngaged'};
 
 for t = 1:numel(sessionTypes)
   typeKey = matlab.lang.makeValidName(sessionTypes{t});
@@ -2415,12 +2499,18 @@ for s = 1:numel(batchResults)
     typeData.d2NonEngagedMean{areaIdx}(end + 1) = nonSummary.mean;
     typeData.d2NonEngagedSem{areaIdx}(end + 1) = nonSummary.sem;
 
-    [tauEng, alphaEng] = get_engagement_area_av_exponents(avByClass.engaged, areaName);
-    [tauNon, alphaNon] = get_engagement_area_av_exponents(avByClass.nonEngaged, areaName);
+    [tauEng, alphaEng, paramSDEng, dccEng] = get_engagement_area_av_scalars( ...
+      avByClass.engaged, areaName);
+    [tauNon, alphaNon, paramSDNon, dccNon] = get_engagement_area_av_scalars( ...
+      avByClass.nonEngaged, areaName);
     typeData.tauEngaged{areaIdx}(end + 1) = tauEng;
     typeData.tauNonEngaged{areaIdx}(end + 1) = tauNon;
     typeData.alphaEngaged{areaIdx}(end + 1) = alphaEng;
     typeData.alphaNonEngaged{areaIdx}(end + 1) = alphaNon;
+    typeData.paramSDEngaged{areaIdx}(end + 1) = paramSDEng;
+    typeData.paramSDNonEngaged{areaIdx}(end + 1) = paramSDNon;
+    typeData.dccEngaged{areaIdx}(end + 1) = dccEng;
+    typeData.dccNonEngaged{areaIdx}(end + 1) = dccNon;
   end
 
   typeData.sessionLabels{end + 1} = batchResults(s).label;
@@ -2478,9 +2568,13 @@ else
 end
 end
 
-function [tauVal, alphaVal] = get_engagement_area_av_exponents(avClassResult, areaName)
+function [tauVal, alphaVal, paramSDVal, dccVal] = get_engagement_area_av_scalars(avClassResult, areaName)
+% GET_ENGAGEMENT_AREA_AV_SCALARS - tau, alpha, paramSD (1/σνz), dcc for one area
+
 tauVal = nan;
 alphaVal = nan;
+paramSDVal = nan;
+dccVal = nan;
 if ~isstruct(avClassResult) || ~isfield(avClassResult, 'areas') || ~isfield(avClassResult, 'byArea')
   return;
 end
@@ -2497,6 +2591,12 @@ if isfield(avData, 'tau') && isfinite(avData.tau)
 end
 if isfield(avData, 'alpha') && isfinite(avData.alpha)
   alphaVal = avData.alpha;
+end
+if isfield(avData, 'paramSD') && isfinite(avData.paramSD)
+  paramSDVal = avData.paramSD;
+end
+if isfield(avData, 'dcc') && isfinite(avData.dcc)
+  dccVal = avData.dcc;
 end
 end
 
@@ -2557,11 +2657,15 @@ for t = 1:numel(sessionTypes)
         arView.byType.(typeKey).d2Sem{a} = get_eng_series(engType, 'd2EngagedSem', engAreaIdx);
         avView.byType.(typeKey).tau{a} = get_eng_series(engType, 'tauEngaged', engAreaIdx);
         avView.byType.(typeKey).alpha{a} = get_eng_series(engType, 'alphaEngaged', engAreaIdx);
+        avView.byType.(typeKey).paramSD{a} = get_eng_series(engType, 'paramSDEngaged', engAreaIdx);
+        avView.byType.(typeKey).dcc{a} = get_eng_series(engType, 'dccEngaged', engAreaIdx);
       else
         arView.byType.(typeKey).d2Mean{a} = get_eng_series(engType, 'd2NonEngagedMean', engAreaIdx);
         arView.byType.(typeKey).d2Sem{a} = get_eng_series(engType, 'd2NonEngagedSem', engAreaIdx);
         avView.byType.(typeKey).tau{a} = get_eng_series(engType, 'tauNonEngaged', engAreaIdx);
         avView.byType.(typeKey).alpha{a} = get_eng_series(engType, 'alphaNonEngaged', engAreaIdx);
+        avView.byType.(typeKey).paramSD{a} = get_eng_series(engType, 'paramSDNonEngaged', engAreaIdx);
+        avView.byType.(typeKey).dcc{a} = get_eng_series(engType, 'dccNonEngaged', engAreaIdx);
       end
     end
     arView.byType.(typeKey).sessionNames = get_field_or_empty(engType, 'sessionNames');
@@ -2592,6 +2696,8 @@ for t = 1:numel(sessionTypes)
         end
         avView.byType.(typeKey).tau{a} = get_type_metric_cell(avSrc, 'tau', srcIdx);
         avView.byType.(typeKey).alpha{a} = get_type_metric_cell(avSrc, 'alpha', srcIdx);
+        avView.byType.(typeKey).paramSD{a} = get_type_metric_cell(avSrc, 'paramSD', srcIdx);
+        avView.byType.(typeKey).dcc{a} = get_type_metric_cell(avSrc, 'dcc', srcIdx);
       end
       avView.byType.(typeKey).sessionNames = get_field_or_empty(avSrc, 'sessionNames');
       avView.byType.(typeKey).sessionLabels = get_field_or_empty(avSrc, 'sessionLabels');
@@ -2616,9 +2722,13 @@ function typeData = init_standard_av_type(numAreas)
 typeData = struct();
 typeData.tau = cell(1, numAreas);
 typeData.alpha = cell(1, numAreas);
+typeData.paramSD = cell(1, numAreas);
+typeData.dcc = cell(1, numAreas);
 for a = 1:numAreas
   typeData.tau{a} = [];
   typeData.alpha{a} = [];
+  typeData.paramSD{a} = [];
+  typeData.dcc{a} = [];
 end
 typeData.sessionNames = {};
 typeData.sessionLabels = {};

@@ -16,9 +16,9 @@ function [sigmaNuZInv, sigmaNuZInvStd, logCoeff] = size_given_duration(sizes, du
 %   (..., 'durmax', durMax) - sets duration maximum at durMax (scalar double)
 %
 % Outputs:
-%   sigmaNuZInv (scalar double) - 1/(sigma nu z) estimate from average size
-%     given duration WLS fit
-%   sigmaNuZInvStd (scalar double) - standard deviation on 1/(sigma nu z)
+%   sigmaNuZInv (scalar double) - Crackling / size-duration exponent 1/(σ ν z)
+%     from ⟨S⟩(T) ~ T^{1/σνz} (stored as paramSD elsewhere in this codebase)
+%   sigmaNuZInvStd (scalar double) - standard deviation on 1/(σ ν z)
 %     estimate from WLS fit
 %   logCoeff (scalar double) - logarithm of scaling coefficient for the fit
 %
