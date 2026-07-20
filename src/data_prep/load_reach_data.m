@@ -32,7 +32,7 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
     dataStruct.reachStart = dataR.R(:,1) / 1000;  % Convert from ms to seconds
     dataStruct.startBlock2 = dataStruct.reachStart(find(ismember(dataStruct.reachClass, [3 4]), 1));
     
-    % Set collectEnd; clamp only if session is meaningfully shorter
+    % Set collectEnd; [] = session end minus last 180 s (then clamp if needed)
     sessionEnd = round(min(dataR.R(end,1) + 5000, max(dataR.CSV(:,1)*1000)) / 1000);
     if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
         opts.collectStart = 0;
@@ -40,7 +40,7 @@ function dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName
     if ~isfield(opts, 'collectEnd')
         opts.collectEnd = [];
     end
-    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, sessionEnd, opts.collectStart);
+    opts.collectEnd = resolve_reach_collect_end(opts.collectEnd, sessionEnd, opts.collectStart);
     dataStruct.opts = opts;
     
     if strcmp(dataSource, 'spikes')

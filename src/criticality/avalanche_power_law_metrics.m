@@ -10,7 +10,8 @@ function metrics = avalanche_power_law_metrics(sizes, durs, config)
 %   Single call site for power-law fits used in criticality_av_analysis.
 %
 % Returns:
-%   metrics - Struct with tau, alpha, decades, minavS, maxavS, minavD, maxavD, paramSD
+%   metrics - Struct with tau, alpha, decades, minavS, maxavS, minavD, maxavD,
+%             paramSD (crackling 1/σνz from WLS ⟨S⟩~T^γ; see size_given_duration)
 
 metrics = struct('tau', nan, 'alpha', nan, 'decades', nan, ...
   'minavS', nan, 'maxavS', nan, 'minavD', nan, 'maxavD', nan, 'paramSD', nan);

@@ -363,7 +363,7 @@ end
             validIdx = ~isnan(paramSD{a});
             if any(validIdx)
                 plot(startS{a}(validIdx), paramSD{a}(validIdx), '-', ...
-                    'Color', [0 0 1], 'LineWidth', 3, 'DisplayName', 'paramSD');
+                    'Color', [0 0 1], 'LineWidth', 3, 'DisplayName', '1/\sigma\nu z');
             end
         end
         
@@ -448,7 +448,8 @@ end
             yyaxis left;
         end
         
-        title(sprintf('%s (n=%d) - tau (orange), alpha (green), paramSD (blue)', areas{a}, nNeurons));
+        title(sprintf('%s (n=%d) - tau (orange), alpha (green), 1/\\sigma\\nu z (blue)', areas{a}, nNeurons), ...
+            'Interpreter', 'tex');
         xlabel('Time (s)');
         ylabel('Value');
         grid on;

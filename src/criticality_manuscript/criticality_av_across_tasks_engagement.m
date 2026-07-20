@@ -19,6 +19,7 @@
 %   Compare avalanche exponents and related scalars across session types.
 %   Reach/interval: engaged vs non-engaged side-by-side per session.
 %   Spontaneous: full-window session values (+ shuffle mean when available).
+%   Companion figure: crackling 1/σνz (paramSD) vs (α-1)/(τ-1).
 
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
@@ -52,7 +53,7 @@ minNonEngagedWindow = 30;
 reachBuffer = 1;
 absorbSingleEvents = true;
 
-metricsToPlot = {'dcc', 'decades', 'tau', 'alpha'};
+metricsToPlot = {'dcc', 'decades', 'tau', 'alpha', 'paramSD'};
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = [];
@@ -242,6 +243,8 @@ if plotResults
   fprintf('Areas: %s\n', strjoin(commonAreas, ', '));
   plot_engagement_av_across_tasks(plotData, commonAreas, sessionTypes, collectStart, ...
     collectEnd, paths, brainArea, metricsToPlot, plotConfig);
+  plot_engagement_av_crackling_relation(plotData, commonAreas, sessionTypes, collectStart, ...
+    collectEnd, paths, brainArea, plotConfig);
 end
 
 fprintf('\n=== Done ===\n');
@@ -670,7 +673,9 @@ for a = 1:numel(areasToPlot)
     nonField = plotRows{m, 4};
     plot_av_engagement_metric_panel(ax, plotData, sessionTypes, areaIdx, ...
       spontField, engField, nonField, [metricName, 'PermutedMean'], plotConfig);
-    ylabel(ax, metricName, 'FontSize', plotConfig.axisLabelFontSize);
+    yLabelText = engagement_av_metric_ylabel(metricName);
+    ylabel(ax, yLabelText, 'FontSize', plotConfig.axisLabelFontSize, ...
+      'Interpreter', engagement_av_label_interpreter(yLabelText));
     title(ax, sprintf('%s — %s', areaName, metricName), ...
       'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
     apply_manuscript_axes_style(ax, plotConfig, '', '', '', 'none');
@@ -820,6 +825,193 @@ metricsToPlot = intersect(valid, metricsToPlot, 'stable');
 if isempty(metricsToPlot)
   error('metricsToPlot must include at least one valid metric.');
 end
+end
+
+function yLabelText = engagement_av_metric_ylabel(metricName)
+% ENGAGEMENT_AV_METRIC_YLABEL - Display label for engagement AV panels
+switch lower(metricName)
+  case 'paramSD'
+    yLabelText = '1/\sigma\nu z (crackling)';
+  otherwise
+    yLabelText = metricName;
+end
+end
+
+function interp = engagement_av_label_interpreter(labelText)
+if contains(labelText, '\')
+  interp = 'tex';
+else
+  interp = 'none';
+end
+end
+
+function plot_engagement_av_crackling_relation(plotData, areasToPlot, sessionTypes, ...
+    collectStart, collectEnd, paths, brainArea, plotConfig)
+% PLOT_ENGAGEMENT_AV_CRACKLING_RELATION - paramSD vs γ_pred by engagement class
+%
+% Variables:
+%   plotData - Aggregated engagement AV scalars (tau/alpha/paramSD + Engaged fields)
+%
+% Goal:
+%   Companion crackling diagnostic: measured 1/σνz against (α-1)/(τ-1).
+
+if nargin < 8 || isempty(plotConfig)
+  plotConfig = fill_manuscript_plot_config();
+end
+if nargin < 7
+  brainArea = '';
+end
+
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+if ~exist(saveDir, 'dir')
+  mkdir(saveDir);
+end
+collectTag = format_collect_window_tag(collectStart, collectEnd);
+typeColors = lines(max(numel(sessionTypes), 3));
+engFace = [0.85, 0.33, 0.10];
+nonFace = [0.20, 0.45, 0.70];
+
+for a = 1:numel(areasToPlot)
+  areaName = areasToPlot{a};
+  areaIdx = find(strcmp(plotData.areas, areaName), 1);
+  if isempty(areaIdx)
+    continue;
+  end
+
+  fig = figure('Color', 'w', 'Name', sprintf('AV crackling engagement — %s', areaName));
+  position_figure_full_monitor(fig);
+  ax = axes('Parent', fig);
+  hold(ax, 'on');
+  legendHandles = gobjects(0);
+  legendLabels = {};
+  nPlotted = 0;
+
+  for t = 1:numel(sessionTypes)
+    sessionType = sessionTypes{t};
+    typeKey = matlab.lang.makeValidName(sessionType);
+    if ~isfield(plotData.byType, typeKey)
+      continue;
+    end
+    typeData = plotData.byType.(typeKey);
+    taskColor = typeColors(t, :);
+
+    if isfield(typeData, 'useEngagement') && typeData.useEngagement
+      classSpecs = { ...
+        'Engaged', 'tauEngaged', 'alphaEngaged', 'paramSDEngaged', 'o', engFace
+        'Non-engaged', 'tauNonEngaged', 'alphaNonEngaged', 'paramSDNonEngaged', 's', nonFace
+        };
+    else
+      classSpecs = { ...
+        sessionType, 'tau', 'alpha', 'paramSD', 'o', taskColor
+        };
+    end
+
+    for c = 1:size(classSpecs, 1)
+      classLabel = classSpecs{c, 1};
+      tauVals = get_engagement_metric_vector(typeData, classSpecs{c, 2}, areaIdx);
+      alphaVals = get_engagement_metric_vector(typeData, classSpecs{c, 3}, areaIdx);
+      paramSDVals = get_engagement_metric_vector(typeData, classSpecs{c, 4}, areaIdx);
+      marker = classSpecs{c, 5};
+      faceColor = classSpecs{c, 6};
+      if isempty(tauVals) || isempty(alphaVals) || isempty(paramSDVals)
+        continue;
+      end
+      n = min([numel(tauVals), numel(alphaVals), numel(paramSDVals)]);
+      tauVals = tauVals(1:n);
+      alphaVals = alphaVals(1:n);
+      paramSDVals = paramSDVals(1:n);
+      gammaPred = nan(size(tauVals));
+      validTau = isfinite(tauVals) & isfinite(alphaVals) & (tauVals > 1);
+      gammaPred(validTau) = (alphaVals(validTau) - 1) ./ (tauVals(validTau) - 1);
+      valid = isfinite(gammaPred) & isfinite(paramSDVals);
+      if ~any(valid)
+        continue;
+      end
+      displayName = classLabel;
+      if isfield(typeData, 'useEngagement') && typeData.useEngagement
+        displayName = sprintf('%s %s', sessionType, classLabel);
+      end
+      hSc = scatter(ax, gammaPred(valid), paramSDVals(valid), 70, marker, ...
+        'filled', 'MarkerFaceColor', faceColor, 'MarkerEdgeColor', taskColor, ...
+        'LineWidth', 1.0, 'DisplayName', displayName);
+      if isempty(legendLabels) || ~ismember(displayName, legendLabels)
+        legendHandles(end + 1) = hSc; %#ok<AGROW>
+        legendLabels{end + 1} = displayName; %#ok<AGROW>
+      end
+      nPlotted = nPlotted + sum(valid);
+    end
+  end
+
+  if nPlotted == 0
+    close(fig);
+    fprintf('Skipping engagement crackling for %s: no finite sessions.\n', areaName);
+    continue;
+  end
+
+  add_engagement_identity_line(ax);
+  xlabel(ax, '(\alpha-1)/(\tau-1)', 'FontSize', plotConfig.axisLabelFontSize, ...
+    'Interpreter', 'tex');
+  ylabel(ax, '1/\sigma\nu z (paramSD)', 'FontSize', plotConfig.axisLabelFontSize, ...
+    'Interpreter', 'tex');
+  title(ax, sprintf('%s — crackling relation', areaName), ...
+    'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
+  if ~isempty(legendHandles)
+    legend(ax, legendHandles, legendLabels, 'Location', 'best', ...
+      'FontSize', plotConfig.legendFontSize);
+  end
+  set(ax, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
+    'Box', 'off', 'TickDir', 'out');
+  axis(ax, 'square');
+  hold(ax, 'off');
+
+  if ~isempty(brainArea)
+    titleStr = sprintf('Crackling engagement — %s [%s]', brainArea, collectTag);
+    plotBase = sprintf('criticality_av_engagement_crackling_%s_%s', brainArea, collectTag);
+  else
+    titleStr = sprintf('Crackling engagement — %s [%s]', areaName, collectTag);
+    plotBase = sprintf('criticality_av_engagement_crackling_%s_%s', areaName, collectTag);
+  end
+  if numel(areasToPlot) > 1
+    plotBase = sprintf('%s_area%s', plotBase, areaName);
+  end
+  sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', ...
+    'Interpreter', 'none');
+
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+  fprintf('Saved engagement crackling: %s\n', fullfile(saveDir, plotBase));
+end
+end
+
+function vals = get_engagement_metric_vector(typeData, fieldName, areaIdx)
+vals = [];
+if ~isfield(typeData, fieldName) || areaIdx > numel(typeData.(fieldName))
+  return;
+end
+vals = typeData.(fieldName){areaIdx};
+vals = vals(:)';
+end
+
+function add_engagement_identity_line(ax)
+hold(ax, 'on');
+sc = findobj(ax, 'Type', 'Scatter');
+xAll = [];
+yAll = [];
+for i = 1:numel(sc)
+  xAll = [xAll; sc(i).XData(:)]; %#ok<AGROW>
+  yAll = [yAll; sc(i).YData(:)]; %#ok<AGROW>
+end
+valid = isfinite(xAll) & isfinite(yAll);
+if ~any(valid)
+  return;
+end
+lo = min([xAll(valid); yAll(valid)]);
+hi = max([xAll(valid); yAll(valid)]);
+pad = 0.05 * max(hi - lo, eps);
+lim = [lo - pad, hi + pad];
+xlim(ax, lim);
+ylim(ax, lim);
+plot(ax, lim, lim, 'k--', 'LineWidth', 1.25, 'HandleVisibility', 'off');
 end
 
 function hasData = area_has_engagement_av_plot_data(plotData, sessionTypes, areaIdx, plotRows)

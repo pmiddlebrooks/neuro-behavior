@@ -1933,8 +1933,10 @@ for aIdx = 1:numel(areasToAnalyze)
   avResult.byArea{end + 1} = avData; %#ok<AGROW>
 
   if avData.hasAvalanches
-    fprintf('  AV %s: n=%d, tau=%.2f, alpha=%.2f, decades=%.2f, dcc=%.3f, (alpha-1)/(tau-1)=%.3f\n', ...
-      areaName, avData.nAvalanches, avData.tau, avData.alpha, avData.decades, avData.dcc, avData.scalingRelation);
+    fprintf(['  AV %s: n=%d, tau=%.2f, alpha=%.2f, paramSD=%.3f, ', ...
+      'decades=%.2f, dcc=%.3f, (alpha-1)/(tau-1)=%.3f\n'], ...
+      areaName, avData.nAvalanches, avData.tau, avData.alpha, avData.paramSD, ...
+      avData.decades, avData.dcc, avData.scalingRelation);
     if computeShuffles && ~isempty(avData.shuffleSizes)
       fprintf('  AV %s shuffle (total): n=%d over %d shuffles\n', ...
         areaName, numel(avData.shuffleSizes), avData.nShufflesCompleted);
@@ -2168,11 +2170,11 @@ end
 
 function fig = plot_engagement_avalanche_distributions(avByClass, areaNames, sessionName, ...
     collectStart, collectEnd, avDurations, plotConfig)
-% PLOT_ENGAGEMENT_AVALANCHE_DISTRIBUTIONS - Size/duration CCDFs for three classes
+% PLOT_ENGAGEMENT_AVALANCHE_DISTRIBUTIONS - Size/duration CCDFs + ⟨S⟩(T) by class
 %
 % Goal:
 %   Overlay total / engaged / non-engaged CCDFs, plus circular-shuffle CCDF for
-%   the full-session (total) data only.
+%   the full-session (total) data only. Third column: crackling ⟨S⟩(T) with WLS fit.
 
 plotConfig = fill_default_engagement_plot_config(plotConfig);
 classNames = engagement_class_names();
@@ -2181,15 +2183,17 @@ classFields = {'total', 'engaged', 'nonEngaged'};
 shuffleColor = [0.55, 0.55, 0.55];
 nAreas = numel(areaNames);
 
-fig = figure('Color', 'w', 'Position', [80 80 max(900, 380 * nAreas) 440], ...
+fig = figure('Color', 'w', 'Position', [80 80 max(1100, 420 * nAreas) 440], ...
   'Name', 'Engagement avalanche distributions');
-tiledlayout(fig, nAreas, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+tiledlayout(fig, nAreas, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 for aIdx = 1:nAreas
-  axSize = nexttile((aIdx - 1) * 2 + 1);
-  axDur = nexttile((aIdx - 1) * 2 + 2);
+  axSize = nexttile((aIdx - 1) * 3 + 1);
+  axDur = nexttile((aIdx - 1) * 3 + 2);
+  axCrack = nexttile((aIdx - 1) * 3 + 3);
   hold(axSize, 'on');
   hold(axDur, 'on');
+  hold(axCrack, 'on');
 
   for c = 1:numel(classFields)
     avData = avByClass.(classFields{c}).byArea{aIdx};
@@ -2204,6 +2208,8 @@ for aIdx = 1:nAreas
     plot_empirical_ccdf(axDur, avData.durations * binSize * 1000, classColors(c, :), ...
       displayNameDur, plotConfig);
 
+    plot_engagement_size_given_duration(axCrack, avData, classColors(c, :), classNames{c}, plotConfig);
+
     % Shuffle overlay for full-session (total) only
     if strcmp(classFields{c}, 'total') && isfield(avData, 'shuffleSizes') ...
         && ~isempty(avData.shuffleSizes)
@@ -2217,26 +2223,81 @@ for aIdx = 1:nAreas
 
   set(axSize, 'XScale', 'log', 'YScale', 'log');
   set(axDur, 'XScale', 'log', 'YScale', 'log');
+  set(axCrack, 'XScale', 'log', 'YScale', 'log');
   apply_engagement_axes_style(axSize, plotConfig, 'Avalanche size', 'P(X \geq x)', ...
     sprintf('%s — size', areaNames{aIdx}), 'tex');
   apply_engagement_axes_style(axDur, plotConfig, 'Avalanche duration (ms)', 'P(X \geq x)', ...
     sprintf('%s — duration', areaNames{aIdx}), 'tex');
+  apply_engagement_axes_style(axCrack, plotConfig, 'Duration (bins)', '\langleS\rangle(T)', ...
+    sprintf('%s — crackling', areaNames{aIdx}), 'tex');
   grid(axSize, 'on');
   grid(axDur, 'on');
+  grid(axCrack, 'on');
   legend(axSize, 'Location', 'southwest', 'Interpreter', 'tex', ...
     'FontSize', plotConfig.legendFontSize);
   legend(axDur, 'Location', 'southwest', 'Interpreter', 'tex', ...
     'FontSize', plotConfig.legendFontSize);
+  legend(axCrack, 'Location', 'northwest', 'Interpreter', 'tex', ...
+    'FontSize', plotConfig.legendFontSize);
   hold(axSize, 'off');
   hold(axDur, 'off');
+  hold(axCrack, 'off');
 end
 
 sgtitle(fig, sprintf( ...
-  ['%s — avalanche CCDFs by engagement [%.0f–%.0f s]\n', ...
+  ['%s — avalanche CCDFs + crackling by engagement [%.0f–%.0f s]\n', ...
   'durations: total %.1f min, engaged %.1f min, non-engaged %.1f min'], ...
   sessionName, collectStart, collectEnd, ...
   avDurations.totalSec / 60, avDurations.engagedSec / 60, avDurations.nonEngagedSec / 60), ...
   'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', 'Interpreter', 'none');
+end
+
+function plot_engagement_size_given_duration(ax, avData, lineColor, className, plotConfig)
+% PLOT_ENGAGEMENT_SIZE_GIVEN_DURATION - ⟨S⟩|T markers + WLS crackling slope
+
+sizes = avData.sizes(:);
+durations = avData.durations(:);
+valid = isfinite(sizes) & isfinite(durations) & sizes > 0 & durations > 0;
+sizes = sizes(valid);
+durations = durations(valid);
+if numel(sizes) < 2
+  return;
+end
+
+unqDurations = unique(durations);
+meanSize = nan(size(unqDurations));
+for iDur = 1:numel(unqDurations)
+  meanSize(iDur) = mean(sizes(durations == unqDurations(iDur)));
+end
+validMean = isfinite(meanSize) & meanSize > 0;
+unqDurations = unqDurations(validMean);
+meanSize = meanSize(validMean);
+
+paramSD = nan;
+if isfield(avData, 'paramSD') && isfinite(avData.paramSD)
+  paramSD = avData.paramSD;
+end
+displayName = sprintf('%s (1/\\sigma\\nu z=%.2f)', className, paramSD);
+plot(ax, unqDurations, meanSize, 'o-', 'Color', lineColor, ...
+  'MarkerFaceColor', lineColor, 'MarkerSize', plotConfig.markerSize, ...
+  'LineWidth', plotConfig.lineWidth, 'DisplayName', displayName);
+
+durMin = nan;
+durMax = nan;
+if isfield(avData, 'minDurFit'), durMin = avData.minDurFit; end
+if isfield(avData, 'maxDurFit'), durMax = avData.maxDurFit; end
+if ~(isfinite(durMin) && isfinite(durMax) && durMin <= durMax)
+  return;
+end
+[fitParamSD, ~, logCoeff] = size_given_duration(sizes, durations, ...
+  'durmin', durMin, 'durmax', durMax);
+if ~(isfinite(fitParamSD) && isfinite(logCoeff) && durMin > 0 && durMax > durMin)
+  return;
+end
+xFit = logspace(log10(durMin), log10(durMax), 60);
+yFit = 10 .^ (fitParamSD * log10(xFit) + logCoeff);
+plot(ax, xFit, yFit, '-', 'Color', lineColor, 'LineWidth', max(1.5, plotConfig.lineWidth), ...
+  'HandleVisibility', 'off');
 end
 
 function plot_empirical_ccdf(ax, values, lineColor, displayName, plotConfig, isShuffle)
