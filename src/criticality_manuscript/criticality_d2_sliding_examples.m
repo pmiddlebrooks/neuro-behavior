@@ -10,7 +10,8 @@
 %                      .sessionType, .sessionName, .subjectName ('' for reach)
 %   dataSource       - 'spikes' or 'lfp'
 %   collectStart     - Analysis window start (seconds from session onset)
-%   collectEnd       - Analysis window end (seconds); [] = session end (reach)
+%   collectEnd       - Analysis window end (seconds); [] = session end
+%                      (reach: [] omits final 180 s via resolve_reach_collect_end)
 %   brainArea              - Single or merged area to plot (e.g. 'M56', 'M23M56')
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   saveFigure       - Export PNG to dropPath/criticality_manuscript
@@ -35,21 +36,21 @@ exampleSessions(2) = struct( ...
 exampleSessions(3) = struct( ...
   'sessionType', 'reach', ...
   'subjectName', '', ...
-  'sessionName', 'AB6_27-Mar-2025 14_04_12_NeuroBeh', ...
+  'sessionName', 'Y16_23-Dec-2025 16_07_49_NeuroBeh', ...
   'displayLabel', 'reach');
 
 dataSource = 'spikes';
 collectStart = 0;
-collectEnd = 45 * 60;
-brainArea = 'M56';
+collectEnd = 30 * 60;
+brainArea = 'M2356';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
-saveFigure = false;
+saveFigure = true;
 plotD2PopActivity = true;
 
 % Overlapping sliding-window d2 settings (aligned with run_criticality_ar.m)
 slidingWindowSize = 30;   % seconds
 stepSize = 0.5;           % seconds; overlap when step < window
-stepSize = 1;           % seconds; overlap when step < window
+stepSize = 2;           % seconds; overlap when step < window
 useLog10D2 = true;
 useSubsampling = false;
 nSubsamples = 20;
@@ -82,26 +83,9 @@ analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-%% Paths
+% Paths
 paths = get_paths();
-scriptDir = fileparts(mfilename('fullpath'));
-if contains(scriptDir, [filesep 'Editor_' filesep])
-  scriptDir = fileparts(which('criticality_d2_sliding_examples'));
-end
-srcPath = fullfile(scriptDir, '..');
-addpath(srcPath);
-addpath(fullfile(srcPath, 'reach_task'));
-addpath(fullfile(srcPath, 'schall'));
-addpath(fullfile(srcPath, 'spontaneous'));
-addpath(fullfile(srcPath, 'interval_timing_task'));
-addpath(fullfile(srcPath, 'criticality', 'scripts'));
-addpath(fullfile(srcPath, 'criticality', 'analyses'));
-addpath(fullfile(srcPath, 'session_prep', 'data_prep'));
-addpath(fullfile(srcPath, 'session_prep', 'utils'));
-addpath(fullfile(srcPath, 'data_prep'));
-addpath(fullfile(srcPath, 'sliding_window_prep', 'data_prep'));
-addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
-addpath(fullfile(srcPath, 'criticality'));
+
 
 fprintf('\n=== Criticality d2 sliding-window examples ===\n');
 fprintf('Window: %.1f s, step: %.2f s (overlapping)\n', slidingWindowSize, stepSize);
@@ -110,7 +94,7 @@ fprintf('useLog10D2: %d\n', useLog10D2);
 
 validate_example_sessions(exampleSessions);
 
-%% Run analysis for each example session
+% Run analysis for each example session
 numExamples = numel(exampleSessions);
 exampleResults = repmat(struct(), numExamples, 1);
 
@@ -149,7 +133,7 @@ for e = 1:numExamples
     numel(trace.d2), max(trace.timeMin) - min(trace.timeMin), mean(trace.d2, 'omitnan'));
 end
 
-%% Plot all traces on one axis
+% Plot all traces on one axis
 fig = plot_d2_sliding_examples(exampleResults, brainArea, slidingWindowSize, stepSize, useLog10D2);
 
 if plotD2PopActivity
@@ -203,20 +187,22 @@ for e = 1:numel(exampleSessions)
 end
 end
 
-function opts = build_example_load_opts(sessionType, collectStart, collectEnd)
-% BUILD_EXAMPLE_LOAD_OPTS - Loader opts per session type (matches run_criticality_ar.m)
+function opts = build_example_load_opts(~, collectStart, collectEnd)
+% BUILD_EXAMPLE_LOAD_OPTS - Loader opts for example sessions
+%
+% Variables:
+%   collectStart - Analysis window start (s)
+%   collectEnd   - Analysis window end (s); [] = full session (reach omits last 180 s)
+%
+% Goal:
+%   Apply the same collectStart/collectEnd to spontaneous, interval, and reach.
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = [];
 opts.collectStart = collectStart;
+opts.collectEnd = collectEnd;
 opts.minFiringRate = 0.05;
 opts.maxFiringRate = 150;
-
-if strcmpi(sessionType, 'reach') || strcmpi(sessionType, 'hong')
-  opts.collectEnd = [];
-else
-  opts.collectEnd = collectEnd;
-end
 end
 
 function results = filter_ar_results_to_brain_area(results, brainArea)
