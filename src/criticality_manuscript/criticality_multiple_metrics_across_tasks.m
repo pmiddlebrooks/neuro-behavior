@@ -2378,10 +2378,7 @@ engModOpts.collectEnd = opts.collectEnd;
 engModOpts.brainArea = opts.brainArea;
 engModOpts.brainAreaCombinations = opts.brainAreaCombinations;
 engModOpts.d2Window = opts.d2Window;
-if isempty(engModOpts.d2Window)
-  % Full-session one-window intent; AR clamps to loaded duration per session
-  engModOpts.d2Window = 1e6;
-end
+% Empty d2Window is resolved to loaded session duration inside engagement modules
 engModOpts.useLog10D2 = opts.useLog10D2;
 engModOpts.useSubsampling = opts.useSubsampling;
 engModOpts.nSubsamples = opts.nSubsamples;

@@ -254,7 +254,7 @@ function results = criticality_ar_analysis(dataStruct, config)
     totalTime = timeRange(2) - timeRange(1);
 
     % If session is meaningfully shorter than requested window, use full session
-    % (e.g. d2Window = collectEnd on a session shorter than collectEnd)
+    % (e.g. d2Window = collectEnd / 1e6 sentinel on a shorter recording)
     windowToleranceSec = 1;
     if config.slidingWindowSize > (totalTime + windowToleranceSec)
         fprintf(['  slidingWindowSize %.1f s exceeds session duration %.1f s; ', ...
@@ -264,6 +264,12 @@ function results = criticality_ar_analysis(dataStruct, config)
     end
     if config.stepSize > (totalTime + windowToleranceSec)
         config.stepSize = totalTime;
+    end
+    % Keep per-area window vector in sync with the clamped config window
+    oversizedMask = isfinite(slidingWindowSize) & ...
+      (slidingWindowSize > (totalTime + windowToleranceSec));
+    if any(oversizedMask)
+      slidingWindowSize(oversizedMask) = totalTime;
     end
     
     % Generate common centerTime values
@@ -538,7 +544,8 @@ function results = criticality_ar_analysis(dataStruct, config)
                     if s == 1
                         wPopActivityFull = popActivityLocal(startIdx:endIdx);
                         popActivityWindowsLocal(w) = mean(wPopActivityFull);
-                        popActivityFullLocal(w) = popActivityLocal(startIdx + round(winSamples/2) - 1);
+                        midIdx = startIdx + floor((endIdx - startIdx) / 2);
+                        popActivityFullLocal(w) = popActivityLocal(midIdx);
                         
                         % Calculate behavior proportion once per window for this area
                         if ~isempty(tempBehaviorProportion{idx})
@@ -659,7 +666,8 @@ function results = criticality_ar_analysis(dataStruct, config)
                 
                 wPopActivity = popActivityLocal(startIdx:endIdx);
                 popActivityWindowsLocal(w) = mean(wPopActivity);
-                popActivityFullLocal(w) = popActivityLocal(startIdx + round(winSamples/2) - 1);
+                midIdx = startIdx + floor((endIdx - startIdx) / 2);
+                popActivityFullLocal(w) = popActivityLocal(midIdx);
                 
                 % Calculate behavior proportion for this window if enabled
                 if ~isempty(tempBehaviorProportion{idx})

@@ -116,6 +116,19 @@ if isempty(collectStart)
   opts.collectStart = collectStart;
 end
 
+% Full-session / oversized d2Window → one window over the loaded collect range
+sessionDuration = collectEnd - collectStart;
+if isempty(opts.d2Window) || opts.d2Window > (sessionDuration + 1)
+  if isempty(opts.d2Window)
+    prevD2WindowStr = '[]';
+  else
+    prevD2WindowStr = sprintf('%.1f', opts.d2Window);
+  end
+  fprintf('  d2Window clamped to session duration %.1f s (was %s).\n', ...
+    sessionDuration, prevD2WindowStr);
+  opts.d2Window = sessionDuration;
+end
+
 [dataStruct, areaOk] = apply_manuscript_brain_area_selection( ...
   dataStruct, opts.brainArea, opts.brainAreaCombinations, true);
 if ~areaOk

@@ -29,7 +29,13 @@ function [startIdx, endIdx] = calculate_window_indices_from_center(centerTime, s
     if winSamples < 1
         winSamples = 1;
     end
-    
+    % Full-session / oversized window: use entire recording
+    if winSamples >= numTimePoints
+        startIdx = 1;
+        endIdx = numTimePoints;
+        return;
+    end
+
     % Calculate start and end indices centered around centerIdx
     halfWin = round(winSamples / 2);
     startIdx = centerIdx - halfWin + 1;
