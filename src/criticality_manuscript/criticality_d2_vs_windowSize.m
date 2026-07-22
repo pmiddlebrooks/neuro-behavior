@@ -26,6 +26,11 @@
 %   nShuffles        - Number of whole-session circular permutations
 %   makePlots        - Plot mean d2 / mean CV (data + shuffled if enabled)
 %   saveFigure       - Export PNG to dropPath/criticality_manuscript
+%   plotConfig       - Optional manuscript axis fonts / line widths
+%
+% Plot colors: d2 = colors_for_tasks(sessionType); CV = muted magenta;
+% shuffled = grayed versions of those observed colors. Legend on first panel
+% only. CV plotted under d2.
 %
 % Coefficient of variation (CV): for each popActivity trace,
 % CV = nanstd(x) / |nanmean(x)|. Mean CV at each W is nanmean across tiles.
@@ -53,7 +58,7 @@ exampleSessions(2) = struct( ...
 exampleSessions(3) = struct( ...
   'sessionType', 'reach', ...
   'subjectName', '', ...
-  'sessionName', 'Y16_23-Dec-2025 16_07_49_NeuroBeh', ...
+  'sessionName', 'AB19_09-Apr-2026 14_28_19_NeuroBeh', ...
   'displayLabel', 'reach');
 
 dataSource = 'spikes';
@@ -63,12 +68,12 @@ collectEnd = [];
 brainArea = 'M2356';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 
-windowsToTest = 2:1:45;   % seconds
+windowsToTest = 2:2:180;   % seconds
 binSizeManual = 0.025;      % seconds (fixed across window sizes)
 pOrder = 10;
 critType = 2;
 meanSubtract = false;
-useLog10D2 = false;
+useLog10D2 = true;
 enablePermutations = true;
 nShuffles = 10;
 makePlots = true;
@@ -86,7 +91,7 @@ end
 
 validate_example_sessions(exampleSessions);
 
-%% Analysis — one example session per task type
+% Analysis — one example session per task type
 numExamples = numel(exampleSessions);
 numW = numel(windowsToTest);
 exampleResults = repmat(struct(), numExamples, 1);
@@ -216,6 +221,11 @@ results.exampleResults = exampleResults;
 
 % Plot — 1x3: spontaneous | interval | reach (shared y-axes)
 if makePlots
+  if ~exist('plotConfig', 'var') || isempty(plotConfig)
+    plotConfig = struct();
+  end
+  plotConfig = fill_manuscript_plot_config(plotConfig);
+
   saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
   if saveFigure && ~exist(saveDir, 'dir')
     mkdir(saveDir);
@@ -227,71 +237,107 @@ if makePlots
 
   plotOrder = {'spontaneous', 'interval', 'reach'};
   [d2YLim, cvYLim] = shared_d2_cv_ylims(exampleResults, plotOrder, enablePermutations);
+  colorCv = [0.72 0.42 0.68];       % muted magenta (toward gray)
+  colorCvPermuted = gray_color_toward_neutral(colorCv, 0.68);
 
   figMain = figure('Color', 'w', 'Name', 'd2 vs window size');
-  set(figMain, 'WindowState', 'maximized');
+  screenSize = get(0, 'ScreenSize');
+  figWidthPx = round(0.92 * screenSize(3));
+  figHeightPx = round(0.46 * screenSize(4));   % ~half of a maximized figure
+  set(figMain, 'Units', 'pixels', 'Position', ...
+    [round(0.04 * screenSize(3)), round(0.27 * screenSize(4)), figWidthPx, figHeightPx]);
   tl = tiledlayout(1, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
   for k = 1:numel(plotOrder)
     e = find(arrayfun(@(r) isfield(r, 'example') && ~isempty(r.example) ...
       && strcmpi(r.example.sessionType, plotOrder{k}), exampleResults), 1);
-    nexttile;
+    ax = nexttile(tl);
     if isempty(e) || ~isfield(exampleResults(e), 'meanD2') || isempty(exampleResults(e).meanD2)
-      title(sprintf('%s (no data)', plotOrder{k}), 'Interpreter', 'none');
+      apply_manuscript_axes_style(ax, plotConfig, 'Window size (s)', '', ...
+        sprintf('%s (no data)', plotOrder{k}), 'none');
       continue;
     end
-    hold on;
+    hold(ax, 'on');
     er = exampleResults(e);
+    colorD2 = colors_for_tasks(er.example.sessionType);
+    colorD2Permuted = gray_color_toward_neutral(colorD2, 0.68);
     meanD2 = er.meanD2;
     semD2 = er.semD2;
     meanCv = er.meanCv;
     semCvPlot = er.semCv;
     semCvPlot(isnan(semCvPlot)) = 0;
+    legendHandles = gobjects(0);
+    legendLabels = {};
 
-    yyaxis left
-    semD2Plot = semD2;
-    semD2Plot(isnan(semD2Plot)) = 0;
-    errorbar(windowsToTest, meanD2, semD2Plot, '-o', 'LineWidth', 1.5, ...
-      'CapSize', 4, 'Color', [0 0.45 0.74], 'DisplayName', 'd2 data');
-    if enablePermutations && ~isempty(er.meanD2Permuted) && any(isfinite(er.meanD2Permuted))
-      semD2PermPlot = er.semD2Permuted;
-      semD2PermPlot(isnan(semD2PermPlot)) = 0;
-      errorbar(windowsToTest, er.meanD2Permuted, semD2PermPlot, '--s', 'LineWidth', 1.4, ...
-        'CapSize', 4, 'Color', [0.45 0.45 0.45], 'DisplayName', 'd2 shuffled');
-    end
-    if useLog10D2 && all(meanD2(~isnan(meanD2)) > 0)
-      set(gca, 'YScale', 'log');
-    end
-    if ~isempty(d2YLim)
-      ylim(d2YLim);
-    end
-    if k == 1
-      ylabel('mean d2');
-    end
-
-    yyaxis right
-    errorbar(windowsToTest, meanCv, semCvPlot, '-s', 'LineWidth', 1.5, ...
-      'CapSize', 4, 'Color', [0.85 0.33 0.1], 'DisplayName', 'CV data');
+    % Plot CV first so d2 draws on top
+    yyaxis(ax, 'right');
+    hCv = errorbar(ax, windowsToTest, meanCv, semCvPlot, '-s', ...
+      'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
+      'Color', colorCv, 'MarkerFaceColor', colorCv, 'DisplayName', 'CV data');
     if enablePermutations && ~isempty(er.meanCvPermuted) && any(isfinite(er.meanCvPermuted))
       semCvPermPlot = er.semCvPermuted;
       semCvPermPlot(isnan(semCvPermPlot)) = 0;
-      errorbar(windowsToTest, er.meanCvPermuted, semCvPermPlot, '--d', 'LineWidth', 1.4, ...
-        'CapSize', 4, 'Color', [0.65 0.45 0.35], 'DisplayName', 'CV shuffled');
+      hCvPerm = errorbar(ax, windowsToTest, er.meanCvPermuted, semCvPermPlot, '--d', ...
+        'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
+        'Color', colorCvPermuted, 'MarkerFaceColor', colorCvPermuted, ...
+        'DisplayName', 'CV shuffled');
+    else
+      hCvPerm = gobjects(0);
     end
     if ~isempty(cvYLim)
-      ylim(cvYLim);
+      ylim(ax, cvYLim);
     end
+    set(ax, 'YColor', 'k');
     if k == numel(plotOrder)
-      ylabel('mean CV');
+      ylabel(ax, 'mean CV', 'FontSize', plotConfig.axisLabelFontSize);
     end
-    set(gca, 'YColor', [0.85 0.33 0.1]);
 
-    yyaxis left
-    set(gca, 'YColor', [0 0.45 0.74]);
-    grid on;
-    xlabel('Window size (s)');
-    title(sprintf('%s: %s (%s, bin %.3f s)', er.example.displayLabel, ...
-      er.example.sessionName, er.areaName, er.binSize), 'Interpreter', 'none');
-    legend('Location', 'best');
+    yyaxis(ax, 'left');
+    semD2Plot = semD2;
+    semD2Plot(isnan(semD2Plot)) = 0;
+    hD2 = errorbar(ax, windowsToTest, meanD2, semD2Plot, '-o', ...
+      'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
+      'Color', colorD2, 'MarkerFaceColor', colorD2, 'DisplayName', 'd2 data');
+    legendHandles(end + 1) = hD2; %#ok<AGROW>
+    legendLabels{end + 1} = 'd2 data'; %#ok<AGROW>
+    if enablePermutations && ~isempty(er.meanD2Permuted) && any(isfinite(er.meanD2Permuted))
+      semD2PermPlot = er.semD2Permuted;
+      semD2PermPlot(isnan(semD2PermPlot)) = 0;
+      hD2Perm = errorbar(ax, windowsToTest, er.meanD2Permuted, semD2PermPlot, '--s', ...
+        'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
+        'Color', colorD2Permuted, 'MarkerFaceColor', colorD2Permuted, ...
+        'DisplayName', 'd2 shuffled');
+      legendHandles(end + 1) = hD2Perm; %#ok<AGROW>
+      legendLabels{end + 1} = 'd2 shuffled'; %#ok<AGROW>
+    end
+    legendHandles(end + 1) = hCv; %#ok<AGROW>
+    legendLabels{end + 1} = 'CV data'; %#ok<AGROW>
+    if ~isempty(hCvPerm)
+      legendHandles(end + 1) = hCvPerm; %#ok<AGROW>
+      legendLabels{end + 1} = 'CV shuffled'; %#ok<AGROW>
+    end
+    if useLog10D2 && all(meanD2(~isnan(meanD2)) > 0)
+      set(ax, 'YScale', 'log');
+    end
+    if ~isempty(d2YLim)
+      ylim(ax, d2YLim);
+    end
+    set(ax, 'YColor', 'k');
+    if k == 1
+      ylabel(ax, 'mean d2', 'FontSize', plotConfig.axisLabelFontSize);
+    end
+
+    apply_manuscript_axes_style(ax, plotConfig, 'Window size (s)', '', ...
+      sprintf('%s: %s', er.example.displayLabel, er.example.sessionName), 'none');
+    yyaxis(ax, 'left');
+    set(ax, 'YColor', 'k', 'XColor', 'k');
+    yyaxis(ax, 'right');
+    set(ax, 'YColor', 'k', 'XColor', 'k');
+    grid(ax, 'on');
+    if k == 1
+      legend(ax, legendHandles, legendLabels, 'Location', 'best', ...
+        'FontSize', plotConfig.legendFontSize);
+    end
+    hold(ax, 'off');
   end
   if enablePermutations
     titleSuffix = sprintf('non-overlapping tiles; %d circular shuffles', nShuffles);
@@ -299,7 +345,8 @@ if makePlots
     titleSuffix = 'non-overlapping tiles';
   end
   sgtitle(tl, sprintf('d2 vs window size across tasks (%s; %s)', ...
-    brainArea, titleSuffix), 'Interpreter', 'none', 'FontSize', 12);
+    brainArea, titleSuffix), 'Interpreter', 'none', ...
+    'FontSize', plotConfig.sgtitleFontSize);
 
   if saveFigure
     if enablePermutations
@@ -317,6 +364,26 @@ end
 fprintf('\n=== criticality_d2_vs_windowSize: done ===\n');
 
 %% Local functions
+
+function colorGrayed = gray_color_toward_neutral(colorRgb, grayAmount)
+% GRAY_COLOR_TOWARD_NEUTRAL - Mix an RGB color toward mid-gray
+%
+% Variables:
+%   colorRgb   - 1x3 or 3x1 RGB in [0, 1]
+%   grayAmount - Fraction toward mid-gray (0 = original, 1 = fully gray)
+%
+% Goal:
+%   Desaturate observed colors for shuffled / permuted traces while keeping
+%   a recognizable hue link to the data series.
+
+if nargin < 2 || isempty(grayAmount)
+  grayAmount = 0.68;
+end
+grayAmount = min(max(grayAmount, 0), 1);
+colorRgb = colorRgb(:)';
+neutralGray = [0.55, 0.55, 0.55];
+colorGrayed = (1 - grayAmount) * colorRgb + grayAmount * neutralGray;
+end
 
 function validate_example_sessions(exampleSessions)
 % VALIDATE_EXAMPLE_SESSIONS - Require spontaneous, interval, and reach examples

@@ -18,7 +18,7 @@
 % Optional overrides (set before running):
 %   windowsToTest, binSizeManual, pOrder, critType, meanSubtract, useLog10D2,
 %   makePlots, areasToTest, cvThreshold, windowMin, windowSizeStepSec,
-%   halfSessionReachSweepMode, halfSessionWinMaxSec
+%   halfSessionReachSweepMode, halfSessionWinMaxSec, plotConfig
 %
 % Half-session reach sweep (section before local functions):
 %   halfSessionReachSweepMode:
@@ -105,10 +105,17 @@ if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
 
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'sliding_window_prep', 'utils'));
+scriptDir = fileparts(mfilename('fullpath'));
+addpath(fullfile(scriptDir, '..', 'sliding_window_prep', 'utils'));
+addpath(fullfile(scriptDir, '..', 'criticality_manuscript'));
 
 binSize = zeros(1, numAreas);
 binSize(:) = binSizeManual;
+
+if ~exist('plotConfig', 'var') || isempty(plotConfig)
+    plotConfig = struct();
+end
+plotConfig = fill_manuscript_plot_config(plotConfig);
 
 %% =============================    Analysis    =============================
 numW = numel(windowsToTest);
@@ -258,49 +265,66 @@ results.sessionName = sessionName;
 
 %% =============================    Plot    =============================
 if makePlots
+    colorD2 = colors_for_tasks(sessionType);
+    colorCv = [0.85 0.15 0.75];   % magenta
     nPlot = numel(areasToTest);
     figure(3101); clf;
-    set(gcf, 'WindowState', 'maximized');
+    set(gcf, 'Color', 'w', 'WindowState', 'maximized');
     tl = tiledlayout(nPlot, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
     for k = 1:nPlot
         a = areasToTest(k);
-        nexttile;
-        hold on;
+        ax = nexttile(tl);
+        hold(ax, 'on');
         meanD2 = meanD2ByArea{a};
         semD2 = semD2ByArea{a};
         meanCv = meanCvByArea{a};
         semCvPlot = semCvByArea{a};
         semCvPlot(isnan(semCvPlot)) = 0;
 
-        yyaxis left
+        yyaxis(ax, 'left');
         semD2Plot = semD2;
         semD2Plot(isnan(semD2Plot)) = 0;
-        errorbar(windowsToTest, meanD2, semD2Plot, '-o', 'LineWidth', 1.5, 'CapSize', 4, 'Color', [0 0.45 0.74]);
+        hD2 = errorbar(ax, windowsToTest, meanD2, semD2Plot, '-o', ...
+            'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
+            'Color', colorD2, 'MarkerFaceColor', colorD2, 'DisplayName', 'mean d2');
         if useLog10D2 && all(meanD2(~isnan(meanD2)) > 0)
-            set(gca, 'YScale', 'log');
+            set(ax, 'YScale', 'log');
         end
-        ylabel('mean d2');
+        set(ax, 'YColor', colorD2);
+        ylabel(ax, 'mean d2', 'FontSize', plotConfig.axisLabelFontSize);
 
-        yyaxis right
-        errorbar(windowsToTest, meanCv, semCvPlot, '-s', 'LineWidth', 1.5, 'CapSize', 4, 'Color', [0.85 0.33 0.1]);
-        ylabel('mean CV');
-        set(gca, 'YColor', [0.85 0.33 0.1]);
+        yyaxis(ax, 'right');
+        hCv = errorbar(ax, windowsToTest, meanCv, semCvPlot, '-s', ...
+            'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
+            'Color', colorCv, 'MarkerFaceColor', colorCv, 'DisplayName', 'mean CV');
+        set(ax, 'YColor', colorCv);
+        ylabel(ax, 'mean CV', 'FontSize', plotConfig.axisLabelFontSize);
 
         winStar = smallestWinCvBelowThresholdByArea(a);
         if ~isnan(winStar)
-            xline(winStar, '--', 'Color', [0.15 0.15 0.15], 'LineWidth', 1.25, ...
+            xline(ax, winStar, '--', 'Color', [0.45 0.45 0.45], ...
+                'LineWidth', plotConfig.lineWidth, ...
                 'Label', sprintf('mean CV <= %.g', cvThreshold), ...
-                'LabelHorizontalAlignment', 'left', 'FontSize', 9);
+                'LabelHorizontalAlignment', 'left', ...
+                'FontSize', plotConfig.tickLabelFontSize, ...
+                'HandleVisibility', 'off');
         end
 
-        yyaxis left
-        set(gca, 'YColor', [0 0.45 0.74]);
-        grid on;
-        xlabel('Window size (s)');
-        title(sprintf('%s (bin %.3f s)', areas{a}, binSize(a)), 'Interpreter', 'none');
+        apply_behavior_axes_style(ax, plotConfig, 'Window size (s)', '', ...
+            sprintf('%s (bin %.3f s)', areas{a}, binSize(a)), 'none');
+        yyaxis(ax, 'left');
+        set(ax, 'YColor', colorD2);
+        yyaxis(ax, 'right');
+        set(ax, 'YColor', colorCv);
+        grid(ax, 'on');
+        if k == 1
+            legend(ax, [hD2, hCv], {'mean d2', 'mean CV'}, 'Location', 'best', ...
+                'FontSize', plotConfig.legendFontSize);
+        end
+        hold(ax, 'off');
     end
     sgtitle(tl, sprintf('%s: d2 vs window size (reach-centered, non-overlap neighbors)', ...
-        sessionName), 'Interpreter', 'none', 'FontSize', 12);
+        sessionName), 'Interpreter', 'none', 'FontSize', plotConfig.sgtitleFontSize);
     outPng = fullfile(saveDir, 'criticality_reach_d2_vs_windowSize.png');
     exportgraphics(gcf, outPng, 'Resolution', 300);
     fprintf('Saved figure: %s\n', outPng);
@@ -309,7 +333,7 @@ if makePlots
     winSmallestSec = windowsToTest(1);
     winLargestSec = windowsToTest(end);
     figure(3102); clf;
-    set(gcf, 'WindowState', 'maximized');
+    set(gcf, 'Color', 'w', 'WindowState', 'maximized');
     tlCv = tiledlayout(nPlot, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
     for k = 1:nPlot
         a = areasToTest(k);
@@ -327,32 +351,36 @@ if makePlots
             xLimRow = [0, 1];
         end
 
-        nexttile;
-        hold on;
+        axSmall = nexttile(tlCv);
+        hold(axSmall, 'on');
         if ~isempty(cvSmall)
-            histogram(cvSmall, 30, 'FaceColor', [0.55 0.65 0.85], 'EdgeColor', [0.2 0.2 0.2]);
-            xline(cvThreshold, '--', 'Color', [0.72 0.15 0.15], 'LineWidth', 1.1);
+            histogram(axSmall, cvSmall, 30, 'FaceColor', [0.55 0.65 0.85], ...
+                'FaceAlpha', plotConfig.histogramFaceAlpha, 'EdgeColor', [0.2 0.2 0.2]);
+            xline(axSmall, cvThreshold, '--', 'Color', [0.72 0.15 0.15], ...
+                'LineWidth', plotConfig.lineWidth);
         end
-        xlim(xLimRow);
-        xlabel('CV');
-        ylabel('Count');
-        title(sprintf('%s: W = %.2f s (smallest)', areas{a}, winSmallestSec), 'Interpreter', 'none');
-        grid on;
+        xlim(axSmall, xLimRow);
+        apply_behavior_axes_style(axSmall, plotConfig, 'CV', 'Count', ...
+            sprintf('%s: W = %.2f s (smallest)', areas{a}, winSmallestSec), 'none');
+        grid(axSmall, 'on');
+        hold(axSmall, 'off');
 
-        nexttile;
-        hold on;
+        axLarge = nexttile(tlCv);
+        hold(axLarge, 'on');
         if ~isempty(cvLarge)
-            histogram(cvLarge, 30, 'FaceColor', [0.85 0.72 0.55], 'EdgeColor', [0.2 0.2 0.2]);
-            xline(cvThreshold, '--', 'Color', [0.72 0.15 0.15], 'LineWidth', 1.1);
+            histogram(axLarge, cvLarge, 30, 'FaceColor', [0.85 0.72 0.55], ...
+                'FaceAlpha', plotConfig.histogramFaceAlpha, 'EdgeColor', [0.2 0.2 0.2]);
+            xline(axLarge, cvThreshold, '--', 'Color', [0.72 0.15 0.15], ...
+                'LineWidth', plotConfig.lineWidth);
         end
-        xlim(xLimRow);
-        xlabel('CV');
-        ylabel('Count');
-        title(sprintf('%s: W = %.2f s (largest)', areas{a}, winLargestSec), 'Interpreter', 'none');
-        grid on;
+        xlim(axLarge, xLimRow);
+        apply_behavior_axes_style(axLarge, plotConfig, 'CV', 'Count', ...
+            sprintf('%s: W = %.2f s (largest)', areas{a}, winLargestSec), 'none');
+        grid(axLarge, 'on');
+        hold(axLarge, 'off');
     end
     sgtitle(tlCv, sprintf('%s: CV per reach (smallest vs largest window)', sessionName), ...
-        'Interpreter', 'none', 'FontSize', 12);
+        'Interpreter', 'none', 'FontSize', plotConfig.sgtitleFontSize);
     outPngCv = fullfile(saveDir, 'criticality_reach_d2_vs_windowSize_cv_hist_min_max_win.png');
     exportgraphics(gcf, outPngCv, 'Resolution', 300);
     fprintf('Saved figure: %s\n', outPngCv);
@@ -480,27 +508,33 @@ results.reachInclusionWinSecByArea = reachInclusionWinSecByArea;
 results.reachInclusionReachIdxByArea = reachInclusionReachIdxByArea;
 
 if makePlots && ~isempty(windowsHalfReachSweep)
+    colorD2Half = colors_for_tasks(sessionType);
+    colorD2HalfFace = min(1, colorD2Half * 0.45 + 0.55);
+    colorReachInc = [0.82 0.25 0.2];
     nPlotHalf = numel(areasToTest);
     figure(3103); clf;
-    set(gcf, 'WindowState', 'maximized');
+    set(gcf, 'Color', 'w', 'WindowState', 'maximized');
     tlHalf = tiledlayout(nPlotHalf, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
     for k = 1:nPlotHalf
         a = areasToTest(k);
-        nexttile;
-        hold on;
+        ax = nexttile(tlHalf);
+        hold(ax, 'on');
         d2Trace = d2HalfReachByArea{a};
-        plot(windowsHalfReachSweep, d2Trace, '-o', 'LineWidth', 1.5, 'Color', [0 0.45 0.74], ...
-            'MarkerFaceColor', [0.65 0.8 1]);
+        hD2 = plot(ax, windowsHalfReachSweep, d2Trace, '-o', ...
+            'LineWidth', plotConfig.lineWidth, 'Color', colorD2Half, ...
+            'MarkerFaceColor', colorD2HalfFace, 'DisplayName', 'd2');
         if useLog10D2
             d2Finite = d2Trace(~isnan(d2Trace));
             if ~isempty(d2Finite) && all(d2Finite > 0)
-                set(gca, 'YScale', 'log');
+                set(ax, 'YScale', 'log');
             end
         end
         winInc = reachInclusionWinSecByArea{a};
+        hReach = gobjects(0);
         for e = 1:numel(winInc)
             wE = winInc(e);
-            xline(wE, ':', 'Color', [0.82 0.25 0.2], 'LineWidth', 0.9);
+            xline(ax, wE, ':', 'Color', colorReachInc, 'LineWidth', 0.9, ...
+                'HandleVisibility', 'off');
             tolW = max(1e-9, 1e-9 * max(1, abs(wE)));
             jMatch = find(abs(windowsHalfReachSweep - wE) < tolW, 1);
             if isempty(jMatch)
@@ -508,13 +542,28 @@ if makePlots && ~isempty(windowsHalfReachSweep)
             end
             yE = d2Trace(jMatch);
             if ~isnan(yE)
-                scatter(wE, yE, 28, [0.82 0.25 0.2], 'filled');
+                if isempty(hReach)
+                    hReach = scatter(ax, wE, yE, plotConfig.scatterMarkerSize * 0.6, ...
+                        colorReachInc, 'filled', 'DisplayName', 'reach newly inside');
+                else
+                    scatter(ax, wE, yE, plotConfig.scatterMarkerSize * 0.6, ...
+                        colorReachInc, 'filled', 'HandleVisibility', 'off');
+                end
             end
         end
-        grid on;
-        xlabel('Window size (s)');
-        ylabel('d2');
-        title(sprintf('%s (bin %.3f s)', areas{a}, binSize(a)), 'Interpreter', 'none');
+        apply_behavior_axes_style(ax, plotConfig, 'Window size (s)', 'd2', ...
+            sprintf('%s (bin %.3f s)', areas{a}, binSize(a)), 'none');
+        grid(ax, 'on');
+        if k == 1
+            if isempty(hReach)
+                legend(ax, hD2, {'d2'}, 'Location', 'best', ...
+                    'FontSize', plotConfig.legendFontSize);
+            else
+                legend(ax, [hD2, hReach], {'d2', 'reach newly inside'}, 'Location', 'best', ...
+                    'FontSize', plotConfig.legendFontSize);
+            end
+        end
+        hold(ax, 'off');
     end
     if strcmpi(sweepModeLabel, 'firstReachGrowRight')
         sgTitleStr = sprintf(['%s: d2 vs window (first reach at %.3g s, grow right; ', ...
@@ -525,7 +574,7 @@ if makePlots && ~isempty(windowsHalfReachSweep)
             'red = reach onset newly inside window)'], sessionName);
         outPngHalf = fullfile(saveDir, 'criticality_reach_d2_halfsession_center_win_growth.png');
     end
-    sgtitle(tlHalf, sgTitleStr, 'Interpreter', 'none', 'FontSize', 11);
+    sgtitle(tlHalf, sgTitleStr, 'Interpreter', 'none', 'FontSize', plotConfig.sgtitleFontSize);
     exportgraphics(gcf, outPngHalf, 'Resolution', 300);
     fprintf('Saved figure: %s\n', outPngHalf);
 end
@@ -534,6 +583,19 @@ end
 fprintf('\n=== criticality_reach_d2_vs_windowSize: done ===\n');
 
 %% -------------------------------------------------------------------------
+function apply_behavior_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter)
+% APPLY_BEHAVIOR_AXES_STYLE - Manuscript-style axis formatting
+%
+% Variables:
+%   ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter
+%
+% Goal:
+%   Match spontaneous/engagement manuscript axis styling via
+%   apply_manuscript_axes_style.
+
+    apply_manuscript_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter);
+end
+
 function [startIdx, endIdx] = window_bin_indices_from_center_time( ...
     centerTimeSec, windowSizeSec, binSizeSec, numTimePoints)
 % WINDOW_BIN_INDICES_FROM_CENTER_TIME
