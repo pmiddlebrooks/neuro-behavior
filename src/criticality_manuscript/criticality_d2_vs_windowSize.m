@@ -77,7 +77,7 @@ useLog10D2 = true;
 enablePermutations = true;
 nShuffles = 10;
 makePlots = true;
-saveFigure = false;
+saveFigure = true;
 
 fprintf('\n=== criticality_d2_vs_windowSize ===\n');
 fprintf('Windows (s): %s\n', mat2str(windowsToTest([1, end]), 3));
