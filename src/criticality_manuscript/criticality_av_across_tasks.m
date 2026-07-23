@@ -21,6 +21,8 @@
 %   plfit2023Path        - Path to folder containing plfit2023.m
 %   useSubsampling       - If true, metrics = mean across neuron subsamples per window
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
+%   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory
+%   widthCutoff          - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %
 %   avalancheDetectionMode:
 %     'fixedBinMedian' - config.binSize (s) + per-window median cutoff (default)
@@ -36,8 +38,18 @@ function out = criticality_av_across_tasks(opts)
 % CRITICALITY_AV_ACROSS_TASKS - Batch and plot avalanche metrics across session types
 %
 % Usage:
-%   out = criticality_av_across_tasks();
+%   opts = criticality_av_across_tasks();                  % default opts
+%   out = criticality_av_across_tasks(opts);
 %   out = criticality_av_across_tasks(struct('plotResults', false, 'saveBatchResults', true));
+%
+% Returns:
+%   out.batchResults, out.plotData, out.batchMeta, out.paths
+%   (or default opts struct when called with no arguments)
+
+if nargin == 0
+  out = fill_criticality_av_across_tasks_opts(struct());
+  return;
+end
 
 if nargin < 1 || isempty(opts)
   opts = struct();
@@ -47,8 +59,11 @@ setup_criticality_manuscript_paths('criticality_av_across_tasks');
 paths = get_paths();
 
 if isempty(opts.batchResultsFile)
-  opts.batchResultsFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
-    'criticality_av_across_tasks_batch.mat');
+  batchName = 'criticality_av_across_tasks_batch.mat';
+  if opts.splitExcitatoryInhibitory
+    batchName = 'criticality_av_across_tasks_batch_ei_split.mat';
+  end
+  opts.batchResultsFile = fullfile(paths.dropPath, 'criticality_manuscript', batchName);
 end
 
 if isempty(opts.collectEnd)
@@ -66,6 +81,9 @@ if opts.useSubsampling
     opts.nSubsamples, opts.nNeuronsSubsample, opts.minNeuronsMultiple);
 else
   fprintf('Subsampling: off\n');
+end
+if opts.splitExcitatoryInhibitory
+  fprintf('E/I split: on (widthCutoff = %.3f ms)\n', opts.widthCutoff);
 end
 if isempty(opts.collectEnd)
   fprintf('Collect window: [%.1f, full] s\n', opts.collectStart);
@@ -87,12 +105,20 @@ if numSessions == 0
   error('No sessions found for the requested session types.');
 end
 
+cellTypesToRun = get_session_cell_types_to_run(opts.splitExcitatoryInhibitory);
+
 if opts.runBatch
-  batchResults = run_av_across_tasks_batch(sessionTable, opts, clausetPlfitPath, plfit2023Path);
-  plotData = aggregate_av_metrics(batchResults, opts.sessionTypes);
+  batchByCell = run_av_across_tasks_batch(sessionTable, opts, clausetPlfitPath, plfit2023Path, paths);
   batchMeta = pack_av_across_tasks_batch_meta(opts);
+  plotDataByCell = cell(1, numel(cellTypesToRun));
+  for iCell = 1:numel(cellTypesToRun)
+    plotDataByCell{iCell} = aggregate_av_metrics(batchByCell{iCell}, opts.sessionTypes);
+  end
   if opts.saveBatchResults
-    save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
+    batchResults = batchByCell{1};
+    plotData = plotDataByCell{1};
+    save(opts.batchResultsFile, 'batchByCell', 'plotDataByCell', 'cellTypesToRun', ...
+      'batchResults', 'plotData', 'batchMeta', '-v7.3');
     fprintf('\nSaved batch results: %s\n', opts.batchResultsFile);
   end
 else
@@ -100,27 +126,54 @@ else
     error('criticality_av_across_tasks:NoBatchFile', ...
       'Batch file not found: %s. Set runBatch true to compute.', opts.batchResultsFile);
   end
-  loaded = load(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta');
-  batchResults = loaded.batchResults;
-  plotData = loaded.plotData;
+  loaded = load(opts.batchResultsFile);
   batchMeta = loaded.batchMeta;
+  if isfield(loaded, 'batchByCell')
+    batchByCell = loaded.batchByCell;
+    cellTypesToRun = loaded.cellTypesToRun;
+    if isfield(loaded, 'plotDataByCell')
+      plotDataByCell = loaded.plotDataByCell;
+    else
+      plotDataByCell = cell(1, numel(batchByCell));
+      for iCell = 1:numel(batchByCell)
+        plotDataByCell{iCell} = aggregate_av_metrics(batchByCell{iCell}, opts.sessionTypes);
+      end
+    end
+  else
+    batchByCell = {loaded.batchResults};
+    plotDataByCell = {loaded.plotData};
+    cellTypesToRun = {''};
+  end
   fprintf('\nLoaded batch results: %s\n', opts.batchResultsFile);
 end
 
-if isempty(plotData.areas)
-  error('No avalanche metrics extracted. Check that batch analyses succeeded.');
+batchResults = batchByCell{1};
+plotData = plotDataByCell{1};
+
+anyAreas = false;
+for iCell = 1:numel(cellTypesToRun)
+  cellType = cellTypesToRun{iCell};
+  plotDataCell = plotDataByCell{iCell};
+  if isempty(plotDataCell.areas)
+    warning('criticality_av_across_tasks:NoMetrics', ...
+      'No avalanche metrics for %s. Skipping.', cell_type_label(cellType));
+    continue;
+  end
+  anyAreas = true;
+  if opts.plotResults
+    commonAreas = resolve_areas_to_plot(plotDataCell.areas, opts.areasToPlot, opts.brainArea);
+
+    fprintf('\n=== Areas for plotting (%s) ===\n', cell_type_label(cellType));
+    fprintf('  %s\n', strjoin(commonAreas, ', '));
+
+    plot_av_across_tasks(plotDataCell, commonAreas, opts.sessionTypes, opts.collectStart, ...
+      opts.collectEnd, paths, opts.brainArea, cellType);
+    plot_av_crackling_relation_across_tasks(plotDataCell, commonAreas, opts.sessionTypes, ...
+      opts.collectStart, opts.collectEnd, paths, opts.brainArea, cellType);
+  end
 end
-
-commonAreas = resolve_areas_to_plot(plotData.areas, opts.areasToPlot, opts.brainArea);
-
-fprintf('\n=== Areas for plotting ===\n');
-fprintf('  %s\n', strjoin(commonAreas, ', '));
-
-if opts.plotResults
-  plot_av_across_tasks(plotData, commonAreas, opts.sessionTypes, opts.collectStart, ...
-    opts.collectEnd, paths, opts.brainArea);
-  plot_av_crackling_relation_across_tasks(plotData, commonAreas, opts.sessionTypes, ...
-    opts.collectStart, opts.collectEnd, paths, opts.brainArea);
+if ~anyAreas
+  error('No avalanche metrics extracted. Check that batch analyses succeeded.');
 end
 
 fprintf('\n=== Done ===\n');
@@ -128,9 +181,12 @@ fprintf('\n=== Done ===\n');
 out = struct();
 out.batchResults = batchResults;
 out.plotData = plotData;
+out.batchByCell = batchByCell;
+out.plotDataByCell = plotDataByCell;
+out.cellTypesToRun = cellTypesToRun;
 out.batchMeta = batchMeta;
 out.paths = paths;
-out.areasToPlot = commonAreas;
+out.areasToPlot = opts.areasToPlot;
 end
 
 function opts = fill_criticality_av_across_tasks_opts(opts)
@@ -158,6 +214,8 @@ defaults.minFiringRate = 0.05;
 defaults.maxFiringRate = 100;
 defaults.enablePermutations = true;
 defaults.nShuffles = 5;
+defaults.splitExcitatoryInhibitory = false;
+defaults.widthCutoff = 0.35;
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 opts = merge_struct_defaults(opts, defaults);
 if preserveCollectEndEmpty
@@ -173,10 +231,12 @@ batchMeta = struct( ...
   'brainArea', opts.brainArea, ...
   'areasToPlot', {opts.areasToPlot}, ...
   'powerLawFitMethod', opts.powerLawFitMethod, ...
-  'avalancheDetectionMode', opts.avalancheDetectionMode);
+  'avalancheDetectionMode', opts.avalancheDetectionMode, ...
+  'splitExcitatoryInhibitory', opts.splitExcitatoryInhibitory, ...
+  'widthCutoff', opts.widthCutoff);
 end
 
-function batchResults = run_av_across_tasks_batch(sessionTable, opts, clausetPlfitPath, plfit2023Path)
+function batchByCell = run_av_across_tasks_batch(sessionTable, opts, clausetPlfitPath, plfit2023Path, paths)
 if isempty(opts.collectEnd)
   windowDurationSec = [];
 else
@@ -190,8 +250,14 @@ loadOpts.collectEnd = opts.collectEnd;
 loadOpts.minFiringRate = opts.minFiringRate;
 loadOpts.maxFiringRate = opts.maxFiringRate;
 
+cellTypesToRun = get_session_cell_types_to_run(opts.splitExcitatoryInhibitory);
 numSessions = size(sessionTable, 1);
-batchResults = repmat(struct(), numSessions, 1);
+batchByCell = cell(1, numel(cellTypesToRun));
+emptyEntry = struct('sessionType', '', 'sessionName', '', 'subjectName', '', ...
+  'label', '', 'cellType', '', 'success', false, 'results', [], 'skipReason', '');
+for iCell = 1:numel(cellTypesToRun)
+  batchByCell{iCell} = repmat(emptyEntry, numSessions, 1);
+end
 fprintf('\n=== Running avalanche analysis (single window per session) ===\n');
 
 for s = 1:numSessions
@@ -205,12 +271,15 @@ for s = 1:numSessions
     fprintf('  subjectName: %s\n', subjectName);
   end
 
-  batchResults(s).sessionType = sessionType;
-  batchResults(s).sessionName = sessionName;
-  batchResults(s).subjectName = subjectName;
-  batchResults(s).label = sessionTable.label{s};
-  batchResults(s).success = false;
-  batchResults(s).results = [];
+  for iCell = 1:numel(cellTypesToRun)
+    batchByCell{iCell}(s).sessionType = sessionType;
+    batchByCell{iCell}(s).sessionName = sessionName;
+    batchByCell{iCell}(s).subjectName = subjectName;
+    batchByCell{iCell}(s).label = sessionTable.label{s};
+    batchByCell{iCell}(s).cellType = cellTypesToRun{iCell};
+    batchByCell{iCell}(s).success = false;
+    batchByCell{iCell}(s).results = [];
+  end
 
   try
     loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
@@ -220,6 +289,17 @@ for s = 1:numSessions
     if ~areaOk
       fprintf('  Brain area "%s" not available in this session; skipping.\n', opts.brainArea);
       continue;
+    end
+
+    if opts.splitExcitatoryInhibitory
+      eiCheck = check_session_ei_neuron_counts(dataStruct, paths, opts.widthCutoff, ...
+        opts.brainArea, opts.brainAreaCombinations, analysisConfig.nMinNeurons);
+      if ~eiCheck.isOk
+        for iCell = 1:numel(cellTypesToRun)
+          batchByCell{iCell}(s).skipReason = 'Insufficient E/I neurons';
+        end
+        continue;
+      end
     end
 
     sessionConfig = analysisConfig;
@@ -238,22 +318,43 @@ for s = 1:numSessions
       sessionConfig.avStepSize = sessionDuration;
     end
 
-    avResults = criticality_av_analysis(dataStruct, sessionConfig);
-    if ~isempty(opts.brainArea)
-      avResults = filter_av_results_to_brain_area(avResults, opts.brainArea);
-      if isempty(avResults.areas)
-        fprintf('  No results for brain area "%s"; skipping.\n', opts.brainArea);
-        continue;
+    for iCell = 1:numel(cellTypesToRun)
+      cellType = cellTypesToRun{iCell};
+      try
+        dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, ...
+          opts.widthCutoff, opts.splitExcitatoryInhibitory);
+        [dataStructRun, ~] = apply_manuscript_brain_area_selection( ...
+          dataStructRun, opts.brainArea, opts.brainAreaCombinations);
+
+        avResults = criticality_av_analysis(dataStructRun, sessionConfig);
+        if ~isempty(opts.brainArea)
+          avResults = filter_av_results_to_brain_area(avResults, opts.brainArea);
+          if isempty(avResults.areas)
+            fprintf('  No results for brain area "%s" (%s); skipping.\n', ...
+              opts.brainArea, cell_type_label(cellType));
+            continue;
+          end
+        end
+
+        batchByCell{iCell}(s).success = true;
+        batchByCell{iCell}(s).results = avResults;
+        fprintf('  Analysis completed (%s).\n', cell_type_label(cellType));
+      catch MECell
+        if is_skippable_session_analysis_error(MECell)
+          fprintf('  Skipping %s (insufficient neurons / no valid areas): %s\n', ...
+            cell_type_label(cellType), MECell.message);
+          batchByCell{iCell}(s).skipReason = MECell.message;
+          continue;
+        end
+        rethrow(MECell);
       end
     end
-
-    batchResults(s).success = true;
-    batchResults(s).results = avResults;
-    fprintf('  Analysis completed.\n');
   catch ME
     if is_skippable_session_analysis_error(ME)
       fprintf('  Skipping session (insufficient neurons / no valid areas): %s\n', ME.message);
-      batchResults(s).skipReason = ME.message;
+      for iCell = 1:numel(cellTypesToRun)
+        batchByCell{iCell}(s).skipReason = ME.message;
+      end
       continue;
     end
     fprintf('  Error: %s\n', ME.message);
@@ -573,12 +674,16 @@ else
 end
 end
 
-function plot_av_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, paths, brainArea)
+function plot_av_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, paths, brainArea, cellType)
 % PLOT_AV_ACROSS_TASKS - 2x4 bar plots grouped by session type
 
-if nargin < 8
+if nargin < 7
   brainArea = '';
 end
+if nargin < 8 || isempty(cellType)
+  cellType = '';
+end
+cellTag = cell_type_file_tag(cellType);
 
 numAreas = length(areasToPlot);
 numSessionTypes = length(sessionTypes);
@@ -702,6 +807,9 @@ for a = 1:numAreas
   else
     titleStr = sprintf('Avalanche criticality — %s [%s]', areaName, collectTag);
   end
+  if ~isempty(cellType)
+    titleStr = sprintf('%s | %s', titleStr, cell_type_label(cellType));
+  end
   sgtitle(fig, titleStr, 'FontWeight', 'bold');
 
   if ~isempty(brainArea)
@@ -712,6 +820,7 @@ for a = 1:numAreas
   if numAreas > 1
     plotBase = sprintf('%s_area%s', plotBase, areaName);
   end
+  plotBase = [plotBase, cellTag];
 
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
@@ -793,7 +902,7 @@ end
 end
 
 function plot_av_crackling_relation_across_tasks(plotData, areasToPlot, sessionTypes, ...
-    collectStart, collectEnd, paths, brainArea)
+    collectStart, collectEnd, paths, brainArea, cellType)
 % PLOT_AV_CRACKLING_RELATION_ACROSS_TASKS - paramSD vs γ_pred + dcc histogram
 %
 % Variables:
@@ -808,6 +917,10 @@ function plot_av_crackling_relation_across_tasks(plotData, areasToPlot, sessionT
 if nargin < 7
   brainArea = '';
 end
+if nargin < 8 || isempty(cellType)
+  cellType = '';
+end
+cellTag = cell_type_file_tag(cellType);
 
 saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
 if ~exist(saveDir, 'dir')
@@ -929,9 +1042,13 @@ for a = 1:numel(areasToPlot)
     titleStr = sprintf('Crackling diagnostics — %s [%s]', areaName, collectTag);
     plotBase = sprintf('criticality_av_crackling_relation_%s_%s', areaName, collectTag);
   end
+  if ~isempty(cellType)
+    titleStr = sprintf('%s | %s', titleStr, cell_type_label(cellType));
+  end
   if numel(areasToPlot) > 1
     plotBase = sprintf('%s_area%s', plotBase, areaName);
   end
+  plotBase = [plotBase, cellTag];
   sgtitle(fig, titleStr, 'FontWeight', 'bold', 'Interpreter', 'none');
 
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);

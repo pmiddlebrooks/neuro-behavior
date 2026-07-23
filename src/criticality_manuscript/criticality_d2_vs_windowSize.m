@@ -26,7 +26,13 @@
 %   nShuffles        - Number of whole-session circular permutations
 %   makePlots        - Plot mean d2 / mean CV (data + shuffled if enabled)
 %   saveFigure       - Export PNG to dropPath/criticality_manuscript
+%   figureTag        - Optional suffix for saved PNG (e.g. reach session name);
+%                      pre-set by batch callers so outputs do not overwrite
+%   closeFigure      - If true, close the figure after plotting / saving
 %   plotConfig       - Optional manuscript axis fonts / line widths
+%
+% Batch callers may pre-set exampleSessions, figureTag, and closeFigure before
+% running this script (see criticality_manuscript/scratch.m).
 %
 % Plot colors: d2 = colors_for_tasks(sessionType); CV = muted magenta;
 % shuffled = grayed versions of those observed colors. Legend on first panel
@@ -45,21 +51,30 @@ setup_criticality_manuscript_paths('criticality_d2_vs_windowSize');
 paths = get_paths();
 
 %% Configuration — three example sessions (one per condition)
-exampleSessions(1) = struct( ...
-  'sessionType', 'spontaneous', ...
-  'subjectName', 'ag25290', ...
-  'sessionName', 'ag112321_1', ...
-  'displayLabel', 'spontaneous');
-exampleSessions(2) = struct( ...
-  'sessionType', 'interval', ...
-  'subjectName', 'ey9166', ...
-  'sessionName', 'ey9166_2026_04_03', ...
-  'displayLabel', 'interval');
-exampleSessions(3) = struct( ...
-  'sessionType', 'reach', ...
-  'subjectName', '', ...
-  'sessionName', 'AB19_09-Apr-2026 14_28_19_NeuroBeh', ...
-  'displayLabel', 'reach');
+% Caller (e.g. scratch batch) may pre-set exampleSessions / figureTag / closeFigure.
+if ~exist('exampleSessions', 'var') || isempty(exampleSessions)
+  exampleSessions(1) = struct( ...
+    'sessionType', 'spontaneous', ...
+    'subjectName', 'ag25290', ...
+    'sessionName', 'ag112321_1', ...
+    'displayLabel', 'spontaneous');
+  exampleSessions(2) = struct( ...
+    'sessionType', 'interval', ...
+    'subjectName', 'ey9166', ...
+    'sessionName', 'ey9166_2026_04_03', ...
+    'displayLabel', 'interval');
+  exampleSessions(3) = struct( ...
+    'sessionType', 'reach', ...
+    'subjectName', '', ...
+    'sessionName', 'AB19_09-Apr-2026 14_28_19_NeuroBeh', ...
+    'displayLabel', 'reach');
+end
+if ~exist('figureTag', 'var')
+  figureTag = '';
+end
+if ~exist('closeFigure', 'var') || isempty(closeFigure)
+  closeFigure = false;
+end
 
 dataSource = 'spikes';
 collectStart = 0;
@@ -74,7 +89,7 @@ pOrder = 10;
 critType = 2;
 meanSubtract = false;
 useLog10D2 = true;
-enablePermutations = true;
+enablePermutations = false;
 nShuffles = 10;
 makePlots = true;
 saveFigure = true;
@@ -354,10 +369,18 @@ if makePlots
     else
       shuffleTag = '';
     end
+    if isempty(figureTag)
+      sessionTag = '';
+    else
+      sessionTag = ['_' matlab.lang.makeValidName(char(string(figureTag)))];
+    end
     outPng = fullfile(saveDir, sprintf( ...
-      'criticality_d2_vs_windowSize_%s%s.png', areaTag, shuffleTag));
+      'criticality_d2_vs_windowSize_%s%s%s.png', areaTag, shuffleTag, sessionTag));
     exportgraphics(figMain, outPng, 'Resolution', 300);
     fprintf('Saved figure: %s\n', outPng);
+  end
+  if closeFigure && isgraphics(figMain)
+    close(figMain);
   end
 end
 

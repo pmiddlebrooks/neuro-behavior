@@ -534,6 +534,12 @@ end
 function apply_engagement_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter)
 % APPLY_ENGAGEMENT_AXES_STYLE - Thicker axes and larger fonts (manuscript style)
 
+if nargin < 3, xLabelText = ''; end
+if nargin < 4, yLabelText = ''; end
+if nargin < 5, titleText = ''; end
+if nargin < 6 || isempty(textInterpreter)
+  textInterpreter = 'none';
+end
 apply_manuscript_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter);
 end
 

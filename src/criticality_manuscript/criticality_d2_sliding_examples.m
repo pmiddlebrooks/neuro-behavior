@@ -309,11 +309,6 @@ end
 function fig = plot_d2_sliding_examples(exampleResults, brainArea, slidingWindowSize, stepSize, useLog10D2)
 % PLOT_D2_SLIDING_EXAMPLES - Overlay d2 traces from example sessions on one axis
 
-conditionColors = [ ...
-  0.15, 0.45, 0.75; ...
-  0.85, 0.35, 0.15; ...
-  0.20, 0.65, 0.35];
-
 fig = figure('Color', 'w', 'Position', [100 100 1100 420], ...
   'Name', 'd2 sliding-window examples');
 ax = axes(fig);
@@ -326,7 +321,7 @@ for e = 1:numel(exampleResults)
   end
   trace = exampleResults(e).trace;
   ex = exampleResults(e).example;
-  lineColor = get_example_condition_color(ex.sessionType, conditionColors);
+  lineColor = colors_for_tasks(ex.sessionType);
   if isfield(ex, 'displayLabel') && ~isempty(ex.displayLabel)
     legendLabel = ex.displayLabel;
   else
@@ -354,21 +349,6 @@ legend(ax, 'Location', 'best');
 hold(ax, 'off');
 end
 
-function lineColor = get_example_condition_color(sessionType, conditionColors)
-% GET_EXAMPLE_CONDITION_COLOR - Stable color per session type
-
-switch lower(sessionType)
-  case 'spontaneous'
-    lineColor = conditionColors(1, :);
-  case 'interval'
-    lineColor = conditionColors(2, :);
-  case 'reach'
-    lineColor = conditionColors(3, :);
-  otherwise
-    lineColor = conditionColors(1, :);
-end
-end
-
 function y = log10_safe_numeric(x)
 % LOG10_SAFE_NUMERIC - log10 with NaN for non-positive values
 
@@ -386,10 +366,6 @@ function fig = plot_d2_popactivity_examples(exampleResults, brainArea, slidingWi
 % Goal:
 %   Match session_d2_distributions pop-activity scatter; shared y-limits across panels.
 
-conditionColors = [ ...
-  0.15, 0.45, 0.75; ...
-  0.85, 0.35, 0.15; ...
-  0.20, 0.65, 0.35];
 shuffleColor = [0.55, 0.55, 0.55];
 
 numExamples = numel(exampleResults);
@@ -452,7 +428,7 @@ for e = 1:numExamples
 
   pd = panelData{e};
   ex = pd.example;
-  dataColor = get_example_condition_color(ex.sessionType, conditionColors);
+  dataColor = colors_for_tasks(ex.sessionType);
   if isfield(ex, 'displayLabel') && ~isempty(ex.displayLabel)
     panelTitle = ex.displayLabel;
   else

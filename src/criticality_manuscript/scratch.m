@@ -1,3 +1,54 @@
+%% Batch: d2 vs windowSize — one plot per reach session
+%
+% Keeps the default spontaneous / interval examples fixed and swaps the reach
+% session through reach_session_list(), running criticality_d2_vs_windowSize
+% and saving a uniquely named PNG for each.
+
+setup_criticality_manuscript_paths('criticality_d2_vs_windowSize');
+
+reachSessions = reach_session_list();
+nReach = numel(reachSessions);
+
+spontaneousEx = struct( ...
+  'sessionType', 'spontaneous', ...
+  'subjectName', 'ag25290', ...
+  'sessionName', 'ag112321_1', ...
+  'displayLabel', 'spontaneous');
+intervalEx = struct( ...
+  'sessionType', 'interval', ...
+  'subjectName', 'ey9166', ...
+  'sessionName', 'ey9166_2026_04_03', ...
+  'displayLabel', 'interval');
+
+closeFigure = true;   % avoid stacking figures across the batch
+
+fprintf('\n=== Batch d2 vs windowSize across %d reach sessions ===\n', nReach);
+for iReach = 1:nReach
+  reachName = reachSessions{iReach};
+  fprintf('\n##### Reach %d/%d: %s #####\n', iReach, nReach, reachName);
+
+  exampleSessions = spontaneousEx;
+  exampleSessions(2) = intervalEx;
+  exampleSessions(3) = struct( ...
+    'sessionType', 'reach', ...
+    'subjectName', '', ...
+    'sessionName', reachName, ...
+    'displayLabel', 'reach');
+  figureTag = reachName;
+
+  try
+    criticality_d2_vs_windowSize;
+  catch ME
+    warning('scratch:D2VsWindowSizeBatchFailed', ...
+      'Failed for reach session %s: %s', reachName, ME.message);
+  end
+
+  % Clear so the next iteration can re-set; also drop large intermediates
+  clear exampleSessions figureTag results exampleResults
+end
+clear closeFigure spontaneousEx intervalEx reachSessions nReach iReach reachName
+fprintf('\n=== Batch d2 vs windowSize: done ===\n');
+
 %% Scratch: PRG across tasks — sweep finalCutoffDivisor x surrogateMethod
 %
 % Nested loops call criticality_prg_across_tasks for each combo, then build a

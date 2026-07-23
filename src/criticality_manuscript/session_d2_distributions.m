@@ -111,7 +111,7 @@ if splitExcitatoryInhibitory
   fprintf('E/I split: on (widthCutoff = %.3f ms)\n', widthCutoff);
 end
 
-%% Load session and run d2 analysis
+% Load session and run d2 analysis
 subjectNameForLoad = '';
 if exist('subjectName', 'var') && ~isempty(subjectName)
   subjectNameForLoad = subjectName;

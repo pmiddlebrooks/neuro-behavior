@@ -25,6 +25,8 @@
 %   plotSeparatedMetrics - 2x4 figure: d2/tau/alpha/paramSD (top) and
 %                          decades/dcc/kurtosis/D_JS (bottom); consecutive sessions
 %                          linked within each task type on each panel.
+%                          When enablePermutations is true, shuffled/surrogate
+%                          session summaries are overlaid in gray.
 %   anchorMetric       - 'd2', 'tau', or 'alpha' (primary / left axis)
 %   metricsToPlot      - Subset of {'d2','tau','alpha'} markers to draw
 %   splitByEngagement  - If true, interval/reach use engaged vs non-engaged
@@ -48,14 +50,18 @@ d2Window = [];
 % One d2 estimate for the full collect window ([] when collectEnd is [])
 % d2Window = collectEnd;
 
+% Paths first — needed by default_manuscript_brain_area_combinations / plotConfig
+setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
+paths = get_paths();
+
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 
-runArBatch = true;
-runAvBatch = true;
-runPrgBatch = true;
-runEngagementBatch = true;
+runArBatch = false;
+runAvBatch = false;
+runPrgBatch = false;
+runEngagementBatch = false;
 loadSavedResults = true;
 plotResults = true;
 plotMetricPairScatters = true;
@@ -86,9 +92,6 @@ finalCutoffDivisor = 16;
 prgMethod = 'pca';
 
 plotConfig = fill_manuscript_plot_config();
-
-setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
-paths = get_paths();
 
 combinedBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
   'criticality_multiple_metrics_across_tasks_batch.mat');
@@ -121,6 +124,12 @@ fprintf('splitByEngagement: %d\n', splitByEngagement);
 fprintf('plotMetricPairScatters: %d\n', plotMetricPairScatters);
 fprintf('plotSeparatedMetrics: %d\n', plotSeparatedMetrics);
 fprintf('plotCorrelationMatrix: %d\n', plotCorrelationMatrix);
+fprintf('Batch files:\n  AR:  %s (exists=%d)\n  AV:  %s (exists=%d)\n  PRG: %s (exists=%d)\n', ...
+  arBatchFile, isfile(arBatchFile), avBatchFile, isfile(avBatchFile), ...
+  prgBatchFile, isfile(prgBatchFile));
+if isempty(d2Window)
+  fprintf('Plot filenames will use tag "winfull" (d2Window=[]).\n');
+end
 
 % AR batch (d2) — full-session metrics across all requested session types
 arOpts = struct( ...
@@ -279,7 +288,7 @@ if saveCombinedBatch
   fprintf('\nSaved combined batch: %s\n', combinedBatchFile);
 end
 
-% Combined plotting
+% Combined plotting (same Editor section as batch load — run the full script)
 if plotResults
   if ~exist('plotSeparatedMetrics', 'var') || isempty(plotSeparatedMetrics)
     plotSeparatedMetrics = true;
@@ -297,6 +306,7 @@ if plotResults
   end
 
   fprintf('\n=== Combined plotting ===\n');
+  fprintf('Figures save to: %s\n', fullfile(paths.dropPath, 'criticality_manuscript'));
   if useAnchorAffineMap
     fprintf('Anchor metric: %s (affine map onto this scale)\n', anchorMetric);
   else
@@ -305,12 +315,17 @@ if plotResults
   fprintf('Markers: %s\n', strjoin(metricsToPlot, ', '));
 
   if ~splitByEngagement
-    plotAreas = intersect(arOut.plotData.areas, avOut.plotData.areas, 'stable');
+    plotAreas = intersect(cellstr(string(arOut.plotData.areas)), ...
+      cellstr(string(avOut.plotData.areas)), 'stable');
     if ~isempty(areasToPlot)
-      plotAreas = intersect(plotAreas, areasToPlot, 'stable');
+      plotAreas = intersect(plotAreas, cellstr(string(areasToPlot)), 'stable');
     end
     if isempty(plotAreas)
-      error('No common brain areas between AR and AV plotData.');
+      error(['No common brain areas between AR and AV plotData. ', ...
+        'AR areas={%s}; AV areas={%s}; requested={%s}'], ...
+        strjoin(cellstr(string(arOut.plotData.areas)), ','), ...
+        strjoin(cellstr(string(avOut.plotData.areas)), ','), ...
+        strjoin(cellstr(string(areasToPlot)), ','));
     end
     fprintf('Areas: %s\n', strjoin(plotAreas, ', '));
     plot_multimetric_d2_tau_alpha_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
@@ -323,7 +338,7 @@ if plotResults
       plot_multimetric_separated_axes_across_tasks(arOut.plotData, avOut.plotData, ...
         prgOut.plotData, plotAreas, sessionTypes, collectStart, collectEnd, d2Window, ...
         paths, brainArea, useLog10D2, plotConfig, '', metricsToPlot, avOut.plotData, ...
-        finalCutoffDivisor);
+        finalCutoffDivisor, enablePermutations);
     end
     if plotMetricPairScatters
       plot_multimetric_pair_scatters_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
@@ -340,7 +355,8 @@ if plotResults
         arOut.plotData, avOut.plotData, engOut.plotData, engClass, sessionTypes);
       classViews.(engClass).ar = arView;
       classViews.(engClass).av = avView;
-      classAreas = intersect(arView.areas, avView.areas, 'stable');
+      classAreas = intersect(cellstr(string(arView.areas)), ...
+        cellstr(string(avView.areas)), 'stable');
       if isempty(plotAreas)
         plotAreas = classAreas;
       else
@@ -348,7 +364,7 @@ if plotResults
       end
     end
     if ~isempty(areasToPlot)
-      plotAreas = intersect(plotAreas, areasToPlot, 'stable');
+      plotAreas = intersect(plotAreas, cellstr(string(areasToPlot)), 'stable');
     end
     if isempty(plotAreas)
       error('No common brain areas for engagement paired plots.');
@@ -373,7 +389,8 @@ if plotResults
         plot_multimetric_separated_axes_across_tasks( ...
           classViews.(engClass).ar, classViews.(engClass).av, prgOut.plotData, plotAreas, ...
           sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-          plotConfig, engClass, metricsToPlot, avOut.plotData, finalCutoffDivisor);
+          plotConfig, engClass, metricsToPlot, avOut.plotData, finalCutoffDivisor, ...
+          enablePermutations);
       end
       if plotMetricPairScatters
         plot_multimetric_pair_scatters_across_tasks( ...
@@ -383,9 +400,11 @@ if plotResults
       end
     end
   end
+else
+  fprintf('\nplotResults=false; skipping combined / separated / pair-scatter figures.\n');
 end
 
-%% Cross-session metric correlation matrix (pooled across task types)
+% Cross-session metric correlation matrix (pooled across task types)
 if plotCorrelationMatrix
   if isempty(prgOut) || ~isfield(prgOut, 'plotData')
     error('PRG plotData required for correlation matrix.');
@@ -864,6 +883,8 @@ for a = 1:numel(areasToPlot)
     else
       yLimPrimary = compute_native_ylim_for_metric(nativeVals.(anchorMetric));
       if isempty(yLimPrimary)
+        warning('criticality_multiple_metrics_across_tasks:EmptyPrimaryYLim', ...
+          'Skipping %s: no finite values for anchor metric "%s".', areaName, anchorMetric);
         close(fig);
         continue;
       end
@@ -942,6 +963,9 @@ for a = 1:numel(areasToPlot)
   end
 
   if isempty(xticksCenters)
+    warning('criticality_multiple_metrics_across_tasks:EmptyXTicks', ...
+      'Skipping %s: no session x-ticks after layout (aligned table may lack matching sessionTypes).', ...
+      areaName);
     close(fig);
     continue;
   end
@@ -963,6 +987,9 @@ for a = 1:numel(areasToPlot)
     end
   end
   if isempty(yLimPlot) || ~all(isfinite(yLimPlot))
+    warning('criticality_multiple_metrics_across_tasks:EmptyYLim', ...
+      'Skipping %s: could not compute y-limits for anchor metric "%s".', ...
+      areaName, anchorMetric);
     close(fig);
     continue;
   end
@@ -1042,7 +1069,7 @@ end
 function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, prgPlotData, ...
     areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
     useLog10D2, plotConfig, engagementTag, metricsToPlot, avPlotDataDecades, ...
-    finalCutoffDivisor)
+    finalCutoffDivisor, enablePermutations)
 % PLOT_MULTIMETRIC_SEPARATED_AXES_ACROSS_TASKS - 2x4 panels of session metrics
 %
 % Layout:
@@ -1057,10 +1084,12 @@ function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, pr
 %                             engagement av views lack decades); defaults to avPlotData
 %   metricsToPlot           - Controls which of d2/tau/alpha appear in the top row
 %   finalCutoffDivisor      - PRG kappa reported at N/finalCutoffDivisor (ylabel)
+%   enablePermutations      - If true, overlay shuffled/surrogate means in gray
 %
 % Goal:
 %   Same session-level data as the combined plot, each metric on its own axis.
-%   Within each task type, consecutive session markers are connected by a line.
+%   Within each task type, a horizontal line marks the within-task mean from
+%   first to last session. Optional gray markers show shuffle/surrogate summaries.
 
 if nargin < 12 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
@@ -1081,6 +1110,10 @@ if nargin < 16 || isempty(finalCutoffDivisor)
     finalCutoffDivisor = 4;
   end
 end
+if nargin < 17 || isempty(enablePermutations)
+  enablePermutations = false;
+end
+enablePermutations = logical(enablePermutations);
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
 engagementTag = char(engagementTag);
 
@@ -1113,11 +1146,21 @@ fieldByKey = struct('d2', 'd2Mean', 'tau', 'tauMean', 'alpha', 'alphaMean', ...
 semByKey = struct('d2', 'd2Sem', 'tau', 'tauSem', 'alpha', 'alphaSem', ...
   'paramSD', 'paramSDSem', 'decades', 'decadesSem', 'dcc', 'dccSem', ...
   'kurtosis', 'kurtosisSem', 'djs', 'djsSem');
+shuffleFieldByKey = struct('d2', 'd2ShuffleMean', 'tau', 'tauShuffleMean', ...
+  'alpha', 'alphaShuffleMean', 'paramSD', 'paramSDShuffleMean', ...
+  'decades', 'decadesShuffleMean', 'dcc', 'dccShuffleMean', ...
+  'kurtosis', 'kurtosisShuffleMean', 'djs', 'djsShuffleMean');
+shuffleSemByKey = struct('d2', 'd2ShuffleSem', 'tau', 'tauShuffleSem', ...
+  'alpha', 'alphaShuffleSem', 'paramSD', 'paramSDShuffleSem', ...
+  'decades', 'decadesShuffleSem', 'dcc', 'dccShuffleSem', ...
+  'kurtosis', 'kurtosisShuffleSem', 'djs', 'djsShuffleSem');
 % d2 / paramSD / decades / dcc / kurtosis / Djs: filled circles; tau square; alpha diamond
 markerByKey = struct('d2', 'o', 'tau', 's', 'alpha', 'd', ...
   'paramSD', 'o', 'decades', 'o', 'dcc', 'o', 'kurtosis', 'o', 'djs', 'o');
 fillByKey = struct('d2', true, 'tau', false, 'alpha', false, ...
   'paramSD', true, 'decades', true, 'dcc', true, 'kurtosis', true, 'djs', true);
+shuffleColor = [0.55, 0.55, 0.55];
+shuffleXOffset = 0.22;
 
 nPanels = numel(panelMetricKeys);
 nCols = 4;
@@ -1177,6 +1220,12 @@ for a = 1:numel(areasToPlot)
     xtickLabels = {};
     yField = panelYFields{iPanel};
     semField = panelSemFields{iPanel};
+    shuffleField = shuffleFieldByKey.(metricKey);
+    shuffleSemField = shuffleSemByKey.(metricKey);
+    yLimVals = sessionTable.(yField)(:);
+    if enablePermutations && ismember(shuffleField, sessionTable.Properties.VariableNames)
+      yLimVals = [yLimVals; sessionTable.(shuffleField)(:)]; %#ok<AGROW>
+    end
 
     for t = 1:numel(sessionTypes)
       sessionType = sessionTypes{t};
@@ -1196,11 +1245,22 @@ for a = 1:numel(areasToPlot)
         faceColor = 'none';
       end
 
-      validLine = isfinite(xPos(:)) & isfinite(yPos(:));
-      if sum(validLine) >= 2
-        plot(ax, xPos(validLine), yPos(validLine), '-', ...
-          'Color', 0.55 * taskColor + 0.45 * [1 1 1], ...
-          'LineWidth', max(1, plotConfig.lineWidth - 0.25), 'HandleVisibility', 'off');
+      % Horizontal mean across sessions within this task (first → last x)
+      yMeanTask = mean(yPos(isfinite(yPos)));
+      if isfinite(yMeanTask) && numSessions >= 1
+        plot(ax, [xPos(1), xPos(end)], [yMeanTask, yMeanTask], '-', ...
+          'Color', taskColor, ...
+          'LineWidth', 2, ...
+          'HandleVisibility', 'off');
+      end
+
+      if enablePermutations && ismember(shuffleField, sessionTable.Properties.VariableNames)
+        yShuffle = sessionTable.(shuffleField)(rowIdx);
+        yShuffleSem = sessionTable.(shuffleSemField)(rowIdx);
+        if any(isfinite(yShuffle))
+          plot_metric_errorbar_group(ax, xPos + shuffleXOffset, yShuffle, yShuffleSem, ...
+            markerByKey.(metricKey), shuffleColor, shuffleColor, plotConfig);
+        end
       end
 
       plot_metric_errorbar_group(ax, xPos, yPos, ySem, ...
@@ -1213,7 +1273,7 @@ for a = 1:numel(areasToPlot)
       xCursor = xPos(end) + 1.5;
     end
 
-    yLimPlot = compute_native_ylim_for_metric(sessionTable.(yField));
+    yLimPlot = compute_native_ylim_for_metric(yLimVals);
     if ~isempty(yLimPlot)
       ylim(ax, yLimPlot);
     end
@@ -1245,6 +1305,9 @@ for a = 1:numel(areasToPlot)
     titleStr = sprintf('Separated metrics%s — %s [%s, %s d2 windows]', ...
       engTitle, areaName, collectTag, winTag);
   end
+  if enablePermutations
+    titleStr = sprintf('%s (gray = shuffled)', titleStr);
+  end
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
   plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
@@ -1266,6 +1329,7 @@ function sessionTable = build_separated_metrics_session_table(arPlotData, avPlot
 %
 % Goal:
 %   Align top-row metrics with paramSD/dcc (AV), decades (AV), and PRG kurtosis / D_JS.
+%   Also collect shuffle/surrogate session summaries when present in plotData.
 
 if nargin < 10 || isempty(topMetrics)
   topMetrics = {'d2', 'tau', 'alpha'};
@@ -1291,6 +1355,23 @@ kurtosisSemCol = zeros(nRow, 1);
 djsCol = nan(nRow, 1);
 djsSemCol = zeros(nRow, 1);
 
+d2ShuffleMeanCol = nan(nRow, 1);
+d2ShuffleSemCol = nan(nRow, 1);
+tauShuffleMeanCol = nan(nRow, 1);
+tauShuffleSemCol = nan(nRow, 1);
+alphaShuffleMeanCol = nan(nRow, 1);
+alphaShuffleSemCol = nan(nRow, 1);
+paramSDShuffleMeanCol = nan(nRow, 1);
+paramSDShuffleSemCol = nan(nRow, 1);
+dccShuffleMeanCol = nan(nRow, 1);
+dccShuffleSemCol = nan(nRow, 1);
+decadesShuffleMeanCol = nan(nRow, 1);
+decadesShuffleSemCol = nan(nRow, 1);
+kurtosisShuffleMeanCol = nan(nRow, 1);
+kurtosisShuffleSemCol = nan(nRow, 1);
+djsShuffleMeanCol = nan(nRow, 1);
+djsShuffleSemCol = nan(nRow, 1);
+
 for i = 1:nRow
   sessionType = baseTable.sessionType{i};
   sessionName = baseTable.sessionName{i};
@@ -1299,12 +1380,25 @@ for i = 1:nRow
   typeRows = find(strcmp(baseTable.sessionType, sessionType));
   withinTypeIdx = find(typeRows == i, 1);
 
+  if isfield(arPlotData.byType, typeKey)
+    arType = arPlotData.byType.(typeKey);
+    arIdx = find_matching_session_index(arType, sessionName, withinTypeIdx);
+    if ~isempty(arIdx)
+      d2ShuffleMeanCol(i) = get_type_cell_metric(arType, 'd2ShuffleMean', areaIdxAr, arIdx);
+      d2ShuffleSemCol(i) = get_type_cell_metric(arType, 'd2ShuffleSem', areaIdxAr, arIdx);
+    end
+  end
+
   if isfield(avPlotData.byType, typeKey)
     avType = avPlotData.byType.(typeKey);
     avIdx = find_matching_session_index(avType, sessionName, withinTypeIdx);
     if ~isempty(avIdx)
       paramSDCol(i) = get_type_cell_metric(avType, 'paramSD', areaIdxAv, avIdx);
       dccCol(i) = get_type_cell_metric(avType, 'dcc', areaIdxAv, avIdx);
+      tauShuffleMeanCol(i) = get_type_cell_metric(avType, 'tauPermutedMean', areaIdxAv, avIdx);
+      alphaShuffleMeanCol(i) = get_type_cell_metric(avType, 'alphaPermutedMean', areaIdxAv, avIdx);
+      paramSDShuffleMeanCol(i) = get_type_cell_metric(avType, 'paramSDPermutedMean', areaIdxAv, avIdx);
+      dccShuffleMeanCol(i) = get_type_cell_metric(avType, 'dccPermutedMean', areaIdxAv, avIdx);
     end
   end
 
@@ -1313,6 +1407,8 @@ for i = 1:nRow
     avDecIdx = find_matching_session_index(avDecType, sessionName, withinTypeIdx);
     if ~isempty(avDecIdx)
       decadesCol(i) = get_type_cell_metric(avDecType, 'decades', areaIdxAvDec, avDecIdx);
+      decadesShuffleMeanCol(i) = get_type_cell_metric(avDecType, 'decadesPermutedMean', ...
+        areaIdxAvDec, avDecIdx);
     end
   end
 
@@ -1324,6 +1420,12 @@ for i = 1:nRow
       kurtosisSemCol(i) = get_type_cell_metric(prgType, 'kappaSem', areaIdxPrg, prgIdx);
       djsCol(i) = get_type_cell_metric(prgType, 'djsMean', areaIdxPrg, prgIdx);
       djsSemCol(i) = get_type_cell_metric(prgType, 'djsSem', areaIdxPrg, prgIdx);
+      kurtosisShuffleMeanCol(i) = get_type_cell_metric(prgType, 'kappaShuffleMean', ...
+        areaIdxPrg, prgIdx);
+      kurtosisShuffleSemCol(i) = get_type_cell_metric(prgType, 'kappaShuffleSem', ...
+        areaIdxPrg, prgIdx);
+      djsShuffleMeanCol(i) = get_type_cell_metric(prgType, 'djsShuffleMean', areaIdxPrg, prgIdx);
+      djsShuffleSemCol(i) = get_type_cell_metric(prgType, 'djsShuffleSem', areaIdxPrg, prgIdx);
       if ~isfinite(kurtosisSemCol(i)), kurtosisSemCol(i) = 0; end
       if ~isfinite(djsSemCol(i)), djsSemCol(i) = 0; end
     end
@@ -1332,8 +1434,16 @@ end
 
 sessionTable = [baseTable, table(paramSDCol, paramSDSemCol, dccCol, dccSemCol, ...
   decadesCol, decadesSemCol, kurtosisCol, kurtosisSemCol, djsCol, djsSemCol, ...
+  d2ShuffleMeanCol, d2ShuffleSemCol, tauShuffleMeanCol, tauShuffleSemCol, ...
+  alphaShuffleMeanCol, alphaShuffleSemCol, paramSDShuffleMeanCol, paramSDShuffleSemCol, ...
+  dccShuffleMeanCol, dccShuffleSemCol, decadesShuffleMeanCol, decadesShuffleSemCol, ...
+  kurtosisShuffleMeanCol, kurtosisShuffleSemCol, djsShuffleMeanCol, djsShuffleSemCol, ...
   'VariableNames', {'paramSD', 'paramSDSem', 'dcc', 'dccSem', ...
-  'decades', 'decadesSem', 'kurtosis', 'kurtosisSem', 'djs', 'djsSem'})];
+  'decades', 'decadesSem', 'kurtosis', 'kurtosisSem', 'djs', 'djsSem', ...
+  'd2ShuffleMean', 'd2ShuffleSem', 'tauShuffleMean', 'tauShuffleSem', ...
+  'alphaShuffleMean', 'alphaShuffleSem', 'paramSDShuffleMean', 'paramSDShuffleSem', ...
+  'dccShuffleMean', 'dccShuffleSem', 'decadesShuffleMean', 'decadesShuffleSem', ...
+  'kurtosisShuffleMean', 'kurtosisShuffleSem', 'djsShuffleMean', 'djsShuffleSem'})];
 end
 
 function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, areasToPlot, ...
@@ -1349,6 +1459,8 @@ function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, are
 %
 % Crackling naming:
 %   Measured / observed crackling exponent = paramSD = 1/σνz from WLS ⟨S⟩(T)
+%     (avalanches restricted to the duration power-law fit range [minavD, maxavD]
+%     used for α — see avalanche_power_law_metrics / size_given_duration)
 %   Predicted crackling exponent = (α-1)/(τ-1) from the size/duration PDFs
 %   dcc = |predicted - measured|
 %
@@ -1436,7 +1548,7 @@ for a = 1:numel(areasToPlot)
         continue;
       end
       taskColor = colors_for_tasks(sessionType);
-      plotConfig.scatterMarkerSize = 120;
+      plotConfig.scatterMarkerSize = 180;
       plotConfig.markerFaceAlpha = 0.8;
       hSc = scatter_manuscript_filled(ax, xVals(valid), yVals(valid), plotConfig, ...
         taskColor, sessionType);
@@ -1496,6 +1608,8 @@ function sessionTable = build_pair_scatter_session_table(arPlotData, avPlotData,
 % Goal:
 %   Align AR d2 with AV tau, alpha, and crackling paramSD (1/σνz). Also store
 %   predicted crackling exponent (α-1)/(τ-1) for the identity-line panel.
+%   Measured paramSD comes from the AV batch, where ⟨S⟩(T) was fit only on
+%   durations inside the α power-law range (same range used for alpha).
 
 baseTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
   areaIdxAr, areaIdxAv, {'d2', 'tau', 'alpha'});
@@ -2680,6 +2794,8 @@ for t = 1:numel(sessionTypes)
         end
         arView.byType.(typeKey).d2Mean{a} = get_type_metric_cell(arSrc, 'd2Mean', srcIdx);
         arView.byType.(typeKey).d2Sem{a} = get_type_metric_cell(arSrc, 'd2Sem', srcIdx);
+        arView.byType.(typeKey).d2ShuffleMean{a} = get_type_metric_cell(arSrc, 'd2ShuffleMean', srcIdx);
+        arView.byType.(typeKey).d2ShuffleSem{a} = get_type_metric_cell(arSrc, 'd2ShuffleSem', srcIdx);
       end
       arView.byType.(typeKey).sessionNames = get_field_or_empty(arSrc, 'sessionNames');
       arView.byType.(typeKey).sessionLabels = get_field_or_empty(arSrc, 'sessionLabels');
@@ -2695,6 +2811,10 @@ for t = 1:numel(sessionTypes)
         avView.byType.(typeKey).alpha{a} = get_type_metric_cell(avSrc, 'alpha', srcIdx);
         avView.byType.(typeKey).paramSD{a} = get_type_metric_cell(avSrc, 'paramSD', srcIdx);
         avView.byType.(typeKey).dcc{a} = get_type_metric_cell(avSrc, 'dcc', srcIdx);
+        avView.byType.(typeKey).tauPermutedMean{a} = get_type_metric_cell(avSrc, 'tauPermutedMean', srcIdx);
+        avView.byType.(typeKey).alphaPermutedMean{a} = get_type_metric_cell(avSrc, 'alphaPermutedMean', srcIdx);
+        avView.byType.(typeKey).paramSDPermutedMean{a} = get_type_metric_cell(avSrc, 'paramSDPermutedMean', srcIdx);
+        avView.byType.(typeKey).dccPermutedMean{a} = get_type_metric_cell(avSrc, 'dccPermutedMean', srcIdx);
       end
       avView.byType.(typeKey).sessionNames = get_field_or_empty(avSrc, 'sessionNames');
       avView.byType.(typeKey).sessionLabels = get_field_or_empty(avSrc, 'sessionLabels');
@@ -2707,9 +2827,13 @@ function typeData = init_standard_ar_type(numAreas)
 typeData = struct();
 typeData.d2Mean = cell(1, numAreas);
 typeData.d2Sem = cell(1, numAreas);
+typeData.d2ShuffleMean = cell(1, numAreas);
+typeData.d2ShuffleSem = cell(1, numAreas);
 for a = 1:numAreas
   typeData.d2Mean{a} = [];
   typeData.d2Sem{a} = [];
+  typeData.d2ShuffleMean{a} = [];
+  typeData.d2ShuffleSem{a} = [];
 end
 typeData.sessionNames = {};
 typeData.sessionLabels = {};
@@ -2721,11 +2845,19 @@ typeData.tau = cell(1, numAreas);
 typeData.alpha = cell(1, numAreas);
 typeData.paramSD = cell(1, numAreas);
 typeData.dcc = cell(1, numAreas);
+typeData.tauPermutedMean = cell(1, numAreas);
+typeData.alphaPermutedMean = cell(1, numAreas);
+typeData.paramSDPermutedMean = cell(1, numAreas);
+typeData.dccPermutedMean = cell(1, numAreas);
 for a = 1:numAreas
   typeData.tau{a} = [];
   typeData.alpha{a} = [];
   typeData.paramSD{a} = [];
   typeData.dcc{a} = [];
+  typeData.tauPermutedMean{a} = [];
+  typeData.alphaPermutedMean{a} = [];
+  typeData.paramSDPermutedMean{a} = [];
+  typeData.dccPermutedMean{a} = [];
 end
 typeData.sessionNames = {};
 typeData.sessionLabels = {};

@@ -587,11 +587,20 @@ avData.sizeFitInfo = sizeFit;
 avData.durFitInfo = durFit;
 avData.nAvalanches = numel(sizes);
 
-% Crackling / size-given-duration exponent (1/σνz) and DCC vs (α-1)/(τ-1)
-if isfinite(durFit.fitMin) && isfinite(durFit.fitMax) && durFit.fitMin <= durFit.fitMax ...
+% Crackling / size-given-duration exponent (1/σνz) and DCC vs (α-1)/(τ-1).
+% Restrict ⟨S⟩(T) to the duration power-law range used for α.
+if isfinite(durFit.fitMin) && isfinite(durFit.fitMax) && durFit.fitMin < durFit.fitMax ...
     && numel(sizes) >= 2 && numel(durations) >= 2
-  [avData.paramSD, ~, ~] = size_given_duration(sizes(:), durations(:), ...
-    'durmin', durFit.fitMin, 'durmax', durFit.fitMax);
+  sizesCol = sizes(:);
+  dursCol = durations(:);
+  inDurFitRange = isfinite(sizesCol) & isfinite(dursCol) ...
+    & sizesCol > 0 & dursCol > 0 ...
+    & dursCol >= durFit.fitMin & dursCol <= durFit.fitMax;
+  if nnz(inDurFitRange) >= 2 && numel(unique(dursCol(inDurFitRange))) >= 2
+    [avData.paramSD, ~, ~] = size_given_duration( ...
+      sizesCol(inDurFitRange), dursCol(inDurFitRange), ...
+      'durmin', durFit.fitMin, 'durmax', durFit.fitMax);
+  end
 end
 if isfinite(avData.tau) && isfinite(avData.alpha) && avData.tau > 1
   avData.scalingRelation = (avData.alpha - 1) / (avData.tau - 1);

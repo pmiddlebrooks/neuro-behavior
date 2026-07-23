@@ -96,18 +96,12 @@ durHist = durHist(validIndices);
 logUnqDurs = log10(unqDurations)'; 
 logSizeGivDur = log10(sizeGivDur)';
 
-% find minimum and maximum duration histogram indices
+% Restrict WLS to duration bins inside [durMin, durMax] (power-law fit range).
+% Do not fall back to the full duration span if the requested range is empty.
 durMinInd = find(unqDurations >= durMin, 1, 'first');
-if isempty(durMinInd)
-    durMinInd = 1;
-end
-
 durMaxInd = find(unqDurations <= durMax, 1, 'last');
-if isempty(durMaxInd)
-  durMaxInd = length(unqDurations);
-end
 
-if durMin > durMax || durMinInd > durMaxInd
+if durMin > durMax || isempty(durMinInd) || isempty(durMaxInd) || durMinInd > durMaxInd
   sigmaNuZInv = nan;
   sigmaNuZInvStd = nan;
   logCoeff = nan;
@@ -115,6 +109,12 @@ if durMin > durMax || durMinInd > durMaxInd
 end
 
 nFit = durMaxInd - durMinInd + 1;
+if nFit < 2
+  sigmaNuZInv = nan;
+  sigmaNuZInvStd = nan;
+  logCoeff = nan;
+  return;
+end
 logDurSlice = logUnqDurs(durMinInd:durMaxInd);
 logSizeSlice = logSizeGivDur(durMinInd:durMaxInd);
 weightSlice = durHist(durMinInd:durMaxInd);

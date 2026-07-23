@@ -19,7 +19,12 @@ function out = reach_criticality_d2_accuracy(sessionName, opts)
 %       .useLog10D2, .useOptimalBinWindowFunction, .binSizeManual,
 %       .minSpikesPerBin, .minBinsPerWindow, .pcaFlag
 %     Analysis:
-%       .brainArea, .brainAreaCombinations, .nMinNeurons
+%       .brainArea             - Area to analyze (default 'M23M56'). Examples:
+%                                'M56' (single), 'M23M56' or 'M2356' (merged
+%                                M23+M56), '' (all areas in the session).
+%       .brainAreaCombinations - Merge definitions (name + source areas cell).
+%                                Default includes M23M56 and legacy alias M2356.
+%       .nMinNeurons
 %     Output:
 %       .makePlots, .saveFigure, .saveResults, .outputDir, .plotConfig
 %
@@ -58,6 +63,12 @@ collectEnd = opts.collectEnd;
 
 fprintf('\n=== Reach criticality d2 accuracy ===\n');
 fprintf('Session: %s\n', sessionName);
+if isempty(opts.brainArea)
+  brainAreaStr = '(all areas)';
+else
+  brainAreaStr = char(opts.brainArea);
+end
+fprintf('Brain area: %s\n', brainAreaStr);
 fprintf('d2Window=%.2fs | preReachBuffer=%d ms | postReachBuffer=%d ms\n', ...
   opts.d2Window, opts.preReachBuffer, opts.postReachBuffer);
 
@@ -93,12 +104,11 @@ if isempty(collectStart)
   opts.collectStart = collectStart;
 end
 
-if ~isempty(opts.brainArea)
-  [dataStruct, areaOk] = apply_manuscript_brain_area_selection( ...
-    dataStruct, opts.brainArea, opts.brainAreaCombinations, true);
-  if ~areaOk
-    error('Brain area "%s" not available in this session.', opts.brainArea);
-  end
+[dataStruct, areaOk] = apply_manuscript_brain_area_selection( ...
+  dataStruct, opts.brainArea, opts.brainAreaCombinations, true);
+if ~areaOk
+  error('reach_criticality_d2_accuracy:BrainAreaUnavailable', ...
+    'Brain area "%s" not available in this session.', opts.brainArea);
 end
 
 areas = dataStruct.areas;
@@ -239,6 +249,7 @@ print_d2_accuracy_stats(statsByAreaPost, opts.useLog10D2, 'Post-reach');
 out = struct();
 out.sessionName = sessionName;
 out.config = opts;
+out.brainArea = opts.brainArea;
 out.areas = areas;
 out.areasToTest = areasToTest;
 out.reachStart = reachStart;
@@ -378,7 +389,7 @@ if ~isfield(opts, 'pcaFlag') || isempty(opts.pcaFlag)
 end
 
 if ~isfield(opts, 'brainArea')
-  opts.brainArea = '';
+  opts.brainArea = 'M23M56';
 end
 if ~isfield(opts, 'brainAreaCombinations') || isempty(opts.brainAreaCombinations)
   opts.brainAreaCombinations = default_manuscript_brain_area_combinations();

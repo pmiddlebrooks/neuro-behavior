@@ -513,6 +513,12 @@ end
 function apply_engagement_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter)
 % APPLY_ENGAGEMENT_AXES_STYLE - Thicker axes and larger fonts (manuscript style)
 
+if nargin < 3, xLabelText = ''; end
+if nargin < 4, yLabelText = ''; end
+if nargin < 5, titleText = ''; end
+if nargin < 6 || isempty(textInterpreter)
+  textInterpreter = 'none';
+end
 apply_manuscript_axes_style(ax, plotConfig, xLabelText, yLabelText, titleText, textInterpreter);
 end
 
@@ -552,7 +558,7 @@ arConfig.analyzeMrBr = false;
 arConfig.pcaFlag = 0;
 arConfig.pcaFirstFlag = 1;
 arConfig.nDim = 4;
-arConfig.enablePermutations = true;
+arConfig.enablePermutations = false;
 arConfig.nShuffles = opts.nShufflesD2;
 arConfig.normalizeD2 = true;
 arConfig.useLog10D2 = opts.useLog10D2;

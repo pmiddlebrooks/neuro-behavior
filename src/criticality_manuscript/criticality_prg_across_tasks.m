@@ -20,6 +20,8 @@
 %   surrogateMethod  - 'isi' (ISI shuffle per unit) or 'circular' (circshift per neuron)
 %   useSubsampling   - If true, kappa/D_JS per window = mean across neuron subsamples
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
+%   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory
+%   widthCutoff      - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %
 % Goal:
 %   Compare PRG kurtosis (kappa at N/finalCutoffDivisor) and Jensen-Shannon distance
@@ -31,9 +33,13 @@ function out = criticality_prg_across_tasks(opts)
 % CRITICALITY_PRG_ACROSS_TASKS - Batch and plot PRG kurtosis across session types
 %
 % Usage:
-%   opts = criticality_prg_across_tasks();
+%   opts = criticality_prg_across_tasks();                  % default opts
 %   out = criticality_prg_across_tasks(opts);
 %   out = criticality_prg_across_tasks(struct('plotResults', false));
+%
+% Returns:
+%   out.batchResults, out.plotData, out.batchMeta, out.paths
+%   (or default opts struct when called with no arguments)
 
 if nargin == 0
   out = fill_criticality_prg_across_tasks_opts(struct());
@@ -48,8 +54,11 @@ setup_criticality_manuscript_paths('criticality_prg_across_tasks');
 paths = get_paths();
 
 if isempty(opts.batchResultsFile)
-  opts.batchResultsFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
-    'criticality_prg_across_tasks_batch.mat');
+  batchName = 'criticality_prg_across_tasks_batch.mat';
+  if opts.splitExcitatoryInhibitory
+    batchName = 'criticality_prg_across_tasks_batch_ei_split.mat';
+  end
+  opts.batchResultsFile = fullfile(paths.dropPath, 'criticality_manuscript', batchName);
 end
 
 fprintf('\n=== Criticality PRG Across Task Types ===\n');
@@ -69,6 +78,9 @@ if opts.useSubsampling
 else
   fprintf('Subsampling: off\n');
 end
+if opts.splitExcitatoryInhibitory
+  fprintf('E/I split: on (widthCutoff = %.3f ms)\n', opts.widthCutoff);
+end
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
 if ~isempty(opts.brainArea)
   fprintf('Brain area: %s (single-area analysis)\n', opts.brainArea);
@@ -83,13 +95,21 @@ if numSessions == 0
   error('No sessions found for the requested session types.');
 end
 
+cellTypesToRun = get_session_cell_types_to_run(opts.splitExcitatoryInhibitory);
+
 if opts.runBatch
-  batchResults = run_prg_across_tasks_batch(sessionTable, opts);
-  plotData = aggregate_prg_metrics(batchResults, opts.sessionTypes, opts.finalCutoffDivisor);
-  plotData.surrogateMethod = opts.surrogateMethod;
+  batchByCell = run_prg_across_tasks_batch(sessionTable, opts, paths);
   batchMeta = pack_prg_across_tasks_batch_meta(opts);
+  plotDataByCell = cell(1, numel(cellTypesToRun));
+  for iCell = 1:numel(cellTypesToRun)
+    plotDataByCell{iCell} = aggregate_prg_metrics(batchByCell{iCell}, opts.sessionTypes, opts.finalCutoffDivisor);
+    plotDataByCell{iCell}.surrogateMethod = opts.surrogateMethod;
+  end
   if opts.saveBatchResults
-    save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
+    batchResults = batchByCell{1};
+    plotData = plotDataByCell{1};
+    save(opts.batchResultsFile, 'batchByCell', 'plotDataByCell', 'cellTypesToRun', ...
+      'batchResults', 'plotData', 'batchMeta', '-v7.3');
     fprintf('\nSaved batch results: %s\n', opts.batchResultsFile);
   end
 else
@@ -97,32 +117,61 @@ else
     error('criticality_prg_across_tasks:NoBatchFile', ...
       'Batch file not found: %s. Set runBatch true to compute.', opts.batchResultsFile);
   end
-  loaded = load(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta');
-  batchResults = loaded.batchResults;
-  plotData = loaded.plotData;
+  loaded = load(opts.batchResultsFile);
   batchMeta = loaded.batchMeta;
-  if (~isfield(plotData, 'surrogateMethod') || isempty(plotData.surrogateMethod)) ...
-      && isfield(batchMeta, 'surrogateMethod')
-    plotData.surrogateMethod = batchMeta.surrogateMethod;
-  elseif ~isfield(plotData, 'surrogateMethod') || isempty(plotData.surrogateMethod)
-    plotData.surrogateMethod = opts.surrogateMethod;
+  if isfield(loaded, 'batchByCell')
+    batchByCell = loaded.batchByCell;
+    cellTypesToRun = loaded.cellTypesToRun;
+    if isfield(loaded, 'plotDataByCell')
+      plotDataByCell = loaded.plotDataByCell;
+    else
+      plotDataByCell = cell(1, numel(batchByCell));
+      for iCell = 1:numel(batchByCell)
+        plotDataByCell{iCell} = aggregate_prg_metrics(batchByCell{iCell}, opts.sessionTypes, opts.finalCutoffDivisor);
+      end
+    end
+  else
+    batchByCell = {loaded.batchResults};
+    plotDataByCell = {loaded.plotData};
+    cellTypesToRun = {''};
+  end
+  for iCell = 1:numel(plotDataByCell)
+    if (~isfield(plotDataByCell{iCell}, 'surrogateMethod') || isempty(plotDataByCell{iCell}.surrogateMethod)) ...
+        && isfield(batchMeta, 'surrogateMethod')
+      plotDataByCell{iCell}.surrogateMethod = batchMeta.surrogateMethod;
+    elseif ~isfield(plotDataByCell{iCell}, 'surrogateMethod') || isempty(plotDataByCell{iCell}.surrogateMethod)
+      plotDataByCell{iCell}.surrogateMethod = opts.surrogateMethod;
+    end
   end
   fprintf('\nLoaded batch results: %s\n', opts.batchResultsFile);
 end
 
-if isempty(plotData.areas)
-  error('No PRG metrics extracted. Check that batch analyses succeeded.');
+batchResults = batchByCell{1};
+plotData = plotDataByCell{1};
+
+anyAreas = false;
+for iCell = 1:numel(cellTypesToRun)
+  cellType = cellTypesToRun{iCell};
+  plotDataCell = plotDataByCell{iCell};
+  if isempty(plotDataCell.areas)
+    warning('criticality_prg_across_tasks:NoMetrics', ...
+      'No PRG metrics for %s. Skipping.', cell_type_label(cellType));
+    continue;
+  end
+  anyAreas = true;
+  if opts.plotResults
+    commonAreas = resolve_areas_to_plot(plotDataCell.areas, opts.areasToPlot, opts.brainArea);
+
+    fprintf('\n=== Areas for plotting (%s) ===\n', cell_type_label(cellType));
+    fprintf('  %s\n', strjoin(commonAreas, ', '));
+
+    plot_prg_across_tasks(plotDataCell, commonAreas, opts.sessionTypes, opts.collectStart, ...
+      opts.collectEnd, opts.prgWindow, paths, opts.brainArea, opts.prgMethod, ...
+      opts.surrogateMethod, cellType);
+  end
 end
-
-commonAreas = resolve_areas_to_plot(plotData.areas, opts.areasToPlot, opts.brainArea);
-
-fprintf('\n=== Areas for plotting ===\n');
-fprintf('  %s\n', strjoin(commonAreas, ', '));
-
-if opts.plotResults
-  plot_prg_across_tasks(plotData, commonAreas, opts.sessionTypes, opts.collectStart, ...
-    opts.collectEnd, opts.prgWindow, paths, opts.brainArea, opts.prgMethod, ...
-    opts.surrogateMethod);
+if ~anyAreas
+  error('No PRG metrics extracted. Check that batch analyses succeeded.');
 end
 
 fprintf('\n=== Done ===\n');
@@ -130,9 +179,12 @@ fprintf('\n=== Done ===\n');
 out = struct();
 out.batchResults = batchResults;
 out.plotData = plotData;
+out.batchByCell = batchByCell;
+out.plotDataByCell = plotDataByCell;
+out.cellTypesToRun = cellTypesToRun;
 out.batchMeta = batchMeta;
 out.paths = paths;
-out.areasToPlot = commonAreas;
+out.areasToPlot = opts.areasToPlot;
 end
 
 function opts = fill_criticality_prg_across_tasks_opts(opts)
@@ -166,6 +218,8 @@ defaults.nMinNeurons = 32;
 defaults.firingRateCheckTime = [];
 defaults.minFiringRate = 0.05;
 defaults.maxFiringRate = 100;
+defaults.splitExcitatoryInhibitory = false;
+defaults.widthCutoff = 0.35;
 % Empty collectEnd is a sentinel for "full session" — do not replace
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 opts = merge_struct_defaults(opts, defaults);
@@ -184,10 +238,12 @@ batchMeta = struct( ...
   'areasToPlot', {opts.areasToPlot}, ...
   'prgMethod', opts.prgMethod, ...
   'surrogateMethod', opts.surrogateMethod, ...
-  'finalCutoffDivisor', opts.finalCutoffDivisor);
+  'finalCutoffDivisor', opts.finalCutoffDivisor, ...
+  'splitExcitatoryInhibitory', opts.splitExcitatoryInhibitory, ...
+  'widthCutoff', opts.widthCutoff);
 end
 
-function batchResults = run_prg_across_tasks_batch(sessionTable, opts)
+function batchByCell = run_prg_across_tasks_batch(sessionTable, opts, paths)
 analysisConfig = build_prg_analysis_config(opts);
 loadOpts = neuro_behavior_options();
 loadOpts.firingRateCheckTime = opts.firingRateCheckTime;
@@ -196,8 +252,14 @@ loadOpts.collectEnd = opts.collectEnd;
 loadOpts.minFiringRate = opts.minFiringRate;
 loadOpts.maxFiringRate = opts.maxFiringRate;
 
+cellTypesToRun = get_session_cell_types_to_run(opts.splitExcitatoryInhibitory);
 numSessions = size(sessionTable, 1);
-batchResults = repmat(struct(), numSessions, 1);
+batchByCell = cell(1, numel(cellTypesToRun));
+emptyEntry = struct('sessionType', '', 'sessionName', '', 'subjectName', '', ...
+  'label', '', 'cellType', '', 'success', false, 'results', [], 'skipReason', '');
+for iCell = 1:numel(cellTypesToRun)
+  batchByCell{iCell} = repmat(emptyEntry, numSessions, 1);
+end
 fprintf('\n=== Running PRG analysis (%.0f s non-overlapping blocks) ===\n', opts.prgWindow);
 
 for s = 1:numSessions
@@ -211,12 +273,15 @@ for s = 1:numSessions
     fprintf('  subjectName: %s\n', subjectName);
   end
 
-  batchResults(s).sessionType = sessionType;
-  batchResults(s).sessionName = sessionName;
-  batchResults(s).subjectName = subjectName;
-  batchResults(s).label = sessionTable.label{s};
-  batchResults(s).success = false;
-  batchResults(s).results = [];
+  for iCell = 1:numel(cellTypesToRun)
+    batchByCell{iCell}(s).sessionType = sessionType;
+    batchByCell{iCell}(s).sessionName = sessionName;
+    batchByCell{iCell}(s).subjectName = subjectName;
+    batchByCell{iCell}(s).label = sessionTable.label{s};
+    batchByCell{iCell}(s).cellType = cellTypesToRun{iCell};
+    batchByCell{iCell}(s).success = false;
+    batchByCell{iCell}(s).results = [];
+  end
 
   try
     loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
@@ -228,19 +293,56 @@ for s = 1:numSessions
       continue;
     end
 
-    prgResults = criticality_prg_analysis(dataStruct, analysisConfig);
-    if ~isempty(opts.brainArea)
-      prgResults = filter_prg_results_to_brain_area(prgResults, opts.brainArea);
-      if isempty(prgResults.areas)
-        fprintf('  No results for brain area "%s"; skipping.\n', opts.brainArea);
+    if opts.splitExcitatoryInhibitory
+      eiCheck = check_session_ei_neuron_counts(dataStruct, paths, opts.widthCutoff, ...
+        opts.brainArea, opts.brainAreaCombinations, analysisConfig.nMinNeurons);
+      if ~eiCheck.isOk
+        for iCell = 1:numel(cellTypesToRun)
+          batchByCell{iCell}(s).skipReason = 'Insufficient E/I neurons';
+        end
         continue;
       end
     end
 
-    batchResults(s).success = true;
-    batchResults(s).results = prgResults;
-    fprintf('  Analysis completed.\n');
+    for iCell = 1:numel(cellTypesToRun)
+      cellType = cellTypesToRun{iCell};
+      try
+        dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, ...
+          opts.widthCutoff, opts.splitExcitatoryInhibitory);
+        [dataStructRun, ~] = apply_manuscript_brain_area_selection( ...
+          dataStructRun, opts.brainArea, opts.brainAreaCombinations);
+
+        prgResults = criticality_prg_analysis(dataStructRun, analysisConfig);
+        if ~isempty(opts.brainArea)
+          prgResults = filter_prg_results_to_brain_area(prgResults, opts.brainArea);
+          if isempty(prgResults.areas)
+            fprintf('  No results for brain area "%s" (%s); skipping.\n', ...
+              opts.brainArea, cell_type_label(cellType));
+            continue;
+          end
+        end
+
+        batchByCell{iCell}(s).success = true;
+        batchByCell{iCell}(s).results = prgResults;
+        fprintf('  Analysis completed (%s).\n', cell_type_label(cellType));
+      catch MECell
+        if is_skippable_session_analysis_error(MECell)
+          fprintf('  Skipping %s (insufficient neurons / no valid areas): %s\n', ...
+            cell_type_label(cellType), MECell.message);
+          batchByCell{iCell}(s).skipReason = MECell.message;
+          continue;
+        end
+        rethrow(MECell);
+      end
+    end
   catch ME
+    if is_skippable_session_analysis_error(ME)
+      fprintf('  Skipping session (insufficient neurons / no valid areas): %s\n', ME.message);
+      for iCell = 1:numel(cellTypesToRun)
+        batchByCell{iCell}(s).skipReason = ME.message;
+      end
+      continue;
+    end
     fprintf('  Error: %s\n', ME.message);
     for st = 1:length(ME.stack)
       fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
@@ -250,6 +352,12 @@ for s = 1:numSessions
       s, numSessions, sessionType, sessionName, ME.message);
   end
 end
+end
+
+function tf = is_skippable_session_analysis_error(ME)
+% IS_SKIPPABLE_SESSION_ANALYSIS_ERROR - True for expected per-session skip cases
+tf = contains(ME.message, 'No valid areas to process') ...
+  || contains(ME.message, 'insufficient neurons');
 end
 
 function analysisConfig = build_prg_analysis_config(opts)
@@ -638,7 +746,7 @@ for m = 1:length(metricFields)
 end
 end
 
-function plot_prg_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, prgWindow, paths, brainArea, prgMethod, surrogateMethod)
+function plot_prg_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, prgWindow, paths, brainArea, prgMethod, surrogateMethod, cellType)
 % PLOT_PRG_ACROSS_TASKS - Session kappa and D_JS with surrogate summary, by session type
 
 if nargin < 8 || isempty(brainArea)
@@ -654,6 +762,10 @@ if nargin < 10 || isempty(surrogateMethod)
     surrogateMethod = 'isi';
   end
 end
+if nargin < 11 || isempty(cellType)
+  cellType = '';
+end
+cellTag = cell_type_file_tag(cellType);
 
 finalCutoffDivisor = 16;
 if isfield(plotData, 'finalCutoffDivisor') && ~isempty(plotData.finalCutoffDivisor)
@@ -697,11 +809,15 @@ for a = 1:length(areasToPlot)
     titleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
       prgMethod, kappaTitleWord, areaName, collectStart, collectEnd, prgWindow);
   end
+  if ~isempty(cellType)
+    titleStr = sprintf('%s | %s', titleStr, cell_type_label(cellType));
+  end
   sgtitle(figKappa, titleStr, 'FontWeight', 'bold');
 
   plotBase = make_prg_plot_basename('criticality_prg_across_tasks', areaName, brainArea, ...
     prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, ...
     prgMethod, surrogateMethod);
+  plotBase = [plotBase, cellTag];
   exportgraphics(figKappa, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(figKappa, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
@@ -727,11 +843,15 @@ for a = 1:length(areasToPlot)
       kappaNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
         prgMethod, kappaNormTitleWord, areaName, collectStart, collectEnd, prgWindow);
     end
+    if ~isempty(cellType)
+      kappaNormTitleStr = sprintf('%s | %s', kappaNormTitleStr, cell_type_label(cellType));
+    end
     sgtitle(figKappaNorm, kappaNormTitleStr, 'FontWeight', 'bold');
 
     plotBaseNorm = make_prg_plot_basename('criticality_prg_kappa_norm_across_tasks', areaName, brainArea, ...
       prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, ...
       prgMethod, surrogateMethod);
+    plotBaseNorm = [plotBaseNorm, cellTag];
     exportgraphics(figKappaNorm, fullfile(saveDir, [plotBaseNorm, '.png']), 'Resolution', 300);
     exportgraphics(figKappaNorm, fullfile(saveDir, [plotBaseNorm, '.eps']), 'ContentType', 'vector');
     fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseNorm));
@@ -753,11 +873,15 @@ for a = 1:length(areasToPlot)
       djsTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
         prgMethod, djsTitleWord, areaName, collectStart, collectEnd, prgWindow);
     end
+    if ~isempty(cellType)
+      djsTitleStr = sprintf('%s | %s', djsTitleStr, cell_type_label(cellType));
+    end
     sgtitle(figDjs, djsTitleStr, 'FontWeight', 'bold');
 
     plotBaseDjs = make_prg_plot_basename('criticality_prg_djs_across_tasks', areaName, brainArea, ...
       prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, ...
       prgMethod, surrogateMethod);
+    plotBaseDjs = [plotBaseDjs, cellTag];
     exportgraphics(figDjs, fullfile(saveDir, [plotBaseDjs, '.png']), 'Resolution', 300);
     exportgraphics(figDjs, fullfile(saveDir, [plotBaseDjs, '.eps']), 'ContentType', 'vector');
     fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseDjs));
@@ -784,11 +908,15 @@ for a = 1:length(areasToPlot)
       djsNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
         prgMethod, djsNormTitleWord, areaName, collectStart, collectEnd, prgWindow);
     end
+    if ~isempty(cellType)
+      djsNormTitleStr = sprintf('%s | %s', djsNormTitleStr, cell_type_label(cellType));
+    end
     sgtitle(figDjsNorm, djsNormTitleStr, 'FontWeight', 'bold');
 
     plotBaseDjsNorm = make_prg_plot_basename('criticality_prg_djs_norm_across_tasks', areaName, brainArea, ...
       prgWindow, collectStart, collectEnd, length(areasToPlot) > 1, finalCutoffDivisor, ...
       prgMethod, surrogateMethod);
+    plotBaseDjsNorm = [plotBaseDjsNorm, cellTag];
     exportgraphics(figDjsNorm, fullfile(saveDir, [plotBaseDjsNorm, '.png']), 'Resolution', 300);
     exportgraphics(figDjsNorm, fullfile(saveDir, [plotBaseDjsNorm, '.eps']), 'ContentType', 'vector');
     fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseDjsNorm));
