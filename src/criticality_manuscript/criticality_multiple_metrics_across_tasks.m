@@ -45,7 +45,7 @@
 sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 0;
 collectEnd = 45 * 60;
-collectEnd = [];  % [] = full session
+% collectEnd = [];  % [] = full session
 d2Window = [];
 % One d2 estimate for the full collect window ([] when collectEnd is [])
 % d2Window = collectEnd;
@@ -58,10 +58,10 @@ brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 
-runArBatch = false;
-runAvBatch = false;
-runPrgBatch = false;
-runEngagementBatch = false;
+runArBatch = true;
+runAvBatch = true;
+runPrgBatch = true;
+runEngagementBatch = true;
 loadSavedResults = true;
 plotResults = true;
 plotMetricPairScatters = true;
@@ -76,10 +76,10 @@ metricsToPlot = {'d2', 'tau', 'alpha'};  % any non-empty subset
 splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
-useSubsampling = false;
+useSubsampling = true;
 nSubsamples = 20;
-nNeuronsSubsample = 45;
-minNeuronsMultiple = 1.2;
+nNeuronsSubsample = 50;
+minNeuronsMultiple = 1.1;
 
 powerLawFitMethod = 'plfit2023';
 avalancheDetectionMode = 'fixedBinMedian';

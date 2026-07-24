@@ -9,6 +9,10 @@ function out = reach_criticality_d2_accuracy_across_sessions(opts)
 %     .saveFigure          - Export summary figure(s)
 %     .saveBatchResults    - Save batch .mat
 %     .batchResultsFile    - Path for batch .mat (default under dropPath)
+%     .splitByBlock        - If true, Block 1 (class 1/2) and Block 2 (class 3/4)
+%                            are aggregated and plotted on separate axes
+%     .useSubsampling, .nSubsamples, .nNeuronsSubsample, .minNeuronsMultiple
+%                          - Neuron-subset averaging (passed to per-session d2)
 %     Plus all fields accepted by reach_criticality_d2_accuracy (brainArea,
 %     d2Window, pre/postReachBuffer, useLog10D2, collectStart/End, ...).
 %     Per-session makePlots/saveFigure are forced off in the batch loop.
@@ -18,7 +22,9 @@ function out = reach_criticality_d2_accuracy_across_sessions(opts)
 %   figures). Aggregate session-mean d2 for correct vs error (pre- and
 %   post-reach), plot session means plus across-session mean +/- SEM, and
 %   test correct vs error with paired Wilcoxon signed-rank (and paired t-test)
-%   across sessions, separately for pre- and post-reach.
+%   across sessions, separately for pre- and post-reach. With splitByBlock,
+%   plot a 2x2: Pre top (Block1 | Block2), Post bottom (Block1 | Block2),
+%   with shared y-limits.
 %
 % Usage:
 %   opts = reach_criticality_d2_accuracy_across_sessions();
@@ -45,9 +51,18 @@ if isempty(opts.batchResultsFile)
   if isempty(areaTag)
     areaTag = 'all_areas';
   end
+  blockTag = '';
+  if opts.splitByBlock
+    blockTag = '_byBlock';
+  end
+  subsampleTag = '';
+  if opts.useSubsampling
+    subsampleTag = sprintf('_sub%d_n%d', opts.nSubsamples, opts.nNeuronsSubsample);
+  end
   opts.batchResultsFile = fullfile(paths.dropPath, 'reach_task', 'results', ...
     'd2_accuracy_across_sessions', ...
-    sprintf('reach_criticality_d2_accuracy_across_sessions_%s.mat', areaTag));
+    sprintf('reach_criticality_d2_accuracy_across_sessions_%s%s%s.mat', ...
+      areaTag, blockTag, subsampleTag));
 end
 
 sessions = opts.sessions;
@@ -66,8 +81,14 @@ else
 end
 fprintf('d2Window=%.2fs | preReachBuffer=%d ms | postReachBuffer=%d ms\n', ...
   opts.d2Window, opts.preReachBuffer, opts.postReachBuffer);
-fprintf('useLog10D2: %d | runBatch: %d | plotResults: %d\n', ...
-  opts.useLog10D2, opts.runBatch, opts.plotResults);
+fprintf('useLog10D2: %d | splitByBlock: %d | runBatch: %d | plotResults: %d\n', ...
+  opts.useLog10D2, opts.splitByBlock, opts.runBatch, opts.plotResults);
+if opts.useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+    opts.nSubsamples, opts.nNeuronsSubsample, opts.minNeuronsMultiple);
+else
+  fprintf('Subsampling: off\n');
+end
 
 if opts.runBatch
   [batchResults, sessionOk, sessionErrors] = run_d2_accuracy_session_batch(sessions, opts);
@@ -118,9 +139,30 @@ if any(~sessionOk)
   end
 end
 
+if opts.splitByBlock
+  missingBlock = false;
+  for iSess = 1:nSessions
+    if ~sessionOk(iSess) || ~isstruct(batchResults{iSess})
+      continue;
+    end
+    sessOut = batchResults{iSess};
+    if ~isfield(sessOut, 'preReach') ...
+        || ~isfield(sessOut.preReach, 'statsByAreaBlock1') ...
+        || isempty(sessOut.preReach.statsByAreaBlock1)
+      missingBlock = true;
+      break;
+    end
+  end
+  if missingBlock
+    error('reach_criticality_d2_accuracy_across_sessions:MissingBlockStats', ...
+      ['splitByBlock true but session results lack statsByAreaBlock1/2. ', ...
+      'Re-run with runBatch true (and splitByBlock true).']);
+  end
+end
+
 [batchTable, areaNames] = build_d2_accuracy_across_sessions_table( ...
-  sessions, batchResults, sessionOk, opts.brainArea);
-statsByArea = run_d2_accuracy_across_sessions_stats(batchTable, areaNames);
+  sessions, batchResults, sessionOk, opts.brainArea, opts.splitByBlock);
+statsByArea = run_d2_accuracy_across_sessions_stats(batchTable, areaNames, opts.splitByBlock);
 print_d2_accuracy_across_sessions_stats(statsByArea, opts.useLog10D2);
 
 figHandles = struct();
@@ -138,9 +180,18 @@ if opts.plotResults
     if isempty(areaTag)
       areaTag = 'all_areas';
     end
+    blockTag = '';
+    if opts.splitByBlock
+      blockTag = '_byBlock';
+    end
+    subsampleTag = '';
+    if opts.useSubsampling
+      subsampleTag = sprintf('_sub%d_n%d', opts.nSubsamples, opts.nNeuronsSubsample);
+    end
     plotBase = fullfile(saveDir, sprintf( ...
-      'reach_criticality_d2_accuracy_across_sessions_%s_W%.1f_pre%d_post%d', ...
-      areaTag, opts.d2Window, opts.preReachBuffer, opts.postReachBuffer));
+      'reach_criticality_d2_accuracy_across_sessions_%s_W%.1f_pre%d_post%d%s%s', ...
+      areaTag, opts.d2Window, opts.preReachBuffer, opts.postReachBuffer, ...
+      blockTag, subsampleTag));
     exportgraphics(figHandles.summary, [plotBase, '.png'], 'Resolution', 300);
     exportgraphics(figHandles.summary, [plotBase, '.eps'], 'ContentType', 'vector');
     fprintf('\nSaved figure: %s\n', plotBase);
@@ -194,6 +245,11 @@ if ~isfield(opts, 'saveBatchResults') || isempty(opts.saveBatchResults)
 end
 if ~isfield(opts, 'batchResultsFile')
   opts.batchResultsFile = '';
+end
+if ~isfield(opts, 'splitByBlock') || isempty(opts.splitByBlock)
+  opts.splitByBlock = false;
+else
+  opts.splitByBlock = logical(opts.splitByBlock);
 end
 if ~isfield(opts, 'plotConfig') || isempty(opts.plotConfig)
   opts.plotConfig = struct();
@@ -285,6 +341,11 @@ batchMeta = struct( ...
   'preReachBuffer', opts.preReachBuffer, ...
   'postReachBuffer', opts.postReachBuffer, ...
   'useLog10D2', opts.useLog10D2, ...
+  'splitByBlock', opts.splitByBlock, ...
+  'useSubsampling', opts.useSubsampling, ...
+  'nSubsamples', opts.nSubsamples, ...
+  'nNeuronsSubsample', opts.nNeuronsSubsample, ...
+  'minNeuronsMultiple', opts.minNeuronsMultiple, ...
   'collectStart', opts.collectStart, ...
   'collectEnd', opts.collectEnd, ...
   'nMinNeurons', opts.nMinNeurons);
@@ -353,7 +414,7 @@ end
 %% -------------------------------------------------------------------------
 
 function [batchTable, areaNames] = build_d2_accuracy_across_sessions_table( ...
-    sessions, batchResults, sessionOk, brainArea)
+    sessions, batchResults, sessionOk, brainArea, splitByBlock)
 % BUILD_D2_ACCURACY_ACROSS_SESSIONS_TABLE - Session-mean correct/error d2
 %
 % Variables:
@@ -361,9 +422,15 @@ function [batchTable, areaNames] = build_d2_accuracy_across_sessions_table( ...
 %   batchResults - Cell of reach_criticality_d2_accuracy outputs
 %   sessionOk    - Logical success flags
 %   brainArea    - Preferred area name; '' keeps all areas found
+%   splitByBlock - If true, store Block 1 / Block 2 session means
 %
 % Goal:
 %   One row per session with pre/post meanCorrect and meanError per area.
+%   With splitByBlock, columns use prefixes preB1/preB2/postB1/postB2.
+
+if nargin < 5 || isempty(splitByBlock)
+  splitByBlock = false;
+end
 
 areaNames = collect_batch_area_names(batchResults, sessionOk, brainArea);
 nSessions = numel(sessions);
@@ -373,18 +440,22 @@ batchTable = table();
 batchTable.sessionName = sessions(:);
 batchTable.ok = sessionOk(:);
 
+if splitByBlock
+  prefixes = {'preB1', 'preB2', 'postB1', 'postB2'};
+else
+  prefixes = {'pre', 'post'};
+end
+
 for a = 1:nAreas
   areaKey = matlab.lang.makeValidName(areaNames{a});
-  batchTable.(['pre_meanCorrect_' areaKey]) = nan(nSessions, 1);
-  batchTable.(['pre_meanError_' areaKey]) = nan(nSessions, 1);
-  batchTable.(['pre_nCorrect_' areaKey]) = nan(nSessions, 1);
-  batchTable.(['pre_nError_' areaKey]) = nan(nSessions, 1);
-  batchTable.(['pre_pRanksum_' areaKey]) = nan(nSessions, 1);
-  batchTable.(['post_meanCorrect_' areaKey]) = nan(nSessions, 1);
-  batchTable.(['post_meanError_' areaKey]) = nan(nSessions, 1);
-  batchTable.(['post_nCorrect_' areaKey]) = nan(nSessions, 1);
-  batchTable.(['post_nError_' areaKey]) = nan(nSessions, 1);
-  batchTable.(['post_pRanksum_' areaKey]) = nan(nSessions, 1);
+  for p = 1:numel(prefixes)
+    prefix = prefixes{p};
+    batchTable.([prefix, '_meanCorrect_', areaKey]) = nan(nSessions, 1);
+    batchTable.([prefix, '_meanError_', areaKey]) = nan(nSessions, 1);
+    batchTable.([prefix, '_nCorrect_', areaKey]) = nan(nSessions, 1);
+    batchTable.([prefix, '_nError_', areaKey]) = nan(nSessions, 1);
+    batchTable.([prefix, '_pRanksum_', areaKey]) = nan(nSessions, 1);
+  end
 end
 
 for iSess = 1:nSessions
@@ -395,23 +466,42 @@ for iSess = 1:nSessions
   for a = 1:nAreas
     areaName = areaNames{a};
     areaKey = matlab.lang.makeValidName(areaName);
-    stPre = find_area_stats(sessOut.preReach.statsByArea, areaName);
-    stPost = find_area_stats(sessOut.postReach.statsByArea, areaName);
-    if ~isempty(stPre)
-      batchTable.(['pre_meanCorrect_' areaKey])(iSess) = stPre.meanCorrect;
-      batchTable.(['pre_meanError_' areaKey])(iSess) = stPre.meanError;
-      batchTable.(['pre_nCorrect_' areaKey])(iSess) = stPre.nCorrect;
-      batchTable.(['pre_nError_' areaKey])(iSess) = stPre.nError;
-      batchTable.(['pre_pRanksum_' areaKey])(iSess) = stPre.pRanksum;
+    if splitByBlock
+      stList = { ...
+        get_session_block_stats(sessOut, 'preReach', 1), ...
+        get_session_block_stats(sessOut, 'preReach', 2), ...
+        get_session_block_stats(sessOut, 'postReach', 1), ...
+        get_session_block_stats(sessOut, 'postReach', 2)};
+    else
+      stList = {sessOut.preReach.statsByArea, sessOut.postReach.statsByArea};
     end
-    if ~isempty(stPost)
-      batchTable.(['post_meanCorrect_' areaKey])(iSess) = stPost.meanCorrect;
-      batchTable.(['post_meanError_' areaKey])(iSess) = stPost.meanError;
-      batchTable.(['post_nCorrect_' areaKey])(iSess) = stPost.nCorrect;
-      batchTable.(['post_nError_' areaKey])(iSess) = stPost.nError;
-      batchTable.(['post_pRanksum_' areaKey])(iSess) = stPost.pRanksum;
+    for p = 1:numel(prefixes)
+      st = find_area_stats(stList{p}, areaName);
+      if isempty(st)
+        continue;
+      end
+      prefix = prefixes{p};
+      batchTable.([prefix, '_meanCorrect_', areaKey])(iSess) = st.meanCorrect;
+      batchTable.([prefix, '_meanError_', areaKey])(iSess) = st.meanError;
+      batchTable.([prefix, '_nCorrect_', areaKey])(iSess) = st.nCorrect;
+      batchTable.([prefix, '_nError_', areaKey])(iSess) = st.nError;
+      batchTable.([prefix, '_pRanksum_', areaKey])(iSess) = st.pRanksum;
     end
   end
+end
+end
+
+function statsArr = get_session_block_stats(sessOut, timingField, blockNum)
+% GET_SESSION_BLOCK_STATS - statsByAreaBlock1/2 from session output
+
+statsArr = [];
+if ~isstruct(sessOut) || ~isfield(sessOut, timingField)
+  return;
+end
+timingStruct = sessOut.(timingField);
+fieldName = sprintf('statsByAreaBlock%d', blockNum);
+if isfield(timingStruct, fieldName)
+  statsArr = timingStruct.(fieldName);
 end
 end
 
@@ -456,16 +546,21 @@ for i = 1:numel(statsByArea)
 end
 end
 
-function statsByArea = run_d2_accuracy_across_sessions_stats(batchTable, areaNames)
+function statsByArea = run_d2_accuracy_across_sessions_stats(batchTable, areaNames, splitByBlock)
 % RUN_D2_ACCURACY_ACROSS_SESSIONS_STATS - Paired correct vs error across sessions
 %
 % Variables:
-%   batchTable - Session-level means from build_d2_accuracy_across_sessions_table
-%   areaNames  - Areas to test
+%   batchTable   - Session-level means from build_d2_accuracy_across_sessions_table
+%   areaNames    - Areas to test
+%   splitByBlock - If true, stats columns are preB1/preB2/postB1/postB2
 %
 % Goal:
-%   For pre- and post-reach separately, test whether session-mean d2 differs
-%   between correct and error (Wilcoxon signed-rank + paired t-test).
+%   For each timing(/block), test whether session-mean d2 differs between
+%   correct and error (Wilcoxon signed-rank + paired t-test).
+
+if nargin < 3 || isempty(splitByBlock)
+  splitByBlock = false;
+end
 
 nAreas = numel(areaNames);
 emptyRow = struct( ...
@@ -483,17 +578,33 @@ emptyRow = struct( ...
   'sessionMeanCorrect', [], ...
   'sessionMeanError', [], ...
   'sessionNames', {{}});
-statsByArea = repmat(emptyRow, nAreas, 2);  % rows: areas; cols: pre=1, post=2
-timingTags = {'pre', 'post'};
-timingLabels = {'pre-reach', 'post-reach'};
+
+if splitByBlock
+  timingTags = {'preB1', 'preB2', 'postB1', 'postB2'};
+  timingLabels = {'pre Block1', 'pre Block2', 'post Block1', 'post Block2'};
+else
+  timingTags = {'pre', 'post'};
+  timingLabels = {'pre-reach', 'post-reach'};
+end
+nTiming = numel(timingTags);
+statsByArea = repmat(emptyRow, nAreas, nTiming);
 
 okRows = batchTable.ok;
 for a = 1:nAreas
   areaName = areaNames{a};
   areaKey = matlab.lang.makeValidName(areaName);
-  for t = 1:2
+  for t = 1:nTiming
     corrCol = [timingTags{t}, '_meanCorrect_', areaKey];
     errCol = [timingTags{t}, '_meanError_', areaKey];
+    if ~ismember(corrCol, batchTable.Properties.VariableNames) ...
+        || ~ismember(errCol, batchTable.Properties.VariableNames)
+      row = emptyRow;
+      row.areaName = areaName;
+      row.timing = timingLabels{t};
+      row.n = 0;
+      statsByArea(a, t) = row;
+      continue;
+    end
     corrVals = batchTable.(corrCol)(okRows);
     errVals = batchTable.(errCol)(okRows);
     sessNames = batchTable.sessionName(okRows);
@@ -598,13 +709,16 @@ function fig = plot_d2_accuracy_across_sessions(batchTable, statsByArea, areaNam
 %
 % Variables:
 %   batchTable  - Session-level means
-%   statsByArea - Across-session paired stats (areas x [pre, post])
-%   areaNames   - Areas to plot (columns)
-%   opts        - Includes useLog10D2, plotConfig, buffers, brainArea
+%   statsByArea - Across-session paired stats (areas x timing[/block])
+%   areaNames   - Areas to plot
+%   opts        - Includes useLog10D2, plotConfig, buffers, brainArea, splitByBlock
 %
 % Goal:
-%   Two rows (pre, post) x nAreas columns. Each panel: Correct vs Error with
-%   one marker per session (paired gray lines), plus across-session mean+/-SEM.
+%   Default: 2 rows (pre, post) x nAreas.
+%   With splitByBlock: 2x2 per area — top = Pre (Block1 | Block2),
+%   bottom = Post (Block1 | Block2); shared y-limits.
+%   Each panel: Correct vs Error with one marker per session (paired gray
+%   lines), plus across-session mean+/-SEM.
 
 plotConfig = opts.plotConfig;
 nAreas = numel(areaNames);
@@ -628,29 +742,44 @@ errorColor = [0.85, 0.33, 0.1];
 sessionMarkerSize = plotConfig.scatterMarkerSize;
 meanMarkerSize = max(8, plotConfig.scatterMarkerSize / 4);
 
-fig = figure('Color', 'w', 'Name', 'Across-session d2: correct vs error', ...
-  'NumberTitle', 'off');
+splitByBlock = isfield(opts, 'splitByBlock') && logical(opts.splitByBlock);
+% statsByArea columns when splitByBlock: 1=preB1, 2=preB2, 3=postB1, 4=postB2
+if splitByBlock
+  nRow = 2;
+  nCol = 2 * nAreas;
+  rowTimingTitles = {'Pre-reach', 'Post-reach'};
+  colBlockTitles = {'Block 1', 'Block 2'};
+  % Map (row, block) → stats column: Pre→1/2, Post→3/4
+  statsColMap = [1, 2; 3, 4];
+  figName = 'Across-session d2 by block: correct vs error';
+else
+  nRow = 2;
+  nCol = nAreas;
+  rowTimingTitles = {'Pre-reach', 'Post-reach'};
+  figName = 'Across-session d2: correct vs error';
+end
+
+fig = figure('Color', 'w', 'Name', figName, 'NumberTitle', 'off');
 if exist('position_figure_full_monitor', 'file')
   position_figure_full_monitor(fig);
 else
-  set(fig, 'Position', [80, 80, max(420, 320 * nAreas), 720]);
+  set(fig, 'Position', [80, 80, max(420, 280 * nCol), max(520, 260 * nRow)]);
 end
 
-nRow = 2;
 useTight = exist('tight_subplot', 'file');
 if useTight
-  ha = tight_subplot(nRow, nAreas, [0.08 0.06], [0.08 0.12], [0.08 0.04]);
+  ha = tight_subplot(nRow, nCol, [0.08 0.06], [0.08 0.12], [0.08 0.04]);
 else
-  ha = gobjects(nRow * nAreas, 1);
-  for ii = 1:(nRow * nAreas)
-    ha(ii) = subplot(nRow, nAreas, ii);
+  ha = gobjects(nRow * nCol, 1);
+  for ii = 1:(nRow * nCol)
+    ha(ii) = subplot(nRow, nCol, ii);
   end
 end
 
-rowTitles = {'Pre-reach', 'Post-reach'};
+nStatsCol = size(statsByArea, 2);
 allVals = [];
 for a = 1:nAreas
-  for t = 1:2
+  for t = 1:nStatsCol
     st = statsByArea(a, t);
     allVals = [allVals; st.sessionMeanCorrect(:); st.sessionMeanError(:)]; %#ok<AGROW>
   end
@@ -667,11 +796,26 @@ else
 end
 
 for rowIdx = 1:nRow
-  for colIdx = 1:nAreas
-    ax = ha((rowIdx - 1) * nAreas + colIdx);
-    st = statsByArea(colIdx, rowIdx);
-    hold(ax, 'on');
+  for colIdx = 1:nCol
+    ax = ha((rowIdx - 1) * nCol + colIdx);
+    if splitByBlock
+      areaIdx = ceil(colIdx / 2);
+      if mod(colIdx, 2) == 1
+        blockIdx = 1;
+      else
+        blockIdx = 2;
+      end
+      statsCol = statsColMap(rowIdx, blockIdx);
+      st = statsByArea(areaIdx, statsCol);
+      titleStr = sprintf('%s | %s | n=%d | p_{signrank}=%s', ...
+        st.areaName, colBlockTitles{blockIdx}, st.n, format_p_value(st.pSignrank));
+    else
+      st = statsByArea(colIdx, rowIdx);
+      titleStr = sprintf('%s | n=%d sessions | p_{signrank}=%s', ...
+        st.areaName, st.n, format_p_value(st.pSignrank));
+    end
 
+    hold(ax, 'on');
     corrVals = st.sessionMeanCorrect(:);
     errVals = st.sessionMeanError(:);
     n = numel(corrVals);
@@ -698,9 +842,6 @@ for rowIdx = 1:nRow
         'MarkerSize', meanMarkerSize, 'HandleVisibility', 'off');
     end
 
-    pText = format_p_value(st.pSignrank);
-    titleStr = sprintf('%s | n=%d sessions | p_{signrank}=%s', ...
-      st.areaName, st.n, pText);
     if exist('apply_manuscript_axes_style', 'file')
       apply_manuscript_axes_style(ax, plotConfig, '', '', titleStr, 'tex');
     else
@@ -712,11 +853,11 @@ for rowIdx = 1:nRow
       'XTickLabelMode', 'manual', 'TickLabelInterpreter', 'none');
     xlim(ax, [0.5, 2.5]);
     ylim(ax, yLimGlobal);
-    if colIdx == 1
-      ylabel(ax, sprintf('%s\n%s', rowTitles{rowIdx}, yLabelStr), ...
+    if (~splitByBlock && colIdx == 1) || (splitByBlock && mod(colIdx, 2) == 1)
+      ylabel(ax, sprintf('%s\n%s', rowTimingTitles{rowIdx}, yLabelStr), ...
         'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', yLabInterpreter);
     end
-    if rowIdx == 1 && colIdx == nAreas
+    if rowIdx == 1 && colIdx == nCol
       legend(ax, 'Location', 'best', 'FontSize', plotConfig.legendFontSize);
     end
     hold(ax, 'off');
@@ -728,10 +869,14 @@ if ~isempty(opts.brainArea)
 else
   areaTitle = strjoin(areaNames, ', ');
 end
+blockNote = '';
+if splitByBlock
+  blockNote = ' | Pre top (B1|B2), Post bottom (B1|B2)';
+end
 sgtitle(fig, sprintf([ ...
-  'Across sessions: pre/post-reach d2 correct vs error | %s | ', ...
+  'Across sessions: pre/post-reach d2 correct vs error%s | %s | ', ...
   'W=%.1fs, preBuf=%d ms, postBuf=%d ms'], ...
-  areaTitle, opts.d2Window, opts.preReachBuffer, opts.postReachBuffer), ...
+  blockNote, areaTitle, opts.d2Window, opts.preReachBuffer, opts.postReachBuffer), ...
   'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none', 'FontWeight', 'bold');
 end
 

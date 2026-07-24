@@ -18,6 +18,9 @@ function out = reach_criticality_d2_accuracy(sessionName, opts)
 %       .pOrder, .critType, .normalizeD2, .nShuffles, .meanSubtract,
 %       .useLog10D2, .useOptimalBinWindowFunction, .binSizeManual,
 %       .minSpikesPerBin, .minBinsPerWindow, .pcaFlag
+%       .useSubsampling        - If true, d2 per reach = mean across neuron subsets
+%       .nSubsamples, .nNeuronsSubsample, .minNeuronsMultiple - subsample settings
+%                                (same as session_d2_distributions / run_criticality_ar)
 %     Analysis:
 %       .brainArea             - Area to analyze (default 'M23M56'). Examples:
 %                                'M56' (single), 'M23M56' or 'M2356' (merged
@@ -25,6 +28,8 @@ function out = reach_criticality_d2_accuracy(sessionName, opts)
 %       .brainAreaCombinations - Merge definitions (name + source areas cell).
 %                                Default includes M23M56 and legacy alias M2356.
 %       .nMinNeurons
+%       .splitByBlock          - If true, analyze/plot Block 1 (reachClass 1/2)
+%                                and Block 2 (reachClass 3/4) separately
 %     Output:
 %       .makePlots, .saveFigure, .saveResults, .outputDir, .plotConfig
 %
@@ -35,7 +40,9 @@ function out = reach_criticality_d2_accuracy(sessionName, opts)
 %   overlap with [next reach - preReachBuffer, next reach].
 %   Compare d2 between correct (reachClass 2/4) and error (1/3) per area
 %   (Wilcoxon rank-sum and two-sample t-test). Plot pre-reach (top row) and
-%   post-reach (bottom row).
+%   post-reach (bottom row). With splitByBlock, plot a 2x2 per area:
+%   top = Pre (Block1 | Block2), bottom = Post (Block1 | Block2), shared y-limits.
+%   With useSubsampling, each reach d2 is the mean over random neuron subsets.
 %
 % Returns:
 %   With no inputs: default options struct.
@@ -71,6 +78,13 @@ end
 fprintf('Brain area: %s\n', brainAreaStr);
 fprintf('d2Window=%.2fs | preReachBuffer=%d ms | postReachBuffer=%d ms\n', ...
   opts.d2Window, opts.preReachBuffer, opts.postReachBuffer);
+fprintf('splitByBlock: %d (Block1=class 1/2, Block2=class 3/4)\n', opts.splitByBlock);
+if opts.useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+    opts.nSubsamples, opts.nNeuronsSubsample, opts.minNeuronsMultiple);
+else
+  fprintf('Subsampling: off\n');
+end
 
 %% Load session
 loadOpts = neuro_behavior_options();
@@ -126,6 +140,16 @@ for a = areasToTest
       'Area %s has %d neurons (min %d); results may be unreliable.', ...
       areas{a}, nUnits, opts.nMinNeurons);
   end
+  if opts.useSubsampling
+    minNeuronsForSubsample = round(opts.nNeuronsSubsample * opts.minNeuronsMultiple);
+    if nUnits < minNeuronsForSubsample
+      error('reach_criticality_d2_accuracy:TooFewNeuronsForSubsample', ...
+        ['Area %s has %d neurons; need at least %d for subsampling ', ...
+        '(%d x %.2f).'], ...
+        areas{a}, nUnits, minNeuronsForSubsample, ...
+        opts.nNeuronsSubsample, opts.minNeuronsMultiple);
+    end
+  end
 end
 
 reachStartAll = dataStruct.reachStart(:);
@@ -149,10 +173,16 @@ end
 
 isCorrectReach = ismember(reachClass, [2, 4]);
 isErrorReach = ismember(reachClass, [1, 3]);
+isBlock1Reach = ismember(reachClass, [1, 2]);
+isBlock2Reach = ismember(reachClass, [3, 4]);
 if ~any(isCorrectReach) || ~any(isErrorReach)
   warning('reach_criticality_d2_accuracy:ImbalancedOutcomes', ...
     'Few or no reaches in one outcome class (correct=%d, error=%d).', ...
     sum(isCorrectReach), sum(isErrorReach));
+end
+if opts.splitByBlock
+  fprintf('Blocks: Block1=%d reaches | Block2=%d reaches\n', ...
+    sum(isBlock1Reach), sum(isBlock2Reach));
 end
 
 if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectStart')
@@ -224,6 +254,19 @@ statsByAreaPre = build_d2_accuracy_stats_by_area(d2AnalysisPre, areas, areasToTe
   preEligible, isCorrectReach, isErrorReach, 'pre-reach');
 print_d2_accuracy_stats(statsByAreaPre, opts.useLog10D2, 'Pre-reach');
 
+statsByAreaPreBlock1 = [];
+statsByAreaPreBlock2 = [];
+if opts.splitByBlock
+  statsByAreaPreBlock1 = build_d2_accuracy_stats_by_area(d2AnalysisPre, areas, areasToTest, ...
+    preEligible, isCorrectReach & isBlock1Reach, isErrorReach & isBlock1Reach, ...
+    'pre-reach Block1');
+  statsByAreaPreBlock2 = build_d2_accuracy_stats_by_area(d2AnalysisPre, areas, areasToTest, ...
+    preEligible, isCorrectReach & isBlock2Reach, isErrorReach & isBlock2Reach, ...
+    'pre-reach Block2');
+  print_d2_accuracy_stats(statsByAreaPreBlock1, opts.useLog10D2, 'Pre-reach Block1');
+  print_d2_accuracy_stats(statsByAreaPreBlock2, opts.useLog10D2, 'Pre-reach Block2');
+end
+
 %% Per-area d2 (post-reach)
 d2PerReachPost = cell(1, numAreas);
 d2PerReachNormPost = cell(1, numAreas);
@@ -245,6 +288,19 @@ statsByAreaPost = build_d2_accuracy_stats_by_area(d2AnalysisPost, areas, areasTo
   postEligible, isCorrectReach, isErrorReach, 'post-reach');
 print_d2_accuracy_stats(statsByAreaPost, opts.useLog10D2, 'Post-reach');
 
+statsByAreaPostBlock1 = [];
+statsByAreaPostBlock2 = [];
+if opts.splitByBlock
+  statsByAreaPostBlock1 = build_d2_accuracy_stats_by_area(d2AnalysisPost, areas, areasToTest, ...
+    postEligible, isCorrectReach & isBlock1Reach, isErrorReach & isBlock1Reach, ...
+    'post-reach Block1');
+  statsByAreaPostBlock2 = build_d2_accuracy_stats_by_area(d2AnalysisPost, areas, areasToTest, ...
+    postEligible, isCorrectReach & isBlock2Reach, isErrorReach & isBlock2Reach, ...
+    'post-reach Block2');
+  print_d2_accuracy_stats(statsByAreaPostBlock1, opts.useLog10D2, 'Post-reach Block1');
+  print_d2_accuracy_stats(statsByAreaPostBlock2, opts.useLog10D2, 'Post-reach Block2');
+end
+
 %% Output struct
 out = struct();
 out.sessionName = sessionName;
@@ -256,6 +312,8 @@ out.reachStart = reachStart;
 out.reachClass = reachClass;
 out.isCorrectReach = isCorrectReach;
 out.isErrorReach = isErrorReach;
+out.isBlock1Reach = isBlock1Reach;
+out.isBlock2Reach = isBlock2Reach;
 out.binSize = binSize;
 out.saveDir = saveDir;
 out.figHandles = struct();
@@ -271,6 +329,8 @@ out.preReach.d2PerReach = d2PerReachPre;
 out.preReach.d2PerReachNorm = d2PerReachNormPre;
 out.preReach.d2Analysis = d2AnalysisPre;
 out.preReach.statsByArea = statsByAreaPre;
+out.preReach.statsByAreaBlock1 = statsByAreaPreBlock1;
+out.preReach.statsByAreaBlock2 = statsByAreaPreBlock2;
 
 out.postReach = struct();
 out.postReach.winStartReach = postWinStart;
@@ -283,11 +343,15 @@ out.postReach.d2PerReach = d2PerReachPost;
 out.postReach.d2PerReachNorm = d2PerReachNormPost;
 out.postReach.d2Analysis = d2AnalysisPost;
 out.postReach.statsByArea = statsByAreaPost;
+out.postReach.statsByAreaBlock1 = statsByAreaPostBlock1;
+out.postReach.statsByAreaBlock2 = statsByAreaPostBlock2;
 
 plotConfig = opts.plotConfig;
 if opts.makePlots
   out.figHandles.comparison = plot_d2_accuracy_comparison( ...
-    statsByAreaPre, statsByAreaPost, sessionName, opts, plotConfig);
+    statsByAreaPre, statsByAreaPost, sessionName, opts, plotConfig, ...
+    statsByAreaPreBlock1, statsByAreaPreBlock2, ...
+    statsByAreaPostBlock1, statsByAreaPostBlock2);
 end
 
 if opts.saveFigure && opts.makePlots && isgraphics(out.figHandles.comparison)
@@ -295,8 +359,18 @@ if opts.saveFigure && opts.makePlots && isgraphics(out.figHandles.comparison)
   if isempty(areaTag)
     areaTag = 'all_areas';
   end
-  plotBase = fullfile(saveDir, sprintf('reach_criticality_d2_accuracy_%s_%s_W%.1f_pre%d_post%d', ...
-    sessionName, areaTag, opts.d2Window, opts.preReachBuffer, opts.postReachBuffer));
+  blockTag = '';
+  if opts.splitByBlock
+    blockTag = '_byBlock';
+  end
+  subsampleTag = '';
+  if opts.useSubsampling
+    subsampleTag = sprintf('_sub%d_n%d', opts.nSubsamples, opts.nNeuronsSubsample);
+  end
+  plotBase = fullfile(saveDir, sprintf( ...
+    'reach_criticality_d2_accuracy_%s_%s_W%.1f_pre%d_post%d%s%s', ...
+    sessionName, areaTag, opts.d2Window, opts.preReachBuffer, opts.postReachBuffer, ...
+    blockTag, subsampleTag));
   exportgraphics(out.figHandles.comparison, [plotBase, '.png'], 'Resolution', 300);
   exportgraphics(out.figHandles.comparison, [plotBase, '.eps'], 'ContentType', 'vector');
   out.savedFigurePng = [plotBase, '.png'];
@@ -387,6 +461,18 @@ end
 if ~isfield(opts, 'pcaFlag') || isempty(opts.pcaFlag)
   opts.pcaFlag = 0;
 end
+if ~isfield(opts, 'useSubsampling') || isempty(opts.useSubsampling)
+  opts.useSubsampling = false;
+end
+if ~isfield(opts, 'nSubsamples') || isempty(opts.nSubsamples)
+  opts.nSubsamples = 20;
+end
+if ~isfield(opts, 'nNeuronsSubsample') || isempty(opts.nNeuronsSubsample)
+  opts.nNeuronsSubsample = 32;
+end
+if ~isfield(opts, 'minNeuronsMultiple') || isempty(opts.minNeuronsMultiple)
+  opts.minNeuronsMultiple = 1.25;
+end
 
 if ~isfield(opts, 'brainArea')
   opts.brainArea = 'M23M56';
@@ -396,6 +482,9 @@ if ~isfield(opts, 'brainAreaCombinations') || isempty(opts.brainAreaCombinations
 end
 if ~isfield(opts, 'nMinNeurons') || isempty(opts.nMinNeurons)
   opts.nMinNeurons = 20;
+end
+if ~isfield(opts, 'splitByBlock') || isempty(opts.splitByBlock)
+  opts.splitByBlock = false;
 end
 
 if ~isfield(opts, 'makePlots') || isempty(opts.makePlots)
@@ -576,6 +665,22 @@ function [d2RawVec, d2NormVec] = compute_aligned_reach_d2_for_area( ...
     dataStruct, areaIdx, eligibleReach, winCenterReach, d2Window, ...
     binSizeArea, timeRange, opts)
 % COMPUTE_ALIGNED_REACH_D2_FOR_AREA - d2 per reach for one brain area
+%
+% Variables:
+%   dataStruct, areaIdx - Session data and area index
+%   eligibleReach       - Logical mask of reaches with a valid window
+%   winCenterReach      - Window centers (s) per reach
+%   d2Window            - Window length (s)
+%   binSizeArea         - Bin size for this area (s)
+%   timeRange           - [tStart, tEnd] for binning
+%   opts                - Includes pOrder, critType, normalizeD2, nShuffles,
+%                         meanSubtract, pcaFlag, and optional useSubsampling /
+%                         nSubsamples / nNeuronsSubsample
+%
+% Goal:
+%   Compute population d2 for each eligible reach-aligned window. When
+%   useSubsampling is true, d2 per reach is the mean over random neuron
+%   subsets (drawn once per area, shared across reaches).
 
 nReach = numel(winCenterReach);
 d2RawVec = nan(nReach, 1);
@@ -585,6 +690,7 @@ neuronIDs = dataStruct.idLabel{areaIdx};
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
   neuronIDs, timeRange, binSizeArea);
 nT = size(aDataMat, 1);
+numNeuronsArea = size(aDataMat, 2);
 
 if opts.pcaFlag
   [coeff, score, ~, ~, explained, mu] = pca(aDataMat);
@@ -593,6 +699,55 @@ if opts.pcaFlag
   nDimUse = 1:forDim;
   aDataMat = score(:, nDimUse) * coeff(:, nDimUse)' + mu;
 end
+
+useSubsampling = isfield(opts, 'useSubsampling') && logical(opts.useSubsampling);
+if useSubsampling
+  nSubsamples = opts.nSubsamples;
+  nNeuronsSubsample = min(opts.nNeuronsSubsample, numNeuronsArea);
+  neuronIdxSubsamples = cell(1, nSubsamples);
+  for s = 1:nSubsamples
+    if nNeuronsSubsample == numNeuronsArea
+      neuronIdxSubsamples{s} = 1:numNeuronsArea;
+    else
+      neuronIdxSubsamples{s} = randperm(numNeuronsArea, nNeuronsSubsample);
+    end
+  end
+  fprintf('  Area %s: %d neurons, %d subsets x %d neurons\n', ...
+    dataStruct.areas{areaIdx}, numNeuronsArea, nSubsamples, nNeuronsSubsample);
+
+  d2Sub = nan(nReach, nSubsamples);
+  d2NormSub = nan(nReach, nSubsamples);
+  for s = 1:nSubsamples
+    colIdx = neuronIdxSubsamples{s};
+    aDataMatSub = aDataMat(:, colIdx);
+    [d2Sub(:, s), d2NormSub(:, s)] = compute_reach_window_d2_vectors( ...
+      aDataMatSub, eligibleReach, winCenterReach, d2Window, binSizeArea, opts);
+  end
+  d2RawVec = nanmean(d2Sub, 2);
+  if opts.normalizeD2
+    d2NormVec = nanmean(d2NormSub, 2);
+  end
+else
+  [d2RawVec, d2NormVec] = compute_reach_window_d2_vectors( ...
+    aDataMat, eligibleReach, winCenterReach, d2Window, binSizeArea, opts);
+end
+end
+
+function [d2RawVec, d2NormVec] = compute_reach_window_d2_vectors( ...
+    aDataMat, eligibleReach, winCenterReach, d2Window, binSizeArea, opts)
+% COMPUTE_REACH_WINDOW_D2_VECTORS - Per-reach d2 from a (possibly subsampled) matrix
+%
+% Variables:
+%   aDataMat - Time x neurons binned spikes (full area or one neuron subset)
+%
+% Goal:
+%   Build pop activity per eligible window and compute d2 (+ optional shuffle
+%   normalization). Shared by full-population and subsampled paths.
+
+nReach = numel(winCenterReach);
+nT = size(aDataMat, 1);
+d2RawVec = nan(nReach, 1);
+d2NormVec = nan(nReach, 1);
 
 popTraceCell = cell(nReach, 1);
 windowMatCell = cell(nReach, 1);
@@ -726,11 +881,34 @@ end
 %% -------------------------------------------------------------------------
 
 function fig = plot_d2_accuracy_comparison(statsByAreaPre, statsByAreaPost, ...
-    sessionName, opts, plotConfig)
-% PLOT_D2_ACCURACY_COMPARISON - Pre (top) and post (bottom) correct vs error d2
+    sessionName, opts, plotConfig, statsByAreaPreBlock1, statsByAreaPreBlock2, ...
+    statsByAreaPostBlock1, statsByAreaPostBlock2)
+% PLOT_D2_ACCURACY_COMPARISON - Pre/post correct vs error d2 (optional by block)
+%
+% Variables:
+%   statsByAreaPre/Post           - Pooled-block per-area stats
+%   statsByArea*Block1/Block2     - Optional per-block stats when splitByBlock
+%
+% Goal:
+%   Default: 2 rows (pre, post) x nAreas.
+%   With splitByBlock: 2x2 per area — top = Pre (Block1 | Block2),
+%   bottom = Post (Block1 | Block2); shared y-limits across panels.
+
+if nargin < 6
+  statsByAreaPreBlock1 = [];
+end
+if nargin < 7
+  statsByAreaPreBlock2 = [];
+end
+if nargin < 8
+  statsByAreaPostBlock1 = [];
+end
+if nargin < 9
+  statsByAreaPostBlock2 = [];
+end
 
 plotConfig = fill_default_d2_accuracy_plot_config(plotConfig);
-nCol = numel(statsByAreaPre);
+nAreas = numel(statsByAreaPre);
 
 if opts.useLog10D2
   yLabelStr = 'log_{10}(d2)';
@@ -740,8 +918,17 @@ else
   yLabInterpreter = 'none';
 end
 
-fig = figure('Color', 'w', 'Name', 'Pre/post-reach d2: correct vs error', ...
-  'NumberTitle', 'off');
+splitByBlock = isfield(opts, 'splitByBlock') && logical(opts.splitByBlock) ...
+  && ~isempty(statsByAreaPreBlock1) && ~isempty(statsByAreaPreBlock2) ...
+  && ~isempty(statsByAreaPostBlock1) && ~isempty(statsByAreaPostBlock2);
+
+if splitByBlock
+  figName = 'Pre/post-reach d2 by block: correct vs error';
+else
+  figName = 'Pre/post-reach d2: correct vs error';
+end
+
+fig = figure('Color', 'w', 'Name', figName, 'NumberTitle', 'off');
 monitorPositions = get(0, 'MonitorPositions');
 if size(monitorPositions, 1) >= 2
   set(fig, 'Position', monitorPositions(end, :));
@@ -749,8 +936,29 @@ else
   set(fig, 'Position', monitorPositions(1, :));
 end
 
-nRow = 2;
 useTight = exist('tight_subplot', 'file');
+
+if splitByBlock
+  % 2 rows (Pre, Post) x 2 cols (Block1, Block2) per area → 2 x (2*nAreas)
+  nRow = 2;
+  nCol = 2 * nAreas;
+  % panelStats{timing, block}: timing 1=Pre, 2=Post; block 1/2
+  panelStats = { ...
+    statsByAreaPreBlock1, statsByAreaPreBlock2
+    statsByAreaPostBlock1, statsByAreaPostBlock2
+    };
+  rowTimingTitles = {'Pre-reach', 'Post-reach'};
+  colBlockTitles = {'Block 1', 'Block 2'};
+  yLimArgs = {statsByAreaPreBlock1, statsByAreaPreBlock2, ...
+    statsByAreaPostBlock1, statsByAreaPostBlock2};
+else
+  nRow = 2;
+  nCol = nAreas;
+  panelStats = {statsByAreaPre; statsByAreaPost};
+  rowTimingTitles = {'Pre-reach', 'Post-reach'};
+  yLimArgs = {statsByAreaPre, statsByAreaPost};
+end
+
 if useTight
   ha = tight_subplot(nRow, nCol, [0.06 0.06], [0.08 0.12], [0.08 0.04]);
 else
@@ -760,24 +968,34 @@ else
   end
 end
 
-rowStats = {statsByAreaPre, statsByAreaPost};
-rowTitles = {'Pre-reach', 'Post-reach'};
-
-[yLimGlobal, yTicksGlobal, yTickLabelsGlobal] = compute_d2_accuracy_y_axis( ...
-  statsByAreaPre, statsByAreaPost);
+[yLimGlobal, yTicksGlobal, yTickLabelsGlobal] = compute_d2_accuracy_y_axis(yLimArgs{:});
 
 for rowIdx = 1:nRow
   for colIdx = 1:nCol
     ax = ha((rowIdx - 1) * nCol + colIdx);
-    st = rowStats{rowIdx}(colIdx);
-    if rowIdx == 1
-      panelTitle = st.areaName;
+    if splitByBlock
+      areaIdx = ceil(colIdx / 2);
+      if mod(colIdx, 2) == 1
+        blockIdx = 1;
+      else
+        blockIdx = 2;
+      end
+      st = panelStats{rowIdx, blockIdx}(areaIdx);
+      panelTitle = sprintf('%s | %s | n_{corr}=%d, n_{err}=%d', ...
+        st.areaName, colBlockTitles{blockIdx}, st.nCorrect, st.nError);
+      yRowLabel = rowTimingTitles{rowIdx};
     else
-      panelTitle = sprintf('n_{corr}=%d, n_{err}=%d', st.nCorrect, st.nError);
+      st = panelStats{rowIdx}(colIdx);
+      if rowIdx == 1
+        panelTitle = st.areaName;
+      else
+        panelTitle = sprintf('n_{corr}=%d, n_{err}=%d', st.nCorrect, st.nError);
+      end
+      yRowLabel = rowTimingTitles{rowIdx};
     end
     plot_d2_accuracy_panel(ax, st, plotConfig, panelTitle, yLimGlobal);
-    if colIdx == 1
-      ylabel(ax, sprintf('%s\n%s', rowTitles{rowIdx}, yLabelStr), ...
+    if (~splitByBlock && colIdx == 1) || (splitByBlock && mod(colIdx, 2) == 1)
+      ylabel(ax, sprintf('%s\n%s', yRowLabel, yLabelStr), ...
         'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', yLabInterpreter);
     end
     set(ax, 'YLim', yLimGlobal, 'YTick', yTicksGlobal, 'YTickLabel', yTickLabelsGlobal, ...
@@ -788,18 +1006,36 @@ for rowIdx = 1:nRow
   end
 end
 
-sgtitle(sprintf(['Pre/post-reach d2 | %s | W=%.1fs, preBuf=%d ms, postBuf=%d ms'], ...
-  sessionName, opts.d2Window, opts.preReachBuffer, opts.postReachBuffer), ...
+blockNote = '';
+if splitByBlock
+  blockNote = ' | Pre top (B1|B2), Post bottom (B1|B2)';
+end
+sgtitle(sprintf(['Pre/post-reach d2 | %s | W=%.1fs, preBuf=%d ms, postBuf=%d ms%s'], ...
+  sessionName, opts.d2Window, opts.preReachBuffer, opts.postReachBuffer, blockNote), ...
   'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
-function [yLimGlobal, yTicksGlobal, yTickLabelsGlobal] = compute_d2_accuracy_y_axis( ...
-    statsByAreaPre, statsByAreaPost)
+function [yLimGlobal, yTicksGlobal, yTickLabelsGlobal] = compute_d2_accuracy_y_axis(varargin)
 % COMPUTE_D2_ACCURACY_Y_AXIS - Shared y-limits and tick labels across panels
+%
+% Variables:
+%   varargin - One or more statsByArea struct arrays (pooled and/or by block)
 
 allVals = [];
-for st = [statsByAreaPre, statsByAreaPost]
-  allVals = [allVals; st.d2Correct(:); st.d2Error(:)]; %#ok<AGROW>
+for iArg = 1:nargin
+  statsArr = varargin{iArg};
+  if isempty(statsArr)
+    continue;
+  end
+  for iSt = 1:numel(statsArr)
+    st = statsArr(iSt);
+    if isfield(st, 'd2Correct')
+      allVals = [allVals; st.d2Correct(:)]; %#ok<AGROW>
+    end
+    if isfield(st, 'd2Error')
+      allVals = [allVals; st.d2Error(:)]; %#ok<AGROW>
+    end
+  end
 end
 allVals = allVals(isfinite(allVals));
 
