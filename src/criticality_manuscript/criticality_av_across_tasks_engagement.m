@@ -428,7 +428,9 @@ cellFields = {'dcc', 'dccNormalized', 'kappa', 'kappaNormalized', 'decades', 'ta
   'alpha', 'paramSD', 'startS', 'dccPermuted', 'kappaPermuted', 'decadesPermuted', ...
   'tauPermuted', 'alphaPermuted', 'paramSDPermuted', 'dccPermutedMean', ...
   'kappaPermutedMean', 'decadesPermutedMean', 'tauPermutedMean', 'alphaPermutedMean', ...
-  'paramSDPermutedMean'};
+  'paramSDPermutedMean', ...
+  'dccSubsamples', 'kappaSubsamples', 'decadesSubsamples', ...
+  'tauSubsamples', 'alphaSubsamples', 'paramSDSubsamples'};
 results.areas = results.areas(areaIdx);
 for f = 1:numel(cellFields)
   fieldName = cellFields{f};
@@ -523,6 +525,19 @@ for s = 1:numel(batchResults)
         spontField = metricPairs{m, 2};
         typeData.(spontField){areaIdx}(end + 1) = extract_single_window_value( ...
           get_result_metric_cell(results, metricName, a)); %#ok<AGROW>
+        semField = [spontField, 'Sem'];
+        if ~isfield(typeData, semField)
+          typeData.(semField) = cell(1, numel(typeData.(spontField)));
+          for aa = 1:numel(typeData.(semField))
+            typeData.(semField){aa} = [];
+          end
+        end
+        while numel(typeData.(semField)) < areaIdx
+          typeData.(semField){end + 1} = []; %#ok<AGROW>
+        end
+        useSubsampling = isfield(results, 'useSubsampling') && results.useSubsampling;
+        [~, semVal] = summarize_engagement_av_metric_sem(results, a, metricName, useSubsampling);
+        typeData.(semField){areaIdx}(end + 1) = semVal; %#ok<AGROW>
         shuffleField = [metricName, 'PermutedMean'];
         if isfield(results, shuffleField)
           typeData.(shuffleField){areaIdx}(end + 1) = extract_single_window_value( ...
@@ -632,6 +647,23 @@ elseif numel(valid) == 1
 else
   val = mean(valid);
 end
+end
+
+function [meanVal, semVal] = summarize_engagement_av_metric_sem(results, areaIdx, metricName, useSubsampling)
+% SUMMARIZE_ENGAGEMENT_AV_METRIC_SEM - Window or subsample SEM for spontaneous AV
+meanVal = nan;
+semVal = nan;
+metricVec = get_result_metric_cell(results, metricName, areaIdx);
+if isempty(metricVec)
+  return;
+end
+subField = [metricName, 'Subsamples'];
+subMat = [];
+if useSubsampling && isfield(results, subField) && areaIdx <= numel(results.(subField)) ...
+    && ~isempty(results.(subField){areaIdx})
+  subMat = results.(subField){areaIdx};
+end
+[meanVal, semVal] = mean_sem_across_windows_or_subsamples(metricVec, subMat, useSubsampling);
 end
 
 function plot_engagement_av_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, ...

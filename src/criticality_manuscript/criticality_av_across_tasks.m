@@ -550,7 +550,9 @@ cellFields = {'dcc', 'dccNormalized', 'kappa', 'kappaNormalized', ...
   'dccPermuted', 'kappaPermuted', 'decadesPermuted', 'tauPermuted', ...
   'alphaPermuted', 'paramSDPermuted', ...
   'dccPermutedMean', 'kappaPermutedMean', 'decadesPermutedMean', ...
-  'tauPermutedMean', 'alphaPermutedMean', 'paramSDPermutedMean'};
+  'tauPermutedMean', 'alphaPermutedMean', 'paramSDPermutedMean', ...
+  'dccSubsamples', 'kappaSubsamples', 'decadesSubsamples', ...
+  'tauSubsamples', 'alphaSubsamples', 'paramSDSubsamples'};
 
 results.areas = results.areas(areaIdx);
 for f = 1:length(cellFields)
@@ -570,6 +572,9 @@ end
 
 function plotData = aggregate_av_metrics(batchResults, sessionTypes)
 % AGGREGATE_AV_METRICS - Collect single-window metrics per session and area
+%
+% For each metric, also stores <metric>Sem: with useSubsampling and one window,
+% SEM across neuron subsamples; otherwise SEM across windows (0 if one window).
 
 plotData = struct();
 plotData.areas = {};
@@ -577,6 +582,9 @@ plotData.sessionTypes = sessionTypes;
 plotData.byType = struct();
 
 metricFields = get_av_metric_storage_fields();
+semMetricNames = {'dcc', 'kappa', 'decades', 'tau', 'alpha', 'paramSD'};
+semFields = cellfun(@(n) [n, 'Sem'], semMetricNames, 'UniformOutput', false);
+allFields = [metricFields, semFields];
 
 for s = 1:length(batchResults)
   if ~batchResults(s).success || isempty(batchResults(s).results)
@@ -589,13 +597,13 @@ for s = 1:length(batchResults)
   if isempty(plotData.areas)
     for t = 1:length(sessionTypes)
       st = sessionTypes{t};
-      plotData.byType.(matlab.lang.makeValidName(st)) = init_type_metrics(metricFields, 0);
+      plotData.byType.(matlab.lang.makeValidName(st)) = init_type_metrics(allFields, 0);
     end
   end
 
   typeKey = matlab.lang.makeValidName(sessionType);
   if ~isfield(plotData.byType, typeKey)
-    plotData.byType.(typeKey) = init_type_metrics(metricFields, length(plotData.areas));
+    plotData.byType.(typeKey) = init_type_metrics(allFields, length(plotData.areas));
   end
   typeData = plotData.byType.(typeKey);
 
@@ -605,7 +613,7 @@ for s = 1:length(batchResults)
     if isempty(areaIdx)
       plotData.areas{end+1} = areaName;
       areaIdx = length(plotData.areas);
-      plotData = extend_plot_data_areas(plotData, sessionTypes, metricFields, areaIdx);
+      plotData = extend_plot_data_areas(plotData, sessionTypes, allFields, areaIdx);
       typeData = plotData.byType.(typeKey);
     end
 
@@ -618,12 +626,38 @@ for s = 1:length(batchResults)
       end
       typeData.(fieldName){areaIdx} = [typeData.(fieldName){areaIdx}, val];
     end
+
+    useSubsampling = isfield(results, 'useSubsampling') && results.useSubsampling;
+    for m = 1:numel(semMetricNames)
+      metricName = semMetricNames{m};
+      semField = [metricName, 'Sem'];
+      [~, semVal] = summarize_av_metric_mean_sem(results, a, metricName, useSubsampling);
+      typeData.(semField){areaIdx} = [typeData.(semField){areaIdx}, semVal];
+    end
   end
 
   typeData.sessionLabels{end+1} = batchResults(s).label;
   typeData.sessionNames{end+1} = batchResults(s).sessionName;
   plotData.byType.(typeKey) = typeData;
 end
+end
+
+function [meanVal, semVal] = summarize_av_metric_mean_sem(results, areaIdx, metricName, useSubsampling)
+% SUMMARIZE_AV_METRIC_MEAN_SEM - Window or subsample SEM for one AV metric
+meanVal = nan;
+semVal = nan;
+if ~isfield(results, metricName) || areaIdx > numel(results.(metricName)) ...
+    || isempty(results.(metricName){areaIdx})
+  return;
+end
+windowVec = results.(metricName){areaIdx};
+subField = [metricName, 'Subsamples'];
+subMat = [];
+if useSubsampling && isfield(results, subField) && areaIdx <= numel(results.(subField)) ...
+    && ~isempty(results.(subField){areaIdx})
+  subMat = results.(subField){areaIdx};
+end
+[meanVal, semVal] = mean_sem_across_windows_or_subsamples(windowVec, subMat, useSubsampling);
 end
 
 function plotData = extend_plot_data_areas(plotData, sessionTypes, metricFields, newAreaIdx)

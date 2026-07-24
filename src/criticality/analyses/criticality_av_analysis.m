@@ -326,6 +326,8 @@ function results = criticality_av_analysis(dataStruct, config)
     [dcc, kappa, decades, startS, tau, alpha, paramSD] = deal(cell(1, numAreas));
     [dccNormalized, kappaNormalized, decadesNormalized, tauNormalized, alphaNormalized, paramSDNormalized] = ...
         deal(cell(1, numAreas));
+    [dccSubsamples, kappaSubsamples, decadesSubsamples, tauSubsamples, alphaSubsamples, paramSDSubsamples] = ...
+        deal(cell(1, numAreas));
     
     dccPermuted = cell(1, numAreas);
     kappaPermuted = cell(1, numAreas);
@@ -340,6 +342,12 @@ function results = criticality_av_analysis(dataStruct, config)
         tauPermuted{a} = [];
         alphaPermuted{a} = [];
         paramSDPermuted{a} = [];
+        dccSubsamples{a} = [];
+        kappaSubsamples{a} = [];
+        decadesSubsamples{a} = [];
+        tauSubsamples{a} = [];
+        alphaSubsamples{a} = [];
+        paramSDSubsamples{a} = [];
     end
     
     % Main analysis loop
@@ -423,6 +431,12 @@ function results = criticality_av_analysis(dataStruct, config)
                     neuronIdxSubsamples{s} = randperm(numNeuronsArea, nNeuronsSubsampleArea);
                 end
             end
+            dccSubsamples{a} = nan(numWindows, nSubsamplesArea);
+            kappaSubsamples{a} = nan(numWindows, nSubsamplesArea);
+            decadesSubsamples{a} = nan(numWindows, nSubsamplesArea);
+            tauSubsamples{a} = nan(numWindows, nSubsamplesArea);
+            alphaSubsamples{a} = nan(numWindows, nSubsamplesArea);
+            paramSDSubsamples{a} = nan(numWindows, nSubsamplesArea);
             if config.enablePermutations
                 dccPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
                 kappaPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
@@ -482,6 +496,12 @@ function results = criticality_av_analysis(dataStruct, config)
                         end
                     end
                 end
+                dccSubsamples{a}(w, :) = dccSub;
+                kappaSubsamples{a}(w, :) = kappaSub;
+                decadesSubsamples{a}(w, :) = decadesSub;
+                tauSubsamples{a}(w, :) = tauSub;
+                alphaSubsamples{a}(w, :) = alphaSub;
+                paramSDSubsamples{a}(w, :) = paramSDSub;
                 dcc{a}(w) = nanmean(dccSub);
                 kappa{a}(w) = nanmean(kappaSub);
                 decades{a}(w) = nanmean(decadesSub);
@@ -597,7 +617,9 @@ function results = criticality_av_analysis(dataStruct, config)
         dccNormalized, kappaNormalized, decadesNormalized, tauNormalized, alphaNormalized, paramSDNormalized, ...
         binSize, slidingWindowSize, ...
         dccPermuted, kappaPermuted, decadesPermuted, ...
-        tauPermuted, alphaPermuted, paramSDPermuted);
+        tauPermuted, alphaPermuted, paramSDPermuted, ...
+        dccSubsamples, kappaSubsamples, decadesSubsamples, ...
+        tauSubsamples, alphaSubsamples, paramSDSubsamples);
     
     % Save results if requested
     if config.saveData
@@ -948,7 +970,9 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
     dccNormalized, kappaNormalized, decadesNormalized, tauNormalized, alphaNormalized, paramSDNormalized, ...
     binSize, slidingWindowSize, ...
     dccPermuted, kappaPermuted, decadesPermuted, ...
-    tauPermuted, alphaPermuted, paramSDPermuted)
+    tauPermuted, alphaPermuted, paramSDPermuted, ...
+    dccSubsamples, kappaSubsamples, decadesSubsamples, ...
+    tauSubsamples, alphaSubsamples, paramSDSubsamples)
 % BUILD_RESULTS_STRUCTURE_AV Build results structure for avalanche analysis
     
     results = struct();
@@ -981,6 +1005,14 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
     if isfield(config, 'useSubsampling')
         results.params.useSubsampling = config.useSubsampling;
         results.useSubsampling = config.useSubsampling;
+        if config.useSubsampling
+            results.dccSubsamples = dccSubsamples;
+            results.kappaSubsamples = kappaSubsamples;
+            results.decadesSubsamples = decadesSubsamples;
+            results.tauSubsamples = tauSubsamples;
+            results.alphaSubsamples = alphaSubsamples;
+            results.paramSDSubsamples = paramSDSubsamples;
+        end
     end
     if isfield(config, 'nSubsamples')
         results.params.nSubsamples = config.nSubsamples;

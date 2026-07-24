@@ -9,8 +9,9 @@
 %   sessionTypes   - Cell array of session types to include
 %   dataSource     - 'spikes' or 'lfp'
 %   collectStart   - Analysis window start (seconds from session onset)
-%   collectEnd     - Analysis window end (seconds)
-%   prgWindow      - Non-overlapping block length (seconds); blockWindowSize
+%   collectEnd     - Analysis window end (seconds); [] = full session
+%   prgWindow      - Non-overlapping block length (seconds); blockWindowSize.
+%                    [] = one block spanning the full collect duration (like d2Window)
 %   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' = all valid areas
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   areasToPlot            - Area names to plot; {} uses brainArea if set
@@ -69,7 +70,11 @@ else
   fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
     (opts.collectEnd - opts.collectStart) / 60);
 end
-fprintf('PRG blocks: %.1f s, non-overlapping\n', opts.prgWindow);
+if isempty(opts.prgWindow)
+  fprintf('PRG blocks: full collect duration (one block per session)\n');
+else
+  fprintf('PRG blocks: %.1f s, non-overlapping\n', opts.prgWindow);
+end
 fprintf('Kappa at N/%d; bin size: %.3f s; surrogates: %s\n', ...
   opts.finalCutoffDivisor, opts.binSize, opts.surrogateMethod);
 if opts.useSubsampling
@@ -220,11 +225,15 @@ defaults.minFiringRate = 0.05;
 defaults.maxFiringRate = 100;
 defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
-% Empty collectEnd is a sentinel for "full session" — do not replace
+% Empty collectEnd / prgWindow are sentinels for "full session" — do not replace
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
+preservePrgWindowEmpty = isfield(opts, 'prgWindow') && isempty(opts.prgWindow);
 opts = merge_struct_defaults(opts, defaults);
 if preserveCollectEndEmpty
   opts.collectEnd = [];
+end
+if preservePrgWindowEmpty
+  opts.prgWindow = [];
 end
 end
 
@@ -260,7 +269,11 @@ emptyEntry = struct('sessionType', '', 'sessionName', '', 'subjectName', '', ...
 for iCell = 1:numel(cellTypesToRun)
   batchByCell{iCell} = repmat(emptyEntry, numSessions, 1);
 end
-fprintf('\n=== Running PRG analysis (%.0f s non-overlapping blocks) ===\n', opts.prgWindow);
+if isempty(opts.prgWindow)
+  fprintf('\n=== Running PRG analysis (one block over full collect duration) ===\n');
+else
+  fprintf('\n=== Running PRG analysis (%.0f s non-overlapping blocks) ===\n', opts.prgWindow);
+end
 
 for s = 1:numSessions
   sessionType = sessionTable.sessionType{s};
@@ -304,6 +317,21 @@ for s = 1:numSessions
       end
     end
 
+    sessionConfig = analysisConfig;
+    sessionDuration = get_session_collect_duration(dataStruct, opts);
+    durationToleranceSec = 1;
+    useFullSessionBlock = isempty(opts.prgWindow) ...
+      || sessionDuration < (opts.prgWindow - durationToleranceSec);
+    if useFullSessionBlock
+      if isempty(opts.prgWindow)
+        fprintf('  Using full session block (%.1f s).\n', sessionDuration);
+      else
+        fprintf('  Session duration %.1f s < requested prgWindow %.1f s; using full session block.\n', ...
+          sessionDuration, opts.prgWindow);
+      end
+      sessionConfig.blockWindowSize = sessionDuration;
+    end
+
     for iCell = 1:numel(cellTypesToRun)
       cellType = cellTypesToRun{iCell};
       try
@@ -312,7 +340,7 @@ for s = 1:numSessions
         [dataStructRun, ~] = apply_manuscript_brain_area_selection( ...
           dataStructRun, opts.brainArea, opts.brainAreaCombinations);
 
-        prgResults = criticality_prg_analysis(dataStructRun, analysisConfig);
+        prgResults = criticality_prg_analysis(dataStructRun, sessionConfig);
         if ~isempty(opts.brainArea)
           prgResults = filter_prg_results_to_brain_area(prgResults, opts.brainArea);
           if isempty(prgResults.areas)
@@ -363,7 +391,12 @@ end
 function analysisConfig = build_prg_analysis_config(opts)
 analysisConfig = struct();
 analysisConfig.prgMethod = opts.prgMethod;
-analysisConfig.blockWindowSize = opts.prgWindow;
+if isempty(opts.prgWindow)
+  % Placeholder; overwritten per session with collect duration
+  analysisConfig.blockWindowSize = 1;
+else
+  analysisConfig.blockWindowSize = opts.prgWindow;
+end
 analysisConfig.binSize = opts.binSize;
 analysisConfig.cvThreshold = opts.cvThreshold;
 analysisConfig.cutoffDivisors = opts.cutoffDivisors;
@@ -379,6 +412,34 @@ analysisConfig.useSubsampling = opts.useSubsampling;
 analysisConfig.nSubsamples = opts.nSubsamples;
 analysisConfig.nNeuronsSubsample = opts.nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = opts.minNeuronsMultiple;
+end
+
+function sessionDuration = get_session_collect_duration(dataStruct, opts)
+% GET_SESSION_COLLECT_DURATION - Actual loaded collect window length (s)
+
+if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectEnd') ...
+    && isfield(dataStruct.spikeData, 'collectStart')
+  sessionDuration = dataStruct.spikeData.collectEnd - dataStruct.spikeData.collectStart;
+elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectEnd') ...
+    && ~isempty(dataStruct.opts.collectEnd)
+  collectStart = 0;
+  if isfield(dataStruct.opts, 'collectStart') && ~isempty(dataStruct.opts.collectStart)
+    collectStart = dataStruct.opts.collectStart;
+  end
+  sessionDuration = dataStruct.opts.collectEnd - collectStart;
+elseif isfield(dataStruct, 'spikeTimes') && ~isempty(dataStruct.spikeTimes)
+  collectStart = opts.collectStart;
+  if isempty(collectStart)
+    collectStart = 0;
+  end
+  sessionDuration = max(dataStruct.spikeTimes) - collectStart;
+else
+  sessionDuration = opts.collectEnd - opts.collectStart;
+  if isempty(sessionDuration)
+    error('criticality_prg_across_tasks:UnknownSessionDuration', ...
+      'Could not determine session collect duration.');
+  end
+end
 end
 
 function commonAreas = resolve_areas_to_plot(plotAreas, areasToPlot, brainArea)
@@ -484,7 +545,8 @@ if isempty(areaIdx)
 end
 
 cellFields = {'kappa', 'kappaByCutoff', 'windowStartS', 'popCv', 'windowExcluded', ...
-  'nNeuronsPerWindow', 'kappaSurrogate', 'djs', 'djsSurrogate', 'nCutoffList'};
+  'nNeuronsPerWindow', 'kappaSurrogate', 'djs', 'djsSurrogate', 'nCutoffList', ...
+  'kappaSubsamples', 'djsSubsamples'};
 
 results.areas = results.areas(areaIdx);
 for f = 1:length(cellFields)
@@ -574,6 +636,8 @@ function summary = summarize_session_kappa_windows(results, areaIdx)
 %             djsMean, djsSem, djsShuffleMean, djsShuffleSem,
 %             djsNormMean, djsNormSem
 %
+%   With useSubsampling and a single valid window, kappaSem / djsSem are SEM
+%   across neuron subsamples. Otherwise SEM is across window means.
 %   Normalized metrics: per-window value / mean(surrogate for that window), then
 %   mean and SEM across valid windows. *ShuffleSem - SEM across windows of per-window surrogate means
 
@@ -586,6 +650,7 @@ if areaIdx > length(results.kappa) || isempty(results.kappa{areaIdx})
   return;
 end
 
+useSubsampling = isfield(results, 'useSubsampling') && results.useSubsampling;
 kappaVec = results.kappa{areaIdx}(:);
 nWin = numel(kappaVec);
 excluded = false(nWin, 1);
@@ -597,31 +662,28 @@ if isfield(results, 'windowExcluded') && areaIdx <= length(results.windowExclude
   end
 end
 validMask = isfinite(kappaVec) & ~excluded;
-kappaValid = kappaVec(validMask);
-if ~isempty(kappaValid)
-  summary.kappaMean = mean(kappaValid);
-  nK = numel(kappaValid);
-  if nK > 1
-    summary.kappaSem = std(kappaValid) / sqrt(nK);
-  else
-    summary.kappaSem = 0;
-  end
+kappaValid = kappaVec;
+kappaValid(~validMask) = nan;
+kappaSubMat = [];
+if useSubsampling && isfield(results, 'kappaSubsamples') && areaIdx <= numel(results.kappaSubsamples) ...
+    && ~isempty(results.kappaSubsamples{areaIdx})
+  kappaSubMat = results.kappaSubsamples{areaIdx};
 end
+[summary.kappaMean, summary.kappaSem] = mean_sem_across_windows_or_subsamples( ...
+  kappaValid, kappaSubMat, useSubsampling);
 
 if isfield(results, 'djs') && areaIdx <= length(results.djs) && ~isempty(results.djs{areaIdx})
   djsVec = results.djs{areaIdx}(:);
   if numel(djsVec) == nWin
-    djsValid = djsVec(validMask);
-    djsValid = djsValid(isfinite(djsValid));
-    if ~isempty(djsValid)
-      summary.djsMean = mean(djsValid);
-      nD = numel(djsValid);
-      if nD > 1
-        summary.djsSem = std(djsValid) / sqrt(nD);
-      else
-        summary.djsSem = 0;
-      end
+    djsValid = djsVec;
+    djsValid(~validMask) = nan;
+    djsSubMat = [];
+    if useSubsampling && isfield(results, 'djsSubsamples') && areaIdx <= numel(results.djsSubsamples) ...
+        && ~isempty(results.djsSubsamples{areaIdx})
+      djsSubMat = results.djsSubsamples{areaIdx};
     end
+    [summary.djsMean, summary.djsSem] = mean_sem_across_windows_or_subsamples( ...
+      djsValid, djsSubMat, useSubsampling);
   end
 end
 
@@ -632,17 +694,10 @@ if isfield(results, 'kappaSurrogate') && areaIdx <= length(results.kappaSurrogat
     perWindowShuffleMean = get_per_window_shuffle_mean_matrix(surrMat, results);
 
     normVec = normalize_prg_by_surrogate(kappaVec, perWindowShuffleMean);
-    normValid = normVec(validMask);
-    normValid = normValid(isfinite(normValid));
-    if ~isempty(normValid)
-      summary.kappaNormMean = mean(normValid);
-      nNorm = numel(normValid);
-      if nNorm > 1
-        summary.kappaNormSem = std(normValid) / sqrt(nNorm);
-      else
-        summary.kappaNormSem = 0;
-      end
-    end
+    normValid = normVec;
+    normValid(~validMask) = nan;
+    [summary.kappaNormMean, summary.kappaNormSem] = mean_sem_across_windows_or_subsamples( ...
+      normValid, [], false);
 
     perWindowShuffleMean = perWindowShuffleMean(validMask);
     shuffleValid = perWindowShuffleMean(isfinite(perWindowShuffleMean));
@@ -668,17 +723,10 @@ if isfield(results, 'djsSurrogate') && areaIdx <= length(results.djsSurrogate) .
     perWindowDjsShuffleMean = get_per_window_shuffle_mean_matrix(djsSurrMat, results);
 
     normVec = normalize_prg_by_surrogate(djsVec, perWindowDjsShuffleMean);
-    normValid = normVec(validMask);
-    normValid = normValid(isfinite(normValid));
-    if ~isempty(normValid)
-      summary.djsNormMean = mean(normValid);
-      nNorm = numel(normValid);
-      if nNorm > 1
-        summary.djsNormSem = std(normValid) / sqrt(nNorm);
-      else
-        summary.djsNormSem = 0;
-      end
-    end
+    normValid = normVec;
+    normValid(~validMask) = nan;
+    [summary.djsNormMean, summary.djsNormSem] = mean_sem_across_windows_or_subsamples( ...
+      normValid, [], false);
 
     perWindowDjsShuffleMean = perWindowDjsShuffleMean(validMask);
     shuffleValid = perWindowDjsShuffleMean(isfinite(perWindowDjsShuffleMean));
@@ -803,11 +851,11 @@ for a = 1:length(areasToPlot)
   yline(axKappa, 3, '--', 'Color', [0.4, 0.4, 0.4], 'LineWidth', 1, 'HandleVisibility', 'off');
 
   if ~isempty(brainArea)
-    titleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-      prgMethod, kappaTitleWord, brainArea, collectStart, collectEnd, prgWindow);
+    titleStr = format_prg_sgtitle(prgMethod, kappaTitleWord, brainArea, ...
+      collectStart, collectEnd, prgWindow);
   else
-    titleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-      prgMethod, kappaTitleWord, areaName, collectStart, collectEnd, prgWindow);
+    titleStr = format_prg_sgtitle(prgMethod, kappaTitleWord, areaName, ...
+      collectStart, collectEnd, prgWindow);
   end
   if ~isempty(cellType)
     titleStr = sprintf('%s | %s', titleStr, cell_type_label(cellType));
@@ -837,11 +885,11 @@ for a = 1:length(areasToPlot)
     yline(axKappaNorm, 1, '--', 'Color', [0.4, 0.4, 0.4], 'LineWidth', 1, 'HandleVisibility', 'off');
 
     if ~isempty(brainArea)
-      kappaNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-        prgMethod, kappaNormTitleWord, brainArea, collectStart, collectEnd, prgWindow);
+      kappaNormTitleStr = format_prg_sgtitle(prgMethod, kappaNormTitleWord, brainArea, ...
+        collectStart, collectEnd, prgWindow);
     else
-      kappaNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-        prgMethod, kappaNormTitleWord, areaName, collectStart, collectEnd, prgWindow);
+      kappaNormTitleStr = format_prg_sgtitle(prgMethod, kappaNormTitleWord, areaName, ...
+        collectStart, collectEnd, prgWindow);
     end
     if ~isempty(cellType)
       kappaNormTitleStr = sprintf('%s | %s', kappaNormTitleStr, cell_type_label(cellType));
@@ -867,11 +915,11 @@ for a = 1:length(areasToPlot)
     title(axDjs, sprintf('%s — %s vs Gaussian', areaName, djsTitleWord));
 
     if ~isempty(brainArea)
-      djsTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-        prgMethod, djsTitleWord, brainArea, collectStart, collectEnd, prgWindow);
+      djsTitleStr = format_prg_sgtitle(prgMethod, djsTitleWord, brainArea, ...
+        collectStart, collectEnd, prgWindow);
     else
-      djsTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-        prgMethod, djsTitleWord, areaName, collectStart, collectEnd, prgWindow);
+      djsTitleStr = format_prg_sgtitle(prgMethod, djsTitleWord, areaName, ...
+        collectStart, collectEnd, prgWindow);
     end
     if ~isempty(cellType)
       djsTitleStr = sprintf('%s | %s', djsTitleStr, cell_type_label(cellType));
@@ -902,11 +950,11 @@ for a = 1:length(areasToPlot)
     yline(axDjsNorm, 1, '--', 'Color', [0.4, 0.4, 0.4], 'LineWidth', 1, 'HandleVisibility', 'off');
 
     if ~isempty(brainArea)
-      djsNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-        prgMethod, djsNormTitleWord, brainArea, collectStart, collectEnd, prgWindow);
+      djsNormTitleStr = format_prg_sgtitle(prgMethod, djsNormTitleWord, brainArea, ...
+        collectStart, collectEnd, prgWindow);
     else
-      djsNormTitleStr = sprintf('PRG (%s) %s — %s [%.0f–%.0f s, %.0fs blocks]', ...
-        prgMethod, djsNormTitleWord, areaName, collectStart, collectEnd, prgWindow);
+      djsNormTitleStr = format_prg_sgtitle(prgMethod, djsNormTitleWord, areaName, ...
+        collectStart, collectEnd, prgWindow);
     end
     if ~isempty(cellType)
       djsNormTitleStr = sprintf('%s | %s', djsNormTitleStr, cell_type_label(cellType));
@@ -1181,16 +1229,44 @@ if nargin < 10 || isempty(surrogateMethod)
   surrogateMethod = 'isi';
 end
 
-if ~isempty(brainArea)
-  plotBase = sprintf('%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d_%s', prefix, prgMethod, brainArea, ...
-    prgWindow, collectStart, collectEnd, finalCutoffDivisor, surrogateMethod);
+if isempty(prgWindow)
+  winTag = 'full';
 else
-  plotBase = sprintf('%s_%s_%s_win%.0fs_%.0f-%.0fs_N%d_%s', prefix, prgMethod, areaName, ...
-    prgWindow, collectStart, collectEnd, finalCutoffDivisor, surrogateMethod);
+  winTag = sprintf('%.0fs', prgWindow);
+end
+if isempty(collectEnd)
+  collectTag = sprintf('%.0f-full', collectStart);
+else
+  collectTag = sprintf('%.0f-%.0fs', collectStart, collectEnd);
+end
+
+if ~isempty(brainArea)
+  plotBase = sprintf('%s_%s_%s_win%s_%s_N%d_%s', prefix, prgMethod, brainArea, ...
+    winTag, collectTag, finalCutoffDivisor, surrogateMethod);
+else
+  plotBase = sprintf('%s_%s_%s_win%s_%s_N%d_%s', prefix, prgMethod, areaName, ...
+    winTag, collectTag, finalCutoffDivisor, surrogateMethod);
 end
 if multiArea
   plotBase = sprintf('%s_area%s', plotBase, areaName);
 end
+end
+
+function titleStr = format_prg_sgtitle(prgMethod, metricWord, areaLabel, collectStart, collectEnd, prgWindow)
+% FORMAT_PRG_SGTITLE - Super-title with collect range and block length tags
+
+if isempty(collectEnd)
+  collectTag = sprintf('%.0f–full s', collectStart);
+else
+  collectTag = sprintf('%.0f–%.0f s', collectStart, collectEnd);
+end
+if isempty(prgWindow)
+  winTag = 'full-session blocks';
+else
+  winTag = sprintf('%.0fs blocks', prgWindow);
+end
+titleStr = sprintf('PRG (%s) %s — %s [%s, %s]', ...
+  prgMethod, metricWord, areaLabel, collectTag, winTag);
 end
 
 function hasData = area_has_prg_djs_plot_data(plotData, sessionTypes, areaIdx)

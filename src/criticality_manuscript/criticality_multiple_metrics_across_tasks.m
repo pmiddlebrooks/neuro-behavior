@@ -6,7 +6,9 @@
 % a cross-session metric correlation matrix (pooled across task types).
 %
 % Variables:
-%   sessionTypes, collectStart, collectEnd, d2Window, brainArea, areasToPlot
+%   sessionTypes, collectStart, collectEnd, d2Window, prgWindow, brainArea, areasToPlot
+%   d2Window / prgWindow - Analysis window length (s); [] = one window over the
+%                         full collect duration per session
 %   runArBatch, runAvBatch, runPrgBatch - Run each analysis pipeline
 %   loadSavedResults   - If true, load saved .mat outputs when run*Batch false
 %   plotResults        - Create combined d2/tau/alpha figure(s)
@@ -47,7 +49,8 @@ collectStart = 0;
 collectEnd = 45 * 60;
 % collectEnd = [];  % [] = full session
 d2Window = [];
-% One d2 estimate for the full collect window ([] when collectEnd is [])
+prgWindow = d2Window;
+% One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 % d2Window = collectEnd;
 
 % Paths first — needed by default_manuscript_brain_area_combinations / plotConfig
@@ -60,9 +63,9 @@ areasToPlot = {};
 
 runArBatch = true;
 runAvBatch = true;
-runPrgBatch = true;
+runPrgBatch = false;
 runEngagementBatch = true;
-loadSavedResults = true;
+loadSavedResults = false;
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
@@ -77,17 +80,13 @@ splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on 
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 20;
-nNeuronsSubsample = 50;
+nSubsamples = 25;
+nNeuronsSubsample = 30;
 minNeuronsMultiple = 1.1;
 
 powerLawFitMethod = 'plfit2023';
 avalancheDetectionMode = 'fixedBinMedian';
 
-prgWindow = d2Window;
-if isempty(prgWindow)
-  prgWindow = 30;
-end
 finalCutoffDivisor = 16;
 prgMethod = 'pca';
 
@@ -116,6 +115,11 @@ if isempty(d2Window)
 else
   fprintf('d2 windows: %.0f s\n', d2Window);
 end
+if isempty(prgWindow)
+  fprintf('PRG blocks: full collect duration (one block per session)\n');
+else
+  fprintf('PRG blocks: %.0f s\n', prgWindow);
+end
 fprintf('enablePermutations: %d (observed metrics only when false)\n', enablePermutations);
 fprintf('useAnchorAffineMap: %d\n', useAnchorAffineMap);
 fprintf('anchorMetric: %s\n', anchorMetric);
@@ -129,6 +133,9 @@ fprintf('Batch files:\n  AR:  %s (exists=%d)\n  AV:  %s (exists=%d)\n  PRG: %s (
   prgBatchFile, isfile(prgBatchFile));
 if isempty(d2Window)
   fprintf('Plot filenames will use tag "winfull" (d2Window=[]).\n');
+end
+if isempty(prgWindow)
+  fprintf('PRG batch uses full-session blocks when prgWindow=[].\n');
 end
 
 % AR batch (d2) — full-session metrics across all requested session types
@@ -330,7 +337,8 @@ if plotResults
     fprintf('Areas: %s\n', strjoin(plotAreas, ', '));
     plot_multimetric_d2_tau_alpha_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
       sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-      plotConfig, anchorMetric, '', metricsToPlot, struct(), useAnchorAffineMap);
+      plotConfig, anchorMetric, '', metricsToPlot, struct(), useAnchorAffineMap, ...
+      useSubsampling, nNeuronsSubsample);
     if plotSeparatedMetrics
       if isempty(prgOut) || ~isfield(prgOut, 'plotData')
         error('PRG plotData required for separated metrics (kurtosis / D_{JS}). Set runPrgBatch true.');
@@ -338,12 +346,12 @@ if plotResults
       plot_multimetric_separated_axes_across_tasks(arOut.plotData, avOut.plotData, ...
         prgOut.plotData, plotAreas, sessionTypes, collectStart, collectEnd, d2Window, ...
         paths, brainArea, useLog10D2, plotConfig, '', metricsToPlot, avOut.plotData, ...
-        finalCutoffDivisor, enablePermutations);
+        finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample);
     end
     if plotMetricPairScatters
       plot_multimetric_pair_scatters_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
         sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-        plotConfig, '');
+        plotConfig, '', useSubsampling, nNeuronsSubsample);
     end
   else
     engagementClasses = {'engaged', 'nonEngaged'};
@@ -380,7 +388,8 @@ if plotResults
       plot_multimetric_d2_tau_alpha_across_tasks( ...
         classViews.(engClass).ar, classViews.(engClass).av, plotAreas, ...
         sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-        plotConfig, anchorMetric, engClass, metricsToPlot, sharedByArea, useAnchorAffineMap);
+        plotConfig, anchorMetric, engClass, metricsToPlot, sharedByArea, useAnchorAffineMap, ...
+        useSubsampling, nNeuronsSubsample);
       if plotSeparatedMetrics
         if isempty(prgOut) || ~isfield(prgOut, 'plotData')
           error('PRG plotData required for separated metrics (kurtosis / D_{JS}).');
@@ -390,13 +399,13 @@ if plotResults
           classViews.(engClass).ar, classViews.(engClass).av, prgOut.plotData, plotAreas, ...
           sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
           plotConfig, engClass, metricsToPlot, avOut.plotData, finalCutoffDivisor, ...
-          enablePermutations);
+          enablePermutations, useSubsampling, nNeuronsSubsample);
       end
       if plotMetricPairScatters
         plot_multimetric_pair_scatters_across_tasks( ...
           classViews.(engClass).ar, classViews.(engClass).av, plotAreas, ...
           sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-          plotConfig, engClass);
+          plotConfig, engClass, useSubsampling, nNeuronsSubsample);
       end
     end
   end
@@ -424,7 +433,7 @@ if plotCorrelationMatrix
   fprintf('Areas: %s\n', strjoin(corrAreas, ', '));
   plot_metric_correlation_matrix_across_sessions( ...
     arOut, avOut, prgOut, corrAreas, sessionTypes, collectStart, collectEnd, ...
-    d2Window, paths, brainArea, useLog10D2, plotConfig);
+    d2Window, paths, brainArea, useLog10D2, plotConfig, useSubsampling, nNeuronsSubsample);
 end
 
 fprintf('\n=== Done ===\n');
@@ -432,7 +441,8 @@ fprintf('\n=== Done ===\n');
 %% Local functions
 
 function plot_metric_correlation_matrix_across_sessions(arOut, avOut, prgOut, areasToPlot, ...
-    sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, plotConfig)
+    sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, plotConfig, ...
+    useSubsampling, nNeuronsSubsample)
 % PLOT_METRIC_CORRELATION_MATRIX_ACROSS_SESSIONS - Pearson corr heatmap per area
 %
 % Variables:
@@ -445,6 +455,12 @@ function plot_metric_correlation_matrix_across_sessions(arOut, avOut, prgOut, ar
 
 if nargin < 12 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
+end
+if nargin < 13 || isempty(useSubsampling)
+  useSubsampling = false;
+end
+if nargin < 14 || isempty(nNeuronsSubsample)
+  nNeuronsSubsample = 0;
 end
 
 metricKeys = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', 'djs', ...
@@ -529,10 +545,11 @@ for iArea = 1:numel(areasToPlot)
   if useLog10D2
     titleStr = [titleStr, '; d2 = log10(d2)']; %#ok<AGROW>
   end
+  titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample);
   title(ax, titleStr, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
 
   plotBase = make_correlation_matrix_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2);
+    collectStart, collectEnd, useLog10D2, useSubsampling, nNeuronsSubsample);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved correlation matrix: %s\n', fullfile(saveDir, plotBase));
@@ -736,8 +753,14 @@ cmap = [blueToWhite; whiteToRed];
 end
 
 function plotBase = make_correlation_matrix_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2)
+    collectStart, collectEnd, useLog10D2, useSubsampling, nNeuronsSubsample)
 % MAKE_CORRELATION_MATRIX_PLOT_BASENAME - File stem for correlation heatmap
+if nargin < 7 || isempty(useSubsampling)
+  useSubsampling = false;
+end
+if nargin < 8 || isempty(nNeuronsSubsample)
+  nNeuronsSubsample = 0;
+end
 if isempty(brainArea)
   areaTag = areaName;
 else
@@ -757,12 +780,14 @@ logTag = '';
 if useLog10D2
   logTag = '_log10d2';
 end
-plotBase = sprintf('metric_corr_across_sessions_%s_%s_%s%s', areaTag, winTag, timeTag, logTag);
+plotBase = sprintf('metric_corr_across_sessions_%s_%s_%s%s%s', ...
+  areaTag, winTag, timeTag, logTag, format_subsamp_file_tag(useSubsampling, nNeuronsSubsample));
 end
 
 function plot_multimetric_d2_tau_alpha_across_tasks(arPlotData, avPlotData, areasToPlot, ...
     sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-    plotConfig, anchorMetric, engagementTag, metricsToPlot, sharedByArea, useAnchorAffineMap)
+    plotConfig, anchorMetric, engagementTag, metricsToPlot, sharedByArea, useAnchorAffineMap, ...
+    useSubsampling, nNeuronsSubsample)
 % PLOT_MULTIMETRIC_D2_TAU_ALPHA_ACROSS_TASKS - Aligned d2/tau/alpha session plot
 %
 % Variables:
@@ -785,6 +810,12 @@ if nargin < 15 || isempty(sharedByArea)
 end
 if nargin < 16 || isempty(useAnchorAffineMap)
   useAnchorAffineMap = true;
+end
+if nargin < 17 || isempty(useSubsampling)
+  useSubsampling = false;
+end
+if nargin < 18 || isempty(nNeuronsSubsample)
+  nNeuronsSubsample = 0;
 end
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
 anchorMetric = lower(char(anchorMetric));
@@ -1053,11 +1084,12 @@ for a = 1:numel(areasToPlot)
     titleStr = sprintf('%s (%s)%s — %s [%s, %s d2 windows]', ...
       metricTitle, scaleTag, engTitle, areaName, collectTag, winTag);
   end
+  titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample);
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
   plotBase = make_multimetric_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, anchorMetric, engagementTag, metricsToPlot, ...
-    useAnchorAffineMap);
+    useAnchorAffineMap, useSubsampling, nNeuronsSubsample);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
@@ -1069,7 +1101,7 @@ end
 function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, prgPlotData, ...
     areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
     useLog10D2, plotConfig, engagementTag, metricsToPlot, avPlotDataDecades, ...
-    finalCutoffDivisor, enablePermutations)
+    finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample)
 % PLOT_MULTIMETRIC_SEPARATED_AXES_ACROSS_TASKS - 2x4 panels of session metrics
 %
 % Layout:
@@ -1112,6 +1144,12 @@ if nargin < 16 || isempty(finalCutoffDivisor)
 end
 if nargin < 17 || isempty(enablePermutations)
   enablePermutations = false;
+end
+if nargin < 18 || isempty(useSubsampling)
+  useSubsampling = false;
+end
+if nargin < 19 || isempty(nNeuronsSubsample)
+  nNeuronsSubsample = 0;
 end
 enablePermutations = logical(enablePermutations);
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
@@ -1308,10 +1346,12 @@ for a = 1:numel(areasToPlot)
   if enablePermutations
     titleStr = sprintf('%s (gray = shuffled)', titleStr);
   end
+  titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample);
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
   plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2, engagementTag, panelMetricKeys);
+    collectStart, collectEnd, useLog10D2, engagementTag, panelMetricKeys, ...
+    useSubsampling, nNeuronsSubsample);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved separated metrics: %s\n', fullfile(saveDir, plotBase));
@@ -1394,11 +1434,15 @@ for i = 1:nRow
     avIdx = find_matching_session_index(avType, sessionName, withinTypeIdx);
     if ~isempty(avIdx)
       paramSDCol(i) = get_type_cell_metric(avType, 'paramSD', areaIdxAv, avIdx);
+      paramSDSemCol(i) = get_type_cell_metric(avType, 'paramSDSem', areaIdxAv, avIdx);
       dccCol(i) = get_type_cell_metric(avType, 'dcc', areaIdxAv, avIdx);
+      dccSemCol(i) = get_type_cell_metric(avType, 'dccSem', areaIdxAv, avIdx);
       tauShuffleMeanCol(i) = get_type_cell_metric(avType, 'tauPermutedMean', areaIdxAv, avIdx);
       alphaShuffleMeanCol(i) = get_type_cell_metric(avType, 'alphaPermutedMean', areaIdxAv, avIdx);
       paramSDShuffleMeanCol(i) = get_type_cell_metric(avType, 'paramSDPermutedMean', areaIdxAv, avIdx);
       dccShuffleMeanCol(i) = get_type_cell_metric(avType, 'dccPermutedMean', areaIdxAv, avIdx);
+      if ~isfinite(paramSDSemCol(i)), paramSDSemCol(i) = 0; end
+      if ~isfinite(dccSemCol(i)), dccSemCol(i) = 0; end
     end
   end
 
@@ -1407,8 +1451,10 @@ for i = 1:nRow
     avDecIdx = find_matching_session_index(avDecType, sessionName, withinTypeIdx);
     if ~isempty(avDecIdx)
       decadesCol(i) = get_type_cell_metric(avDecType, 'decades', areaIdxAvDec, avDecIdx);
+      decadesSemCol(i) = get_type_cell_metric(avDecType, 'decadesSem', areaIdxAvDec, avDecIdx);
       decadesShuffleMeanCol(i) = get_type_cell_metric(avDecType, 'decadesPermutedMean', ...
         areaIdxAvDec, avDecIdx);
+      if ~isfinite(decadesSemCol(i)), decadesSemCol(i) = 0; end
     end
   end
 
@@ -1448,7 +1494,7 @@ end
 
 function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, areasToPlot, ...
     sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-    plotConfig, engagementTag)
+    plotConfig, engagementTag, useSubsampling, nNeuronsSubsample)
 % PLOT_MULTIMETRIC_PAIR_SCATTERS_ACROSS_TASKS - 2x2 session metric scatters
 %
 % Panels (titles are Y vs X):
@@ -1478,6 +1524,12 @@ if nargin < 11 || isempty(plotConfig)
 end
 if nargin < 12 || isempty(engagementTag)
   engagementTag = '';
+end
+if nargin < 13 || isempty(useSubsampling)
+  useSubsampling = false;
+end
+if nargin < 14 || isempty(nNeuronsSubsample)
+  nNeuronsSubsample = 0;
 end
 engagementTag = char(engagementTag);
 
@@ -1591,10 +1643,11 @@ for a = 1:numel(areasToPlot)
     titleStr = sprintf('Session metric pairs%s — %s [%s, %s d2 windows]', ...
       engTitle, areaName, collectTag, winTag);
   end
+  titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample);
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
   plotBase = make_pair_scatter_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2, engagementTag);
+    collectStart, collectEnd, useLog10D2, engagementTag, useSubsampling, nNeuronsSubsample);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved pair scatters: %s\n', fullfile(saveDir, plotBase));
@@ -1745,15 +1798,31 @@ for t = 1:numel(sessionTypes)
     tauVal = nan;
     alphaVal = nan;
     d2SemVal = nan;
+    tauSemVal = 0;
+    alphaSemVal = 0;
     if needD2
       d2Val = arType.d2Mean{areaIdxAr}(i);
       d2SemVal = get_metric_series_value(arType.d2Sem{areaIdxAr}, i);
     end
     if needTau
       tauVal = avType.tau{areaIdxAv}(avIdx);
+      if isfield(avType, 'tauSem') && areaIdxAv <= numel(avType.tauSem) ...
+          && ~isempty(avType.tauSem{areaIdxAv})
+        tauSemVal = get_metric_series_value(avType.tauSem{areaIdxAv}, avIdx);
+        if ~isfinite(tauSemVal)
+          tauSemVal = 0;
+        end
+      end
     end
     if needAlpha
       alphaVal = avType.alpha{areaIdxAv}(avIdx);
+      if isfield(avType, 'alphaSem') && areaIdxAv <= numel(avType.alphaSem) ...
+          && ~isempty(avType.alphaSem{areaIdxAv})
+        alphaSemVal = get_metric_series_value(avType.alphaSem{areaIdxAv}, avIdx);
+        if ~isfinite(alphaSemVal)
+          alphaSemVal = 0;
+        end
+      end
     end
 
     checkVals = [];
@@ -1770,9 +1839,9 @@ for t = 1:numel(sessionTypes)
     d2MeanCol(end + 1, 1) = d2Val; %#ok<AGROW>
     d2SemCol(end + 1, 1) = d2SemVal; %#ok<AGROW>
     tauMeanCol(end + 1, 1) = tauVal; %#ok<AGROW>
-    tauSemCol(end + 1, 1) = 0; %#ok<AGROW>
+    tauSemCol(end + 1, 1) = tauSemVal; %#ok<AGROW>
     alphaMeanCol(end + 1, 1) = alphaVal; %#ok<AGROW>
-    alphaSemCol(end + 1, 1) = 0; %#ok<AGROW>
+    alphaSemCol(end + 1, 1) = alphaSemVal; %#ok<AGROW>
   end
 end
 
@@ -2098,13 +2167,20 @@ end
 end
 
 function plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2, engagementTag, metricsToPlot)
+    collectStart, collectEnd, useLog10D2, engagementTag, metricsToPlot, ...
+    useSubsampling, nNeuronsSubsample)
 % MAKE_SEPARATED_METRICS_PLOT_BASENAME - File stem for separated metric panels
 if nargin < 7 || isempty(engagementTag)
   engagementTag = '';
 end
 if nargin < 8 || isempty(metricsToPlot)
   metricsToPlot = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', 'djs'};
+end
+if nargin < 9 || isempty(useSubsampling)
+  useSubsampling = false;
+end
+if nargin < 10 || isempty(nNeuronsSubsample)
+  nNeuronsSubsample = 0;
 end
 if ischar(metricsToPlot) || isstring(metricsToPlot)
   metricsToPlot = cellstr(metricsToPlot);
@@ -2130,6 +2206,7 @@ end
 if useLog10D2
   plotBase = [plotBase, '_log10'];
 end
+plotBase = [plotBase, format_subsamp_file_tag(useSubsampling, nNeuronsSubsample)];
 end
 
 function interp = ternary_metric_label_interpreter(labelText)
@@ -2142,7 +2219,7 @@ end
 
 function plotBase = make_multimetric_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, anchorMetric, engagementTag, metricsToPlot, ...
-    useAnchorAffineMap)
+    useAnchorAffineMap, useSubsampling, nNeuronsSubsample)
 if nargin < 7 || isempty(anchorMetric)
   anchorMetric = 'd2';
 end
@@ -2154,6 +2231,12 @@ if nargin < 9 || isempty(metricsToPlot)
 end
 if nargin < 10 || isempty(useAnchorAffineMap)
   useAnchorAffineMap = true;
+end
+if nargin < 11 || isempty(useSubsampling)
+  useSubsampling = false;
+end
+if nargin < 12 || isempty(nNeuronsSubsample)
+  nNeuronsSubsample = 0;
 end
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
 collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
@@ -2181,13 +2264,20 @@ end
 if useLog10D2
   plotBase = [plotBase, '_log10'];
 end
+plotBase = [plotBase, format_subsamp_file_tag(useSubsampling, nNeuronsSubsample)];
 end
 
 function plotBase = make_pair_scatter_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2, engagementTag)
+    collectStart, collectEnd, useLog10D2, engagementTag, useSubsampling, nNeuronsSubsample)
 % MAKE_PAIR_SCATTER_PLOT_BASENAME - File stem for 1x3 metric pair scatters
 if nargin < 7 || isempty(engagementTag)
   engagementTag = '';
+end
+if nargin < 8 || isempty(useSubsampling)
+  useSubsampling = false;
+end
+if nargin < 9 || isempty(nNeuronsSubsample)
+  nNeuronsSubsample = 0;
 end
 collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
 if isempty(d2Window)
@@ -2206,6 +2296,22 @@ if ~isempty(engagementTag)
 end
 if useLog10D2
   plotBase = [plotBase, '_log10'];
+end
+plotBase = [plotBase, format_subsamp_file_tag(useSubsampling, nNeuronsSubsample)];
+end
+
+function tag = format_subsamp_file_tag(useSubsampling, nNeuronsSubsample)
+% FORMAT_SUBSAMP_FILE_TAG - Filename suffix when neuron subsampling is on
+tag = '';
+if useSubsampling
+  tag = sprintf('_subsamp%d', nNeuronsSubsample);
+end
+end
+
+function titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample)
+% APPEND_SUBSAMP_TITLE_TAG - Append subsampN to figure title when subsampling
+if useSubsampling
+  titleStr = sprintf('%s; subsamp%d', titleStr, nNeuronsSubsample);
 end
 end
 

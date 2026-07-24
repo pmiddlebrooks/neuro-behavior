@@ -113,7 +113,8 @@ function results = criticality_prg_analysis(dataStruct, config)
 
     % Preallocate per-area result cells (one vector/matrix per area index)
     [kappa, kappaByCutoff, windowStartS, popCv, windowExcluded, nNeuronsPerWindow, ...
-        kappaSurrogate, djs, djsSurrogate, nCutoffListRef] = deal(cell(1, numAreas));
+        kappaSurrogate, djs, djsSurrogate, nCutoffListRef, kappaSubsamples, djsSubsamples] = ...
+        deal(cell(1, numAreas));
 
     areasToProcess = filter_prg_areas(dataStruct, areas, areasToTest, config);
 
@@ -134,11 +135,15 @@ function results = criticality_prg_analysis(dataStruct, config)
         windowStartS{a} = windowStartTimes;
         kappaByCutoff{a} = nan(numWindows, numel(config.cutoffDivisors));
         nCutoffListRef{a} = [];
+        kappaSubsamples{a} = [];
+        djsSubsamples{a} = [];
 
         useSubsamplingArea = isfield(config, 'useSubsampling') && config.useSubsampling;
         nSubsamplesArea = 1;
         if useSubsamplingArea
             nSubsamplesArea = config.nSubsamples;
+            kappaSubsamples{a} = nan(numWindows, nSubsamplesArea);
+            djsSubsamples{a} = nan(numWindows, nSubsamplesArea);
         end
 
         if config.enableSurrogates
@@ -212,6 +217,8 @@ function results = criticality_prg_analysis(dataStruct, config)
                 kappa{a}(w) = nanmean(kappaSub);
                 djs{a}(w) = nanmean(djsSub);
                 kappaByCutoff{a}(w, :) = nanmean(kappaByCutoffSub, 1);
+                kappaSubsamples{a}(w, :) = kappaSub;
+                djsSubsamples{a}(w, :) = djsSub;
             else
                 %% Step 3: PRG coarse-graining + kurtosis / D_JS (PCA or ICG)
                 kappa{a}(w) = prgOutFull.kappaFinal;
@@ -248,11 +255,14 @@ function results = criticality_prg_analysis(dataStruct, config)
         kappaSurrogate{a} = [];
         djsSurrogate{a} = [];
         nCutoffListRef{a} = [];
+        kappaSubsamples{a} = [];
+        djsSubsamples{a} = [];
     end
 
     results = build_prg_results_structure(dataStruct, config, areas, ...
         kappa, kappaByCutoff, windowStartS, popCv, windowExcluded, ...
-        nNeuronsPerWindow, kappaSurrogate, djs, djsSurrogate, nCutoffListRef, windowStartTimes);
+        nNeuronsPerWindow, kappaSurrogate, djs, djsSurrogate, nCutoffListRef, ...
+        windowStartTimes, kappaSubsamples, djsSubsamples);
 
     if config.saveData
         save(resultsPath, 'results');
@@ -454,7 +464,8 @@ end
 
 function results = build_prg_results_structure(dataStruct, config, areas, ...
     kappa, kappaByCutoff, windowStartS, popCv, windowExcluded, ...
-    nNeuronsPerWindow, kappaSurrogate, djs, djsSurrogate, nCutoffListRef, windowStartTimes)
+    nNeuronsPerWindow, kappaSurrogate, djs, djsSurrogate, nCutoffListRef, windowStartTimes, ...
+    kappaSubsamples, djsSubsamples)
 % BUILD_PRG_RESULTS_STRUCTURE Package outputs for saving and downstream plots/stats.
 %
 % Key fields:
@@ -463,9 +474,17 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
 %   kappaByCutoff{area} - kappa at each N_c (RG flow across momentum shells)
 %   kappaSurrogate{area}- optional null kappa (ISI or circular surrogate)
 %   djsSurrogate{area}  - optional null D_JS for the same windows
+%   kappaSubsamples{area} / djsSubsamples{area} - [nWindows x nSubsamples] when useSubsampling
 %   windowExcluded{area}- logical; true if CV > cvThreshold
 %   nCutoffList{area}   - actual N_c values used (may differ when N is small)
 %   params.kappaAxisMax - upper cap on kurtosis axes in plots (mirrors config)
+
+    if nargin < 15
+      kappaSubsamples = cell(1, numel(areas));
+    end
+    if nargin < 16
+      djsSubsamples = cell(1, numel(areas));
+    end
 
     results = struct();
     results.sessionType = dataStruct.sessionType;
@@ -492,6 +511,10 @@ function results = build_prg_results_structure(dataStruct, config, areas, ...
     if isfield(config, 'useSubsampling')
         results.params.useSubsampling = config.useSubsampling;
         results.useSubsampling = config.useSubsampling;
+        if config.useSubsampling
+            results.kappaSubsamples = kappaSubsamples;
+            results.djsSubsamples = djsSubsamples;
+        end
     end
     if isfield(config, 'nSubsamples')
         results.params.nSubsamples = config.nSubsamples;

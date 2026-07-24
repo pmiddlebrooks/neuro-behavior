@@ -602,7 +602,8 @@ if isempty(areaIdx)
 end
 
 cellFields = {'d2', 'd2Normalized', 'startS', 'd2Permuted', 'mrBrPermuted', ...
-  'd2PermutedMean', 'd2PermutedSEM', 'popActivityWindows', 'popActivityFull'};
+  'd2PermutedMean', 'd2PermutedSEM', 'popActivityWindows', 'popActivityFull', ...
+  'd2Subsamples', 'd2NormalizedSubsamples'};
 
 results.areas = results.areas(areaIdx);
 for f = 1:length(cellFields)
@@ -733,6 +734,8 @@ function summary = summarize_session_d2_windows(results, areaIdx, useLog10D2)
 % Returns:
 %   summary - Struct with d2Mean, d2Sem, d2ShuffleMean, d2ShuffleSem, d2NormMean, d2NormSem
 %
+%   With useSubsampling and a single valid window, d2Sem / d2NormSem are SEM
+%   across neuron subsamples. Otherwise SEM is across window means.
 %   d2ShuffleSem - SEM across windows of per-window shuffle summary
 %   (with subsampling: mean across subsamples of per-subsample shuffle means)
 
@@ -747,37 +750,39 @@ if areaIdx > length(results.d2) || isempty(results.d2{areaIdx})
   return;
 end
 
+useSubsampling = isfield(results, 'useSubsampling') && results.useSubsampling;
 d2Vec = results.d2{areaIdx}(:);
+d2SubMat = [];
+if useSubsampling && isfield(results, 'd2Subsamples') && areaIdx <= numel(results.d2Subsamples) ...
+    && ~isempty(results.d2Subsamples{areaIdx})
+  d2SubMat = results.d2Subsamples{areaIdx};
+  if useLog10D2
+    d2SubMat = log10_safe_numeric(d2SubMat);
+  end
+end
 if useLog10D2
   d2Vec = log10_safe_numeric(d2Vec);
 end
-d2Vec = d2Vec(isfinite(d2Vec));
-if ~isempty(d2Vec)
-  summary.d2Mean = mean(d2Vec);
-  nD2 = numel(d2Vec);
-  if nD2 > 1
-    summary.d2Sem = std(d2Vec) / sqrt(nD2);
-  else
-    summary.d2Sem = 0;
-  end
-end
+[summary.d2Mean, summary.d2Sem] = mean_sem_across_windows_or_subsamples( ...
+  d2Vec, d2SubMat, useSubsampling);
 
 if isfield(results, 'd2Normalized') && areaIdx <= length(results.d2Normalized) ...
     && ~isempty(results.d2Normalized{areaIdx})
   d2NormVec = results.d2Normalized{areaIdx}(:);
+  d2NormSubMat = [];
+  if useSubsampling && isfield(results, 'd2NormalizedSubsamples') ...
+      && areaIdx <= numel(results.d2NormalizedSubsamples) ...
+      && ~isempty(results.d2NormalizedSubsamples{areaIdx})
+    d2NormSubMat = results.d2NormalizedSubsamples{areaIdx};
+    if useLog10D2
+      d2NormSubMat = log10_safe_numeric(d2NormSubMat);
+    end
+  end
   if useLog10D2
     d2NormVec = log10_safe_numeric(d2NormVec);
   end
-  d2NormVec = d2NormVec(isfinite(d2NormVec));
-  if ~isempty(d2NormVec)
-    summary.d2NormMean = mean(d2NormVec);
-    nNorm = numel(d2NormVec);
-    if nNorm > 1
-      summary.d2NormSem = std(d2NormVec) / sqrt(nNorm);
-    else
-      summary.d2NormSem = 0;
-    end
-  end
+  [summary.d2NormMean, summary.d2NormSem] = mean_sem_across_windows_or_subsamples( ...
+    d2NormVec, d2NormSubMat, useSubsampling);
 end
 
 if isfield(results, 'd2Permuted') && areaIdx <= length(results.d2Permuted) ...
