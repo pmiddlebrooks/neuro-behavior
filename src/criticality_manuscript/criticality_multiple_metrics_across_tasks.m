@@ -80,8 +80,8 @@ splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on b
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 25;
-nNeuronsSubsample = 60;
+nSubsamples = 50;
+nNeuronsSubsample = 40;
 minNeuronsMultiple = 1.1;
 
 powerLawFitMethod = 'plfit2023';
