@@ -46,7 +46,7 @@
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 0;
-collectEnd = 45 * 60;
+collectEnd = 60 * 60;
 % collectEnd = [];  % [] = full session
 d2Window = [];
 prgWindow = d2Window;
@@ -63,25 +63,25 @@ areasToPlot = {};
 
 runArBatch = true;
 runAvBatch = true;
-runPrgBatch = false;
+runPrgBatch = true;
 runEngagementBatch = true;
 loadSavedResults = false;
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
 plotCorrelationMatrix = true;
-saveCombinedBatch = false;
+saveCombinedBatch = true;
 enablePermutations = false;
 useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % any non-empty subset
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
 nSubsamples = 25;
-nNeuronsSubsample = 30;
+nNeuronsSubsample = 60;
 minNeuronsMultiple = 1.1;
 
 powerLawFitMethod = 'plfit2023';
@@ -2548,10 +2548,7 @@ for s = 1:numSessions
     batchResults(s).success = true;
     fprintf('  Engagement analysis completed.\n');
   catch ME
-    if contains(ME.message, 'No valid areas to process') ...
-        || contains(ME.message, 'insufficient neurons') ...
-        || contains(ME.message, 'TooFewNeurons') ...
-        || contains(ME.message, 'not available')
+    if is_skippable_engagement_session_error(ME)
       fprintf('  Skipping session: %s\n', ME.message);
       batchResults(s).skipReason = ME.message;
       continue;
@@ -2582,6 +2579,22 @@ save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
 fprintf('\nSaved engagement batch: %s\n', opts.batchResultsFile);
 
 engOut = struct('batchResults', batchResults, 'plotData', plotData, 'batchMeta', batchMeta);
+end
+
+function tf = is_skippable_engagement_session_error(ME)
+% IS_SKIPPABLE_ENGAGEMENT_SESSION_ERROR - Expected per-session skip cases
+%
+% Includes TooFewNeurons / TooFewNeuronsForSubsample (matched on identifier,
+% since the message text may not contain those tokens).
+
+msg = ME.message;
+id = ME.identifier;
+tf = contains(msg, 'No valid areas to process') ...
+  || contains(msg, 'insufficient neurons') ...
+  || contains(msg, 'for subsampling') ...
+  || contains(msg, 'not available') ...
+  || contains(id, 'TooFewNeurons') ...
+  || contains(id, 'TooFewNeuronsForSubsample');
 end
 
 function engModOpts = build_multimetric_engagement_module_opts(opts, sessionType)
