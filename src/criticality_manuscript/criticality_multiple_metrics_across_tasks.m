@@ -48,7 +48,7 @@ sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 0;
 collectEnd = 30 * 60;
 % collectEnd = [];  % [] = full session
-d2Window = [];
+d2Window =30;
 prgWindow = d2Window;
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 % d2Window = collectEnd;
