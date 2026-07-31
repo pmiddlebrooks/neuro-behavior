@@ -25,8 +25,8 @@ dataSource = 'spikes';
 collectStart = 0;
 collectEnd = 60 * 60;
 % collectEnd = [];  % [] = full session
-d2Window = [];   % [] = one window over the collect duration
-prgWindow = [];  % [] = one block over the collect duration
+d2Window = 30;   % [] = one window over the collect duration
+prgWindow = 30;  % [] = one block over the collect duration
 
 setup_criticality_manuscript_paths('criticality_per_subsample_size_batch');
 paths = get_paths();
