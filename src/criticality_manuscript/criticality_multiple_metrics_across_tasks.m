@@ -48,7 +48,7 @@ sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 0;
 collectEnd = 30 * 60;
 % collectEnd = [];  % [] = full session
-d2Window = 45;
+d2Window = [];
 prgWindow = d2Window;
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 % d2Window = collectEnd;
@@ -58,7 +58,7 @@ setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
 paths = get_paths();
 
 brainArea = 'M23M56';
-brainArea = 'M56';
+% brainArea = 'M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 
@@ -81,7 +81,7 @@ splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on 
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 25;
+nSubsamples = 40;
 nNeuronsSubsample = 40;
 minNeuronsMultiple = 1.1;
 
