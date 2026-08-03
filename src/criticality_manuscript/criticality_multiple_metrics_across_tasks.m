@@ -46,9 +46,9 @@
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 0;
-collectEnd = 30 * 60;
-% collectEnd = [];  % [] = full session
-d2Window =30;
+collectEnd = 40 * 60;
+collectEnd = [];  % [] = full session
+d2Window = [];
 prgWindow = d2Window;
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 % d2Window = collectEnd;
@@ -77,7 +77,7 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % any non-empty subset
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
