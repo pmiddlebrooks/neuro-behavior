@@ -96,7 +96,8 @@ config.useOptimalBinWindowFunction = true;
 
 % Additional parameters
 config.thresholdFlag = 1;  % Use threshold method
-config.thresholdPct = 1;  % Threshold as percentage of median
+config.thresholdMethod = 'median';  % 'median' or 'quantile10' (10th percentile)
+config.thresholdPct = 1;  % Fraction of median when thresholdMethod is 'median'
 config.nMinNeurons = 15;  % Minimum number of neurons required per area
 config.includeM2356 = false;  % Set to true to include combined M23+M56 area
 % saveDir will be obtained from dataStruct.saveDir in the analysis function

@@ -9,6 +9,15 @@
 %   sessionTypes, collectStart, collectEnd, d2Window, prgWindow, brainArea, areasToPlot
 %   d2Window / prgWindow - Analysis window length (s); [] = one window over the
 %                         full collect duration per session
+%   binSizeD2 / binSizePrg / binSizeAv - Spike bin width (s) for d2, PRG, and
+%                         avalanche analyses; overrides each pipeline default
+%   engagementBuffer   - Seconds around each reach/beam-break counted as engaged
+%                        (reach: reachBuffer; interval: eventBuffer; default 1)
+%   minNonEngagedWindow - Min gap without events (s) for non-engaged avalanche
+%                        segments (default 30)
+%   absorbSingleEvents - If true, isolated single events flanked by qualifying
+%                        non-engaged gaps are merged into non-engaged time
+%   thresholdMethod    - Avalanche population cutoff: 'median' or 'quantile10'
 %   runArBatch, runAvBatch, runPrgBatch - Run each analysis pipeline
 %   loadSavedResults   - If true, load saved .mat outputs when run*Batch false
 %   plotResults        - Create combined d2/tau/alpha figure(s)
@@ -45,13 +54,19 @@
 
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
-collectStart = 0;
-collectEnd = 40 * 60;
-collectEnd = [];  % [] = full session
+collectStart = 10;
+collectEnd = 60 * 60;
+% collectEnd = [];  % [] = full session
 d2Window = [];
 prgWindow = d2Window;
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
-% d2Window = collectEnd;
+binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
+binSizePrg = 0.04;  % PRG spike bin width (s); overrides PRG default
+binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
+% Engagement timing (reach + interval); defaults match engagement module fill_*_defaults
+engagementBuffer = 1;       % s around each reach/beam-break = engaged
+minNonEngagedWindow = 45;   % min gap (s) for non-engaged avalanche segments
+absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
 
 % Paths first — needed by default_manuscript_brain_area_combinations / plotConfig
 setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
@@ -82,11 +97,12 @@ splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on b
 useLog10D2 = true;
 useSubsampling = true;
 nSubsamples = 40;
-nNeuronsSubsample = 40;
+nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 
 powerLawFitMethod = 'plfit2023';
 avalancheDetectionMode = 'fixedBinMedian';
+thresholdMethod = 'quantile10';  % 'median' or 'quantile10' (10th percentile cutoff)
 
 finalCutoffDivisor = 16;
 prgMethod = 'pca';
@@ -121,6 +137,12 @@ if isempty(prgWindow)
 else
   fprintf('PRG blocks: %.0f s\n', prgWindow);
 end
+fprintf('binSizeD2: %.3f s; binSizePrg: %.3f s; binSizeAv: %.3f s\n', ...
+  binSizeD2, binSizePrg, binSizeAv);
+fprintf('engagementBuffer: %.1f s; minNonEngagedWindow: %.1f s; absorbSingleEvents: %d\n', ...
+  engagementBuffer, minNonEngagedWindow, absorbSingleEvents);
+fprintf('avalancheDetectionMode: %s; thresholdMethod: %s\n', ...
+  avalancheDetectionMode, thresholdMethod);
 fprintf('enablePermutations: %d (observed metrics only when false)\n', enablePermutations);
 fprintf('useAnchorAffineMap: %d\n', useAnchorAffineMap);
 fprintf('anchorMetric: %s\n', anchorMetric);
@@ -145,6 +167,7 @@ arOpts = struct( ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
   'd2Window', d2Window, ...
+  'binSize', binSizeD2, ...
   'brainArea', brainArea, ...
   'brainAreaCombinations', {brainAreaCombinations}, ...
   'areasToPlot', {areasToPlot}, ...
@@ -173,11 +196,13 @@ avOpts = struct( ...
   'sessionTypes', {sessionTypes}, ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
+  'binSize', binSizeAv, ...
   'brainArea', brainArea, ...
   'brainAreaCombinations', {brainAreaCombinations}, ...
   'areasToPlot', {areasToPlot}, ...
   'powerLawFitMethod', powerLawFitMethod, ...
   'avalancheDetectionMode', avalancheDetectionMode, ...
+  'thresholdMethod', thresholdMethod, ...
   'useSubsampling', useSubsampling, ...
   'nSubsamples', nSubsamples, ...
   'nNeuronsSubsample', nNeuronsSubsample, ...
@@ -203,6 +228,7 @@ prgOpts = struct( ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
   'prgWindow', prgWindow, ...
+  'binSize', binSizePrg, ...
   'brainArea', brainArea, ...
   'brainAreaCombinations', {brainAreaCombinations}, ...
   'areasToPlot', {areasToPlot}, ...
@@ -242,6 +268,11 @@ if splitByEngagement
     'collectStart', collectStart, ...
     'collectEnd', collectEnd, ...
     'd2Window', d2Window, ...
+    'binSizeD2', binSizeD2, ...
+    'binSizeAv', binSizeAv, ...
+    'engagementBuffer', engagementBuffer, ...
+    'minNonEngagedWindow', minNonEngagedWindow, ...
+    'absorbSingleEvents', absorbSingleEvents, ...
     'brainArea', brainArea, ...
     'brainAreaCombinations', {brainAreaCombinations}, ...
     'useLog10D2', useLog10D2, ...
@@ -252,6 +283,7 @@ if splitByEngagement
     'enablePermutations', enablePermutations, ...
     'powerLawFitMethod', powerLawFitMethod, ...
     'avalancheDetectionMode', avalancheDetectionMode, ...
+    'thresholdMethod', thresholdMethod, ...
     'batchResultsFile', engBatchFile, ...
     'plotConfig', plotConfig);
 
@@ -280,6 +312,13 @@ combinedOut.collectStart = collectStart;
 combinedOut.collectEnd = collectEnd;
 combinedOut.d2Window = d2Window;
 combinedOut.prgWindow = prgWindow;
+combinedOut.binSizeD2 = binSizeD2;
+combinedOut.binSizePrg = binSizePrg;
+combinedOut.binSizeAv = binSizeAv;
+combinedOut.engagementBuffer = engagementBuffer;
+combinedOut.minNonEngagedWindow = minNonEngagedWindow;
+combinedOut.absorbSingleEvents = absorbSingleEvents;
+combinedOut.thresholdMethod = thresholdMethod;
 combinedOut.brainArea = brainArea;
 combinedOut.useLog10D2 = useLog10D2;
 combinedOut.enablePermutations = enablePermutations;
@@ -2575,6 +2614,24 @@ batchMeta = struct( ...
   'useLog10D2', opts.useLog10D2, ...
   'powerLawFitMethod', opts.powerLawFitMethod, ...
   'avalancheDetectionMode', opts.avalancheDetectionMode);
+if isfield(opts, 'thresholdMethod')
+  batchMeta.thresholdMethod = opts.thresholdMethod;
+end
+if isfield(opts, 'binSizeD2')
+  batchMeta.binSizeD2 = opts.binSizeD2;
+end
+if isfield(opts, 'binSizeAv')
+  batchMeta.binSizeAv = opts.binSizeAv;
+end
+if isfield(opts, 'engagementBuffer')
+  batchMeta.engagementBuffer = opts.engagementBuffer;
+end
+if isfield(opts, 'minNonEngagedWindow')
+  batchMeta.minNonEngagedWindow = opts.minNonEngagedWindow;
+end
+if isfield(opts, 'absorbSingleEvents')
+  batchMeta.absorbSingleEvents = opts.absorbSingleEvents;
+end
 
 save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
 fprintf('\nSaved engagement batch: %s\n', opts.batchResultsFile);
@@ -2613,6 +2670,31 @@ engModOpts.brainArea = opts.brainArea;
 engModOpts.brainAreaCombinations = opts.brainAreaCombinations;
 engModOpts.d2Window = opts.d2Window;
 % Empty d2Window is resolved to loaded session duration inside engagement modules
+if isfield(opts, 'binSizeD2') && ~isempty(opts.binSizeD2)
+  engModOpts.binSizeD2 = opts.binSizeD2;
+end
+if isfield(opts, 'binSizeAv') && ~isempty(opts.binSizeAv)
+  engModOpts.binSizeAv = opts.binSizeAv;
+end
+% Engagement timing: reach uses reachBuffer / absorbSingleReaches;
+% interval uses eventBuffer / absorbSingleEvents (aliases also accepted there)
+if isfield(opts, 'engagementBuffer') && ~isempty(opts.engagementBuffer)
+  if strcmpi(sessionType, 'reach')
+    engModOpts.reachBuffer = opts.engagementBuffer;
+  else
+    engModOpts.eventBuffer = opts.engagementBuffer;
+  end
+end
+if isfield(opts, 'minNonEngagedWindow') && ~isempty(opts.minNonEngagedWindow)
+  engModOpts.minNonEngagedWindow = opts.minNonEngagedWindow;
+end
+if isfield(opts, 'absorbSingleEvents') && ~isempty(opts.absorbSingleEvents)
+  if strcmpi(sessionType, 'reach')
+    engModOpts.absorbSingleReaches = logical(opts.absorbSingleEvents);
+  else
+    engModOpts.absorbSingleEvents = logical(opts.absorbSingleEvents);
+  end
+end
 engModOpts.useLog10D2 = opts.useLog10D2;
 engModOpts.useSubsampling = opts.useSubsampling;
 engModOpts.nSubsamples = opts.nSubsamples;
@@ -2620,6 +2702,9 @@ engModOpts.nNeuronsSubsample = opts.nNeuronsSubsample;
 engModOpts.minNeuronsMultiple = opts.minNeuronsMultiple;
 engModOpts.powerLawFitMethod = opts.powerLawFitMethod;
 engModOpts.avalancheDetectionMode = opts.avalancheDetectionMode;
+if isfield(opts, 'thresholdMethod') && ~isempty(opts.thresholdMethod)
+  engModOpts.thresholdMethod = opts.thresholdMethod;
+end
 engModOpts.enableCircularPermutations = logical(opts.enablePermutations);
 if opts.enablePermutations
   engModOpts.nShuffles = 5;

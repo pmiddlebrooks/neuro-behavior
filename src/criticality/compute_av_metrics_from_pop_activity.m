@@ -1,17 +1,22 @@
-function metrics = compute_av_metrics_from_pop_activity(wPopActivity, config)
+function metrics = compute_av_metrics_from_pop_activity(wPopActivity, config, fixedThreshold)
 % COMPUTE_AV_METRICS_FROM_POP_ACTIVITY - Avalanche metrics for one population trace
 %
 % Variables:
-%   wPopActivity - Population activity per bin (column vector)
-%   config       - Analysis config passed to avalanche_power_law_metrics
+%   wPopActivity   - Population activity per bin (column vector)
+%   config         - Analysis config passed to avalanche_power_law_metrics
+%   fixedThreshold - Optional shared cutoff (full collect range); [] = recompute
 %
 % Returns:
 %   metrics - Struct with dcc, kappa, decades, tau, alpha, paramSD (NaN if no avalanches)
 
+if nargin < 3
+  fixedThreshold = [];
+end
+
 metrics = struct('dcc', nan, 'kappa', nan, 'decades', nan, ...
   'tau', nan, 'alpha', nan, 'paramSD', nan);
 
-wPopActivity = apply_avalanche_population_threshold(wPopActivity(:), config);
+wPopActivity = apply_avalanche_population_threshold(wPopActivity(:), config, fixedThreshold);
 zeroBins = find(wPopActivity == 0);
 if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
   return;

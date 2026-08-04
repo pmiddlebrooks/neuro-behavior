@@ -34,6 +34,11 @@ for shuffle = 1:nShuffles
   end
 
   wPopActivityPerm = sum(permutedWindowData, 2);
-  permMetrics(shuffle) = compute_av_metrics_from_pop_activity(wPopActivityPerm, config);
+  fixedThreshold = [];
+  if isfield(config, 'fixedPopulationThreshold') && isfinite(config.fixedPopulationThreshold)
+    fixedThreshold = config.fixedPopulationThreshold;
+  end
+  permMetrics(shuffle) = compute_av_metrics_from_pop_activity( ...
+    wPopActivityPerm, config, fixedThreshold);
 end
 end

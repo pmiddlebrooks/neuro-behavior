@@ -17,6 +17,8 @@
 %   plotResults          - If true, create summary figures after batch
 %   powerLawFitMethod    - 'clauset', 'plfit2023', or 'hybrid'
 %   avalancheDetectionMode - 'fixedBinMedian' or 'meanIsiZero' (see below)
+%   thresholdMethod      - Population cutoff: 'median' (default) or 'quantile10'
+%   binSize              - Spike bin width (s) for fixedBinMedian mode (default 0.05)
 %   clausetPlfitPath     - Path to Clauset toolbox MATLAB Code folder
 %   plfit2023Path        - Path to folder containing plfit2023.m
 %   useSubsampling       - If true, metrics = mean across neuron subsamples per window
@@ -25,8 +27,11 @@
 %   widthCutoff          - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %
 %   avalancheDetectionMode:
-%     'fixedBinMedian' - config.binSize (s) + per-window median cutoff (default)
+%     'fixedBinMedian' - config.binSize (s) + per-window population cutoff (default)
 %     'meanIsiZero'    - bin size = mean population ISI; zero cutoff (literature)
+%   thresholdMethod (fixedBinMedian only):
+%     'median'     - thresholdPct * median population activity (default; pct=1)
+%     'quantile10' - 10th percentile of population activity
 %
 % Goal:
 %   Compare avalanche metrics (dcc, kappa, decades, tau, alpha,
@@ -76,6 +81,10 @@ end
 fprintf('\n=== Criticality Avalanche Across Task Types ===\n');
 fprintf('Power-law fit method: %s\n', opts.powerLawFitMethod);
 fprintf('Avalanche detection mode: %s\n', opts.avalancheDetectionMode);
+if ~strcmpi(opts.avalancheDetectionMode, 'meanIsiZero')
+  fprintf('binSize: %.3f s\n', opts.binSize);
+  fprintf('thresholdMethod: %s\n', opts.thresholdMethod);
+end
 if opts.useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
     opts.nSubsamples, opts.nNeuronsSubsample, opts.minNeuronsMultiple);
@@ -205,6 +214,8 @@ defaults.batchResultsFile = '';
 defaults.powerLawFitMethod = 'hybrid';
 defaults.gofThreshold = 0.8;
 defaults.avalancheDetectionMode = 'fixedBinMedian';
+defaults.thresholdMethod = 'median';  % 'median' or 'quantile10'
+defaults.binSize = 0.05;
 defaults.useSubsampling = false;
 defaults.nSubsamples = 20;
 defaults.nNeuronsSubsample = 20;
@@ -232,6 +243,8 @@ batchMeta = struct( ...
   'areasToPlot', {opts.areasToPlot}, ...
   'powerLawFitMethod', opts.powerLawFitMethod, ...
   'avalancheDetectionMode', opts.avalancheDetectionMode, ...
+  'thresholdMethod', opts.thresholdMethod, ...
+  'binSize', opts.binSize, ...
   'splitExcitatoryInhibitory', opts.splitExcitatoryInhibitory, ...
   'widthCutoff', opts.widthCutoff);
 end
@@ -388,7 +401,7 @@ analysisConfig.avalancheDetectionMode = opts.avalancheDetectionMode;
 if strcmpi(opts.avalancheDetectionMode, 'meanIsiZero')
   % bin size set per area in criticality_av_analysis
 else
-  analysisConfig.binSize = 0.05;
+  analysisConfig.binSize = opts.binSize;
 end
 analysisConfig.analyzeDcc = true;
 analysisConfig.analyzeKappa = false;
@@ -400,6 +413,7 @@ analysisConfig.nShuffles = opts.nShuffles;
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.thresholdFlag = 1;
+analysisConfig.thresholdMethod = opts.thresholdMethod;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = 25;
 analysisConfig.useSubsampling = opts.useSubsampling;

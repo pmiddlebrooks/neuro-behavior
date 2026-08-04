@@ -375,53 +375,6 @@ if isfield(analysisConfig, 'enableCircularPermutations') && analysisConfig.enabl
 end
 end
 
-function [sizes, durations, hasAvalanches] = compute_avalanche_sizes_durations_from_binned(aDataMat, analysisConfig)
-% COMPUTE_AVALANCHE_SIZES_DURATIONS_FROM_BINNED - Avalanche vectors from binned spike matrix
-
-sizes = [];
-durations = [];
-hasAvalanches = false;
-
-useSubsampling = isfield(analysisConfig, 'useSubsampling') && analysisConfig.useSubsampling;
-if useSubsampling
-  numNeuronsArea = size(aDataMat, 2);
-  nSubsamplesArea = analysisConfig.nSubsamples;
-  nNeuronsSubsampleArea = min(analysisConfig.nNeuronsSubsample, numNeuronsArea);
-  for s = 1:nSubsamplesArea
-    if nNeuronsSubsampleArea == numNeuronsArea
-      colIdx = 1:numNeuronsArea;
-    else
-      colIdx = randperm(numNeuronsArea, nNeuronsSubsampleArea);
-    end
-    wPopActivity = sum(aDataMat(:, colIdx), 2);
-    avMetrics = compute_av_metrics_from_pop_activity(wPopActivity, analysisConfig);
-    if ~isfinite(avMetrics.kappa)
-      continue;
-    end
-    wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
-    zeroBins = find(wPopActivity == 0);
-    if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
-      continue;
-    end
-    [sizesSub, dursSub] = getAvalanches(wPopActivity', 0.5, 1);
-    sizes = [sizes; sizesSub(:)]; %#ok<AGROW>
-    durations = [durations; dursSub(:)]; %#ok<AGROW>
-  end
-else
-  wPopActivity = sum(aDataMat, 2);
-  wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
-  zeroBins = find(wPopActivity == 0);
-  if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
-    return;
-  end
-  [sizes, durations] = getAvalanches(wPopActivity', 0.5, 1);
-end
-
-sizes = sizes(:);
-durations = durations(:);
-hasAvalanches = ~isempty(sizes) && ~isempty(durations);
-end
-
 function [shuffleSizes, shuffleDurations, nCompleted] = pooled_circular_shuffle_avalanches(aDataMat, analysisConfig, nShuffles)
 % POOLED_CIRCULAR_SHUFFLE_AVALANCHES - Pool avalanches across circular neuron shuffles
 

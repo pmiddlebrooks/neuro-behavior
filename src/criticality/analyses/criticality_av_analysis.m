@@ -13,10 +13,13 @@ function results = criticality_av_analysis(dataStruct, config)
 %     .nDim - Number of PCA dimensions (default: 4)
 %     .enablePermutations - Perform circular permutations (default: true)
 %     .nShuffles - Number of permutations (default: 3)
-%     .avalancheDetectionMode - 'fixedBinMedian' (user binSize + median cutoff)
+%     .avalancheDetectionMode - 'fixedBinMedian' (user binSize + population cutoff)
 %                               or 'meanIsiZero' (mean population ISI bins, zero cutoff)
-%     .thresholdFlag - Use median threshold when fixedBinMedian (default: 1)
-%     .thresholdPct - Threshold as percentage of median (default: 1)
+%     .thresholdFlag - Apply population cutoff when fixedBinMedian (default: 1)
+%     .thresholdMethod - 'median' (default) or 'quantile10' (10th percentile cutoff)
+%     .thresholdPct - Fraction of median when thresholdMethod is 'median' (default: 1)
+%     Population cutoff is computed once from the full collect range (and once per
+%     neuron subsample when useSubsampling) and reused for every sliding window.
 %     .makePlots - Create plots (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
 %     .includeM2356 - Include combined M23+M56 area (default: false)
@@ -101,7 +104,8 @@ function results = criticality_av_analysis(dataStruct, config)
     if is_mean_isi_zero_avalanche_mode(config)
       fprintf('Avalanche detection: mean population ISI bin size, zero cutoff\n');
     else
-      fprintf('Avalanche detection: fixed bin size + median cutoff\n');
+      fprintf('Avalanche detection: fixed bin size + %s\n', ...
+        describe_avalanche_threshold_method(config));
     end
     
     % Create filename suffix based on PCA flag
@@ -420,16 +424,26 @@ function results = criticality_av_analysis(dataStruct, config)
         paramSDNormalized{a} = nan(1, numWindows);
 
         if useSubsamplingArea
-            numNeuronsArea = size(aDataMatNeurons, 2);
+            % Shared cutoffs + fixed neuron subsets from full collect range
+            sharedThreshInfo = prepare_shared_avalanche_threshold_info(aDataMatNeurons, config);
             nSubsamplesArea = config.nSubsamples;
-            nNeuronsSubsampleArea = min(config.nNeuronsSubsample, numNeuronsArea);
-            neuronIdxSubsamples = cell(1, nSubsamplesArea);
-            for s = 1:nSubsamplesArea
+            if sharedThreshInfo.useSubsampling ...
+                && ~isempty(sharedThreshInfo.neuronIdxSubsamples)
+              neuronIdxSubsamples = sharedThreshInfo.neuronIdxSubsamples;
+              thresholdPerSubsample = sharedThreshInfo.thresholdPerSubsample;
+            else
+              % Fallback (e.g. meanIsiZero): draw subsets here; no spike cutoff
+              numNeuronsArea = size(aDataMatNeurons, 2);
+              nNeuronsSubsampleArea = min(config.nNeuronsSubsample, numNeuronsArea);
+              neuronIdxSubsamples = cell(1, nSubsamplesArea);
+              thresholdPerSubsample = nan(1, nSubsamplesArea);
+              for s = 1:nSubsamplesArea
                 if nNeuronsSubsampleArea == numNeuronsArea
-                    neuronIdxSubsamples{s} = 1:numNeuronsArea;
+                  neuronIdxSubsamples{s} = 1:numNeuronsArea;
                 else
-                    neuronIdxSubsamples{s} = randperm(numNeuronsArea, nNeuronsSubsampleArea);
+                  neuronIdxSubsamples{s} = randperm(numNeuronsArea, nNeuronsSubsampleArea);
                 end
+              end
             end
             dccSubsamples{a} = nan(numWindows, nSubsamplesArea);
             kappaSubsamples{a} = nan(numWindows, nSubsamplesArea);
@@ -445,6 +459,9 @@ function results = criticality_av_analysis(dataStruct, config)
                 alphaPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
                 paramSDPermuted{a} = nan(numWindows, config.nShuffles * nSubsamplesArea);
             end
+        else
+            % Shared cutoff from full collect-range population activity
+            sharedFixedThreshold = compute_avalanche_population_threshold(aDataMat(:), config);
         end
         
         % Process each window using common centerTime
@@ -454,8 +471,8 @@ function results = criticality_av_analysis(dataStruct, config)
             
             % Convert centerTime to indices for this area's binning
             % Use area-specific optimal window size
-                [startIdx, endIdx] = calculate_window_indices_from_center(...
-                    centerTime, slidingWindowSize(a), binSize(a), numTimePoints_dcc);
+            [startIdx, endIdx] = calculate_window_indices_from_center(...
+                centerTime, slidingWindowSize(a), binSize(a), numTimePoints_dcc);
             
             % Check if window is valid (within bounds)
             if startIdx < 1 || endIdx > numTimePoints_dcc || startIdx > endIdx
@@ -473,7 +490,9 @@ function results = criticality_av_analysis(dataStruct, config)
                 paramSDSub = nan(1, nSubsamplesArea);
                 for s = 1:nSubsamplesArea
                     wPopActivity = sum(windowData(:, neuronIdxSubsamples{s}), 2);
-                    avMetrics = compute_av_metrics_from_pop_activity(wPopActivity, config);
+                    fixedThresh = thresholdPerSubsample(s);
+                    avMetrics = compute_av_metrics_from_pop_activity( ...
+                        wPopActivity, config, fixedThresh);
                     dccSub(s) = avMetrics.dcc;
                     kappaSub(s) = avMetrics.kappa;
                     decadesSub(s) = avMetrics.decades;
@@ -482,10 +501,11 @@ function results = criticality_av_analysis(dataStruct, config)
                     paramSDSub(s) = avMetrics.paramSD;
 
                     if config.enablePermutations
+                        configShuf = config;
+                        configShuf.fixedPopulationThreshold = fixedThresh;
                         permMetrics = run_av_window_circular_shuffles( ...
-                            windowData(:, neuronIdxSubsamples{s}), config);
+                            windowData(:, neuronIdxSubsamples{s}), configShuf);
                         colStart = (s - 1) * config.nShuffles + 1;
-                        colEnd = colStart + config.nShuffles - 1;
                         for shuffle = 1:config.nShuffles
                             dccPermuted{a}(w, colStart + shuffle - 1) = permMetrics(shuffle).dcc;
                             kappaPermuted{a}(w, colStart + shuffle - 1) = permMetrics(shuffle).kappa;
@@ -511,7 +531,8 @@ function results = criticality_av_analysis(dataStruct, config)
             else
                 % Calculate population activity for this window
                 wPopActivity = aDataMat(startIdx:endIdx);
-                avMetrics = compute_av_metrics_from_pop_activity(wPopActivity, config);
+                avMetrics = compute_av_metrics_from_pop_activity( ...
+                    wPopActivity, config, sharedFixedThreshold);
                 dcc{a}(w) = avMetrics.dcc;
                 kappa{a}(w) = avMetrics.kappa;
                 decades{a}(w) = avMetrics.decades;
@@ -525,18 +546,20 @@ function results = criticality_av_analysis(dataStruct, config)
         
         % Perform circular permutations if enabled (non-subsampling path)
         if config.enablePermutations && ~useSubsamplingArea
+            configPerm = config;
+            configPerm.fixedPopulationThreshold = sharedFixedThreshold;
             if config.pcaFlag
                 % Use PCA-reconstructed data for permutations
                 [dccPermuted{a}, kappaPermuted{a}, decadesPermuted{a}, ...
                     tauPermuted{a}, alphaPermuted{a}, paramSDPermuted{a}] = ...
                     perform_circular_permutations_av_pca(reconstructedDataMat{a}, a, binSize(a), ...
-                    slidingWindowSize(a), config, commonCenterTimes, numTimePoints_dcc, timeRange, tempBinSize);
+                    slidingWindowSize(a), configPerm, commonCenterTimes, numTimePoints_dcc, timeRange, tempBinSize);
             else
                 % Use original spike times for permutations
                 [dccPermuted{a}, kappaPermuted{a}, decadesPermuted{a}, ...
                     tauPermuted{a}, alphaPermuted{a}, paramSDPermuted{a}] = ...
                     perform_circular_permutations_av(dataStruct, a, neuronIDs, binSize(a), ...
-                    slidingWindowSize(a), config, commonCenterTimes, numTimePoints_dcc, timeRange);
+                    slidingWindowSize(a), configPerm, commonCenterTimes, numTimePoints_dcc, timeRange);
             end
         end
 
@@ -644,11 +667,47 @@ function results = criticality_av_analysis(dataStruct, config)
 end
 
 function config = validate_avalanche_detection_config(config)
-% VALIDATE_AVALANCHE_DETECTION_CONFIG - Check avalancheDetectionMode value
+% VALIDATE_AVALANCHE_DETECTION_CONFIG - Check avalancheDetectionMode / thresholdMethod
 
 validModes = {'fixedBinMedian', 'meanIsiZero'};
 if ~any(strcmpi(config.avalancheDetectionMode, validModes))
   error('config.avalancheDetectionMode must be ''fixedBinMedian'' or ''meanIsiZero''.');
+end
+
+thresholdMethod = 'median';
+if isfield(config, 'thresholdMethod') && ~isempty(config.thresholdMethod)
+  thresholdMethod = char(config.thresholdMethod);
+end
+validMethods = {'median', 'quantile10', 'p10', 'q10'};
+if ~any(strcmpi(thresholdMethod, validMethods))
+  error('config.thresholdMethod must be ''median'' or ''quantile10''.');
+end
+config.thresholdMethod = lower(thresholdMethod);
+if any(strcmpi(config.thresholdMethod, {'p10', 'q10'}))
+  config.thresholdMethod = 'quantile10';
+end
+end
+
+function label = describe_avalanche_threshold_method(config)
+% DESCRIBE_AVALANCHE_THRESHOLD_METHOD - Human-readable cutoff description
+
+method = 'median';
+if isfield(config, 'thresholdMethod') && ~isempty(config.thresholdMethod)
+  method = char(config.thresholdMethod);
+end
+switch lower(method)
+  case {'quantile10', 'p10', 'q10'}
+    label = '10th-quantile cutoff';
+  otherwise
+    thresholdPct = 1;
+    if isfield(config, 'thresholdPct') && ~isempty(config.thresholdPct)
+      thresholdPct = config.thresholdPct;
+    end
+    if thresholdPct == 1
+      label = 'median cutoff';
+    else
+      label = sprintf('%.2g x median cutoff', thresholdPct);
+    end
 end
 end
 
@@ -672,6 +731,7 @@ function config = set_config_defaults(config)
     defaults.minBinsPerWindow = 1000;
     defaults.avalancheDetectionMode = 'fixedBinMedian';
     defaults.thresholdFlag = 1;
+    defaults.thresholdMethod = 'median';  % 'median' or 'quantile10'
     defaults.thresholdPct = 1;
     defaults.normalizeMetrics = true;  % Normalize metrics by shuffled metric values
     defaults.useSubsampling = false;
@@ -1000,6 +1060,7 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
     results.params.nDim = config.nDim;
     results.params.avalancheDetectionMode = config.avalancheDetectionMode;
     results.params.thresholdFlag = config.thresholdFlag;
+    results.params.thresholdMethod = config.thresholdMethod;
     results.params.thresholdPct = config.thresholdPct;
     results.params.normalizeMetrics = config.normalizeMetrics;
     if isfield(config, 'useSubsampling')

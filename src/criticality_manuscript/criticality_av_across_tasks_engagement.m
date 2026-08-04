@@ -10,7 +10,7 @@
 %   sessionTypes, dataSource, collectStart, collectEnd
 %   brainArea, brainAreaCombinations, areasToPlot
 %   runBatch, plotResults, saveBatchResults, batchResultsFile
-%   powerLawFitMethod, avalancheDetectionMode, gofThreshold
+%   powerLawFitMethod, avalancheDetectionMode, thresholdMethod, gofThreshold
 %   enablePermutations, nShuffles (spontaneous total; engagement total class only)
 %   useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple
 %   metricsToPlot - subset of {'dcc','decades','tau','alpha','paramSD'}
@@ -39,6 +39,7 @@ batchResultsFile = '';  % default under dropPath/criticality_manuscript/
 
 powerLawFitMethod = 'plfit2023';
 avalancheDetectionMode = 'fixedBinMedian';
+thresholdMethod = 'median';  % 'median' or 'quantile10' (10th percentile cutoff)
 gofThreshold = 0.8;
 enablePermutations = false;
 nShuffles = 5;
@@ -75,7 +76,8 @@ end
 
 fprintf('\n=== Criticality Avalanche Across Task Types (Engagement) ===\n');
 fprintf('Collect window: [%.1f, %s] s\n', collectStart, format_collect_end_label(collectEnd));
-fprintf('Power-law fit: %s | detection: %s\n', powerLawFitMethod, avalancheDetectionMode);
+fprintf('Power-law fit: %s | detection: %s | threshold: %s\n', ...
+  powerLawFitMethod, avalancheDetectionMode, thresholdMethod);
 fprintf('enablePermutations: %d\n', enablePermutations);
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 fprintf('metricsToPlot: %s\n', strjoin(metricsToPlot, ', '));
@@ -93,7 +95,7 @@ if runBatch
   end
 
   analysisConfig = build_spontaneous_av_config(collectStart, collectEnd, ...
-    powerLawFitMethod, avalancheDetectionMode, gofThreshold, enablePermutations, ...
+    powerLawFitMethod, avalancheDetectionMode, thresholdMethod, gofThreshold, enablePermutations, ...
     nShuffles, useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple, ...
     nMinNeurons, clausetPlfitPath, plfit2023Path);
 
@@ -121,7 +123,7 @@ if runBatch
       if batchResults(s).useEngagement
         engOpts = build_av_engagement_batch_opts(opts, brainArea, brainAreaCombinations, ...
           plotConfig, sessionType, powerLawFitMethod, avalancheDetectionMode, ...
-          gofThreshold, enablePermutations, nShuffles, useSubsampling, nSubsamples, ...
+          thresholdMethod, gofThreshold, enablePermutations, nShuffles, useSubsampling, nSubsamples, ...
           nNeuronsSubsample, minNeuronsMultiple, nMinNeurons, minNonEngagedWindow, ...
           reachBuffer, absorbSingleEvents);
         if strcmpi(sessionType, 'reach')
@@ -297,8 +299,8 @@ tf = any(strcmpi(sessionType, {'reach', 'interval'}));
 end
 
 function engOpts = build_av_engagement_batch_opts(opts, brainArea, brainAreaCombinations, ...
-    plotConfig, sessionType, powerLawFitMethod, avalancheDetectionMode, gofThreshold, ...
-    enablePermutations, nShuffles, useSubsampling, nSubsamples, nNeuronsSubsample, ...
+    plotConfig, sessionType, powerLawFitMethod, avalancheDetectionMode, thresholdMethod, ...
+    gofThreshold, enablePermutations, nShuffles, useSubsampling, nSubsamples, nNeuronsSubsample, ...
     minNeuronsMultiple, nMinNeurons, minNonEngagedWindow, reachBuffer, absorbSingleEvents)
 % BUILD_AV_ENGAGEMENT_BATCH_OPTS - Engagement-module opts (avalanches only)
 
@@ -322,6 +324,7 @@ engOpts.saveFigure = false;
 engOpts.plotConfig = plotConfig;
 engOpts.powerLawFitMethod = powerLawFitMethod;
 engOpts.avalancheDetectionMode = avalancheDetectionMode;
+engOpts.thresholdMethod = thresholdMethod;
 engOpts.gofThreshold = gofThreshold;
 engOpts.enableCircularPermutations = logical(enablePermutations);
 engOpts.nShuffles = nShuffles;
@@ -341,7 +344,7 @@ end
 end
 
 function analysisConfig = build_spontaneous_av_config(collectStart, collectEnd, ...
-    powerLawFitMethod, avalancheDetectionMode, gofThreshold, enablePermutations, ...
+    powerLawFitMethod, avalancheDetectionMode, thresholdMethod, gofThreshold, enablePermutations, ...
     nShuffles, useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple, ...
     nMinNeurons, clausetPlfitPath, plfit2023Path)
 if isempty(collectEnd)
@@ -372,6 +375,7 @@ analysisConfig.nShuffles = nShuffles;
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.thresholdFlag = 1;
+analysisConfig.thresholdMethod = thresholdMethod;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = nMinNeurons;
 analysisConfig.useSubsampling = useSubsampling;

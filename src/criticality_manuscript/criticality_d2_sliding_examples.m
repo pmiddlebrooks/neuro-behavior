@@ -40,7 +40,7 @@ exampleSessions(3) = struct( ...
   'displayLabel', 'reach');
 
 dataSource = 'spikes';
-collectStart = 0;
+collectStart = 10;
 collectEnd = 30 * 60;
 brainArea = 'M2356';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
@@ -48,19 +48,20 @@ saveFigure = true;
 plotD2PopActivity = true;
 
 % Overlapping sliding-window d2 settings (aligned with run_criticality_ar.m)
-slidingWindowSize = 30;   % seconds
+slidingWindowSize = 60;   % seconds
+binSize = .04;
 stepSize = 0.5;           % seconds; overlap when step < window
 stepSize = 2;           % seconds; overlap when step < window
 useLog10D2 = true;
-useSubsampling = false;
-nSubsamples = 20;
-nNeuronsSubsample = 20;
-minNeuronsMultiple = 1.25;
+useSubsampling = true;
+nSubsamples = 50;
+nNeuronsSubsample = 45;
+minNeuronsMultiple = 1.1;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = slidingWindowSize;
 analysisConfig.stepSize = stepSize;
-analysisConfig.binSize = 0.025;
+analysisConfig.binSize = binSize;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;
 analysisConfig.analyzeMrBr = false;
@@ -218,7 +219,8 @@ if isempty(areaIdx)
   return;
 end
 cellFields = {'d2', 'd2Normalized', 'startS', 'd2Permuted', 'mrBrPermuted', ...
-  'd2PermutedMean', 'd2PermutedSEM', 'popActivityWindows', 'popActivityFull'};
+  'd2PermutedMean', 'd2PermutedSEM', 'popActivityWindows', 'popActivityFull', ...
+  'd2Subsamples', 'd2NormalizedSubsamples'};
 results.areas = {areaNames{areaIdx}};
 for f = 1:length(cellFields)
   fieldName = cellFields{f};
@@ -277,9 +279,10 @@ function trace = extract_d2_time_trace(results, useLog10D2, normalizeD2)
 %   normalizeD2  - Use d2Normalized instead of raw d2 when true
 %
 % Returns:
-%   trace - Struct with .timeMin (minutes) and .d2 column vectors
+%   trace - Struct with .timeMin (minutes), .d2, and optional .d2Sem
+%           (SEM across neuron subsamples when useSubsampling was on)
 
-trace = struct('timeMin', [], 'd2', []);
+trace = struct('timeMin', [], 'd2', [], 'd2Sem', []);
 if ~isfield(results, 'areas') || isempty(results.areas)
   return;
 end
@@ -292,22 +295,46 @@ if areaIdx > numel(results.startS) || isempty(results.startS{areaIdx})
 end
 
 d2Vec = results.d2{areaIdx}(:);
-if normalizeD2 && isfield(results, 'd2Normalized') ...
-    && ~isempty(results.d2Normalized{areaIdx})
+subMat = [];
+useNormalizedSubs = normalizeD2 && isfield(results, 'd2Normalized') ...
+  && ~isempty(results.d2Normalized{areaIdx});
+if useNormalizedSubs
   d2Vec = results.d2Normalized{areaIdx}(:);
+  if isfield(results, 'd2NormalizedSubsamples') ...
+      && areaIdx <= numel(results.d2NormalizedSubsamples) ...
+      && ~isempty(results.d2NormalizedSubsamples{areaIdx})
+    subMat = results.d2NormalizedSubsamples{areaIdx};
+  end
+elseif isfield(results, 'd2Subsamples') && areaIdx <= numel(results.d2Subsamples) ...
+    && ~isempty(results.d2Subsamples{areaIdx})
+  subMat = results.d2Subsamples{areaIdx};
 end
 if useLog10D2
   d2Vec = log10_safe_numeric(d2Vec);
+  if ~isempty(subMat)
+    subMat = log10_safe_numeric(subMat);
+  end
+end
+
+d2Sem = nan(size(d2Vec));
+if ~isempty(subMat) && size(subMat, 1) == numel(d2Vec)
+  nSub = sum(isfinite(subMat), 2);
+  d2Sem = nanstd(subMat, 0, 2) ./ sqrt(max(nSub, 1));
+  d2Sem(nSub <= 1) = 0;
 end
 
 timeSec = results.startS{areaIdx}(:);
 validMask = isfinite(timeSec) & isfinite(d2Vec);
 trace.timeMin = timeSec(validMask) / 60;
 trace.d2 = d2Vec(validMask);
+trace.d2Sem = d2Sem(validMask);
 end
 
 function fig = plot_d2_sliding_examples(exampleResults, brainArea, slidingWindowSize, stepSize, useLog10D2)
 % PLOT_D2_SLIDING_EXAMPLES - Overlay d2 traces from example sessions on one axis
+%
+% When subsample SEM is available (useSubsampling), draws a light SEM ribbon
+% under each mean trace (SEM across neuron subsamples per window).
 
 fig = figure('Color', 'w', 'Position', [100 100 1100 420], ...
   'Name', 'd2 sliding-window examples');
@@ -327,6 +354,18 @@ for e = 1:numel(exampleResults)
   else
     legendLabel = ex.sessionType;
   end
+
+  if isfield(trace, 'd2Sem') && ~isempty(trace.d2Sem) && any(isfinite(trace.d2Sem))
+    ribbonMask = isfinite(trace.timeMin) & isfinite(trace.d2) & isfinite(trace.d2Sem);
+    if any(ribbonMask)
+      xFill = trace.timeMin(ribbonMask)';
+      yLo = (trace.d2(ribbonMask) - trace.d2Sem(ribbonMask))';
+      yHi = (trace.d2(ribbonMask) + trace.d2Sem(ribbonMask))';
+      fill(ax, [xFill, fliplr(xFill)], [yHi, fliplr(yLo)], lineColor, ...
+        'FaceAlpha', 0.4, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    end
+  end
+
   plot(ax, trace.timeMin, trace.d2, '-', 'Color', lineColor, ...
     'LineWidth', 2, 'DisplayName', legendLabel);
   plottedCount = plottedCount + 1;

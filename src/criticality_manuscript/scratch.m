@@ -193,16 +193,16 @@ plotConfig = fill_manuscript_plot_config();
 sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 0;
 collectEnd = [];  % [] = full session (matches multiple_metrics)
-% collectEnd = 40 * 60;
+collectEnd = 60 * 60;
 dataSource = 'spikes';
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 
 % Loading filters — same defaults as criticality_ar_across_tasks when
 % multiple_metrics does not override them
-firingRateCheckTime = [];  % [] = check rate over the loaded collect window
-minFiringRate = 0.05;
-maxFiringRate = 150;
+firingRateCheckTime = 300;  % [] = check rate over the loaded collect window
+minFiringRate = 0.1;
+maxFiringRate = 200;
 
 fprintf('\n=== Neuron counts across tasks ===\n');
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
@@ -821,17 +821,17 @@ if ~isempty(legendHandles)
 end
 hold(ax, 'off');
 
-saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
-if ~exist(saveDir, 'dir')
-  mkdir(saveDir);
-end
-if isempty(collectEnd)
-  winTag = 'full';
-else
-  winTag = sprintf('%.0f-%.0f', collectStart, collectEnd);
-end
-plotBase = sprintf('neuron_counts_across_tasks_%s_win%s_fr%.2g-%.2g', ...
-  matlab.lang.makeValidName(brainArea), winTag, minFiringRate, maxFiringRate);
-exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
-fprintf('Saved neuron-count figure: %s\n', fullfile(saveDir, plotBase));
+% saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+% if ~exist(saveDir, 'dir')
+%   mkdir(saveDir);
+% end
+% if isempty(collectEnd)
+%   winTag = 'full';
+% else
+%   winTag = sprintf('%.0f-%.0f', collectStart, collectEnd);
+% end
+% plotBase = sprintf('neuron_counts_across_tasks_%s_win%s_fr%.2g-%.2g', ...
+%   matlab.lang.makeValidName(brainArea), winTag, minFiringRate, maxFiringRate);
+% exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+% fprintf('Saved neuron-count figure: %s\n', fullfile(saveDir, plotBase));
 end

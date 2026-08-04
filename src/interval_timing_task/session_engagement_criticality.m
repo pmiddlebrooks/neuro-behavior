@@ -107,6 +107,10 @@ if isempty(areasToAnalyze)
 end
 areaNames = dataStruct.areas(areasToAnalyze);
 
+% Shared avalanche thresholds from full load span (covers both windows)
+avConfig.sharedThresholdByArea = prepare_shared_av_thresholds_by_area( ...
+  dataStruct, areasToAnalyze, avConfig, collectStart, collectEnd);
+
 avResults = cell(1, 2);
 arResults = cell(1, 2);
 prgResults = cell(1, 2);
@@ -361,7 +365,14 @@ localConfig.avStepSize = windowDurationSec;
 for aIdx = 1:numel(areasToAnalyze)
   areaIndex = areasToAnalyze(aIdx);
   areaName = dataStruct.areas{areaIndex};
-  avData = extract_area_avalanches(dataStruct, areaIndex, localConfig, seg.start, seg.end);
+  areaConfig = localConfig;
+  if isfield(avConfig, 'sharedThresholdByArea') ...
+      && numel(avConfig.sharedThresholdByArea) >= areaIndex ...
+      && ~isempty(avConfig.sharedThresholdByArea{areaIndex})
+    areaConfig = merge_shared_av_threshold_into_config( ...
+      areaConfig, avConfig.sharedThresholdByArea{areaIndex});
+  end
+  avData = extract_area_avalanches(dataStruct, areaIndex, areaConfig, seg.start, seg.end);
   segAv.areas{end+1} = areaName; %#ok<AGROW>
   segAv.byArea{end+1} = avData; %#ok<AGROW>
 
@@ -947,52 +958,20 @@ avData = struct('hasAvalanches', false, 'sizes', [], 'durations', [], ...
 
 timeRange = [collectStart, collectEnd];
 neuronIds = dataStruct.idLabel{areaIndex};
-binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analysisConfig);
-binSize = binSizeVec(areaIndex);
+if isfield(analysisConfig, 'sharedCollectBinSize') ...
+    && isfinite(analysisConfig.sharedCollectBinSize)
+  binSize = analysisConfig.sharedCollectBinSize;
+else
+  binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analysisConfig);
+  binSize = binSizeVec(areaIndex);
+end
 
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
   neuronIds, timeRange, binSize);
 
-useSubsampling = isfield(analysisConfig, 'useSubsampling') && analysisConfig.useSubsampling;
-sizes = [];
-durations = [];
-if useSubsampling
-  numNeuronsArea = size(aDataMat, 2);
-  nSubsamplesArea = analysisConfig.nSubsamples;
-  nNeuronsSubsampleArea = min(analysisConfig.nNeuronsSubsample, numNeuronsArea);
-  for s = 1:nSubsamplesArea
-    if nNeuronsSubsampleArea == numNeuronsArea
-      colIdx = 1:numNeuronsArea;
-    else
-      colIdx = randperm(numNeuronsArea, nNeuronsSubsampleArea);
-    end
-    wPopActivity = sum(aDataMat(:, colIdx), 2);
-    avMetrics = compute_av_metrics_from_pop_activity(wPopActivity, analysisConfig);
-    if ~isfinite(avMetrics.kappa)
-      continue;
-    end
-    wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
-    zeroBins = find(wPopActivity == 0);
-    if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
-      continue;
-    end
-    [sizesSub, dursSub] = getAvalanches(wPopActivity', 0.5, 1);
-    sizes = [sizes; sizesSub(:)]; %#ok<AGROW>
-    durations = [durations; dursSub(:)]; %#ok<AGROW>
-  end
-else
-  wPopActivity = sum(aDataMat, 2);
-  wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
-  zeroBins = find(wPopActivity == 0);
-  if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
-    return;
-  end
-  [sizes, durations] = getAvalanches(wPopActivity', 0.5, 1);
-end
-
-sizes = sizes(:);
-durations = durations(:);
-if isempty(sizes) || isempty(durations)
+[sizes, durations, hasAvalanches] = compute_avalanche_sizes_durations_from_binned( ...
+  aDataMat, analysisConfig);
+if ~hasAvalanches
   return;
 end
 

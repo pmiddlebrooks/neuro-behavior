@@ -1,0 +1,55 @@
+function threshInfo = prepare_shared_avalanche_threshold_info(aDataMatFull, config)
+% PREPARE_SHARED_AVALANCHE_THRESHOLD_INFO - Collect-range thresholds (+ subsample idxs)
+%
+% Variables:
+%   aDataMatFull - Binned spikes for the full collect range [timeBins x neurons]
+%   config       - AV analysis config (thresholdMethod, useSubsampling, ...)
+%
+% Goal:
+%   Compute the population avalanche cutoff once from the full collect range so
+%   engaged / non-engaged / windowed analyses share the same threshold.
+%   With useSubsampling, draw neuron subsets once and compute one cutoff per
+%   subsample from the full-session activity of those neurons.
+
+threshInfo = struct( ...
+  'useSubsampling', false, ...
+  'neuronIdxSubsamples', {{}}, ...
+  'thresholdPerSubsample', [], ...
+  'fixedThreshold', nan);
+
+if isempty(aDataMatFull) || size(aDataMatFull, 1) < 1
+  return;
+end
+
+if is_mean_isi_zero_avalanche_mode(config)
+  return;
+end
+if isfield(config, 'thresholdFlag') && ~config.thresholdFlag
+  return;
+end
+
+useSubsampling = isfield(config, 'useSubsampling') && config.useSubsampling;
+threshInfo.useSubsampling = useSubsampling;
+numNeuronsArea = size(aDataMatFull, 2);
+
+if useSubsampling
+  nSubsamplesArea = config.nSubsamples;
+  nNeuronsSubsampleArea = min(config.nNeuronsSubsample, numNeuronsArea);
+  neuronIdxSubsamples = cell(1, nSubsamplesArea);
+  thresholdPerSubsample = nan(1, nSubsamplesArea);
+  for s = 1:nSubsamplesArea
+    if nNeuronsSubsampleArea == numNeuronsArea
+      neuronIdxSubsamples{s} = 1:numNeuronsArea;
+    else
+      neuronIdxSubsamples{s} = randperm(numNeuronsArea, nNeuronsSubsampleArea);
+    end
+    popFull = sum(aDataMatFull(:, neuronIdxSubsamples{s}), 2);
+    thresholdPerSubsample(s) = compute_avalanche_population_threshold(popFull, config);
+  end
+  threshInfo.neuronIdxSubsamples = neuronIdxSubsamples;
+  threshInfo.thresholdPerSubsample = thresholdPerSubsample;
+else
+  popFull = sum(aDataMatFull, 2);
+  threshInfo.fixedThreshold = compute_avalanche_population_threshold(popFull, config);
+end
+end

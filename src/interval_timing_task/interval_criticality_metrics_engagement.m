@@ -27,18 +27,23 @@ function out = interval_criticality_metrics_engagement(subjectName, sessionName,
 %       .plotConfig - axisLabelFontSize, tickLabelFontSize, axesLineWidth, ...
 %       .useSubsampling, .nSubsamples, .nNeuronsSubsample, .minNeuronsMultiple
 %     d2:
-%       .d2Window, .useLog10D2, .nShufflesD2
+%       .d2Window, .binSizeD2, .useLog10D2, .nShufflesD2
 %       .sessionInterval - Target interval duration (s; default 5)
 %       .rewardAttemptBeforeSec - Exclude error trials with poke time before
 %                                 sessionInterval - this value (default 1)
 %       .runD2TrialRateCorrelation - If true (default), correlate d2 with trial
 %                                    count/rate across all d2 windows
 %     Kurtosis (PRG):
-%       .prgWindow, .prgMethod, .surrogateMethod, .nSurrogates
+%       .prgWindow, .binSizePrg, .prgMethod, .surrogateMethod, .nSurrogates
 %     Avalanches:
-%       .powerLawFitMethod, .avalancheDetectionMode, .runClausetPlpva, .gofThreshold
+%       .powerLawFitMethod, .avalancheDetectionMode, .binSizeAv, .thresholdMethod,
+%       .runClausetPlpva, .gofThreshold
 %       .enableCircularPermutations - If true, overlay shuffle CCDF for total only
 %       .nShuffles - Number of circular permutations for total shuffle (default 5)
+%     Avalanche threshold (shared across total / engaged / non-engaged):
+%       Cutoff from the full collect range via thresholdMethod ('median' or
+%       'quantile10'). With useSubsampling, one cutoff per subsample from the
+%       full-session activity of that fixed neuron subset.
 %
 % Goal:
 %   Same analyses as reach_criticality_metrics_engagement, but engagement events
@@ -284,6 +289,10 @@ if ismember('avalanches', opts.analyses)
   end
   areaNames = dataStruct.areas(areasToAnalyze);
 
+  % One collect-range threshold (per area / subsample) for total+engaged+non-engaged
+  avConfig.sharedThresholdByArea = prepare_shared_av_thresholds_by_area( ...
+    dataStruct, areasToAnalyze, avConfig, collectStart, collectEnd);
+
   avByClass = struct();
   fprintf('Total (full session)');
   if avConfig.enableCircularPermutations
@@ -451,6 +460,9 @@ end
 if ~isfield(opts, 'd2Window') || isempty(opts.d2Window)
   opts.d2Window = 30;
 end
+if ~isfield(opts, 'binSizeD2') || isempty(opts.binSizeD2)
+  opts.binSizeD2 = 0.025;
+end
 if ~isfield(opts, 'useLog10D2') || isempty(opts.useLog10D2)
   opts.useLog10D2 = true;
 end
@@ -470,6 +482,9 @@ end
 if ~isfield(opts, 'prgWindow') || isempty(opts.prgWindow)
   opts.prgWindow = 30;
 end
+if ~isfield(opts, 'binSizePrg') || isempty(opts.binSizePrg)
+  opts.binSizePrg = 0.05;
+end
 if ~isfield(opts, 'prgMethod') || isempty(opts.prgMethod)
   opts.prgMethod = 'pca';
 end
@@ -485,6 +500,12 @@ if ~isfield(opts, 'powerLawFitMethod') || isempty(opts.powerLawFitMethod)
 end
 if ~isfield(opts, 'avalancheDetectionMode') || isempty(opts.avalancheDetectionMode)
   opts.avalancheDetectionMode = 'fixedBinMedian';
+end
+if ~isfield(opts, 'binSizeAv') || isempty(opts.binSizeAv)
+  opts.binSizeAv = 0.05;
+end
+if ~isfield(opts, 'thresholdMethod') || isempty(opts.thresholdMethod)
+  opts.thresholdMethod = 'median';
 end
 if ~isfield(opts, 'runClausetPlpva') || isempty(opts.runClausetPlpva)
   opts.runClausetPlpva = false;
@@ -551,7 +572,7 @@ function arConfig = build_ar_config(opts)
 arConfig = struct();
 arConfig.slidingWindowSize = opts.d2Window;
 arConfig.stepSize = opts.d2Window;
-arConfig.binSize = 0.025;
+arConfig.binSize = opts.binSizeD2;
 arConfig.useOptimalBinWindowFunction = false;
 arConfig.analyzeD2 = true;
 arConfig.analyzeMrBr = false;
@@ -582,7 +603,7 @@ function prgConfig = build_prg_config(opts)
 prgConfig = struct();
 prgConfig.prgMethod = opts.prgMethod;
 prgConfig.blockWindowSize = opts.prgWindow;
-prgConfig.binSize = 0.05;
+prgConfig.binSize = opts.binSizePrg;
 prgConfig.cvThreshold = 5;
 prgConfig.cutoffDivisors = [1, 2, 4, 8, 16];
 prgConfig.finalCutoffDivisor = 16;
@@ -607,9 +628,10 @@ avConfig = struct();
 avConfig.useOptimalBinWindowFunction = false;
 avConfig.avalancheDetectionMode = opts.avalancheDetectionMode;
 if strcmpi(opts.avalancheDetectionMode, 'fixedBinMedian')
-  avConfig.binSize = 0.05;
+  avConfig.binSize = opts.binSizeAv;
 end
 avConfig.thresholdFlag = 1;
+avConfig.thresholdMethod = opts.thresholdMethod;
 avConfig.thresholdPct = 1;
 avConfig.nMinNeurons = 20;
 avConfig.useSubsampling = opts.useSubsampling;
@@ -1941,6 +1963,14 @@ if isempty(segments)
   return;
 end
 
+% Attach collect-range shared threshold for this area (total / engaged / non-engaged)
+if isfield(analysisConfig, 'sharedThresholdByArea') ...
+    && numel(analysisConfig.sharedThresholdByArea) >= areaIndex ...
+    && ~isempty(analysisConfig.sharedThresholdByArea{areaIndex})
+  analysisConfig = merge_shared_av_threshold_into_config( ...
+    analysisConfig, analysisConfig.sharedThresholdByArea{areaIndex});
+end
+
 allSizes = [];
 allDurations = [];
 allShuffleSizes = [];
@@ -2019,8 +2049,13 @@ end
 avData = empty_avalanche_data();
 timeRange = [collectStart, collectEnd];
 neuronIds = dataStruct.idLabel{areaIndex};
-binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analysisConfig);
-binSize = binSizeVec(areaIndex);
+if isfield(analysisConfig, 'sharedCollectBinSize') ...
+    && isfinite(analysisConfig.sharedCollectBinSize)
+  binSize = analysisConfig.sharedCollectBinSize;
+else
+  binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analysisConfig);
+  binSize = binSizeVec(areaIndex);
+end
 avData.binSize = binSize;
 
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
@@ -2091,54 +2126,6 @@ for neuronIdx = 1:size(aDataMat, 2)
   shiftAmount = randi([1, winSamples]);
   permutedMat(:, neuronIdx) = circshift(aDataMat(:, neuronIdx), shiftAmount);
 end
-end
-
-function [sizes, durations, hasAvalanches] = compute_avalanche_sizes_durations_from_binned( ...
-    aDataMat, analysisConfig)
-% COMPUTE_AVALANCHE_SIZES_DURATIONS_FROM_BINNED - Avalanche vectors from binned matrix
-
-sizes = [];
-durations = [];
-hasAvalanches = false;
-
-useSubsampling = isfield(analysisConfig, 'useSubsampling') && analysisConfig.useSubsampling;
-if useSubsampling
-  numNeuronsArea = size(aDataMat, 2);
-  nSubsamplesArea = analysisConfig.nSubsamples;
-  nNeuronsSubsampleArea = min(analysisConfig.nNeuronsSubsample, numNeuronsArea);
-  for s = 1:nSubsamplesArea
-    if nNeuronsSubsampleArea == numNeuronsArea
-      colIdx = 1:numNeuronsArea;
-    else
-      colIdx = randperm(numNeuronsArea, nNeuronsSubsampleArea);
-    end
-    wPopActivity = sum(aDataMat(:, colIdx), 2);
-    avMetrics = compute_av_metrics_from_pop_activity(wPopActivity, analysisConfig);
-    if ~isfinite(avMetrics.kappa)
-      continue;
-    end
-    wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
-    zeroBins = find(wPopActivity == 0);
-    if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
-      continue;
-    end
-    [sizesSub, dursSub] = getAvalanches(wPopActivity', 0.5, 1);
-    sizes = [sizes; sizesSub(:)]; %#ok<AGROW>
-    durations = [durations; dursSub(:)]; %#ok<AGROW>
-  end
-else
-  wPopActivity = sum(aDataMat, 2);
-  wPopActivity = apply_avalanche_population_threshold(wPopActivity, analysisConfig);
-  zeroBins = find(wPopActivity == 0);
-  if ~(numel(zeroBins) > 1 && any(diff(zeroBins) > 1))
-    return;
-  end
-  [sizes, durations] = getAvalanches(wPopActivity', 0.5, 1);
-end
-
-sizes = sizes(:);
-durations = durations(:);
-hasAvalanches = ~isempty(sizes) && ~isempty(durations);
 end
 
 function fig = plot_engagement_avalanche_distributions(avByClass, areaNames, sessionName, ...

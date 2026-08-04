@@ -11,6 +11,7 @@
 %   collectEnd     - Analysis window end (seconds); [] = full session
 %   d2Window       - Non-overlapping window length (seconds); stepSize = d2Window.
 %                    [] = one window over the loaded collect duration
+%   binSize        - Spike bin width (seconds) for d2 (default 0.05)
 %   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' = all areas
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   areasToPlot            - Area names to plot; {} uses brainArea if set
@@ -76,6 +77,7 @@ if isempty(opts.d2Window)
 else
   fprintf('d2 windows: %.1f s, non-overlapping (step = window)\n', opts.d2Window);
 end
+fprintf('binSize: %.3f s\n', opts.binSize);
 fprintf('useLog10D2 (aggregate/plot): %d\n', opts.useLog10D2);
 if opts.useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
@@ -222,6 +224,7 @@ defaults.dataSource = 'spikes';
 defaults.collectStart = 0;
 defaults.collectEnd = [];
 defaults.d2Window = 30;
+defaults.binSize = 0.05;
 defaults.brainArea = 'M23M56';
 defaults.brainAreaCombinations = default_manuscript_brain_area_combinations();
 defaults.areasToPlot = {};
@@ -261,6 +264,7 @@ batchMeta = struct( ...
   'collectStart', opts.collectStart, ...
   'collectEnd', opts.collectEnd, ...
   'd2Window', opts.d2Window, ...
+  'binSize', opts.binSize, ...
   'brainArea', opts.brainArea, ...
   'areasToPlot', {opts.areasToPlot}, ...
   'nMinNeurons', opts.nMinNeurons, ...
@@ -474,7 +478,7 @@ else
   analysisConfig.slidingWindowSize = opts.d2Window;
   analysisConfig.stepSize = opts.d2Window;
 end
-analysisConfig.binSize = 0.05;
+analysisConfig.binSize = opts.binSize;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;
 analysisConfig.analyzeMrBr = false;
