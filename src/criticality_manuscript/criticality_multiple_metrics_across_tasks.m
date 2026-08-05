@@ -17,6 +17,9 @@
 %                        segments (default 30)
 %   absorbSingleEvents - If true, isolated single events flanked by qualifying
 %                        non-engaged gaps are merged into non-engaged time
+%   minTimeNonEngaged  - When splitByEngagement, min total non-engaged time (s)
+%                        to keep non-engaged metrics; shorter sessions stay on
+%                        the x-axis but plot blank (NaN) so plots stay aligned
 %   thresholdMethod    - Avalanche population cutoff: 'median' or 'quantile10'
 %   runArBatch, runAvBatch, runPrgBatch - Run each analysis pipeline
 %   loadSavedResults   - If true, load saved .mat outputs when run*Batch false
@@ -45,6 +48,7 @@
 %                        each including spontaneous alongside that class.
 %                        Paired plots share d2-aligned y-limits for comparison.
 %                        Correlation matrix always uses full-session metrics.
+%                        See minTimeNonEngaged for blanking short non-engaged.
 %
 % Goal:
 %   One session-grouped plot per brain area with d2, tau, and alpha per session.
@@ -55,18 +59,22 @@
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 10;
-collectEnd = 60 * 60;
+collectEnd = 45 * 60;
 % collectEnd = [];  % [] = full session
-d2Window = [];
+d2Window = 60;
 prgWindow = d2Window;
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
+
 binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
-binSizePrg = 0.04;  % PRG spike bin width (s); overrides PRG default
+binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
+
 % Engagement timing (reach + interval); defaults match engagement module fill_*_defaults
 engagementBuffer = 1;       % s around each reach/beam-break = engaged
-minNonEngagedWindow = 45;   % min gap (s) for non-engaged avalanche segments
+minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
 absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
+minTimeNonEngaged = 300;      % min total non-engaged time (s) to plot; 0 = no filter
+% Sessions below minTimeNonEngaged stay in non-engaged plots but are blanked
 
 % Paths first — needed by default_manuscript_brain_area_combinations / plotConfig
 setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
@@ -96,7 +104,7 @@ splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on b
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 40;
+nSubsamples = 25;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 
@@ -141,6 +149,8 @@ fprintf('binSizeD2: %.3f s; binSizePrg: %.3f s; binSizeAv: %.3f s\n', ...
   binSizeD2, binSizePrg, binSizeAv);
 fprintf('engagementBuffer: %.1f s; minNonEngagedWindow: %.1f s; absorbSingleEvents: %d\n', ...
   engagementBuffer, minNonEngagedWindow, absorbSingleEvents);
+fprintf('minTimeNonEngaged: %.1f s (blank non-engaged below this; 0 = off)\n', ...
+  minTimeNonEngaged);
 fprintf('avalancheDetectionMode: %s; thresholdMethod: %s\n', ...
   avalancheDetectionMode, thresholdMethod);
 fprintf('enablePermutations: %d (observed metrics only when false)\n', enablePermutations);
@@ -291,9 +301,12 @@ if splitByEngagement
     engOut = run_multimetric_engagement_batch(engOpts);
   elseif loadSavedResults && isfile(engBatchFile)
     loadedEng = load(engBatchFile, 'batchResults', 'plotData', 'batchMeta');
+    % Re-aggregate so nonEngagedSec (and other fields) stay current for filtering
+    engPlotData = aggregate_multimetric_engagement_plot_data( ...
+      loadedEng.batchResults, engOpts.sessionTypes, engOpts.useLog10D2);
     engOut = struct( ...
       'batchResults', loadedEng.batchResults, ...
-      'plotData', loadedEng.plotData, ...
+      'plotData', engPlotData, ...
       'batchMeta', loadedEng.batchMeta);
     fprintf('\nLoaded engagement batch: %s\n', engBatchFile);
   else
@@ -318,6 +331,7 @@ combinedOut.binSizeAv = binSizeAv;
 combinedOut.engagementBuffer = engagementBuffer;
 combinedOut.minNonEngagedWindow = minNonEngagedWindow;
 combinedOut.absorbSingleEvents = absorbSingleEvents;
+combinedOut.minTimeNonEngaged = minTimeNonEngaged;
 combinedOut.thresholdMethod = thresholdMethod;
 combinedOut.brainArea = brainArea;
 combinedOut.useLog10D2 = useLog10D2;
@@ -400,7 +414,8 @@ if plotResults
     for iClass = 1:numel(engagementClasses)
       engClass = engagementClasses{iClass};
       [arView, avView] = build_engagement_class_metric_views( ...
-        arOut.plotData, avOut.plotData, engOut.plotData, engClass, sessionTypes);
+        arOut.plotData, avOut.plotData, engOut.plotData, engClass, sessionTypes, ...
+        minTimeNonEngaged);
       classViews.(engClass).ar = arView;
       classViews.(engClass).av = avView;
       classAreas = intersect(cellstr(string(arView.areas)), ...
@@ -904,7 +919,7 @@ for a = 1:numel(areasToPlot)
   end
 
   sessionTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
-    areaIdxAr, areaIdxAv, metricsToPlot);
+    areaIdxAr, areaIdxAv, metricsToPlot, strcmpi(engagementTag, 'nonEngaged'));
   if isempty(sessionTable)
     fprintf('Skipping %s: no aligned sessions for metrics [%s].\n', ...
       areaName, strjoin(metricsToPlot, ', '));
@@ -1017,6 +1032,9 @@ for a = 1:numel(areasToPlot)
         xMetric = xPos(iSess) + xOffsets(m);
         yMetric = yVals.(metricName)(rowIdx(iSess));
         ySem = ySems.(metricName)(rowIdx(iSess));
+        if ~(isfinite(xMetric) && isfinite(yMetric))
+          continue;
+        end
         hMetric = plot_metric_errorbar_group(axMain, xMetric, yMetric, ySem, ...
           metricMarkers.(metricName), taskColor, faceColor, plotConfig);
         if isempty(legendHandles) || ~ismember(metricLabels.(metricName), legendLabels)
@@ -1280,7 +1298,8 @@ for a = 1:numel(areasToPlot)
 
   sessionTable = build_separated_metrics_session_table( ...
     arPlotData, avPlotData, prgPlotData, avPlotDataDecades, sessionTypes, ...
-    areaIdxAr, areaIdxAv, areaIdxPrg, areaIdxAvDec, {'d2', 'tau', 'alpha'});
+    areaIdxAr, areaIdxAv, areaIdxPrg, areaIdxAvDec, {'d2', 'tau', 'alpha'}, ...
+    strcmpi(engagementTag, 'nonEngaged'));
   if isempty(sessionTable)
     fprintf('Skipping separated metrics for %s: no aligned sessions.\n', areaName);
     continue;
@@ -1400,12 +1419,14 @@ end
 
 function sessionTable = build_separated_metrics_session_table(arPlotData, avPlotData, ...
     prgPlotData, avPlotDataDecades, sessionTypes, areaIdxAr, areaIdxAv, areaIdxPrg, ...
-    areaIdxAvDec, topMetrics)
+    areaIdxAvDec, topMetrics, keepBlankSessions)
 % BUILD_SEPARATED_METRICS_SESSION_TABLE - d2/tau/alpha + crackling + PRG metrics
 %
 % Variables:
 %   avPlotDataDecades - AV source for decades (may differ from avPlotData)
 %   topMetrics        - Which of d2/tau/alpha must be finite to keep a session
+%                       (ignored when keepBlankSessions is true)
+%   keepBlankSessions - If true, keep sessions with NaN top-row metrics (blank slots)
 %
 % Goal:
 %   Align top-row metrics with paramSD/dcc (AV), decades (AV), and PRG kurtosis / D_JS.
@@ -1414,10 +1435,13 @@ function sessionTable = build_separated_metrics_session_table(arPlotData, avPlot
 if nargin < 10 || isempty(topMetrics)
   topMetrics = {'d2', 'tau', 'alpha'};
 end
+if nargin < 11 || isempty(keepBlankSessions)
+  keepBlankSessions = false;
+end
 topMetrics = normalize_metrics_to_plot(topMetrics);
 
 baseTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
-  areaIdxAr, areaIdxAv, topMetrics);
+  areaIdxAr, areaIdxAv, topMetrics, keepBlankSessions);
 if isempty(baseTable)
   sessionTable = baseTable;
   return;
@@ -1775,11 +1799,18 @@ end
 end
 
 function sessionTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
-    areaIdxAr, areaIdxAv, metricsToPlot)
+    areaIdxAr, areaIdxAv, metricsToPlot, keepBlankSessions)
 % BUILD_MULTIMETRIC_SESSION_TABLE - Align d2/tau/alpha per session across pipelines
+%
+% Variables:
+%   keepBlankSessions - If true, keep sessions even when requested metrics are NaN
+%                       (used for non-engaged plots so x-axis slots stay aligned)
 
 if nargin < 6 || isempty(metricsToPlot)
   metricsToPlot = {'d2', 'tau', 'alpha'};
+end
+if nargin < 7 || isempty(keepBlankSessions)
+  keepBlankSessions = false;
 end
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
 needD2 = ismember('d2', metricsToPlot);
@@ -1869,7 +1900,7 @@ for t = 1:numel(sessionTypes)
     if needD2, checkVals(end + 1) = d2Val; end %#ok<AGROW>
     if needTau, checkVals(end + 1) = tauVal; end %#ok<AGROW>
     if needAlpha, checkVals(end + 1) = alphaVal; end %#ok<AGROW>
-    if isempty(checkVals) || ~all(isfinite(checkVals))
+    if ~keepBlankSessions && (isempty(checkVals) || ~all(isfinite(checkVals)))
       continue;
     end
 
@@ -2632,6 +2663,9 @@ end
 if isfield(opts, 'absorbSingleEvents')
   batchMeta.absorbSingleEvents = opts.absorbSingleEvents;
 end
+if isfield(opts, 'minTimeNonEngaged')
+  batchMeta.minTimeNonEngaged = opts.minTimeNonEngaged;
+end
 
 save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
 fprintf('\nSaved engagement batch: %s\n', opts.batchResultsFile);
@@ -2796,6 +2830,7 @@ for s = 1:numel(batchResults)
   d2Split = batchResults(s).d2Split;
   avByClass = batchResults(s).avalanches.byClass;
   areaNames = d2Split.areas;
+  nonEngagedSec = get_batch_non_engaged_sec(batchResults(s));
 
   for a = 1:numel(areaNames)
     areaName = areaNames{a};
@@ -2831,7 +2866,29 @@ for s = 1:numel(batchResults)
 
   typeData.sessionLabels{end + 1} = batchResults(s).label;
   typeData.sessionNames{end + 1} = batchResults(s).sessionName;
+  typeData.nonEngagedSec(end + 1) = nonEngagedSec; %#ok<AGROW>
   plotData.byType.(typeKey) = typeData;
+end
+end
+
+function nonEngagedSec = get_batch_non_engaged_sec(batchResult)
+% GET_BATCH_NON_ENGAGED_SEC - Total non-engaged time (s) for one engagement session
+%
+% Prefers avalanche segment duration; falls back to d2 window-based duration.
+
+nonEngagedSec = nan;
+if isfield(batchResult, 'avalanches') && isstruct(batchResult.avalanches) ...
+    && isfield(batchResult.avalanches, 'durations') ...
+    && isfield(batchResult.avalanches.durations, 'nonEngagedSec') ...
+    && isfinite(batchResult.avalanches.durations.nonEngagedSec)
+  nonEngagedSec = batchResult.avalanches.durations.nonEngagedSec;
+  return;
+end
+if isfield(batchResult, 'd2Split') && isstruct(batchResult.d2Split) ...
+    && isfield(batchResult.d2Split, 'durations') ...
+    && isfield(batchResult.d2Split.durations, 'nonEngagedSec') ...
+    && isfinite(batchResult.d2Split.durations.nonEngagedSec)
+  nonEngagedSec = batchResult.d2Split.durations.nonEngagedSec;
 end
 end
 
@@ -2845,6 +2902,7 @@ for m = 1:numel(metricFields)
 end
 typeData.sessionLabels = {};
 typeData.sessionNames = {};
+typeData.nonEngagedSec = [];
 end
 
 function plotData = extend_engagement_plot_areas(plotData, metricFields, newAreaIdx)
@@ -2917,8 +2975,17 @@ end
 end
 
 function [arView, avView] = build_engagement_class_metric_views(arPlotData, avPlotData, ...
-    engPlotData, engagementClass, sessionTypes)
+    engPlotData, engagementClass, sessionTypes, minTimeNonEngaged)
 % BUILD_ENGAGEMENT_CLASS_METRIC_VIEWS - Remap engaged/non-engaged into standard plotData
+%
+% Variables:
+%   minTimeNonEngaged - For nonEngaged class, blank (NaN) session metrics when
+%                       total non-engaged time is below this threshold (s).
+%                       Session slots remain so plots stay aligned.
+
+if nargin < 6 || isempty(minTimeNonEngaged)
+  minTimeNonEngaged = 0;
+end
 
 engagementClass = lower(char(engagementClass));
 if strcmp(engagementClass, 'nonengaged')
@@ -2962,6 +3029,10 @@ for t = 1:numel(sessionTypes)
       continue;
     end
     engType = engPlotData.byType.(typeKey);
+    blankMask = false(1, 0);
+    if strcmp(engagementClass, 'nonEngaged') && minTimeNonEngaged > 0
+      blankMask = resolve_non_engaged_blank_mask(engType, minTimeNonEngaged, sessionType);
+    end
     for a = 1:numel(areaSet)
       areaName = areaSet{a};
       engAreaIdx = find(strcmp(engPlotData.areas, areaName), 1);
@@ -2976,12 +3047,18 @@ for t = 1:numel(sessionTypes)
         avView.byType.(typeKey).paramSD{a} = get_eng_series(engType, 'paramSDEngaged', engAreaIdx);
         avView.byType.(typeKey).dcc{a} = get_eng_series(engType, 'dccEngaged', engAreaIdx);
       else
-        arView.byType.(typeKey).d2Mean{a} = get_eng_series(engType, 'd2NonEngagedMean', engAreaIdx);
-        arView.byType.(typeKey).d2Sem{a} = get_eng_series(engType, 'd2NonEngagedSem', engAreaIdx);
-        avView.byType.(typeKey).tau{a} = get_eng_series(engType, 'tauNonEngaged', engAreaIdx);
-        avView.byType.(typeKey).alpha{a} = get_eng_series(engType, 'alphaNonEngaged', engAreaIdx);
-        avView.byType.(typeKey).paramSD{a} = get_eng_series(engType, 'paramSDNonEngaged', engAreaIdx);
-        avView.byType.(typeKey).dcc{a} = get_eng_series(engType, 'dccNonEngaged', engAreaIdx);
+        arView.byType.(typeKey).d2Mean{a} = blank_metric_series( ...
+          get_eng_series(engType, 'd2NonEngagedMean', engAreaIdx), blankMask);
+        arView.byType.(typeKey).d2Sem{a} = blank_metric_series( ...
+          get_eng_series(engType, 'd2NonEngagedSem', engAreaIdx), blankMask);
+        avView.byType.(typeKey).tau{a} = blank_metric_series( ...
+          get_eng_series(engType, 'tauNonEngaged', engAreaIdx), blankMask);
+        avView.byType.(typeKey).alpha{a} = blank_metric_series( ...
+          get_eng_series(engType, 'alphaNonEngaged', engAreaIdx), blankMask);
+        avView.byType.(typeKey).paramSD{a} = blank_metric_series( ...
+          get_eng_series(engType, 'paramSDNonEngaged', engAreaIdx), blankMask);
+        avView.byType.(typeKey).dcc{a} = blank_metric_series( ...
+          get_eng_series(engType, 'dccNonEngaged', engAreaIdx), blankMask);
       end
     end
     arView.byType.(typeKey).sessionNames = get_field_or_empty(engType, 'sessionNames');
@@ -3024,6 +3101,58 @@ for t = 1:numel(sessionTypes)
       avView.byType.(typeKey).sessionNames = get_field_or_empty(avSrc, 'sessionNames');
       avView.byType.(typeKey).sessionLabels = get_field_or_empty(avSrc, 'sessionLabels');
     end
+  end
+end
+end
+
+function blankMask = resolve_non_engaged_blank_mask(engType, minTimeNonEngaged, sessionType)
+% RESOLVE_NON_ENGAGED_BLANK_MASK - True where non-engaged time is below threshold
+
+nSess = 0;
+if isfield(engType, 'sessionNames') && ~isempty(engType.sessionNames)
+  nSess = numel(engType.sessionNames);
+elseif isfield(engType, 'sessionLabels') && ~isempty(engType.sessionLabels)
+  nSess = numel(engType.sessionLabels);
+end
+blankMask = false(1, nSess);
+if nSess == 0 || ~(isfinite(minTimeNonEngaged) && minTimeNonEngaged > 0)
+  return;
+end
+
+nonEngagedSec = [];
+if isfield(engType, 'nonEngagedSec') && ~isempty(engType.nonEngagedSec)
+  nonEngagedSec = engType.nonEngagedSec(:)';
+end
+for i = 1:nSess
+  tSec = nan;
+  if numel(nonEngagedSec) >= i
+    tSec = nonEngagedSec(i);
+  end
+  if isfinite(tSec) && tSec < minTimeNonEngaged
+    blankMask(i) = true;
+    sessName = '';
+    if isfield(engType, 'sessionNames') && numel(engType.sessionNames) >= i
+      sessName = char(engType.sessionNames{i});
+    elseif isfield(engType, 'sessionLabels') && numel(engType.sessionLabels) >= i
+      sessName = char(engType.sessionLabels{i});
+    end
+    fprintf(['  Blanking non-engaged [%s] %s: non-engaged time %.1f s ', ...
+      '< minTimeNonEngaged %.1f s\n'], sessionType, sessName, tSec, minTimeNonEngaged);
+  end
+end
+end
+
+function series = blank_metric_series(series, blankMask)
+% BLANK_METRIC_SERIES - Set selected session indices to NaN (keep length)
+
+if isempty(series) || isempty(blankMask) || ~any(blankMask)
+  return;
+end
+series = series(:)';
+n = numel(series);
+for i = 1:min(n, numel(blankMask))
+  if blankMask(i)
+    series(i) = nan;
   end
 end
 end
