@@ -7,6 +7,7 @@ function [unitWidths, meta] = get_session_unit_widths(dataStruct, paths)
 %
 % Goal:
 %   Load waveforms once for spontaneous/interval (Kilosort) or reach sessions.
+%   Semicircle does not yet have waveform support for E/I splits.
 %
 % Returns:
 %   unitWidths - containers.Map from unit id to width (ms)
@@ -41,6 +42,10 @@ switch lower(dataStruct.sessionType)
 
     case 'reach'
         [unitWidths, meta] = load_reach_unit_widths(dataStruct, paths, opts.fsSpike);
+
+    case 'semicircle'
+        error(['Waveform / E/I loading is not yet implemented for semicircle ', ...
+            'sessions (sessionName=%s).'], dataStruct.sessionName);
 
     otherwise
         error(['Waveform loading supports spontaneous, interval, and reach sessions. ', ...

@@ -6,7 +6,7 @@ function spikeData = load_spike_times(sessionType, paths, sessionName, opts)
 % on-demand binning at different bin sizes per area.
 %
 % Variables:
-%   sessionType - Type of data: 'reach', 'spontaneous', 'interval', 'schall', 'hong'
+%   sessionType - Type of data: 'reach', 'spontaneous', 'interval', 'semicircle', 'schall', 'hong'
 %   paths - Paths structure from get_paths
 %   sessionName - Session name (format depends on sessionType)
 %   opts - Options structure with firing rate filtering parameters
@@ -30,6 +30,8 @@ function spikeData = load_spike_times(sessionType, paths, sessionName, opts)
             spikeData = load_spike_times_spontaneous(paths, sessionName, opts);
         case 'interval'
             spikeData = load_spike_times_interval(paths, sessionName, opts);
+        case 'semicircle'
+            spikeData = load_spike_times_semicircle(paths, sessionName, opts);
         case 'schall'
             spikeData = load_spike_times_schall(paths, sessionName, opts);
         case 'hong'
@@ -248,6 +250,135 @@ function spikeData = load_spike_times_interval(paths, sessionName, opts)
     spikeData.totalTime = opts.collectEnd - opts.collectStart;
     spikeData.collectStart = opts.collectStart;
     spikeData.collectEnd = opts.collectEnd;
+end
+
+function spikeData = load_spike_times_semicircle(paths, sessionName, opts)
+% LOAD_SPIKE_TIMES_SEMICIRCLE - Load spike times for semicircle reward task
+%
+% Variables:
+%   paths       - Paths structure from get_paths
+%   sessionName - Session .mat basename (e.g. 'AS1_0618_WellLearned')
+%   opts        - Options; requires opts.subjectName (e.g. 'AS1')
+%
+% Goal:
+%   Load CSV spike times and IdChan metadata; map LayerID via layerIDs to
+%   M23/M56/DS/VS. Keep MUA and good units (unitType 1 and 2).
+
+    if ~isfield(opts, 'subjectName') || isempty(opts.subjectName)
+        error('opts.subjectName must be set before loading semicircle spike times');
+    end
+
+    dataFile = fullfile(paths.semicircleDataPath, opts.subjectName, [sessionName, '.mat']);
+    if ~exist(dataFile, 'file')
+        error('Semicircle data file not found: %s', dataFile);
+    end
+    dataS = load(dataFile);
+
+    idChan = get_semicircle_idchan(dataS);
+    layerIds = get_semicircle_layer_ids(dataS);
+    areaByLayer = map_semicircle_layer_to_area(layerIds);
+
+    % LayerID col 7; unitType col 4 (1=MUA, 2=Good); exclude LayerID==0
+    layerIdCol = idChan(:, 7);
+    unitTypeCol = idChan(:, 4);
+    validLayerIds = cell2mat(keys(areaByLayer));
+    useNeurons = find(layerIdCol ~= 0 & ismember(unitTypeCol, [1 2]) & ...
+        ismember(layerIdCol, validLayerIds));
+    neuronIDs = idChan(useNeurons, 1);
+    neuronAreas = cell(numel(useNeurons), 1);
+    for i = 1:numel(useNeurons)
+        neuronAreas{i} = areaByLayer(layerIdCol(useNeurons(i)));
+    end
+
+    spikeTimes = dataS.CSV(:, 1);
+    spikeClusters = dataS.CSV(:, 2);
+
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        opts.collectStart = 0;
+    end
+    if ~isfield(opts, 'collectEnd')
+        opts.collectEnd = [];
+    end
+    sessionEnd = max(spikeTimes);
+    if isfield(dataS, 'TaskMatrix') && ~isempty(dataS.TaskMatrix)
+        sessionEnd = max(sessionEnd, max(dataS.TaskMatrix(:, 8)));
+    end
+    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, sessionEnd, opts.collectStart);
+
+    validSpikes = ismember(spikeClusters, neuronIDs) & ...
+        spikeTimes >= opts.collectStart & ...
+        spikeTimes <= opts.collectEnd;
+    spikeTimes = spikeTimes(validSpikes);
+    spikeClusters = spikeClusters(validSpikes);
+
+    if opts.removeSome
+        [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
+            filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
+    end
+
+    spikeData = struct();
+    spikeData.spikeTimes = spikeTimes;
+    spikeData.spikeClusters = spikeClusters;
+    spikeData.neuronIDs = neuronIDs;
+    spikeData.neuronAreas = neuronAreas;
+    spikeData.idLabels = neuronIDs;
+    spikeData.areaLabelsUnique = unique(neuronAreas);
+    spikeData.totalTime = opts.collectEnd - opts.collectStart;
+    spikeData.collectStart = opts.collectStart;
+    spikeData.collectEnd = opts.collectEnd;
+end
+
+function idChan = get_semicircle_idchan(dataS)
+% GET_SEMICIRCLE_IDCHAN - Resolve IdChan / idchan field name
+
+    if isfield(dataS, 'IdChan')
+        idChan = dataS.IdChan;
+    elseif isfield(dataS, 'idchan')
+        idChan = dataS.idchan;
+    else
+        error('Semicircle file missing IdChan / idchan');
+    end
+end
+
+function layerIds = get_semicircle_layer_ids(dataS)
+% GET_SEMICIRCLE_LAYER_IDS - Cell of area names indexed by LayerID
+
+    if ~isfield(dataS, 'layerIDs') || isempty(dataS.layerIDs)
+        error('Semicircle file missing layerIDs');
+    end
+    layerIds = dataS.layerIDs;
+    if ~iscell(layerIds)
+        error('layerIDs must be a cell array of area name strings');
+    end
+end
+
+function areaByLayer = map_semicircle_layer_to_area(layerIds)
+% MAP_SEMICIRCLE_LAYER_TO_AREA - Map LayerID index -> pipeline area label
+%
+% Variables:
+%   layerIds - Cell of strings from data file (e.g. {'M1 L23','M1 L5','DMS','VS'})
+%
+% Goal:
+%   Build containers.Map from LayerID (1..N) to M23/M56/DS/VS used elsewhere.
+
+    areaByLayer = containers.Map('KeyType', 'double', 'ValueType', 'char');
+    for iLayer = 1:numel(layerIds)
+        rawName = lower(strtrim(char(layerIds{iLayer})));
+        if contains(rawName, 'l23') || contains(rawName, 'm23')
+            areaName = 'M23';
+        elseif contains(rawName, 'l5') || contains(rawName, 'm56')
+            areaName = 'M56';
+        elseif contains(rawName, 'dms') || strcmp(rawName, 'ds')
+            areaName = 'DS';
+        elseif contains(rawName, 'vs')
+            areaName = 'VS';
+        else
+            warning('load_spike_times_semicircle:UnknownLayer', ...
+                'Unrecognized layerIDs{%d}=''%s''; skipping.', iLayer, layerIds{iLayer});
+            continue;
+        end
+        areaByLayer(iLayer) = areaName;
+    end
 end
 
 function spikeData = load_spike_times_schall(paths, sessionName, opts)

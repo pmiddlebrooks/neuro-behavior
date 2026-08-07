@@ -63,7 +63,8 @@
 %   correlation matrix across sessions.
 
 %% Configuration
-sessionTypes = {'spontaneous', 'interval', 'reach'};
+sessionTypes = default_manuscript_session_types();
+sessionTypes = order_manuscript_session_types(sessionTypes);
 collectStart = 10;
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
@@ -75,7 +76,7 @@ binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
 binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 
-% Engagement timing (reach + interval); defaults match engagement module fill_*_defaults
+% Engagement timing (reach + interval + semicircle); defaults match engagement module fill_*_defaults
 engagementBuffer = 1;       % s around each reach/beam-break = engaged
 minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
 absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
@@ -306,9 +307,9 @@ end
 % Engagement batch (interval/reach engaged vs non-engaged for selected pipelines)
 engOut = [];
 if splitByEngagement
-  engSessionTypes = intersect(sessionTypes, {'interval', 'reach'}, 'stable');
+  engSessionTypes = intersect(sessionTypes, {'interval', 'reach', 'semicircle'}, 'stable');
   if isempty(engSessionTypes)
-    error('splitByEngagement requires interval and/or reach in sessionTypes.');
+    error('splitByEngagement requires interval, reach, and/or semicircle in sessionTypes.');
   end
   engAnalyses = {};
   if useAr, engAnalyses{end + 1} = 'd2'; end %#ok<AGROW>
@@ -564,6 +565,7 @@ function plot_metric_correlation_matrix_across_sessions(arOut, avOut, prgOut, ar
 %
 % Goal:
 %   Each matrix entry is corr(metric_i, metric_j) across sessions (all tasks).
+sessionTypes = order_manuscript_session_types(sessionTypes);
 %   Crackling (paramSD=1/σνz), decades, kurtosis, and JS distance are inverted
 %   (1/x) before correlating so expected co-variation with criticality is positive.
 
@@ -1024,6 +1026,7 @@ function plot_multimetric_d2_tau_alpha_across_tasks(arPlotData, avPlotData, area
 %
 % Variables:
 %   useAnchorAffineMap - If true, affine-map non-anchor metrics onto anchorMetric
+sessionTypes = order_manuscript_session_types(sessionTypes);
 
 if nargin < 11 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
@@ -1342,6 +1345,7 @@ function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, pr
 % Layout:
 %   Top:    D2 | Avalanche Sizes | Avalanche Durations | Crackling 1/σνz
 %   Bottom: Scale Range | dcc | Renorm: Kurtosis | Renorm: JS-Distance
+sessionTypes = order_manuscript_session_types(sessionTypes);
 %
 % Variables:
 %   arPlotData / avPlotData - Sources for d2 / tau / alpha / paramSD / dcc
@@ -1799,6 +1803,7 @@ function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, are
 %   (1,2) Avalanche Durations vs D2
 %   (2,1) Measured vs Predicted Crackling Exponent
 %   (2,2) Crackling Exponent vs D2
+sessionTypes = order_manuscript_session_types(sessionTypes);
 %
 % Crackling naming:
 %   Measured / observed crackling exponent = paramSD = 1/σνz from WLS ⟨S⟩(T)
@@ -3102,6 +3107,8 @@ for s = 1:numSessions
     engModOpts = build_multimetric_engagement_module_opts(opts, sessionType);
     if strcmpi(sessionType, 'reach')
       sessionOut = reach_criticality_metrics_engagement(sessionName, engModOpts);
+    elseif strcmpi(sessionType, 'semicircle')
+      sessionOut = semicircle_criticality_metrics_engagement(subjectName, sessionName, engModOpts);
     else
       sessionOut = interval_criticality_metrics_engagement(subjectName, sessionName, engModOpts);
     end
@@ -3201,10 +3208,12 @@ tf = contains(msg, 'No valid areas to process') ...
 end
 
 function engModOpts = build_multimetric_engagement_module_opts(opts, sessionType)
-% BUILD_MULTIMETRIC_ENGAGEMENT_MODULE_OPTS - Opts for reach/interval engagement
+% BUILD_MULTIMETRIC_ENGAGEMENT_MODULE_OPTS - Opts for reach/interval/semicircle engagement
 
 if strcmpi(sessionType, 'reach')
   engModOpts = reach_criticality_metrics_engagement();
+elseif strcmpi(sessionType, 'semicircle')
+  engModOpts = semicircle_criticality_metrics_engagement();
 else
   engModOpts = interval_criticality_metrics_engagement();
 end
@@ -3222,7 +3231,7 @@ if isfield(opts, 'binSizeAv') && ~isempty(opts.binSizeAv)
   engModOpts.binSizeAv = opts.binSizeAv;
 end
 % Engagement timing: reach uses reachBuffer / absorbSingleReaches;
-% interval uses eventBuffer / absorbSingleEvents (aliases also accepted there)
+% interval/semicircle use eventBuffer / absorbSingleEvents
 if isfield(opts, 'engagementBuffer') && ~isempty(opts.engagementBuffer)
   if strcmpi(sessionType, 'reach')
     engModOpts.reachBuffer = opts.engagementBuffer;
@@ -3311,19 +3320,16 @@ sessionTable = table(sessionTypeCol, sessionNameCol, subjectNameCol, labelCol, .
 end
 
 function entries = get_multimetric_engagement_sessions(sessionType)
-switch lower(sessionType)
-  case 'interval'
-    entries = interval_session_list();
-  case 'reach'
-    names = reach_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:numel(names)
-      entries(i).subjectName = ''; %#ok<AGROW>
-      entries(i).sessionName = names{i}; %#ok<AGROW>
-    end
-  otherwise
-    entries = struct('subjectName', {}, 'sessionName', {});
+% GET_MULTIMETRIC_ENGAGEMENT_SESSIONS - Sessions for engagement batch only
+%
+% Engagement modules exist for interval/reach/semicircle. Spontaneous returns
+% an empty list so it stays on the main (non-split) path.
+
+if ~is_manuscript_engagement_session_type(sessionType)
+  entries = struct('subjectName', {}, 'sessionName', {});
+  return;
 end
+entries = manuscript_sessions_for_type(sessionType);
 end
 
 function plotData = aggregate_multimetric_engagement_plot_data(batchResults, sessionTypes, useLog10D2)
@@ -3331,6 +3337,7 @@ function plotData = aggregate_multimetric_engagement_plot_data(batchResults, ses
 
 plotData = struct();
 plotData.areas = {};
+sessionTypes = order_manuscript_session_types(sessionTypes);
 plotData.sessionTypes = sessionTypes;
 plotData.byType = struct();
 plotData.useLog10D2 = useLog10D2;
@@ -3629,7 +3636,7 @@ prgView.areas = areaSet;
 for t = 1:numel(sessionTypes)
   sessionType = sessionTypes{t};
   typeKey = matlab.lang.makeValidName(sessionType);
-  isEngType = ismember(lower(sessionType), {'interval', 'reach'});
+  isEngType = is_manuscript_engagement_session_type(sessionType);
 
   arView.byType.(typeKey) = init_standard_ar_type(numel(areaSet));
   avView.byType.(typeKey) = init_standard_av_type(numel(areaSet));

@@ -480,7 +480,7 @@ setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
 paths = get_paths();
 plotConfig = fill_manuscript_plot_config();
 
-sessionTypes = {'spontaneous', 'interval', 'reach'};
+sessionTypes = default_manuscript_session_types();
 sessionTypes = {'spontaneous'};
 collectStart = 0;
 collectEnd = [];  % [] = full session (matches multiple_metrics)
@@ -914,35 +914,7 @@ end
 
 function entries = scratch_get_sessions_for_type(sessionType)
 % SCRATCH_GET_SESSIONS_FOR_TYPE - Struct array with subjectName and sessionName
-
-switch lower(sessionType)
-  case 'spontaneous'
-    entries = spontaneous_session_list();
-  case 'interval'
-    entries = interval_session_list();
-  case 'reach'
-    names = reach_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:numel(names)
-      entries(i).subjectName = '';
-      entries(i).sessionName = names{i};
-    end
-  case 'schall'
-    names = schall_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:numel(names)
-      parts = strsplit(names{i}, '/');
-      if numel(parts) >= 2
-        entries(i).subjectName = parts{1};
-        entries(i).sessionName = parts{2};
-      else
-        entries(i).subjectName = '';
-        entries(i).sessionName = names{i};
-      end
-    end
-  otherwise
-    error('Unknown sessionType: %s', sessionType);
-end
+entries = manuscript_sessions_for_type(sessionType);
 end
 
 function combo = scratch_lookup_brain_area_combo(brainArea, combinations)

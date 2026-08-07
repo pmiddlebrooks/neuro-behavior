@@ -170,23 +170,16 @@ fprintf('\n=== Done ===\n');
 %% Local functions
 
 function validate_example_sessions(exampleSessions)
-% VALIDATE_EXAMPLE_SESSIONS - Require spontaneous, interval, and reach examples
+% VALIDATE_EXAMPLE_SESSIONS - Require named examples with valid sessionType
 
-requiredTypes = {'spontaneous', 'interval', 'reach'};
-if numel(exampleSessions) ~= 3
-  error('exampleSessions must contain exactly three entries.');
-end
-foundTypes = {exampleSessions.sessionType};
-for t = 1:numel(requiredTypes)
-  if ~any(strcmpi(foundTypes, requiredTypes{t}))
-    error('exampleSessions must include one %s session.', requiredTypes{t});
-  end
+if isempty(exampleSessions)
+  error('exampleSessions must contain at least one entry.');
 end
 for e = 1:numel(exampleSessions)
   if isempty(exampleSessions(e).sessionName)
     error('exampleSessions(%d).sessionName is required.', e);
   end
-  if any(strcmpi(exampleSessions(e).sessionType, {'spontaneous', 'interval'})) ...
+  if any(strcmpi(exampleSessions(e).sessionType, {'spontaneous', 'interval', 'semicircle'})) ...
       && isempty(exampleSessions(e).subjectName)
     error('exampleSessions(%d).subjectName is required for %s sessions.', ...
       e, exampleSessions(e).sessionType);
@@ -463,11 +456,22 @@ plotConfig = fill_default_avalanche_plot_config(plotConfig);
 
 fig = figure('Color', 'w', 'Position', [40 80 1680 320], ...
   'Name', 'Avalanche size/duration examples');
-tileLayout = tiledlayout(fig, 1, 6, ...
-  'TileSpacing', plotConfig.tileSpacing, 'Padding', plotConfig.tilePadding);
 
-sessionOrder = {'spontaneous', 'interval', 'reach'};
+foundTypes = {};
+for iEx = 1:numel(exampleResults)
+  if isfield(exampleResults(iEx), 'sessionType') && ~isempty(exampleResults(iEx).sessionType)
+    foundTypes{end + 1} = exampleResults(iEx).sessionType; %#ok<AGROW>
+  elseif isfield(exampleResults(iEx), 'example') && ~isempty(exampleResults(iEx).example) ...
+      && isfield(exampleResults(iEx).example, 'sessionType')
+    foundTypes{end + 1} = exampleResults(iEx).example.sessionType; %#ok<AGROW>
+  end
+end
+sessionOrder = order_manuscript_session_types(foundTypes);
 plottedCount = 0;
+
+nSessions = max(1, numel(sessionOrder));
+tileLayout = tiledlayout(fig, 1, nSessions * 2, ...
+  'TileSpacing', plotConfig.tileSpacing, 'Padding', plotConfig.tilePadding);
 
 for s = 1:numel(sessionOrder)
   sessionType = sessionOrder{s};

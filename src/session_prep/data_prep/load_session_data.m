@@ -2,11 +2,11 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
 % LOAD_SESSION_DATA Load and prepare data for session-based analyses
 %
 % Variables:
-%   sessionType - 'reach', 'spontaneous', 'interval', 'schall', or 'hong'
+%   sessionType - 'reach', 'spontaneous', 'interval', 'semicircle', 'schall', or 'hong'
 %   dataSource - 'spikes' or 'lfp'
 %   varargin - Optional name-value pairs:
-%       'subjectName' - Subject folder (required for spontaneous/interval)
-%       'sessionName' - Session identifier (required for reach/spontaneous/interval/schall)
+%       'subjectName' - Subject folder (required for spontaneous/interval/semicircle)
+%       'sessionName' - Session identifier (required for reach/spontaneous/interval/semicircle/schall)
 %       'opts' - Options structure (default: neuro_behavior_options).
 %           If opts.firingRateCheckTime is empty, firing-rate filtering uses
 %           the full session duration (opts.collectStart to opts.collectEnd).
@@ -101,6 +101,14 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
             dataStruct.sessionName = sessionName;
             dataStruct = load_reach_data(dataStruct, dataSource, paths, sessionName, opts, lfpCleanParams, bands);
 
+        case 'semicircle'
+            if isempty(subjectName) || isempty(sessionName)
+                error('subjectName and sessionName must be provided for semicircle data');
+            end
+            dataStruct.subjectName = subjectName;
+            dataStruct.sessionName = sessionName;
+            dataStruct = load_semicircle_data(dataStruct, dataSource, paths, opts, subjectName, sessionName, lfpCleanParams, bands);
+
         case 'schall'
             if isempty(sessionName)
                 error('sessionName must be provided for schall data');
@@ -113,7 +121,7 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
             dataStruct.sessionName = sessionName;
 
         otherwise
-            error('Invalid sessionType: %s. Must be ''reach'', ''spontaneous'', ''interval'', ''schall'', or ''hong''', sessionType);
+            error('Invalid sessionType: %s. Must be ''reach'', ''spontaneous'', ''interval'', ''semicircle'', ''schall'', or ''hong''', sessionType);
     end
 
     fprintf('Session data loading complete. %d areas loaded.\n', length(dataStruct.areas));

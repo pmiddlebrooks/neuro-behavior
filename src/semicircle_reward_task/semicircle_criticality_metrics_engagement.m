@@ -1,0 +1,39 @@
+function out = semicircle_criticality_metrics_engagement(subjectName, sessionName, opts)
+% SEMICIRCLE_CRITICALITY_METRICS_ENGAGEMENT - Criticality by semicircle engagement
+%
+% Variables:
+%   subjectName - Subject folder (e.g. 'AS1')
+%   sessionName - Session identifier (e.g. 'AS1_0618_WellLearned')
+%   opts        - Options struct (same fields as interval_criticality_metrics_engagement)
+%
+% Goal:
+%   Same engagement analyses as the interval-timing module, but engagement
+%   events are rewarded / unrewarded choice-port beam breaks from TaskMatrix
+%   (outcomes 1 and 0). Failed trials (outcome -1) are not engagement events.
+%
+% Returns:
+%   With no inputs: default options struct.
+%   Otherwise: engagement results struct from the shared beam-break pipeline.
+
+if nargin == 0
+  out = interval_criticality_metrics_engagement();
+  out.runD2TrialRateCorrelation = false;
+  out.beamBreakTask = 'semicircle';
+  return;
+end
+
+if nargin < 2 || isempty(subjectName) || isempty(sessionName)
+  error('semicircle_criticality_metrics_engagement:MissingSession', ...
+    'subjectName and sessionName are required.');
+end
+if nargin < 3 || isempty(opts)
+  opts = struct();
+end
+
+opts.beamBreakTask = 'semicircle';
+if ~isfield(opts, 'runD2TrialRateCorrelation') || isempty(opts.runD2TrialRateCorrelation)
+  opts.runD2TrialRateCorrelation = false;
+end
+
+out = interval_criticality_metrics_engagement(subjectName, sessionName, opts);
+end

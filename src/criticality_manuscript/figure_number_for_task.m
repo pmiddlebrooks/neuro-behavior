@@ -2,7 +2,7 @@ function figNumber = figure_number_for_task(sessionType, plotKind, cellType)
 % FIGURE_NUMBER_FOR_TASK - Stable MATLAB figure numbers per task and plot role
 %
 % Variables:
-%   sessionType - 'spontaneous', 'interval', 'reach', or 'schall'
+%   sessionType - 'spontaneous', 'interval', 'reach', 'semicircle', or 'schall'
 %   plotKind    - 'distributions', 'ei_summary', or 'bin_size_sweep'
 %   cellType    - '', 'all', 'excitatory', or 'inhibitory' (distributions only)
 %
@@ -28,6 +28,8 @@ switch lower(strtrim(char(sessionType)))
     baseNumber = 8300;
   case 'schall'
     baseNumber = 8400;
+  case 'semicircle'
+    baseNumber = 8500;
   otherwise
     baseNumber = 8900;
 end

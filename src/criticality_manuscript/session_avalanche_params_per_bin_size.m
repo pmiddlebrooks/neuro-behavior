@@ -5,7 +5,7 @@
 % across bin sizes and plots tau, alpha, paramSD, decades, and dcc.
 %
 % Variables (configure in this section):
-%   sessionType        - 'spontaneous', 'interval', 'reach', 'schall'
+%   sessionType        - 'spontaneous', 'interval', 'reach', 'semicircle', 'schall'
 %   sessionName        - Session identifier
 %   subjectName        - Required for spontaneous/interval; '' for reach
 %   dataSource         - 'spikes' or 'lfp'

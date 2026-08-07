@@ -17,7 +17,8 @@
 %      summarized by task.
 
 %% Configuration
-sessionTypes = {'spontaneous', 'interval', 'reach'};
+sessionTypes = default_manuscript_session_types();
+sessionTypes = order_manuscript_session_types(sessionTypes);
 analyses = {'d2', 'av', 'prg'};  % any subset of {'d2','av','prg'}
 nNeuronsSubsampleList = 20:5:60;
 
@@ -223,38 +224,7 @@ sessionTable = table(sessionTypeCol, sessionNameCol, subjectNameCol, labelCol, .
 end
 
 function entries = get_sessions_for_type(sessionType)
-switch lower(sessionType)
-  case 'spontaneous'
-    entries = spontaneous_session_list();
-  case 'interval'
-    entries = interval_session_list();
-  case 'reach'
-    names = reach_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:length(names)
-      entries(i).subjectName = '';
-      entries(i).sessionName = names{i};
-    end
-  case 'schall'
-    names = schall_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:length(names)
-      parts = strsplit(names{i}, '/');
-      if numel(parts) >= 2
-        entries(i).subjectName = parts{1};
-        entries(i).sessionName = parts{2};
-      else
-        entries(i).subjectName = '';
-        entries(i).sessionName = names{i};
-      end
-    end
-  otherwise
-    error('Unknown sessionType: %s', sessionType);
-end
-
-if ~isstruct(entries) || ~isfield(entries, 'sessionName')
-  error('Session list for %s must return a struct array with sessionName.', sessionType);
-end
+entries = manuscript_sessions_for_type(sessionType);
 end
 
 function summary = aggregate_subsample_batch_summary(batchResults, opts)

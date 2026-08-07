@@ -200,7 +200,7 @@ end
 
 function opts = fill_criticality_av_across_tasks_opts(opts)
 defaults = struct();
-defaults.sessionTypes = {'spontaneous', 'interval', 'reach'};
+defaults.sessionTypes = default_manuscript_session_types();
 defaults.dataSource = 'spikes';
 defaults.collectStart = 0;
 defaults.collectEnd = 45 * 60;
@@ -232,6 +232,7 @@ opts = merge_struct_defaults(opts, defaults);
 if preserveCollectEndEmpty
   opts.collectEnd = [];
 end
+opts.sessionTypes = order_manuscript_session_types(opts.sessionTypes);
 end
 
 function batchMeta = pack_av_across_tasks_batch_meta(opts)
@@ -505,39 +506,7 @@ end
 
 function entries = get_sessions_for_type(sessionType)
 % GET_SESSIONS_FOR_TYPE - Struct array with subjectName and sessionName
-
-switch lower(sessionType)
-  case 'spontaneous'
-    entries = spontaneous_session_list();
-  case 'interval'
-    entries = interval_session_list();
-  case 'reach'
-    names = reach_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:length(names)
-      entries(i).subjectName = '';
-      entries(i).sessionName = names{i};
-    end
-  case 'schall'
-    names = schall_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:length(names)
-      parts = strsplit(names{i}, '/');
-      if numel(parts) >= 2
-        entries(i).subjectName = parts{1};
-        entries(i).sessionName = parts{2};
-      else
-        entries(i).subjectName = '';
-        entries(i).sessionName = names{i};
-      end
-    end
-  otherwise
-    error('Unknown sessionType: %s', sessionType);
-end
-
-if ~isstruct(entries) || ~isfield(entries, 'sessionName')
-  error('Session list for %s must return a struct array with sessionName.', sessionType);
-end
+entries = manuscript_sessions_for_type(sessionType);
 end
 
 function label = make_session_label(~, entry)
@@ -592,6 +561,7 @@ function plotData = aggregate_av_metrics(batchResults, sessionTypes)
 
 plotData = struct();
 plotData.areas = {};
+sessionTypes = order_manuscript_session_types(sessionTypes);
 plotData.sessionTypes = sessionTypes;
 plotData.byType = struct();
 
@@ -723,6 +693,7 @@ end
 end
 
 function plot_av_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, paths, brainArea, cellType)
+sessionTypes = order_manuscript_session_types(sessionTypes);
 % PLOT_AV_ACROSS_TASKS - 2x4 bar plots grouped by session type
 
 if nargin < 7
@@ -951,6 +922,7 @@ end
 
 function plot_av_crackling_relation_across_tasks(plotData, areasToPlot, sessionTypes, ...
     collectStart, collectEnd, paths, brainArea, cellType)
+sessionTypes = order_manuscript_session_types(sessionTypes);
 % PLOT_AV_CRACKLING_RELATION_ACROSS_TASKS - paramSD vs γ_pred + dcc histogram
 %
 % Variables:

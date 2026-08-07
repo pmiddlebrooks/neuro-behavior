@@ -6,7 +6,7 @@
 % window-wise d2 for real vs shuffled data.
 %
 % Variables (configure in this section):
-%   sessionType      - 'spontaneous', 'interval', 'reach', 'schall'
+%   sessionType      - 'spontaneous', 'interval', 'reach', 'semicircle', 'schall'
 %   sessionName      - Session identifier
 %   subjectName      - Required for spontaneous/interval; '' for reach
 %   dataSource       - 'spikes' or 'lfp'
@@ -42,13 +42,20 @@
 % sessionName = 'ey9166_2026_04_03';
 % dataSource = 'spikes';
 
+sessionType = 'semicircle';
+subjectName = 'AS1';
+sessionName = 'AS1_0618_WellLearned';
+% sessionName = 'AS1_0623_TransitionAfterCompletedTrial_80';
+% sessionName = 'AS1_0624_PoorlyLearned';
+dataSource = 'spikes';
+
 collectStart = 0;
 % collectStart = 1.2*10^4;
 collectEnd = 45 * 60;
 collectEnd = 1.2*10^4;
 collectEnd = [];
 
-d2Window = 5*60;  % seconds; non-overlapping windows
+d2Window = 1*60;  % seconds; non-overlapping windows
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
@@ -61,7 +68,7 @@ nPermutations = 5;  % circular shuffles per window for shuffled d2 distribution
 plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
-binSize = 0.04;  % s; spike binning for d2 (and window mean popActivity)
+binSize = 0.03;  % s; spike binning for d2 (and window mean popActivity)
 saveFigure = false;
 plotConfig = fill_manuscript_plot_config();
 
@@ -104,6 +111,7 @@ analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 
 % Paths
+paths = get_paths();
 
 fprintf('\n=== Session d2 Distributions ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);

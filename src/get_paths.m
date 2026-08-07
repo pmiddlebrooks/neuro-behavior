@@ -34,6 +34,8 @@ intervalDataPath = fullfile(dropPath, 'interval_timing_task/data');
 intervalResultsPath = fullfile(dropPath, 'interval_timing_task/results');
 reachDataPath = fullfile(dropPath, 'reach_task/data');
 reachResultsPath = fullfile(dropPath, 'reach_task/results');
+semicircleDataPath = fullfile(dropPath, 'semicircle_reward_task/data');
+semicircleResultsPath = fullfile(dropPath, 'semicircle_reward_task/results');
 schallDataPath = fullfile(dropPath, 'schall/data');
 schallResultsPath = fullfile(dropPath, 'schall/results');
 
@@ -63,6 +65,8 @@ paths.nrnDataPath = nrnDataPath;
 paths.saveDataPath = saveDataPath;
 paths.reachDataPath = reachDataPath;
 paths.reachResultsPath = reachResultsPath;
+paths.semicircleDataPath = semicircleDataPath;
+paths.semicircleResultsPath = semicircleResultsPath;
 paths.schallDataPath = schallDataPath;
 paths.schallResultsPath = schallResultsPath;
 paths.dropPath = dropPath;

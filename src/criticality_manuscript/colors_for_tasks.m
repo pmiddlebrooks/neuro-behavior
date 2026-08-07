@@ -2,7 +2,7 @@ function colorRgb = colors_for_tasks(sessionType)
 % COLORS_FOR_TASKS - Task-specific RGB colors for manuscript figures
 %
 % Variables:
-%   sessionType - 'spontaneous', 'interval', 'reach', or 'schall'
+%   sessionType - 'spontaneous', 'interval', 'reach', 'semicircle', or 'schall'
 %
 % Returns:
 %   colorRgb - 1x3 RGB in [0, 1]
@@ -17,6 +17,8 @@ switch lower(strtrim(char(sessionType)))
     colorRgb = [0.90, 0.60, 0.15];
   case 'reach'
     colorRgb = [0.20, 0.65, 0.30];
+  case 'semicircle'
+    colorRgb = [0.75, 0.25, 0.45];
   otherwise
     colorRgb = [0.35, 0.35, 0.35];
 end

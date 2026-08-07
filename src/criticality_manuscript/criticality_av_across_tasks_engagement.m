@@ -22,7 +22,8 @@
 %   Companion figure: crackling 1/σνz (paramSD) vs (α-1)/(τ-1).
 
 %% Configuration
-sessionTypes = {'spontaneous', 'interval', 'reach'};
+sessionTypes = default_manuscript_session_types();
+sessionTypes = order_manuscript_session_types(sessionTypes);
 dataSource = 'spikes';
 
 collectStart = 0;
@@ -128,6 +129,8 @@ if runBatch
           reachBuffer, absorbSingleEvents);
         if strcmpi(sessionType, 'reach')
           engOut = reach_criticality_metrics_engagement(sessionName, engOpts);
+        elseif strcmpi(sessionType, 'semicircle')
+          engOut = semicircle_criticality_metrics_engagement(subjectName, sessionName, engOpts);
         else
           engOut = interval_criticality_metrics_engagement(subjectName, sessionName, engOpts);
         end
@@ -207,7 +210,7 @@ else
   batchResults = loaded.batchResults;
   plotData = loaded.plotData;
   batchMeta = loaded.batchMeta;
-  sessionTypes = batchMeta.sessionTypes;
+  sessionTypes = order_manuscript_session_types(batchMeta.sessionTypes);
   collectStart = batchMeta.collectStart;
   collectEnd = batchMeta.collectEnd;
   brainArea = batchMeta.brainArea;
@@ -277,25 +280,11 @@ sessionTable = table(sessionTypeCol, sessionNameCol, subjectNameCol, labelCol, .
 end
 
 function entries = get_engagement_sessions_for_type(sessionType)
-switch lower(sessionType)
-  case 'spontaneous'
-    entries = spontaneous_session_list();
-  case 'interval'
-    entries = interval_session_list();
-  case 'reach'
-    names = reach_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:length(names)
-      entries(i).subjectName = ''; %#ok<AGROW>
-      entries(i).sessionName = names{i}; %#ok<AGROW>
-    end
-  otherwise
-    error('Unknown sessionType for engagement AV: %s', sessionType);
-end
+entries = manuscript_sessions_for_type(sessionType);
 end
 
 function tf = is_engagement_session_type(sessionType)
-tf = any(strcmpi(sessionType, {'reach', 'interval'}));
+tf = is_manuscript_engagement_session_type(sessionType);
 end
 
 function engOpts = build_av_engagement_batch_opts(opts, brainArea, brainAreaCombinations, ...
@@ -306,6 +295,8 @@ function engOpts = build_av_engagement_batch_opts(opts, brainArea, brainAreaComb
 
 if strcmpi(sessionType, 'reach')
   engOpts = reach_criticality_metrics_engagement();
+elseif strcmpi(sessionType, 'semicircle')
+  engOpts = semicircle_criticality_metrics_engagement();
 else
   engOpts = interval_criticality_metrics_engagement();
 end
@@ -455,6 +446,7 @@ function plotData = aggregate_engagement_av_metrics(batchResults, sessionTypes)
 
 plotData = struct();
 plotData.areas = {};
+sessionTypes = order_manuscript_session_types(sessionTypes);
 plotData.sessionTypes = sessionTypes;
 plotData.byType = struct();
 
@@ -673,6 +665,7 @@ end
 function plot_engagement_av_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, ...
     collectEnd, paths, brainArea, metricsToPlot, plotConfig)
 % PLOT_ENGAGEMENT_AV_ACROSS_TASKS - Engaged/non-engaged avalanche scalars by session
+sessionTypes = order_manuscript_session_types(sessionTypes);
 
 if nargin < 9 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
@@ -883,6 +876,7 @@ end
 
 function plot_engagement_av_crackling_relation(plotData, areasToPlot, sessionTypes, ...
     collectStart, collectEnd, paths, brainArea, plotConfig)
+sessionTypes = order_manuscript_session_types(sessionTypes);
 % PLOT_ENGAGEMENT_AV_CRACKLING_RELATION - paramSD vs γ_pred by engagement class
 %
 % Variables:

@@ -51,6 +51,10 @@ function out = interval_criticality_metrics_engagement(subjectName, sessionName,
 %   task log rather than reaches. Isolated single events may be absorbed; see
 %   absorbSingleEvents.
 %
+%   Also supports semicircle sessions when opts.beamBreakTask = 'semicircle'
+%   (via semicircle_criticality_metrics_engagement), using rewarded/unrewarded
+%   choice-port poke times from TaskMatrix as beam-break events.
+%
 % Returns:
 %   With no inputs: default options struct (same fields as opts above).
 %   Otherwise: struct with durations, segments, results, figHandles, config
@@ -71,11 +75,22 @@ end
 opts = fill_engagement_opts_defaults(opts);
 
 sessionType = 'interval';
+if isfield(opts, 'beamBreakTask') && ~isempty(opts.beamBreakTask)
+  sessionType = lower(strtrim(char(opts.beamBreakTask)));
+end
+if ~ismember(sessionType, {'interval', 'semicircle'})
+  error('interval_criticality_metrics_engagement:BadBeamBreakTask', ...
+    'beamBreakTask must be ''interval'' or ''semicircle'' (got %s).', sessionType);
+end
 dataSource = opts.dataSource;
 collectStart = opts.collectStart;
 collectEnd = opts.collectEnd;
 
-fprintf('\n=== Interval criticality metrics by engagement ===\n');
+if strcmp(sessionType, 'semicircle')
+  fprintf('\n=== Semicircle criticality metrics by engagement ===\n');
+else
+  fprintf('\n=== Interval criticality metrics by engagement ===\n');
+end
 fprintf('Session: %s / %s\n', subjectName, sessionName);
 fprintf('Analyses: %s\n', strjoin(opts.analyses, ', '));
 
@@ -126,8 +141,13 @@ if ~areaOk
 end
 
 paths = get_paths();
-[eventTimes, eventTypes, trials] = load_interval_beam_break_events( ...
-  paths, subjectName, sessionName, opts.minLeaveSec);
+if strcmp(sessionType, 'semicircle')
+  [eventTimes, eventTypes, trials] = load_semicircle_beam_break_events( ...
+    paths, subjectName, sessionName);
+else
+  [eventTimes, eventTypes, trials] = load_interval_beam_break_events( ...
+    paths, subjectName, sessionName, opts.minLeaveSec);
+end
 eventInCollect = eventTimes >= collectStart & eventTimes <= collectEnd;
 eventTimes = eventTimes(eventInCollect);
 eventTypes = eventTypes(eventInCollect);
@@ -136,7 +156,7 @@ nError = sum(eventTypes == "error");
 
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', ...
   collectStart, collectEnd, (collectEnd - collectStart) / 60);
-fprintf('Beam-break events in collect window: %d (%d correct, %d error)\n', ...
+fprintf('Beam-break events in collect window: %d (%d correct/rewarded, %d error/unrewarded)\n', ...
   numel(eventTimes), nCorrect, nError);
 if isempty(eventTimes)
   error('interval_criticality_metrics_engagement:NoEvents', ...
@@ -149,14 +169,19 @@ if opts.absorbSingleEvents && numel(eventTimesEngaged) < numel(eventTimes)
     numel(eventTimes) - numel(eventTimesEngaged));
 end
 
-[eventTimesForRate, nExcludedEarlyErrors] = filter_interval_events_for_trial_rate( ...
-  trials, opts.sessionInterval, opts.rewardAttemptBeforeSec);
-eventInCollectRate = eventTimesForRate >= collectStart & eventTimesForRate <= collectEnd;
-eventTimesForRate = eventTimesForRate(eventInCollectRate);
-fprintf(['Trial-rate analysis: %d beam-break events in collect window ', ...
-  '(%d early errors excluded; poke < %.1f s)\n'], ...
-  numel(eventTimesForRate), nExcludedEarlyErrors, ...
-  opts.sessionInterval - opts.rewardAttemptBeforeSec);
+if strcmp(sessionType, 'interval') && opts.runD2TrialRateCorrelation
+  [eventTimesForRate, nExcludedEarlyErrors] = filter_interval_events_for_trial_rate( ...
+    trials, opts.sessionInterval, opts.rewardAttemptBeforeSec);
+  eventInCollectRate = eventTimesForRate >= collectStart & eventTimesForRate <= collectEnd;
+  eventTimesForRate = eventTimesForRate(eventInCollectRate);
+  fprintf(['Trial-rate analysis: %d beam-break events in collect window ', ...
+    '(%d early errors excluded; poke < %.1f s)\n'], ...
+    numel(eventTimesForRate), nExcludedEarlyErrors, ...
+    opts.sessionInterval - opts.rewardAttemptBeforeSec);
+else
+  eventTimesForRate = eventTimes;
+  nExcludedEarlyErrors = 0;
+end
 
 [clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
 

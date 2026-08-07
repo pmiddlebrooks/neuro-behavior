@@ -250,7 +250,14 @@ if makePlots
     areaTag = 'allAreas';
   end
 
-  plotOrder = {'spontaneous', 'interval', 'reach'};
+  foundTypes = {};
+  for iEx = 1:numel(exampleResults)
+    if isfield(exampleResults(iEx), 'example') && ~isempty(exampleResults(iEx).example) ...
+        && isfield(exampleResults(iEx).example, 'sessionType')
+      foundTypes{end + 1} = exampleResults(iEx).example.sessionType; %#ok<AGROW>
+    end
+  end
+  plotOrder = order_manuscript_session_types(foundTypes);
   [d2YLim, cvYLim] = shared_d2_cv_ylims(exampleResults, plotOrder, enablePermutations);
   colorCv = [0.72 0.42 0.68];       % muted magenta (toward gray)
   colorCvPermuted = gray_color_toward_neutral(colorCv, 0.68);
@@ -261,7 +268,7 @@ if makePlots
   figHeightPx = round(0.46 * screenSize(4));   % ~half of a maximized figure
   set(figMain, 'Units', 'pixels', 'Position', ...
     [round(0.04 * screenSize(3)), round(0.27 * screenSize(4)), figWidthPx, figHeightPx]);
-  tl = tiledlayout(1, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
+  tl = tiledlayout(1, max(1, numel(plotOrder)), 'TileSpacing', 'compact', 'Padding', 'compact');
   for k = 1:numel(plotOrder)
     e = find(arrayfun(@(r) isfield(r, 'example') && ~isempty(r.example) ...
       && strcmpi(r.example.sessionType, plotOrder{k}), exampleResults), 1);
@@ -409,23 +416,16 @@ colorGrayed = (1 - grayAmount) * colorRgb + grayAmount * neutralGray;
 end
 
 function validate_example_sessions(exampleSessions)
-% VALIDATE_EXAMPLE_SESSIONS - Require spontaneous, interval, and reach examples
+% VALIDATE_EXAMPLE_SESSIONS - Require named examples with valid sessionType
 
-requiredTypes = {'spontaneous', 'interval', 'reach'};
-if numel(exampleSessions) ~= 3
-  error('exampleSessions must contain exactly three entries.');
-end
-foundTypes = {exampleSessions.sessionType};
-for t = 1:numel(requiredTypes)
-  if ~any(strcmpi(foundTypes, requiredTypes{t}))
-    error('exampleSessions must include one %s session.', requiredTypes{t});
-  end
+if isempty(exampleSessions)
+  error('exampleSessions must contain at least one entry.');
 end
 for e = 1:numel(exampleSessions)
   if isempty(exampleSessions(e).sessionName)
     error('exampleSessions(%d).sessionName is required.', e);
   end
-  if any(strcmpi(exampleSessions(e).sessionType, {'spontaneous', 'interval'})) ...
+  if any(strcmpi(exampleSessions(e).sessionType, {'spontaneous', 'interval', 'semicircle'})) ...
       && isempty(exampleSessions(e).subjectName)
     error('exampleSessions(%d).subjectName is required for %s sessions.', ...
       e, exampleSessions(e).sessionType);

@@ -2,7 +2,7 @@ function out = criticality_per_subsample_size(sessionType, sessionName, subjectN
 % CRITICALITY_PER_SUBSAMPLE_SIZE - Metric dependence on nNeuronsSubsample (one session)
 %
 % Variables:
-%   sessionType - 'spontaneous' | 'interval' | 'reach' | 'schall'
+%   sessionType - 'spontaneous' | 'interval' | 'reach' | 'semicircle' | 'schall'
 %   sessionName - Session identifier
 %   subjectName - Subject ('' for reach / some lists)
 %   opts        - Optional struct; see defaults below

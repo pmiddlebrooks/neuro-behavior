@@ -219,7 +219,7 @@ function opts = fill_criticality_ar_across_tasks_opts(opts)
 % FILL_CRITICALITY_AR_ACROSS_TASKS_OPTS - Defaults for criticality_ar_across_tasks
 
 defaults = struct();
-defaults.sessionTypes = {'spontaneous', 'interval', 'reach'};
+defaults.sessionTypes = default_manuscript_session_types();
 defaults.dataSource = 'spikes';
 defaults.collectStart = 0;
 defaults.collectEnd = [];
@@ -255,6 +255,7 @@ end
 if preserveD2WindowEmpty
   opts.d2Window = [];
 end
+opts.sessionTypes = order_manuscript_session_types(opts.sessionTypes);
 end
 
 function batchMeta = pack_ar_across_tasks_batch_meta(opts)
@@ -552,39 +553,7 @@ end
 
 function entries = get_sessions_for_type(sessionType)
 % GET_SESSIONS_FOR_TYPE - Struct array with subjectName and sessionName
-
-switch lower(sessionType)
-  case 'spontaneous'
-    entries = spontaneous_session_list();
-  case 'interval'
-    entries = interval_session_list();
-  case 'reach'
-    names = reach_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:length(names)
-      entries(i).subjectName = '';
-      entries(i).sessionName = names{i};
-    end
-  case 'schall'
-    names = schall_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:length(names)
-      parts = strsplit(names{i}, '/');
-      if numel(parts) >= 2
-        entries(i).subjectName = parts{1};
-        entries(i).sessionName = parts{2};
-      else
-        entries(i).subjectName = '';
-        entries(i).sessionName = names{i};
-      end
-    end
-  otherwise
-    error('Unknown sessionType: %s', sessionType);
-end
-
-if ~isstruct(entries) || ~isfield(entries, 'sessionName')
-  error('Session list for %s must return a struct array with sessionName.', sessionType);
-end
+entries = manuscript_sessions_for_type(sessionType);
 end
 
 function label = make_session_label(~, entry)
@@ -640,6 +609,7 @@ end
 
 plotData = struct();
 plotData.areas = {};
+sessionTypes = order_manuscript_session_types(sessionTypes);
 plotData.sessionTypes = sessionTypes;
 plotData.byType = struct();
 plotData.useLog10D2 = useLog10D2;
@@ -845,6 +815,7 @@ end
 
 function plot_ar_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, cellType, enablePermutations)
 % PLOT_AR_ACROSS_TASKS - Raw+shuffled d2 and normalized d2 by session type
+sessionTypes = order_manuscript_session_types(sessionTypes);
 
 if nargin < 8 || isempty(brainArea)
   brainArea = '';

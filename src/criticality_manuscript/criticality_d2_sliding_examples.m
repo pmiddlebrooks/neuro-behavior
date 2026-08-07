@@ -164,23 +164,16 @@ fprintf('\n=== Done ===\n');
 %% Local functions
 
 function validate_example_sessions(exampleSessions)
-% VALIDATE_EXAMPLE_SESSIONS - Require spontaneous, interval, and reach examples
+% VALIDATE_EXAMPLE_SESSIONS - Require named examples with valid sessionType
 
-requiredTypes = {'spontaneous', 'interval', 'reach'};
-if numel(exampleSessions) ~= 3
-  error('exampleSessions must contain exactly three entries.');
-end
-foundTypes = {exampleSessions.sessionType};
-for t = 1:numel(requiredTypes)
-  if ~any(strcmpi(foundTypes, requiredTypes{t}))
-    error('exampleSessions must include one %s session.', requiredTypes{t});
-  end
+if isempty(exampleSessions)
+  error('exampleSessions must contain at least one entry.');
 end
 for e = 1:numel(exampleSessions)
   if isempty(exampleSessions(e).sessionName)
     error('exampleSessions(%d).sessionName is required.', e);
   end
-  if any(strcmpi(exampleSessions(e).sessionType, {'spontaneous', 'interval'})) ...
+  if any(strcmpi(exampleSessions(e).sessionType, {'spontaneous', 'interval', 'semicircle'})) ...
       && isempty(exampleSessions(e).subjectName)
     error('exampleSessions(%d).subjectName is required for %s sessions.', ...
       e, exampleSessions(e).sessionType);

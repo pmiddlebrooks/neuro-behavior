@@ -117,6 +117,17 @@ sessionName =  'Y16_23-Dec-2025 16_07_49_NeuroBeh';  %
 
 
 
+%% =============================    Semicircle Reward Task Data Loading    =============================
+sessionType = 'semicircle';  % 'reach' , 'spontaneous' , 'interval' , 'semicircle' , 'schall' , 'hong'
+
+subjectName = 'AS1';
+sessionName = 'AS1_0618_WellLearned';
+% sessionName = 'AS1_0623_TransitionAfterCompletedTrial_80';
+% sessionName = 'AS1_0624_PoorlyLearned';
+
+
+
+
 %% =============================    Schall Choice countermanding Data Loading    =============================
 sessionType = 'schall';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
 

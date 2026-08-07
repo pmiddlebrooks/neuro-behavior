@@ -1,10 +1,10 @@
 %%
 % Criticality AR (d2) Across Task Types — Engagement Split (Manuscript)
 %
-% Like criticality_ar_across_tasks.m, but for reach and interval sessions uses
-% reach_criticality_metrics_engagement / interval_criticality_metrics_engagement
-% (makePlots false) to obtain engaged vs non-engaged window d2 summaries.
-% Spontaneous sessions use the standard all-window d2 pipeline.
+% Like criticality_ar_across_tasks.m, but for reach, interval, and semicircle
+% sessions uses the engagement modules (makePlots false) to obtain engaged vs
+% non-engaged window d2 summaries. Spontaneous sessions use the standard
+% all-window d2 pipeline.
 %
 % Variables (configure in this section):
 %   sessionTypes   - Cell array of session types to include
@@ -19,13 +19,15 @@
 %   useSubsampling, nSubsamples, ...
 %
 % Goal:
-%   Compare d2 across sessions grouped by task type. Reach/interval: engaged and
-%   non-engaged side-by-side per session (+ shuffled mean in bar mode). Optional
-%   violin mode shows window distributions with means. Spontaneous: session total.
+%   Compare d2 across sessions grouped by task type. Reach/interval/semicircle:
+%   engaged and non-engaged side-by-side per session (+ shuffled mean in bar mode).
+%   Optional violin mode shows window distributions with means. Spontaneous: session total.
 
 %% Configuration
-sessionTypes = {'spontaneous', 'interval', 'reach'};
-sessionTypes = {'interval', 'reach'};
+sessionTypes = default_manuscript_session_types();
+sessionTypes = {'interval', 'reach', 'semicircle'};
+sessionTypes = order_manuscript_session_types(sessionTypes);
+% sessionTypes = default_manuscript_session_types();  % also includes spontaneous (no eng split)
 dataSource = 'spikes';
 
 collectStart = 0;
@@ -132,6 +134,8 @@ if runBatch
           brainAreaCombinations, plotConfig, sessionType);
         if strcmpi(sessionType, 'reach')
           engOut = reach_criticality_metrics_engagement(sessionName, engOpts);
+        elseif strcmpi(sessionType, 'semicircle')
+          engOut = semicircle_criticality_metrics_engagement(subjectName, sessionName, engOpts);
         else
           engOut = interval_criticality_metrics_engagement(subjectName, sessionName, engOpts);
         end
@@ -189,7 +193,7 @@ else
   batchResults = loaded.batchResults;
   plotData = loaded.plotData;
   batchMeta = loaded.batchMeta;
-  sessionTypes = batchMeta.sessionTypes;
+  sessionTypes = order_manuscript_session_types(batchMeta.sessionTypes);
   useLog10D2 = batchMeta.useLog10D2;
   collectStart = batchMeta.collectStart;
   collectEnd = batchMeta.collectEnd;
@@ -258,25 +262,11 @@ sessionTable = table(sessionTypeCol, sessionNameCol, subjectNameCol, labelCol, .
 end
 
 function entries = get_engagement_sessions_for_type(sessionType)
-switch lower(sessionType)
-  case 'spontaneous'
-    entries = spontaneous_session_list();
-  case 'interval'
-    entries = interval_session_list();
-  case 'reach'
-    names = reach_session_list();
-    entries = struct('subjectName', {}, 'sessionName', {});
-    for i = 1:length(names)
-      entries(i).subjectName = '';
-      entries(i).sessionName = names{i};
-    end
-  otherwise
-    error('Unknown sessionType: %s', sessionType);
-end
+entries = manuscript_sessions_for_type(sessionType);
 end
 
 function tf = is_engagement_session_type(sessionType)
-tf = any(strcmpi(sessionType, {'reach', 'interval'}));
+tf = is_manuscript_engagement_session_type(sessionType);
 end
 
 function engOpts = build_engagement_batch_opts(opts, analysisConfig, brainArea, ...
@@ -285,6 +275,8 @@ function engOpts = build_engagement_batch_opts(opts, analysisConfig, brainArea, 
 
 if strcmpi(sessionType, 'reach')
   engOpts = reach_criticality_metrics_engagement();
+elseif strcmpi(sessionType, 'semicircle')
+  engOpts = semicircle_criticality_metrics_engagement();
 else
   engOpts = interval_criticality_metrics_engagement();
 end
@@ -323,6 +315,7 @@ function plotData = aggregate_engagement_ar_metrics(batchResults, sessionTypes, 
 
 plotData = struct();
 plotData.areas = {};
+sessionTypes = order_manuscript_session_types(sessionTypes);
 plotData.sessionTypes = sessionTypes;
 plotData.byType = struct();
 plotData.useLog10D2 = useLog10D2;
@@ -649,6 +642,7 @@ end
 function plot_engagement_ar_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, ...
     collectEnd, d2Window, paths, brainArea, useLog10D2, useViolinPlots, plotConfig)
 % PLOT_ENGAGEMENT_AR_ACROSS_TASKS - Raw and normalized d2 across sessions
+sessionTypes = order_manuscript_session_types(sessionTypes);
 
 if nargin < 10 || isempty(useViolinPlots)
   useViolinPlots = false;
