@@ -1,126 +1,71 @@
-%% Waveforms sandbox
-% Load spike waveforms for the session selected in the workspace.
-%
-% Prerequisites:
-%   Run src/data_prep/choose_task_and_session.m first so these variables exist:
-%     sessionType, sessionName
-%     subjectName (required for spontaneous/interval; '' for reach)
-%     paths, opts (optional; defaults are created if missing)
+%% Waveforms sandbox — spontaneous waveform vs neuronID overlap
+% Opens an example spontaneous session and reports how waveforms.mat unitIDs
+% match the analysis neuronIDs from load_spike_times (cluster_info good/mua
+% + area + firing-rate filters).
 %
 % Goal:
-%   Load mean unit waveforms and plot width / firing-rate summaries.
-%   Spontaneous/interval: waveforms.mat in the spike session folder.
-%   Reach: *_Neural_WFs.mat in reach_task/data/WaveformDATA.
+%   Print:
+%     - waveforms accounted for in neuronIDs
+%     - waveforms with no matching neuronID
+%     - neuronIDs with no corresponding waveform
 
 %% Paths
-scriptDir = fileparts(mfilename('fullpath'));
-if exist(scriptDir, 'dir')
-    addpath(scriptDir);
+
+paths = get_paths;
+opts = neuro_behavior_options;
+
+% Example spontaneous session
+sessionType = 'spontaneous';
+subjectName = 'ag25290';
+sessionName = 'ag112321_1';
+
+opts.subjectName = subjectName;
+opts.sessionName = sessionName;
+opts.collectStart = 0;
+opts.collectEnd = [];
+
+fprintf('\n=== Waveform vs neuronID overlap ===\n');
+fprintf('Session: %s | %s (%s)\n', subjectName, sessionName, sessionType);
+
+%% Load waveforms (sp_waveforms.unitID)
+waveformContext = load_kilosort_waveform_context(sessionType, paths, subjectName, sessionName, opts);
+waveformUnitIds = unique(waveformContext.unitIds(:));
+waveformUnitIds = waveformUnitIds(~isnan(waveformUnitIds));
+
+fprintf('Waveforms file:\n  %s\n', waveformContext.waveformsFile);
+fprintf('Waveform entries: %d (unique unitIDs: %d)\n', ...
+    waveformContext.nUnits, numel(waveformUnitIds));
+
+%% Load analysis neuronIDs (same path as criticality manuscript pipeline)
+spikeData = load_spike_times(sessionType, paths, sessionName, opts);
+neuronIds = unique(spikeData.neuronIDs(:));
+
+fprintf('neuronIDs (after area / quality / FR filters): %d\n', numel(neuronIds));
+
+%% Overlap
+wfInNeuronIds = ismember(waveformUnitIds, neuronIds);
+neuronIdsWithWf = ismember(neuronIds, waveformUnitIds);
+
+nWfMatched = sum(wfInNeuronIds);
+nWfUnmatched = sum(~wfInNeuronIds);
+nNeuronMissingWf = sum(~neuronIdsWithWf);
+
+fprintf('\n--- Match summary ---\n');
+fprintf('Waveforms accounted for in neuronIDs:     %d / %d\n', ...
+    nWfMatched, numel(waveformUnitIds));
+fprintf('Waveforms NOT in neuronIDs:               %d / %d\n', ...
+    nWfUnmatched, numel(waveformUnitIds));
+fprintf('neuronIDs with no corresponding waveform: %d / %d\n', ...
+    nNeuronMissingWf, numel(neuronIds));
+
+if nWfUnmatched > 0
+    fprintf('\nExample waveform unitIDs missing from neuronIDs (up to 20):\n');
+    disp(waveformUnitIds(~wfInNeuronIds).');
 end
-
-if ~exist('paths', 'var') || isempty(paths)
-    paths = get_paths;
-end
-if ~exist('opts', 'var') || isempty(opts)
-    opts = neuro_behavior_options;
-end
-
-%% Session info from workspace
-if ~exist('sessionType', 'var') || isempty(sessionType)
-    error(['Define sessionType in the workspace — run ', ...
-        'src/data_prep/choose_task_and_session.m first.']);
-end
-if ~exist('sessionName', 'var') || isempty(sessionName)
-    error(['Define sessionName in the workspace — run ', ...
-        'src/data_prep/choose_task_and_session.m first.']);
-end
-if ~exist('subjectName', 'var')
-    subjectName = '';
-end
-
-switch lower(sessionType)
-    case {'spontaneous', 'interval'}
-        if isempty(subjectName)
-            error(['subjectName is required for %s sessions. ', ...
-                'Set it in choose_task_and_session.m.'], sessionType);
-        end
-        waveformContext = load_kilosort_waveform_context(sessionType, paths, subjectName, sessionName, opts);
-    case 'reach'
-        waveformContext = load_reach_waveform_context(paths, sessionName, opts);
-    otherwise
-        error(['waveforms_sandbox supports spontaneous, interval, and reach sessions. ', ...
-            'Got sessionType = %s.'], sessionType);
-end
-
-fprintf('Loading waveforms from:\n  %s\n', waveformContext.waveformsFile);
-fprintf('%d waveform entries loaded (fsSpike = %g Hz)\n', ...
-    waveformContext.nUnits, waveformContext.fsSpike);
-
-collectStart = waveformContext.collectStart;
-collectEnd = waveformContext.collectEnd;
-recordingDurationSec = collectEnd - collectStart;
-spikeTimes = waveformContext.spikeTimes;
-spikeClusters = waveformContext.spikeClusters;
-nUnits = waveformContext.nUnits;
-
-%% Waveform width and firing rate per unit
-unitIds = nan(nUnits, 1);
-waveformWidthMs = nan(nUnits, 1);
-fwhmMs = nan(nUnits, 1);
-unitFiringRateHz = nan(nUnits, 1);
-
-for iUnit = 1:nUnits
-    meanWf = waveformContext.meanWaveforms{iUnit};
-    if isempty(meanWf)
-        continue;
-    end
-
-    unitId = waveformContext.unitIds(iUnit);
-    unitIds(iUnit) = unitId;
-    waveformWidthMs(iUnit) = compute_peak_to_trough(meanWf, waveformContext.fsSpike);
-    fwhmMs(iUnit) = compute_fwhm(meanWf, waveformContext.fsSpike);
-
-    unitSpikeTimes = spikeTimes(spikeClusters == unitId);
-    unitSpikeTimes = unitSpikeTimes(unitSpikeTimes >= collectStart & unitSpikeTimes <= collectEnd);
-    unitFiringRateHz(iUnit) = numel(unitSpikeTimes) / recordingDurationSec;
-end
-
-validWidth = ~isnan(waveformWidthMs);
-validScatter = validWidth & ~isnan(unitFiringRateHz);
-fprintf('%d / %d units with valid peak-to-trough width\n', sum(validWidth), nUnits);
-fprintf('Firing rates computed over %.1f–%.1f s (duration = %.1f s)\n', ...
-    collectStart, collectEnd, recordingDurationSec);
-
-sessionLabel = waveformContext.sessionLabel;
-widthEdges = 0.02:0.02:1.2;
-figure('Name', 'waveforms_sandbox_widths');
-histogram(waveformWidthMs(validWidth), widthEdges, ...
-    'FaceColor', [0.35 0.55 0.85], 'EdgeColor', 'w');
-xlabel('Peak-to-trough width (ms)');
-ylabel('Unit count');
-title(sprintf('%s — mean waveform widths (n = %d)', sessionLabel, sum(validWidth)));
-grid on;
-
-figure('Name', 'waveforms_sandbox_fr_vs_width');
-scatter(waveformWidthMs(validScatter), unitFiringRateHz(validScatter), ...
-    18, [0.25 0.25 0.25], 'filled', 'MarkerFaceAlpha', 0.55);
-xlabel('Peak-to-trough width (ms)');
-ylabel('Firing rate (Hz)');
-title(sprintf('%s — firing rate vs waveform width (n = %d)', sessionLabel, sum(validScatter)));
-grid on;
-
-%% Quick look (edit below for your analyses)
-exampleIdx = find(validWidth, 1, 'first');
-if ~isempty(exampleIdx)
-    meanWf = waveformContext.meanWaveforms{exampleIdx};
-    tMs = waveform_context_time_ms(waveformContext, numel(meanWf));
-
-    figure('Name', 'waveforms_sandbox_example');
-    plot(tMs, meanWf, 'k', 'LineWidth', 1.5);
-    xlabel('Time (ms)');
-    ylabel('Amplitude (a.u.)');
-    title(sprintf('%s | unit %g', sessionLabel, unitIds(exampleIdx)));
-    grid on;
+if nNeuronMissingWf > 0
+    fprintf('Example neuronIDs missing waveforms (up to 20):\n');
+    missingIds = neuronIds(~neuronIdsWithWf);
+    disp(missingIds(1:min(20, end)).');
 end
 
 function waveformContext = load_kilosort_waveform_context(sessionType, paths, subjectName, sessionName, opts)
