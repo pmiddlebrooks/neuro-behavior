@@ -19,7 +19,8 @@ for iBhv = 1 : length(analyzeCodes)
     preWindow = round(preEventTime(1:end-1) / opts.frameSize); % frames around onset (remove last frame)
 
 
-    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
+    bhvStartFrames = abs_time_to_collect_frame( ...
+        dataBhv.StartTime(dataBhv.ID == bhvCode), opts.collectStart, opts.frameSize, 'floor');
     bhvStartFrames(bhvStartFrames < abs(preWindow(1))+1) = [];
     bhvStartFrames(bhvStartFrames > size(dataMat, 1) - periWindow(end)-1) = [];
 
@@ -224,7 +225,8 @@ eventMat = cell(length(analyzeBhv), 1);
 for iBhv = 1 : length(analyzeBhv)
     bhvCode = analyzeCodes(strcmp(analyzeBhv, analyzeBhv{iBhv}));
 
-    bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
+    bhvStartFrames = abs_time_to_collect_frame( ...
+        dataBhv.StartTime(dataBhv.ID == bhvCode), opts.collectStart, opts.frameSize, 'floor');
     bhvStartFrames(bhvStartFrames < dataWindow(end) + 1) = [];
     bhvStartFrames(bhvStartFrames > size(dataMat, 1) - dataWindow(end)) = [];
 

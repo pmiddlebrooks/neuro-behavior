@@ -221,7 +221,7 @@ if strcmp(dataSource, 'spikes')
     totalTime = timeRange(2) - timeRange(1);
 end
 
-% Generate common centerTime values
+% Generate common centerTime values in absolute session time
 % Use minimum window size for common alignment (before area-specific values)
 % Convert scalar to vector if needed for calculation
 if isscalar(config.slidingWindowSize)
@@ -229,8 +229,15 @@ if isscalar(config.slidingWindowSize)
 else
     minWindowSize = min(config.slidingWindowSize(~isnan(config.slidingWindowSize)));
 end
-firstCenterTime = minWindowSize / 2;
-lastCenterTime = totalTime - minWindowSize / 2;
+timeOrigin = 0;
+if exist('timeRange', 'var') && numel(timeRange) >= 1
+    timeOrigin = timeRange(1);
+elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectStart') ...
+        && ~isempty(dataStruct.opts.collectStart)
+    timeOrigin = dataStruct.opts.collectStart;
+end
+firstCenterTime = timeOrigin + minWindowSize / 2;
+lastCenterTime = timeOrigin + totalTime - minWindowSize / 2;
 commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
 
 if isempty(commonCenterTimes)
@@ -485,7 +492,7 @@ for idx = 1:numToProcess
             % Convert centerTime to indices for this area's binning
             % Use area-specific window size
             [startIdx, endIdx] = calculate_window_indices_from_center(...
-                centerTime, areaWindowSize, config.binSize(a), numTimePoints);
+                centerTime, areaWindowSize, config.binSize(a), numTimePoints, timeOrigin);
 
             % Check if window is valid (within bounds)
             if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -667,8 +674,9 @@ for idx = 1:numToProcess
                     bhvBinSize = 1 / fsBhv;  % Behavior bin size in seconds
                     winStartTime = centerTime - areaWindowSize / 2;
                     winEndTime = centerTime + areaWindowSize / 2;
-                    bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
-                    bhvEndIdx = round(winEndTime / bhvBinSize);
+                    bhvOrigin = session_time_origin(dataStruct);
+                    bhvStartIdx = round((winStartTime - bhvOrigin) / bhvBinSize) + 1;
+                    bhvEndIdx = round((winEndTime - bhvOrigin) / bhvBinSize);
                     bhvStartIdx = max(1, bhvStartIdx);
                     bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
 

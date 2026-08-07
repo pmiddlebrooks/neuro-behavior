@@ -33,6 +33,10 @@ end
 
 %%
 
+if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+    opts.collectStart = 0;
+end
+
 % Need to get behavior data if you call spikes, too (for making the
 % neural_matrix)
 if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDataType, 'spikes')
@@ -73,9 +77,14 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDa
 
 
 
-    nFrame = ceil(opts.collectEnd / opts.frameSize);
+    collectStart = 0;
+    if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+        collectStart = opts.collectStart;
+    end
+    nFrame = ceil((opts.collectEnd - collectStart) / opts.frameSize);
 
-    dataBhv.StartFrame = 1 + round(dataBhv.StartTime / opts.frameSize);
+    dataBhv.StartFrame = abs_time_to_collect_frame( ...
+        dataBhv.StartTime, collectStart, opts.frameSize, 'round');
     % dataBhv.DurFrame = [diff(dataBhv.StartFrame); nFrame - sum(dataBhv.StartFrame)];
     % dataBhv.DurFrame = floor(dataBhv.Dur ./ opts.frameSize);
 
@@ -83,16 +92,31 @@ if strcmp(getDataType, 'all') || strcmp(getDataType, 'behavior') || strcmp(getDa
 
 
     % Create bhvID, a vector of ID labels, one element per frame to match the
-    % neural matrix
+    % neural matrix (absolute collect window; frame 1 = opts.collectStart)
 
     % Use StartFrame and DurFrame method:
     bhvID = int8(zeros(nFrame, 1));
     for i = 1 : size(dataBhv, 1) - 1
         % iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
-        iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
-        bhvID(iInd) = dataBhv.ID(i);
+        iStart = max(1, dataBhv.StartFrame(i));
+        iEnd = min(nFrame, dataBhv.StartFrame(i+1) - 1);
+        if iStart <= iEnd
+            bhvID(iStart:iEnd) = dataBhv.ID(i);
+        end
     end
-    bhvID(iInd(end) + 1 : end) = dataBhv.ID(end);
+    iStart = max(1, dataBhv.StartFrame(end));
+    if iStart <= nFrame
+        % Prefer Dur when present so we do not invent a long unlabeled tail
+        if ismember('Dur', dataBhv.Properties.VariableNames)
+            iEnd = min(nFrame, abs_time_to_collect_frame( ...
+                dataBhv.StartTime(end) + dataBhv.Dur(end), collectStart, opts.frameSize, 'round'));
+        else
+            iEnd = nFrame;
+        end
+        if iStart <= iEnd
+            bhvID(iStart:iEnd) = dataBhv.ID(end);
+        end
+    end
 
 
     % Use majority time in frame method:
@@ -317,7 +341,9 @@ warning('Warning in get_standard_data: you are loading muas with the good spikin
     % periMatZ = cell(length(analyzeCodes), 1);
     for iBhv = 1 : length(analyzeCodes)
 
-        bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv) & dataBhv.Valid) ./ opts.frameSize);
+        bhvStartFrames = abs_time_to_collect_frame( ...
+            dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv) & dataBhv.Valid), ...
+            opts.collectStart, opts.frameSize, 'floor');
         bhvStartFrames(bhvStartFrames < -zWindow(1) + 1) = [];
         bhvStartFrames(bhvStartFrames > size(dataMat, 1) - zWindow(end)) = [];
 

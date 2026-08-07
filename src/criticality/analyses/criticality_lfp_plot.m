@@ -19,6 +19,10 @@ utilsPath = fullfile(srcRoot, 'sliding_window_prep', 'utils');
 if exist(utilsPath, 'dir')
     addpath(utilsPath);
 end
+dataPrepPath = fullfile(srcRoot, 'data_prep');
+if exist(dataPrepPath, 'dir')
+    addpath(dataPrepPath);
+end
 
     % Extract data from results
     areas = results.areas;
@@ -29,6 +33,30 @@ end
     bandBinSizes = results.bandBinSizes;
     d2WindowSize = results.d2WindowSize;
     stepSize = results.stepSize;
+
+    % Optional: plot relative to collectStart (default: absolute session time)
+    useRelativeTime = false;
+    if isfield(config, 'useRelativeTime') && ~isempty(config.useRelativeTime)
+        useRelativeTime = logical(config.useRelativeTime);
+    end
+    if useRelativeTime
+        t0 = 0;
+        if nargin >= 4 && ~isempty(dataStruct)
+            t0 = session_time_origin(dataStruct);
+        elseif isfield(results, 'params') && isfield(results.params, 'timeOrigin') ...
+                && ~isempty(results.params.timeOrigin)
+            t0 = results.params.timeOrigin;
+        end
+        if iscell(startS)
+            for aRel = 1:numel(startS)
+                if ~isempty(startS{aRel})
+                    startS{aRel} = startS{aRel} - t0;
+                end
+            end
+        else
+            startS = startS - t0;
+        end
+    end
     
     % Get areas to plot
     if isfield(dataStruct, 'areasToTest')
@@ -77,7 +105,11 @@ end
             if size(dataStruct.lfpPerArea, 2) >= a && ~isempty(startS{a})
                 lfpData = dataStruct.lfpPerArea(:, a);
                 numSamples = length(lfpData);
-                lfpTimeBins = (0:numSamples-1) / fsLfp;
+                t0Bins = 0;
+                if ~useRelativeTime
+                    t0Bins = session_time_origin(dataStruct);
+                end
+                lfpTimeBins = t0Bins + (0:numSamples-1) / fsLfp;
                 
                 % Calculate windowed mean LFP for each window center
                 numWindows = length(startS{a});

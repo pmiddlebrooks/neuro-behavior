@@ -4,7 +4,8 @@ function data = spontaneous_load_data(opts, dataType)
 
 % dataType: behavior:
 %
-% make a data structure with the start times and durations of each behavior
+% Make a data structure with absolute start times and durations of each
+% behavior bout within opts.collectStart:opts.collectEnd.
 
 % dataType: neuron:
 %
@@ -27,10 +28,14 @@ switch dataType
         dataFull = readtable(fullfile(searchPath, fileName));
 
 % if isempty(opts.collectEnd), opts.collectEnd = 
-        % Use a time window of recorded data
-        getWindow = (1 + opts.fsBhv * opts.collectStart : opts.fsBhv * (opts.collectEnd));
+        % Use a time window of recorded data (keep absolute session times)
+        collectStart = 0;
+        if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+            collectStart = opts.collectStart;
+        end
+        getWindow = (1 + opts.fsBhv * collectStart : opts.fsBhv * (opts.collectEnd));
         dataWindow = dataFull(getWindow,:);
-        dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
+        tAbs = dataWindow.Time;
         bhvID = dataWindow.Code;
 
 
@@ -42,11 +47,18 @@ switch dataType
 
 
         data = table();
-        data.Dur = [diff([0; dataWindow.Time(changeBhvIdx)]); opts.collectEnd - dataWindow.Time(changeBhvIdx(end))];
-        data.ID = [bhvID(1); bhvID(changeBhvIdx)];
-        % data.Name = bhvName;
-        data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
-        data.StartTime = [0; dataWindow.Time(changeBhvIdx)];
+        if isempty(changeBhvIdx)
+            data.StartTime = tAbs(1);
+            data.Dur = max(tAbs(end) - tAbs(1), 0);
+            data.ID = bhvID(1);
+            data.Name = dataWindow.Behavior(1);
+        else
+            startTimes = [tAbs(1); tAbs(changeBhvIdx)];
+            data.StartTime = startTimes;
+            data.Dur = [diff(startTimes); max(tAbs(end) - startTimes(end), 0)];
+            data.ID = [bhvID(1); bhvID(changeBhvIdx)];
+            data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
+        end
         % data.StartFrame = bhvStartFrame;
 
         data.Valid = behavior_selection(data, opts);

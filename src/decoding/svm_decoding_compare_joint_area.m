@@ -237,15 +237,32 @@ elseif strcmp(dataType, 'spontaneous')
 
     dataBhv = load_data(opts, 'behavior');
 
-    nFrameBhv = ceil(opts.collectEnd / opts.frameSize);
-    dataBhv.StartFrame = 1 + round(dataBhv.StartTime / opts.frameSize);
+    collectStart = 0;
+    if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+        collectStart = opts.collectStart;
+    end
+    nFrameBhv = ceil((opts.collectEnd - collectStart) / opts.frameSize);
+    dataBhv.StartFrame = abs_time_to_collect_frame( ...
+        dataBhv.StartTime, collectStart, opts.frameSize, 'round');
     bhvID = int8(zeros(nFrameBhv, 1));
     if size(dataBhv, 1) >= 2
         for iB = 1:size(dataBhv, 1) - 1
-            iIndB = dataBhv.StartFrame(iB) : dataBhv.StartFrame(iB+1) - 1;
-            bhvID(iIndB) = dataBhv.ID(iB);
+            iStartB = max(1, dataBhv.StartFrame(iB));
+            iEndB = min(nFrameBhv, dataBhv.StartFrame(iB+1) - 1);
+            if iStartB <= iEndB
+                bhvID(iStartB:iEndB) = dataBhv.ID(iB);
+            end
         end
-        bhvID(iIndB(end) + 1 : end) = dataBhv.ID(end);
+        iStartB = max(1, dataBhv.StartFrame(end));
+        if ismember('Dur', dataBhv.Properties.VariableNames)
+            iEndB = min(nFrameBhv, abs_time_to_collect_frame( ...
+                dataBhv.StartTime(end) + dataBhv.Dur(end), collectStart, opts.frameSize, 'round'));
+        else
+            iEndB = nFrameBhv;
+        end
+        if iStartB <= iEndB
+            bhvID(iStartB:iEndB) = dataBhv.ID(end);
+        end
     elseif size(dataBhv, 1) == 1
         bhvID(:) = dataBhv.ID(1);
     end

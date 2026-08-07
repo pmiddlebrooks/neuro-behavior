@@ -4,7 +4,12 @@ function [oneBackDesign, oneBackLabels] = rrm_design_matrix_one_back(data, opts)
 
 durFrames = floor(sum(data.Dur) / opts.frameSize);
 [bhvIdx, ~, ~] = unique(data.ID);
-data.StartFrame = 1 + floor(data.StartTime ./ opts.frameSize); % adjust start times to frame time based on frameSize
+collectStart = 0;
+if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+    collectStart = opts.collectStart;
+end
+data.StartFrame = abs_time_to_collect_frame( ...
+    data.StartTime, collectStart, opts.frameSize, 'floor');
 
 
 % pre-allocate the design matrix

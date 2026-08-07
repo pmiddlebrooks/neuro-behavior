@@ -36,7 +36,8 @@ bhv = 'face_groom_1';
 
 bhvCode = analyzeCodes(strcmp(analyzeBhv, bhv));
 
-bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
+bhvStartFrames = abs_time_to_collect_frame( ...
+    dataBhv.StartTime(dataBhv.ID == bhvCode), opts.collectStart, opts.frameSize, 'floor');
 bhvStartFrames(bhvStartFrames < 10) = [];
 bhvStartFrames(bhvStartFrames > size(dataMat, 1) - 10) = [];
 nTrial = length(bhvStartFrames);
@@ -401,7 +402,12 @@ opts.frameSize = .01; % Need 10ms binned spike matrix
 %% Get data ready for CCA canonical-correlation-maps
 areas = {'M56', 'VS'};
 dataBhv = dataBhv(8:end-8,:);
-bhvStartFrames = 1 + floor(dataBhv.StartTime ./ opts.frameSize);
+collectStart = 0;
+if exist('opts', 'var') && isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+    collectStart = opts.collectStart;
+end
+bhvStartFrames = abs_time_to_collect_frame( ...
+    dataBhv.StartTime, collectStart, opts.frameSize, 'floor');
 expCond = dataBhv.ID;
 
 nTrial = length(bhvStartFrames);

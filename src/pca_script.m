@@ -154,7 +154,8 @@ saveas(gcf, fullfile(paths.figurePath, ['PCA ' area, ' binsize ', num2str(binSiz
 figure(7);
 onsetInd = length(dataWindow)/2 + 1;
 for iBhv = 1 : length(analyzeCodes)
-    iStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv)) ./ opts.frameSize);
+    iStartFrames = abs_time_to_collect_frame( ...
+        dataBhv.StartTime(dataBhv.ID == analyzeCodes(iBhv)), opts.collectStart, opts.frameSize, 'floor');
     iStartFrames = iStartFrames(3:end-3);
     for jStart = 1 : length(iStartFrames)
         cla

@@ -133,23 +133,37 @@ optsNat.dataPath = bhvDataPath;
 optsNat.fileName = bhvFileName;
 dataBhvNat = load_data(optsNat, 'behavior');
 
-% Create bhvID for spontaneous data (matching get_standard_data.m approach)
-nFrame = ceil(optsNat.collectEnd / optsNat.frameSize);
-dataBhvNat.StartFrame = 1 + round(dataBhvNat.StartTime / optsNat.frameSize);
+% Create bhvID for spontaneous data (absolute StartTime -> collect-window frames)
+collectStartNat = 0;
+if isfield(optsNat, 'collectStart') && ~isempty(optsNat.collectStart)
+    collectStartNat = optsNat.collectStart;
+end
+nFrame = ceil((optsNat.collectEnd - collectStartNat) / optsNat.frameSize);
+dataBhvNat.StartFrame = abs_time_to_collect_frame( ...
+    dataBhvNat.StartTime, collectStartNat, optsNat.frameSize, 'round');
 bhvIDNat = int8(zeros(nFrame, 1));
 for i = 1:size(dataBhvNat, 1) - 1
-    iInd = dataBhvNat.StartFrame(i) : dataBhvNat.StartFrame(i+1) - 1;
-    bhvIDNat(iInd) = dataBhvNat.ID(i);
+    iStart = max(1, dataBhvNat.StartFrame(i));
+    iEnd = min(nFrame, dataBhvNat.StartFrame(i+1) - 1);
+    if iStart <= iEnd
+        bhvIDNat(iStart:iEnd) = dataBhvNat.ID(i);
+    end
 end
 if ~isempty(dataBhvNat)
-    iInd = dataBhvNat.StartFrame(end):nFrame;
-    if ~isempty(iInd)
-        bhvIDNat(iInd) = dataBhvNat.ID(end);
+    iStart = max(1, dataBhvNat.StartFrame(end));
+    if ismember('Dur', dataBhvNat.Properties.VariableNames)
+        iEnd = min(nFrame, abs_time_to_collect_frame( ...
+            dataBhvNat.StartTime(end) + dataBhvNat.Dur(end), collectStartNat, optsNat.frameSize, 'round'));
+    else
+        iEnd = nFrame;
+    end
+    if iStart <= iEnd
+        bhvIDNat(iStart:iEnd) = dataBhvNat.ID(end);
     end
 end
 
-% Create time axis for spontaneous behavior labels
-timeAxisNatBhv = (0:length(bhvIDNat)-1) * optsNat.frameSize;
+% Create time axis for spontaneous behavior labels (absolute session time)
+timeAxisNatBhv = collectStartNat + (0:length(bhvIDNat)-1) * optsNat.frameSize;
 
 % Spontaneous behavior colors (matching svm_umap_figures.m)
 codesNat = unique(dataBhvNat.ID);

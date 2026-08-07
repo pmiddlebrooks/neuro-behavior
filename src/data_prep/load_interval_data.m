@@ -68,6 +68,10 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
 
         dataStruct.bhvID = [];
         dataStruct.dataBhv = [];
+        dataStruct.bhvTimeOrigin = [];
+        if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+            dataStruct.bhvTimeOrigin = opts.collectStart;
+        end
         dataStruct.fsBhv = [];
 
     elseif strcmp(dataSource, 'lfp')

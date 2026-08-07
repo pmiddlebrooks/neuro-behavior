@@ -19,6 +19,10 @@ utilsPath = fullfile(srcRoot, 'sliding_window_prep', 'utils');
 if exist(utilsPath, 'dir')
     addpath(utilsPath);
 end
+dataPrepPath = fullfile(srcRoot, 'data_prep');
+if exist(dataPrepPath, 'dir')
+    addpath(dataPrepPath);
+end
 
 % Light-plot options to avoid renderer crashes and heavy export (many windows = many vertices)
 plotResolution = 300;
@@ -46,6 +50,27 @@ areas = results.areas;
 d2 = results.d2;  % Raw d2 values
 mrBr = results.mrBr;
 startS = results.startS;
+
+% Optional: plot relative to collectStart (default: absolute session time)
+useRelativeTime = false;
+if isfield(config, 'useRelativeTime') && ~isempty(config.useRelativeTime)
+    useRelativeTime = logical(config.useRelativeTime);
+end
+if useRelativeTime
+    t0 = 0;
+    if nargin >= 4 && ~isempty(dataStruct)
+        t0 = session_time_origin(dataStruct);
+    elseif isfield(results, 'params') && isfield(results.params, 'timeOrigin') ...
+            && ~isempty(results.params.timeOrigin)
+        t0 = results.params.timeOrigin;
+    end
+    for aRel = 1:numel(startS)
+        if ~isempty(startS{aRel})
+            startS{aRel} = startS{aRel} - t0;
+        end
+    end
+end
+
 if isfield(results, 'popActivityWindows')
     popActivityWindows = results.popActivityWindows;
 else

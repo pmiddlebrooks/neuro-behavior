@@ -133,10 +133,11 @@ for i = 1:length(validD2Times)
     windowStartTime = centerTime - criticalityWindowSize/2;
     windowEndTime = centerTime + criticalityWindowSize/2;
 
-    % Convert to frame indices for behavior data
-    % bhvID is in 0.1 second bins, so convert times to frame indices
-    startFrame = max(1, round(windowStartTime / bhvBinSize));
-    endFrame = min(length(bhvID), round(windowEndTime / bhvBinSize));
+    % Convert absolute window times to bhvID indices (frame 1 = collectStart)
+    startFrame = max(1, abs_time_to_collect_frame( ...
+        windowStartTime, opts.collectStart, bhvBinSize, 'round'));
+    endFrame = min(length(bhvID), abs_time_to_collect_frame( ...
+        windowEndTime, opts.collectStart, bhvBinSize, 'round'));
 
     % Get behavior labels for this window
     windowBhvID = bhvID(startFrame:endFrame);

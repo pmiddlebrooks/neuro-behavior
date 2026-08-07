@@ -46,8 +46,9 @@ bhvInd = find(strcmp(analyzeBhv, behavior));
 periTime = -.2 : opts.frameSize : .2;
 periWindow = periTime(1:end-1) / opts.frameSize; % frames around onset w.r.t. zWindow (remove last frame)
 
-% startFrame = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvID & validBhv(:, codes == bhvID)) / opts.frameSize);
-startFrame = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvID) / opts.frameSize);
+% startFrame = abs_time_to_collect_frame(dataBhv.StartTime(dataBhv.ID == bhvID & validBhv(:, codes == bhvID)), opts.collectStart, opts.frameSize, 'floor');
+startFrame = abs_time_to_collect_frame( ...
+    dataBhv.StartTime(dataBhv.ID == bhvID), opts.collectStart, opts.frameSize, 'floor');
 
 % Get mean of spike counts in peri-onset windows, across session, to
 % calculate residual spikes

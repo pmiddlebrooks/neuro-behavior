@@ -330,12 +330,19 @@ function results = lzc_sliding_analysis(dataStruct, config)
         totalTime = length(rawSignal) / fsRaw;
     end
     
-    % Generate common centerTime values
+    % Generate common centerTime values in absolute session time
     % Use minimum window size across all areas (optimal if useOptimalWindowSize is true, otherwise user-specified)
     % This ensures all areas can have valid windows at these center times
     minWindowSize = min(slidingWindowSize);
-    firstCenterTime = minWindowSize / 2;
-    lastCenterTime = totalTime - minWindowSize / 2;
+    timeOrigin = 0;
+    if exist('timeRange', 'var') && numel(timeRange) >= 1
+        timeOrigin = timeRange(1);
+    elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectStart') ...
+            && ~isempty(dataStruct.opts.collectStart)
+        timeOrigin = dataStruct.opts.collectStart;
+    end
+    firstCenterTime = timeOrigin + minWindowSize / 2;
+    lastCenterTime = timeOrigin + totalTime - minWindowSize / 2;
     commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
     
     if isempty(commonCenterTimes)
@@ -475,7 +482,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 % Convert centerTime to indices for this area's binning
                 % Use area-specific window size
                 [startIdx, endIdx] = calculate_window_indices_from_center(...
-                    centerTime, slidingWindowSize(a), config.binSize(a), numTimePoints);
+                    centerTime, slidingWindowSize(a), config.binSize(a), numTimePoints, timeOrigin);
                 
                 % Check if window is valid (within bounds)
                 if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -510,8 +517,9 @@ function results = lzc_sliding_analysis(dataStruct, config)
                         bhvBinSize = 1 / fsBhv;  % Behavior bin size in seconds
                         winStartTime = centerTime - slidingWindowSize(a) / 2;
                         winEndTime = centerTime + slidingWindowSize(a) / 2;
-                        bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
-                        bhvEndIdx = round(winEndTime / bhvBinSize);
+                        bhvOrigin = session_time_origin(dataStruct);
+                        bhvStartIdx = round((winStartTime - bhvOrigin) / bhvBinSize) + 1;
+                        bhvEndIdx = round((winEndTime - bhvOrigin) / bhvBinSize);
                         bhvStartIdx = max(1, bhvStartIdx);
                         bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
                         
@@ -581,7 +589,7 @@ function results = lzc_sliding_analysis(dataStruct, config)
                 % Convert centerTime to indices for LFP (sampling rate = fsRaw)
                 % Use area-specific window size
                 [startIdx, endIdx] = calculate_window_indices_from_center(...
-                    centerTime, slidingWindowSize(a), 1/fsRaw, numTimePoints);
+                    centerTime, slidingWindowSize(a), 1/fsRaw, numTimePoints, timeOrigin);
                 
                 % Check if window is valid (within bounds)
                 if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -612,8 +620,9 @@ function results = lzc_sliding_analysis(dataStruct, config)
                         bhvBinSize = 1 / fsBhv;  % Behavior bin size in seconds
                         winStartTime = centerTime - slidingWindowSize(a) / 2;
                         winEndTime = centerTime + slidingWindowSize(a) / 2;
-                        bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
-                        bhvEndIdx = round(winEndTime / bhvBinSize);
+                        bhvOrigin = session_time_origin(dataStruct);
+                        bhvStartIdx = round((winStartTime - bhvOrigin) / bhvBinSize) + 1;
+                        bhvEndIdx = round((winEndTime - bhvOrigin) / bhvBinSize);
                         bhvStartIdx = max(1, bhvStartIdx);
                         bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
                         

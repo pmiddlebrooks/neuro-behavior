@@ -4,7 +4,9 @@ function data = load_data(opts, dataType)
 
 % dataType: behavior:
 %
-% make a data structure with the start times and durations of each behavior
+% Make a data structure with absolute start times and durations of each
+% behavior bout within opts.collectStart:opts.collectEnd. StartTime is in
+% absolute session seconds (not rezeroed to the collect window).
 
 % dataType: neuron:
 %
@@ -34,30 +36,33 @@ switch dataType
 
         % Use a time window of recorded data (integer frame indices)
         nFrames = height(dataFull);
-        startFrame = max(1, 1 + round(opts.fsBhv * opts.collectStart));
+        collectStart = 0;
+        if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+            collectStart = opts.collectStart;
+        end
+        startFrame = max(1, 1 + round(opts.fsBhv * collectStart));
         endFrame = min(nFrames, max(startFrame, round(opts.fsBhv * opts.collectEnd)));
         getWindow = startFrame:endFrame;
         dataWindow = dataFull(getWindow,:);
-        dataWindow.Time = dataWindow.Time - dataWindow.Time(1);
+        % Keep absolute session times (do not rezero to collectStart)
+        tAbs = dataWindow.Time;
         bhvID = dataWindow.Code;
 
         changeBhv = [0; diff(bhvID)]; % nonzeros at all the indices when a new behavior begins
         changeBhvIdx = find(changeBhv);
 
         data = table();
-        % After rezeroing Time, last segment end is the window duration (not absolute collectEnd)
-        windowDur = dataWindow.Time(end);
         if isempty(changeBhvIdx)
-            data.Dur = windowDur;
+            data.StartTime = tAbs(1);
+            data.Dur = max(tAbs(end) - tAbs(1), 0);
             data.ID = bhvID(1);
             data.Name = dataWindow.Behavior(1);
-            data.StartTime = 0;
         else
-            data.Dur = [diff([0; dataWindow.Time(changeBhvIdx)]); ...
-                windowDur - dataWindow.Time(changeBhvIdx(end))];
+            startTimes = [tAbs(1); tAbs(changeBhvIdx)];
+            data.StartTime = startTimes;
+            data.Dur = [diff(startTimes); max(tAbs(end) - startTimes(end), 0)];
             data.ID = [bhvID(1); bhvID(changeBhvIdx)];
             data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
-            data.StartTime = [0; dataWindow.Time(changeBhvIdx)];
         end
 
         data.Valid = behavior_selection(data, opts);

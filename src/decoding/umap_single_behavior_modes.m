@@ -180,17 +180,28 @@ changeBhvIdx = find(changeBhv);
 dataBhvSingle = table();
 dataBhvSingle.ID = [dataBhvCsv.B_SOiDLabels(1); dataBhvCsv.B_SOiDLabels(changeBhvIdx)];
 dataBhvSingle.StartTime = [dataBhvCsv.Time(1); dataBhvCsv.Time(changeBhvIdx)];
-dataBhvSingle.StartFrame = 1 + floor(dataBhvSingle.StartTime / opts.frameSize);
+collectStart = 0;
+if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+    collectStart = opts.collectStart;
+end
+dataBhvSingle.StartFrame = abs_time_to_collect_frame( ...
+    dataBhvSingle.StartTime, collectStart, opts.frameSize, 'floor');
 
 
-    nFrame = ceil(opts.collectEnd / opts.frameSize);
-    % Use StartFrame and DurFrame method:
+    nFrame = ceil((opts.collectEnd - collectStart) / opts.frameSize);
+    % Use StartFrame method (absolute StartTime -> collect-window frames)
     bhvIDMatSingle = int8(zeros(nFrame, 1));
-    for i = 1 : size(dataBhv, 1) - 1
-        iInd = dataBhvSingle.StartFrame(i) : dataBhvSingle.StartFrame(i+1) - 1;
-        bhvIDMatSingle(iInd) = dataBhv.ID(i);
+    for i = 1 : size(dataBhvSingle, 1) - 1
+        iStart = max(1, dataBhvSingle.StartFrame(i));
+        iEnd = min(nFrame, dataBhvSingle.StartFrame(i+1) - 1);
+        if iStart <= iEnd
+            bhvIDMatSingle(iStart:iEnd) = dataBhvSingle.ID(i);
+        end
     end
-    bhvIDMatSingle(iInd(end) + 1 : end) = dataBhvSingle.ID(end);
+    iStart = max(1, dataBhvSingle.StartFrame(end));
+    if iStart <= nFrame
+        bhvIDMatSingle(iStart:nFrame) = dataBhvSingle.ID(end);
+    end
 disp('done')
 
 %%

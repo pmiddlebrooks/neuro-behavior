@@ -158,7 +158,8 @@ dataMatMahala = zscore(dataMat(:, strcmp(areaLabels, brainArea)));
 beforeAfterFrames = 3;
 
 dataBhvTruncate = dataBhv(3:end-3, :); % Truncate a few behaviors so we can look back and ahead in time a bit
-onsetFrames = 1 + floor(dataBhvTruncate.StartTime ./ opts.frameSize);
+onsetFrames = abs_time_to_collect_frame( ...
+    dataBhvTruncate.StartTime, opts.collectStart, opts.frameSize, 'floor');
 
 
 mdist = cell(length(analyzeCodes), 1);
@@ -551,7 +552,8 @@ nTrial = 40;
 bhvBlockWindow = 15 * 60 / opts.frameSize;
 dataWindow = -2 / opts.frameSize : 2 / opts.frameSize;
 
-bhvStartFrames = 1 + floor(dataBhv.StartTime(dataBhv.ID == bhvCode) ./ opts.frameSize);
+bhvStartFrames = abs_time_to_collect_frame( ...
+    dataBhv.StartTime(dataBhv.ID == bhvCode), opts.collectStart, opts.frameSize, 'floor');
 
 blockFrameStarts = 1 + linspace(0, 210, 8) .* 60 ./ opts.frameSize; % get a 10 min span every 30 min
 

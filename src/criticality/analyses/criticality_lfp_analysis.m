@@ -20,13 +20,15 @@ function results = criticality_lfp_analysis(dataStruct, config)
 %   Uses common time points across all analyses with different window sizes.
 %
 % Returns:
-%   results - Structure with d2, dfa, startS, and params
+%   results - Structure with d2, dfa, startS, and params.
+%             startS are absolute session times (seconds).
 
     % Add paths
     srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
     addpath(srcRoot);
     add_figure_tools_path();
     addpath(fullfile(srcRoot, 'sliding_window_prep', 'utils'));
+    addpath(fullfile(srcRoot, 'data_prep'));
     addpath(fullfile(fileparts(mfilename('fullpath')), '..'));
     
     % Validate inputs
@@ -97,6 +99,12 @@ function results = criticality_lfp_analysis(dataStruct, config)
     
     totalSessionDuration = min(durations);
     fprintf('Total session duration: %.1f s\n', totalSessionDuration);
+
+    timeOrigin = 0;
+    if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectStart') ...
+            && ~isempty(dataStruct.opts.collectStart)
+        timeOrigin = dataStruct.opts.collectStart;
+    end
     
     % Calculate window sizes
     d2WindowSize = config.slidingWindowSize;
@@ -118,12 +126,9 @@ function results = criticality_lfp_analysis(dataStruct, config)
         end
     end
     
-    % Calculate common centerTime values based on maxWindowSize and stepSize
-    % This ensures all areas/bands have aligned windows regardless of their specific window sizes
-    % Generate common centerTime values
-    % Start from maxWindowSize/2, end at totalSessionDuration - maxWindowSize/2
-    firstCenterTime = maxWindowSize / 2;
-    lastCenterTime = totalSessionDuration - maxWindowSize / 2;
+    % Calculate common centerTime values in absolute session time
+    firstCenterTime = timeOrigin + maxWindowSize / 2;
+    lastCenterTime = timeOrigin + totalSessionDuration - maxWindowSize / 2;
     commonCenterTimes = firstCenterTime:stepSize:lastCenterTime;
     
     if isempty(commonCenterTimes)
@@ -195,7 +200,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     if config.analyzeD2
                         % Convert centerTime to indices for this band's binning
                         [d2StartBin, d2EndBin] = calculate_window_indices_from_center(...
-                            centerTime, d2WindowSize, bandBinSize, numFrames_b);
+                            centerTime, d2WindowSize, bandBinSize, numFrames_b, timeOrigin);
                         
                         % Check if window is valid (within bounds)
                         if d2StartBin >= 1 && d2EndBin <= numFrames_b && d2StartBin <= d2EndBin
@@ -209,7 +214,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     if config.analyzeDFA
                         % Convert centerTime to indices for this band's binning
                         [dfaStartBin, dfaEndBin] = calculate_window_indices_from_center(...
-                            centerTime, dfaEnvWinSize, bandBinSize, numFrames_b);
+                            centerTime, dfaEnvWinSize, bandBinSize, numFrames_b, timeOrigin);
                         
                         % Check if window is valid (within bounds)
                         if dfaStartBin >= 1 && dfaEndBin <= numFrames_b && dfaStartBin <= dfaEndBin
@@ -265,7 +270,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     if config.analyzeD2
                         % Convert centerTime to indices for this LFP bin size
                         [d2StartBin, d2EndBin] = calculate_window_indices_from_center(...
-                            centerTime, d2WindowSize, currentLfpBinSize, numFrames_lfp);
+                            centerTime, d2WindowSize, currentLfpBinSize, numFrames_lfp, timeOrigin);
                         
                         % Check if window is valid (within bounds)
                         if d2StartBin >= 1 && d2EndBin <= numFrames_lfp && d2StartBin <= d2EndBin
@@ -279,7 +284,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
                     if config.analyzeDFA
                         % Convert centerTime to indices for this LFP bin size
                         [dfaStartBin, dfaEndBin] = calculate_window_indices_from_center(...
-                            centerTime, dfaLfpWinSize, currentLfpBinSize, numFrames_lfp);
+                            centerTime, dfaLfpWinSize, currentLfpBinSize, numFrames_lfp, timeOrigin);
                         
                         % Check if window is valid (within bounds)
                         if dfaStartBin >= 1 && dfaEndBin <= numFrames_lfp && dfaStartBin <= dfaEndBin
@@ -385,6 +390,7 @@ function results = build_results_structure_lfp(dataStruct, config, areas, areasT
     
     results.params.slidingWindowSize = config.slidingWindowSize;
     results.params.stepSize = config.stepSize;
+    results.params.timeOrigin = session_time_origin(dataStruct);
     results.params.analyzeD2 = config.analyzeD2;
     results.params.analyzeDFA = config.analyzeDFA;
     results.params.pOrder = config.pOrder;

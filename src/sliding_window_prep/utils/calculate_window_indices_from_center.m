@@ -1,28 +1,34 @@
-function [startIdx, endIdx] = calculate_window_indices_from_center(centerTime, slidingWindowSize, binSize, numTimePoints)
+function [startIdx, endIdx] = calculate_window_indices_from_center(centerTime, slidingWindowSize, binSize, numTimePoints, timeOrigin)
 % CALCULATE_WINDOW_INDICES_FROM_CENTER Calculate window indices from center time
 %
 % Variables:
-%   centerTime - Center time of window in seconds
+%   centerTime - Center time of window in absolute session seconds
 %   slidingWindowSize - Window size in seconds
 %   binSize - Bin size in seconds (for converting time to sample index)
 %   numTimePoints - Total number of time points in data
+%   timeOrigin - Absolute session time of matrix bin 1 (default 0). Relative
+%                indexing uses (centerTime - timeOrigin).
 %
 % Goal:
 %   Calculate the start and end indices for a sliding window given a center
 %   time. This ensures all areas have aligned windows regardless of their
-%   bin sizes. The centerTime is in absolute time (seconds), and indices are
-%   calculated based on the area's specific binSize.
+%   bin sizes. Indices are relative to the binned matrix (bin 1 = timeOrigin).
 %
 % Returns:
 %   startIdx - Start index of window (1-indexed)
 %   endIdx - End index of window (1-indexed)
 
-    % Convert centerTime to a sample index (1-indexed)
-    % centerTime is in seconds, binSize is in seconds
+    if nargin < 5 || isempty(timeOrigin)
+        timeOrigin = 0;
+    end
+
+    % Convert absolute centerTime to time relative to matrix start
+    relativeCenter = centerTime - timeOrigin;
+
+    % Convert relative center to a sample index (1-indexed)
     % If bin 1 covers [0, binSize), then bin n covers [(n-1)*binSize, n*binSize)
-    % So for time t, the bin index is: floor(t / binSize) + 1
-    % But for centering, we want the bin closest to centerTime, so use round
-    centerIdx = round(centerTime / binSize) + 1;
+    % For centering, use round to the nearest bin
+    centerIdx = round(relativeCenter / binSize) + 1;
     
     % Calculate window size in samples
     winSamples = round(slidingWindowSize / binSize);
@@ -59,4 +65,3 @@ function [startIdx, endIdx] = calculate_window_indices_from_center(centerTime, s
         endIdx = numTimePoints;
     end
 end
-

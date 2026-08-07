@@ -38,21 +38,40 @@ end
 % Reclassify Valid behaviors based on new dataBhv
 dataBhv.Valid = behavior_selection(dataBhv, opts);
 
-% Recalculate StartFrame
-dataBhv.StartFrame = 1 + floor(dataBhv.StartTime / opts.frameSize);
-    nFrame = ceil(opts.collectEnd / opts.frameSize);
+% Recalculate StartFrame in collect-window coordinates (absolute StartTime)
+collectStart = 0;
+if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+    collectStart = opts.collectStart;
+end
+dataBhv.StartFrame = abs_time_to_collect_frame( ...
+    dataBhv.StartTime, collectStart, opts.frameSize, 'floor');
+nFrame = ceil((opts.collectEnd - collectStart) / opts.frameSize);
 
 % Re-Create bhvIDMat, a vector of ID labels, one element per frame to match the
 % neural matrix (see get_standard_data.m)
 
-% Use StartFrame and DurFrame method:
+% Use StartFrame method (clamp to collect window)
 bhvID = int8(zeros(nFrame, 1));
-for i = 1 : size(dataBhv, 1) - 1
-    % iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i) + dataBhv.DurFrame(i) - 1;
-    iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
-    bhvID(iInd) = dataBhv.ID(i);
+if size(dataBhv, 1) < 1 || nFrame < 1
+    return;
 end
-bhvID(iInd(end) + 1 : end) = dataBhv.ID(end);
+for i = 1 : size(dataBhv, 1) - 1
+    iStart = max(1, dataBhv.StartFrame(i));
+    iEnd = min(nFrame, dataBhv.StartFrame(i+1) - 1);
+    if iStart <= iEnd
+        bhvID(iStart:iEnd) = dataBhv.ID(i);
+    end
+end
+iStart = max(1, dataBhv.StartFrame(end));
+if ismember('Dur', dataBhv.Properties.VariableNames)
+    iEnd = min(nFrame, abs_time_to_collect_frame( ...
+        dataBhv.StartTime(end) + dataBhv.Dur(end), collectStart, opts.frameSize, 'floor'));
+else
+    iEnd = nFrame;
+end
+if iStart <= iEnd
+    bhvID(iStart:iEnd) = dataBhv.ID(end);
+end
 
 
 % Use majority time in frame method:

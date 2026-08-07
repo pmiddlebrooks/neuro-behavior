@@ -29,7 +29,8 @@ function results = criticality_av_analysis(dataStruct, config)
 %   Uses spike times directly with on-demand binning. Supports PCA and permutation testing.
 %
 % Returns:
-%   results - Structure with dcc, kappa, decades, tau, alpha, paramSD, startS, and params
+%   results - Structure with dcc, kappa, decades, tau, alpha, paramSD, startS, and params.
+%             startS are absolute session times (seconds).
 
     % Add paths
     srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
@@ -312,10 +313,10 @@ function results = criticality_av_analysis(dataStruct, config)
         config.avStepSize = totalTime;
     end
     
-    % Generate common centerTime values
-    % Start from slidingWindowSize/2, end at totalTime - slidingWindowSize/2
-    firstCenterTime = config.slidingWindowSize / 2;
-    lastCenterTime = totalTime - config.slidingWindowSize / 2;
+    % Generate common centerTime values in absolute session time
+    timeOrigin = timeRange(1);
+    firstCenterTime = timeOrigin + config.slidingWindowSize / 2;
+    lastCenterTime = timeOrigin + totalTime - config.slidingWindowSize / 2;
     commonCenterTimes = firstCenterTime:config.avStepSize:lastCenterTime;
     
     if isempty(commonCenterTimes)
@@ -472,7 +473,7 @@ function results = criticality_av_analysis(dataStruct, config)
             % Convert centerTime to indices for this area's binning
             % Use area-specific optimal window size
             [startIdx, endIdx] = calculate_window_indices_from_center(...
-                centerTime, slidingWindowSize(a), binSize(a), numTimePoints_dcc);
+                centerTime, slidingWindowSize(a), binSize(a), numTimePoints_dcc, timeOrigin);
             
             % Check if window is valid (within bounds)
             if startIdx < 1 || endIdx > numTimePoints_dcc || startIdx > endIdx
@@ -853,7 +854,7 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
         % Convert centerTime to indices for this area's binning
         % Use area-specific optimal window size
         [startIdx, endIdx] = calculate_window_indices_from_center(...
-            centerTime, slidingWindowSize, binSize, numTimePoints);
+            centerTime, slidingWindowSize, binSize, numTimePoints, timeRange(1));
         
         % Check if window is valid (within bounds)
         if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -971,7 +972,7 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
         % Convert centerTime to indices for this area's binning
         % Use area-specific optimal window size
         [startIdx, endIdx] = calculate_window_indices_from_center(...
-            centerTime, slidingWindowSize, binSize, numTimePoints);
+            centerTime, slidingWindowSize, binSize, numTimePoints, timeRange(1));
         
         % Check if window is valid (within bounds)
         if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -1055,6 +1056,7 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
     results.slidingWindowSize = slidingWindowSize;
     results.params.slidingWindowSize = config.slidingWindowSize;
     results.params.avStepSize = config.avStepSize;
+    results.params.timeOrigin = session_time_origin(dataStruct);
     results.params.pcaFlag = config.pcaFlag;
     results.params.pcaFirstFlag = config.pcaFirstFlag;
     results.params.nDim = config.nDim;

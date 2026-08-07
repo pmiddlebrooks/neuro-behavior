@@ -19,6 +19,10 @@ utilsPath = fullfile(srcRoot, 'sliding_window_prep', 'utils');
 if exist(utilsPath, 'dir')
     addpath(utilsPath);
 end
+dataPrepPath = fullfile(srcRoot, 'data_prep');
+if exist(dataPrepPath, 'dir')
+    addpath(dataPrepPath);
+end
 
     % Extract data from results
     areas = results.areas;
@@ -29,6 +33,26 @@ end
     alpha = results.alpha;
     paramSD = results.paramSD;
     startS = results.startS;
+
+    % Optional: plot relative to collectStart (default: absolute session time)
+    useRelativeTime = false;
+    if isfield(config, 'useRelativeTime') && ~isempty(config.useRelativeTime)
+        useRelativeTime = logical(config.useRelativeTime);
+    end
+    if useRelativeTime
+        t0 = 0;
+        if nargin >= 4 && ~isempty(dataStruct)
+            t0 = session_time_origin(dataStruct);
+        elseif isfield(results, 'params') && isfield(results.params, 'timeOrigin') ...
+                && ~isempty(results.params.timeOrigin)
+            t0 = results.params.timeOrigin;
+        end
+        for aRel = 1:numel(startS)
+            if ~isempty(startS{aRel})
+                startS{aRel} = startS{aRel} - t0;
+            end
+        end
+    end
     
     % Get areas to plot
     if isfield(dataStruct, 'areasToTest')
@@ -63,9 +87,13 @@ end
                 aDataMat = neural_matrix_ms_to_frames(dataStruct.dataMat(:, aID), binSize);
                 % Sum across neurons
                 summedActivity = sum(aDataMat, 2);
-                % Calculate time bins (center of each bin)
+                % Absolute session times for bins (matrix index 1 = collectStart)
                 numBins = size(aDataMat, 1);
-                activityTimeBins = ((0:numBins-1) + 0.5) * binSize;
+                t0Bins = 0;
+                if ~useRelativeTime
+                    t0Bins = session_time_origin(dataStruct);
+                end
+                activityTimeBins = t0Bins + ((0:numBins-1) + 0.5) * binSize;
                 
                 % Calculate windowed mean activity for each window center
                 numWindows = length(startS{a});

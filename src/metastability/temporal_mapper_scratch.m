@@ -247,23 +247,34 @@ elseif strcmp(sessionType, 'spontaneous')
             error('No behavior data');
         end
         bhvBinSize = 1 / optsBhv.fsBhv;
-        nBhvBins = ceil(optsBhv.collectEnd / bhvBinSize);
-        dataBhv.StartFrame = 1 + round(dataBhv.StartTime / bhvBinSize);
+        collectStartBhv = 0;
+        if isfield(optsBhv, 'collectStart') && ~isempty(optsBhv.collectStart)
+            collectStartBhv = optsBhv.collectStart;
+        end
+        nBhvBins = ceil((optsBhv.collectEnd - collectStartBhv) / bhvBinSize);
+        dataBhv.StartFrame = abs_time_to_collect_frame( ...
+            dataBhv.StartTime, collectStartBhv, bhvBinSize, 'round');
         bhvID = zeros(nBhvBins, 1);
         for i = 1:size(dataBhv, 1) - 1
-            iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
-            if iInd(1) <= nBhvBins
-                iInd = iInd(iInd <= nBhvBins);
-                bhvID(iInd) = dataBhv.ID(i);
+            iStart = max(1, dataBhv.StartFrame(i));
+            iEnd = min(nBhvBins, dataBhv.StartFrame(i+1) - 1);
+            if iStart <= iEnd
+                bhvID(iStart:iEnd) = dataBhv.ID(i);
             end
         end
-        iInd = dataBhv.StartFrame(end) : nBhvBins;
-        if ~isempty(iInd) && iInd(1) <= nBhvBins
-            bhvID(iInd) = dataBhv.ID(end);
+        iStart = max(1, dataBhv.StartFrame(end));
+        if ismember('Dur', dataBhv.Properties.VariableNames)
+            iEnd = min(nBhvBins, abs_time_to_collect_frame( ...
+                dataBhv.StartTime(end) + dataBhv.Dur(end), collectStartBhv, bhvBinSize, 'round'));
+        else
+            iEnd = nBhvBins;
+        end
+        if iStart <= iEnd
+            bhvID(iStart:iEnd) = dataBhv.ID(end);
         end
         colorvar = zeros(length(t), 1);
         for i = 1:length(t)
-            binIdx = floor(t(i) / bhvBinSize) + 1;
+            binIdx = abs_time_to_collect_frame(t(i), collectStartBhv, bhvBinSize, 'floor');
             if binIdx >= 1 && binIdx <= length(bhvID)
                 colorvar(i) = bhvID(binIdx);
             else

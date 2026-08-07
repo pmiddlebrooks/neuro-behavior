@@ -90,32 +90,28 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
         if hasBehaviorLabels
             dataBhv = load_data(opts, 'behavior');
 
-            % Create bhvID vector using behavior sampling frequency (opts.fsBhv)
+            % Create bhvID for absolute collect window [collectStart, collectEnd]
             if ~isfield(opts, 'fsBhv')
                 error('behavior needs a sampling frequency, opts.fsBhv, in the opts struct')
             end
-            bhvBinSize = 1 / opts.fsBhv;  % Behavior bin size in seconds
-            nBhvBins = ceil(opts.collectEnd / bhvBinSize);
-            dataBhv.StartFrame = 1 + round(dataBhv.StartTime / bhvBinSize);
-            bhvID = zeros(nBhvBins, 1);
-            for i = 1:size(dataBhv, 1) - 1
-                iInd = dataBhv.StartFrame(i) : dataBhv.StartFrame(i+1) - 1;
-                bhvID(iInd) = dataBhv.ID(i);
+            collectStartBhv = 0;
+            if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+                collectStartBhv = opts.collectStart;
             end
-            if ~isempty(dataBhv)
-                iInd = dataBhv.StartFrame(end):nBhvBins;
-                if ~isempty(iInd)
-                    bhvID(iInd) = dataBhv.ID(end);
-                end
-            end
+            [bhvID, bhvTimeOrigin] = build_bhv_id_vector( ...
+                dataBhv, collectStartBhv, opts.collectEnd, opts.fsBhv);
+            dataBhv.StartFrame = abs_time_to_collect_frame( ...
+                dataBhv.StartTime, collectStartBhv, 1 / opts.fsBhv, 'round');
 
             dataStruct.bhvID = bhvID;
+            dataStruct.bhvTimeOrigin = bhvTimeOrigin;
             dataStruct.dataBhv = dataBhv;
             dataStruct.fsBhv = opts.fsBhv;
         else
             warning('load_spontaneous_data:NoBehaviorLabels', ...
                 'No behavior_labels CSV in %s; skipping behavior data.', sessionFolder);
             dataStruct.bhvID = [];
+            dataStruct.bhvTimeOrigin = [];
             dataStruct.dataBhv = [];
             if isfield(opts, 'fsBhv') && ~isempty(opts.fsBhv)
                 dataStruct.fsBhv = opts.fsBhv;

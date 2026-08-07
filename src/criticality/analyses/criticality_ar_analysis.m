@@ -27,7 +27,9 @@ function results = criticality_ar_analysis(dataStruct, config)
 %   Supports PCA, modulation analysis, and permutation testing.
 %
 % Returns:
-%   results - Structure with d2, mrBr, startS, popActivity, and params
+%   results - Structure with d2, mrBr, startS, popActivity, and params.
+%             startS are absolute session times (seconds), matching
+%             spikeData.collectStart / opts.collectStart.
 
     % Add paths
     srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
@@ -272,10 +274,11 @@ function results = criticality_ar_analysis(dataStruct, config)
       slidingWindowSize(oversizedMask) = totalTime;
     end
     
-    % Generate common centerTime values
-    % Start from slidingWindowSize/2, end at totalTime - slidingWindowSize/2
-    firstCenterTime = config.slidingWindowSize / 2;
-    lastCenterTime = totalTime - config.slidingWindowSize / 2;
+    % Generate common centerTime values in absolute session time
+    % (bin indexing subtracts timeOrigin via calculate_window_indices_from_center)
+    timeOrigin = timeRange(1);
+    firstCenterTime = timeOrigin + config.slidingWindowSize / 2;
+    lastCenterTime = timeOrigin + totalTime - config.slidingWindowSize / 2;
     commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
     
     if isempty(commonCenterTimes)
@@ -285,6 +288,8 @@ function results = criticality_ar_analysis(dataStruct, config)
     numWindows = length(commonCenterTimes);
     fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s (stepSize=%.3f s)\n', ...
         numWindows, firstCenterTime, lastCenterTime, config.stepSize);
+    
+    bhvTimeOrigin = session_time_origin(dataStruct);
     
     % Initialize results
     [popActivity, mrBr, d2, d2Normalized, startS, popActivityWindows, popActivityFull] = ...
@@ -490,7 +495,7 @@ function results = criticality_ar_analysis(dataStruct, config)
         for w = 1:numWindows
             centerTime = commonCenterTimes(w);
             [startIdx, endIdx] = calculate_window_indices_from_center(...
-                centerTime, slidingWindowSize(a), binSize(a), numTimePoints);
+                centerTime, slidingWindowSize(a), binSize(a), numTimePoints, timeOrigin);
             windowIndices(w, :) = [startIdx, endIdx];
         end
         
@@ -554,8 +559,8 @@ function results = criticality_ar_analysis(dataStruct, config)
                                 bhvBinSize = 1 / fsBhv;
                                 winStartTime = centerTime - slidingWindowSize(a) / 2;
                                 winEndTime = centerTime + slidingWindowSize(a) / 2;
-                                bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
-                                bhvEndIdx = round(winEndTime / bhvBinSize);
+                                bhvStartIdx = round((winStartTime - bhvTimeOrigin) / bhvBinSize) + 1;
+                                bhvEndIdx = round((winEndTime - bhvTimeOrigin) / bhvBinSize);
                                 bhvStartIdx = max(1, bhvStartIdx);
                                 bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
                                 if bhvStartIdx <= bhvEndIdx
@@ -589,7 +594,7 @@ function results = criticality_ar_analysis(dataStruct, config)
                 % Circular permutations for this subsample (used only for normalization and summary stats)
                 if config.enablePermutations && config.normalizeD2 && config.analyzeD2
                     [d2PermutedSub, mrBrPermutedSub] = perform_circular_permutations(...
-                        aDataMatSub, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config);
+                        aDataMatSub, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config, timeOrigin);
                     
                     % Normalize d2 for this subsample
                     d2PermutedMeanSub = nanmean(d2PermutedSub, 2);
@@ -656,7 +661,7 @@ function results = criticality_ar_analysis(dataStruct, config)
                 % Convert centerTime to indices for this area's binning
                 % Use area-specific optimal window size
                 [startIdx, endIdx] = calculate_window_indices_from_center(...
-                    centerTime, slidingWindowSize(a), binSize(a), numTimePoints);
+                    centerTime, slidingWindowSize(a), binSize(a), numTimePoints, timeOrigin);
                 
                 % Check if window is valid (within bounds)
                 if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -676,8 +681,8 @@ function results = criticality_ar_analysis(dataStruct, config)
                         bhvBinSize = 1 / fsBhv;
                         winStartTime = centerTime - slidingWindowSize(a) / 2;
                         winEndTime = centerTime + slidingWindowSize(a) / 2;
-                        bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
-                        bhvEndIdx = round(winEndTime / bhvBinSize);
+                        bhvStartIdx = round((winStartTime - bhvTimeOrigin) / bhvBinSize) + 1;
+                        bhvEndIdx = round((winEndTime - bhvTimeOrigin) / bhvBinSize);
                         bhvStartIdx = max(1, bhvStartIdx);
                         bhvEndIdx = min(length(dataStruct.bhvID), bhvEndIdx);
                         if bhvStartIdx <= bhvEndIdx
@@ -717,7 +722,7 @@ function results = criticality_ar_analysis(dataStruct, config)
                 else
                     % Use original binned data for permutations
                     [d2PermutedLocal, mrBrPermutedLocal] = perform_circular_permutations(...
-                        aDataMat, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config);
+                        aDataMat, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config, timeOrigin);
                 end
                 
                 % Normalize d2 by shuffled d2 values if requested
@@ -1088,23 +1093,28 @@ function [binSize, slidingWindowSize, ...
     end
 end
 
-function [d2Permuted, mrBrPermuted] = perform_circular_permutations(aDataMat, commonCenterTimes, slidingWindowSize, binSize, numTimePoints, config)
+function [d2Permuted, mrBrPermuted] = perform_circular_permutations(aDataMat, commonCenterTimes, slidingWindowSize, binSize, numTimePoints, config, timeOrigin)
 % PERFORM_CIRCULAR_PERMUTATIONS Perform circular permutation testing
 %   Shuffles each neuron's activity independently using circular shifts,
 %   then computes population activity from the shuffled data.
 %
 % Variables:
 %   aDataMat - Binned spike matrix [time bins x neurons]
-%   commonCenterTimes - Vector of window center times
+%   commonCenterTimes - Absolute window center times (s)
 %   slidingWindowSize - Window size in seconds
 %   binSize - Bin size in seconds
 %   numTimePoints - Number of time points in aDataMat
 %   config - Configuration structure
+%   timeOrigin - Absolute time of matrix bin 1 (default 0)
 %
 % Goal:
 %   For each shuffle, circularly shift each neuron's activity independently,
 %   then compute population activity and analyze d2/mrBr in sliding windows.
     
+    if nargin < 7 || isempty(timeOrigin)
+        timeOrigin = 0;
+    end
+
     numWindows = length(commonCenterTimes);
     numNeurons = size(aDataMat, 2);
     
@@ -1126,10 +1136,9 @@ function [d2Permuted, mrBrPermuted] = perform_circular_permutations(aDataMat, co
         for w = 1:numWindows
             centerTime = commonCenterTimes(w);
             
-            % Convert centerTime to indices for this area's binning
-            % Use area-specific window size
+            % Convert absolute centerTime to indices for this area's binning
             [startIdx, endIdx] = calculate_window_indices_from_center(...
-                centerTime, slidingWindowSize, binSize, numTimePoints);
+                centerTime, slidingWindowSize, binSize, numTimePoints, timeOrigin);
             
             % Check if window is valid (within bounds)
             if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -1161,12 +1170,12 @@ function [d2Permuted, mrBrPermuted] = perform_circular_permutations_pca(reconstr
 % Variables:
 %   reconstructedMat_1ms - PCA-reconstructed data matrix [timeBins_1ms x neurons] at tempBinSize
 %   a - Area index
-%   commonCenterTimes - Vector of window center times
+%   commonCenterTimes - Absolute window center times (s)
 %   slidingWindowSize - Window size in seconds
 %   binSize - Bin size in seconds
 %   numTimePoints - Number of time points at optimal bin size
 %   config - Configuration structure
-%   timeRange - [startTime, endTime] in seconds
+%   timeRange - Absolute [startTime, endTime] in seconds
 %   tempBinSize - Bin size used for PCA (typically 0.001s = 1ms)
 %
 % Goal:
@@ -1213,10 +1222,9 @@ function [d2Permuted, mrBrPermuted] = perform_circular_permutations_pca(reconstr
         for w = 1:numWindows
             centerTime = commonCenterTimes(w);
             
-            % Convert centerTime to indices for this area's binning
-            % Use area-specific window size
+            % Convert absolute centerTime to indices for this area's binning
             [startIdx, endIdx] = calculate_window_indices_from_center(...
-                centerTime, slidingWindowSize, binSize, numTimePoints);
+                centerTime, slidingWindowSize, binSize, numTimePoints, timeRange(1));
             
             % Check if window is valid (within bounds)
             if startIdx < 1 || endIdx > numTimePoints || startIdx > endIdx
@@ -1283,6 +1291,7 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     end
     results.params.slidingWindowSize = config.slidingWindowSize;
     results.params.stepSize = config.stepSize;
+    results.params.timeOrigin = session_time_origin(dataStruct);
     results.params.analyzeD2 = config.analyzeD2;
     results.params.analyzeMrBr = config.analyzeMrBr;
     results.params.pcaFlag = config.pcaFlag;

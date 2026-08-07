@@ -21,6 +21,7 @@
 %   nPermutations    - Number of circular permutations per window for shuffled d2
 %   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled)
 %   plotD2Timeline   - If true, plot mean pop per d2 window, d2, and ethogram vs time
+%   useRelativeTime  - If true, timeline x-axis is relative to collectStart (default false)
 %   binSize          - Spike bin width (s) for d2 analysis (and window popActivity)
 %   saveFigure       - Export PNG/EPS to dropPath/criticality_manuscript
 %   plotConfig       - Axis fonts/line widths (see fill_manuscript_plot_config)
@@ -42,21 +43,24 @@
 % dataSource = 'spikes';
 
 collectStart = 0;
+% collectStart = 1.2*10^4;
 collectEnd = 45 * 60;
 collectEnd = 1.2*10^4;
+collectEnd = [];
 
 d2Window = 5*60;  % seconds; non-overlapping windows
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
-useSubsampling = true;
+useSubsampling = false;
 nSubsamples = 20;
-nNeuronsSubsample = 45;
+nNeuronsSubsample = 40;
 minNeuronsMultiple = 1.1;
 nPermutations = 5;  % circular shuffles per window for shuffled d2 distribution
 plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
+useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
 binSize = 0.04;  % s; spike binning for d2 (and window mean popActivity)
 saveFigure = false;
 plotConfig = fill_manuscript_plot_config();
@@ -225,7 +229,7 @@ for iCellRun = 1:numel(cellTypesToRun)
   if plotD2Timeline
     figTime = plot_d2_pop_ethogram_timeline(dataStruct, results, ...
       collectStart, collectEnd, d2Window, binSize, useLog10D2, plotConfig, ...
-      sessionName, cellType);
+      sessionName, cellType, useRelativeTime);
     if ~isempty(figTime) && saveFigure
       saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
       if ~exist(saveDir, 'dir')
@@ -812,18 +816,21 @@ end
 
 function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
     collectStart, collectEnd, d2Window, binSize, useLog10D2, plotConfig, ...
-    sessionName, cellType)
+    sessionName, cellType, useRelativeTime)
 % PLOT_D2_POP_ETHOGRAM_TIMELINE - Stacked mean-pop | d2 | ethogram vs time
 %
 % Variables:
 %   dataStructBhv - Session used for bhvID / fsBhv and duration
 %   results       - criticality_ar_analysis output (d2, startS, popActivityWindows)
 %   binSize       - Spike bin width (s) used in d2 analysis (title only)
+%   useRelativeTime - If true, shift x-axis so t=0 at collectStart (default false)
 %
 % Layout (per brain area column):
 %   Top:    mean popActivity per d2 window (results.popActivityWindows)
 %   Middle: window-wise d2 (and shuffled mean when present)
 %   Bottom: behavior ethogram
+%
+% Timebase: results.startS and bhvID use absolute session time by default.
 
 if nargin < 8 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
@@ -834,6 +841,14 @@ end
 if nargin < 10
   cellType = '';
 end
+if nargin < 11 || isempty(useRelativeTime)
+  useRelativeTime = false;
+end
+
+dataPrepPath = fullfile(fileparts(mfilename('fullpath')), '..', 'data_prep');
+if exist(dataPrepPath, 'dir')
+  addpath(dataPrepPath);
+end
 
 fig = [];
 numAreas = numel(results.areas);
@@ -843,11 +858,22 @@ if numAreas < 1
 end
 
 bhvRec = session_d2_behavior_record(dataStructBhv);
-tMax = session_d2_resolve_timeline_tmax([], results, collectStart, collectEnd, d2Window, ...
+tMaxAbs = session_d2_resolve_timeline_tmax([], results, collectStart, collectEnd, d2Window, ...
   dataStructBhv);
-tMin = collectStart;
-if isempty(tMin) || ~isfinite(tMin)
+tMinAbs = collectStart;
+if isempty(tMinAbs) || ~isfinite(tMinAbs)
+  tMinAbs = session_time_origin(dataStructBhv);
+end
+if useRelativeTime
   tMin = 0;
+  tMax = tMaxAbs - tMinAbs;
+  timeShift = tMinAbs;
+  xLabelText = 'Time from collectStart (s)';
+else
+  tMin = tMinAbs;
+  tMax = tMaxAbs;
+  timeShift = 0;
+  xLabelText = 'Time (s)';
 end
 
 plotColors = manuscript_plot_colors();
@@ -860,7 +886,7 @@ for a = 1:numAreas
   areaName = results.areas{a};
   tWin = [];
   if isfield(results, 'startS') && a <= numel(results.startS) && ~isempty(results.startS{a})
-    tWin = results.startS{a}(:);
+    tWin = results.startS{a}(:) - timeShift;
   end
 
   axPop = subplot(3, numAreas, a, 'Parent', fig);
@@ -921,7 +947,7 @@ for a = 1:numAreas
 
   axEth = subplot(3, numAreas, 2 * numAreas + a, 'Parent', fig);
   session_d2_plot_behavior_ethogram(axEth, bhvRec, tMin, tMax);
-  xlabel(axEth, 'Time (s)', 'FontSize', plotConfig.axisLabelFontSize);
+  xlabel(axEth, xLabelText, 'FontSize', plotConfig.axisLabelFontSize);
   set(axEth, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth);
 
   axesToLink = [axesToLink; axPop; axD2; axEth]; %#ok<AGROW>
@@ -1007,7 +1033,7 @@ end
 function bhvRec = session_d2_behavior_record(dataStruct)
 % SESSION_D2_BEHAVIOR_RECORD - bhvID + fsBhv for ethogram plotting
 
-bhvRec = struct('bhvID', [], 'fsBhv', nan);
+bhvRec = struct('bhvID', [], 'fsBhv', nan, 'bhvTimeOrigin', 0);
 if isfield(dataStruct, 'bhvID') && ~isempty(dataStruct.bhvID)
   bhvRec.bhvID = dataStruct.bhvID(:);
 end
@@ -1017,6 +1043,7 @@ elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'fsBhv') ...
     && ~isempty(dataStruct.opts.fsBhv)
   bhvRec.fsBhv = dataStruct.opts.fsBhv;
 end
+bhvRec.bhvTimeOrigin = session_time_origin(dataStruct);
 end
 
 function session_d2_plot_behavior_ethogram(ax, bhvRec, tMin, tMax)
@@ -1024,8 +1051,9 @@ function session_d2_plot_behavior_ethogram(ax, bhvRec, tMin, tMax)
 %
 % Variables:
 %   ax     - Target axes
-%   bhvRec - Struct with .bhvID and .fsBhv
-%   tMin, tMax - Shared x-limits (s); bhvID starts at tMin (loaded collect window)
+%   bhvRec - Struct with .bhvID, .fsBhv, .bhvTimeOrigin
+%   tMin, tMax - Shared x-limits (s). bhvID(1) maps to tMin (absolute collect
+%                start by default, or 0 when plotting relative time).
 
 hold(ax, 'on');
 bhvID = bhvRec.bhvID;

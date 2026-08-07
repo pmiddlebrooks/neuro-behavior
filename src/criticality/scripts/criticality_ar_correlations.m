@@ -323,6 +323,8 @@ else
     winSize = config.slidingWindowSize;
 end
 
+bhvTimeOrigin = session_time_origin(dataStruct);
+
 numWindows = numel(centerTimes);
 switchingRate = nan(numWindows, 1);
 
@@ -331,8 +333,8 @@ for w = 1:numWindows
     winStartTime = centerTime - winSize / 2;
     winEndTime = centerTime + winSize / 2;
     
-    bhvStartIdx = round(winStartTime / bhvBinSize) + 1;
-    bhvEndIdx = round(winEndTime / bhvBinSize);
+    bhvStartIdx = round((winStartTime - bhvTimeOrigin) / bhvBinSize) + 1;
+    bhvEndIdx = round((winEndTime - bhvTimeOrigin) / bhvBinSize);
     bhvStartIdx = max(1, bhvStartIdx);
     bhvEndIdx = min(length(newLabels), bhvEndIdx);
     
