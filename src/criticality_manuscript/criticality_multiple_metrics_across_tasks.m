@@ -21,13 +21,18 @@
 %                        to keep non-engaged metrics; shorter sessions stay on
 %                        the x-axis but plot blank (NaN) so plots stay aligned
 %   thresholdMethod    - Avalanche population cutoff: 'median' or 'quantile10'
-%   runArBatch, runAvBatch, runPrgBatch - Run each analysis pipeline
+%   runArBatch, runAvBatch, runPrgBatch - Select which pipelines to run
+%                            (any non-empty combination of d2 / avalanche / PRG).
+%                            Unselected metrics stay blank in combined / separated
+%                            / pair-scatter layouts; correlation matrix only
+%                            includes selected families.
 %   loadSavedResults   - If true, load saved .mat outputs when run*Batch false
 %   plotResults        - Create combined d2/tau/alpha figure(s)
 %   plotMetricPairScatters - 2x2 figure: d2 vs tau, d2 vs alpha,
 %                            paramSD (crackling 1/σνz) vs (α-1)/(τ-1),
 %                            d2 vs paramSD
-%   plotCorrelationMatrix - Pearson corr heatmap across sessions (all tasks)
+%   plotCorrelationMatrix - Pearson corr heatmap across sessions (all tasks);
+%                            only metrics from selected pipelines
 %   saveCombinedBatch  - Save merged outputs for plot-only reruns
 %   enablePermutations - If false, observed metrics only (no shuffles; faster)
 %   useAnchorAffineMap - If true, non-anchor metrics LS-affine-map onto
@@ -44,8 +49,9 @@
 %   anchorMetric       - 'd2', 'tau', or 'alpha' (primary / left axis)
 %   metricsToPlot      - Subset of {'d2','tau','alpha'} markers to draw
 %   splitByEngagement  - If true, interval/reach use engaged vs non-engaged
-%                        analyses; make two plots (engaged and non-engaged),
-%                        each including spontaneous alongside that class.
+%                        analyses (d2, AV including decades, PRG); make two
+%                        plots (engaged and non-engaged), each including
+%                        spontaneous alongside that class.
 %                        Paired plots share d2-aligned y-limits for comparison.
 %                        Correlation matrix always uses full-session metrics.
 %                        See minTimeNonEngaged for blanking short non-engaged.
@@ -59,9 +65,9 @@
 %% Configuration
 sessionTypes = {'spontaneous', 'interval', 'reach'};
 collectStart = 10;
-collectEnd = 45 * 60;
+collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
-d2Window = 60;
+d2Window = [];
 prgWindow = d2Window;
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
@@ -85,9 +91,10 @@ brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 
-runArBatch = true;
-runAvBatch = true;
-runPrgBatch = true;
+% Pipeline selection — any combination of d2 (AR), avalanche (AV), PRG
+runArBatch = true;   % d2
+runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
+runPrgBatch = true;  % kurtosis, JS distance
 runEngagementBatch = true;
 loadSavedResults = false;
 plotResults = true;
@@ -98,13 +105,13 @@ saveCombinedBatch = true;
 enablePermutations = false;
 useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
-metricsToPlot = {'d2', 'tau', 'alpha'};  % any non-empty subset
+metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 25;
+nSubsamples = 50;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 
@@ -128,7 +135,17 @@ prgBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
 engBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
   'criticality_multiple_metrics_engagement_batch.mat');
 
+% Resolve which pipelines are active (run or load). Unselected → blank panels.
+useAr = logical(runArBatch) || (logical(loadSavedResults) && isfile(arBatchFile));
+useAv = logical(runAvBatch) || (logical(loadSavedResults) && isfile(avBatchFile));
+usePrg = logical(runPrgBatch) || (logical(loadSavedResults) && isfile(prgBatchFile));
+if ~(useAr || useAv || usePrg)
+  error(['Select at least one pipeline: set runArBatch / runAvBatch / runPrgBatch ', ...
+    'true, or loadSavedResults with existing batch files.']);
+end
+
 fprintf('\n=== Criticality Multiple Metrics Across Tasks ===\n');
+fprintf('Pipelines: AR(d2)=%d  AV=%d  PRG=%d\n', useAr, useAv, usePrg);
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 if isempty(collectEnd)
   fprintf('Collect window: [%.1f, full] s\n', collectStart);
@@ -191,14 +208,15 @@ arOpts = struct( ...
   'saveBatchResults', true, ...
   'batchResultsFile', arBatchFile);
 
-if runArBatch
+if useAr && runArBatch
   arOut = criticality_ar_across_tasks(arOpts);
-elseif loadSavedResults && isfile(arBatchFile)
+elseif useAr && loadSavedResults && isfile(arBatchFile)
   arOptsLoad = arOpts;
   arOptsLoad.runBatch = false;
   arOut = criticality_ar_across_tasks(arOptsLoad);
 else
-  error('AR batch required. Set runArBatch true or provide %s', arBatchFile);
+  arOut = [];
+  fprintf('Skipping AR (d2) batch.\n');
 end
 
 % AV batch (tau, alpha, paramSD, decades, dcc)
@@ -222,14 +240,15 @@ avOpts = struct( ...
   'saveBatchResults', true, ...
   'batchResultsFile', avBatchFile);
 
-if runAvBatch
+if useAv && runAvBatch
   avOut = criticality_av_across_tasks(avOpts);
-elseif loadSavedResults && isfile(avBatchFile)
+elseif useAv && loadSavedResults && isfile(avBatchFile)
   avOptsLoad = avOpts;
   avOptsLoad.runBatch = false;
   avOut = criticality_av_across_tasks(avOptsLoad);
 else
-  error('AV batch required. Set runAvBatch true or provide %s', avBatchFile);
+  avOut = [];
+  fprintf('Skipping AV batch.\n');
 end
 
 % PRG batch (kurtosis / kappaMean, Jensen-Shannon / djsMean)
@@ -253,36 +272,64 @@ prgOpts = struct( ...
   'saveBatchResults', true, ...
   'batchResultsFile', prgBatchFile);
 
-if runPrgBatch
+if usePrg && runPrgBatch
   prgOut = criticality_prg_across_tasks(prgOpts);
-elseif loadSavedResults && isfile(prgBatchFile)
+elseif usePrg && loadSavedResults && isfile(prgBatchFile)
   prgOptsLoad = prgOpts;
   prgOptsLoad.runBatch = false;
   prgOut = criticality_prg_across_tasks(prgOptsLoad);
-elseif plotCorrelationMatrix
-  error('PRG batch required for correlation matrix. Set runPrgBatch true or provide %s', prgBatchFile);
 else
   prgOut = [];
-  fprintf('Skipping PRG batch (plotCorrelationMatrix false and runPrgBatch false).\n');
+  fprintf('Skipping PRG batch.\n');
 end
 
-% Engagement batch (interval/reach engaged vs non-engaged d2 + tau/alpha)
+% Stub empty plotData for skipped pipelines (same areas so panels stay blank)
+refAreas = resolve_pipeline_ref_areas(arOut, avOut, prgOut, areasToPlot, brainArea);
+if isempty(arOut) || ~isfield(arOut, 'plotData')
+  arOut = make_empty_pipeline_out(sessionTypes, refAreas, 'ar', useLog10D2);
+end
+if isempty(avOut) || ~isfield(avOut, 'plotData')
+  avOut = make_empty_pipeline_out(sessionTypes, refAreas, 'av', false);
+end
+if isempty(prgOut) || ~isfield(prgOut, 'plotData')
+  prgOut = make_empty_pipeline_out(sessionTypes, refAreas, 'prg', false);
+end
+
+% Narrow combined-plot markers to selected pipelines (may be empty if PRG-only)
+metricsToPlot = filter_metrics_to_plot_by_pipelines(metricsToPlot, useAr, useAv);
+if ~isempty(metricsToPlot) && useAnchorAffineMap && ~ismember(anchorMetric, metricsToPlot)
+  fprintf('anchorMetric "%s" not in active metricsToPlot; using "%s".\n', ...
+    anchorMetric, metricsToPlot{1});
+  anchorMetric = metricsToPlot{1};
+end
+
+% Engagement batch (interval/reach engaged vs non-engaged for selected pipelines)
 engOut = [];
 if splitByEngagement
   engSessionTypes = intersect(sessionTypes, {'interval', 'reach'}, 'stable');
   if isempty(engSessionTypes)
     error('splitByEngagement requires interval and/or reach in sessionTypes.');
   end
+  engAnalyses = {};
+  if useAr, engAnalyses{end + 1} = 'd2'; end %#ok<AGROW>
+  if useAv, engAnalyses{end + 1} = 'avalanches'; end %#ok<AGROW>
+  if usePrg, engAnalyses{end + 1} = 'kurtosis'; end %#ok<AGROW>
+  if isempty(engAnalyses)
+    error('splitByEngagement requires at least one active pipeline (AR/AV/PRG).');
+  end
   engOpts = struct( ...
     'sessionTypes', {engSessionTypes}, ...
     'collectStart', collectStart, ...
     'collectEnd', collectEnd, ...
     'd2Window', d2Window, ...
+    'prgWindow', prgWindow, ...
     'binSizeD2', binSizeD2, ...
+    'binSizePrg', binSizePrg, ...
     'binSizeAv', binSizeAv, ...
     'engagementBuffer', engagementBuffer, ...
     'minNonEngagedWindow', minNonEngagedWindow, ...
     'absorbSingleEvents', absorbSingleEvents, ...
+    'minTimeNonEngaged', minTimeNonEngaged, ...
     'brainArea', brainArea, ...
     'brainAreaCombinations', {brainAreaCombinations}, ...
     'useLog10D2', useLog10D2, ...
@@ -294,6 +341,9 @@ if splitByEngagement
     'powerLawFitMethod', powerLawFitMethod, ...
     'avalancheDetectionMode', avalancheDetectionMode, ...
     'thresholdMethod', thresholdMethod, ...
+    'finalCutoffDivisor', finalCutoffDivisor, ...
+    'prgMethod', prgMethod, ...
+    'analyses', {engAnalyses}, ...
     'batchResultsFile', engBatchFile, ...
     'plotConfig', plotConfig);
 
@@ -339,6 +389,9 @@ combinedOut.enablePermutations = enablePermutations;
 combinedOut.anchorMetric = anchorMetric;
 combinedOut.useAnchorAffineMap = useAnchorAffineMap;
 combinedOut.metricsToPlot = metricsToPlot;
+combinedOut.useAr = useAr;
+combinedOut.useAv = useAv;
+combinedOut.usePrg = usePrg;
 combinedOut.splitByEngagement = splitByEngagement;
 combinedOut.plotMetricPairScatters = plotMetricPairScatters;
 combinedOut.plotSeparatedMetrics = plotSeparatedMetrics;
@@ -348,6 +401,8 @@ if saveCombinedBatch
   save(combinedBatchFile, '-struct', 'combinedOut', '-v7.3');
   fprintf('\nSaved combined batch: %s\n', combinedBatchFile);
 end
+
+activeAnalyses = struct('ar', useAr, 'av', useAv, 'prg', usePrg);
 
 % Combined plotting (same Editor section as batch load — run the full script)
 if plotResults
@@ -360,66 +415,68 @@ if plotResults
   if isempty(areasToPlot) && ~isempty(brainArea)
     areasToPlot = {brainArea};
   end
-  metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
-  if useAnchorAffineMap && ~ismember(anchorMetric, metricsToPlot)
-    error('anchorMetric "%s" must be included in metricsToPlot when useAnchorAffineMap is true.', ...
-      anchorMetric);
+  if ~isempty(metricsToPlot)
+    metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
+    if useAnchorAffineMap && ~ismember(anchorMetric, metricsToPlot)
+      error('anchorMetric "%s" must be included in metricsToPlot when useAnchorAffineMap is true.', ...
+        anchorMetric);
+    end
   end
 
   fprintf('\n=== Combined plotting ===\n');
   fprintf('Figures save to: %s\n', fullfile(paths.dropPath, 'criticality_manuscript'));
-  if useAnchorAffineMap
+  if isempty(metricsToPlot)
+    fprintf('No d2/tau/alpha markers active (PRG-only or empty metricsToPlot).\n');
+  elseif useAnchorAffineMap
     fprintf('Anchor metric: %s (affine map onto this scale)\n', anchorMetric);
   else
     fprintf('Anchor affine map: off (native metric scales)\n');
   end
-  fprintf('Markers: %s\n', strjoin(metricsToPlot, ', '));
+  if ~isempty(metricsToPlot)
+    fprintf('Markers: %s\n', strjoin(metricsToPlot, ', '));
+  end
 
   if ~splitByEngagement
-    plotAreas = intersect(cellstr(string(arOut.plotData.areas)), ...
-      cellstr(string(avOut.plotData.areas)), 'stable');
-    if ~isempty(areasToPlot)
-      plotAreas = intersect(plotAreas, cellstr(string(areasToPlot)), 'stable');
-    end
+    plotAreas = resolve_multimetric_plot_areas(arOut, avOut, prgOut, useAr, useAv, usePrg, ...
+      areasToPlot, brainArea);
     if isempty(plotAreas)
-      error(['No common brain areas between AR and AV plotData. ', ...
-        'AR areas={%s}; AV areas={%s}; requested={%s}'], ...
-        strjoin(cellstr(string(arOut.plotData.areas)), ','), ...
-        strjoin(cellstr(string(avOut.plotData.areas)), ','), ...
-        strjoin(cellstr(string(areasToPlot)), ','));
+      error('No brain areas available for plotting from selected pipelines.');
     end
     fprintf('Areas: %s\n', strjoin(plotAreas, ', '));
-    plot_multimetric_d2_tau_alpha_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
-      sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-      plotConfig, anchorMetric, '', metricsToPlot, struct(), useAnchorAffineMap, ...
-      useSubsampling, nNeuronsSubsample);
+    if ~isempty(metricsToPlot)
+      plot_multimetric_d2_tau_alpha_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
+        sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
+        plotConfig, anchorMetric, '', metricsToPlot, struct(), useAnchorAffineMap, ...
+        useSubsampling, nNeuronsSubsample);
+    end
     if plotSeparatedMetrics
-      if isempty(prgOut) || ~isfield(prgOut, 'plotData')
-        error('PRG plotData required for separated metrics (kurtosis / D_{JS}). Set runPrgBatch true.');
-      end
       plot_multimetric_separated_axes_across_tasks(arOut.plotData, avOut.plotData, ...
         prgOut.plotData, plotAreas, sessionTypes, collectStart, collectEnd, d2Window, ...
         paths, brainArea, useLog10D2, plotConfig, '', metricsToPlot, avOut.plotData, ...
-        finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample);
+        finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample, ...
+        activeAnalyses);
     end
     if plotMetricPairScatters
       plot_multimetric_pair_scatters_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
         sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-        plotConfig, '', useSubsampling, nNeuronsSubsample);
+        plotConfig, '', useSubsampling, nNeuronsSubsample, activeAnalyses);
     end
   else
     engagementClasses = {'engaged', 'nonEngaged'};
     classViews = struct();
     plotAreas = {};
+    prgPlotDataFull = prgOut.plotData;
     for iClass = 1:numel(engagementClasses)
       engClass = engagementClasses{iClass};
-      [arView, avView] = build_engagement_class_metric_views( ...
-        arOut.plotData, avOut.plotData, engOut.plotData, engClass, sessionTypes, ...
-        minTimeNonEngaged);
+      [arView, avView, prgView] = build_engagement_class_metric_views( ...
+        arOut.plotData, avOut.plotData, prgPlotDataFull, engOut.plotData, engClass, ...
+        sessionTypes, minTimeNonEngaged);
       classViews.(engClass).ar = arView;
       classViews.(engClass).av = avView;
-      classAreas = intersect(cellstr(string(arView.areas)), ...
-        cellstr(string(avView.areas)), 'stable');
+      classViews.(engClass).prg = prgView;
+      classAreas = resolve_multimetric_plot_areas( ...
+        struct('plotData', arView), struct('plotData', avView), struct('plotData', prgView), ...
+        useAr, useAv, usePrg, {}, '');
       if isempty(plotAreas)
         plotAreas = classAreas;
       else
@@ -434,33 +491,36 @@ if plotResults
     end
 
     % Shared maps + y-limits across engaged/non-engaged so d2 axes match
-    sharedByArea = compute_shared_engagement_plot_scales(classViews, plotAreas, ...
-      sessionTypes, metricsToPlot, anchorMetric, useAnchorAffineMap);
+    if ~isempty(metricsToPlot)
+      sharedByArea = compute_shared_engagement_plot_scales(classViews, plotAreas, ...
+        sessionTypes, metricsToPlot, anchorMetric, useAnchorAffineMap);
+    else
+      sharedByArea = struct();
+    end
 
     for iClass = 1:numel(engagementClasses)
       engClass = engagementClasses{iClass};
       fprintf('Areas (%s): %s\n', engClass, strjoin(plotAreas, ', '));
-      plot_multimetric_d2_tau_alpha_across_tasks( ...
-        classViews.(engClass).ar, classViews.(engClass).av, plotAreas, ...
-        sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-        plotConfig, anchorMetric, engClass, metricsToPlot, sharedByArea, useAnchorAffineMap, ...
-        useSubsampling, nNeuronsSubsample);
-      if plotSeparatedMetrics
-        if isempty(prgOut) || ~isfield(prgOut, 'plotData')
-          error('PRG plotData required for separated metrics (kurtosis / D_{JS}).');
-        end
-        % Top row: engagement d2/tau/alpha; bottom: full-session decades + PRG
-        plot_multimetric_separated_axes_across_tasks( ...
-          classViews.(engClass).ar, classViews.(engClass).av, prgOut.plotData, plotAreas, ...
+      if ~isempty(metricsToPlot)
+        plot_multimetric_d2_tau_alpha_across_tasks( ...
+          classViews.(engClass).ar, classViews.(engClass).av, plotAreas, ...
           sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-          plotConfig, engClass, metricsToPlot, avOut.plotData, finalCutoffDivisor, ...
-          enablePermutations, useSubsampling, nNeuronsSubsample);
+          plotConfig, anchorMetric, engClass, metricsToPlot, sharedByArea, useAnchorAffineMap, ...
+          useSubsampling, nNeuronsSubsample);
+      end
+      if plotSeparatedMetrics
+        plot_multimetric_separated_axes_across_tasks( ...
+          classViews.(engClass).ar, classViews.(engClass).av, classViews.(engClass).prg, ...
+          plotAreas, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
+          useLog10D2, plotConfig, engClass, metricsToPlot, classViews.(engClass).av, ...
+          finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample, ...
+          activeAnalyses);
       end
       if plotMetricPairScatters
         plot_multimetric_pair_scatters_across_tasks( ...
           classViews.(engClass).ar, classViews.(engClass).av, plotAreas, ...
           sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-          plotConfig, engClass, useSubsampling, nNeuronsSubsample);
+          plotConfig, engClass, useSubsampling, nNeuronsSubsample, activeAnalyses);
       end
     end
   end
@@ -470,25 +530,21 @@ end
 
 % Cross-session metric correlation matrix (pooled across task types)
 if plotCorrelationMatrix
-  if isempty(prgOut) || ~isfield(prgOut, 'plotData')
-    error('PRG plotData required for correlation matrix.');
-  end
   if isempty(areasToPlot) && ~isempty(brainArea)
     areasToPlot = {brainArea};
   end
-  corrAreas = intersect(arOut.plotData.areas, avOut.plotData.areas, 'stable');
-  corrAreas = intersect(corrAreas, prgOut.plotData.areas, 'stable');
-  if ~isempty(areasToPlot)
-    corrAreas = intersect(corrAreas, areasToPlot, 'stable');
-  end
+  corrAreas = resolve_multimetric_plot_areas(arOut, avOut, prgOut, useAr, useAv, usePrg, ...
+    areasToPlot, brainArea);
   if isempty(corrAreas)
-    error('No common brain areas among AR, AV, and PRG for correlation matrix.');
+    error('No brain areas available among selected pipelines for correlation matrix.');
   end
   fprintf('\n=== Metric correlation matrix (sessions pooled across tasks) ===\n');
+  fprintf('Active pipelines: AR=%d AV=%d PRG=%d\n', useAr, useAv, usePrg);
   fprintf('Areas: %s\n', strjoin(corrAreas, ', '));
   plot_metric_correlation_matrix_across_sessions( ...
     arOut, avOut, prgOut, corrAreas, sessionTypes, collectStart, collectEnd, ...
-    d2Window, paths, brainArea, useLog10D2, plotConfig, useSubsampling, nNeuronsSubsample);
+    d2Window, paths, brainArea, useLog10D2, plotConfig, useSubsampling, nNeuronsSubsample, ...
+    activeAnalyses);
 end
 
 fprintf('\n=== Done ===\n');
@@ -497,16 +553,19 @@ fprintf('\n=== Done ===\n');
 
 function plot_metric_correlation_matrix_across_sessions(arOut, avOut, prgOut, areasToPlot, ...
     sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, plotConfig, ...
-    useSubsampling, nNeuronsSubsample)
+    useSubsampling, nNeuronsSubsample, activeAnalyses)
 % PLOT_METRIC_CORRELATION_MATRIX_ACROSS_SESSIONS - Pearson corr heatmap per area
 %
 % Variables:
 %   arOut/avOut/prgOut - Batch outputs with plotData (and AR batchResults fallback)
 %   areasToPlot        - Brain areas to plot
 %   sessionTypes       - Session types pooled into one correlation
+%   activeAnalyses     - Struct with .ar/.av/.prg booleans; only those metrics plotted
 %
 % Goal:
 %   Each matrix entry is corr(metric_i, metric_j) across sessions (all tasks).
+%   Crackling (paramSD=1/σνz), decades, kurtosis, and JS distance are inverted
+%   (1/x) before correlating so expected co-variation with criticality is positive.
 
 if nargin < 12 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
@@ -517,11 +576,36 @@ end
 if nargin < 14 || isempty(nNeuronsSubsample)
   nNeuronsSubsample = 0;
 end
+if nargin < 15 || isempty(activeAnalyses)
+  activeAnalyses = struct('ar', true, 'av', true, 'prg', true);
+end
+activeAnalyses = fill_active_analyses(activeAnalyses);
 
-metricKeys = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', 'djs', ...
+allMetricKeys = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', 'djs', ...
   'meanSpikesPerBinPerNeuron'};
-metricLabels = {'d2', 'tau', 'alpha', '1/\sigma\nu z', 'decades', 'dcc', 'kurtosis', ...
+allMetricLabels = {'d2', 'tau', 'alpha', '1/\sigma\nu z', 'decades', 'dcc', 'kurtosis', ...
   'JS distance', 'spikes/bin/neuron'};
+% Invert metrics expected to anti-correlate with criticality (so all should co-vary)
+invertMetricKeys = {'paramSD', 'decades', 'kurtosis', 'djs'};
+invertMetricLabels = {'\sigma\nu z', '1/decades', '1/kurtosis', '1/JS distance'};
+
+keepMask = false(size(allMetricKeys));
+for iMetric = 1:numel(allMetricKeys)
+  key = allMetricKeys{iMetric};
+  if ismember(key, {'d2', 'meanSpikesPerBinPerNeuron'})
+    keepMask(iMetric) = activeAnalyses.ar;
+  elseif ismember(key, {'tau', 'alpha', 'paramSD', 'decades', 'dcc'})
+    keepMask(iMetric) = activeAnalyses.av;
+  elseif ismember(key, {'kurtosis', 'djs'})
+    keepMask(iMetric) = activeAnalyses.prg;
+  end
+end
+metricKeys = allMetricKeys(keepMask);
+metricLabels = allMetricLabels(keepMask);
+if numel(metricKeys) < 2
+  warning('Correlation matrix needs >=2 selected metrics; skipping.');
+  return;
+end
 
 saveDir = fullfile(paths.dropPath, 'criticality_manuscript', 'figures');
 if ~exist(saveDir, 'dir')
@@ -533,13 +617,19 @@ for iArea = 1:numel(areasToPlot)
   areaIdxAr = find(strcmp(arOut.plotData.areas, areaName), 1);
   areaIdxAv = find(strcmp(avOut.plotData.areas, areaName), 1);
   areaIdxPrg = find(strcmp(prgOut.plotData.areas, areaName), 1);
-  if isempty(areaIdxAr) || isempty(areaIdxAv) || isempty(areaIdxPrg)
-    warning('Skipping correlation for area %s (missing in one pipeline).', areaName);
+  if (activeAnalyses.ar && isempty(areaIdxAr)) ...
+      || (activeAnalyses.av && isempty(areaIdxAv)) ...
+      || (activeAnalyses.prg && isempty(areaIdxPrg))
+    warning('Skipping correlation for area %s (missing in an active pipeline).', areaName);
     continue;
   end
+  if isempty(areaIdxAr), areaIdxAr = 1; end
+  if isempty(areaIdxAv), areaIdxAv = 1; end
+  if isempty(areaIdxPrg), areaIdxPrg = 1; end
 
   sessionTable = build_correlation_metric_session_table( ...
-    arOut, avOut, prgOut, sessionTypes, areaIdxAr, areaIdxAv, areaIdxPrg, areaName);
+    arOut, avOut, prgOut, sessionTypes, areaIdxAr, areaIdxAv, areaIdxPrg, areaName, ...
+    activeAnalyses);
   if height(sessionTable) < 3
     warning('Skipping correlation for area %s: only %d sessions with metrics.', ...
       areaName, height(sessionTable));
@@ -547,8 +637,14 @@ for iArea = 1:numel(areasToPlot)
   end
 
   metricMat = nan(height(sessionTable), numel(metricKeys));
+  plotLabels = metricLabels;
   for iMetric = 1:numel(metricKeys)
     metricMat(:, iMetric) = sessionTable.(metricKeys{iMetric});
+    invertIdx = find(strcmp(invertMetricKeys, metricKeys{iMetric}), 1);
+    if ~isempty(invertIdx)
+      metricMat(:, iMetric) = safe_reciprocal_metric(metricMat(:, iMetric));
+      plotLabels{iMetric} = invertMetricLabels{invertIdx};
+    end
   end
 
   corrMat = corrcoef(metricMat, 'Rows', 'pairwise');
@@ -557,7 +653,7 @@ for iArea = 1:numel(areasToPlot)
   fprintf('  %s: %d sessions in correlation table\n', areaName, height(sessionTable));
   for iMetric = 1:numel(metricKeys)
     nValid = sum(isfinite(metricMat(:, iMetric)));
-    fprintf('    %s: %d finite\n', metricLabels{iMetric}, nValid);
+    fprintf('    %s: %d finite\n', plotLabels{iMetric}, nValid);
   end
 
   fig = figure('Color', 'w', 'Position', [100 100 780 700]);
@@ -571,9 +667,9 @@ for iArea = 1:numel(areasToPlot)
   cb.Label.String = 'Pearson r (across sessions)';
   cb.Label.FontSize = plotConfig.axisLabelFontSize;
 
-  nMetric = numel(metricLabels);
-  set(ax, 'XTick', 1:nMetric, 'XTickLabel', metricLabels, ...
-    'YTick', 1:nMetric, 'YTickLabel', metricLabels, ...
+  nMetric = numel(plotLabels);
+  set(ax, 'XTick', 1:nMetric, 'XTickLabel', plotLabels, ...
+    'YTick', 1:nMetric, 'YTickLabel', plotLabels, ...
     'TickLabelInterpreter', 'tex', 'FontSize', plotConfig.tickLabelFontSize);
   xtickangle(ax, 45);
   xlabel(ax, 'Metric', 'FontSize', plotConfig.axisLabelFontSize);
@@ -597,22 +693,34 @@ for iArea = 1:numel(areasToPlot)
   end
 
   titleStr = sprintf('Metric correlations across sessions (%s)', areaName);
-  if useLog10D2
+  if useLog10D2 && activeAnalyses.ar
     titleStr = [titleStr, '; d2 = log10(d2)']; %#ok<AGROW>
+  end
+  invActive = intersect(invertMetricKeys, metricKeys, 'stable');
+  if ~isempty(invActive)
+    titleStr = [titleStr, '; inv: crackling, decades, kurtosis, JS']; %#ok<AGROW>
   end
   titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample);
   title(ax, titleStr, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
 
   plotBase = make_correlation_matrix_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, useSubsampling, nNeuronsSubsample);
+  plotBase = [plotBase, '_invMetrics']; %#ok<AGROW>
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved correlation matrix: %s\n', fullfile(saveDir, plotBase));
 end
 end
 
+function y = safe_reciprocal_metric(x)
+% SAFE_RECIPROCAL_METRIC - Element-wise 1/x; non-finite or zero -> NaN
+y = nan(size(x));
+ok = isfinite(x) & (x ~= 0);
+y(ok) = 1 ./ x(ok);
+end
+
 function sessionTable = build_correlation_metric_session_table(arOut, avOut, prgOut, ...
-    sessionTypes, areaIdxAr, areaIdxAv, areaIdxPrg, areaName)
+    sessionTypes, areaIdxAr, areaIdxAv, areaIdxPrg, areaName, activeAnalyses)
 % BUILD_CORRELATION_METRIC_SESSION_TABLE - One row per session, metrics joined by name
 %
 % Variables:
@@ -620,9 +728,15 @@ function sessionTable = build_correlation_metric_session_table(arOut, avOut, prg
 %   sessionTypes       - Types to pool
 %   areaIdx*           - Area indices in each plotData
 %   areaName           - Area name (for AR batchResults rate fallback)
+%   activeAnalyses     - Struct with .ar/.av/.prg; inactive fields stay NaN
 %
 % Goal:
-%   Align d2, AV exponents, PRG kurtosis/JS, and mean spikes/bin/neuron.
+%   Align available d2, AV exponents, PRG kurtosis/JS, and mean spikes/bin/neuron.
+
+if nargin < 9 || isempty(activeAnalyses)
+  activeAnalyses = struct('ar', true, 'av', true, 'prg', true);
+end
+activeAnalyses = fill_active_analyses(activeAnalyses);
 
 arPlotData = arOut.plotData;
 avPlotData = avOut.plotData;
@@ -643,41 +757,104 @@ meanSpikesCol = [];
 for t = 1:numel(sessionTypes)
   sessionType = sessionTypes{t};
   typeKey = matlab.lang.makeValidName(sessionType);
-  if ~isfield(arPlotData.byType, typeKey) || ~isfield(avPlotData.byType, typeKey) ...
-      || ~isfield(prgPlotData.byType, typeKey)
+  hasArType = isfield(arPlotData.byType, typeKey);
+  hasAvType = isfield(avPlotData.byType, typeKey);
+  hasPrgType = isfield(prgPlotData.byType, typeKey);
+  if (activeAnalyses.ar && ~hasArType) && (activeAnalyses.av && ~hasAvType) ...
+      && (activeAnalyses.prg && ~hasPrgType)
     continue;
   end
-  arType = arPlotData.byType.(typeKey);
-  avType = avPlotData.byType.(typeKey);
-  prgType = prgPlotData.byType.(typeKey);
-  arNames = get_type_session_names(arType);
-  if areaIdxAr > numel(arType.d2Mean) || isempty(arType.d2Mean{areaIdxAr})
+  if ~hasArType && ~hasAvType && ~hasPrgType
     continue;
   end
-  numAr = numel(arType.d2Mean{areaIdxAr});
 
-  for i = 1:numAr
-    sessionName = arNames{min(i, numel(arNames))};
-    avIdx = find_matching_session_index(avType, sessionName, i);
-    prgIdx = find_matching_session_index(prgType, sessionName, i);
-    if isempty(avIdx) || isempty(prgIdx)
-      continue;
+  arType = [];
+  avType = [];
+  prgType = [];
+  if hasArType, arType = arPlotData.byType.(typeKey); end
+  if hasAvType, avType = avPlotData.byType.(typeKey); end
+  if hasPrgType, prgType = prgPlotData.byType.(typeKey); end
+
+  % Driver session list: prefer AR, else AV, else PRG
+  if activeAnalyses.ar && hasArType && isfield(arType, 'd2Mean') ...
+      && areaIdxAr <= numel(arType.d2Mean) && ~isempty(arType.d2Mean{areaIdxAr})
+    driverNames = get_type_session_names(arType);
+    numSess = numel(arType.d2Mean{areaIdxAr});
+    driver = 'ar';
+  elseif activeAnalyses.av && hasAvType && isfield(avType, 'tau') ...
+      && areaIdxAv <= numel(avType.tau) && ~isempty(avType.tau{areaIdxAv})
+    driverNames = get_type_session_names(avType);
+    numSess = numel(avType.tau{areaIdxAv});
+    driver = 'av';
+  elseif activeAnalyses.prg && hasPrgType && isfield(prgType, 'kappaMean') ...
+      && areaIdxPrg <= numel(prgType.kappaMean) && ~isempty(prgType.kappaMean{areaIdxPrg})
+    driverNames = get_type_session_names(prgType);
+    numSess = numel(prgType.kappaMean{areaIdxPrg});
+    driver = 'prg';
+  else
+    continue;
+  end
+
+  for i = 1:numSess
+    sessionName = driverNames{min(i, numel(driverNames))};
+    arIdx = i;
+    avIdx = i;
+    prgIdx = i;
+    if ~strcmp(driver, 'ar') && hasArType
+      arIdx = find_matching_session_index(arType, sessionName, i);
+    end
+    if ~strcmp(driver, 'av') && hasAvType
+      avIdx = find_matching_session_index(avType, sessionName, i);
+    elseif ~hasAvType
+      avIdx = [];
+    end
+    if ~strcmp(driver, 'prg') && hasPrgType
+      prgIdx = find_matching_session_index(prgType, sessionName, i);
+    elseif ~hasPrgType
+      prgIdx = [];
+    end
+    if strcmp(driver, 'ar') && ~hasArType
+      arIdx = [];
     end
 
-    d2Val = get_metric_series_value(arType.d2Mean{areaIdxAr}, i);
-    tauVal = get_type_cell_metric(avType, 'tau', areaIdxAv, avIdx);
-    alphaVal = get_type_cell_metric(avType, 'alpha', areaIdxAv, avIdx);
-    paramSDVal = get_type_cell_metric(avType, 'paramSD', areaIdxAv, avIdx);
-    decadesVal = get_type_cell_metric(avType, 'decades', areaIdxAv, avIdx);
-    dccVal = get_type_cell_metric(avType, 'dcc', areaIdxAv, avIdx);
-    kurtosisVal = get_type_cell_metric(prgType, 'kappaMean', areaIdxPrg, prgIdx);
-    djsVal = get_type_cell_metric(prgType, 'djsMean', areaIdxPrg, prgIdx);
-    meanSpikesVal = get_mean_spikes_per_bin_per_neuron_session( ...
-      arType, arOut, sessionType, sessionName, areaIdxAr, i, areaName);
+    d2Val = nan;
+    tauVal = nan;
+    alphaVal = nan;
+    paramSDVal = nan;
+    decadesVal = nan;
+    dccVal = nan;
+    kurtosisVal = nan;
+    djsVal = nan;
+    meanSpikesVal = nan;
 
-    % Keep session if at least two metrics are finite (pairwise corr handles the rest)
-    metricVec = [d2Val, tauVal, alphaVal, paramSDVal, decadesVal, dccVal, ...
-      kurtosisVal, djsVal, meanSpikesVal];
+    if activeAnalyses.ar && ~isempty(arIdx) && hasArType
+      d2Val = get_metric_series_value(arType.d2Mean{areaIdxAr}, arIdx);
+      meanSpikesVal = get_mean_spikes_per_bin_per_neuron_session( ...
+        arType, arOut, sessionType, sessionName, areaIdxAr, arIdx, areaName);
+    end
+    if activeAnalyses.av && ~isempty(avIdx) && hasAvType
+      tauVal = get_type_cell_metric(avType, 'tau', areaIdxAv, avIdx);
+      alphaVal = get_type_cell_metric(avType, 'alpha', areaIdxAv, avIdx);
+      paramSDVal = get_type_cell_metric(avType, 'paramSD', areaIdxAv, avIdx);
+      decadesVal = get_type_cell_metric(avType, 'decades', areaIdxAv, avIdx);
+      dccVal = get_type_cell_metric(avType, 'dcc', areaIdxAv, avIdx);
+    end
+    if activeAnalyses.prg && ~isempty(prgIdx) && hasPrgType
+      kurtosisVal = get_type_cell_metric(prgType, 'kappaMean', areaIdxPrg, prgIdx);
+      djsVal = get_type_cell_metric(prgType, 'djsMean', areaIdxPrg, prgIdx);
+    end
+
+    % Keep session if at least two selected metrics are finite
+    metricVec = [];
+    if activeAnalyses.ar
+      metricVec = [metricVec, d2Val, meanSpikesVal]; %#ok<AGROW>
+    end
+    if activeAnalyses.av
+      metricVec = [metricVec, tauVal, alphaVal, paramSDVal, decadesVal, dccVal]; %#ok<AGROW>
+    end
+    if activeAnalyses.prg
+      metricVec = [metricVec, kurtosisVal, djsVal]; %#ok<AGROW>
+    end
     if sum(isfinite(metricVec)) < 2
       continue;
     end
@@ -1159,7 +1336,7 @@ end
 function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, prgPlotData, ...
     areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
     useLog10D2, plotConfig, engagementTag, metricsToPlot, avPlotDataDecades, ...
-    finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample)
+    finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample, activeAnalyses)
 % PLOT_MULTIMETRIC_SEPARATED_AXES_ACROSS_TASKS - 2x4 panels of session metrics
 %
 % Layout:
@@ -1170,11 +1347,12 @@ function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, pr
 %   arPlotData / avPlotData - Sources for d2 / tau / alpha / paramSD / dcc
 %                             (may be engagement views)
 %   prgPlotData             - PRG plotData for kurtosis (kappaMean) and D_JS
-%   avPlotDataDecades       - AV plotData used for decades (full-session when
-%                             engagement av views lack decades); defaults to avPlotData
+%   avPlotDataDecades       - AV plotData used for decades (defaults to avPlotData;
+%                             pass engagement AV view so scale-free range splits)
 %   metricsToPlot           - Controls which of d2/tau/alpha appear in the top row
 %   finalCutoffDivisor      - PRG kappa reported at N/finalCutoffDivisor (ylabel)
 %   enablePermutations      - If true, overlay shuffled/surrogate means in gray
+%   activeAnalyses          - Struct .ar/.av/.prg; inactive panels stay blank
 %
 % Goal:
 %   Same session-level data as the combined plot, each metric on its own axis.
@@ -1209,9 +1387,36 @@ end
 if nargin < 19 || isempty(nNeuronsSubsample)
   nNeuronsSubsample = 0;
 end
+if nargin < 20 || isempty(activeAnalyses)
+  activeAnalyses = struct('ar', true, 'av', true, 'prg', true);
+end
+activeAnalyses = fill_active_analyses(activeAnalyses);
 enablePermutations = logical(enablePermutations);
-metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
+if isempty(metricsToPlot)
+  metricsToPlot = {};
+else
+  metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
+end
 engagementTag = char(engagementTag);
+
+activePanelKeys = {};
+if activeAnalyses.ar
+  activePanelKeys = [activePanelKeys, {'d2'}]; %#ok<AGROW>
+end
+if activeAnalyses.av
+  activePanelKeys = [activePanelKeys, {'tau', 'alpha', 'paramSD', 'decades', 'dcc'}]; %#ok<AGROW>
+end
+if activeAnalyses.prg
+  activePanelKeys = [activePanelKeys, {'kurtosis', 'djs'}]; %#ok<AGROW>
+end
+% Top-row d2/tau/alpha also respect metricsToPlot when provided
+if ~isempty(metricsToPlot)
+  for topKey = {'d2', 'tau', 'alpha'}
+    if ~ismember(topKey{1}, metricsToPlot)
+      activePanelKeys = setdiff(activePanelKeys, topKey, 'stable');
+    end
+  end
+end
 
 if useLog10D2
   d2Label = 'log_{10}(d2)';
@@ -1284,22 +1489,34 @@ for a = 1:numel(areasToPlot)
   areaIdxAv = find(strcmp(avPlotData.areas, areaName), 1);
   areaIdxAvDec = find(strcmp(avPlotDataDecades.areas, areaName), 1);
   areaIdxPrg = find(strcmp(prgPlotData.areas, areaName), 1);
-  if isempty(areaIdxAr) || isempty(areaIdxAv)
+  hasArea = (activeAnalyses.ar && ~isempty(areaIdxAr)) ...
+    || (activeAnalyses.av && ~isempty(areaIdxAv)) ...
+    || (activeAnalyses.prg && ~isempty(areaIdxPrg));
+  if ~hasArea
     continue;
   end
+  if isempty(areaIdxAr), areaIdxAr = 1; end
+  if isempty(areaIdxAv), areaIdxAv = 1; end
   if isempty(areaIdxAvDec)
     areaIdxAvDec = areaIdxAv;
     avPlotDataDecades = avPlotData;
   end
-  if isempty(areaIdxPrg)
-    warning('Skipping separated metrics for %s: area missing in PRG plotData.', areaName);
-    continue;
-  end
+  if isempty(areaIdxPrg), areaIdxPrg = 1; end
 
+  topMetrics = metricsToPlot;
+  if isempty(topMetrics)
+    if activeAnalyses.ar
+      topMetrics = {'d2'};
+    elseif activeAnalyses.av
+      topMetrics = {'tau'};
+    else
+      topMetrics = {};  % PRG-only: session list from PRG
+    end
+  end
   sessionTable = build_separated_metrics_session_table( ...
     arPlotData, avPlotData, prgPlotData, avPlotDataDecades, sessionTypes, ...
-    areaIdxAr, areaIdxAv, areaIdxPrg, areaIdxAvDec, {'d2', 'tau', 'alpha'}, ...
-    strcmpi(engagementTag, 'nonEngaged'));
+    areaIdxAr, areaIdxAv, areaIdxPrg, areaIdxAvDec, topMetrics, ...
+    strcmpi(engagementTag, 'nonEngaged') || numel(activePanelKeys) < 8);
   if isempty(sessionTable)
     fprintf('Skipping separated metrics for %s: no aligned sessions.\n', areaName);
     continue;
@@ -1319,8 +1536,13 @@ for a = 1:numel(areasToPlot)
     semField = panelSemFields{iPanel};
     shuffleField = shuffleFieldByKey.(metricKey);
     shuffleSemField = shuffleSemByKey.(metricKey);
+    panelIsActive = ismember(metricKey, activePanelKeys);
     yLimVals = sessionTable.(yField)(:);
-    if enablePermutations && ismember(shuffleField, sessionTable.Properties.VariableNames)
+    if ~panelIsActive
+      yLimVals = nan(size(yLimVals));
+    end
+    if panelIsActive && enablePermutations ...
+        && ismember(shuffleField, sessionTable.Properties.VariableNames)
       yLimVals = [yLimVals; sessionTable.(shuffleField)(:)]; %#ok<AGROW>
     end
 
@@ -1336,6 +1558,10 @@ for a = 1:numel(areasToPlot)
       xPos = xCursor + (1:numSessions);
       yPos = sessionTable.(yField)(rowIdx);
       ySem = sessionTable.(semField)(rowIdx);
+      if ~panelIsActive
+        yPos = nan(size(yPos));
+        ySem = nan(size(ySem));
+      end
 
       faceColor = taskColor;
       if ~fillByKey.(metricKey)
@@ -1351,7 +1577,8 @@ for a = 1:numel(areasToPlot)
           'HandleVisibility', 'off');
       end
 
-      if enablePermutations && ismember(shuffleField, sessionTable.Properties.VariableNames)
+      if panelIsActive && enablePermutations ...
+          && ismember(shuffleField, sessionTable.Properties.VariableNames)
         yShuffle = sessionTable.(shuffleField)(rowIdx);
         yShuffleSem = sessionTable.(shuffleSemField)(rowIdx);
         if any(isfinite(yShuffle))
@@ -1438,10 +1665,16 @@ end
 if nargin < 11 || isempty(keepBlankSessions)
   keepBlankSessions = false;
 end
-topMetrics = normalize_metrics_to_plot(topMetrics);
-
-baseTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
-  areaIdxAr, areaIdxAv, topMetrics, keepBlankSessions);
+if isempty(topMetrics)
+  baseTable = table();
+else
+  topMetrics = normalize_metrics_to_plot(topMetrics);
+  baseTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
+    areaIdxAr, areaIdxAv, topMetrics, keepBlankSessions);
+end
+if isempty(baseTable)
+  baseTable = build_prg_only_session_base_table(prgPlotData, sessionTypes, areaIdxPrg);
+end
 if isempty(baseTable)
   sessionTable = baseTable;
   return;
@@ -1558,7 +1791,7 @@ end
 
 function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, areasToPlot, ...
     sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-    plotConfig, engagementTag, useSubsampling, nNeuronsSubsample)
+    plotConfig, engagementTag, useSubsampling, nNeuronsSubsample, activeAnalyses)
 % PLOT_MULTIMETRIC_PAIR_SCATTERS_ACROSS_TASKS - 2x2 session metric scatters
 %
 % Panels (titles are Y vs X):
@@ -1579,6 +1812,7 @@ function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, are
 %   areasToPlot             - Brain areas to plot (one figure each)
 %   sessionTypes            - Session types (points colored by type)
 %   engagementTag           - Optional engaged / nonEngaged suffix
+%   activeAnalyses          - Struct .ar/.av; inactive metrics stay blank
 %
 % Goal:
 %   Cross-session relationships among d2 and avalanche / crackling exponents.
@@ -1595,7 +1829,15 @@ end
 if nargin < 14 || isempty(nNeuronsSubsample)
   nNeuronsSubsample = 0;
 end
+if nargin < 15 || isempty(activeAnalyses)
+  activeAnalyses = struct('ar', true, 'av', true, 'prg', false);
+end
+activeAnalyses = fill_active_analyses(activeAnalyses);
 engagementTag = char(engagementTag);
+if ~activeAnalyses.ar && ~activeAnalyses.av
+  fprintf('Skipping pair scatters (requires AR and/or AV).\n');
+  return;
+end
 
 if useLog10D2
   d2Label = 'log_{10}(d2)';
@@ -1615,12 +1857,16 @@ for a = 1:numel(areasToPlot)
   areaName = areasToPlot{a};
   areaIdxAr = find(strcmp(arPlotData.areas, areaName), 1);
   areaIdxAv = find(strcmp(avPlotData.areas, areaName), 1);
-  if isempty(areaIdxAr) || isempty(areaIdxAv)
+  hasArea = (activeAnalyses.ar && ~isempty(areaIdxAr)) ...
+    || (activeAnalyses.av && ~isempty(areaIdxAv));
+  if ~hasArea
     continue;
   end
+  if isempty(areaIdxAr), areaIdxAr = 1; end
+  if isempty(areaIdxAv), areaIdxAv = 1; end
 
   sessionTable = build_pair_scatter_session_table(arPlotData, avPlotData, sessionTypes, ...
-    areaIdxAr, areaIdxAv);
+    areaIdxAr, areaIdxAv, activeAnalyses);
   if isempty(sessionTable)
     fprintf('Skipping pair scatters for %s: no aligned sessions.\n', areaName);
     continue;
@@ -1719,7 +1965,7 @@ end
 end
 
 function sessionTable = build_pair_scatter_session_table(arPlotData, avPlotData, sessionTypes, ...
-    areaIdxAr, areaIdxAv)
+    areaIdxAr, areaIdxAv, activeAnalyses)
 % BUILD_PAIR_SCATTER_SESSION_TABLE - d2/tau/alpha + paramSD and γ_pred
 %
 % Goal:
@@ -1728,8 +1974,24 @@ function sessionTable = build_pair_scatter_session_table(arPlotData, avPlotData,
 %   Measured paramSD comes from the AV batch, where ⟨S⟩(T) was fit only on
 %   durations inside the α power-law range (same range used for alpha).
 
+if nargin < 6 || isempty(activeAnalyses)
+  activeAnalyses = struct('ar', true, 'av', true, 'prg', false);
+end
+activeAnalyses = fill_active_analyses(activeAnalyses);
+topMetrics = {};
+if activeAnalyses.ar
+  topMetrics{end + 1} = 'd2'; %#ok<AGROW>
+end
+if activeAnalyses.av
+  topMetrics = [topMetrics, {'tau', 'alpha'}]; %#ok<AGROW>
+end
+if isempty(topMetrics)
+  sessionTable = table();
+  return;
+end
+
 baseTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
-  areaIdxAr, areaIdxAv, {'d2', 'tau', 'alpha'});
+  areaIdxAr, areaIdxAv, topMetrics, true);
 if isempty(baseTable)
   sessionTable = baseTable;
   return;
@@ -1812,10 +2074,16 @@ end
 if nargin < 7 || isempty(keepBlankSessions)
   keepBlankSessions = false;
 end
-metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
-needD2 = ismember('d2', metricsToPlot);
-needTau = ismember('tau', metricsToPlot);
-needAlpha = ismember('alpha', metricsToPlot);
+if isempty(metricsToPlot)
+  needD2 = false;
+  needTau = false;
+  needAlpha = false;
+else
+  metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
+  needD2 = ismember('d2', metricsToPlot);
+  needTau = ismember('tau', metricsToPlot);
+  needAlpha = ismember('alpha', metricsToPlot);
+end
 needAv = needTau || needAlpha;
 
 sessionTypeCol = {};
@@ -1831,38 +2099,83 @@ alphaSemCol = [];
 for t = 1:numel(sessionTypes)
   sessionType = sessionTypes{t};
   typeKey = matlab.lang.makeValidName(sessionType);
-  if ~isfield(arPlotData.byType, typeKey)
+  hasArType = isfield(arPlotData.byType, typeKey);
+  hasAvType = isfield(avPlotData.byType, typeKey);
+  if needD2 && ~hasArType
     continue;
   end
-  if needAv && ~isfield(avPlotData.byType, typeKey)
+  if needAv && ~hasAvType
     continue;
   end
-  arType = arPlotData.byType.(typeKey);
+  if ~hasArType && ~hasAvType
+    continue;
+  end
+
+  arType = [];
+  avType = [];
+  if hasArType
+    arType = arPlotData.byType.(typeKey);
+  end
+  if hasAvType
+    avType = avPlotData.byType.(typeKey);
+  end
   if needD2 && (areaIdxAr > numel(arType.d2Mean) || isempty(arType.d2Mean{areaIdxAr}))
     continue;
   end
-  avType = [];
-  if needAv
-    avType = avPlotData.byType.(typeKey);
-    if areaIdxAv > numel(avType.tau)
-      continue;
-    end
+  if needAv && (areaIdxAv > numel(avType.tau) || isempty(avType.tau{areaIdxAv}))
+    continue;
   end
 
-  arNames = get_type_session_names(arType);
-  if needD2
-    numAr = numel(arType.d2Mean{areaIdxAr});
+  % Drive session list from AR when d2 requested (or AV unavailable); else AV
+  useArDriver = hasArType && (needD2 || ~needAv || ~hasAvType ...
+    || (isfield(arType, 'd2Mean') && areaIdxAr <= numel(arType.d2Mean) ...
+    && ~isempty(arType.d2Mean{areaIdxAr})));
+  if useArDriver && needD2
+    driverNames = get_type_session_names(arType);
+    numSess = numel(arType.d2Mean{areaIdxAr});
+    driver = 'ar';
+  elseif hasAvType && needAv
+    driverNames = get_type_session_names(avType);
+    numSess = numel(avType.tau{areaIdxAv});
+    driver = 'av';
+  elseif hasArType
+    driverNames = get_type_session_names(arType);
+    if isfield(arType, 'd2Mean') && areaIdxAr <= numel(arType.d2Mean) ...
+        && ~isempty(arType.d2Mean{areaIdxAr})
+      numSess = numel(arType.d2Mean{areaIdxAr});
+    else
+      numSess = numel(driverNames);
+    end
+    driver = 'ar';
+  elseif hasAvType
+    driverNames = get_type_session_names(avType);
+    if isfield(avType, 'tau') && areaIdxAv <= numel(avType.tau) ...
+        && ~isempty(avType.tau{areaIdxAv})
+      numSess = numel(avType.tau{areaIdxAv});
+    else
+      numSess = numel(driverNames);
+    end
+    driver = 'av';
   else
-    numAr = numel(arNames);
+    continue;
   end
-  for i = 1:numAr
-    sessionName = arNames{min(i, numel(arNames))};
+
+  for i = 1:numSess
+    sessionName = driverNames{min(i, numel(driverNames))};
+    arIdx = i;
     avIdx = i;
-    if needAv
+    if strcmp(driver, 'ar') && needAv
       avIdx = find_matching_session_index(avType, sessionName, i);
       if isempty(avIdx)
         continue;
       end
+    elseif strcmp(driver, 'av') && needD2
+      arIdx = find_matching_session_index(arType, sessionName, i);
+      if isempty(arIdx)
+        continue;
+      end
+    elseif strcmp(driver, 'av') && hasArType && ~needD2
+      arIdx = find_matching_session_index(arType, sessionName, i);
     end
 
     d2Val = nan;
@@ -1871,11 +2184,11 @@ for t = 1:numel(sessionTypes)
     d2SemVal = nan;
     tauSemVal = 0;
     alphaSemVal = 0;
-    if needD2
-      d2Val = arType.d2Mean{areaIdxAr}(i);
-      d2SemVal = get_metric_series_value(arType.d2Sem{areaIdxAr}, i);
+    if needD2 && ~isempty(arIdx) && hasArType
+      d2Val = arType.d2Mean{areaIdxAr}(arIdx);
+      d2SemVal = get_metric_series_value(arType.d2Sem{areaIdxAr}, arIdx);
     end
-    if needTau
+    if needTau && ~isempty(avIdx) && hasAvType
       tauVal = avType.tau{areaIdxAv}(avIdx);
       if isfield(avType, 'tauSem') && areaIdxAv <= numel(avType.tauSem) ...
           && ~isempty(avType.tauSem{areaIdxAv})
@@ -1885,7 +2198,7 @@ for t = 1:numel(sessionTypes)
         end
       end
     end
-    if needAlpha
+    if needAlpha && ~isempty(avIdx) && hasAvType
       alphaVal = avType.alpha{areaIdxAv}(avIdx);
       if isfield(avType, 'alphaSem') && areaIdxAv <= numel(avType.alphaSem) ...
           && ~isempty(avType.alphaSem{areaIdxAv})
@@ -1904,9 +2217,16 @@ for t = 1:numel(sessionTypes)
       continue;
     end
 
+    if strcmp(driver, 'ar')
+      labelIdx = arIdx;
+      labelType = arType;
+    else
+      labelIdx = avIdx;
+      labelType = avType;
+    end
     sessionTypeCol{end + 1, 1} = sessionType; %#ok<AGROW>
     sessionNameCol{end + 1, 1} = sessionName; %#ok<AGROW>
-    sessionLabelCol{end + 1, 1} = get_session_display_label(arType, i, sessionType); %#ok<AGROW>
+    sessionLabelCol{end + 1, 1} = get_session_display_label(labelType, labelIdx, sessionType); %#ok<AGROW>
     d2MeanCol(end + 1, 1) = d2Val; %#ok<AGROW>
     d2SemCol(end + 1, 1) = d2SemVal; %#ok<AGROW>
     tauMeanCol(end + 1, 1) = tauVal; %#ok<AGROW>
@@ -2424,6 +2744,178 @@ if isempty(metricsToPlot)
 end
 end
 
+function metricsToPlot = filter_metrics_to_plot_by_pipelines(metricsToPlot, useAr, useAv)
+% FILTER_METRICS_TO_PLOT_BY_PIPELINES - Drop markers for inactive pipelines
+%
+% May return {} when only PRG is selected (combined d2/tau/alpha plot skipped).
+
+if ischar(metricsToPlot) || isstring(metricsToPlot)
+  metricsToPlot = cellstr(metricsToPlot);
+end
+metricsToPlot = lower(metricsToPlot(:)');
+valid = {'d2', 'tau', 'alpha'};
+metricsToPlot = intersect(valid, metricsToPlot, 'stable');
+if ~useAr
+  metricsToPlot = setdiff(metricsToPlot, {'d2'}, 'stable');
+end
+if ~useAv
+  metricsToPlot = setdiff(metricsToPlot, {'tau', 'alpha'}, 'stable');
+end
+end
+
+function activeAnalyses = fill_active_analyses(activeAnalyses)
+% FILL_ACTIVE_ANALYSES - Ensure .ar/.av/.prg logical fields exist
+if ~isstruct(activeAnalyses)
+  activeAnalyses = struct('ar', true, 'av', true, 'prg', true);
+end
+if ~isfield(activeAnalyses, 'ar') || isempty(activeAnalyses.ar)
+  activeAnalyses.ar = true;
+end
+if ~isfield(activeAnalyses, 'av') || isempty(activeAnalyses.av)
+  activeAnalyses.av = true;
+end
+if ~isfield(activeAnalyses, 'prg') || isempty(activeAnalyses.prg)
+  activeAnalyses.prg = true;
+end
+activeAnalyses.ar = logical(activeAnalyses.ar);
+activeAnalyses.av = logical(activeAnalyses.av);
+activeAnalyses.prg = logical(activeAnalyses.prg);
+end
+
+function areas = resolve_pipeline_ref_areas(arOut, avOut, prgOut, areasToPlot, brainArea)
+% RESOLVE_PIPELINE_REF_AREAS - Prefer loaded pipeline areas for stubs
+areas = {};
+outs = {arOut, avOut, prgOut};
+for i = 1:numel(outs)
+  out = outs{i};
+  if isempty(out) || ~isfield(out, 'plotData') || ~isfield(out.plotData, 'areas')
+    continue;
+  end
+  areas = [areas, cellstr(string(out.plotData.areas))]; %#ok<AGROW>
+end
+areas = unique(areas, 'stable');
+if isempty(areas)
+  if ~isempty(areasToPlot)
+    areas = cellstr(string(areasToPlot));
+  elseif ~isempty(brainArea)
+    areas = {char(brainArea)};
+  end
+end
+end
+
+function areas = resolve_multimetric_plot_areas(arOut, avOut, prgOut, useAr, useAv, usePrg, ...
+    areasToPlot, brainArea)
+% RESOLVE_MULTIMETRIC_PLOT_AREAS - Areas from active pipelines (intersect when >1)
+areaLists = {};
+if useAr && ~isempty(arOut) && isfield(arOut, 'plotData') && isfield(arOut.plotData, 'areas') ...
+    && ~isempty(arOut.plotData.areas)
+  areaLists{end + 1} = cellstr(string(arOut.plotData.areas)); %#ok<AGROW>
+end
+if useAv && ~isempty(avOut) && isfield(avOut, 'plotData') && isfield(avOut.plotData, 'areas') ...
+    && ~isempty(avOut.plotData.areas)
+  areaLists{end + 1} = cellstr(string(avOut.plotData.areas)); %#ok<AGROW>
+end
+if usePrg && ~isempty(prgOut) && isfield(prgOut, 'plotData') && isfield(prgOut.plotData, 'areas') ...
+    && ~isempty(prgOut.plotData.areas)
+  areaLists{end + 1} = cellstr(string(prgOut.plotData.areas)); %#ok<AGROW>
+end
+if isempty(areaLists)
+  areas = resolve_pipeline_ref_areas(arOut, avOut, prgOut, areasToPlot, brainArea);
+else
+  areas = areaLists{1};
+  for i = 2:numel(areaLists)
+    areas = intersect(areas, areaLists{i}, 'stable');
+  end
+end
+if ~isempty(areasToPlot)
+  areas = intersect(areas, cellstr(string(areasToPlot)), 'stable');
+elseif ~isempty(brainArea)
+  areas = intersect(areas, {char(brainArea)}, 'stable');
+end
+end
+
+function out = make_empty_pipeline_out(sessionTypes, areas, kind, useLog10D2)
+% MAKE_EMPTY_PIPELINE_OUT - Stub batch output so plotting layouts stay intact
+%
+% Variables:
+%   sessionTypes - Task types for byType keys
+%   areas        - Brain-area list (shared with active pipelines)
+%   kind         - 'ar', 'av', or 'prg'
+%   useLog10D2   - Stored on AR plotData when true
+
+if nargin < 4 || isempty(useLog10D2)
+  useLog10D2 = false;
+end
+if isempty(areas)
+  areas = {};
+end
+plotData = struct('areas', {areas}, 'sessionTypes', {sessionTypes}, 'byType', struct());
+if strcmpi(kind, 'ar')
+  plotData.useLog10D2 = logical(useLog10D2);
+end
+nAreas = numel(areas);
+for t = 1:numel(sessionTypes)
+  typeKey = matlab.lang.makeValidName(sessionTypes{t});
+  switch lower(kind)
+    case 'ar'
+      plotData.byType.(typeKey) = init_standard_ar_type(nAreas);
+    case 'av'
+      plotData.byType.(typeKey) = init_standard_av_type(nAreas);
+    case 'prg'
+      plotData.byType.(typeKey) = init_standard_prg_type(nAreas);
+    otherwise
+      error('make_empty_pipeline_out: unknown kind "%s"', kind);
+  end
+end
+out = struct('plotData', plotData, 'batchResults', []);
+end
+
+function baseTable = build_prg_only_session_base_table(prgPlotData, sessionTypes, areaIdxPrg)
+% BUILD_PRG_ONLY_SESSION_BASE_TABLE - Session rows from PRG when AR/AV absent
+
+sessionTypeCol = {};
+sessionNameCol = {};
+sessionLabelCol = {};
+d2MeanCol = [];
+d2SemCol = [];
+tauMeanCol = [];
+tauSemCol = [];
+alphaMeanCol = [];
+alphaSemCol = [];
+
+for t = 1:numel(sessionTypes)
+  sessionType = sessionTypes{t};
+  typeKey = matlab.lang.makeValidName(sessionType);
+  if ~isfield(prgPlotData.byType, typeKey)
+    continue;
+  end
+  prgType = prgPlotData.byType.(typeKey);
+  if ~isfield(prgType, 'kappaMean') || areaIdxPrg > numel(prgType.kappaMean) ...
+      || isempty(prgType.kappaMean{areaIdxPrg})
+    continue;
+  end
+  names = get_type_session_names(prgType);
+  numSess = numel(prgType.kappaMean{areaIdxPrg});
+  for i = 1:numSess
+    sessionName = names{min(i, numel(names))};
+    sessionTypeCol{end + 1, 1} = sessionType; %#ok<AGROW>
+    sessionNameCol{end + 1, 1} = sessionName; %#ok<AGROW>
+    sessionLabelCol{end + 1, 1} = get_session_display_label(prgType, i, sessionType); %#ok<AGROW>
+    d2MeanCol(end + 1, 1) = nan; %#ok<AGROW>
+    d2SemCol(end + 1, 1) = nan; %#ok<AGROW>
+    tauMeanCol(end + 1, 1) = nan; %#ok<AGROW>
+    tauSemCol(end + 1, 1) = 0; %#ok<AGROW>
+    alphaMeanCol(end + 1, 1) = nan; %#ok<AGROW>
+    alphaSemCol(end + 1, 1) = 0; %#ok<AGROW>
+  end
+end
+
+baseTable = table(sessionTypeCol, sessionNameCol, sessionLabelCol, ...
+  d2MeanCol, d2SemCol, tauMeanCol, tauSemCol, alphaMeanCol, alphaSemCol, ...
+  'VariableNames', {'sessionType', 'sessionName', 'sessionLabel', ...
+  'd2Mean', 'd2Sem', 'tauMean', 'tauSem', 'alphaMean', 'alphaSem'});
+end
+
 function yLimPlot = compute_display_ylim_for_metrics(yVals, metricsToPlot, anchorMetric)
 % COMPUTE_DISPLAY_YLIM_FOR_METRICS - Padded y-limits from plotted display values
 
@@ -2571,9 +3063,13 @@ end
 %% -------------------------------------------------------------------------
 
 function engOut = run_multimetric_engagement_batch(opts)
-% RUN_MULTIMETRIC_ENGAGEMENT_BATCH - Interval/reach d2 + AV by engagement class
+% RUN_MULTIMETRIC_ENGAGEMENT_BATCH - Interval/reach metrics by engagement class
 
-fprintf('\n=== Engagement batch (d2 + avalanches) ===\n');
+analysesTag = 'd2 + avalanches + kurtosis';
+if isfield(opts, 'analyses') && ~isempty(opts.analyses)
+  analysesTag = strjoin(opts.analyses, ' + ');
+end
+fprintf('\n=== Engagement batch (%s) ===\n', analysesTag);
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
 
 sessionTable = build_multimetric_engagement_session_table(opts.sessionTypes);
@@ -2585,7 +3081,7 @@ end
 
 batchResults = repmat(struct( ...
   'sessionType', '', 'sessionName', '', 'subjectName', '', 'label', '', ...
-  'success', false, 'skipReason', '', 'd2Split', [], 'avalanches', []), ...
+  'success', false, 'skipReason', '', 'd2Split', [], 'avalanches', [], 'kurtosis', []), ...
   numSessions, 1);
 
 for s = 1:numSessions
@@ -2609,13 +3105,28 @@ for s = 1:numSessions
     else
       sessionOut = interval_criticality_metrics_engagement(subjectName, sessionName, engModOpts);
     end
-    if isempty(sessionOut.d2) || isempty(sessionOut.avalanches)
+    analyses = engModOpts.analyses;
+    needD2 = any(strcmpi(analyses, 'd2'));
+    needAv = any(strcmpi(analyses, 'avalanches'));
+    incomplete = (needD2 && (~isfield(sessionOut, 'd2') || isempty(sessionOut.d2))) ...
+      || (needAv && (~isfield(sessionOut, 'avalanches') || isempty(sessionOut.avalanches)));
+    if incomplete
       fprintf('  Incomplete engagement outputs; skipping.\n');
       batchResults(s).skipReason = 'incomplete engagement outputs';
       continue;
     end
-    batchResults(s).d2Split = sessionOut.d2;
-    batchResults(s).avalanches = sessionOut.avalanches;
+    if isfield(sessionOut, 'd2')
+      batchResults(s).d2Split = sessionOut.d2;
+    end
+    if isfield(sessionOut, 'avalanches')
+      batchResults(s).avalanches = sessionOut.avalanches;
+    end
+    if isfield(sessionOut, 'kurtosis')
+      batchResults(s).kurtosis = sessionOut.kurtosis;
+    end
+    if any(strcmpi(analyses, 'kurtosis')) && isempty(batchResults(s).kurtosis)
+      fprintf('  Warning: kurtosis/PRG engagement split missing for this session.\n');
+    end
     batchResults(s).success = true;
     fprintf('  Engagement analysis completed.\n');
   catch ME
@@ -2739,15 +3250,32 @@ engModOpts.avalancheDetectionMode = opts.avalancheDetectionMode;
 if isfield(opts, 'thresholdMethod') && ~isempty(opts.thresholdMethod)
   engModOpts.thresholdMethod = opts.thresholdMethod;
 end
+if isfield(opts, 'prgWindow')
+  engModOpts.prgWindow = opts.prgWindow;
+end
+if isfield(opts, 'binSizePrg') && ~isempty(opts.binSizePrg)
+  engModOpts.binSizePrg = opts.binSizePrg;
+end
+if isfield(opts, 'prgMethod') && ~isempty(opts.prgMethod)
+  engModOpts.prgMethod = opts.prgMethod;
+end
+if isfield(opts, 'finalCutoffDivisor') && ~isempty(opts.finalCutoffDivisor)
+  engModOpts.finalCutoffDivisor = opts.finalCutoffDivisor;
+end
 engModOpts.enableCircularPermutations = logical(opts.enablePermutations);
 if opts.enablePermutations
   engModOpts.nShuffles = 5;
   engModOpts.nShufflesD2 = 10;
+  engModOpts.nSurrogates = 10;
 else
   engModOpts.nShuffles = 0;
   engModOpts.nShufflesD2 = 1;
+  engModOpts.nSurrogates = 0;
 end
-engModOpts.analyses = {'d2', 'avalanches'};
+engModOpts.analyses = {'d2', 'avalanches', 'kurtosis'};
+if isfield(opts, 'analyses') && ~isempty(opts.analyses)
+  engModOpts.analyses = opts.analyses;
+end
 engModOpts.makePlots = false;
 engModOpts.saveFigure = false;
 engModOpts.plotConfig = opts.plotConfig;
@@ -2810,7 +3338,10 @@ plotData.useLog10D2 = useLog10D2;
 metricFields = { ...
   'd2EngagedMean', 'd2EngagedSem', 'd2NonEngagedMean', 'd2NonEngagedSem', ...
   'tauEngaged', 'tauNonEngaged', 'alphaEngaged', 'alphaNonEngaged', ...
-  'paramSDEngaged', 'paramSDNonEngaged', 'dccEngaged', 'dccNonEngaged'};
+  'paramSDEngaged', 'paramSDNonEngaged', 'dccEngaged', 'dccNonEngaged', ...
+  'decadesEngaged', 'decadesNonEngaged', ...
+  'kappaEngagedMean', 'kappaEngagedSem', 'kappaNonEngagedMean', 'kappaNonEngagedSem', ...
+  'djsEngagedMean', 'djsEngagedSem', 'djsNonEngagedMean', 'djsNonEngagedSem'};
 
 for t = 1:numel(sessionTypes)
   typeKey = matlab.lang.makeValidName(sessionTypes{t});
@@ -2829,6 +3360,10 @@ for s = 1:numel(batchResults)
   typeData = plotData.byType.(typeKey);
   d2Split = batchResults(s).d2Split;
   avByClass = batchResults(s).avalanches.byClass;
+  prgSplit = [];
+  if isfield(batchResults(s), 'kurtosis') && ~isempty(batchResults(s).kurtosis)
+    prgSplit = batchResults(s).kurtosis;
+  end
   areaNames = d2Split.areas;
   nonEngagedSec = get_batch_non_engaged_sec(batchResults(s));
 
@@ -2850,9 +3385,9 @@ for s = 1:numel(batchResults)
     typeData.d2NonEngagedMean{areaIdx}(end + 1) = nonSummary.mean;
     typeData.d2NonEngagedSem{areaIdx}(end + 1) = nonSummary.sem;
 
-    [tauEng, alphaEng, paramSDEng, dccEng] = get_engagement_area_av_scalars( ...
+    [tauEng, alphaEng, paramSDEng, dccEng, decadesEng] = get_engagement_area_av_scalars( ...
       avByClass.engaged, areaName);
-    [tauNon, alphaNon, paramSDNon, dccNon] = get_engagement_area_av_scalars( ...
+    [tauNon, alphaNon, paramSDNon, dccNon, decadesNon] = get_engagement_area_av_scalars( ...
       avByClass.nonEngaged, areaName);
     typeData.tauEngaged{areaIdx}(end + 1) = tauEng;
     typeData.tauNonEngaged{areaIdx}(end + 1) = tauNon;
@@ -2862,6 +3397,21 @@ for s = 1:numel(batchResults)
     typeData.paramSDNonEngaged{areaIdx}(end + 1) = paramSDNon;
     typeData.dccEngaged{areaIdx}(end + 1) = dccEng;
     typeData.dccNonEngaged{areaIdx}(end + 1) = dccNon;
+    typeData.decadesEngaged{areaIdx}(end + 1) = decadesEng;
+    typeData.decadesNonEngaged{areaIdx}(end + 1) = decadesNon;
+
+    [kappaEngMean, kappaEngSem, djsEngMean, djsEngSem] = ...
+      summarize_engagement_prg_area(prgSplit, 'Engaged', areaName);
+    [kappaNonMean, kappaNonSem, djsNonMean, djsNonSem] = ...
+      summarize_engagement_prg_area(prgSplit, 'Non-engaged', areaName);
+    typeData.kappaEngagedMean{areaIdx}(end + 1) = kappaEngMean;
+    typeData.kappaEngagedSem{areaIdx}(end + 1) = kappaEngSem;
+    typeData.kappaNonEngagedMean{areaIdx}(end + 1) = kappaNonMean;
+    typeData.kappaNonEngagedSem{areaIdx}(end + 1) = kappaNonSem;
+    typeData.djsEngagedMean{areaIdx}(end + 1) = djsEngMean;
+    typeData.djsEngagedSem{areaIdx}(end + 1) = djsEngSem;
+    typeData.djsNonEngagedMean{areaIdx}(end + 1) = djsNonMean;
+    typeData.djsNonEngagedSem{areaIdx}(end + 1) = djsNonSem;
   end
 
   typeData.sessionLabels{end + 1} = batchResults(s).label;
@@ -2942,13 +3492,15 @@ else
 end
 end
 
-function [tauVal, alphaVal, paramSDVal, dccVal] = get_engagement_area_av_scalars(avClassResult, areaName)
-% GET_ENGAGEMENT_AREA_AV_SCALARS - tau, alpha, paramSD (1/σνz), dcc for one area
+function [tauVal, alphaVal, paramSDVal, dccVal, decadesVal] = get_engagement_area_av_scalars( ...
+    avClassResult, areaName)
+% GET_ENGAGEMENT_AREA_AV_SCALARS - tau, alpha, paramSD, dcc, decades for one area
 
 tauVal = nan;
 alphaVal = nan;
 paramSDVal = nan;
 dccVal = nan;
+decadesVal = nan;
 if ~isstruct(avClassResult) || ~isfield(avClassResult, 'areas') || ~isfield(avClassResult, 'byArea')
   return;
 end
@@ -2972,18 +3524,71 @@ end
 if isfield(avData, 'dcc') && isfinite(avData.dcc)
   dccVal = avData.dcc;
 end
+if isfield(avData, 'decades') && isfinite(avData.decades)
+  decadesVal = avData.decades;
+elseif isfield(avData, 'sizeFitInfo') && isstruct(avData.sizeFitInfo) ...
+    && isfield(avData.sizeFitInfo, 'decades') && isfinite(avData.sizeFitInfo.decades)
+  decadesVal = avData.sizeFitInfo.decades;
+end
 end
 
-function [arView, avView] = build_engagement_class_metric_views(arPlotData, avPlotData, ...
-    engPlotData, engagementClass, sessionTypes, minTimeNonEngaged)
+function [kappaMean, kappaSem, djsMean, djsSem] = summarize_engagement_prg_area( ...
+    prgSplit, className, areaName)
+% SUMMARIZE_ENGAGEMENT_PRG_AREA - Mean/SEM of kappa and D_JS for one class/area
+
+kappaMean = nan;
+kappaSem = nan;
+djsMean = nan;
+djsSem = nan;
+if isempty(prgSplit) || ~isstruct(prgSplit) || ~isfield(prgSplit, 'areas') ...
+    || ~isfield(prgSplit, 'classNames')
+  return;
+end
+areaIdx = find(strcmp(prgSplit.areas, areaName), 1);
+classIdx = find(strcmpi(prgSplit.classNames, className), 1);
+if isempty(areaIdx) || isempty(classIdx)
+  return;
+end
+if isfield(prgSplit, 'kappa') && classIdx <= numel(prgSplit.kappa) ...
+    && areaIdx <= numel(prgSplit.kappa{classIdx})
+  [kappaMean, kappaSem] = mean_sem_finite_vector(prgSplit.kappa{classIdx}{areaIdx});
+end
+if isfield(prgSplit, 'djs') && classIdx <= numel(prgSplit.djs) ...
+    && areaIdx <= numel(prgSplit.djs{classIdx})
+  [djsMean, djsSem] = mean_sem_finite_vector(prgSplit.djs{classIdx}{areaIdx});
+end
+end
+
+function [meanVal, semVal] = mean_sem_finite_vector(vals)
+meanVal = nan;
+semVal = nan;
+vals = vals(:);
+vals = vals(isfinite(vals));
+if isempty(vals)
+  return;
+end
+meanVal = mean(vals);
+if numel(vals) > 1
+  semVal = std(vals) / sqrt(numel(vals));
+else
+  semVal = 0;
+end
+end
+
+function [arView, avView, prgView] = build_engagement_class_metric_views(arPlotData, ...
+    avPlotData, prgPlotData, engPlotData, engagementClass, sessionTypes, minTimeNonEngaged)
 % BUILD_ENGAGEMENT_CLASS_METRIC_VIEWS - Remap engaged/non-engaged into standard plotData
 %
 % Variables:
 %   minTimeNonEngaged - For nonEngaged class, blank (NaN) session metrics when
 %                       total non-engaged time is below this threshold (s).
 %                       Session slots remain so plots stay aligned.
+%
+% Returns AR/AV/PRG views. Interval/reach use engagement-split decades and
+% PRG (kappa/D_JS); spontaneous (and other non-engagement types) copy from
+% full-session AR/AV/PRG batches.
 
-if nargin < 6 || isempty(minTimeNonEngaged)
+if nargin < 7 || isempty(minTimeNonEngaged)
   minTimeNonEngaged = 0;
 end
 
@@ -2997,11 +3602,12 @@ end
 
 arView = struct('areas', {{}}, 'sessionTypes', {sessionTypes}, 'byType', struct());
 avView = struct('areas', {{}}, 'sessionTypes', {sessionTypes}, 'byType', struct());
+prgView = struct('areas', {{}}, 'sessionTypes', {sessionTypes}, 'byType', struct());
 if isfield(arPlotData, 'useLog10D2')
   arView.useLog10D2 = arPlotData.useLog10D2;
 end
 
-% Union of areas from spontaneous AR/AV and engagement
+% Union of areas from spontaneous AR/AV/PRG and engagement
 areaSet = {};
 if isfield(arPlotData, 'areas')
   areaSet = [areaSet, arPlotData.areas]; %#ok<AGROW>
@@ -3009,12 +3615,16 @@ end
 if isfield(avPlotData, 'areas')
   areaSet = [areaSet, avPlotData.areas]; %#ok<AGROW>
 end
+if isfield(prgPlotData, 'areas')
+  areaSet = [areaSet, prgPlotData.areas]; %#ok<AGROW>
+end
 if isfield(engPlotData, 'areas')
   areaSet = [areaSet, engPlotData.areas]; %#ok<AGROW>
 end
 areaSet = unique(areaSet, 'stable');
 arView.areas = areaSet;
 avView.areas = areaSet;
+prgView.areas = areaSet;
 
 for t = 1:numel(sessionTypes)
   sessionType = sessionTypes{t};
@@ -3023,6 +3633,7 @@ for t = 1:numel(sessionTypes)
 
   arView.byType.(typeKey) = init_standard_ar_type(numel(areaSet));
   avView.byType.(typeKey) = init_standard_av_type(numel(areaSet));
+  prgView.byType.(typeKey) = init_standard_prg_type(numel(areaSet));
 
   if isEngType
     if ~isfield(engPlotData.byType, typeKey)
@@ -3046,6 +3657,12 @@ for t = 1:numel(sessionTypes)
         avView.byType.(typeKey).alpha{a} = get_eng_series(engType, 'alphaEngaged', engAreaIdx);
         avView.byType.(typeKey).paramSD{a} = get_eng_series(engType, 'paramSDEngaged', engAreaIdx);
         avView.byType.(typeKey).dcc{a} = get_eng_series(engType, 'dccEngaged', engAreaIdx);
+        avView.byType.(typeKey).decades{a} = get_eng_series(engType, 'decadesEngaged', engAreaIdx);
+        avView.byType.(typeKey).decadesSem{a} = zeros(size(avView.byType.(typeKey).decades{a}));
+        prgView.byType.(typeKey).kappaMean{a} = get_eng_series(engType, 'kappaEngagedMean', engAreaIdx);
+        prgView.byType.(typeKey).kappaSem{a} = get_eng_series(engType, 'kappaEngagedSem', engAreaIdx);
+        prgView.byType.(typeKey).djsMean{a} = get_eng_series(engType, 'djsEngagedMean', engAreaIdx);
+        prgView.byType.(typeKey).djsSem{a} = get_eng_series(engType, 'djsEngagedSem', engAreaIdx);
       else
         arView.byType.(typeKey).d2Mean{a} = blank_metric_series( ...
           get_eng_series(engType, 'd2NonEngagedMean', engAreaIdx), blankMask);
@@ -3059,12 +3676,25 @@ for t = 1:numel(sessionTypes)
           get_eng_series(engType, 'paramSDNonEngaged', engAreaIdx), blankMask);
         avView.byType.(typeKey).dcc{a} = blank_metric_series( ...
           get_eng_series(engType, 'dccNonEngaged', engAreaIdx), blankMask);
+        avView.byType.(typeKey).decades{a} = blank_metric_series( ...
+          get_eng_series(engType, 'decadesNonEngaged', engAreaIdx), blankMask);
+        avView.byType.(typeKey).decadesSem{a} = zeros(size(avView.byType.(typeKey).decades{a}));
+        prgView.byType.(typeKey).kappaMean{a} = blank_metric_series( ...
+          get_eng_series(engType, 'kappaNonEngagedMean', engAreaIdx), blankMask);
+        prgView.byType.(typeKey).kappaSem{a} = blank_metric_series( ...
+          get_eng_series(engType, 'kappaNonEngagedSem', engAreaIdx), blankMask);
+        prgView.byType.(typeKey).djsMean{a} = blank_metric_series( ...
+          get_eng_series(engType, 'djsNonEngagedMean', engAreaIdx), blankMask);
+        prgView.byType.(typeKey).djsSem{a} = blank_metric_series( ...
+          get_eng_series(engType, 'djsNonEngagedSem', engAreaIdx), blankMask);
       end
     end
     arView.byType.(typeKey).sessionNames = get_field_or_empty(engType, 'sessionNames');
     arView.byType.(typeKey).sessionLabels = get_field_or_empty(engType, 'sessionLabels');
     avView.byType.(typeKey).sessionNames = get_field_or_empty(engType, 'sessionNames');
     avView.byType.(typeKey).sessionLabels = get_field_or_empty(engType, 'sessionLabels');
+    prgView.byType.(typeKey).sessionNames = get_field_or_empty(engType, 'sessionNames');
+    prgView.byType.(typeKey).sessionLabels = get_field_or_empty(engType, 'sessionLabels');
   else
     % Spontaneous (and other non-engagement types): copy from standard batches
     if isfield(arPlotData.byType, typeKey)
@@ -3093,13 +3723,35 @@ for t = 1:numel(sessionTypes)
         avView.byType.(typeKey).alpha{a} = get_type_metric_cell(avSrc, 'alpha', srcIdx);
         avView.byType.(typeKey).paramSD{a} = get_type_metric_cell(avSrc, 'paramSD', srcIdx);
         avView.byType.(typeKey).dcc{a} = get_type_metric_cell(avSrc, 'dcc', srcIdx);
+        avView.byType.(typeKey).decades{a} = get_type_metric_cell(avSrc, 'decades', srcIdx);
+        avView.byType.(typeKey).decadesSem{a} = get_type_metric_cell(avSrc, 'decadesSem', srcIdx);
         avView.byType.(typeKey).tauPermutedMean{a} = get_type_metric_cell(avSrc, 'tauPermutedMean', srcIdx);
         avView.byType.(typeKey).alphaPermutedMean{a} = get_type_metric_cell(avSrc, 'alphaPermutedMean', srcIdx);
         avView.byType.(typeKey).paramSDPermutedMean{a} = get_type_metric_cell(avSrc, 'paramSDPermutedMean', srcIdx);
         avView.byType.(typeKey).dccPermutedMean{a} = get_type_metric_cell(avSrc, 'dccPermutedMean', srcIdx);
+        avView.byType.(typeKey).decadesPermutedMean{a} = get_type_metric_cell(avSrc, 'decadesPermutedMean', srcIdx);
       end
       avView.byType.(typeKey).sessionNames = get_field_or_empty(avSrc, 'sessionNames');
       avView.byType.(typeKey).sessionLabels = get_field_or_empty(avSrc, 'sessionLabels');
+    end
+    if isfield(prgPlotData, 'byType') && isfield(prgPlotData.byType, typeKey)
+      prgSrc = prgPlotData.byType.(typeKey);
+      for a = 1:numel(areaSet)
+        srcIdx = find(strcmp(prgPlotData.areas, areaSet{a}), 1);
+        if isempty(srcIdx)
+          continue;
+        end
+        prgView.byType.(typeKey).kappaMean{a} = get_type_metric_cell(prgSrc, 'kappaMean', srcIdx);
+        prgView.byType.(typeKey).kappaSem{a} = get_type_metric_cell(prgSrc, 'kappaSem', srcIdx);
+        prgView.byType.(typeKey).djsMean{a} = get_type_metric_cell(prgSrc, 'djsMean', srcIdx);
+        prgView.byType.(typeKey).djsSem{a} = get_type_metric_cell(prgSrc, 'djsSem', srcIdx);
+        prgView.byType.(typeKey).kappaShuffleMean{a} = get_type_metric_cell(prgSrc, 'kappaShuffleMean', srcIdx);
+        prgView.byType.(typeKey).kappaShuffleSem{a} = get_type_metric_cell(prgSrc, 'kappaShuffleSem', srcIdx);
+        prgView.byType.(typeKey).djsShuffleMean{a} = get_type_metric_cell(prgSrc, 'djsShuffleMean', srcIdx);
+        prgView.byType.(typeKey).djsShuffleSem{a} = get_type_metric_cell(prgSrc, 'djsShuffleSem', srcIdx);
+      end
+      prgView.byType.(typeKey).sessionNames = get_field_or_empty(prgSrc, 'sessionNames');
+      prgView.byType.(typeKey).sessionLabels = get_field_or_empty(prgSrc, 'sessionLabels');
     end
   end
 end
@@ -3179,19 +3831,49 @@ typeData.tau = cell(1, numAreas);
 typeData.alpha = cell(1, numAreas);
 typeData.paramSD = cell(1, numAreas);
 typeData.dcc = cell(1, numAreas);
+typeData.decades = cell(1, numAreas);
+typeData.decadesSem = cell(1, numAreas);
 typeData.tauPermutedMean = cell(1, numAreas);
 typeData.alphaPermutedMean = cell(1, numAreas);
 typeData.paramSDPermutedMean = cell(1, numAreas);
 typeData.dccPermutedMean = cell(1, numAreas);
+typeData.decadesPermutedMean = cell(1, numAreas);
 for a = 1:numAreas
   typeData.tau{a} = [];
   typeData.alpha{a} = [];
   typeData.paramSD{a} = [];
   typeData.dcc{a} = [];
+  typeData.decades{a} = [];
+  typeData.decadesSem{a} = [];
   typeData.tauPermutedMean{a} = [];
   typeData.alphaPermutedMean{a} = [];
   typeData.paramSDPermutedMean{a} = [];
   typeData.dccPermutedMean{a} = [];
+  typeData.decadesPermutedMean{a} = [];
+end
+typeData.sessionNames = {};
+typeData.sessionLabels = {};
+end
+
+function typeData = init_standard_prg_type(numAreas)
+typeData = struct();
+typeData.kappaMean = cell(1, numAreas);
+typeData.kappaSem = cell(1, numAreas);
+typeData.djsMean = cell(1, numAreas);
+typeData.djsSem = cell(1, numAreas);
+typeData.kappaShuffleMean = cell(1, numAreas);
+typeData.kappaShuffleSem = cell(1, numAreas);
+typeData.djsShuffleMean = cell(1, numAreas);
+typeData.djsShuffleSem = cell(1, numAreas);
+for a = 1:numAreas
+  typeData.kappaMean{a} = [];
+  typeData.kappaSem{a} = [];
+  typeData.djsMean{a} = [];
+  typeData.djsSem{a} = [];
+  typeData.kappaShuffleMean{a} = [];
+  typeData.kappaShuffleSem{a} = [];
+  typeData.djsShuffleMean{a} = [];
+  typeData.djsShuffleSem{a} = [];
 end
 typeData.sessionNames = {};
 typeData.sessionLabels = {};

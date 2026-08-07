@@ -640,10 +640,17 @@ prgConfig.prgMethod = opts.prgMethod;
 prgConfig.blockWindowSize = opts.prgWindow;
 prgConfig.binSize = opts.binSizePrg;
 prgConfig.cvThreshold = 5;
-prgConfig.cutoffDivisors = [1, 2, 4, 8, 16];
-prgConfig.finalCutoffDivisor = 16;
+prgConfig.cutoffDivisors = [1, 2, 4, 8, 16, 32];
+if isfield(opts, 'finalCutoffDivisor') && ~isempty(opts.finalCutoffDivisor)
+  prgConfig.finalCutoffDivisor = opts.finalCutoffDivisor;
+else
+  prgConfig.finalCutoffDivisor = 16;
+end
 prgConfig.kappaAxisMax = 20;
 prgConfig.enableSurrogates = true;
+if isfield(opts, 'nSurrogates') && ~isempty(opts.nSurrogates) && opts.nSurrogates == 0
+  prgConfig.enableSurrogates = false;
+end
 prgConfig.nSurrogates = opts.nSurrogates;
 prgConfig.surrogateMethod = opts.surrogateMethod;
 prgConfig.makePlots = false;

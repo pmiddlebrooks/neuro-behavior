@@ -1,3 +1,293 @@
+%% Load one spontaneous session — put behavior labels in bhvID
+%
+% Uses the same load path as manuscript analyses (load_session_data →
+% load_spontaneous_data). Behavior codes are already on dataStruct.bhvID at
+% opts.fsBhv; copy them into workspace variable bhvID.
+
+setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
+paths = get_paths();
+
+sessionType = 'spontaneous';
+subjectName = 'ag25290';
+sessionName = 'ag112321_1';  % from spontaneous_session_list
+sessionName = 'ag112321_1';  % from spontaneous_session_list
+dataSource = 'spikes';
+collectStart = 0;
+collectEnd = [];  % [] = full session
+
+loadOpts = neuro_behavior_options();
+loadOpts.collectStart = collectStart;
+loadOpts.collectEnd = collectEnd;
+
+loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
+dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
+
+bhvID = [];
+if isfield(dataStruct, 'bhvID') && ~isempty(dataStruct.bhvID)
+  bhvID = dataStruct.bhvID(:);
+end
+
+fprintf('\n=== Spontaneous session loaded ===\n');
+fprintf('Subject / session: %s / %s\n', subjectName, sessionName);
+if isempty(bhvID)
+  warning('scratch:NoBhvID', 'No behavior labels found (bhvID is empty).');
+else
+  fsBhv = [];
+  if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+    fsBhv = dataStruct.fsBhv;
+  elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'fsBhv')
+    fsBhv = dataStruct.opts.fsBhv;
+  end
+  fprintf('bhvID: %d samples', numel(bhvID));
+  if ~isempty(fsBhv)
+    fprintf(' (fsBhv = %.3g Hz, ~%.1f s)\n', fsBhv, numel(bhvID) / fsBhv);
+  else
+    fprintf('\n');
+  end
+  fprintf('Unique behavior codes: %s\n', mat2str(unique(bhvID)'));
+end
+
+%% Behavior-label pie charts across all spontaneous sessions
+%
+% Load every session in spontaneous_session_list, compute frame proportions
+% per behavior code, and plot one pie per session. Colors are fixed by code
+% via colors_for_behaviors so the same label matches across panels.
+
+setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
+paths = get_paths();
+
+sessionType = 'spontaneous';
+dataSource = 'spikes';
+collectStart = 0;
+collectEnd = [];  % [] = full session
+binSizePop = 0.05;  % s; population activity bin width
+brainAreaPop = 'M23M56';
+brainAreaCombinations = default_manuscript_brain_area_combinations();
+sessionList = spontaneous_session_list();
+nSess = numel(sessionList);
+
+loadOptsBase = neuro_behavior_options();
+loadOptsBase.collectStart = collectStart;
+loadOptsBase.collectEnd = collectEnd;
+
+fprintf('\n=== Spontaneous behavior pies (%d sessions) ===\n', nSess);
+if isempty(collectEnd)
+  fprintf('collectEnd = [] (full session); printing loaded durations.\n');
+end
+fprintf('popActivity area: %s | binSize: %.3g s\n', brainAreaPop, binSizePop);
+
+sessionBhv = repmat(struct( ...
+  'subjectName', '', 'sessionName', '', 'label', '', ...
+  'bhvID', [], 'codeToName', [], 'durationSec', nan, 'fsBhv', nan, ...
+  'popActivity', [], 'popTime', [], ...
+  'success', false, 'skipReason', ''), nSess, 1);
+
+allCodes = [];
+for iSess = 1:nSess
+  subjectName = sessionList(iSess).subjectName;
+  sessionName = sessionList(iSess).sessionName;
+  sessionBhv(iSess).subjectName = subjectName;
+  sessionBhv(iSess).sessionName = sessionName;
+  sessionBhv(iSess).label = sessionName;
+
+  fprintf('Session %d/%d: %s / %s\n', iSess, nSess, subjectName, sessionName);
+  try
+    loadOpts = loadOptsBase;
+    loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
+    dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
+    durationSec = scratch_session_duration_sec(dataStruct, collectStart);
+    sessionBhv(iSess).durationSec = durationSec;
+    if isempty(collectEnd)
+      if isfinite(durationSec)
+        fprintf('  Duration: %.1f s (%.2f min)\n', durationSec, durationSec / 60);
+      else
+        fprintf('  Duration: unknown\n');
+      end
+    end
+
+    [popActivity, popTime] = scratch_session_pop_activity( ...
+      dataStruct, brainAreaPop, brainAreaCombinations, binSizePop, collectStart);
+    sessionBhv(iSess).popActivity = popActivity;
+    sessionBhv(iSess).popTime = popTime;
+    if ~isempty(popActivity)
+      fprintf('  popActivity: %d bins (%.1f s)\n', numel(popActivity), ...
+        popTime(end) - popTime(1) + binSizePop);
+    end
+
+    if ~isfield(dataStruct, 'bhvID') || isempty(dataStruct.bhvID)
+      sessionBhv(iSess).skipReason = 'empty bhvID';
+      warning('scratch:NoBhvID', 'No bhvID for %s; skipping pie.', sessionName);
+      continue;
+    end
+    bhvID = dataStruct.bhvID(:);
+    sessionBhv(iSess).bhvID = bhvID;
+    sessionBhv(iSess).codeToName = scratch_bhv_code_to_name_map(dataStruct);
+    if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+      sessionBhv(iSess).fsBhv = dataStruct.fsBhv;
+    elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'fsBhv')
+      sessionBhv(iSess).fsBhv = dataStruct.opts.fsBhv;
+    else
+      sessionBhv(iSess).fsBhv = loadOptsBase.fsBhv;
+    end
+    sessionBhv(iSess).success = true;
+    allCodes = [allCodes; unique(bhvID)]; %#ok<AGROW>
+  catch ME
+    sessionBhv(iSess).skipReason = ME.message;
+    warning('scratch:SpontaneousPieLoadFailed', 'Failed %s: %s', sessionName, ME.message);
+  end
+end
+
+if isempty(collectEnd)
+  fprintf('\n--- Session durations (full collect) ---\n');
+  for iSess = 1:nSess
+    dur = sessionBhv(iSess).durationSec;
+    if isfinite(dur)
+      fprintf('  %s / %s: %.1f s (%.2f min)\n', ...
+        sessionBhv(iSess).subjectName, sessionBhv(iSess).sessionName, dur, dur / 60);
+    else
+      fprintf('  %s / %s: unknown (%s)\n', ...
+        sessionBhv(iSess).subjectName, sessionBhv(iSess).sessionName, ...
+        sessionBhv(iSess).skipReason);
+    end
+  end
+end
+
+okMask = [sessionBhv.success];
+nOk = sum(okMask);
+if nOk < 1
+  error('scratch:NoSpontaneousBhv', 'No spontaneous sessions with behavior labels.');
+end
+
+allCodes = unique(allCodes(:));
+allCodes = allCodes(isfinite(allCodes));
+[codeColors, codeNames] = scratch_behavior_code_colors_and_names(allCodes, sessionBhv(okMask));
+
+nCol = min(4, nOk);
+nRow = ceil(nOk / nCol);
+fig = figure('Color', 'w', 'Name', 'Spontaneous behavior proportions');
+position_scratch_figure_full_monitor(fig);
+tiled = tiledlayout(fig, nRow, nCol, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+okIdx = find(okMask);
+for iPlot = 1:nOk
+  iSess = okIdx(iPlot);
+  bhvID = sessionBhv(iSess).bhvID;
+  counts = zeros(numel(allCodes), 1);
+  for iCode = 1:numel(allCodes)
+    counts(iCode) = sum(bhvID == allCodes(iCode));
+  end
+  present = counts > 0;
+  if ~any(present)
+    continue;
+  end
+
+  ax = nexttile(tiled);
+  pieCounts = counts(present);
+  pieColors = codeColors(present, :);
+  pieNames = codeNames(present);
+  pieProps = 100 * pieCounts / sum(pieCounts);
+  hPie = pie(ax, pieCounts);
+  % pie returns [patch; text; patch; text; ...]
+  for iSlice = 1:numel(pieCounts)
+    patchIdx = 2 * iSlice - 1;
+    textIdx = 2 * iSlice;
+    set(hPie(patchIdx), 'FaceColor', pieColors(iSlice, :), 'EdgeColor', [1 1 1], ...
+      'LineWidth', 0.5);
+    if pieProps(iSlice) >= 4
+      set(hPie(textIdx), 'String', sprintf('%.0f%%', pieProps(iSlice)), ...
+        'FontSize', 8);
+    else
+      set(hPie(textIdx), 'String', '');
+    end
+  end
+  title(ax, sessionBhv(iSess).label, 'Interpreter', 'none', 'FontSize', 11);
+end
+
+sgtitle(tiled, 'Spontaneous behavior label proportions', 'FontWeight', 'bold');
+
+% Shared legend (same colors across sessions)
+figLeg = figure('Color', 'w', 'Name', 'Behavior label legend', ...
+  'Position', [120 120 360 max(220, 28 * numel(allCodes) + 60)]);
+axLeg = axes(figLeg);
+hold(axLeg, 'on');
+axis(axLeg, 'off');
+for iCode = 1:numel(allCodes)
+  y = numel(allCodes) - iCode + 1;
+  plot(axLeg, 0.1, y, 's', 'MarkerSize', 12, 'MarkerFaceColor', codeColors(iCode, :), ...
+    'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
+  text(axLeg, 0.25, y, sprintf('%s (code %g)', codeNames{iCode}, allCodes(iCode)), ...
+    'FontSize', 11, 'Interpreter', 'none', 'VerticalAlignment', 'middle');
+end
+xlim(axLeg, [0 3]);
+ylim(axLeg, [0.5, numel(allCodes) + 0.5]);
+title(axLeg, 'Behavior colors (shared across sessions)', 'FontSize', 12, 'Interpreter', 'none');
+hold(axLeg, 'off');
+
+fprintf('Plotted pies for %d/%d sessions (%d unique behavior codes).\n', ...
+  nOk, nSess, numel(allCodes));
+
+% Population activity + ethogram — one session per cell, nRows x 2 tiling
+hasPop = arrayfun(@(s) ~isempty(s.popActivity) && ~isempty(s.popTime), sessionBhv);
+nPop = sum(hasPop);
+if nPop < 1
+  warning('scratch:NoPopActivity', 'No sessions with popActivity to plot.');
+else
+  popIdx = find(hasPop);
+
+  % Shared code→color map for ethograms (same colors as pies)
+  codeColorMap = containers.Map('KeyType', 'double', 'ValueType', 'any');
+  for iCode = 1:numel(allCodes)
+    codeColorMap(allCodes(iCode)) = codeColors(iCode, :);
+  end
+
+  nCols = 2;
+  nRows = ceil(nPop / nCols);
+  % Each session uses two subplot rows (popActivity above ethogram)
+  nSubRows = nRows * 2;
+
+  figPop = figure('Color', 'w', 'Name', 'Spontaneous popActivity + ethogram');
+  position_scratch_figure_full_monitor(figPop);
+
+  for iPlot = 1:nPop
+    iSess = popIdx(iPlot);
+    row = ceil(iPlot / nCols);
+    col = mod(iPlot - 1, nCols) + 1;
+    popSubRow = (row - 1) * 2 + 1;
+    ethSubRow = (row - 1) * 2 + 2;
+    popAxIdx = (popSubRow - 1) * nCols + col;
+    ethAxIdx = (ethSubRow - 1) * nCols + col;
+
+    tSess = sessionBhv(iSess).popTime;
+    tMaxSess = max(tSess);
+    if isfinite(sessionBhv(iSess).durationSec)
+      tMaxSess = max(tMaxSess, sessionBhv(iSess).durationSec);
+    end
+
+    axPop = subplot(nSubRows, nCols, popAxIdx, 'Parent', figPop);
+    plot(axPop, tSess, sessionBhv(iSess).popActivity, ...
+      'Color', [0.15 0.15 0.15], 'LineWidth', 0.6);
+    xlim(axPop, [collectStart, tMaxSess]);
+    ylabel(axPop, 'pop', 'FontSize', 9);
+    title(axPop, sprintf('%s (%.1f min)', sessionBhv(iSess).label, ...
+      sessionBhv(iSess).durationSec / 60), 'Interpreter', 'none', 'FontSize', 10);
+    box(axPop, 'off');
+    set(axPop, 'XTickLabel', []);
+
+    axEth = subplot(nSubRows, nCols, ethAxIdx, 'Parent', figPop);
+    scratch_plot_behavior_ethogram(axEth, sessionBhv(iSess), codeColorMap, ...
+      collectStart, tMaxSess);
+    xlabel(axEth, 'Time (s)', 'FontSize', 9);
+    linkaxes([axPop, axEth], 'x');
+  end
+
+  sgtitle(figPop, sprintf( ...
+    'Population activity + ethogram (%s, bin=%.0f ms) — %d sessions (%d x %d)', ...
+    brainAreaPop, binSizePop * 1000, nPop, nRows, nCols), ...
+    'FontWeight', 'bold', 'Interpreter', 'none');
+  fprintf('Plotted popActivity + ethogram for %d/%d sessions (%d x %d tiles).\n', ...
+    nPop, nSess, nRows, nCols);
+end
+
 %% Batch: d2 vs windowSize — one plot per reach session
 %
 % Keeps the default spontaneous / interval examples fixed and swaps the reach
@@ -191,16 +481,17 @@ paths = get_paths();
 plotConfig = fill_manuscript_plot_config();
 
 sessionTypes = {'spontaneous', 'interval', 'reach'};
+sessionTypes = {'spontaneous'};
 collectStart = 0;
 collectEnd = [];  % [] = full session (matches multiple_metrics)
-collectEnd = 60 * 60;
+collectEnd = 120 * 60;
 dataSource = 'spikes';
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 
 % Loading filters — same defaults as criticality_ar_across_tasks when
 % multiple_metrics does not override them
-firingRateCheckTime = 300;  % [] = check rate over the loaded collect window
+firingRateCheckTime = [];  % [] = check rate over the loaded collect window
 minFiringRate = 0.1;
 maxFiringRate = 200;
 
@@ -834,4 +1125,227 @@ hold(ax, 'off');
 %   matlab.lang.makeValidName(brainArea), winTag, minFiringRate, maxFiringRate);
 % exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
 % fprintf('Saved neuron-count figure: %s\n', fullfile(saveDir, plotBase));
+end
+
+function codeToName = scratch_bhv_code_to_name_map(dataStruct)
+% SCRATCH_BHV_CODE_TO_NAME_MAP - Map behavior codes to names from dataBhv
+
+codeToName = containers.Map('KeyType', 'double', 'ValueType', 'char');
+if ~isfield(dataStruct, 'dataBhv') || isempty(dataStruct.dataBhv)
+  return;
+end
+dataBhv = dataStruct.dataBhv;
+if ~ismember('ID', dataBhv.Properties.VariableNames)
+  return;
+end
+hasName = ismember('Name', dataBhv.Properties.VariableNames);
+ids = dataBhv.ID(:);
+for i = 1:numel(ids)
+  code = double(ids(i));
+  if ~isfinite(code) || isKey(codeToName, code)
+    continue;
+  end
+  if hasName
+    nameVal = dataBhv.Name(i);
+    if iscell(nameVal)
+      nameVal = nameVal{1};
+    end
+    codeToName(code) = char(nameVal);
+  else
+    codeToName(code) = sprintf('code_%g', code);
+  end
+end
+end
+
+function durationSec = scratch_session_duration_sec(dataStruct, collectStart)
+% SCRATCH_SESSION_DURATION_SEC - Loaded collect window length (s)
+
+durationSec = nan;
+if nargin < 2 || isempty(collectStart)
+  collectStart = 0;
+end
+if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectEnd') ...
+    && ~isempty(dataStruct.spikeData.collectEnd)
+  startVal = collectStart;
+  if isfield(dataStruct.spikeData, 'collectStart') && ~isempty(dataStruct.spikeData.collectStart)
+    startVal = dataStruct.spikeData.collectStart;
+  end
+  durationSec = dataStruct.spikeData.collectEnd - startVal;
+  return;
+end
+if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectEnd') ...
+    && ~isempty(dataStruct.opts.collectEnd)
+  startVal = collectStart;
+  if isfield(dataStruct.opts, 'collectStart') && ~isempty(dataStruct.opts.collectStart)
+    startVal = dataStruct.opts.collectStart;
+  end
+  durationSec = dataStruct.opts.collectEnd - startVal;
+  return;
+end
+if isfield(dataStruct, 'spikeTimes') && ~isempty(dataStruct.spikeTimes)
+  durationSec = max(dataStruct.spikeTimes) - collectStart;
+end
+end
+
+function [popActivity, popTime] = scratch_session_pop_activity(dataStruct, brainArea, ...
+    brainAreaCombinations, binSize, collectStart)
+% SCRATCH_SESSION_POP_ACTIVITY - Binned population spike count for one area
+%
+% Variables:
+%   dataStruct              - Loaded session
+%   brainArea               - Area or compound name (e.g. M23M56)
+%   brainAreaCombinations   - Manuscript area merges
+%   binSize                 - Bin width (s)
+%   collectStart            - Analysis start (s)
+%
+% Returns:
+%   popActivity - Sum of spikes across neurons per bin
+%   popTime     - Bin-center times (s)
+
+popActivity = [];
+popTime = [];
+if nargin < 5 || isempty(collectStart)
+  collectStart = 0;
+end
+if nargin < 4 || isempty(binSize)
+  binSize = 0.05;
+end
+
+[dataStruct, areaOk] = apply_manuscript_brain_area_selection( ...
+  dataStruct, brainArea, brainAreaCombinations);
+if ~areaOk
+  return;
+end
+areaIdx = find(strcmp(dataStruct.areas, brainArea), 1);
+if isempty(areaIdx) && isfield(dataStruct, 'areasToTest') && ~isempty(dataStruct.areasToTest)
+  areaIdx = dataStruct.areasToTest(1);
+end
+if isempty(areaIdx)
+  return;
+end
+if ~isfield(dataStruct, 'idLabel') || areaIdx > numel(dataStruct.idLabel) ...
+    || isempty(dataStruct.idLabel{areaIdx})
+  return;
+end
+
+durationSec = scratch_session_duration_sec(dataStruct, collectStart);
+if ~isfinite(durationSec) || durationSec <= 0
+  return;
+end
+timeRange = [collectStart, collectStart + durationSec];
+neuronIDs = dataStruct.idLabel{areaIdx};
+aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+  neuronIDs, timeRange, binSize);
+if isempty(aDataMat)
+  return;
+end
+popActivity = sum(aDataMat, 2);
+popTime = collectStart + ((0:numel(popActivity)-1)' + 0.5) * binSize;
+end
+
+function scratch_plot_behavior_ethogram(ax, sessionRec, codeColorMap, tMin, tMax)
+% SCRATCH_PLOT_BEHAVIOR_ETHOGRAM - Colored behavior runs aligned to session time
+%
+% Variables:
+%   ax           - Target axes (thin strip under popActivity)
+%   sessionRec   - Session struct with .bhvID and .fsBhv
+%   codeColorMap - containers.Map code → RGB (shared across sessions)
+%   tMin, tMax   - Shared x-limits (s)
+
+hold(ax, 'on');
+bhvID = sessionRec.bhvID;
+fsBhv = sessionRec.fsBhv;
+if isempty(bhvID) || ~(isfinite(fsBhv) && fsBhv > 0)
+  text(ax, mean([tMin tMax]), 0.5, 'no behavior labels', ...
+    'HorizontalAlignment', 'center', 'FontSize', 9, 'Color', [0.5 0.5 0.5]);
+  xlim(ax, [tMin, tMax]);
+  ylim(ax, [0 1]);
+  set(ax, 'YTick', [], 'Box', 'off');
+  hold(ax, 'off');
+  return;
+end
+
+bhvID = bhvID(:);
+nFrame = numel(bhvID);
+% bhvID is relative to the loaded collect window; align to shared time axis
+frameStarts = tMin + ((0:nFrame-1)' ) / fsBhv;
+frameEnds = tMin + (1:nFrame)' / fsBhv;
+
+% Merge contiguous identical labels into runs
+runCode = bhvID(1);
+runStart = frameStarts(1);
+for i = 2:nFrame
+  if bhvID(i) ~= runCode
+    scratch_fill_ethogram_run(ax, runStart, frameStarts(i), runCode, codeColorMap);
+    runCode = bhvID(i);
+    runStart = frameStarts(i);
+  end
+end
+scratch_fill_ethogram_run(ax, runStart, frameEnds(end), runCode, codeColorMap);
+
+xlim(ax, [tMin, tMax]);
+ylim(ax, [0 1]);
+ylabel(ax, 'bhv', 'FontSize', 9);
+set(ax, 'YTick', [], 'Box', 'off', 'TickDir', 'out');
+hold(ax, 'off');
+end
+
+function scratch_fill_ethogram_run(ax, tStart, tEnd, code, codeColorMap)
+% SCRATCH_FILL_ETHOGRAM_RUN - One colored rectangle for a behavior bout
+
+if ~(isfinite(tStart) && isfinite(tEnd)) || tEnd <= tStart
+  return;
+end
+if isKey(codeColorMap, double(code))
+  faceColor = codeColorMap(double(code));
+else
+  c = colors_for_behaviors(double(code));
+  if size(c, 1) == 1 && size(c, 2) == 3
+    faceColor = c;
+  else
+    faceColor = [0.7 0.7 0.7];
+  end
+end
+fill(ax, [tStart, tEnd, tEnd, tStart], [0, 0, 1, 1], faceColor, ...
+  'EdgeColor', 'none', 'HandleVisibility', 'off');
+end
+
+function [codeColors, codeNames] = scratch_behavior_code_colors_and_names(allCodes, sessionBhvOk)
+% SCRATCH_BEHAVIOR_CODE_COLORS_AND_NAMES - Shared colors/names across sessions
+%
+% Prefer colors_for_behaviors for known B-SOiD codes; fill any missing codes
+% with distinguishable colors so every label still has a stable color.
+
+allCodes = allCodes(:);
+nCode = numel(allCodes);
+codeColors = nan(nCode, 3);
+codeNames = cell(nCode, 1);
+
+for iCode = 1:nCode
+  code = allCodes(iCode);
+  codeNames{iCode} = sprintf('code_%g', code);
+  for iSess = 1:numel(sessionBhvOk)
+    map = sessionBhvOk(iSess).codeToName;
+    if isa(map, 'containers.Map') && isKey(map, code)
+      codeNames{iCode} = map(code);
+      break;
+    end
+  end
+
+  c = colors_for_behaviors(code);
+  if size(c, 1) == 1 && size(c, 2) == 3
+    codeColors(iCode, :) = c;
+  end
+end
+
+missing = any(~isfinite(codeColors), 2);
+if any(missing)
+  nMissing = sum(missing);
+  if exist('distinguishable_colors', 'file') == 2
+    fillColors = distinguishable_colors(nMissing, [1 1 1]);
+  else
+    fillColors = lines(nMissing);
+  end
+  codeColors(missing, :) = fillColors;
+end
 end

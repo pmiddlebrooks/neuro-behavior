@@ -18,7 +18,10 @@
 %   useLog10D2       - If true, plot log10(d2) and log10(shuffled d2)
 %   useSubsampling   - If true, d2 per window = mean across neuron subsamples
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling (run_criticality_ar.m)
+%   nPermutations    - Number of circular permutations per window for shuffled d2
 %   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled)
+%   plotD2Timeline   - If true, plot mean pop per d2 window, d2, and ethogram vs time
+%   binSize          - Spike bin width (s) for d2 analysis (and window popActivity)
 %   saveFigure       - Export PNG/EPS to dropPath/criticality_manuscript
 %   plotConfig       - Axis fonts/line widths (see fill_manuscript_plot_config)
 %   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory;
@@ -40,22 +43,25 @@
 
 collectStart = 0;
 collectEnd = 45 * 60;
-collectEnd = [];
+collectEnd = 1.2*10^4;
 
-d2Window = 30;  % seconds; non-overlapping windows
+d2Window = 5*60;  % seconds; non-overlapping windows
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
-useSubsampling = false;
+useSubsampling = true;
 nSubsamples = 20;
-nNeuronsSubsample = 32;
-minNeuronsMultiple = 1.25;
+nNeuronsSubsample = 45;
+minNeuronsMultiple = 1.1;
+nPermutations = 5;  % circular shuffles per window for shuffled d2 distribution
 plotD2PopActivity = true;
-saveFigure = true;
+plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
+binSize = 0.04;  % s; spike binning for d2 (and window mean popActivity)
+saveFigure = false;
 plotConfig = fill_manuscript_plot_config();
 
-splitExcitatoryInhibitory = true;
+splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 opts = neuro_behavior_options();
@@ -64,20 +70,20 @@ opts.firingRateCheckTime = [];
 opts.collectStart = collectStart;
 opts.collectEnd = collectEnd;
 opts.minFiringRate = 0.1;
-opts.maxFiringRate = 150;
+opts.maxFiringRate = 200;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = d2Window;
 analysisConfig.stepSize = d2Window;
-analysisConfig.binSize = 0.025;
+analysisConfig.binSize = binSize;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;
 analysisConfig.analyzeMrBr = false;
 analysisConfig.pcaFlag = 0;
 analysisConfig.pcaFirstFlag = 1;
 analysisConfig.nDim = 4;
-analysisConfig.enablePermutations = true;
-analysisConfig.nShuffles = 50;
+analysisConfig.enablePermutations = nPermutations > 0;
+analysisConfig.nShuffles = nPermutations;
 analysisConfig.normalizeD2 = true;
 analysisConfig.useLog10D2 = useLog10D2;
 analysisConfig.makePlots = false;
@@ -98,8 +104,8 @@ analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 fprintf('\n=== Session d2 Distributions ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, (collectEnd - collectStart) / 60);
-fprintf('d2 windows: %.1f s; binSize: %.3f s; nShuffles: %d\n', ...
-  d2Window, analysisConfig.binSize, analysisConfig.nShuffles);
+fprintf('d2 windows: %.1f s; binSize: %.3f s; nPermutations: %d\n', ...
+  d2Window, binSize, nPermutations);
 fprintf('useLog10D2: %d\n', useLog10D2);
 if useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
@@ -160,7 +166,7 @@ for iCellRun = 1:numel(cellTypesToRun)
       extract_d2_summary_metric_values(results, useLog10D2));
   end
 
-  %% Build distributions and plot
+  % Build distributions and plot
   plotData = build_d2_distribution_data(results, useLog10D2);
   if isempty(plotData.areas)
     error(['No valid d2 distribution data found (%s). Check d2 values and shuffled ' ...
@@ -189,7 +195,7 @@ for iCellRun = 1:numel(cellTypesToRun)
     fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
   end
 
-  %% d2 vs mean population activity (real and shuffled mean per window)
+  % d2 vs mean population activity (real and shuffled mean per window)
   if plotD2PopActivity
     if splitExcitatoryInhibitory
       eiPopActivityResults{iCellRun} = struct('cellType', cellType, 'results', results);
@@ -212,6 +218,33 @@ for iCellRun = 1:numel(cellTypesToRun)
         exportgraphics(figPop, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
         fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
       end
+    end
+  end
+
+  % popActivity | d2 over time | ethogram (time-aligned)
+  if plotD2Timeline
+    figTime = plot_d2_pop_ethogram_timeline(dataStruct, results, ...
+      collectStart, collectEnd, d2Window, binSize, useLog10D2, plotConfig, ...
+      sessionName, cellType);
+    if ~isempty(figTime) && saveFigure
+      saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+      if ~exist(saveDir, 'dir')
+        mkdir(saveDir);
+      end
+      areaTag = format_areas_label(plotData.areas);
+      if isempty(collectEnd)
+        collectTag = sprintf('%.0f-full', collectStart);
+      else
+        collectTag = sprintf('%.0f-%.0f', collectStart, collectEnd);
+      end
+      plotBase = sprintf('session_d2_timeline_%s_%s_win%.0fs_%ss%s', ...
+        sessionName, areaTag, d2Window, collectTag, cell_type_file_tag(cellType));
+      if useLog10D2
+        plotBase = [plotBase, '_log10'];
+      end
+      exportgraphics(figTime, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+      exportgraphics(figTime, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+      fprintf('Saved timeline figure: %s\n', fullfile(saveDir, plotBase));
     end
   end
 end
@@ -775,4 +808,285 @@ refAreaIdx = find(~cellfun(@isempty, results.startS), 1);
 if isempty(refAreaIdx)
   error('No window center times (startS) found in results.');
 end
+end
+
+function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
+    collectStart, collectEnd, d2Window, binSize, useLog10D2, plotConfig, ...
+    sessionName, cellType)
+% PLOT_D2_POP_ETHOGRAM_TIMELINE - Stacked mean-pop | d2 | ethogram vs time
+%
+% Variables:
+%   dataStructBhv - Session used for bhvID / fsBhv and duration
+%   results       - criticality_ar_analysis output (d2, startS, popActivityWindows)
+%   binSize       - Spike bin width (s) used in d2 analysis (title only)
+%
+% Layout (per brain area column):
+%   Top:    mean popActivity per d2 window (results.popActivityWindows)
+%   Middle: window-wise d2 (and shuffled mean when present)
+%   Bottom: behavior ethogram
+
+if nargin < 8 || isempty(plotConfig)
+  plotConfig = fill_manuscript_plot_config();
+end
+if nargin < 9 || isempty(sessionName)
+  sessionName = '';
+end
+if nargin < 10
+  cellType = '';
+end
+
+fig = [];
+numAreas = numel(results.areas);
+if numAreas < 1
+  warning('session_d2_distributions:NoTimelineAreas', 'No areas for timeline plot.');
+  return;
+end
+
+bhvRec = session_d2_behavior_record(dataStructBhv);
+tMax = session_d2_resolve_timeline_tmax([], results, collectStart, collectEnd, d2Window, ...
+  dataStructBhv);
+tMin = collectStart;
+if isempty(tMin) || ~isfinite(tMin)
+  tMin = 0;
+end
+
+plotColors = manuscript_plot_colors();
+d2YLabel = get_d2_axis_label(useLog10D2);
+fig = figure('Color', 'w', 'Name', sprintf('d2 timeline — %s', sessionName), ...
+  'Position', [100 80 max(720, 420 * numAreas) 780]);
+
+axesToLink = gobjects(0);
+for a = 1:numAreas
+  areaName = results.areas{a};
+  tWin = [];
+  if isfield(results, 'startS') && a <= numel(results.startS) && ~isempty(results.startS{a})
+    tWin = results.startS{a}(:);
+  end
+
+  axPop = subplot(3, numAreas, a, 'Parent', fig);
+  hold(axPop, 'on');
+  popVec = [];
+  if isfield(results, 'popActivityWindows') && a <= numel(results.popActivityWindows) ...
+      && ~isempty(results.popActivityWindows{a})
+    popVec = results.popActivityWindows{a}(:);
+  end
+  if ~isempty(popVec) && ~isempty(tWin)
+    nPlot = min(numel(popVec), numel(tWin));
+    plot(axPop, tWin(1:nPlot), popVec(1:nPlot), '-o', ...
+      'Color', [0.15 0.15 0.15], 'MarkerFaceColor', [0.15 0.15 0.15], ...
+      'MarkerSize', 5, 'LineWidth', plotConfig.axesLineWidth);
+  else
+    text(axPop, mean([tMin tMax]), 0.5, 'no window popActivity', ...
+      'HorizontalAlignment', 'center', 'Color', [0.5 0.5 0.5]);
+  end
+  xlim(axPop, [tMin, tMax]);
+  ylabel(axPop, 'mean pop', 'FontSize', plotConfig.axisLabelFontSize);
+  title(axPop, areaName, 'Interpreter', 'none', 'FontSize', plotConfig.titleFontSize);
+  set(axPop, 'XTickLabel', [], 'Box', 'off', 'TickDir', 'out', ...
+    'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth);
+  hold(axPop, 'off');
+
+  axD2 = subplot(3, numAreas, numAreas + a, 'Parent', fig);
+  hold(axD2, 'on');
+  d2Vec = get_aligned_d2_vector(results, a, useLog10D2);
+  if ~isempty(d2Vec) && ~isempty(tWin)
+    nPlot = min(numel(d2Vec), numel(tWin));
+    tD2 = tWin(1:nPlot);
+    d2Vec = d2Vec(1:nPlot);
+    plot(axD2, tD2, d2Vec, '-o', 'Color', plotColors.data, ...
+      'MarkerFaceColor', plotColors.data, 'MarkerSize', 5, ...
+      'LineWidth', plotConfig.axesLineWidth, 'DisplayName', 'Data');
+    shufVec = get_shuffled_mean_d2_per_window(results, a, useLog10D2);
+    if ~isempty(shufVec)
+      shufVec = shufVec(1:nPlot);
+      shufMask = isfinite(shufVec) & isfinite(tD2);
+      if any(shufMask)
+        plot(axD2, tD2(shufMask), shufVec(shufMask), '-o', 'Color', plotColors.shuffled, ...
+          'MarkerFaceColor', plotColors.shuffled, 'MarkerSize', 4, ...
+          'LineWidth', max(0.8, plotConfig.axesLineWidth - 0.3), ...
+          'DisplayName', 'Shuffled mean');
+      end
+    end
+    legend(axD2, 'Location', 'best', 'FontSize', plotConfig.legendFontSize);
+  else
+    text(axD2, mean([tMin tMax]), 0.5, 'no d2 values', ...
+      'HorizontalAlignment', 'center', 'Color', [0.5 0.5 0.5]);
+  end
+  xlim(axD2, [tMin, tMax]);
+  ylabel(axD2, d2YLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
+    'Interpreter', ternary_tex_if_log10(useLog10D2));
+  set(axD2, 'XTickLabel', [], 'Box', 'off', 'TickDir', 'out', ...
+    'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth);
+  hold(axD2, 'off');
+
+  axEth = subplot(3, numAreas, 2 * numAreas + a, 'Parent', fig);
+  session_d2_plot_behavior_ethogram(axEth, bhvRec, tMin, tMax);
+  xlabel(axEth, 'Time (s)', 'FontSize', plotConfig.axisLabelFontSize);
+  set(axEth, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth);
+
+  axesToLink = [axesToLink; axPop; axD2; axEth]; %#ok<AGROW>
+end
+linkaxes(axesToLink, 'x');
+
+cellTag = '';
+if ~isempty(cellType) && ~strcmpi(cellType, 'combined')
+  cellTag = sprintf(' | %s', cell_type_label(cellType));
+end
+sgtitle(fig, sprintf('%s%s | mean pop / d2 (%.0fs windows, bin=%.0f ms) / ethogram', ...
+  sessionName, cellTag, d2Window, binSize * 1000), ...
+  'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', 'Interpreter', 'none');
+fprintf('Plotted d2 timeline (%d area(s), t=[%.1f, %.1f] s).\n', numAreas, tMin, tMax);
+end
+
+function interp = ternary_tex_if_log10(useLog10D2)
+if useLog10D2
+  interp = 'tex';
+else
+  interp = 'none';
+end
+end
+
+function tMax = session_d2_resolve_timeline_tmax(popTime, results, collectStart, collectEnd, ...
+    d2Window, dataStruct)
+% SESSION_D2_RESOLVE_TIMELINE_TMAX - Right edge of shared time axis
+
+tMax = nan;
+if ~isempty(popTime)
+  tMax = max(popTime);
+end
+if isfield(results, 'startS')
+  for a = 1:numel(results.startS)
+    if ~isempty(results.startS{a})
+      tMax = max(tMax, max(results.startS{a}) + d2Window / 2);
+    end
+  end
+end
+if ~isempty(collectEnd) && isfinite(collectEnd)
+  tMax = max(tMax, collectEnd);
+else
+  durationSec = session_d2_session_duration_sec(dataStruct, collectStart);
+  if isfinite(durationSec)
+    tMax = max(tMax, collectStart + durationSec);
+  end
+end
+if ~isfinite(tMax) || tMax <= collectStart
+  tMax = collectStart + 1;
+end
+end
+
+function durationSec = session_d2_session_duration_sec(dataStruct, collectStart)
+% SESSION_D2_SESSION_DURATION_SEC - Loaded collect window length (s)
+
+durationSec = nan;
+if nargin < 2 || isempty(collectStart)
+  collectStart = 0;
+end
+if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectEnd') ...
+    && ~isempty(dataStruct.spikeData.collectEnd)
+  startVal = collectStart;
+  if isfield(dataStruct.spikeData, 'collectStart') && ~isempty(dataStruct.spikeData.collectStart)
+    startVal = dataStruct.spikeData.collectStart;
+  end
+  durationSec = dataStruct.spikeData.collectEnd - startVal;
+  return;
+end
+if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectEnd') ...
+    && ~isempty(dataStruct.opts.collectEnd)
+  startVal = collectStart;
+  if isfield(dataStruct.opts, 'collectStart') && ~isempty(dataStruct.opts.collectStart)
+    startVal = dataStruct.opts.collectStart;
+  end
+  durationSec = dataStruct.opts.collectEnd - startVal;
+  return;
+end
+if isfield(dataStruct, 'spikeTimes') && ~isempty(dataStruct.spikeTimes)
+  durationSec = max(dataStruct.spikeTimes) - collectStart;
+end
+end
+
+function bhvRec = session_d2_behavior_record(dataStruct)
+% SESSION_D2_BEHAVIOR_RECORD - bhvID + fsBhv for ethogram plotting
+
+bhvRec = struct('bhvID', [], 'fsBhv', nan);
+if isfield(dataStruct, 'bhvID') && ~isempty(dataStruct.bhvID)
+  bhvRec.bhvID = dataStruct.bhvID(:);
+end
+if isfield(dataStruct, 'fsBhv') && ~isempty(dataStruct.fsBhv)
+  bhvRec.fsBhv = dataStruct.fsBhv;
+elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'fsBhv') ...
+    && ~isempty(dataStruct.opts.fsBhv)
+  bhvRec.fsBhv = dataStruct.opts.fsBhv;
+end
+end
+
+function session_d2_plot_behavior_ethogram(ax, bhvRec, tMin, tMax)
+% SESSION_D2_PLOT_BEHAVIOR_ETHOGRAM - Colored behavior runs aligned to time
+%
+% Variables:
+%   ax     - Target axes
+%   bhvRec - Struct with .bhvID and .fsBhv
+%   tMin, tMax - Shared x-limits (s); bhvID starts at tMin (loaded collect window)
+
+hold(ax, 'on');
+bhvID = bhvRec.bhvID;
+fsBhv = bhvRec.fsBhv;
+if isempty(bhvID) || ~(isfinite(fsBhv) && fsBhv > 0)
+  text(ax, mean([tMin tMax]), 0.5, 'no behavior labels', ...
+    'HorizontalAlignment', 'center', 'FontSize', 9, 'Color', [0.5 0.5 0.5]);
+  xlim(ax, [tMin, tMax]);
+  ylim(ax, [0 1]);
+  set(ax, 'YTick', [], 'Box', 'off');
+  hold(ax, 'off');
+  return;
+end
+
+bhvID = bhvID(:);
+nFrame = numel(bhvID);
+frameStarts = tMin + ((0:nFrame-1)' ) / fsBhv;
+frameEnds = tMin + (1:nFrame)' / fsBhv;
+
+uniqueCodes = unique(bhvID);
+codeColorMap = containers.Map('KeyType', 'double', 'ValueType', 'any');
+for iCode = 1:numel(uniqueCodes)
+  code = double(uniqueCodes(iCode));
+  c = colors_for_behaviors(code);
+  if size(c, 1) == 1 && size(c, 2) == 3
+    codeColorMap(code) = c;
+  else
+    codeColorMap(code) = [0.7 0.7 0.7];
+  end
+end
+
+runCode = bhvID(1);
+runStart = frameStarts(1);
+for i = 2:nFrame
+  if bhvID(i) ~= runCode
+    session_d2_fill_ethogram_run(ax, runStart, frameStarts(i), runCode, codeColorMap);
+    runCode = bhvID(i);
+    runStart = frameStarts(i);
+  end
+end
+session_d2_fill_ethogram_run(ax, runStart, frameEnds(end), runCode, codeColorMap);
+
+xlim(ax, [tMin, tMax]);
+ylim(ax, [0 1]);
+ylabel(ax, 'bhv', 'FontSize', 9);
+set(ax, 'YTick', [], 'Box', 'off', 'TickDir', 'out');
+hold(ax, 'off');
+end
+
+function session_d2_fill_ethogram_run(ax, tStart, tEnd, code, codeColorMap)
+% SESSION_D2_FILL_ETHOGRAM_RUN - One colored rectangle for a behavior bout
+
+if ~(isfinite(tStart) && isfinite(tEnd)) || tEnd <= tStart
+  return;
+end
+code = double(code);
+if isKey(codeColorMap, code)
+  faceColor = codeColorMap(code);
+else
+  faceColor = [0.7 0.7 0.7];
+end
+fill(ax, [tStart, tEnd, tEnd, tStart], [0, 0, 1, 1], faceColor, ...
+  'EdgeColor', 'none', 'HandleVisibility', 'off');
 end
