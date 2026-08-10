@@ -51,66 +51,27 @@ if ~exist('sessionType', 'var') || isempty(sessionType)
   % sessionName = 'AS1_0623_TransitionAfterCompletedTrial_80';
   % sessionName = 'AS1_0624_PoorlyLearned';
 end
-if ~exist('dataSource', 'var') || isempty(dataSource)
   dataSource = 'spikes';
-end
-if ~exist('collectStart', 'var')
   collectStart = 0;
-end
-if ~exist('collectEnd', 'var')
   collectEnd = [];
-end
-if ~exist('d2Window', 'var') || isempty(d2Window)
-  d2Window = 1*60;  % seconds; non-overlapping windows
-end
-if ~exist('brainArea', 'var')
+  d2Window = 45;  % seconds; non-overlapping windows
   brainArea = 'M23M56';
-end
-if ~exist('brainAreaCombinations', 'var') || isempty(brainAreaCombinations)
   brainAreaCombinations = default_manuscript_brain_area_combinations();
-end
-if ~exist('useLog10D2', 'var') || isempty(useLog10D2)
   useLog10D2 = true;
-end
-if ~exist('useSubsampling', 'var') || isempty(useSubsampling)
-  useSubsampling = false;
-end
-if ~exist('nSubsamples', 'var') || isempty(nSubsamples)
-  nSubsamples = 20;
-end
-if ~exist('nNeuronsSubsample', 'var') || isempty(nNeuronsSubsample)
-  nNeuronsSubsample = 40;
-end
-if ~exist('minNeuronsMultiple', 'var') || isempty(minNeuronsMultiple)
+  useSubsampling = true;
+  nSubsamples = 40;
+  nNeuronsSubsample = 45;
   minNeuronsMultiple = 1.1;
-end
-if ~exist('nPermutations', 'var') || isempty(nPermutations)
   nPermutations = 5;  % circular shuffles per window for shuffled d2 distribution
-end
-if ~exist('plotD2PopActivity', 'var') || isempty(plotD2PopActivity)
   plotD2PopActivity = true;
-end
-if ~exist('plotD2Timeline', 'var') || isempty(plotD2Timeline)
   plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
-end
-if ~exist('useRelativeTime', 'var') || isempty(useRelativeTime)
   useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
-end
-if ~exist('binSize', 'var') || isempty(binSize)
   binSize = 0.03;  % s; spike binning for d2 (and window mean popActivity)
-end
-if ~exist('saveFigure', 'var') || isempty(saveFigure)
   saveFigure = false;
-end
-if ~exist('plotConfig', 'var') || isempty(plotConfig)
+
   plotConfig = fill_manuscript_plot_config();
-end
-if ~exist('splitExcitatoryInhibitory', 'var') || isempty(splitExcitatoryInhibitory)
   splitExcitatoryInhibitory = false;
-end
-if ~exist('widthCutoff', 'var') || isempty(widthCutoff)
   widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
-end
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
@@ -122,7 +83,7 @@ opts.maxFiringRate = 200;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = d2Window;
-analysisConfig.stepSize = d2Window;
+analysisConfig.stepSize = .1;
 analysisConfig.binSize = binSize;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;

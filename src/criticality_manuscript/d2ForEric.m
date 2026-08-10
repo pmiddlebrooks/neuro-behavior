@@ -23,7 +23,7 @@
 setup_criticality_manuscript_paths('d2ForEric');
 paths = get_paths();
 
-%% Configuration
+% Configuration
 windowsToTest = [30 45 60];
 binSizesToTest = [.025 .04 .07];
 stepSize = 0.05;
@@ -38,12 +38,12 @@ useLog10D2 = true;
 useSubsampling = true;
 enablePermutations = false;
 nShuffles = 0;
-nMinNeurons = 50;
+nMinNeurons = 45;
 
 saveFile = fullfile(paths.dropPath, 'criticality_manuscript', 'd2Results.mat');
 saveIncrementally = true;
 
-%% Session list
+% Session list
 reachSessions = reach_session_list();
 nSessions = numel(reachSessions);
 nWindows = numel(windowsToTest);
@@ -59,7 +59,7 @@ fprintf('Brain area: %s\n', brainArea);
 fprintf('Runs per session: %d (total planned: %d)\n', ...
   nRunsPerSession, nSessions * nRunsPerSession);
 
-%% Load options
+% Load options
 loadOpts = neuro_behavior_options();
 loadOpts.firingRateCheckTime = [];
 loadOpts.collectStart = collectStart;
@@ -67,7 +67,7 @@ loadOpts.collectEnd = collectEnd;
 loadOpts.minFiringRate = 0.05;
 loadOpts.maxFiringRate = 150;
 
-%% Shared AR analysis config (window / bin filled in the loop)
+% Shared AR analysis config (window / bin filled in the loop)
 analysisConfig = struct();
 analysisConfig.stepSize = stepSize;
 analysisConfig.useOptimalBinWindowFunction = false;
@@ -86,14 +86,14 @@ analysisConfig.pOrder = 10;
 analysisConfig.critType = 2;
 analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 100;
-analysisConfig.maxSpikesPerBin = 50;
+analysisConfig.maxSpikesPerBin = 100;
 analysisConfig.nMinNeurons = nMinNeurons;
 analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = 25;
 analysisConfig.nNeuronsSubsample = 45;
 analysisConfig.minNeuronsMultiple = 1.1;
 
-%% Output container
+% Output container
 d2Results = struct();
 d2Results.windowsToTest = windowsToTest;
 d2Results.binSizesToTest = binSizesToTest;
@@ -118,7 +118,7 @@ emptyRun = struct( ...
   'success', false, ...
   'skipReason', '');
 
-%% Main loop: sessions x windows x bin sizes
+% Main loop: sessions x windows x bin sizes
 for iSess = 1:nSessions
   sessionName = reachSessions{iSess};
   fprintf('\n%s\n', repmat('=', 1, 80));
