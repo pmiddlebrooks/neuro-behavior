@@ -288,6 +288,77 @@ else
     nPop, nSess, nRows, nCols);
 end
 
+%% Semicircle: d2 distributions + popActivity + TaskMatrix ethogram
+%
+% Runs session_d2_distributions for semicircle session(s). Produces:
+%   1) d2 vs shuffled density
+%   2) d2 vs mean popActivity scatter
+%   3) timeline: mean pop | d2 | TaskMatrix ethogram
+%
+% Set runAllSemicircleSessions=true to loop semicircle_session_list(); otherwise
+% uses the single subjectName/sessionName below.
+
+setup_criticality_manuscript_paths('session_d2_distributions');
+paths = get_paths();
+
+runAllSemicircleSessions = true;
+% Single-session override when runAllSemicircleSessions = false:
+subjectName = 'AS1';
+sessionName = 'AS1_0618_WellLearned';
+% sessionName = 'AS1_0623_TransitionAfterCompletedTrial_80';
+% sessionName = 'AS1_0624_PoorlyLearned';
+
+if runAllSemicircleSessions
+  semiSessions = semicircle_session_list();
+else
+  semiSessions = struct('subjectName', subjectName, 'sessionName', sessionName);
+end
+
+fprintf('\n=== Semicircle d2 / popActivity / ethogram (%d session(s)) ===\n', ...
+  numel(semiSessions));
+
+for iSemi = 1:numel(semiSessions)
+  sessionType = 'semicircle';
+  subjectName = semiSessions(iSemi).subjectName;
+  sessionName = semiSessions(iSemi).sessionName;
+  dataSource = 'spikes';
+
+  collectStart = 0;
+  collectEnd = [];
+  d2Window = 1 * 60;
+  brainArea = 'M23M56';
+  brainAreaCombinations = default_manuscript_brain_area_combinations();
+  useLog10D2 = true;
+  useSubsampling = false;
+  nSubsamples = 20;
+  nNeuronsSubsample = 40;
+  minNeuronsMultiple = 1.1;
+  nPermutations = 5;
+  plotD2PopActivity = true;
+  plotD2Timeline = true;
+  useRelativeTime = false;
+  binSize = 0.03;
+  saveFigure = false;
+  plotConfig = fill_manuscript_plot_config();
+  splitExcitatoryInhibitory = false;
+  widthCutoff = 0.35;
+
+  fprintf('\n##### Semicircle %d/%d: %s / %s #####\n', ...
+    iSemi, numel(semiSessions), subjectName, sessionName);
+
+  try
+    session_d2_distributions;
+  catch ME
+    warning('scratch:SemicircleD2Failed', ...
+      'Failed for %s / %s: %s', subjectName, sessionName, ME.message);
+    for st = 1:min(5, numel(ME.stack))
+      fprintf('  %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
+    end
+  end
+end
+clear runAllSemicircleSessions semiSessions iSemi
+fprintf('\n=== Semicircle d2 / popActivity / ethogram: done ===\n');
+
 %% Batch: d2 vs windowSize — one plot per reach session
 %
 % Keeps the default spontaneous / interval examples fixed and swaps the reach

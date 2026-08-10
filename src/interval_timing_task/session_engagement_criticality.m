@@ -192,6 +192,7 @@ addpath(fullfile(srcPath, 'reach_task'));
 addpath(fullfile(srcPath, 'schall'));
 addpath(fullfile(srcPath, 'spontaneous'));
 addpath(fullfile(srcPath, 'interval_timing_task'));
+addpath(fullfile(srcPath, 'semicircle_reward_task'));
 addpath(fullfile(srcPath, 'criticality', 'scripts'));
 addpath(fullfile(srcPath, 'criticality', 'analyses'));
 addpath(fullfile(srcPath, 'session_prep', 'data_prep'));

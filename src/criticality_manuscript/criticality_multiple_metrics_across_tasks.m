@@ -66,9 +66,9 @@
 sessionTypes = default_manuscript_session_types();
 sessionTypes = order_manuscript_session_types(sessionTypes);
 collectStart = 10;
-collectEnd = 120*60;
+collectEnd = 30*60;
 % collectEnd = [];  % [] = full session
-d2Window = [];
+d2Window = 30;
 prgWindow = d2Window;
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
@@ -80,7 +80,7 @@ binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 engagementBuffer = 1;       % s around each reach/beam-break = engaged
 minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
 absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
-minTimeNonEngaged = 300;      % min total non-engaged time (s) to plot; 0 = no filter
+minTimeNonEngaged = 180;      % min total non-engaged time (s) to plot; 0 = no filter
 % Sessions below minTimeNonEngaged stay in non-engaged plots but are blanked
 
 % Paths first — needed by default_manuscript_brain_area_combinations / plotConfig
@@ -108,11 +108,11 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 50;
+nSubsamples = 25;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 

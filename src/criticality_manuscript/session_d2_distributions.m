@@ -8,7 +8,7 @@
 % Variables (configure in this section):
 %   sessionType      - 'spontaneous', 'interval', 'reach', 'semicircle', 'schall'
 %   sessionName      - Session identifier
-%   subjectName      - Required for spontaneous/interval; '' for reach
+%   subjectName      - Required for spontaneous/interval/semicircle; '' for reach
 %   dataSource       - 'spikes' or 'lfp'
 %   collectStart     - Window start (seconds from session onset)
 %   collectEnd       - Window end (seconds)
@@ -21,6 +21,7 @@
 %   nPermutations    - Number of circular permutations per window for shuffled d2
 %   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled)
 %   plotD2Timeline   - If true, plot mean pop per d2 window, d2, and ethogram vs time
+%                      Semicircle ethogram: TaskMatrix outcome lines + leave-home/poke/end fills
 %   useRelativeTime  - If true, timeline x-axis is relative to collectStart (default false)
 %   binSize          - Spike bin width (s) for d2 analysis (and window popActivity)
 %   saveFigure       - Export PNG/EPS to dropPath/criticality_manuscript
@@ -37,43 +38,79 @@
 %   windows, where shuffled values are the mean across permutations per window.
 
 %% Configuration
-% sessionType = 'interval';
-% subjectName = 'ey9166';
-% sessionName = 'ey9166_2026_04_03';
-% dataSource = 'spikes';
+% Prefer session identity already set in the workspace (e.g. scratch.m batch).
+% Otherwise default to a semicircle example session.
+if ~exist('sessionType', 'var') || isempty(sessionType)
+  % sessionType = 'interval';
+  % subjectName = 'ey9166';
+  % sessionName = 'ey9166_2026_04_03';
 
-sessionType = 'semicircle';
-subjectName = 'AS1';
-sessionName = 'AS1_0618_WellLearned';
-% sessionName = 'AS1_0623_TransitionAfterCompletedTrial_80';
-% sessionName = 'AS1_0624_PoorlyLearned';
-dataSource = 'spikes';
-
-collectStart = 0;
-% collectStart = 1.2*10^4;
-collectEnd = 45 * 60;
-collectEnd = 1.2*10^4;
-collectEnd = [];
-
-d2Window = 1*60;  % seconds; non-overlapping windows
-
-brainArea = 'M23M56';
-brainAreaCombinations = default_manuscript_brain_area_combinations();
-useLog10D2 = true;
-useSubsampling = false;
-nSubsamples = 20;
-nNeuronsSubsample = 40;
-minNeuronsMultiple = 1.1;
-nPermutations = 5;  % circular shuffles per window for shuffled d2 distribution
-plotD2PopActivity = true;
-plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
-useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
-binSize = 0.03;  % s; spike binning for d2 (and window mean popActivity)
-saveFigure = false;
-plotConfig = fill_manuscript_plot_config();
-
-splitExcitatoryInhibitory = false;
-widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
+  sessionType = 'semicircle';
+  subjectName = 'AS1';
+  sessionName = 'AS1_0618_WellLearned';
+  % sessionName = 'AS1_0623_TransitionAfterCompletedTrial_80';
+  % sessionName = 'AS1_0624_PoorlyLearned';
+end
+if ~exist('dataSource', 'var') || isempty(dataSource)
+  dataSource = 'spikes';
+end
+if ~exist('collectStart', 'var')
+  collectStart = 0;
+end
+if ~exist('collectEnd', 'var')
+  collectEnd = [];
+end
+if ~exist('d2Window', 'var') || isempty(d2Window)
+  d2Window = 1*60;  % seconds; non-overlapping windows
+end
+if ~exist('brainArea', 'var')
+  brainArea = 'M23M56';
+end
+if ~exist('brainAreaCombinations', 'var') || isempty(brainAreaCombinations)
+  brainAreaCombinations = default_manuscript_brain_area_combinations();
+end
+if ~exist('useLog10D2', 'var') || isempty(useLog10D2)
+  useLog10D2 = true;
+end
+if ~exist('useSubsampling', 'var') || isempty(useSubsampling)
+  useSubsampling = false;
+end
+if ~exist('nSubsamples', 'var') || isempty(nSubsamples)
+  nSubsamples = 20;
+end
+if ~exist('nNeuronsSubsample', 'var') || isempty(nNeuronsSubsample)
+  nNeuronsSubsample = 40;
+end
+if ~exist('minNeuronsMultiple', 'var') || isempty(minNeuronsMultiple)
+  minNeuronsMultiple = 1.1;
+end
+if ~exist('nPermutations', 'var') || isempty(nPermutations)
+  nPermutations = 5;  % circular shuffles per window for shuffled d2 distribution
+end
+if ~exist('plotD2PopActivity', 'var') || isempty(plotD2PopActivity)
+  plotD2PopActivity = true;
+end
+if ~exist('plotD2Timeline', 'var') || isempty(plotD2Timeline)
+  plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
+end
+if ~exist('useRelativeTime', 'var') || isempty(useRelativeTime)
+  useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
+end
+if ~exist('binSize', 'var') || isempty(binSize)
+  binSize = 0.03;  % s; spike binning for d2 (and window mean popActivity)
+end
+if ~exist('saveFigure', 'var') || isempty(saveFigure)
+  saveFigure = false;
+end
+if ~exist('plotConfig', 'var') || isempty(plotConfig)
+  plotConfig = fill_manuscript_plot_config();
+end
+if ~exist('splitExcitatoryInhibitory', 'var') || isempty(splitExcitatoryInhibitory)
+  splitExcitatoryInhibitory = false;
+end
+if ~exist('widthCutoff', 'var') || isempty(widthCutoff)
+  widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
+end
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
@@ -836,9 +873,14 @@ function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
 % Layout (per brain area column):
 %   Top:    mean popActivity per d2 window (results.popActivityWindows)
 %   Middle: window-wise d2 (and shuffled mean when present)
-%   Bottom: behavior ethogram
+%   Bottom: behavior ethogram (frame labels, or semicircle TaskMatrix events)
 %
 % Timebase: results.startS and bhvID use absolute session time by default.
+% Semicircle ethogram (TaskMatrix):
+%   green/red/yellow vertical lines at trialEnd for rewarded/unrewarded/failed
+%   black vertical line at choicePort poke time
+%   blue fill: leaveHomeLast -> choicePokeTime
+%   yellow fill: choicePokeTime -> trialEnd
 
 if nargin < 8 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
@@ -866,6 +908,7 @@ if numAreas < 1
 end
 
 bhvRec = session_d2_behavior_record(dataStructBhv);
+semiEth = session_d2_semicircle_ethogram_record(dataStructBhv);
 tMaxAbs = session_d2_resolve_timeline_tmax([], results, collectStart, collectEnd, d2Window, ...
   dataStructBhv);
 tMinAbs = collectStart;
@@ -954,7 +997,11 @@ for a = 1:numAreas
   hold(axD2, 'off');
 
   axEth = subplot(3, numAreas, 2 * numAreas + a, 'Parent', fig);
-  session_d2_plot_behavior_ethogram(axEth, bhvRec, tMin, tMax);
+  if ~isempty(semiEth)
+    session_d2_plot_semicircle_ethogram(axEth, semiEth, tMin, tMax, timeShift);
+  else
+    session_d2_plot_behavior_ethogram(axEth, bhvRec, tMin, tMax);
+  end
   xlabel(axEth, xLabelText, 'FontSize', plotConfig.axisLabelFontSize);
   set(axEth, 'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth);
 
@@ -1052,6 +1099,169 @@ elseif isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'fsBhv') ...
   bhvRec.fsBhv = dataStruct.opts.fsBhv;
 end
 bhvRec.bhvTimeOrigin = session_time_origin(dataStruct);
+end
+
+function ethRec = session_d2_semicircle_ethogram_record(dataStruct)
+% SESSION_D2_SEMICIRCLE_ETHOGRAM_RECORD - TaskMatrix events for semicircle ethogram
+%
+% Variables:
+%   dataStruct - Loaded semicircle session (trialOutcome, choicePokeTime, ...)
+%
+% Goal:
+%   Return [] for non-semicircle sessions; otherwise pack trial event times used
+%   by session_d2_plot_semicircle_ethogram.
+
+ethRec = [];
+if ~isfield(dataStruct, 'sessionType') || ~strcmpi(dataStruct.sessionType, 'semicircle')
+  return;
+end
+if ~isfield(dataStruct, 'trialEnd') || isempty(dataStruct.trialEnd)
+  return;
+end
+
+ethRec = struct();
+ethRec.trialOutcome = dataStruct.trialOutcome(:);
+ethRec.trialEnd = dataStruct.trialEnd(:);
+ethRec.choicePokeTime = dataStruct.choicePokeTime(:);
+ethRec.leaveHomeLast = dataStruct.leaveHomeLast(:);
+nTrial = numel(ethRec.trialEnd);
+if numel(ethRec.trialOutcome) ~= nTrial
+  ethRec.trialOutcome = nan(nTrial, 1);
+end
+if numel(ethRec.choicePokeTime) ~= nTrial
+  ethRec.choicePokeTime = nan(nTrial, 1);
+end
+if numel(ethRec.leaveHomeLast) ~= nTrial
+  ethRec.leaveHomeLast = nan(nTrial, 1);
+end
+end
+
+function session_d2_plot_semicircle_ethogram(ax, ethRec, tMin, tMax, timeShift)
+% SESSION_D2_PLOT_SEMICIRCLE_ETHOGRAM - TaskMatrix event ethogram for semicircle
+%
+% Variables:
+%   ax        - Target axes
+%   ethRec    - From session_d2_semicircle_ethogram_record
+%   tMin/tMax - Shared x-limits (already relative when useRelativeTime)
+%   timeShift - Absolute time subtracted for relative plotting (0 if absolute)
+%
+% Goal:
+%   Draw:
+%     blue fill: leaveHomeLast -> choicePokeTime
+%     yellow fill: choicePokeTime -> trialEnd
+%     black line at choicePokeTime
+%     green/red/yellow line at trialEnd for rewarded/unrewarded/failed
+
+if nargin < 5 || isempty(timeShift)
+  timeShift = 0;
+end
+
+hold(ax, 'on');
+if isempty(ethRec) || isempty(ethRec.trialEnd)
+  text(ax, mean([tMin tMax]), 0.5, 'no semicircle TaskMatrix events', ...
+    'HorizontalAlignment', 'center', 'FontSize', 9, 'Color', [0.5 0.5 0.5]);
+  xlim(ax, [tMin, tMax]);
+  ylim(ax, [0 1]);
+  set(ax, 'YTick', [], 'Box', 'off');
+  hold(ax, 'off');
+  return;
+end
+
+blueFill = [0.30, 0.55, 0.90];
+yellowFill = [0.95, 0.85, 0.25];
+colorReward = [0.10, 0.70, 0.25];
+colorUnrewarded = [0.85, 0.15, 0.15];
+colorFailed = [0.95, 0.80, 0.10];
+colorChoice = [0.05, 0.05, 0.05];
+lineWidthEvent = 1.1;
+
+nTrial = numel(ethRec.trialEnd);
+hBlue = gobjects(0);
+hYellow = gobjects(0);
+hChoice = gobjects(0);
+hReward = gobjects(0);
+hUnrewarded = gobjects(0);
+hFailed = gobjects(0);
+
+% Fills first (behind event lines)
+for iTrial = 1:nTrial
+  leaveT = ethRec.leaveHomeLast(iTrial) - timeShift;
+  pokeT = ethRec.choicePokeTime(iTrial) - timeShift;
+  endT = ethRec.trialEnd(iTrial) - timeShift;
+
+  if isfinite(leaveT) && isfinite(pokeT) && pokeT > leaveT
+    h = fill(ax, [leaveT, pokeT, pokeT, leaveT], [0, 0, 1, 1], blueFill, ...
+      'EdgeColor', 'none', 'FaceAlpha', 0.45, 'HandleVisibility', 'off');
+    if isempty(hBlue)
+      set(h, 'HandleVisibility', 'on', 'DisplayName', 'leave home \rightarrow poke');
+      hBlue = h;
+    end
+  end
+
+  if isfinite(pokeT) && isfinite(endT) && endT > pokeT
+    h = fill(ax, [pokeT, endT, endT, pokeT], [0, 0, 1, 1], yellowFill, ...
+      'EdgeColor', 'none', 'FaceAlpha', 0.40, 'HandleVisibility', 'off');
+    if isempty(hYellow)
+      set(h, 'HandleVisibility', 'on', 'DisplayName', 'poke \rightarrow trial end');
+      hYellow = h;
+    end
+  end
+end
+
+% Event lines
+for iTrial = 1:nTrial
+  pokeT = ethRec.choicePokeTime(iTrial) - timeShift;
+  endT = ethRec.trialEnd(iTrial) - timeShift;
+  outcome = ethRec.trialOutcome(iTrial);
+
+  if isfinite(pokeT)
+    h = plot(ax, [pokeT, pokeT], [0, 1], '-', 'Color', colorChoice, ...
+      'LineWidth', lineWidthEvent, 'HandleVisibility', 'off');
+    if isempty(hChoice)
+      set(h, 'HandleVisibility', 'on', 'DisplayName', 'choice poke');
+      hChoice = h;
+    end
+  end
+
+  if ~isfinite(endT)
+    continue;
+  end
+  if outcome == 1
+    h = plot(ax, [endT, endT], [0, 1], '-', 'Color', colorReward, ...
+      'LineWidth', lineWidthEvent, 'HandleVisibility', 'off');
+    if isempty(hReward)
+      set(h, 'HandleVisibility', 'on', 'DisplayName', 'rewarded end');
+      hReward = h;
+    end
+  elseif outcome == 0
+    h = plot(ax, [endT, endT], [0, 1], '-', 'Color', colorUnrewarded, ...
+      'LineWidth', lineWidthEvent, 'HandleVisibility', 'off');
+    if isempty(hUnrewarded)
+      set(h, 'HandleVisibility', 'on', 'DisplayName', 'unrewarded end');
+      hUnrewarded = h;
+    end
+  elseif outcome == -1
+    h = plot(ax, [endT, endT], [0, 1], '-', 'Color', colorFailed, ...
+      'LineWidth', lineWidthEvent, 'HandleVisibility', 'off');
+    if isempty(hFailed)
+      set(h, 'HandleVisibility', 'on', 'DisplayName', 'failed end');
+      hFailed = h;
+    end
+  end
+end
+
+xlim(ax, [tMin, tMax]);
+ylim(ax, [0 1]);
+ylabel(ax, 'task', 'FontSize', 9);
+set(ax, 'YTick', [], 'Box', 'off', 'TickDir', 'out');
+
+legendHandles = [hBlue, hYellow, hChoice, hReward, hUnrewarded, hFailed];
+legendHandles = legendHandles(isgraphics(legendHandles));
+if ~isempty(legendHandles)
+  legend(ax, legendHandles, 'Location', 'best', 'FontSize', 7, 'Box', 'off', ...
+    'Interpreter', 'tex');
+end
+hold(ax, 'off');
 end
 
 function session_d2_plot_behavior_ethogram(ax, bhvRec, tMin, tMax)
