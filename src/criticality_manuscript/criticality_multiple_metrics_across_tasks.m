@@ -169,9 +169,9 @@ else
   fprintf('PRG blocks: %.0f s\n', prgWindow);
 end
 if isempty(avWindow)
-  fprintf('AV windows: full collect (one shared threshold)\n');
+  fprintf('AV window: full collect (one shared threshold)\n');
 else
-  fprintf('AV windows: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
+  fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
 end
 fprintf('binSizeD2: %.3f s; binSizePrg: %.3f s; binSizeAv: %.3f s\n', ...
   binSizeD2, binSizePrg, binSizeAv);
@@ -198,12 +198,6 @@ end
 if isempty(prgWindow)
   fprintf('PRG batch uses full-session blocks when prgWindow=[].\n');
 end
-if isempty(avWindow)
-  fprintf('AV batch uses full collect with one shared population threshold.\n');
-else
-  fprintf('AV batch tiles collect time into %.0f s windows with local thresholds.\n', avWindow);
-end
-
 set_manuscript_av_window(avWindow);
 
 % AR batch (d2) — full-session metrics across all requested session types

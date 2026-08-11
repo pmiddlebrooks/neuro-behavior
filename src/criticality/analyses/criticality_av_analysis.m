@@ -102,13 +102,26 @@ function results = criticality_av_analysis(dataStruct, config)
     
     fprintf('\n=== Criticality Avalanche Analysis Setup ===\n');
     fprintf('Data type: %s\n', sessionType);
-    fprintf('Number of areas: %d\n', numAreas);
-    fprintf('Window size: %.2f s, Step size: %.2f s\n', config.slidingWindowSize, config.avStepSize);
+    if numel(areasToTest) == 1
+      fprintf('Area: %s\n', areas{areasToTest});
+    else
+      fprintf('Areas: %s\n', strjoin(areas(areasToTest), ', '));
+    end
     if is_mean_isi_zero_avalanche_mode(config)
       fprintf('Avalanche detection: mean population ISI bin size, zero cutoff\n');
     else
       fprintf('Avalanche detection: fixed bin size + %s\n', ...
         describe_avalanche_threshold_method(config));
+    end
+    if use_local_av_window_thresholds(config)
+      if ~isfield(config, 'avWindow') || isempty(config.avWindow)
+        config.avWindow = resolve_effective_av_window(config);
+      end
+      fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', ...
+        config.avWindow);
+    else
+      fprintf('Window size: %.2f s, Step size: %.2f s\n', ...
+        config.slidingWindowSize, config.avStepSize);
     end
     
     % Create filename suffix based on PCA flag
@@ -136,7 +149,6 @@ function results = criticality_av_analysis(dataStruct, config)
         sessionNameForPath, config.saveDir, 'filenameSuffix', filenameSuffix);
     
     % Calculate time range from spike data
-    fprintf('\n--- Using spike times for on-demand binning ---\n');
     if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectStart')
         timeRange = [dataStruct.spikeData.collectStart, dataStruct.spikeData.collectEnd];
     else
@@ -145,12 +157,6 @@ function results = criticality_av_analysis(dataStruct, config)
 
     % Manuscript avWindow: tile collect range, local thresholds, pool + fit once
     if use_local_av_window_thresholds(config)
-        if ~isfield(config, 'avWindow') || isempty(config.avWindow)
-            config.avWindow = resolve_effective_av_window(config);
-        end
-        fprintf(['AV analysis window %.0f s: per-window thresholds, ', ...
-            'pool avalanches, fit once (no per-window exponent average).\n'], ...
-            config.avWindow);
         results = run_session_pooled_avalanche_analysis( ...
             dataStruct, config, timeRange(1), timeRange(2));
         return;

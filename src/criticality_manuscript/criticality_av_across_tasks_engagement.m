@@ -8,6 +8,7 @@
 %
 % Variables (configure in this section):
 %   sessionTypes, dataSource, collectStart, collectEnd
+%   avWindow - Avalanche tile (s); [] = full collect, shared threshold
 %   brainArea, brainAreaCombinations, areasToPlot
 %   runBatch, plotResults, saveBatchResults, batchResultsFile
 %   powerLawFitMethod, avalancheDetectionMode, thresholdMethod, gofThreshold
@@ -28,6 +29,7 @@ dataSource = 'spikes';
 
 collectStart = 0;
 collectEnd = [];  % [] = full session
+avWindow = [];   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
@@ -40,7 +42,7 @@ batchResultsFile = '';  % default under dropPath/criticality_manuscript/
 
 powerLawFitMethod = 'plfit2023';
 avalancheDetectionMode = 'fixedBinMedian';
-thresholdMethod = 'median';  % 'median' or 'quantile10' (10th percentile cutoff)
+thresholdMethod = 'quantile10';  % 'median' or 'quantile10' (10th percentile cutoff)
 gofThreshold = 0.8;
 enablePermutations = false;
 nShuffles = 5;
@@ -69,6 +71,7 @@ plotConfig = fill_manuscript_plot_config();
 %% Paths
 setup_criticality_manuscript_paths('criticality_av_across_tasks_engagement');
 paths = get_paths();
+set_manuscript_av_window(avWindow);
 if isempty(batchResultsFile)
   batchResultsFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
     'criticality_av_across_tasks_engagement_batch.mat');
@@ -77,6 +80,11 @@ end
 
 fprintf('\n=== Criticality Avalanche Across Task Types (Engagement) ===\n');
 fprintf('Collect window: [%.1f, %s] s\n', collectStart, format_collect_end_label(collectEnd));
+if isempty(avWindow)
+  fprintf('AV window: full collect (one shared threshold)\n');
+else
+  fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
+end
 fprintf('Power-law fit: %s | detection: %s | threshold: %s\n', ...
   powerLawFitMethod, avalancheDetectionMode, thresholdMethod);
 fprintf('enablePermutations: %d\n', enablePermutations);
@@ -98,7 +106,7 @@ if runBatch
   analysisConfig = build_spontaneous_av_config(collectStart, collectEnd, ...
     powerLawFitMethod, avalancheDetectionMode, thresholdMethod, gofThreshold, enablePermutations, ...
     nShuffles, useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple, ...
-    nMinNeurons, clausetPlfitPath, plfit2023Path);
+    nMinNeurons, clausetPlfitPath, plfit2023Path, avWindow);
 
   batchResults = repmat(struct(), numSessions, 1);
   fprintf('\n=== Running avalanche analysis ===\n');
@@ -126,7 +134,7 @@ if runBatch
           plotConfig, sessionType, powerLawFitMethod, avalancheDetectionMode, ...
           thresholdMethod, gofThreshold, enablePermutations, nShuffles, useSubsampling, nSubsamples, ...
           nNeuronsSubsample, minNeuronsMultiple, nMinNeurons, minNonEngagedWindow, ...
-          reachBuffer, absorbSingleEvents);
+          reachBuffer, absorbSingleEvents, avWindow);
         if strcmpi(sessionType, 'reach')
           engOut = reach_criticality_metrics_engagement(sessionName, engOpts);
         elseif strcmpi(sessionType, 'semicircle')
@@ -191,6 +199,7 @@ if runBatch
     'sessionTypes', {sessionTypes}, ...
     'collectStart', collectStart, ...
     'collectEnd', collectEnd, ...
+    'avWindow', avWindow, ...
     'brainArea', brainArea, ...
     'areasToPlot', {areasToPlot}, ...
     'powerLawFitMethod', powerLawFitMethod, ...
@@ -213,6 +222,9 @@ else
   sessionTypes = order_manuscript_session_types(batchMeta.sessionTypes);
   collectStart = batchMeta.collectStart;
   collectEnd = batchMeta.collectEnd;
+  if isfield(batchMeta, 'avWindow')
+    avWindow = batchMeta.avWindow;
+  end
   brainArea = batchMeta.brainArea;
   areasToPlot = batchMeta.areasToPlot;
   if isfield(batchMeta, 'metricsToPlot') && ~isempty(batchMeta.metricsToPlot)
@@ -253,6 +265,7 @@ if plotResults
 end
 
 fprintf('\n=== Done ===\n');
+set_manuscript_av_window([]);
 
 %% Local functions
 
@@ -290,7 +303,7 @@ end
 function engOpts = build_av_engagement_batch_opts(opts, brainArea, brainAreaCombinations, ...
     plotConfig, sessionType, powerLawFitMethod, avalancheDetectionMode, thresholdMethod, ...
     gofThreshold, enablePermutations, nShuffles, useSubsampling, nSubsamples, nNeuronsSubsample, ...
-    minNeuronsMultiple, nMinNeurons, minNonEngagedWindow, reachBuffer, absorbSingleEvents)
+    minNeuronsMultiple, nMinNeurons, minNonEngagedWindow, reachBuffer, absorbSingleEvents, avWindow)
 % BUILD_AV_ENGAGEMENT_BATCH_OPTS - Engagement-module opts (avalanches only)
 
 if strcmpi(sessionType, 'reach')
@@ -325,6 +338,11 @@ engOpts.nNeuronsSubsample = nNeuronsSubsample;
 engOpts.minNeuronsMultiple = minNeuronsMultiple;
 engOpts.nMinNeurons = nMinNeurons;
 engOpts.minNonEngagedWindow = minNonEngagedWindow;
+if nargin >= 20
+  engOpts.avWindow = avWindow;
+else
+  engOpts.avWindow = [];
+end
 if strcmpi(sessionType, 'reach')
   engOpts.reachBuffer = reachBuffer;
   engOpts.absorbSingleReaches = absorbSingleEvents;
@@ -337,7 +355,7 @@ end
 function analysisConfig = build_spontaneous_av_config(collectStart, collectEnd, ...
     powerLawFitMethod, avalancheDetectionMode, thresholdMethod, gofThreshold, enablePermutations, ...
     nShuffles, useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple, ...
-    nMinNeurons, clausetPlfitPath, plfit2023Path)
+    nMinNeurons, clausetPlfitPath, plfit2023Path, avWindow)
 if isempty(collectEnd)
   windowDurationSec = [];
 else
@@ -369,6 +387,11 @@ analysisConfig.thresholdFlag = 1;
 analysisConfig.thresholdMethod = thresholdMethod;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = nMinNeurons;
+if nargin >= 16
+  analysisConfig.avWindow = avWindow;
+else
+  analysisConfig.avWindow = [];
+end
 analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;

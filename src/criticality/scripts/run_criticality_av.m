@@ -66,6 +66,10 @@ config = struct();
 config.slidingWindowSize = 180;  % Base window size (s). If useOptimalBinWindowFunction is false
                                  % this can be scalar or per-area vector.
 config.avStepSize = 20;          % Step size between sliding windows (s)
+% Avalanche analysis tile (s). [] = use slidingWindowSize / avStepSize above
+% (per-window metrics). When set, tile the collect range, recompute the
+% population cutoff in each tile, pool avalanches, and fit once.
+config.avWindow = [];   % e.g. 5*60 for 5-min tiles with local thresholds
 
 % Parameters for automatic optimal bin/window search
 config.minSpikesPerBin = 3;
@@ -102,6 +106,14 @@ config.nMinNeurons = 15;  % Minimum number of neurons required per area
 config.includeM2356 = false;  % Set to true to include combined M23+M56 area
 % saveDir will be obtained from dataStruct.saveDir in the analysis function
 % (set by load_sliding_window_data)
+
+if isempty(config.avWindow)
+  fprintf('AV window: sliding %.0f s / step %.0f s\n', ...
+    config.slidingWindowSize, config.avStepSize);
+else
+  fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', ...
+    config.avWindow);
+end
 
 % Run analysis
 results = criticality_av_analysis(dataStruct, config);

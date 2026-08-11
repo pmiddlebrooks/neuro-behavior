@@ -2,10 +2,10 @@
 % Session Avalanche Size and Duration Distributions (Manuscript)
 %
 % For one session and brain area, runs the same avalanche pipeline as
-% criticality_av_across_tasks.m (single full collect window) and plots
-% complementary CCDFs on log-log axes with power-law fits over the viable
-% cutoff range (tau for size, alpha for duration), plus ⟨S⟩(T) with the
-% crackling WLS slope (paramSD = 1/σνz) and printed dcc.
+% criticality_av_across_tasks.m and plots complementary CCDFs on log-log
+% axes with power-law fits over the viable cutoff range (tau for size,
+% alpha for duration), plus ⟨S⟩(T) with the crackling WLS slope
+% (paramSD = 1/σνz) and printed dcc.
 %
 % Variables (configure in this section):
 %   sessionType        - 'spontaneous', 'interval', 'reach', 'semicircle', 'schall'
@@ -14,10 +14,14 @@
 %   dataSource         - 'spikes' or 'lfp'
 %   collectStart       - Window start (seconds from session onset)
 %   collectEnd         - Window end (seconds)
+%   avWindow           - Avalanche analysis tile (s); [] = full collect with
+%                        one shared population threshold. When set, each tile
+%                        gets its own threshold; events are pooled and fit once.
 %   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' uses all valid areas
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   powerLawFitMethod  - 'clauset', 'plfit2023', or 'hybrid'
 %   avalancheDetectionMode - 'fixedBinMedian' or 'meanIsiZero'
+%   thresholdMethod    - Population cutoff: 'median' or 'quantile10'
 %   clausetPlfitPath   - Path to .../Power-Law-Fit-Distribution-MATLAB-main/MATLAB Code
 %   plfit2023Path      - Path to folder containing plfit2023.m
 %   runClausetPlpva    - If true and method is 'clauset', run plpva (slow)
@@ -49,6 +53,7 @@
 collectStart = 0;
 collectEnd = 45 * 60;
 collectEnd = [];
+avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
 windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
@@ -61,16 +66,17 @@ runClausetPlpva = false;
 
 gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 
-% 'fixedBinMedian': analysisConfig.binSize + median cutoff
+% 'fixedBinMedian': analysisConfig.binSize + population cutoff (thresholdMethod)
 % 'meanIsiZero': mean population ISI bin size + zero cutoff
 avalancheDetectionMode = 'fixedBinMedian';
+thresholdMethod = 'quantile10';  % 'median' or 'quantile10' (10th percentile cutoff)
 
 useSubsampling = false;
 nSubsamples = 20;
-nNeuronsSubsample = 20;
-minNeuronsMultiple = 1.25;
+nNeuronsSubsample = 45;
+minNeuronsMultiple = 1.1;
 
-splitExcitatoryInhibitory = true;
+splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 enableCircularPermutations = true;
@@ -98,11 +104,12 @@ opts.firingRateCheckTime = []; %5 * 60;
 opts.collectStart = collectStart;
 opts.collectEnd = collectEnd;
 opts.minFiringRate = 0.1;
-opts.maxFiringRate = 100;
+opts.maxFiringRate = 200;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = windowDurationSec;
 analysisConfig.avStepSize = windowDurationSec;
+analysisConfig.avWindow = avWindow;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.avalancheDetectionMode = avalancheDetectionMode;
 if strcmpi(avalancheDetectionMode, 'meanIsiZero')
@@ -111,6 +118,7 @@ else
   analysisConfig.binSize = 0.05;
 end
 analysisConfig.thresholdFlag = 1;
+analysisConfig.thresholdMethod = thresholdMethod;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = 20;
 analysisConfig.useSubsampling = useSubsampling;
@@ -133,6 +141,9 @@ analysisConfig.plfit2023Path = plfit2023Path;
 fprintf('\n=== Session Avalanche Distributions ===\n');
 fprintf('Power-law fit method: %s\n', powerLawFitMethod);
 fprintf('Avalanche detection mode: %s\n', avalancheDetectionMode);
+if ~strcmpi(avalancheDetectionMode, 'meanIsiZero')
+  fprintf('thresholdMethod: %s\n', thresholdMethod);
+end
 if useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons\n', nSubsamples, nNeuronsSubsample);
 end
@@ -159,7 +170,13 @@ end
 windowDurationSec = collectEnd - collectStart;
 analysisConfig.slidingWindowSize = windowDurationSec;
 analysisConfig.avStepSize = windowDurationSec;
+analysisConfig.avWindow = avWindow;
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
+if isempty(avWindow)
+  fprintf('AV window: full collect (one shared threshold)\n');
+else
+  fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
+end
 
 [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations, false);
 if ~areaOk
@@ -181,6 +198,7 @@ runMeta = struct( ...
   'dataSource', dataSource, ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
+  'avWindow', avWindow, ...
   'brainArea', brainArea, ...
   'brainAreaCombinations', {brainAreaCombinations}, ...
   'powerLawFitMethod', powerLawFitMethod, ...
@@ -284,6 +302,10 @@ for iCellRun = 1:numel(cellTypesToRun)
       analysisConfig.nMinNeurons, cell_type_label(cellType));
   end
 
+  runConfig = analysisConfig;
+  runConfig.sharedThresholdByArea = prepare_shared_av_thresholds_by_area( ...
+    dataStructRun, areasToAnalyze, runConfig, runMeta.collectStart, runMeta.collectEnd);
+
   runResult = struct();
   runResult.cellType = cellType;
   runResult.areasToAnalyze = areasToAnalyze;
@@ -296,7 +318,7 @@ for iCellRun = 1:numel(cellTypesToRun)
     areaName = dataStructRun.areas{areaIndex};
 
     fprintf('\nArea %s (%s)...\n', areaName, cell_type_label(cellType));
-    avData = extract_area_avalanches(dataStructRun, areaIndex, analysisConfig, ...
+    avData = extract_area_avalanches(dataStructRun, areaIndex, runConfig, ...
       runMeta.collectStart, runMeta.collectEnd);
     avData.areaName = areaName;
 
@@ -543,7 +565,8 @@ function avData = extract_area_avalanches(dataStruct, areaIndex, analysisConfig,
 %   collectEnd      - Window end (s)
 %
 % Goal:
-%   Match criticality_av_analysis single-window avalanche extraction.
+%   Detect avalanches over the collect range. When avWindow is set, tile and
+%   recompute the cutoff per tile, then pool events and fit once.
 %
 % Returns:
 %   avData - Struct with sizes, durations, tau, alpha, fit bounds, flags
@@ -556,10 +579,22 @@ avData = struct('hasAvalanches', false, 'sizes', [], 'durations', [], ...
   'shuffleSizes', [], 'shuffleDurations', [], 'shuffleTau', nan, 'shuffleAlpha', nan, ...
   'nShufflesCompleted', 0);
 
+if isfield(analysisConfig, 'sharedThresholdByArea') ...
+    && numel(analysisConfig.sharedThresholdByArea) >= areaIndex ...
+    && ~isempty(analysisConfig.sharedThresholdByArea{areaIndex})
+  analysisConfig = merge_shared_av_threshold_into_config( ...
+    analysisConfig, analysisConfig.sharedThresholdByArea{areaIndex});
+end
+
 timeRange = [collectStart, collectEnd];
 neuronIds = dataStruct.idLabel{areaIndex};
-binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analysisConfig);
-binSize = binSizeVec(areaIndex);
+if isfield(analysisConfig, 'sharedCollectBinSize') ...
+    && isfinite(analysisConfig.sharedCollectBinSize)
+  binSize = analysisConfig.sharedCollectBinSize;
+else
+  binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analysisConfig);
+  binSize = binSizeVec(areaIndex);
+end
 avData.binSize = binSize;
 
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...

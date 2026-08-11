@@ -40,10 +40,13 @@ function out = interval_criticality_metrics_engagement(subjectName, sessionName,
 %       .runClausetPlpva, .gofThreshold
 %       .enableCircularPermutations - If true, overlay shuffle CCDF for total only
 %       .nShuffles - Number of circular permutations for total shuffle (default 5)
+%       .avWindow - Analysis tile length (s); [] = full collect, one shared
+%                   threshold. When set, each tile uses its own cutoff from
+%                   that tile's pop activity; events are pooled and fit once.
 %     Avalanche threshold (shared across total / engaged / non-engaged):
 %       Cutoff from the full collect range via thresholdMethod ('median' or
-%       'quantile10'). With useSubsampling, one cutoff per subsample from the
-%       full-session activity of that fixed neuron subset.
+%       'quantile10') when avWindow is empty. With useSubsampling, one cutoff
+%       per subsample from the full-session activity of that fixed neuron subset.
 %
 % Goal:
 %   Same analyses as reach_criticality_metrics_engagement, but engagement events
@@ -308,6 +311,12 @@ if ismember('avalanches', opts.analyses)
   print_segment_list('Non-engaged', nonEngagedSegs);
 
   avConfig = build_av_config(opts, clausetPlfitPath, plfit2023Path);
+  if use_local_av_window_thresholds(avConfig)
+    fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', ...
+      avConfig.avWindow);
+  else
+    fprintf('AV window: full collect (one shared threshold)\n');
+  end
   areasToAnalyze = resolve_areas_to_analyze(dataStruct, opts.brainArea, avConfig.nMinNeurons);
   if isempty(areasToAnalyze)
     error('No areas meet minimum neuron count (%d).', avConfig.nMinNeurons);
@@ -532,6 +541,9 @@ end
 if ~isfield(opts, 'thresholdMethod') || isempty(opts.thresholdMethod)
   opts.thresholdMethod = 'median';
 end
+if ~isfield(opts, 'avWindow')
+  opts.avWindow = [];
+end
 if ~isfield(opts, 'runClausetPlpva') || isempty(opts.runClausetPlpva)
   opts.runClausetPlpva = false;
 end
@@ -679,6 +691,11 @@ avConfig.clausetPlfitPath = clausetPlfitPath;
 avConfig.plfit2023Path = plfit2023Path;
 avConfig.enableCircularPermutations = opts.enableCircularPermutations;
 avConfig.nShuffles = opts.nShuffles;
+if isfield(opts, 'avWindow')
+  avConfig.avWindow = opts.avWindow;
+else
+  avConfig.avWindow = [];
+end
 end
 
 %% -------------------------------------------------------------------------

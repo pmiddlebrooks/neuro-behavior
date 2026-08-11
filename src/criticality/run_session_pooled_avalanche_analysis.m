@@ -32,8 +32,15 @@ if isfield(analysisConfig, 'useSubsampling') && analysisConfig.useSubsampling ..
   analysisConfig.nMinNeurons = nMinNeurons;
 end
 
+if isfield(dataStruct, 'areasToTest') && ~isempty(dataStruct.areasToTest)
+  candidateAreas = dataStruct.areasToTest(:)';
+else
+  candidateAreas = 1:numAreas;
+end
+candidateAreas = candidateAreas(candidateAreas >= 1 & candidateAreas <= numAreas);
+
 areasToAnalyze = [];
-for a = 1:numAreas
+for a = candidateAreas
   if numel(dataStruct.idMatIdx{a}) >= nMinNeurons
     areasToAnalyze(end + 1) = a; %#ok<AGROW>
   end
@@ -55,13 +62,6 @@ elseif isfield(analysisConfig, 'enableCircularPermutations') ...
 end
 
 segments = struct('start', collectStart, 'end', collectEnd);
-if use_local_av_window_thresholds(analysisConfig)
-  fprintf('  AV windows: %.0f s (per-window thresholds; pool events, one fit)\n', ...
-    analysisConfig.avWindow);
-else
-  fprintf('  AV windows: full collect [%.1f-%.1f] s (shared threshold)\n', ...
-    collectStart, collectEnd);
-end
 
 metricNames = {'dcc', 'kappa', 'decades', 'tau', 'alpha', 'paramSD'};
 results = struct();

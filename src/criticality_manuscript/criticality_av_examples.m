@@ -19,6 +19,7 @@
 %   brainAreaCombinations  - Merged areas: default_manuscript_brain_area_combinations()
 %   powerLawFitMethod      - 'clauset', 'plfit2023', or 'hybrid'
 %   avalancheDetectionMode - 'fixedBinMedian' or 'meanIsiZero'
+%   thresholdMethod    - Population cutoff: 'median' or 'quantile10'
 %   enableCircularPermutations - Overlay pooled circular-shuffle CCDFs
 %   saveFigure       - Export PNG/EPS to dropPath/criticality_manuscript
 %
@@ -58,6 +59,7 @@ powerLawFitMethod = 'plfit2023';
 runClausetPlpva = false;
 gofThreshold = 0.8;
 avalancheDetectionMode = 'fixedBinMedian';
+thresholdMethod = 'quantile10';  % 'median' or 'quantile10' (10th percentile cutoff)
 
 useSubsampling = false;
 nSubsamples = 20;
@@ -84,6 +86,9 @@ plotConfig.observedMarkerFaceAlpha = 0.35;
 fprintf('\n=== Criticality avalanche examples ===\n');
 fprintf('Power-law fit method: %s\n', powerLawFitMethod);
 fprintf('Avalanche detection mode: %s\n', avalancheDetectionMode);
+if ~strcmpi(avalancheDetectionMode, 'meanIsiZero')
+  fprintf('thresholdMethod: %s\n', thresholdMethod);
+end
 fprintf('Brain area: %s\n', brainArea);
 if enableCircularPermutations
   fprintf('Circular permutations: %d shuffles per area\n', nShuffles);
@@ -111,7 +116,7 @@ for e = 1:numExamples
     collectStart, sessionCollectEnd, windowDurationSec / 60);
 
   analysisConfig = build_example_av_analysis_config( ...
-    windowDurationSec, avalancheDetectionMode, powerLawFitMethod, gofThreshold, ...
+    windowDurationSec, avalancheDetectionMode, thresholdMethod, powerLawFitMethod, gofThreshold, ...
     runClausetPlpva, useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple, ...
     enableCircularPermutations, nShuffles, clausetPlfitPath, plfit2023Path);
 
@@ -206,7 +211,7 @@ opts.maxFiringRate = 100;
 end
 
 function analysisConfig = build_example_av_analysis_config( ...
-  windowDurationSec, avalancheDetectionMode, powerLawFitMethod, gofThreshold, ...
+  windowDurationSec, avalancheDetectionMode, thresholdMethod, powerLawFitMethod, gofThreshold, ...
   runClausetPlpva, useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple, ...
   enableCircularPermutations, nShuffles, clausetPlfitPath, plfit2023Path)
 % BUILD_EXAMPLE_AV_ANALYSIS_CONFIG - Avalanche config matching session_avalanche_distributions
@@ -220,6 +225,7 @@ if ~strcmpi(avalancheDetectionMode, 'meanIsiZero')
   analysisConfig.binSize = 0.05;
 end
 analysisConfig.thresholdFlag = 1;
+analysisConfig.thresholdMethod = thresholdMethod;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = 20;
 analysisConfig.useSubsampling = useSubsampling;

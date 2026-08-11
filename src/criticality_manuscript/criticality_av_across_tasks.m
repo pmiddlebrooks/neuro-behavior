@@ -1,15 +1,18 @@
 %%
 % Criticality Avalanche Analysis Across Task Types (Manuscript)
 %
-% Runs avalanche criticality on one fixed-duration window per session (not
-% sliding windows), batches across session types, and plots metrics grouped
-% by sessionType.
+% Runs avalanche criticality per session (not overlapping sliding windows),
+% batches across session types, and plots metrics grouped by sessionType.
+% avWindow tiles the collect range with a local threshold per tile; events
+% are pooled and fit once. Empty avWindow = one shared collect-range threshold.
 %
 % Variables (configure in this section):
 %   sessionTypes  - Cell array of session types to include
 %   dataSource    - 'spikes' or 'lfp'
 %   collectStart  - Window start (seconds from session onset), default 0
 %   collectEnd    - Window end (seconds); [] = full session; default 40*60
+%   avWindow      - Avalanche analysis tile (s); [] = full collect, one shared
+%                   threshold. When set, per-tile thresholds; pool and fit once.
 %   brainArea              - Single or merged area (e.g. 'M23', 'M23M56'); '' = all areas
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   areasToPlot            - Area names to plot; {} uses brainArea if set, else all areas
@@ -17,7 +20,7 @@
 %   plotResults          - If true, create summary figures after batch
 %   powerLawFitMethod    - 'clauset', 'plfit2023', or 'hybrid'
 %   avalancheDetectionMode - 'fixedBinMedian' or 'meanIsiZero' (see below)
-%   thresholdMethod      - Population cutoff: 'median' (default) or 'quantile10'
+%   thresholdMethod      - Population cutoff: 'median' or 'quantile10' (default)
 %   binSize              - Spike bin width (s) for fixedBinMedian mode (default 0.05)
 %   clausetPlfitPath     - Path to Clauset toolbox MATLAB Code folder
 %   plfit2023Path        - Path to folder containing plfit2023.m
@@ -27,11 +30,11 @@
 %   widthCutoff          - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %
 %   avalancheDetectionMode:
-%     'fixedBinMedian' - config.binSize (s) + per-window population cutoff (default)
+%     'fixedBinMedian' - config.binSize (s) + population cutoff (default)
 %     'meanIsiZero'    - bin size = mean population ISI; zero cutoff (literature)
 %   thresholdMethod (fixedBinMedian only):
-%     'median'     - thresholdPct * median population activity (default; pct=1)
-%     'quantile10' - 10th percentile of population activity
+%     'median'     - thresholdPct * median population activity (pct=1)
+%     'quantile10' - 10th percentile of population activity (default)
 %
 % Goal:
 %   Compare avalanche metrics (dcc, kappa, decades, tau, alpha,
@@ -62,6 +65,7 @@ end
 opts = fill_criticality_av_across_tasks_opts(opts);
 setup_criticality_manuscript_paths('criticality_av_across_tasks');
 paths = get_paths();
+set_manuscript_av_window(opts.avWindow);
 
 if isempty(opts.batchResultsFile)
   batchName = 'criticality_av_across_tasks_batch.mat';
@@ -99,6 +103,11 @@ if isempty(opts.collectEnd)
 else
   fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', opts.collectStart, opts.collectEnd, ...
     windowDurationSec / 60);
+end
+if isempty(opts.avWindow)
+  fprintf('AV window: full collect (one shared threshold)\n');
+else
+  fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', opts.avWindow);
 end
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
 if ~isempty(opts.brainArea)
@@ -186,6 +195,7 @@ if ~anyAreas
 end
 
 fprintf('\n=== Done ===\n');
+set_manuscript_av_window([]);
 
 out = struct();
 out.batchResults = batchResults;
@@ -204,6 +214,7 @@ defaults.sessionTypes = default_manuscript_session_types();
 defaults.dataSource = 'spikes';
 defaults.collectStart = 0;
 defaults.collectEnd = 45 * 60;
+defaults.avWindow = [];   % [] = full collect, shared threshold
 defaults.brainArea = 'M23M56';
 defaults.brainAreaCombinations = default_manuscript_brain_area_combinations();
 defaults.areasToPlot = {};
@@ -214,7 +225,7 @@ defaults.batchResultsFile = '';
 defaults.powerLawFitMethod = 'hybrid';
 defaults.gofThreshold = 0.8;
 defaults.avalancheDetectionMode = 'fixedBinMedian';
-defaults.thresholdMethod = 'median';  % 'median' or 'quantile10'
+defaults.thresholdMethod = 'quantile10';  % 'median' or 'quantile10'
 defaults.binSize = 0.05;
 defaults.useSubsampling = false;
 defaults.nSubsamples = 20;
@@ -228,9 +239,13 @@ defaults.nShuffles = 5;
 defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
+preserveAvWindowEmpty = isfield(opts, 'avWindow') && isempty(opts.avWindow);
 opts = merge_struct_defaults(opts, defaults);
 if preserveCollectEndEmpty
   opts.collectEnd = [];
+end
+if preserveAvWindowEmpty
+  opts.avWindow = [];
 end
 opts.sessionTypes = order_manuscript_session_types(opts.sessionTypes);
 end
@@ -240,6 +255,7 @@ batchMeta = struct( ...
   'sessionTypes', {opts.sessionTypes}, ...
   'collectStart', opts.collectStart, ...
   'collectEnd', opts.collectEnd, ...
+  'avWindow', opts.avWindow, ...
   'brainArea', opts.brainArea, ...
   'areasToPlot', {opts.areasToPlot}, ...
   'powerLawFitMethod', opts.powerLawFitMethod, ...
@@ -272,7 +288,12 @@ emptyEntry = struct('sessionType', '', 'sessionName', '', 'subjectName', '', ...
 for iCell = 1:numel(cellTypesToRun)
   batchByCell{iCell} = repmat(emptyEntry, numSessions, 1);
 end
-fprintf('\n=== Running avalanche analysis (single window per session) ===\n');
+if isempty(opts.avWindow)
+  fprintf('\n=== Running avalanche analysis (full collect, shared threshold) ===\n');
+else
+  fprintf('\n=== Running avalanche analysis (%.0f s tiles, per-window thresholds) ===\n', ...
+    opts.avWindow);
+end
 
 for s = 1:numSessions
   sessionType = sessionTable.sessionType{s};
@@ -417,6 +438,11 @@ analysisConfig.thresholdFlag = 1;
 analysisConfig.thresholdMethod = opts.thresholdMethod;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = 25;
+if isfield(opts, 'avWindow')
+  analysisConfig.avWindow = opts.avWindow;
+else
+  analysisConfig.avWindow = [];
+end
 analysisConfig.useSubsampling = opts.useSubsampling;
 analysisConfig.nSubsamples = opts.nSubsamples;
 analysisConfig.nNeuronsSubsample = opts.nNeuronsSubsample;

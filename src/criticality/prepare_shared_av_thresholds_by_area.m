@@ -18,6 +18,9 @@ for aIdx = 1:numel(areasToAnalyze)
   sharedByArea{areaIndex} = prepare_area_shared_av_thresholds( ...
     dataStruct, areaIndex, analysisConfig, collectStart, collectEnd);
   threshInfo = sharedByArea{areaIndex};
+  if use_local_av_window_thresholds(analysisConfig)
+    continue;
+  end
   if isfield(threshInfo, 'useSubsampling') && threshInfo.useSubsampling
     fprintf('  Shared AV thresholds (%s): %d subsamples from collect [%.0f-%.0f s]\n', ...
       dataStruct.areas{areaIndex}, numel(threshInfo.thresholdPerSubsample), ...

@@ -14,6 +14,7 @@
 %   brainArea              - Single or merged area (e.g. 'M23M56')
 %   brainAreaCombinations  - Merged areas from default_manuscript_brain_area_combinations
 %   binSizes           - Vector of bin widths (seconds) to test
+%   thresholdMethod    - Population cutoff: 'median' or 'quantile10'
 %   powerLawFitMethods - Which fits to sweep (subset of 'clauset', 'plfit2023', 'hybrid')
 %                          e.g. {'hybrid'} or {'clauset', 'hybrid'}
 %   useSubsampling     - If true, metrics = mean ± SEM across neuron subsamples
@@ -44,6 +45,7 @@ windowDurationSec = collectEnd - collectStart;
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 binSizes = 0.01:0.01:0.1;
+thresholdMethod = 'quantile10';  % 'median' or 'quantile10' (10th percentile cutoff)
 saveFigure = true;
 
 % Which power-law fit methods to sweep (any non-empty subset):
@@ -82,6 +84,7 @@ opts.maxFiringRate = 100;
 analysisConfig = struct();
 analysisConfig.avalancheDetectionMode = 'fixedBinMedian';
 analysisConfig.thresholdFlag = 1;
+analysisConfig.thresholdMethod = thresholdMethod;
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = 20;
 analysisConfig.useSubsampling = useSubsampling;
@@ -94,6 +97,7 @@ analysisConfig.runClausetPlpva = runClausetPlpva;
 fprintf('\n=== Session Avalanche Metrics vs Bin Size ===\n');
 fprintf('Power-law fit methods: %s\n', strjoin(powerLawFitMethods, ', '));
 fprintf('Avalanche detection mode: fixedBinMedian\n');
+fprintf('thresholdMethod: %s\n', thresholdMethod);
 fprintf('Bin sizes (s): %s\n', mat2str(binSizes, 3));
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Brain area: %s\n', brainArea);

@@ -231,6 +231,7 @@ defaults.nMinNeurons = 20;
 defaults.enablePermutations = false;
 defaults.nShuffles = 0;
 defaults.avalancheDetectionMode = 'fixedBinMedian';
+defaults.thresholdMethod = 'quantile10';  % 'median' or 'quantile10'
 defaults.powerLawFitMethod = 'plfit2023';
 defaults.gofThreshold = 0.1;
 defaults.prgMethod = 'pca';
@@ -340,6 +341,10 @@ analysisConfig.nShuffles = opts.nShuffles;
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.thresholdFlag = 1;
+analysisConfig.thresholdMethod = 'quantile10';
+if isfield(opts, 'thresholdMethod') && ~isempty(opts.thresholdMethod)
+  analysisConfig.thresholdMethod = opts.thresholdMethod;
+end
 analysisConfig.thresholdPct = 1;
 analysisConfig.nMinNeurons = opts.nMinNeurons;
 analysisConfig.useSubsampling = true;
