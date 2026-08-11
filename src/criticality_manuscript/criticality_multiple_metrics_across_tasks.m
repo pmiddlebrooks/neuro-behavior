@@ -9,6 +9,10 @@
 %   sessionTypes, collectStart, collectEnd, d2Window, prgWindow, brainArea, areasToPlot
 %   d2Window / prgWindow - Analysis window length (s); [] = one window over the
 %                         full collect duration per session
+%   avWindow             - Avalanche analysis tile (s); [] = full collect with
+%                         one shared population threshold. When set, each tile
+%                         gets its own threshold from that tile's pop activity;
+%                         avalanches are pooled and fit once (not averaged).
 %   binSizeD2 / binSizePrg / binSizeAv - Spike bin width (s) for d2, PRG, and
 %                         avalanche analyses; overrides each pipeline default
 %   engagementBuffer   - Seconds around each reach/beam-break counted as engaged
@@ -66,10 +70,11 @@
 sessionTypes = default_manuscript_session_types();
 sessionTypes = order_manuscript_session_types(sessionTypes);
 collectStart = 10;
-collectEnd = 30*60;
+collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
 d2Window = 30;
 prgWindow = d2Window;
+avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
 binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
@@ -108,11 +113,11 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 25;
+nSubsamples = 20;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 
@@ -163,6 +168,11 @@ if isempty(prgWindow)
 else
   fprintf('PRG blocks: %.0f s\n', prgWindow);
 end
+if isempty(avWindow)
+  fprintf('AV windows: full collect (one shared threshold)\n');
+else
+  fprintf('AV windows: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
+end
 fprintf('binSizeD2: %.3f s; binSizePrg: %.3f s; binSizeAv: %.3f s\n', ...
   binSizeD2, binSizePrg, binSizeAv);
 fprintf('engagementBuffer: %.1f s; minNonEngagedWindow: %.1f s; absorbSingleEvents: %d\n', ...
@@ -188,6 +198,13 @@ end
 if isempty(prgWindow)
   fprintf('PRG batch uses full-session blocks when prgWindow=[].\n');
 end
+if isempty(avWindow)
+  fprintf('AV batch uses full collect with one shared population threshold.\n');
+else
+  fprintf('AV batch tiles collect time into %.0f s windows with local thresholds.\n', avWindow);
+end
+
+set_manuscript_av_window(avWindow);
 
 % AR batch (d2) — full-session metrics across all requested session types
 arOpts = struct( ...
@@ -225,6 +242,7 @@ avOpts = struct( ...
   'sessionTypes', {sessionTypes}, ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
+  'avWindow', avWindow, ...
   'binSize', binSizeAv, ...
   'brainArea', brainArea, ...
   'brainAreaCombinations', {brainAreaCombinations}, ...
@@ -324,6 +342,7 @@ if splitByEngagement
     'collectEnd', collectEnd, ...
     'd2Window', d2Window, ...
     'prgWindow', prgWindow, ...
+    'avWindow', avWindow, ...
     'binSizeD2', binSizeD2, ...
     'binSizePrg', binSizePrg, ...
     'binSizeAv', binSizeAv, ...
@@ -376,6 +395,7 @@ combinedOut.collectStart = collectStart;
 combinedOut.collectEnd = collectEnd;
 combinedOut.d2Window = d2Window;
 combinedOut.prgWindow = prgWindow;
+combinedOut.avWindow = avWindow;
 combinedOut.binSizeD2 = binSizeD2;
 combinedOut.binSizePrg = binSizePrg;
 combinedOut.binSizeAv = binSizeAv;
@@ -549,6 +569,7 @@ if plotCorrelationMatrix
 end
 
 fprintf('\n=== Done ===\n');
+set_manuscript_av_window([]);
 
 %% Local functions
 
@@ -3172,6 +3193,9 @@ end
 if isfield(opts, 'binSizeAv')
   batchMeta.binSizeAv = opts.binSizeAv;
 end
+if isfield(opts, 'avWindow')
+  batchMeta.avWindow = opts.avWindow;
+end
 if isfield(opts, 'engagementBuffer')
   batchMeta.engagementBuffer = opts.engagementBuffer;
 end
@@ -3229,6 +3253,9 @@ if isfield(opts, 'binSizeD2') && ~isempty(opts.binSizeD2)
 end
 if isfield(opts, 'binSizeAv') && ~isempty(opts.binSizeAv)
   engModOpts.binSizeAv = opts.binSizeAv;
+end
+if isfield(opts, 'avWindow')
+  engModOpts.avWindow = opts.avWindow;
 end
 % Engagement timing: reach uses reachBuffer / absorbSingleReaches;
 % interval/semicircle use eventBuffer / absorbSingleEvents

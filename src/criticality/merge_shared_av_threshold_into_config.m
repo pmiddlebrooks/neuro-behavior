@@ -26,4 +26,9 @@ end
 if isfield(threshInfo, 'binSize') && isfinite(threshInfo.binSize)
   analysisConfig.sharedCollectBinSize = threshInfo.binSize;
 end
+
+% Copy effective avWindow so local extractors that never set the field still tile
+if ~isfield(analysisConfig, 'avWindow')
+  analysisConfig.avWindow = resolve_effective_av_window(analysisConfig);
+end
 end

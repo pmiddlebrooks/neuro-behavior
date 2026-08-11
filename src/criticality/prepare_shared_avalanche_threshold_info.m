@@ -21,16 +21,13 @@ if isempty(aDataMatFull) || size(aDataMatFull, 1) < 1
   return;
 end
 
-if is_mean_isi_zero_avalanche_mode(config)
-  return;
-end
-if isfield(config, 'thresholdFlag') && ~config.thresholdFlag
-  return;
-end
-
 useSubsampling = isfield(config, 'useSubsampling') && config.useSubsampling;
 threshInfo.useSubsampling = useSubsampling;
 numNeuronsArea = size(aDataMatFull, 2);
+computeThreshold = ~is_mean_isi_zero_avalanche_mode(config);
+if isfield(config, 'thresholdFlag') && ~config.thresholdFlag
+  computeThreshold = false;
+end
 
 if useSubsampling
   nSubsamplesArea = config.nSubsamples;
@@ -43,12 +40,14 @@ if useSubsampling
     else
       neuronIdxSubsamples{s} = randperm(numNeuronsArea, nNeuronsSubsampleArea);
     end
-    popFull = sum(aDataMatFull(:, neuronIdxSubsamples{s}), 2);
-    thresholdPerSubsample(s) = compute_avalanche_population_threshold(popFull, config);
+    if computeThreshold
+      popFull = sum(aDataMatFull(:, neuronIdxSubsamples{s}), 2);
+      thresholdPerSubsample(s) = compute_avalanche_population_threshold(popFull, config);
+    end
   end
   threshInfo.neuronIdxSubsamples = neuronIdxSubsamples;
   threshInfo.thresholdPerSubsample = thresholdPerSubsample;
-else
+elseif computeThreshold
   popFull = sum(aDataMatFull, 2);
   threshInfo.fixedThreshold = compute_avalanche_population_threshold(popFull, config);
 end

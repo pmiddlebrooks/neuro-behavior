@@ -42,6 +42,9 @@ function out = reach_criticality_metrics_engagement(sessionName, opts)
 %       Cutoff from the full collect range via thresholdMethod ('median' or
 %       'quantile10'). With useSubsampling, one cutoff per subsample from the
 %       full-session activity of that fixed neuron subset.
+%       .avWindow - Analysis tile length (s); [] = full collect, one shared
+%                   threshold. When set, each tile gets its own threshold from
+%                   that tile's pop activity; avalanches are pooled and fit once.
 %
 % Goal:
 %   Test whether criticality metrics differ with task engagement by separating
@@ -315,6 +318,12 @@ if ismember('avalanches', opts.analyses)
   print_segment_list('Non-engaged', nonEngagedSegs);
 
   avConfig = build_av_config(opts, clausetPlfitPath, plfit2023Path);
+  if use_local_av_window_thresholds(avConfig)
+    fprintf('avWindow: %.0f s (per-window thresholds; pool events, one fit)\n', ...
+      avConfig.avWindow);
+  else
+    fprintf('avWindow: full collect (one shared threshold)\n');
+  end
   areasToAnalyze = resolve_areas_to_analyze(dataStruct, opts.brainArea, avConfig.nMinNeurons);
   if isempty(areasToAnalyze)
     error('No areas meet minimum neuron count (%d).', avConfig.nMinNeurons);
@@ -528,6 +537,9 @@ end
 if ~isfield(opts, 'thresholdMethod') || isempty(opts.thresholdMethod)
   opts.thresholdMethod = 'median';
 end
+if ~isfield(opts, 'avWindow')
+  opts.avWindow = [];
+end
 if ~isfield(opts, 'runClausetPlpva') || isempty(opts.runClausetPlpva)
   opts.runClausetPlpva = false;
 end
@@ -688,6 +700,11 @@ avConfig.clausetPlfitPath = clausetPlfitPath;
 avConfig.plfit2023Path = plfit2023Path;
 avConfig.enableCircularPermutations = opts.enableCircularPermutations;
 avConfig.nShuffles = opts.nShuffles;
+if isfield(opts, 'avWindow')
+  avConfig.avWindow = opts.avWindow;
+else
+  avConfig.avWindow = [];
+end
 end
 
 %% -------------------------------------------------------------------------
@@ -1992,192 +2009,6 @@ for aIdx = 1:numel(areasToAnalyze)
   else
     fprintf('  AV %s: no avalanches\n', areaName);
   end
-end
-end
-
-function avData = extract_pooled_area_avalanches(dataStruct, areaIndex, analysisConfig, ...
-    segments, computeShuffles)
-% EXTRACT_POOLED_AREA_AVALANCHES - Collect avalanches across segments then fit
-%
-% Variables:
-%   segments        - Struct array (.start, .end) in seconds
-%   computeShuffles - If true, also pool circular-shuffle avalanches
-%
-% Goal:
-%   Bin and detect avalanches per segment, pool sizes/durations, fit power laws
-%   on the pooled sample (matches multi-segment engagement design).
-
-if nargin < 5 || isempty(computeShuffles)
-  computeShuffles = false;
-end
-
-avData = empty_avalanche_data();
-if isempty(segments)
-  return;
-end
-
-% Attach collect-range shared threshold for this area (total / engaged / non-engaged)
-if isfield(analysisConfig, 'sharedThresholdByArea') ...
-    && numel(analysisConfig.sharedThresholdByArea) >= areaIndex ...
-    && ~isempty(analysisConfig.sharedThresholdByArea{areaIndex})
-  analysisConfig = merge_shared_av_threshold_into_config( ...
-    analysisConfig, analysisConfig.sharedThresholdByArea{areaIndex});
-end
-
-allSizes = [];
-allDurations = [];
-allShuffleSizes = [];
-allShuffleDurations = [];
-nShufflesCompleted = 0;
-binSizeUsed = nan;
-minSegDur = 0.2;
-if isfield(analysisConfig, 'binSize') && isfinite(analysisConfig.binSize)
-  minSegDur = max(minSegDur, analysisConfig.binSize * 4);
-end
-for i = 1:numel(segments)
-  segStart = segments(i).start;
-  segEnd = segments(i).end;
-  if segEnd - segStart < minSegDur
-    continue;
-  end
-  segAv = extract_area_avalanches(dataStruct, areaIndex, analysisConfig, segStart, segEnd, ...
-    computeShuffles);
-  if ~segAv.hasAvalanches
-    continue;
-  end
-  allSizes = [allSizes; segAv.sizes(:)]; %#ok<AGROW>
-  allDurations = [allDurations; segAv.durations(:)]; %#ok<AGROW>
-  if computeShuffles && ~isempty(segAv.shuffleSizes)
-    allShuffleSizes = [allShuffleSizes; segAv.shuffleSizes(:)]; %#ok<AGROW>
-    allShuffleDurations = [allShuffleDurations; segAv.shuffleDurations(:)]; %#ok<AGROW>
-    nShufflesCompleted = nShufflesCompleted + segAv.nShufflesCompleted;
-  end
-  if ~isfinite(binSizeUsed)
-    binSizeUsed = segAv.binSize;
-  end
-end
-
-if isempty(allSizes) || isempty(allDurations)
-  return;
-end
-
-plMetrics = avalanche_power_law_metrics(allSizes, allDurations, analysisConfig);
-
-avData.hasAvalanches = true;
-avData.sizes = allSizes;
-avData.durations = allDurations;
-avData.tau = plMetrics.tau;
-avData.alpha = plMetrics.alpha;
-avData.paramSD = plMetrics.paramSD;
-avData.decades = plMetrics.decades;
-avData.dcc = distance_to_criticality(plMetrics.tau, plMetrics.alpha, plMetrics.paramSD);
-avData.scalingRelation = compute_avalanche_scaling_relation(avData.tau, avData.alpha);
-avData.minSizeFit = plMetrics.minavS;
-avData.maxSizeFit = plMetrics.maxavS;
-avData.minDurFit = plMetrics.minavD;
-avData.maxDurFit = plMetrics.maxavD;
-avData.sizeFitInfo = struct('exponent', plMetrics.tau, 'fitMin', plMetrics.minavS, ...
-  'fitMax', plMetrics.maxavS, 'decades', plMetrics.decades);
-avData.durFitInfo = struct('exponent', plMetrics.alpha, 'fitMin', plMetrics.minavD, ...
-  'fitMax', plMetrics.maxavD);
-avData.nAvalanches = numel(allSizes);
-avData.binSize = binSizeUsed;
-avData.nSegments = numel(segments);
-avData.shuffleSizes = allShuffleSizes;
-avData.shuffleDurations = allShuffleDurations;
-avData.nShufflesCompleted = nShufflesCompleted;
-end
-
-function avData = extract_area_avalanches(dataStruct, areaIndex, analysisConfig, ...
-    collectStart, collectEnd, computeShuffles)
-% EXTRACT_AREA_AVALANCHES - Bin, threshold, and detect avalanches in one interval
-%
-% Variables:
-%   computeShuffles - If true, also run circular permutations on this window
-
-if nargin < 6 || isempty(computeShuffles)
-  computeShuffles = false;
-end
-
-avData = empty_avalanche_data();
-timeRange = [collectStart, collectEnd];
-neuronIds = dataStruct.idLabel{areaIndex};
-if isfield(analysisConfig, 'sharedCollectBinSize') ...
-    && isfinite(analysisConfig.sharedCollectBinSize)
-  binSize = analysisConfig.sharedCollectBinSize;
-else
-  binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analysisConfig);
-  binSize = binSizeVec(areaIndex);
-end
-avData.binSize = binSize;
-
-aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
-  neuronIds, timeRange, binSize);
-
-[sizes, durations, hasAvalanches] = compute_avalanche_sizes_durations_from_binned( ...
-  aDataMat, analysisConfig);
-if ~hasAvalanches
-  return;
-end
-
-avData.hasAvalanches = true;
-avData.sizes = sizes(:);
-avData.durations = durations(:);
-avData.nAvalanches = numel(sizes);
-
-if computeShuffles
-  nShufflesArea = 5;
-  if isfield(analysisConfig, 'nShuffles') && ~isempty(analysisConfig.nShuffles)
-    nShufflesArea = analysisConfig.nShuffles;
-  end
-  [avData.shuffleSizes, avData.shuffleDurations, avData.nShufflesCompleted] = ...
-    pooled_circular_shuffle_avalanches(aDataMat, analysisConfig, nShufflesArea);
-end
-end
-
-function avData = empty_avalanche_data()
-avData = struct('hasAvalanches', false, 'sizes', [], 'durations', [], ...
-  'tau', nan, 'alpha', nan, 'paramSD', nan, 'decades', nan, 'dcc', nan, ...
-  'scalingRelation', nan, ...
-  'minSizeFit', nan, 'maxSizeFit', nan, ...
-  'minDurFit', nan, 'maxDurFit', nan, 'sizeFitInfo', struct(), ...
-  'durFitInfo', struct(), 'nAvalanches', 0, 'binSize', nan, 'nSegments', 0, ...
-  'shuffleSizes', [], 'shuffleDurations', [], 'nShufflesCompleted', 0);
-end
-
-function [shuffleSizes, shuffleDurations, nCompleted] = pooled_circular_shuffle_avalanches( ...
-    aDataMat, analysisConfig, nShuffles)
-% POOLED_CIRCULAR_SHUFFLE_AVALANCHES - Pool avalanches across circular neuron shuffles
-
-shuffleSizes = [];
-shuffleDurations = [];
-nCompleted = 0;
-
-for shuffleIdx = 1:nShuffles
-  permutedMat = circular_shuffle_binned_matrix(aDataMat);
-  [sizesSub, durationsSub, hasAvalanches] = compute_avalanche_sizes_durations_from_binned( ...
-    permutedMat, analysisConfig);
-  if ~hasAvalanches
-    continue;
-  end
-  shuffleSizes = [shuffleSizes; sizesSub(:)]; %#ok<AGROW>
-  shuffleDurations = [shuffleDurations; durationsSub(:)]; %#ok<AGROW>
-  nCompleted = nCompleted + 1;
-end
-end
-
-function permutedMat = circular_shuffle_binned_matrix(aDataMat)
-% CIRCULAR_SHUFFLE_BINNED_MATRIX - Independent circular shift per neuron column
-
-permutedMat = aDataMat;
-winSamples = size(aDataMat, 1);
-if winSamples < 1
-  return;
-end
-
-for neuronIdx = 1:size(aDataMat, 2)
-  shiftAmount = randi([1, winSamples]);
-  permutedMat(:, neuronIdx) = circshift(aDataMat(:, neuronIdx), shiftAmount);
 end
 end
 

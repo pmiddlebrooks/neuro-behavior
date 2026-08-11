@@ -20,6 +20,8 @@ function results = criticality_av_analysis(dataStruct, config)
 %     .thresholdPct - Fraction of median when thresholdMethod is 'median' (default: 1)
 %     Population cutoff is computed once from the full collect range (and once per
 %     neuron subsample when useSubsampling) and reused for every sliding window.
+%     .avWindow - If set (or via set_manuscript_av_window), tile the collect
+%                 range, recompute the cutoff per tile, pool events, and fit once.
 %     .makePlots - Create plots (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
 %     .includeM2356 - Include combined M23+M56 area (default: false)
@@ -139,6 +141,19 @@ function results = criticality_av_analysis(dataStruct, config)
         timeRange = [dataStruct.spikeData.collectStart, dataStruct.spikeData.collectEnd];
     else
         timeRange = [0, max(dataStruct.spikeTimes)];
+    end
+
+    % Manuscript avWindow: tile collect range, local thresholds, pool + fit once
+    if use_local_av_window_thresholds(config)
+        if ~isfield(config, 'avWindow') || isempty(config.avWindow)
+            config.avWindow = resolve_effective_av_window(config);
+        end
+        fprintf(['AV analysis window %.0f s: per-window thresholds, ', ...
+            'pool avalanches, fit once (no per-window exponent average).\n'], ...
+            config.avWindow);
+        results = run_session_pooled_avalanche_analysis( ...
+            dataStruct, config, timeRange(1), timeRange(2));
+        return;
     end
     
     % For PCA with spike times, we'll bin at a temporary bin size first
