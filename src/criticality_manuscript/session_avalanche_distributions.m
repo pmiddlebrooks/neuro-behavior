@@ -72,8 +72,8 @@ brainAreaCombinations = default_manuscript_brain_area_combinations();
 saveFigure = false;
 
 % Optional engaged vs non-engaged (reach / interval / semicircle only)
-splitByEngagement = false;
-engagementBufferBefore = 1;  % s before each reach/beam-break = engaged
+splitByEngagement = true;
+engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
 engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
 minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
 absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
