@@ -104,16 +104,13 @@ saveAnalysisResults = false;
 analysisResultsFile = '';  % default: dropPath/criticality_manuscript/session_avalanche_results_<session>.mat
 
 % Plot formatting (edit and re-run %% Plotting)
-plotConfig = struct();
+plotConfig = fill_manuscript_plot_config();
 plotConfig.observedMarkerSize = 5;
 plotConfig.shuffleMarkerSize = 4;
 plotConfig.fitLineWidth = 2.5;
 plotConfig.tileSpacing = 'compact';
 plotConfig.tilePadding = 'compact';
 plotConfig.legendLocation = 'southwest';
-plotConfig.axisLabelFontSize = 14;
-plotConfig.tickLabelFontSize = 12;
-plotConfig.axesLineWidth = 1.5;
 plotConfig.observedMarkerFaceAlpha = 0.35;
 plotConfig.figureWidthInches = 6.5;  % fits portrait PDF (A4/Letter) with margins
 
@@ -549,9 +546,9 @@ for aIdx = 1:nAreas
     sprintf('%s — duration', areaNames{aIdx}), 'tex');
   apply_manuscript_axes_style(axCrack, plotConfig, 'Duration (bins)', '\langleS\rangle(T)', ...
     sprintf('%s — crackling', areaNames{aIdx}), 'tex');
-  grid(axSize, 'on');
-  grid(axDur, 'on');
-  grid(axCrack, 'on');
+  grid(axSize, 'off');
+  grid(axDur, 'off');
+  grid(axCrack, 'off');
   legend(axSize, 'Location', plotConfig.legendLocation, 'Interpreter', 'tex');
   legend(axDur, 'Location', plotConfig.legendLocation, 'Interpreter', 'tex');
   legend(axCrack, 'Location', 'northwest', 'Interpreter', 'tex');
@@ -796,6 +793,19 @@ end
 end
 
 function plotConfig = fill_default_avalanche_plot_config(plotConfig)
+% FILL_DEFAULT_AVALANCHE_PLOT_CONFIG - Manuscript fonts plus avalanche CCDF defaults
+%
+% Variables:
+%   plotConfig - Partial or empty struct; missing fields receive defaults
+%
+% Goal:
+%   Ensure apply_manuscript_axes_style fields (titleFontSize, etc.) exist,
+%   then fill avalanche-specific marker / layout options.
+
+if nargin < 1 || isempty(plotConfig)
+  plotConfig = struct();
+end
+plotConfig = fill_manuscript_plot_config(plotConfig);
 if ~isfield(plotConfig, 'observedMarkerSize') || isempty(plotConfig.observedMarkerSize)
   plotConfig.observedMarkerSize = 5;
 end
@@ -813,15 +823,6 @@ if ~isfield(plotConfig, 'tilePadding') || isempty(plotConfig.tilePadding)
 end
 if ~isfield(plotConfig, 'legendLocation') || isempty(plotConfig.legendLocation)
   plotConfig.legendLocation = 'southwest';
-end
-if ~isfield(plotConfig, 'axisLabelFontSize') || isempty(plotConfig.axisLabelFontSize)
-  plotConfig.axisLabelFontSize = 14;
-end
-if ~isfield(plotConfig, 'tickLabelFontSize') || isempty(plotConfig.tickLabelFontSize)
-  plotConfig.tickLabelFontSize = 12;
-end
-if ~isfield(plotConfig, 'axesLineWidth') || isempty(plotConfig.axesLineWidth)
-  plotConfig.axesLineWidth = 1.5;
 end
 if ~isfield(plotConfig, 'observedMarkerFaceAlpha') || isempty(plotConfig.observedMarkerFaceAlpha)
   plotConfig.observedMarkerFaceAlpha = 0.35;
