@@ -26,6 +26,13 @@
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %                        Waveforms: spontaneous/interval waveforms.mat; reach
 %                        reach_task/data/WaveformDATA/*_Neural_WFs.mat
+%   splitByEngagement  - If true (reach/interval/semicircle), also run engaged vs
+%                        non-engaged kurtosis / D_JS via the engagement modules
+%   engagementBufferBefore - Seconds before each reach/beam-break = engaged (default 1)
+%   engagementBufferAfter  - Seconds after each reach/beam-break = engaged (default 1)
+%   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
+%   minNonEngagedWindow - Min gap without events (s) for non-engaged segments
+%   absorbSingleEvents - Merge isolated single events into non-engaged gaps
 %
 % Goal:
 %   Visualize real vs surrogate PRG kurtosis distributions for one session,
@@ -54,6 +61,13 @@ minNeuronsMultiple = 1.25;
 
 splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
+
+% Optional engaged vs non-engaged (reach / interval / semicircle only)
+splitByEngagement = false;
+engagementBufferBefore = 1;  % s before each reach/beam-break = engaged
+engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
+minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
+absorbSingleEvents = true;   % merge isolated single events into non-engaged gaps
 
 % Surrogate null: 'isi' (Cambrainha paper) or 'circular' (per-neuron circshift on binned data)
 surrogateMethod = 'isi';
@@ -87,32 +101,21 @@ analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 
 %% Paths
+setup_criticality_manuscript_paths('session_kurtosis_distributions');
 paths = get_paths();
-scriptDir = fileparts(mfilename('fullpath'));
-if contains(scriptDir, [filesep 'Editor_' filesep])
-  scriptDir = fileparts(which('session_kurtosis_distributions'));
-end
-srcPath = fullfile(scriptDir, '..');
-addpath(srcPath);
-addpath(fullfile(srcPath, 'reach_task'));
-addpath(fullfile(srcPath, 'schall'));
-addpath(fullfile(srcPath, 'spontaneous'));
-addpath(fullfile(srcPath, 'interval_timing_task'));
-addpath(fullfile(srcPath, 'semicircle_reward_task'));
-addpath(fullfile(srcPath, 'criticality', 'scripts'));
-addpath(fullfile(srcPath, 'criticality', 'analyses'));
-addpath(fullfile(srcPath, 'session_prep', 'data_prep'));
-addpath(fullfile(srcPath, 'session_prep', 'utils'));
-addpath(fullfile(srcPath, 'data_prep'));
-addpath(fullfile(srcPath, 'sliding_window_prep', 'utils'));
-addpath(fullfile(srcPath, 'criticality'));
 
 fprintf('\n=== Session Kurtosis Distributions ===\n');
 fprintf('PRG method: %s\n', analysisConfig.prgMethod);
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, (collectEnd - collectStart) / 60);
+if isempty(collectEnd)
+  fprintf('Collect window: [%.1f, full session] s\n', collectStart);
+else
+  fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', ...
+    collectStart, collectEnd, (collectEnd - collectStart) / 60);
+end
 fprintf('PRG blocks: %.1f s; kappa at N/%d; surrogates: %s\n', ...
   prgWindow, analysisConfig.finalCutoffDivisor, analysisConfig.surrogateMethod);
+fprintf('splitByEngagement: %d\n', splitByEngagement);
 if useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons\n', nSubsamples, nNeuronsSubsample);
 end
@@ -273,9 +276,157 @@ if splitExcitatoryInhibitory
   end
 end
 
+if splitByEngagement
+  plotConfigEng = fill_manuscript_plot_config();
+  engOut = run_session_kurtosis_engagement(sessionType, sessionName, subjectNameForLoad, ...
+    opts, analysisConfig, brainArea, brainAreaCombinations, prgWindow, ...
+    engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, ...
+    absorbSingleEvents, splitExcitatoryInhibitory, plotConfigEng);
+  if saveFigure
+    save_session_engagement_kurtosis_figures(engOut, paths, sessionName, brainArea, ...
+      prgWindow, collectStart, collectEnd, analysisConfig);
+  end
+end
+
 fprintf('\n=== Done ===\n');
 
 %% Local functions
+
+function engOut = run_session_kurtosis_engagement(sessionType, sessionName, subjectName, ...
+    opts, analysisConfig, brainArea, brainAreaCombinations, prgWindow, ...
+    engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, ...
+    absorbSingleEvents, splitExcitatoryInhibitory, plotConfig)
+% RUN_SESSION_KURTOSIS_ENGAGEMENT - Engaged / non-engaged PRG via engagement modules
+
+if ~is_manuscript_engagement_session_type(sessionType)
+  error('session_kurtosis_distributions:BadEngagementType', ...
+    'splitByEngagement requires sessionType interval, reach, or semicircle (got %s).', ...
+    sessionType);
+end
+if splitExcitatoryInhibitory
+  warning('session_kurtosis_distributions:EngagementIgnoresEI', ...
+    'splitByEngagement ignores splitExcitatoryInhibitory (combined population only).');
+end
+
+fprintf('\n--- Engagement kurtosis pipeline ---\n');
+fprintf('engagementBuffer: before=%.3g s, after=%.3g s; minNonEngagedWindow=%.1f s\n', ...
+  engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow);
+
+if strcmpi(sessionType, 'reach')
+  engOpts = reach_criticality_metrics_engagement();
+elseif strcmpi(sessionType, 'semicircle')
+  engOpts = semicircle_criticality_metrics_engagement();
+else
+  engOpts = interval_criticality_metrics_engagement();
+end
+
+engOpts.collectStart = opts.collectStart;
+engOpts.collectEnd = opts.collectEnd;
+engOpts.minFiringRate = opts.minFiringRate;
+engOpts.maxFiringRate = opts.maxFiringRate;
+engOpts.firingRateCheckTime = opts.firingRateCheckTime;
+engOpts.dataSource = 'spikes';
+engOpts.brainArea = brainArea;
+engOpts.brainAreaCombinations = brainAreaCombinations;
+engOpts.analyses = {'kurtosis'};
+engOpts.makePlots = true;
+engOpts.saveFigure = false;
+engOpts.plotConfig = plotConfig;
+engOpts.prgWindow = prgWindow;
+engOpts.prgMethod = analysisConfig.prgMethod;
+engOpts.surrogateMethod = analysisConfig.surrogateMethod;
+engOpts.nSurrogates = analysisConfig.nSurrogates;
+engOpts.finalCutoffDivisor = analysisConfig.finalCutoffDivisor;
+engOpts.useSubsampling = analysisConfig.useSubsampling;
+engOpts.nSubsamples = analysisConfig.nSubsamples;
+engOpts.nNeuronsSubsample = analysisConfig.nNeuronsSubsample;
+engOpts.minNeuronsMultiple = analysisConfig.minNeuronsMultiple;
+engOpts.nMinNeurons = analysisConfig.nMinNeurons;
+if isfield(analysisConfig, 'binSize') && ~isempty(analysisConfig.binSize)
+  engOpts.binSizePrg = analysisConfig.binSize;
+end
+engOpts.minNonEngagedWindow = minNonEngagedWindow;
+
+bufOpts = struct( ...
+  'engagementBufferBefore', engagementBufferBefore, ...
+  'engagementBufferAfter', engagementBufferAfter);
+[bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
+  bufOpts, 'engagementBufferBefore', 'engagementBufferAfter', 'engagementBuffer', 1);
+if strcmpi(sessionType, 'reach')
+  engOpts.reachBufferBefore = bufBefore;
+  engOpts.reachBufferAfter = bufAfter;
+  engOpts.absorbSingleReaches = absorbSingleEvents;
+else
+  engOpts.eventBufferBefore = bufBefore;
+  engOpts.eventBufferAfter = bufAfter;
+  engOpts.absorbSingleEvents = absorbSingleEvents;
+end
+
+if strcmpi(sessionType, 'reach')
+  engOut = reach_criticality_metrics_engagement(sessionName, engOpts);
+elseif strcmpi(sessionType, 'semicircle')
+  engOut = semicircle_criticality_metrics_engagement(subjectName, sessionName, engOpts);
+else
+  engOut = interval_criticality_metrics_engagement(subjectName, sessionName, engOpts);
+end
+
+if isempty(engOut) || ~isfield(engOut, 'kurtosis') || isempty(engOut.kurtosis)
+  error('session_kurtosis_distributions:NoEngagementKurtosis', ...
+    'Engagement kurtosis pipeline returned no PRG outputs.');
+end
+end
+
+function save_session_engagement_kurtosis_figures(engOut, paths, sessionName, brainArea, ...
+    prgWindow, collectStart, collectEnd, analysisConfig)
+% SAVE_SESSION_ENGAGEMENT_KURTOSIS_FIGURES - Export engagement kurtosis (+ segments)
+
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+if ~exist(saveDir, 'dir')
+  mkdir(saveDir);
+end
+
+collectEndUsed = collectEnd;
+if isfield(engOut, 'config') && isfield(engOut.config, 'collectEnd') ...
+    && ~isempty(engOut.config.collectEnd)
+  collectEndUsed = engOut.config.collectEnd;
+end
+collectStartUsed = collectStart;
+if isfield(engOut, 'config') && isfield(engOut.config, 'collectStart') ...
+    && ~isempty(engOut.config.collectStart)
+  collectStartUsed = engOut.config.collectStart;
+end
+
+areaTag = format_areas_label(brainArea);
+if isempty(areaTag) && isfield(engOut, 'kurtosis') && isfield(engOut.kurtosis, 'areas')
+  areaTag = format_areas_label(engOut.kurtosis.areas);
+end
+if isempty(areaTag)
+  areaTag = 'areas';
+end
+if isempty(collectEndUsed)
+  collectTag = sprintf('%.0f-full', collectStartUsed);
+else
+  collectTag = sprintf('%.0f-%.0f', collectStartUsed, collectEndUsed);
+end
+
+figNames = {'kurtosis', 'segments'};
+fileTags = {'kurtosis', 'segments'};
+for iFig = 1:numel(figNames)
+  figField = figNames{iFig};
+  if ~isfield(engOut, 'figHandles') || ~isfield(engOut.figHandles, figField) ...
+      || ~isgraphics(engOut.figHandles.(figField))
+    continue;
+  end
+  plotBase = sprintf('session_kurtosis_engagement_%s_%s_%s_%s_%s_win%.0fs_%ss_N%d', ...
+    fileTags{iFig}, sessionName, areaTag, analysisConfig.prgMethod, ...
+    analysisConfig.surrogateMethod, prgWindow, collectTag, analysisConfig.finalCutoffDivisor);
+  exportgraphics(engOut.figHandles.(figField), fullfile(saveDir, [plotBase, '.png']), ...
+    'Resolution', 300);
+  exportgraphics(engOut.figHandles.(figField), fullfile(saveDir, [plotBase, '.eps']), ...
+    'ContentType', 'vector');
+  fprintf('\nSaved engagement figure: %s\n', fullfile(saveDir, plotBase));
+end
+end
 
 function fig = find_new_figure_by_name(figName, figHandlesBefore)
 % FIND_NEW_FIGURE_BY_NAME - Figure created since figHandlesBefore with exact Name

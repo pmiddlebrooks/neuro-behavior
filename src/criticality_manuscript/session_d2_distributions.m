@@ -32,6 +32,13 @@
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
 %                        Waveforms: spontaneous/interval waveforms.mat; reach
 %                        reach_task/data/WaveformDATA/*_Neural_WFs.mat
+%   splitByEngagement  - If true (reach/interval/semicircle), also run engaged vs
+%                        non-engaged d2 distributions via the engagement modules
+%   engagementBufferBefore - Seconds before each reach/beam-break = engaged (default 1)
+%   engagementBufferAfter  - Seconds after each reach/beam-break = engaged (default 1)
+%   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
+%   minNonEngagedWindow - Min gap without events (s) for non-engaged segments
+%   absorbSingleEvents - Merge isolated single events into non-engaged gaps
 %
 % Goal:
 %   Visualize real d2 vs shuffled d2 distributions for one session across
@@ -73,6 +80,13 @@ end
   splitExcitatoryInhibitory = false;
   widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
+  % Optional engaged vs non-engaged (reach / interval / semicircle only)
+  splitByEngagement = false;
+  engagementBufferBefore = 1;  % s before each reach/beam-break = engaged
+  engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
+  minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
+  absorbSingleEvents = true;   % merge isolated single events into non-engaged gaps
+
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
 opts.firingRateCheckTime = [];
@@ -109,14 +123,21 @@ analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 
 % Paths
+setup_criticality_manuscript_paths('session_d2_distributions');
 paths = get_paths();
 
 fprintf('\n=== Session d2 Distributions ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
-fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, (collectEnd - collectStart) / 60);
+if isempty(collectEnd)
+  fprintf('Collect window: [%.1f, full session] s\n', collectStart);
+else
+  fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', ...
+    collectStart, collectEnd, (collectEnd - collectStart) / 60);
+end
 fprintf('d2 windows: %.1f s; binSize: %.3f s; nPermutations: %d\n', ...
   d2Window, binSize, nPermutations);
 fprintf('useLog10D2: %d\n', useLog10D2);
+fprintf('splitByEngagement: %d\n', splitByEngagement);
 if useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
     nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
@@ -305,9 +326,163 @@ if splitExcitatoryInhibitory
   end
 end
 
+if splitByEngagement
+  engOut = run_session_d2_engagement(sessionType, sessionName, subjectNameForLoad, opts, ...
+    analysisConfig, brainArea, brainAreaCombinations, d2Window, useLog10D2, ...
+    engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, ...
+    absorbSingleEvents, splitExcitatoryInhibitory, plotConfig);
+  if saveFigure
+    save_session_engagement_d2_figures(engOut, paths, sessionName, brainArea, d2Window, ...
+      collectStart, collectEnd, useLog10D2);
+  end
+end
+
 fprintf('\n=== Done ===\n');
 
 %% Local functions
+
+function engOut = run_session_d2_engagement(sessionType, sessionName, subjectName, opts, ...
+    analysisConfig, brainArea, brainAreaCombinations, d2Window, useLog10D2, ...
+    engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, ...
+    absorbSingleEvents, splitExcitatoryInhibitory, plotConfig)
+% RUN_SESSION_D2_ENGAGEMENT - Engaged / non-engaged d2 via engagement modules
+
+if ~is_manuscript_engagement_session_type(sessionType)
+  error('session_d2_distributions:BadEngagementType', ...
+    'splitByEngagement requires sessionType interval, reach, or semicircle (got %s).', ...
+    sessionType);
+end
+if splitExcitatoryInhibitory
+  warning('session_d2_distributions:EngagementIgnoresEI', ...
+    'splitByEngagement ignores splitExcitatoryInhibitory (combined population only).');
+end
+
+fprintf('\n--- Engagement d2 pipeline ---\n');
+fprintf('engagementBuffer: before=%.3g s, after=%.3g s; minNonEngagedWindow=%.1f s\n', ...
+  engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow);
+
+if strcmpi(sessionType, 'reach')
+  engOpts = reach_criticality_metrics_engagement();
+elseif strcmpi(sessionType, 'semicircle')
+  engOpts = semicircle_criticality_metrics_engagement();
+else
+  engOpts = interval_criticality_metrics_engagement();
+end
+
+engOpts.collectStart = opts.collectStart;
+engOpts.collectEnd = opts.collectEnd;
+engOpts.minFiringRate = opts.minFiringRate;
+engOpts.maxFiringRate = opts.maxFiringRate;
+engOpts.firingRateCheckTime = opts.firingRateCheckTime;
+engOpts.dataSource = 'spikes';
+engOpts.brainArea = brainArea;
+engOpts.brainAreaCombinations = brainAreaCombinations;
+engOpts.analyses = {'d2'};
+engOpts.makePlots = true;
+engOpts.saveFigure = false;
+engOpts.plotConfig = plotConfig;
+engOpts.d2Window = d2Window;
+engOpts.useLog10D2 = useLog10D2;
+if analysisConfig.enablePermutations
+  engOpts.nShufflesD2 = max(1, analysisConfig.nShuffles);
+else
+  engOpts.nShufflesD2 = 1;
+end
+engOpts.useSubsampling = analysisConfig.useSubsampling;
+engOpts.nSubsamples = analysisConfig.nSubsamples;
+engOpts.nNeuronsSubsample = analysisConfig.nNeuronsSubsample;
+engOpts.minNeuronsMultiple = analysisConfig.minNeuronsMultiple;
+engOpts.nMinNeurons = analysisConfig.nMinNeurons;
+if isfield(analysisConfig, 'binSize') && ~isempty(analysisConfig.binSize)
+  engOpts.binSizeD2 = analysisConfig.binSize;
+end
+engOpts.minNonEngagedWindow = minNonEngagedWindow;
+
+bufOpts = struct( ...
+  'engagementBufferBefore', engagementBufferBefore, ...
+  'engagementBufferAfter', engagementBufferAfter);
+[bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
+  bufOpts, 'engagementBufferBefore', 'engagementBufferAfter', 'engagementBuffer', 1);
+if strcmpi(sessionType, 'reach')
+  engOpts.reachBufferBefore = bufBefore;
+  engOpts.reachBufferAfter = bufAfter;
+  engOpts.absorbSingleReaches = absorbSingleEvents;
+  engOpts.runD2AccuracyCorrelation = false;
+  engOpts.runD2ReachRateCorrelation = false;
+else
+  engOpts.eventBufferBefore = bufBefore;
+  engOpts.eventBufferAfter = bufAfter;
+  engOpts.absorbSingleEvents = absorbSingleEvents;
+  engOpts.runD2TrialRateCorrelation = false;
+end
+
+if strcmpi(sessionType, 'reach')
+  engOut = reach_criticality_metrics_engagement(sessionName, engOpts);
+elseif strcmpi(sessionType, 'semicircle')
+  engOut = semicircle_criticality_metrics_engagement(subjectName, sessionName, engOpts);
+else
+  engOut = interval_criticality_metrics_engagement(subjectName, sessionName, engOpts);
+end
+
+if isempty(engOut) || ~isfield(engOut, 'd2') || isempty(engOut.d2)
+  error('session_d2_distributions:NoEngagementD2', ...
+    'Engagement d2 pipeline returned no d2 outputs.');
+end
+end
+
+function save_session_engagement_d2_figures(engOut, paths, sessionName, brainArea, d2Window, ...
+    collectStart, collectEnd, useLog10D2)
+% SAVE_SESSION_ENGAGEMENT_D2_FIGURES - Export engagement d2 (+ segments) figures
+
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+if ~exist(saveDir, 'dir')
+  mkdir(saveDir);
+end
+
+collectEndUsed = collectEnd;
+if isfield(engOut, 'config') && isfield(engOut.config, 'collectEnd') ...
+    && ~isempty(engOut.config.collectEnd)
+  collectEndUsed = engOut.config.collectEnd;
+end
+collectStartUsed = collectStart;
+if isfield(engOut, 'config') && isfield(engOut.config, 'collectStart') ...
+    && ~isempty(engOut.config.collectStart)
+  collectStartUsed = engOut.config.collectStart;
+end
+
+areaTag = format_areas_label(brainArea);
+if isempty(areaTag) && isfield(engOut, 'd2') && isfield(engOut.d2, 'areas')
+  areaTag = format_areas_label(engOut.d2.areas);
+end
+if isempty(areaTag)
+  areaTag = 'areas';
+end
+if isempty(collectEndUsed)
+  collectTag = sprintf('%.0f-full', collectStartUsed);
+else
+  collectTag = sprintf('%.0f-%.0f', collectStartUsed, collectEndUsed);
+end
+
+figNames = {'d2', 'segments'};
+fileTags = {'d2', 'segments'};
+for iFig = 1:numel(figNames)
+  figField = figNames{iFig};
+  if ~isfield(engOut, 'figHandles') || ~isfield(engOut.figHandles, figField) ...
+      || ~isgraphics(engOut.figHandles.(figField))
+    continue;
+  end
+  plotBase = sprintf('session_d2_engagement_%s_%s_%s_win%.0fs_%ss', ...
+    fileTags{iFig}, sessionName, areaTag, d2Window, collectTag);
+  if useLog10D2 && strcmp(figField, 'd2')
+    plotBase = [plotBase, '_log10']; %#ok<AGROW>
+  end
+  exportgraphics(engOut.figHandles.(figField), fullfile(saveDir, [plotBase, '.png']), ...
+    'Resolution', 300);
+  exportgraphics(engOut.figHandles.(figField), fullfile(saveDir, [plotBase, '.eps']), ...
+    'ContentType', 'vector');
+  fprintf('\nSaved engagement figure: %s\n', fullfile(saveDir, plotBase));
+end
+end
 
 function metricValues = extract_d2_summary_metric_values(results, useLog10D2)
 % EXTRACT_D2_SUMMARY_METRIC_VALUES - Window-wise d2 values for E/I summary plot
