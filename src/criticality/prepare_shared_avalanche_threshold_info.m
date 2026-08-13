@@ -6,10 +6,10 @@ function threshInfo = prepare_shared_avalanche_threshold_info(aDataMatFull, conf
 %   config       - AV analysis config (thresholdMethod, useSubsampling, ...)
 %
 % Goal:
-%   Compute the population avalanche cutoff once from the full collect range so
-%   engaged / non-engaged / windowed analyses share the same threshold.
-%   With useSubsampling, draw neuron subsets once and compute one cutoff per
-%   subsample from the full-session activity of those neurons.
+%   Compute the population avalanche cutoff from aDataMatFull (typically the
+%   full collect range for the total class, or concatenated engaged /
+%   non-engaged segments for those classes). With useSubsampling, draw neuron
+%   subsets once and compute one cutoff per subsample from that matrix.
 
 threshInfo = struct( ...
   'useSubsampling', false, ...

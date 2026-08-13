@@ -10,13 +10,19 @@
 %   d2Window / prgWindow - Analysis window length (s); [] = one window over the
 %                         full collect duration per session
 %   avWindow             - Avalanche analysis tile (s); [] = full collect with
-%                         one shared population threshold. When set, each tile
-%                         gets its own threshold from that tile's pop activity;
-%                         avalanches are pooled and fit once (not averaged).
+%                         one shared population threshold (total class). When
+%                         set, each tile gets its own threshold from that
+%                         tile's pop activity; avalanches are pooled and fit
+%                         once (not averaged). With splitByEngagement, engaged
+%                         and non-engaged each use a distinct cutoff from that
+%                         class's pop activity (or per-tile when avWindow set).
 %   binSizeD2 / binSizePrg / binSizeAv - Spike bin width (s) for d2, PRG, and
 %                         avalanche analyses; overrides each pipeline default
-%   engagementBuffer   - Seconds around each reach/beam-break counted as engaged
-%                        (reach: reachBuffer; interval: eventBuffer; default 1)
+%   engagementBufferBefore - Seconds before each reach/beam-break counted as engaged
+%                            (reach: reachBufferBefore; interval: eventBufferBefore)
+%   engagementBufferAfter  - Seconds after each reach/beam-break counted as engaged
+%                            (reach: reachBufferAfter; interval: eventBufferAfter)
+%   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
 %   minNonEngagedWindow - Min gap without events (s) for non-engaged avalanche
 %                        segments (default 30)
 %   absorbSingleEvents - If true, isolated single events flanked by qualifying
@@ -74,7 +80,7 @@ collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
 d2Window = 30;
 prgWindow = d2Window;
-avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
+avWindow = [];   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
 binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
@@ -82,7 +88,8 @@ binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 
 % Engagement timing (reach + interval + semicircle); defaults match engagement module fill_*_defaults
-engagementBuffer = 1;       % s around each reach/beam-break = engaged
+engagementBufferBefore = 1;  % s before each reach/beam-break = engaged
+engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
 minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
 absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
 minTimeNonEngaged = 180;      % min total non-engaged time (s) to plot; 0 = no filter
@@ -113,11 +120,11 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 20;
+nSubsamples = 40;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 
@@ -169,14 +176,19 @@ else
   fprintf('PRG blocks: %.0f s\n', prgWindow);
 end
 if isempty(avWindow)
-  fprintf('AV window: full collect (one shared threshold)\n');
+  if splitByEngagement
+    fprintf(['AV window: full collect (distinct thresholds for total / ', ...
+      'engaged / non-engaged)\n']);
+  else
+    fprintf('AV window: full collect (one shared threshold)\n');
+  end
 else
   fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
 end
 fprintf('binSizeD2: %.3f s; binSizePrg: %.3f s; binSizeAv: %.3f s\n', ...
   binSizeD2, binSizePrg, binSizeAv);
-fprintf('engagementBuffer: %.1f s; minNonEngagedWindow: %.1f s; absorbSingleEvents: %d\n', ...
-  engagementBuffer, minNonEngagedWindow, absorbSingleEvents);
+fprintf('engagementBuffer: before=%.3g s, after=%.3g s; minNonEngagedWindow: %.1f s; absorbSingleEvents: %d\n', ...
+  engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, absorbSingleEvents);
 fprintf('minTimeNonEngaged: %.1f s (blank non-engaged below this; 0 = off)\n', ...
   minTimeNonEngaged);
 fprintf('avalancheDetectionMode: %s; thresholdMethod: %s\n', ...
@@ -340,7 +352,8 @@ if splitByEngagement
     'binSizeD2', binSizeD2, ...
     'binSizePrg', binSizePrg, ...
     'binSizeAv', binSizeAv, ...
-    'engagementBuffer', engagementBuffer, ...
+    'engagementBufferBefore', engagementBufferBefore, ...
+    'engagementBufferAfter', engagementBufferAfter, ...
     'minNonEngagedWindow', minNonEngagedWindow, ...
     'absorbSingleEvents', absorbSingleEvents, ...
     'minTimeNonEngaged', minTimeNonEngaged, ...
@@ -393,7 +406,8 @@ combinedOut.avWindow = avWindow;
 combinedOut.binSizeD2 = binSizeD2;
 combinedOut.binSizePrg = binSizePrg;
 combinedOut.binSizeAv = binSizeAv;
-combinedOut.engagementBuffer = engagementBuffer;
+combinedOut.engagementBufferBefore = engagementBufferBefore;
+combinedOut.engagementBufferAfter = engagementBufferAfter;
 combinedOut.minNonEngagedWindow = minNonEngagedWindow;
 combinedOut.absorbSingleEvents = absorbSingleEvents;
 combinedOut.minTimeNonEngaged = minTimeNonEngaged;
@@ -3190,6 +3204,12 @@ end
 if isfield(opts, 'avWindow')
   batchMeta.avWindow = opts.avWindow;
 end
+if isfield(opts, 'engagementBufferBefore')
+  batchMeta.engagementBufferBefore = opts.engagementBufferBefore;
+end
+if isfield(opts, 'engagementBufferAfter')
+  batchMeta.engagementBufferAfter = opts.engagementBufferAfter;
+end
 if isfield(opts, 'engagementBuffer')
   batchMeta.engagementBuffer = opts.engagementBuffer;
 end
@@ -3251,14 +3271,16 @@ end
 if isfield(opts, 'avWindow')
   engModOpts.avWindow = opts.avWindow;
 end
-% Engagement timing: reach uses reachBuffer / absorbSingleReaches;
-% interval/semicircle use eventBuffer / absorbSingleEvents
-if isfield(opts, 'engagementBuffer') && ~isempty(opts.engagementBuffer)
-  if strcmpi(sessionType, 'reach')
-    engModOpts.reachBuffer = opts.engagementBuffer;
-  else
-    engModOpts.eventBuffer = opts.engagementBuffer;
-  end
+% Engagement timing: reach uses reachBufferBefore/After;
+% interval/semicircle use eventBufferBefore/After (legacy *Buffer still accepted)
+[bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
+  opts, 'engagementBufferBefore', 'engagementBufferAfter', 'engagementBuffer', 1);
+if strcmpi(sessionType, 'reach')
+  engModOpts.reachBufferBefore = bufBefore;
+  engModOpts.reachBufferAfter = bufAfter;
+else
+  engModOpts.eventBufferBefore = bufBefore;
+  engModOpts.eventBufferAfter = bufAfter;
 end
 if isfield(opts, 'minNonEngagedWindow') && ~isempty(opts.minNonEngagedWindow)
   engModOpts.minNonEngagedWindow = opts.minNonEngagedWindow;

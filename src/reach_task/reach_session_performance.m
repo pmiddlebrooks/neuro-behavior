@@ -6,7 +6,9 @@ function out = reach_session_performance(sessionName, opts)
 %   opts        - Options struct. Fields:
 %       .collectStart, .collectEnd - Analysis window (s); empty collectEnd = session end
 %       .minNonEngagedWindow - Min gap for non-engaged segments (default 30)
-%       .reachBuffer         - Buffer around reaches (s; default 1)
+%       .reachBufferBefore   - Buffer before each reach (s; default 1)
+%       .reachBufferAfter    - Buffer after each reach (s; default 1)
+%       .reachBuffer         - Legacy symmetric alias; if before/after unset, sets both
 %       .absorbSingleReaches - Merge isolated reaches into non-engaged (default true)
 %       .movAvgWinSec        - Moving-average window for rates/accuracy (default 30)
 %       .rateBinSec          - Time bin for rate/accuracy traces (default 1)
@@ -72,8 +74,8 @@ fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', ...
 fprintf('Reaches in collect window: %d\n', numel(reachStart));
 
 [engagedSegs, nonEngagedSegs] = define_reach_engagement_segments( ...
-  collectStart, collectEnd, reachStart, opts.minNonEngagedWindow, opts.reachBuffer, ...
-  opts.absorbSingleReaches);
+  collectStart, collectEnd, reachStart, opts.minNonEngagedWindow, ...
+  opts.reachBufferBefore, opts.reachBufferAfter, opts.absorbSingleReaches);
 
 isCorrect = ismember(reachClass, [2, 4, 6]);
 isError = ismember(reachClass, [1, 3, 5]);
@@ -131,9 +133,9 @@ end
 if ~isfield(opts, 'minNonEngagedWindow') || isempty(opts.minNonEngagedWindow)
   opts.minNonEngagedWindow = 30;
 end
-if ~isfield(opts, 'reachBuffer') || isempty(opts.reachBuffer)
-  opts.reachBuffer = 1;
-end
+[opts.reachBufferBefore, opts.reachBufferAfter] = resolve_engagement_buffer_pair( ...
+  opts, 'reachBufferBefore', 'reachBufferAfter', 'reachBuffer', 1);
+opts.reachBuffer = [opts.reachBufferBefore, opts.reachBufferAfter];
 if ~isfield(opts, 'absorbSingleReaches') || isempty(opts.absorbSingleReaches)
   opts.absorbSingleReaches = true;
 end
@@ -161,6 +163,7 @@ scriptDir = fileparts(mfilename('fullpath'));
 srcPath = fullfile(scriptDir, '..');
 addpath(srcPath);
 addpath(fullfile(srcPath, 'reach_task'));
+addpath(fullfile(srcPath, 'criticality'));
 addpath(fullfile(srcPath, 'data_prep'));
 addpath(fullfile(srcPath, 'session_prep', 'utils'));
 end
@@ -396,25 +399,31 @@ end
 %% -------------------------------------------------------------------------
 
 function [engagedSegs, nonEngagedSegs] = define_reach_engagement_segments( ...
-    collectStart, collectEnd, reachStart, minNonEngagedWindow, reachBuffer, absorbSingleReaches)
+    collectStart, collectEnd, reachStart, minNonEngagedWindow, bufferBefore, bufferAfter, ...
+    absorbSingleReaches)
 % DEFINE_REACH_ENGAGEMENT_SEGMENTS - Continuous engaged / non-engaged intervals
 
-if nargin < 5 || isempty(reachBuffer)
-  reachBuffer = 0;
+if nargin < 5 || isempty(bufferBefore)
+  bufferBefore = 0;
 end
-if nargin < 6 || isempty(absorbSingleReaches)
+if nargin < 6 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
+end
+if nargin < 7 || isempty(absorbSingleReaches)
   absorbSingleReaches = true;
 end
-reachBuffer = max(0, reachBuffer);
+bufferBefore = max(0, bufferBefore);
+bufferAfter = max(0, bufferAfter);
 
 reachStart = sort(reachStart(:));
 reachStart = reachStart(reachStart >= collectStart & reachStart <= collectEnd);
 
-occupied = merge_reach_buffer_intervals(reachStart, reachBuffer, collectStart, collectEnd);
+occupied = merge_reach_buffer_intervals( ...
+  reachStart, bufferBefore, bufferAfter, collectStart, collectEnd);
 absorbedMask = false(1, numel(occupied));
 if absorbSingleReaches && ~isempty(occupied)
   absorbedMask = get_absorbed_single_reach_occupied_mask( ...
-    reachStart, collectStart, collectEnd, minNonEngagedWindow, reachBuffer);
+    reachStart, collectStart, collectEnd, minNonEngagedWindow, bufferBefore, bufferAfter);
 end
 
 nonEngagedSegs = struct('start', {}, 'end', {});
@@ -453,10 +462,14 @@ engagedSegs = complement_segments(collectStart, collectEnd, nonEngagedSegs);
 end
 
 function absorbedMask = get_absorbed_single_reach_occupied_mask( ...
-    reachStart, collectStart, collectEnd, minNonEngagedWindow, reachBuffer)
+    reachStart, collectStart, collectEnd, minNonEngagedWindow, bufferBefore, bufferAfter)
 % GET_ABSORBED_SINGLE_REACH_OCCUPIED_MASK - Isolated single reaches to absorb
 
-occupied = merge_reach_buffer_intervals(reachStart, reachBuffer, collectStart, collectEnd);
+if nargin < 6 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
+end
+occupied = merge_reach_buffer_intervals( ...
+  reachStart, bufferBefore, bufferAfter, collectStart, collectEnd);
 absorbedMask = false(1, numel(occupied));
 if isempty(occupied)
   return;
@@ -486,16 +499,23 @@ for iOcc = 1:numel(occupied)
 end
 end
 
-function occupied = merge_reach_buffer_intervals(reachStart, reachBuffer, collectStart, collectEnd)
-% MERGE_REACH_BUFFER_INTERVALS - Union of [reach-buffer, reach+buffer]
+function occupied = merge_reach_buffer_intervals(reachStart, bufferBefore, bufferAfter, ...
+    collectStart, collectEnd)
+% MERGE_REACH_BUFFER_INTERVALS - Union of [reach-before, reach+after]
+
+if nargin < 3 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
+end
+bufferBefore = max(0, bufferBefore);
+bufferAfter = max(0, bufferAfter);
 
 occupied = struct('start', {}, 'end', {});
 if isempty(reachStart)
   return;
 end
 
-starts = max(collectStart, reachStart - reachBuffer);
-ends = min(collectEnd, reachStart + reachBuffer);
+starts = max(collectStart, reachStart - bufferBefore);
+ends = min(collectEnd, reachStart + bufferAfter);
 valid = ends > starts;
 starts = starts(valid);
 ends = ends(valid);

@@ -15,8 +15,16 @@
 %   collectStart       - Window start (seconds from session onset)
 %   collectEnd         - Window end (seconds)
 %   avWindow           - Avalanche analysis tile (s); [] = full collect with
-%                        one shared population threshold. When set, each tile
-%                        gets its own threshold; events are pooled and fit once.
+%                        one shared population threshold (total). When set, each
+%                        tile gets its own threshold; events are pooled and fit once.
+%   splitByEngagement  - If true (reach/interval/semicircle), also run engaged vs
+%                        non-engaged avalanche distributions. Each class uses its
+%                        own population cutoff (or per-tile when avWindow is set).
+%   engagementBufferBefore - Seconds before each reach/beam-break = engaged (default 1)
+%   engagementBufferAfter  - Seconds after each reach/beam-break = engaged (default 1)
+%   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
+%   minNonEngagedWindow - Min gap without events (s) for non-engaged segments
+%   absorbSingleEvents - Merge isolated single events into non-engaged gaps
 %   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' uses all valid areas
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   powerLawFitMethod  - 'clauset', 'plfit2023', or 'hybrid'
@@ -50,6 +58,9 @@
 % sessionName = 'ey9166_2026_04_03';
 % dataSource = 'spikes';
 
+setup_criticality_manuscript_paths('session_avalanche_distributions');
+paths = get_paths();
+
 collectStart = 0;
 collectEnd = 45 * 60;
 collectEnd = [];
@@ -59,6 +70,13 @@ windowDurationSec = collectEnd - collectStart;
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 saveFigure = false;
+
+% Optional engaged vs non-engaged (reach / interval / semicircle only)
+splitByEngagement = false;
+engagementBufferBefore = 1;  % s before each reach/beam-break = engaged
+engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
+minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
+absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
 
 % Power-law fitting: 'clauset', 'plfit2023', 'hybrid' = plfit2023 xmax, then Clauset plfit on x <= xmax
 powerLawFitMethod = 'plfit2023';
@@ -133,7 +151,6 @@ analysisConfig.enableCircularPermutations = enableCircularPermutations;
 analysisConfig.nShuffles = nShuffles;
 
 % Paths
-
 [clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
 analysisConfig.clausetPlfitPath = clausetPlfitPath;
 analysisConfig.plfit2023Path = plfit2023Path;
@@ -153,6 +170,7 @@ end
 if enableCircularPermutations
   fprintf('Circular permutations: %d shuffles per area\n', nShuffles);
 end
+fprintf('splitByEngagement: %d\n', splitByEngagement);
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 
 %% Analysis — load session, extract avalanches, optionally cache results
@@ -173,7 +191,12 @@ analysisConfig.avStepSize = windowDurationSec;
 analysisConfig.avWindow = avWindow;
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', collectStart, collectEnd, windowDurationSec / 60);
 if isempty(avWindow)
-  fprintf('AV window: full collect (one shared threshold)\n');
+  if splitByEngagement
+    fprintf(['AV window: full collect (distinct thresholds for total / ', ...
+      'engaged / non-engaged)\n']);
+  else
+    fprintf('AV window: full collect (one shared threshold)\n');
+  end
 else
   fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
 end
@@ -208,8 +231,20 @@ runMeta = struct( ...
   'useSubsampling', useSubsampling, ...
   'splitExcitatoryInhibitory', splitExcitatoryInhibitory, ...
   'widthCutoff', widthCutoff, ...
+  'splitByEngagement', splitByEngagement, ...
+  'engagementBufferBefore', engagementBufferBefore, ...
+  'engagementBufferAfter', engagementBufferAfter, ...
+  'minNonEngagedWindow', minNonEngagedWindow, ...
+  'absorbSingleEvents', absorbSingleEvents, ...
   'saveFigure', saveFigure);
 sessionResults = build_session_avalanche_results(dataStruct, paths, analysisConfig, runMeta, plotConfig);
+
+if splitByEngagement
+  sessionResults.engagement = run_session_avalanche_engagement( ...
+    sessionType, sessionName, subjectNameForLoad, opts, analysisConfig, runMeta, plotConfig);
+else
+  sessionResults.engagement = [];
+end
 
 if saveAnalysisResults
   resultsFile = resolve_avalanche_results_file(paths, sessionName, analysisResultsFile);
@@ -231,6 +266,9 @@ end
 
 sessionResults.plotConfig = plotConfig;
 plot_session_avalanche_results(sessionResults, paths, plotConfig);
+if isfield(sessionResults, 'engagement') && ~isempty(sessionResults.engagement)
+  plot_session_engagement_avalanche_results(sessionResults, paths, plotConfig);
+end
 
 fprintf('\n=== Done ===\n');
 
@@ -342,6 +380,272 @@ for iCellRun = 1:numel(cellTypesToRun)
   end
 
   sessionResults.runs{iCellRun} = runResult;
+end
+end
+
+function engagement = run_session_avalanche_engagement(sessionType, sessionName, subjectName, ...
+    opts, analysisConfig, runMeta, plotConfig)
+% RUN_SESSION_AVALANCHE_ENGAGEMENT - Engaged / non-engaged AV via engagement modules
+%
+% Goal:
+%   Reuse reach/interval/semicircle engagement pipelines so class-specific
+%   population thresholds match criticality_av_across_tasks_engagement.m.
+
+if ~is_manuscript_engagement_session_type(sessionType)
+  error('session_avalanche_distributions:BadEngagementType', ...
+    'splitByEngagement requires sessionType interval, reach, or semicircle (got %s).', ...
+    sessionType);
+end
+if runMeta.splitExcitatoryInhibitory
+  warning('session_avalanche_distributions:EngagementIgnoresEI', ...
+    'splitByEngagement ignores splitExcitatoryInhibitory (combined population only).');
+end
+
+fprintf('\n--- Engagement avalanche pipeline ---\n');
+if strcmpi(sessionType, 'reach')
+  engOpts = reach_criticality_metrics_engagement();
+elseif strcmpi(sessionType, 'semicircle')
+  engOpts = semicircle_criticality_metrics_engagement();
+else
+  engOpts = interval_criticality_metrics_engagement();
+end
+
+engOpts.collectStart = runMeta.collectStart;
+engOpts.collectEnd = runMeta.collectEnd;
+engOpts.minFiringRate = opts.minFiringRate;
+engOpts.maxFiringRate = opts.maxFiringRate;
+engOpts.firingRateCheckTime = opts.firingRateCheckTime;
+engOpts.dataSource = runMeta.dataSource;
+engOpts.brainArea = runMeta.brainArea;
+engOpts.brainAreaCombinations = runMeta.brainAreaCombinations;
+engOpts.analyses = {'avalanches'};
+engOpts.makePlots = false;
+engOpts.saveFigure = false;
+engOpts.plotConfig = plotConfig;
+engOpts.powerLawFitMethod = analysisConfig.powerLawFitMethod;
+engOpts.avalancheDetectionMode = analysisConfig.avalancheDetectionMode;
+engOpts.thresholdMethod = analysisConfig.thresholdMethod;
+engOpts.gofThreshold = analysisConfig.gofThreshold;
+engOpts.enableCircularPermutations = analysisConfig.enableCircularPermutations;
+engOpts.nShuffles = analysisConfig.nShuffles;
+engOpts.useSubsampling = analysisConfig.useSubsampling;
+engOpts.nSubsamples = analysisConfig.nSubsamples;
+engOpts.nNeuronsSubsample = analysisConfig.nNeuronsSubsample;
+engOpts.minNeuronsMultiple = analysisConfig.minNeuronsMultiple;
+engOpts.nMinNeurons = analysisConfig.nMinNeurons;
+engOpts.avWindow = runMeta.avWindow;
+engOpts.minNonEngagedWindow = runMeta.minNonEngagedWindow;
+[bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
+  runMeta, 'engagementBufferBefore', 'engagementBufferAfter', 'engagementBuffer', 1);
+if strcmpi(sessionType, 'reach')
+  engOpts.reachBufferBefore = bufBefore;
+  engOpts.reachBufferAfter = bufAfter;
+  engOpts.absorbSingleReaches = runMeta.absorbSingleEvents;
+else
+  engOpts.eventBufferBefore = bufBefore;
+  engOpts.eventBufferAfter = bufAfter;
+  engOpts.absorbSingleEvents = runMeta.absorbSingleEvents;
+end
+
+if strcmpi(sessionType, 'reach')
+  engOut = reach_criticality_metrics_engagement(sessionName, engOpts);
+elseif strcmpi(sessionType, 'semicircle')
+  engOut = semicircle_criticality_metrics_engagement(subjectName, sessionName, engOpts);
+else
+  engOut = interval_criticality_metrics_engagement(subjectName, sessionName, engOpts);
+end
+
+if isempty(engOut) || ~isfield(engOut, 'avalanches') || isempty(engOut.avalanches)
+  error('session_avalanche_distributions:NoEngagementAvalanches', ...
+    'Engagement avalanche pipeline returned no avalanche outputs.');
+end
+engagement = engOut.avalanches;
+end
+
+function plot_session_engagement_avalanche_results(sessionResults, paths, plotConfig)
+% PLOT_SESSION_ENGAGEMENT_AVALANCHE_RESULTS - Overlay total / engaged / non-engaged CCDFs
+
+runMeta = sessionResults.meta(1);
+engagement = sessionResults.engagement;
+if isempty(engagement) || ~isfield(engagement, 'byClass')
+  return;
+end
+if nargin < 3 || isempty(plotConfig)
+  if isfield(sessionResults, 'plotConfig') && ~isempty(sessionResults.plotConfig)
+    plotConfig = sessionResults.plotConfig;
+  else
+    plotConfig = struct();
+  end
+end
+if ~isfield(plotConfig, 'sessionType') || isempty(plotConfig.sessionType)
+  plotConfig.sessionType = runMeta.sessionType;
+end
+plotConfig = fill_default_avalanche_plot_config(plotConfig);
+
+avByClass = engagement.byClass;
+areaNames = engagement.areaNames;
+if isempty(areaNames)
+  return;
+end
+avDurations = engagement.durations;
+classFields = {'total', 'engaged', 'nonEngaged'};
+classNames = {'Total', 'Engaged', 'Non-engaged'};
+classColors = [0.15, 0.15, 0.15; 0.15, 0.45, 0.75; 0.85, 0.35, 0.15];
+shuffleColor = [0.55, 0.55, 0.55];
+nAreas = numel(areaNames);
+
+fig = get_task_figure_handle(plotConfig.sessionType, 'engagement_distributions', '', ...
+  'Session avalanche distributions (engagement)');
+tiledlayout(fig, nAreas, 3, ...
+  'TileSpacing', plotConfig.tileSpacing, 'Padding', plotConfig.tilePadding);
+
+for aIdx = 1:nAreas
+  axSize = nexttile((aIdx - 1) * 3 + 1);
+  axDur = nexttile((aIdx - 1) * 3 + 2);
+  axCrack = nexttile((aIdx - 1) * 3 + 3);
+  hold(axSize, 'on');
+  hold(axDur, 'on');
+  hold(axCrack, 'on');
+
+  for c = 1:numel(classFields)
+    if ~isfield(avByClass, classFields{c}) || isempty(avByClass.(classFields{c})) ...
+        || ~isfield(avByClass.(classFields{c}), 'byArea') ...
+        || numel(avByClass.(classFields{c}).byArea) < aIdx
+      continue;
+    end
+    avData = avByClass.(classFields{c}).byArea{aIdx};
+    if isempty(avData) || ~avData.hasAvalanches
+      continue;
+    end
+
+    displayName = sprintf('%s (\\tau=%.2f, n=%d)', classNames{c}, avData.tau, avData.nAvalanches);
+    plot_engagement_class_ccdf(axSize, avData.sizes, classColors(c, :), displayName, plotConfig);
+
+    binSize = resolve_avalanche_duration_bin_size(avData);
+    displayNameDur = sprintf('%s (\\alpha=%.2f, n=%d)', classNames{c}, avData.alpha, ...
+      avData.nAvalanches);
+    plot_engagement_class_ccdf(axDur, avData.durations * binSize * 1000, classColors(c, :), ...
+      displayNameDur, plotConfig);
+
+    plot_engagement_class_size_given_duration(axCrack, avData, classColors(c, :), ...
+      classNames{c}, plotConfig);
+
+    if strcmp(classFields{c}, 'total') && isfield(avData, 'shuffleSizes') ...
+        && ~isempty(avData.shuffleSizes)
+      shuffleName = sprintf('Shuffle total (n=%d)', numel(avData.shuffleSizes));
+      plot_engagement_class_ccdf(axSize, avData.shuffleSizes, shuffleColor, shuffleName, ...
+        plotConfig, true);
+      plot_engagement_class_ccdf(axDur, avData.shuffleDurations * binSize * 1000, ...
+        shuffleColor, shuffleName, plotConfig, true);
+    end
+  end
+
+  set(axSize, 'XScale', 'log', 'YScale', 'log');
+  set(axDur, 'XScale', 'log', 'YScale', 'log');
+  set(axCrack, 'XScale', 'log', 'YScale', 'log');
+  apply_manuscript_axes_style(axSize, plotConfig, 'Avalanche size', 'P(X \geq x)', ...
+    sprintf('%s — size', areaNames{aIdx}), 'tex');
+  apply_manuscript_axes_style(axDur, plotConfig, 'Avalanche duration (ms)', 'P(X \geq x)', ...
+    sprintf('%s — duration', areaNames{aIdx}), 'tex');
+  apply_manuscript_axes_style(axCrack, plotConfig, 'Duration (bins)', '\langleS\rangle(T)', ...
+    sprintf('%s — crackling', areaNames{aIdx}), 'tex');
+  grid(axSize, 'on');
+  grid(axDur, 'on');
+  grid(axCrack, 'on');
+  legend(axSize, 'Location', plotConfig.legendLocation, 'Interpreter', 'tex');
+  legend(axDur, 'Location', plotConfig.legendLocation, 'Interpreter', 'tex');
+  legend(axCrack, 'Location', 'northwest', 'Interpreter', 'tex');
+  hold(axSize, 'off');
+  hold(axDur, 'off');
+  hold(axCrack, 'off');
+end
+
+sgtitle(fig, sprintf( ...
+  ['%s — engagement avalanche CCDFs [%.0f–%.0f s]\n', ...
+  'durations: total %.1f min, engaged %.1f min, non-engaged %.1f min'], ...
+  runMeta.sessionName, runMeta.collectStart, runMeta.collectEnd, ...
+  avDurations.totalSec / 60, avDurations.engagedSec / 60, avDurations.nonEngagedSec / 60), ...
+  'FontWeight', 'bold', 'Interpreter', 'none');
+apply_portrait_figure_size(fig, plotConfig.figureWidthInches, nAreas, 3);
+
+if runMeta.saveFigure
+  saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+  if ~exist(saveDir, 'dir')
+    mkdir(saveDir);
+  end
+  areaTag = format_areas_label(areaNames);
+  plotBase = sprintf('session_avalanche_engagement_%s_%s_%s_%.0f-%.0fs', ...
+    runMeta.sessionName, areaTag, runMeta.powerLawFitMethod, ...
+    runMeta.collectStart, runMeta.collectEnd);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+  fprintf('\nSaved engagement figure: %s\n', fullfile(saveDir, plotBase));
+end
+end
+
+function plot_engagement_class_ccdf(ax, values, lineColor, displayName, plotConfig, isShuffle)
+% PLOT_ENGAGEMENT_CLASS_CCDF - Empirical complementary CDF markers
+
+if nargin < 6 || isempty(isShuffle)
+  isShuffle = false;
+end
+values = values(:);
+values = values(isfinite(values) & values > 0);
+if numel(values) < 2
+  return;
+end
+values = sort(values);
+n = numel(values);
+ccdf = (n:-1:1)' / n;
+markerSize = plotConfig.observedMarkerSize;
+faceAlpha = plotConfig.observedMarkerFaceAlpha;
+if isShuffle
+  markerSize = plotConfig.shuffleMarkerSize;
+  faceAlpha = 0.25;
+end
+scatter(ax, values, ccdf, markerSize .^ 2, lineColor, 'filled', ...
+  'MarkerFaceAlpha', faceAlpha, 'DisplayName', displayName);
+end
+
+function plot_engagement_class_size_given_duration(ax, avData, lineColor, className, plotConfig)
+% PLOT_ENGAGEMENT_CLASS_SIZE_GIVEN_DURATION - ⟨S⟩|T markers + WLS slope
+
+sizes = avData.sizes(:);
+durations = avData.durations(:);
+valid = isfinite(sizes) & isfinite(durations) & sizes > 0 & durations > 0;
+sizes = sizes(valid);
+durations = durations(valid);
+if numel(sizes) < 2
+  return;
+end
+
+unqDurations = unique(durations);
+meanSize = nan(size(unqDurations));
+for iDur = 1:numel(unqDurations)
+  meanSize(iDur) = mean(sizes(durations == unqDurations(iDur)));
+end
+validMean = isfinite(meanSize) & meanSize > 0;
+unqDurations = unqDurations(validMean);
+meanSize = meanSize(validMean);
+if numel(unqDurations) < 2
+  return;
+end
+
+scatter(ax, unqDurations, meanSize, plotConfig.observedMarkerSize .^ 2, lineColor, 'filled', ...
+  'MarkerFaceAlpha', plotConfig.observedMarkerFaceAlpha, ...
+  'DisplayName', sprintf('%s (1/\\sigma\\nu z=%.2f)', className, avData.paramSD));
+if isfinite(avData.paramSD) && isfinite(avData.minDurFit) && isfinite(avData.maxDurFit) ...
+    && avData.minDurFit < avData.maxDurFit
+  xFit = [avData.minDurFit; avData.maxDurFit];
+  % WLS line through geometric mean of fit-range points
+  inFit = unqDurations >= avData.minDurFit & unqDurations <= avData.maxDurFit;
+  if nnz(inFit) >= 1
+    x0 = exp(mean(log(unqDurations(inFit))));
+    y0 = exp(mean(log(meanSize(inFit))));
+    yFit = y0 * (xFit / x0) .^ avData.paramSD;
+    plot(ax, xFit, yFit, '-', 'Color', lineColor, 'LineWidth', plotConfig.fitLineWidth, ...
+      'HandleVisibility', 'off');
+  end
 end
 end
 

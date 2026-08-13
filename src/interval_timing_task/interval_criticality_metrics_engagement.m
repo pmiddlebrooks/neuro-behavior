@@ -11,10 +11,13 @@ function out = interval_criticality_metrics_engagement(subjectName, sessionName,
 %     Analysis selection:
 %       .analyses - Cell of {'d2','kurtosis','avalanches'} (any subset; default all)
 %     Engagement:
-%       .eventBuffer         - Seconds around each correct/error beam break treated
-%                              as engaged (default 1). d2/kurtosis: windows overlapping
-%                              [event +/- eventBuffer] count as engaged. Avalanches:
-%                              buffer excluded from non-engaged gaps.
+%       .eventBufferBefore   - Seconds before each beam break treated as engaged (default 1).
+%       .eventBufferAfter    - Seconds after each beam break treated as engaged (default 1).
+%                              d2/kurtosis: windows overlapping [event-before, event+after]
+%                              count as engaged. Avalanches: that interval is excluded
+%                              from non-engaged gaps.
+%       .eventBuffer         - Legacy symmetric alias; if before/after unset, sets both.
+%                              Also accepts reachBuffer as a legacy alias.
 %       .minNonEngagedWindow - Min gap without beam-break events (s) for non-engaged
 %                              avalanche segments
 %       .absorbSingleEvents  - If true (default), isolated single beam-break events
@@ -40,13 +43,14 @@ function out = interval_criticality_metrics_engagement(subjectName, sessionName,
 %       .runClausetPlpva, .gofThreshold
 %       .enableCircularPermutations - If true, overlay shuffle CCDF for total only
 %       .nShuffles - Number of circular permutations for total shuffle (default 5)
-%       .avWindow - Analysis tile length (s); [] = full collect, one shared
+%       .avWindow - Analysis tile length (s); [] = full collect / class-level
 %                   threshold. When set, each tile uses its own cutoff from
 %                   that tile's pop activity; events are pooled and fit once.
-%     Avalanche threshold (shared across total / engaged / non-engaged):
-%       Cutoff from the full collect range via thresholdMethod ('median' or
-%       'quantile10') when avWindow is empty. With useSubsampling, one cutoff
-%       per subsample from the full-session activity of that fixed neuron subset.
+%     Avalanche threshold (per engagement class when avWindow is empty):
+%       Total: cutoff from the full collect range via thresholdMethod
+%       ('median' or 'quantile10'). Engaged / non-engaged: each class gets its
+%       own cutoff from that class's pooled pop activity (same neuron
+%       subsample indices as total). With avWindow set, per-tile cutoffs.
 %
 % Goal:
 %   Same analyses as reach_criticality_metrics_engagement, but engagement events
@@ -166,7 +170,8 @@ if isempty(eventTimes)
     'No correct/error beam-break events found in collect window.');
 end
 eventTimesEngaged = filter_engaged_event_times(eventTimes, collectStart, collectEnd, ...
-  opts.minNonEngagedWindow, opts.eventBuffer, opts.absorbSingleEvents);
+  opts.minNonEngagedWindow, opts.eventBufferBefore, opts.eventBufferAfter, ...
+  opts.absorbSingleEvents);
 if opts.absorbSingleEvents && numel(eventTimesEngaged) < numel(eventTimes)
   fprintf('absorbSingleEvents: %d isolated event(s) merged into non-engaged time\n', ...
     numel(eventTimes) - numel(eventTimesEngaged));
@@ -190,8 +195,8 @@ end
 
 % Continuous engagement segments (avalanche definition; also used for overview plot)
 [engagedSegs, nonEngagedSegs] = define_reach_engagement_segments( ...
-  collectStart, collectEnd, eventTimes, opts.minNonEngagedWindow, opts.eventBuffer, ...
-  opts.absorbSingleEvents);
+  collectStart, collectEnd, eventTimes, opts.minNonEngagedWindow, ...
+  opts.eventBufferBefore, opts.eventBufferAfter, opts.absorbSingleEvents);
 engagedSegs = label_segments(engagedSegs, 'Engaged');
 nonEngagedSegs = label_segments(nonEngagedSegs, 'Non-engaged');
 
@@ -218,14 +223,15 @@ plotConfig = opts.plotConfig;
 if opts.makePlots
   out.figHandles.segments = plot_beam_break_engagement_segments( ...
     eventTimes, eventTypes, engagedSegs, nonEngagedSegs, sessionName, ...
-    collectStart, collectEnd, opts.minNonEngagedWindow, opts.eventBuffer, plotConfig);
+    collectStart, collectEnd, opts.minNonEngagedWindow, ...
+    opts.eventBufferBefore, opts.eventBufferAfter, plotConfig);
 end
 
 %% d2: classify non-overlapping windows by beam-break buffer overlap
 if ismember('d2', opts.analyses)
   fprintf('\n--- d2 ---\n');
-  fprintf('eventBuffer: %.1f s (windows overlapping event +/- buffer = engaged)\n', ...
-    opts.eventBuffer);
+  fprintf('eventBuffer: %s (windows overlapping [event-before, event+after] = engaged)\n', ...
+    format_engagement_buffer_label(opts.eventBufferBefore, opts.eventBufferAfter));
   arConfig = build_ar_config(opts);
   resultsD2 = criticality_ar_analysis(dataStruct, arConfig);
   if ~isempty(opts.brainArea)
@@ -236,7 +242,7 @@ if ismember('d2', opts.analyses)
   end
 
   d2Split = split_d2_by_reach_engagement(resultsD2, eventTimesEngaged, collectStart, ...
-    opts.d2Window, opts.useLog10D2, opts.eventBuffer);
+    opts.d2Window, opts.useLog10D2, opts.eventBufferBefore, opts.eventBufferAfter);
   out.d2 = d2Split;
   out.arResultsD2 = resultsD2;
   out.durations.d2 = d2Split.durations;
@@ -265,8 +271,8 @@ end
 %% Kurtosis (PRG): classify non-overlapping blocks by beam-break buffer overlap
 if ismember('kurtosis', opts.analyses)
   fprintf('\n--- Kurtosis (PRG) ---\n');
-  fprintf('eventBuffer: %.1f s (blocks overlapping event +/- buffer = engaged)\n', ...
-    opts.eventBuffer);
+  fprintf('eventBuffer: %s (blocks overlapping [event-before, event+after] = engaged)\n', ...
+    format_engagement_buffer_label(opts.eventBufferBefore, opts.eventBufferAfter));
   prgConfig = build_prg_config(opts);
   resultsPrg = criticality_prg_analysis(dataStruct, prgConfig);
   if ~isempty(opts.brainArea)
@@ -277,7 +283,7 @@ if ismember('kurtosis', opts.analyses)
   end
 
   prgSplit = split_prg_by_reach_engagement(resultsPrg, eventTimesEngaged, opts.prgWindow, ...
-    opts.eventBuffer);
+    opts.eventBufferBefore, opts.eventBufferAfter);
   out.kurtosis = prgSplit;
   out.durations.kurtosis = prgSplit.durations;
   print_engagement_durations('kurtosis', prgSplit.durations);
@@ -292,8 +298,9 @@ end
 %% Avalanches: pool across engaged / non-engaged continuous segments
 if ismember('avalanches', opts.analyses)
   fprintf('\n--- Avalanches ---\n');
-  fprintf('minNonEngagedWindow: %.1f s; eventBuffer: %.1f s\n', ...
-    opts.minNonEngagedWindow, opts.eventBuffer);
+  fprintf('minNonEngagedWindow: %.1f s; eventBuffer: %s\n', ...
+    opts.minNonEngagedWindow, ...
+    format_engagement_buffer_label(opts.eventBufferBefore, opts.eventBufferAfter));
 
   totalSeg = struct('start', collectStart, 'end', collectEnd, 'label', 'Total');
   engagedSegs = out.segments.engaged;
@@ -315,7 +322,8 @@ if ismember('avalanches', opts.analyses)
     fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', ...
       avConfig.avWindow);
   else
-    fprintf('AV window: full collect (one shared threshold)\n');
+    fprintf(['AV window: full collect (distinct thresholds for total / ', ...
+      'engaged / non-engaged)\n']);
   end
   areasToAnalyze = resolve_areas_to_analyze(dataStruct, opts.brainArea, avConfig.nMinNeurons);
   if isempty(areasToAnalyze)
@@ -323,9 +331,15 @@ if ismember('avalanches', opts.analyses)
   end
   areaNames = dataStruct.areas(areasToAnalyze);
 
-  % One collect-range threshold (per area / subsample) for total+engaged+non-engaged
-  avConfig.sharedThresholdByArea = prepare_shared_av_thresholds_by_area( ...
+  % Collect-range thresholds for total (+ shared neuron subsets for all classes)
+  sharedCollectByArea = prepare_shared_av_thresholds_by_area( ...
     dataStruct, areasToAnalyze, avConfig, collectStart, collectEnd);
+  avConfigTotal = avConfig;
+  avConfigTotal.sharedThresholdByArea = sharedCollectByArea;
+  avConfigEngaged = attach_engagement_class_av_thresholds( ...
+    avConfig, dataStruct, areasToAnalyze, engagedSegs, sharedCollectByArea, 'engaged');
+  avConfigNonEngaged = attach_engagement_class_av_thresholds( ...
+    avConfig, dataStruct, areasToAnalyze, nonEngagedSegs, sharedCollectByArea, 'non-engaged');
 
   avByClass = struct();
   fprintf('Total (full session)');
@@ -334,13 +348,13 @@ if ismember('avalanches', opts.analyses)
   end
   fprintf('...\n');
   avByClass.total = run_pooled_avalanche_analysis( ...
-    dataStruct, areasToAnalyze, avConfig, totalSeg, avConfig.enableCircularPermutations);
+    dataStruct, areasToAnalyze, avConfigTotal, totalSeg, avConfig.enableCircularPermutations);
   fprintf('Engaged...\n');
   avByClass.engaged = run_pooled_avalanche_analysis( ...
-    dataStruct, areasToAnalyze, avConfig, engagedSegs, false);
+    dataStruct, areasToAnalyze, avConfigEngaged, engagedSegs, false);
   fprintf('Non-engaged...\n');
   avByClass.nonEngaged = run_pooled_avalanche_analysis( ...
-    dataStruct, areasToAnalyze, avConfig, nonEngagedSegs, false);
+    dataStruct, areasToAnalyze, avConfigNonEngaged, nonEngagedSegs, false);
 
   out.avalanches = struct();
   out.avalanches.segments = struct( ...
@@ -445,13 +459,22 @@ end
 if ~isfield(opts, 'minNonEngagedWindow') || isempty(opts.minNonEngagedWindow)
   opts.minNonEngagedWindow = 30;
 end
-if ~isfield(opts, 'eventBuffer') || isempty(opts.eventBuffer)
-  if isfield(opts, 'reachBuffer') && ~isempty(opts.reachBuffer)
-    opts.eventBuffer = opts.reachBuffer;
-  else
-    opts.eventBuffer = 1;
-  end
+% Prefer eventBufferBefore/After; fall back to eventBuffer, then reachBuffer* aliases
+if (~isfield(opts, 'eventBuffer') || isempty(opts.eventBuffer)) ...
+    && isfield(opts, 'reachBuffer') && ~isempty(opts.reachBuffer)
+  opts.eventBuffer = opts.reachBuffer;
 end
+if (~isfield(opts, 'eventBufferBefore') || isempty(opts.eventBufferBefore)) ...
+    && isfield(opts, 'reachBufferBefore') && ~isempty(opts.reachBufferBefore)
+  opts.eventBufferBefore = opts.reachBufferBefore;
+end
+if (~isfield(opts, 'eventBufferAfter') || isempty(opts.eventBufferAfter)) ...
+    && isfield(opts, 'reachBufferAfter') && ~isempty(opts.reachBufferAfter)
+  opts.eventBufferAfter = opts.reachBufferAfter;
+end
+[opts.eventBufferBefore, opts.eventBufferAfter] = resolve_engagement_buffer_pair( ...
+  opts, 'eventBufferBefore', 'eventBufferAfter', 'eventBuffer', 1);
+opts.eventBuffer = [opts.eventBufferBefore, opts.eventBufferAfter];
 if ~isfield(opts, 'absorbSingleEvents') || isempty(opts.absorbSingleEvents)
   if isfield(opts, 'absorbSingleReaches') && ~isempty(opts.absorbSingleReaches)
     opts.absorbSingleEvents = opts.absorbSingleReaches;
@@ -855,41 +878,48 @@ end
 %% -------------------------------------------------------------------------
 
 function [engagedSegs, nonEngagedSegs] = define_reach_engagement_segments( ...
-    collectStart, collectEnd, eventTimes, minNonEngagedWindow, eventBuffer, absorbSingleEvents)
+    collectStart, collectEnd, eventTimes, minNonEngagedWindow, bufferBefore, bufferAfter, ...
+    absorbSingleEvents)
 % DEFINE_REACH_ENGAGEMENT_SEGMENTS - Continuous engaged / non-engaged intervals
 %
 % Variables:
 %   collectStart, collectEnd - Session analysis bounds (s)
 %   eventTimes               - Beam-break event times in collect window (s)
 %   minNonEngagedWindow      - Minimum gap without events (s)
-%   eventBuffer              - Seconds around each event excluded from non-engaged
+%   bufferBefore             - Seconds before each event excluded from non-engaged
+%   bufferAfter              - Seconds after each event excluded from non-engaged
 %   absorbSingleEvents       - If true, merge isolated single events into flanking gaps
 %
 % Goal:
-%   Each event occupies [event - eventBuffer, event + eventBuffer]. Non-engaged =
+%   Each event occupies [event - bufferBefore, event + bufferAfter]. Non-engaged =
 %   gaps between these buffered neighborhoods (and session edges) with duration
 %   >= minNonEngagedWindow. Engaged = complement (includes all event buffers).
 %   When absorbSingleEvents is true, an occupied interval with exactly one event
 %   that is flanked on both sides by qualifying non-engaged gaps is absorbed: the
 %   event buffer and both gaps form one non-engaged segment.
 
-if nargin < 5 || isempty(eventBuffer)
-  eventBuffer = 0;
+if nargin < 5 || isempty(bufferBefore)
+  bufferBefore = 0;
 end
-if nargin < 6 || isempty(absorbSingleEvents)
+if nargin < 6 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
+end
+if nargin < 7 || isempty(absorbSingleEvents)
   absorbSingleEvents = true;
 end
-eventBuffer = max(0, eventBuffer);
+bufferBefore = max(0, bufferBefore);
+bufferAfter = max(0, bufferAfter);
 
 eventTimes = sort(eventTimes(:));
 eventTimes = eventTimes(eventTimes >= collectStart & eventTimes <= collectEnd);
 
 % Merge overlapping event neighborhoods into occupied intervals
-occupied = merge_event_buffer_intervals(eventTimes, eventBuffer, collectStart, collectEnd);
+occupied = merge_event_buffer_intervals( ...
+  eventTimes, bufferBefore, bufferAfter, collectStart, collectEnd);
 absorbedMask = false(1, numel(occupied));
 if absorbSingleEvents && ~isempty(occupied)
   absorbedMask = get_absorbed_single_event_occupied_mask( ...
-    eventTimes, collectStart, collectEnd, minNonEngagedWindow, eventBuffer);
+    eventTimes, collectStart, collectEnd, minNonEngagedWindow, bufferBefore, bufferAfter);
 end
 
 nonEngagedSegs = struct('start', {}, 'end', {});
@@ -928,17 +958,22 @@ engagedSegs = complement_segments(collectStart, collectEnd, nonEngagedSegs);
 end
 
 function absorbedMask = get_absorbed_single_event_occupied_mask( ...
-    eventTimes, collectStart, collectEnd, minNonEngagedWindow, eventBuffer)
+    eventTimes, collectStart, collectEnd, minNonEngagedWindow, bufferBefore, bufferAfter)
 % GET_ABSORBED_SINGLE_EVENT_OCCUPIED_MASK - Isolated single events to absorb
 %
 % Variables:
-%   eventTimes, collectStart, collectEnd, minNonEngagedWindow, eventBuffer
+%   eventTimes, collectStart, collectEnd, minNonEngagedWindow
+%   bufferBefore, bufferAfter
 %
 % Goal:
 %   Mark merged event-buffer intervals that contain exactly one event and are
 %   flanked on both sides by gaps >= minNonEngagedWindow.
 
-occupied = merge_event_buffer_intervals(eventTimes, eventBuffer, collectStart, collectEnd);
+if nargin < 6 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
+end
+occupied = merge_event_buffer_intervals( ...
+  eventTimes, bufferBefore, bufferAfter, collectStart, collectEnd);
 absorbedMask = false(1, numel(occupied));
 if isempty(occupied)
   return;
@@ -969,18 +1004,25 @@ end
 end
 
 function eventTimesEngaged = filter_engaged_event_times(eventTimes, collectStart, ...
-    collectEnd, minNonEngagedWindow, eventBuffer, absorbSingleEvents)
+    collectEnd, minNonEngagedWindow, bufferBefore, bufferAfter, absorbSingleEvents)
 % FILTER_ENGAGED_EVENT_TIMES - Beam-break events that count as engaged
 %
 % Variables:
-%   eventTimes, collectStart, collectEnd, minNonEngagedWindow, eventBuffer
+%   eventTimes, collectStart, collectEnd, minNonEngagedWindow
+%   bufferBefore, bufferAfter
 %   absorbSingleEvents - If true, drop isolated single events absorbed into gaps
 %
 % Goal:
 %   Return event times whose buffers should be treated as engaged for d2/kurtosis.
 
 eventTimes = sort(eventTimes(:));
-if nargin < 6 || isempty(absorbSingleEvents)
+if nargin < 5 || isempty(bufferBefore)
+  bufferBefore = 0;
+end
+if nargin < 6 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
+end
+if nargin < 7 || isempty(absorbSingleEvents)
   absorbSingleEvents = true;
 end
 if ~absorbSingleEvents || isempty(eventTimes)
@@ -988,9 +1030,10 @@ if ~absorbSingleEvents || isempty(eventTimes)
   return;
 end
 
-occupied = merge_event_buffer_intervals(eventTimes, eventBuffer, collectStart, collectEnd);
+occupied = merge_event_buffer_intervals( ...
+  eventTimes, bufferBefore, bufferAfter, collectStart, collectEnd);
 absorbedMask = get_absorbed_single_event_occupied_mask( ...
-  eventTimes, collectStart, collectEnd, minNonEngagedWindow, eventBuffer);
+  eventTimes, collectStart, collectEnd, minNonEngagedWindow, bufferBefore, bufferAfter);
 keep = true(size(eventTimes));
 for iEvent = 1:numel(eventTimes)
   for iOcc = 1:numel(occupied)
@@ -1004,24 +1047,32 @@ end
 eventTimesEngaged = eventTimes(keep);
 end
 
-function occupied = merge_event_buffer_intervals(reachStart, eventBuffer, collectStart, collectEnd)
-% MERGE_REACH_BUFFER_INTERVALS - Union of [reach-buffer, reach+buffer] in collect window
+function occupied = merge_event_buffer_intervals(eventTimes, bufferBefore, bufferAfter, ...
+    collectStart, collectEnd)
+% MERGE_EVENT_BUFFER_INTERVALS - Union of [event-before, event+after] in collect window
 %
 % Variables:
-%   reachStart               - Reach onset times (s)
-%   eventBuffer              - Half-width around each reach (s)
+%   eventTimes               - Event times (s)
+%   bufferBefore             - Seconds before each event (s)
+%   bufferAfter              - Seconds after each event (s)
 %   collectStart, collectEnd - Clip bounds (s)
 %
 % Goal:
 %   Return non-overlapping occupied intervals sorted by start time.
 
+if nargin < 3 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
+end
+bufferBefore = max(0, bufferBefore);
+bufferAfter = max(0, bufferAfter);
+
 occupied = struct('start', {}, 'end', {});
-if isempty(reachStart)
+if isempty(eventTimes)
   return;
 end
 
-starts = max(collectStart, reachStart - eventBuffer);
-ends = min(collectEnd, reachStart + eventBuffer);
+starts = max(collectStart, eventTimes - bufferBefore);
+ends = min(collectEnd, eventTimes + bufferAfter);
 valid = ends > starts;
 starts = starts(valid);
 ends = ends(valid);
@@ -1106,7 +1157,7 @@ end
 
 function fig = plot_beam_break_engagement_segments(eventTimes, eventTypes, engagedSegs, ...
     nonEngagedSegs, sessionName, collectStart, collectEnd, minNonEngagedWindow, ...
-    eventBuffer, plotConfig)
+    bufferBefore, bufferAfter, plotConfig)
 % PLOT_BEAM_BREAK_ENGAGEMENT_SEGMENTS - Beam breaks and engaged / non-engaged intervals
 %
 % Variables:
@@ -1117,7 +1168,7 @@ function fig = plot_beam_break_engagement_segments(eventTimes, eventTypes, engag
 %   sessionName          - Session id for title
 %   collectStart/End     - Analysis bounds (s)
 %   minNonEngagedWindow  - Gap threshold used for non-engaged (s)
-%   eventBuffer          - Buffer around events excluded from non-engaged (s)
+%   bufferBefore/After   - Buffer before/after events excluded from non-engaged (s)
 %   plotConfig           - Axis fonts and line widths
 %
 % Goal:
@@ -1193,8 +1244,9 @@ ylim(ax, [yMin, yMax]);
 yticks(ax, []);
 titleText = sprintf( ...
   ['%s — beam-break engagement segments [%.0f–%.0f s]\n', ...
-  'minNonEngagedWindow=%.1f s, eventBuffer=%.1f s | %d events (%d correct, %d error)'], ...
-  sessionName, collectStart, collectEnd, minNonEngagedWindow, eventBuffer, ...
+  'minNonEngagedWindow=%.1f s, eventBuffer: %s | %d events (%d correct, %d error)'], ...
+  sessionName, collectStart, collectEnd, minNonEngagedWindow, ...
+  format_engagement_buffer_label(bufferBefore, bufferAfter), ...
   numel(eventTimes), sum(correctMask), sum(errorMask));
 apply_engagement_axes_style(ax, plotConfig, 'Time (s)', 'Engagement (schematic)', titleText);
 
@@ -1468,24 +1520,28 @@ end
 %% -------------------------------------------------------------------------
 
 function d2Split = split_d2_by_reach_engagement(results, reachStart, collectStart, ...
-    d2Window, useLog10D2, eventBuffer)
-% SPLIT_D2_BY_REACH_ENGAGEMENT - Partition window-wise d2 by reach engagement
+    d2Window, useLog10D2, bufferBefore, bufferAfter)
+% SPLIT_D2_BY_REACH_ENGAGEMENT - Partition window-wise d2 by event engagement
 %
 % Variables:
-%   results      - Output of criticality_ar_analysis
-%   reachStart   - Reach onsets in collect window (absolute s)
-%   collectStart - Collect window start (s); startS is relative to this
-%   d2Window     - Non-overlapping window length (s)
-%   useLog10D2   - If true, store log10(d2) for plotting
-%   eventBuffer  - Seconds around each reach that count as engaged (s)
+%   results       - Output of criticality_ar_analysis
+%   reachStart    - Event times in collect window (absolute s)
+%   collectStart  - Collect window start (s); startS is relative to this
+%   d2Window      - Non-overlapping window length (s)
+%   useLog10D2    - If true, store log10(d2) for plotting
+%   bufferBefore  - Seconds before each event that count as engaged (s)
+%   bufferAfter   - Seconds after each event that count as engaged (s)
 %
 % Goal:
-%   Windows overlapping any [reach - eventBuffer, reach + eventBuffer] are engaged
-%   (including windows with no reach onset but within the buffer). Others are
+%   Windows overlapping any [event - bufferBefore, event + bufferAfter] are engaged
+%   (including windows with no event onset but within the buffer). Others are
 %   non-engaged. Total uses all windows. Duration = nWindows * d2Window per class.
 
-if nargin < 6 || isempty(eventBuffer)
-  eventBuffer = 0;
+if nargin < 6 || isempty(bufferBefore)
+  bufferBefore = 0;
+end
+if nargin < 7 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
 end
 
 classNames = engagement_class_names();
@@ -1513,7 +1569,7 @@ for a = 1:numel(d2Split.areas)
   centerRel = results.startS{a}(:);
   winStartAbs = collectStart + centerRel - d2Window / 2;
   winEndAbs = collectStart + centerRel + d2Window / 2;
-  engagedMask = window_overlaps_event_buffer(winStartAbs, winEndAbs, reachStart, eventBuffer);
+  engagedMask = window_overlaps_event_buffer(winStartAbs, winEndAbs, reachStart, bufferBefore, bufferAfter);
   nonEngagedMask = ~engagedMask;
   d2Split.windowMask{a} = struct('engaged', engagedMask, 'nonEngaged', nonEngagedMask);
 
@@ -1809,23 +1865,27 @@ end
 %% Kurtosis (PRG) split and plot
 %% -------------------------------------------------------------------------
 
-function prgSplit = split_prg_by_reach_engagement(results, reachStart, prgWindow, eventBuffer)
+function prgSplit = split_prg_by_reach_engagement(results, reachStart, prgWindow, ...
+    bufferBefore, bufferAfter)
 % SPLIT_PRG_BY_REACH_ENGAGEMENT - Partition PRG windows by reach engagement
 %
 % Variables:
 %   results     - Output of criticality_prg_analysis
 %   reachStart  - Reach onsets (absolute s)
 %   prgWindow   - Non-overlapping block length (s)
-%   eventBuffer - Seconds around each reach that count as engaged (s)
+%   bufferBefore/After - Seconds before/after each event counted as engaged (s)
 %
 % Goal:
-%   Blocks overlapping any [reach - eventBuffer, reach + eventBuffer] are engaged
+%   Blocks overlapping any [event - bufferBefore, event + bufferAfter] are engaged
 %   (including blocks with no reach onset but within the buffer). Duration =
 %   nWindows * prgWindow per class (all blocks, including CV-excluded); metric
 %   vectors use valid (non-excluded) windows only.
 
-if nargin < 4 || isempty(eventBuffer)
-  eventBuffer = 0;
+if nargin < 4 || isempty(bufferBefore)
+  bufferBefore = 0;
+end
+if nargin < 5 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
 end
 
 classNames = engagement_class_names();
@@ -1850,7 +1910,7 @@ for a = 1:numel(prgSplit.areas)
   end
   winStartAbs = results.windowStartS{a}(:);
   winEndAbs = winStartAbs + prgWindow;
-  engagedMask = window_overlaps_event_buffer(winStartAbs, winEndAbs, reachStart, eventBuffer);
+  engagedMask = window_overlaps_event_buffer(winStartAbs, winEndAbs, reachStart, bufferBefore, bufferAfter);
   nonEngagedMask = ~engagedMask;
 
   % Block grid is shared across areas; count session time once
@@ -1994,95 +2054,16 @@ end
 
 function avData = extract_pooled_area_avalanches(dataStruct, areaIndex, analysisConfig, ...
     segments, computeShuffles)
-% EXTRACT_POOLED_AREA_AVALANCHES - Collect avalanches across segments then fit
+% EXTRACT_POOLED_AREA_AVALANCHES - Delegate to path-visible core (avWindow support)
 %
-% Variables:
-%   segments        - Struct array (.start, .end) in seconds
-%   computeShuffles - If true, also pool circular-shuffle avalanches
-%
-% Goal:
-%   Bin and detect avalanches per segment, pool sizes/durations, fit power laws
-%   on the pooled sample (matches multi-segment engagement design).
+% Local shadow previously omitted avWindow tiling / per-tile thresholds. Route
+% through extract_pooled_area_avalanches_core so engagement matches criticality/.
 
 if nargin < 5 || isempty(computeShuffles)
   computeShuffles = false;
 end
-
-avData = empty_avalanche_data();
-if isempty(segments)
-  return;
-end
-
-% Attach collect-range shared threshold for this area (total / engaged / non-engaged)
-if isfield(analysisConfig, 'sharedThresholdByArea') ...
-    && numel(analysisConfig.sharedThresholdByArea) >= areaIndex ...
-    && ~isempty(analysisConfig.sharedThresholdByArea{areaIndex})
-  analysisConfig = merge_shared_av_threshold_into_config( ...
-    analysisConfig, analysisConfig.sharedThresholdByArea{areaIndex});
-end
-
-allSizes = [];
-allDurations = [];
-allShuffleSizes = [];
-allShuffleDurations = [];
-nShufflesCompleted = 0;
-binSizeUsed = nan;
-minSegDur = 0.2;
-if isfield(analysisConfig, 'binSize') && isfinite(analysisConfig.binSize)
-  minSegDur = max(minSegDur, analysisConfig.binSize * 4);
-end
-for i = 1:numel(segments)
-  segStart = segments(i).start;
-  segEnd = segments(i).end;
-  if segEnd - segStart < minSegDur
-    continue;
-  end
-  segAv = extract_area_avalanches(dataStruct, areaIndex, analysisConfig, segStart, segEnd, ...
-    computeShuffles);
-  if ~segAv.hasAvalanches
-    continue;
-  end
-  allSizes = [allSizes; segAv.sizes(:)]; %#ok<AGROW>
-  allDurations = [allDurations; segAv.durations(:)]; %#ok<AGROW>
-  if computeShuffles && ~isempty(segAv.shuffleSizes)
-    allShuffleSizes = [allShuffleSizes; segAv.shuffleSizes(:)]; %#ok<AGROW>
-    allShuffleDurations = [allShuffleDurations; segAv.shuffleDurations(:)]; %#ok<AGROW>
-    nShufflesCompleted = nShufflesCompleted + segAv.nShufflesCompleted;
-  end
-  if ~isfinite(binSizeUsed)
-    binSizeUsed = segAv.binSize;
-  end
-end
-
-if isempty(allSizes) || isempty(allDurations)
-  return;
-end
-
-plMetrics = avalanche_power_law_metrics(allSizes, allDurations, analysisConfig);
-
-avData.hasAvalanches = true;
-avData.sizes = allSizes;
-avData.durations = allDurations;
-avData.tau = plMetrics.tau;
-avData.alpha = plMetrics.alpha;
-avData.paramSD = plMetrics.paramSD;
-avData.decades = plMetrics.decades;
-avData.dcc = distance_to_criticality(plMetrics.tau, plMetrics.alpha, plMetrics.paramSD);
-avData.scalingRelation = compute_avalanche_scaling_relation(avData.tau, avData.alpha);
-avData.minSizeFit = plMetrics.minavS;
-avData.maxSizeFit = plMetrics.maxavS;
-avData.minDurFit = plMetrics.minavD;
-avData.maxDurFit = plMetrics.maxavD;
-avData.sizeFitInfo = struct('exponent', plMetrics.tau, 'fitMin', plMetrics.minavS, ...
-  'fitMax', plMetrics.maxavS, 'decades', plMetrics.decades);
-avData.durFitInfo = struct('exponent', plMetrics.alpha, 'fitMin', plMetrics.minavD, ...
-  'fitMax', plMetrics.maxavD);
-avData.nAvalanches = numel(allSizes);
-avData.binSize = binSizeUsed;
-avData.nSegments = numel(segments);
-avData.shuffleSizes = allShuffleSizes;
-avData.shuffleDurations = allShuffleDurations;
-avData.nShufflesCompleted = nShufflesCompleted;
+avData = extract_pooled_area_avalanches_core(dataStruct, areaIndex, analysisConfig, ...
+  segments, computeShuffles);
 end
 
 function avData = extract_area_avalanches(dataStruct, areaIndex, analysisConfig, ...
@@ -2368,22 +2349,28 @@ function colors = engagement_class_colors()
 colors = manuscript_plot_colors().engagementClasses;
 end
 
-function isEngaged = window_overlaps_event_buffer(winStartAbs, winEndAbs, reachStart, eventBuffer)
-% WINDOW_OVERLAPS_REACH_BUFFER - True if window overlaps any reach buffer interval
+function isEngaged = window_overlaps_event_buffer(winStartAbs, winEndAbs, reachStart, ...
+    bufferBefore, bufferAfter)
+% WINDOW_OVERLAPS_EVENT_BUFFER - True if window overlaps any event buffer interval
 %
 % Variables:
 %   winStartAbs, winEndAbs - Window bounds [start, end) in absolute seconds
-%   reachStart             - Reach onset times (s)
-%   eventBuffer            - Half-width around each reach treated as engaged (s)
+%   reachStart             - Event times (s)
+%   bufferBefore           - Seconds before each event treated as engaged (s)
+%   bufferAfter            - Seconds after each event treated as engaged (s)
 %
 % Goal:
-%   Engaged if the window overlaps [reach - eventBuffer, reach + eventBuffer] for
-%   any reach, so near-reach windows without an onset inside still count.
+%   Engaged if the window overlaps [event - bufferBefore, event + bufferAfter] for
+%   any event, so near-event windows without an onset inside still count.
 
-if nargin < 4 || isempty(eventBuffer)
-  eventBuffer = 0;
+if nargin < 4 || isempty(bufferBefore)
+  bufferBefore = 0;
 end
-eventBuffer = max(0, eventBuffer);
+if nargin < 5 || isempty(bufferAfter)
+  bufferAfter = bufferBefore;
+end
+bufferBefore = max(0, bufferBefore);
+bufferAfter = max(0, bufferAfter);
 
 isEngaged = false(size(winStartAbs));
 if isempty(reachStart)
@@ -2391,9 +2378,9 @@ if isempty(reachStart)
 end
 reachStart = reachStart(:);
 for w = 1:numel(winStartAbs)
-  % Half-open window [winStart, winEnd) vs closed buffer [reach-buf, reach+buf]
-  isEngaged(w) = any(winStartAbs(w) <= reachStart + eventBuffer & ...
-    winEndAbs(w) > reachStart - eventBuffer);
+  % Half-open window [winStart, winEnd) vs closed buffer [event-before, event+after]
+  isEngaged(w) = any(winStartAbs(w) <= reachStart + bufferAfter & ...
+    winEndAbs(w) > reachStart - bufferBefore);
 end
 end
 

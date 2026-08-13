@@ -17,6 +17,9 @@
 %   saveBatchResults, batchResultsFile - Save/load batch for plot-only reruns
 %   useLog10D2, useViolinPlots - Bar means (default) or per-window violin distributions
 %   useSubsampling, nSubsamples, ...
+%   engagementBufferBefore / engagementBufferAfter - Seconds before/after each
+%     reach or beam-break counted as engaged (default 1). Legacy engagementBuffer
+%     (or reachBuffer) sets both sides when before/after are unset.
 %
 % Goal:
 %   Compare d2 across sessions grouped by task type. Reach/interval/semicircle:
@@ -49,6 +52,11 @@ useSubsampling = true;
 nSubsamples = 25;
 nNeuronsSubsample = 50;
 minNeuronsMultiple = 1.2;
+
+engagementBufferBefore = 1;
+engagementBufferAfter = 1;
+minNonEngagedWindow = 30;
+absorbSingleEvents = true;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = d2Window;
@@ -83,6 +91,10 @@ opts.collectStart = collectStart;
 opts.collectEnd = collectEnd;
 opts.minFiringRate = 0.05;
 opts.maxFiringRate = 150;
+opts.engagementBufferBefore = engagementBufferBefore;
+opts.engagementBufferAfter = engagementBufferAfter;
+opts.minNonEngagedWindow = minNonEngagedWindow;
+opts.absorbSingleEvents = absorbSingleEvents;
 
 plotConfig = fill_manuscript_plot_config();
 
@@ -302,11 +314,32 @@ engOpts.makePlots = false;
 engOpts.saveFigure = false;
 engOpts.plotConfig = plotConfig;
 
+[bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
+  opts, 'engagementBufferBefore', 'engagementBufferAfter', 'engagementBuffer', 1);
+% Also accept script-level vars when opts lacks them (batch opts struct)
+if isfield(opts, 'reachBufferBefore') || isfield(opts, 'reachBuffer')
+  [bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
+    opts, 'reachBufferBefore', 'reachBufferAfter', 'reachBuffer', bufBefore);
+end
 if strcmpi(sessionType, 'reach')
+  engOpts.reachBufferBefore = bufBefore;
+  engOpts.reachBufferAfter = bufAfter;
   engOpts.runD2AccuracyCorrelation = false;
   engOpts.runD2ReachRateCorrelation = false;
 else
+  engOpts.eventBufferBefore = bufBefore;
+  engOpts.eventBufferAfter = bufAfter;
   engOpts.runD2TrialRateCorrelation = false;
+end
+if isfield(opts, 'minNonEngagedWindow') && ~isempty(opts.minNonEngagedWindow)
+  engOpts.minNonEngagedWindow = opts.minNonEngagedWindow;
+end
+if isfield(opts, 'absorbSingleEvents') && ~isempty(opts.absorbSingleEvents)
+  if strcmpi(sessionType, 'reach')
+    engOpts.absorbSingleReaches = logical(opts.absorbSingleEvents);
+  else
+    engOpts.absorbSingleEvents = logical(opts.absorbSingleEvents);
+  end
 end
 end
 
