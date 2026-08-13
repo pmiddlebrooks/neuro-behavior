@@ -11,7 +11,9 @@ function threshInfo = prepare_area_shared_av_thresholds(dataStruct, areaIndex, a
 %
 % Goal:
 %   Bin the full collect range once and return shared threshold info (including
-%   fixed subsample neuron indices) for engaged / non-engaged / total analyses.
+%   fixed subsample neuron indices) for the total class. Engaged / non-engaged
+%   cutoffs are prepared separately via prepare_segment_class_av_thresholds_by_area
+%   while reusing these neuron subsets.
 
 timeRange = [collectStart, collectEnd];
 neuronIds = dataStruct.idLabel{areaIndex};

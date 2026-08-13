@@ -13,7 +13,8 @@ function avData = extract_pooled_area_avalanches(dataStruct, areaIndex, analysis
 %   Detect avalanches in each segment (or avWindow tile), pool sizes/durations,
 %   and fit power laws once on the pooled sample. When avWindow is set, each
 %   tile uses a threshold from that tile's own population activity. When
-%   avWindow is empty, reuse the collect-range shared threshold.
+%   avWindow is empty, reuse sharedThresholdByArea (collect-range for total;
+%   engagement callers pass class-specific cutoffs for engaged / non-engaged).
 
 if nargin < 5 || isempty(computeShuffles)
   computeShuffles = false;

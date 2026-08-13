@@ -4,7 +4,8 @@ function out = semicircle_criticality_metrics_engagement(subjectName, sessionNam
 % Variables:
 %   subjectName - Subject folder (e.g. 'AS1')
 %   sessionName - Session identifier (e.g. 'AS1_0618_WellLearned')
-%   opts        - Options struct (same fields as interval_criticality_metrics_engagement)
+%   opts        - Options struct (same fields as interval_criticality_metrics_engagement,
+%                 including eventBufferBefore / eventBufferAfter)
 %
 % Goal:
 %   Same engagement analyses as the interval-timing module, but engagement

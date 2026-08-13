@@ -8,7 +8,10 @@
 %
 % Variables (configure in this section):
 %   sessionTypes, dataSource, collectStart, collectEnd
-%   avWindow - Avalanche tile (s); [] = full collect, shared threshold
+%   avWindow - Avalanche tile (s); [] = full collect / class-level threshold.
+%              When set, each tile gets its own threshold. Engaged and
+%              non-engaged always use distinct class-level (or per-tile)
+%              cutoffs — not one threshold shared across engagement classes.
 %   brainArea, brainAreaCombinations, areasToPlot
 %   runBatch, plotResults, saveBatchResults, batchResultsFile
 %   powerLawFitMethod, avalancheDetectionMode, thresholdMethod, gofThreshold
@@ -29,7 +32,7 @@ dataSource = 'spikes';
 
 collectStart = 0;
 collectEnd = [];  % [] = full session
-avWindow = [];   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
+avWindow = [];   % [] = full collect / class-level threshold; e.g. 5*60 = per-window
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
@@ -54,7 +57,8 @@ minNeuronsMultiple = 1.2;
 nMinNeurons = 25;
 
 minNonEngagedWindow = 30;
-reachBuffer = 1;
+reachBufferBefore = 1;
+reachBufferAfter = 1;
 absorbSingleEvents = true;
 
 metricsToPlot = {'dcc', 'decades', 'tau', 'alpha', 'paramSD'};
@@ -81,7 +85,8 @@ end
 fprintf('\n=== Criticality Avalanche Across Task Types (Engagement) ===\n');
 fprintf('Collect window: [%.1f, %s] s\n', collectStart, format_collect_end_label(collectEnd));
 if isempty(avWindow)
-  fprintf('AV window: full collect (one shared threshold)\n');
+  fprintf(['AV window: full collect (distinct thresholds for total / ', ...
+    'engaged / non-engaged)\n']);
 else
   fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
 end
@@ -134,7 +139,7 @@ if runBatch
           plotConfig, sessionType, powerLawFitMethod, avalancheDetectionMode, ...
           thresholdMethod, gofThreshold, enablePermutations, nShuffles, useSubsampling, nSubsamples, ...
           nNeuronsSubsample, minNeuronsMultiple, nMinNeurons, minNonEngagedWindow, ...
-          reachBuffer, absorbSingleEvents, avWindow);
+          reachBufferBefore, reachBufferAfter, absorbSingleEvents, avWindow);
         if strcmpi(sessionType, 'reach')
           engOut = reach_criticality_metrics_engagement(sessionName, engOpts);
         elseif strcmpi(sessionType, 'semicircle')
@@ -303,7 +308,8 @@ end
 function engOpts = build_av_engagement_batch_opts(opts, brainArea, brainAreaCombinations, ...
     plotConfig, sessionType, powerLawFitMethod, avalancheDetectionMode, thresholdMethod, ...
     gofThreshold, enablePermutations, nShuffles, useSubsampling, nSubsamples, nNeuronsSubsample, ...
-    minNeuronsMultiple, nMinNeurons, minNonEngagedWindow, reachBuffer, absorbSingleEvents, avWindow)
+    minNeuronsMultiple, nMinNeurons, minNonEngagedWindow, reachBufferBefore, reachBufferAfter, ...
+    absorbSingleEvents, avWindow)
 % BUILD_AV_ENGAGEMENT_BATCH_OPTS - Engagement-module opts (avalanches only)
 
 if strcmpi(sessionType, 'reach')
@@ -338,16 +344,21 @@ engOpts.nNeuronsSubsample = nNeuronsSubsample;
 engOpts.minNeuronsMultiple = minNeuronsMultiple;
 engOpts.nMinNeurons = nMinNeurons;
 engOpts.minNonEngagedWindow = minNonEngagedWindow;
-if nargin >= 20
+if nargin >= 21
   engOpts.avWindow = avWindow;
 else
   engOpts.avWindow = [];
 end
+if nargin < 19 || isempty(reachBufferAfter)
+  reachBufferAfter = reachBufferBefore;
+end
 if strcmpi(sessionType, 'reach')
-  engOpts.reachBuffer = reachBuffer;
+  engOpts.reachBufferBefore = reachBufferBefore;
+  engOpts.reachBufferAfter = reachBufferAfter;
   engOpts.absorbSingleReaches = absorbSingleEvents;
 else
-  engOpts.eventBuffer = reachBuffer;
+  engOpts.eventBufferBefore = reachBufferBefore;
+  engOpts.eventBufferAfter = reachBufferAfter;
   engOpts.absorbSingleEvents = absorbSingleEvents;
 end
 end

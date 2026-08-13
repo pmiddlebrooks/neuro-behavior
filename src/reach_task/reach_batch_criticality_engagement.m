@@ -14,7 +14,7 @@
 %   nMinNeurons    - Minimum neurons in analysis area(s)
 %   useSubsampling - If true, metrics = mean across neuron subsamples
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
-%   brainArea, collectStart/End, reachBuffer, minNonEngagedWindow, ...
+%   brainArea, collectStart/End, reachBufferBefore/After, minNonEngagedWindow, ...
 %
 % Goal:
 %   Compare criticality metrics between engaged and non-engaged conditions
@@ -41,7 +41,8 @@ nSubsamples = 10;
 nNeuronsSubsample = 50;
 minNeuronsMultiple = 1.25;
 
-reachBuffer = 2;
+reachBufferBefore = 2;
+reachBufferAfter = 2;
 minNonEngagedWindow = 25;
 absorbSingleReaches = 1;
 d2Window = 30;
@@ -69,7 +70,8 @@ opts.useSubsampling = useSubsampling;
 opts.nSubsamples = nSubsamples;
 opts.nNeuronsSubsample = nNeuronsSubsample;
 opts.minNeuronsMultiple = minNeuronsMultiple;
-opts.reachBuffer = reachBuffer;
+opts.reachBufferBefore = reachBufferBefore;
+opts.reachBufferAfter = reachBufferAfter;
 opts.minNonEngagedWindow = minNonEngagedWindow;
 opts.absorbSingleReaches = absorbSingleReaches;
 opts.d2Window = d2Window;
