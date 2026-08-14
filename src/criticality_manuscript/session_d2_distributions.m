@@ -61,7 +61,7 @@ end
 dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
-d2Window = 30;  % seconds; non-overlapping windows
+d2Window = 40;  % seconds; non-overlapping windows
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
@@ -69,11 +69,11 @@ useSubsampling = true;
 nSubsamples = 40;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
-nPermutations = 5;  % circular shuffles per window for shuffled d2 distribution
+nPermutations = 3;  % circular shuffles per window for shuffled d2 distribution
 plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
-binSize = 0.03;  % s; spike binning for d2 (and window mean popActivity)
+binSize = 0.04;  % s; spike binning for d2 (and window mean popActivity)
 saveFigure = false;
 
 plotConfig = fill_manuscript_plot_config();
@@ -84,7 +84,7 @@ widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 splitByEngagement = true;
 engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
 engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
-minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
+minNonEngagedWindow = 12;    % min gap (s) for non-engaged segments
 absorbSingleEvents = true;   % merge isolated single events into non-engaged gaps
 
 opts = neuro_behavior_options();

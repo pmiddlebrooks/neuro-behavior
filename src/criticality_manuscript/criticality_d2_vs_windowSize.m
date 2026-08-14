@@ -3,8 +3,15 @@
 %
 % Sweeps window durations in windowsToTest for three example sessions
 % (one spontaneous, one interval, one reach). At each size W, places
-% non-overlapping tiled windows of length W within the collect range,
-% computes population d2 and CV per tile, then averages across valid tiles.
+% windows of length W within the collect range, computes population d2
+% and CV per window, then averages across valid windows.
+%
+% Window placement (equalizeWindowCounts):
+%   false (default) - Non-overlapping tiles of length W at each size
+%     (more tiles for smaller W).
+%   true - Tile the session with non-overlapping windows of the largest W,
+%     then place every smaller W centered on those same tile centers so
+%     the number of windows is matched across sizes (controls for n per W).
 %
 % Variables (configure in this section):
 %   exampleSessions  - 3x1 struct array with fields:
@@ -19,7 +26,14 @@
 %   binSizeManual    - Fixed bin width (s) across window sizes
 %   pOrder, critType - AR / d2 parameters
 %   meanSubtract     - If true, subtract mean pop activity within each window
-%   useLog10D2       - Log y-axis for mean d2 when all plotted means are positive
+%   equalizeWindowCounts - If true, match n windows across sizes using
+%                        centers of the largest-W tiles (see above)
+%   useSubsampling   - If true, draw neuron subsets from the full collect
+%                        matrix once, then reuse those same subsets at every W
+%   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsample counts;
+%                        skip area if nNeurons < round(nNeuronsSubsample *
+%                        minNeuronsMultiple)
+%   useLog10D2       - If true, plot log10(d2) (non-positive values omitted)
 %   enablePermutations - If true, circularly permute neurons over the full
 %                        collect range (once per shuffle), then re-tile; avoids
 %                        per-window circshifts for speed
@@ -36,7 +50,8 @@
 %
 % Plot colors: d2 = colors_for_tasks(sessionType); CV = muted magenta;
 % shuffled = grayed versions of those observed colors. Legend on first panel
-% only. CV plotted under d2.
+% only. CV plotted under d2. A second figure overlays mean d2 only for all
+% sessions on one axis (task colors; legend by displayLabel).
 %
 % Coefficient of variation (CV): for each popActivity trace,
 % CV = nanstd(x) / |nanmean(x)|. Mean CV at each W is nanmean across tiles.
@@ -44,7 +59,7 @@
 % Goal:
 %   Characterize how mean d2 and mean pop-activity CV depend on analysis
 %   window length across task types, using the same tiling logic so
-%   spontaneous / interval / reach are directly comparable (1x3 figure).
+%   spontaneous / interval / reach are directly comparable (1x3 + overlay).
 
 %% Paths
 setup_criticality_manuscript_paths('criticality_d2_vs_windowSize');
@@ -88,6 +103,11 @@ binSizeManual = 0.025;      % seconds (fixed across window sizes)
 pOrder = 10;
 critType = 2;
 meanSubtract = false;
+  equalizeWindowCounts = true;  % true: same n across W (centers from max W)
+  useSubsampling = true;
+  nSubsamples = 40;
+  nNeuronsSubsample = 45;
+  minNeuronsMultiple = 1.1;
 useLog10D2 = true;
 enablePermutations = false;
 nShuffles = 10;
@@ -98,6 +118,18 @@ fprintf('\n=== criticality_d2_vs_windowSize ===\n');
 fprintf('Windows (s): %s\n', mat2str(windowsToTest([1, end]), 3));
 fprintf('binSize = %.3f s; pOrder = %d; brainArea = %s\n', ...
   binSizeManual, pOrder, brainArea);
+if equalizeWindowCounts
+  fprintf(['Window placement: equalized n (smaller W centered on ', ...
+    'largest-W tile centers)\n']);
+else
+  fprintf('Window placement: non-overlapping tiles per window size\n');
+end
+if useSubsampling
+  fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
+    nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
+else
+  fprintf('Subsampling: off\n');
+end
 if enablePermutations
   fprintf('Circular permutations: %d (whole-session neuron circshift)\n', nShuffles);
 else
@@ -154,9 +186,29 @@ for e = 1:numExamples
   aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
     neuronIDs, timeRange, binSizeManual);
   binSizeSec = binSizeManual;
+  numNeurons = size(aDataMat, 2);
+  fprintf('  Neurons: %d\n', numNeurons);
+
+  neuronIdxSubsamples = {};
+  if useSubsampling
+    minNeuronsRequired = round(nNeuronsSubsample * minNeuronsMultiple);
+    if numNeurons < minNeuronsRequired
+      warning('criticality_d2_vs_windowSize:TooFewNeurons', ...
+        ['Only %d neurons in %s (need >= %d = %d x %.2f); skipping subsample ', ...
+        'analysis for this session.'], ...
+        numNeurons, ex.sessionName, minNeuronsRequired, ...
+        nNeuronsSubsample, minNeuronsMultiple);
+      continue;
+    end
+    neuronIdxSubsamples = draw_neuron_subsample_indices( ...
+      numNeurons, nSubsamples, nNeuronsSubsample);
+    fprintf('  Using %d neuron subsets of %d (same subsets at every W)\n', ...
+      nSubsamples, min(nNeuronsSubsample, numNeurons));
+  end
 
   [meanD2, semD2, nValid, meanCv, semCv, nCvValid] = sweep_tiled_d2_cv( ...
-    aDataMat, windowsToTest, binSizeSec, pOrder, critType, meanSubtract);
+    aDataMat, windowsToTest, binSizeSec, pOrder, critType, meanSubtract, ...
+    equalizeWindowCounts, neuronIdxSubsamples);
 
   for iW = 1:numW
     fprintf('  W = %5.1f s: nValid = %4d, mean d2 = %.4g, mean CV = %.3g (n_CV = %d)\n', ...
@@ -177,7 +229,8 @@ for e = 1:numExamples
     for s = 1:nShuffles
       permutedDataMat = circular_permute_neurons(aDataMat);
       [meanD2Shuf, ~, ~, meanCvShuf, ~, ~] = sweep_tiled_d2_cv( ...
-        permutedDataMat, windowsToTest, binSizeSec, pOrder, critType, meanSubtract);
+        permutedDataMat, windowsToTest, binSizeSec, pOrder, critType, meanSubtract, ...
+        equalizeWindowCounts, neuronIdxSubsamples);
       d2PermPerShuffle(s, :) = meanD2Shuf;
       cvPermPerShuffle(s, :) = meanCvShuf;
     end
@@ -229,6 +282,11 @@ results.binSizeManual = binSizeManual;
 results.pOrder = pOrder;
 results.critType = critType;
 results.meanSubtract = meanSubtract;
+results.equalizeWindowCounts = equalizeWindowCounts;
+results.useSubsampling = useSubsampling;
+results.nSubsamples = nSubsamples;
+results.nNeuronsSubsample = nNeuronsSubsample;
+results.minNeuronsMultiple = minNeuronsMultiple;
 results.brainArea = brainArea;
 results.enablePermutations = enablePermutations;
 results.nShuffles = nShuffles;
@@ -258,7 +316,14 @@ if makePlots
     end
   end
   plotOrder = order_manuscript_session_types(foundTypes);
-  [d2YLim, cvYLim] = shared_d2_cv_ylims(exampleResults, plotOrder, enablePermutations);
+  [d2YLim, cvYLim] = shared_d2_cv_ylims(exampleResults, plotOrder, ...
+    enablePermutations, useLog10D2);
+  d2YLabel = get_d2_axis_label(useLog10D2);
+  if useLog10D2
+    d2LabelInterpreter = 'tex';
+  else
+    d2LabelInterpreter = 'none';
+  end
   colorCv = [0.72 0.42 0.68];       % muted magenta (toward gray)
   colorCvPermuted = gray_color_toward_neutral(colorCv, 0.68);
 
@@ -314,17 +379,16 @@ if makePlots
     end
 
     yyaxis(ax, 'left');
-    semD2Plot = semD2;
-    semD2Plot(isnan(semD2Plot)) = 0;
-    hD2 = errorbar(ax, windowsToTest, meanD2, semD2Plot, '-o', ...
+    [meanD2Plot, semD2Neg, semD2Pos] = d2_series_for_plot(meanD2, semD2, useLog10D2);
+    hD2 = errorbar(ax, windowsToTest, meanD2Plot, semD2Neg, semD2Pos, '-o', ...
       'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
       'Color', colorD2, 'MarkerFaceColor', colorD2, 'DisplayName', 'd2 data');
     legendHandles(end + 1) = hD2; %#ok<AGROW>
     legendLabels{end + 1} = 'd2 data'; %#ok<AGROW>
     if enablePermutations && ~isempty(er.meanD2Permuted) && any(isfinite(er.meanD2Permuted))
-      semD2PermPlot = er.semD2Permuted;
-      semD2PermPlot(isnan(semD2PermPlot)) = 0;
-      hD2Perm = errorbar(ax, windowsToTest, er.meanD2Permuted, semD2PermPlot, '--s', ...
+      [meanD2PermPlot, semD2PermNeg, semD2PermPos] = d2_series_for_plot( ...
+        er.meanD2Permuted, er.semD2Permuted, useLog10D2);
+      hD2Perm = errorbar(ax, windowsToTest, meanD2PermPlot, semD2PermNeg, semD2PermPos, '--s', ...
         'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
         'Color', colorD2Permuted, 'MarkerFaceColor', colorD2Permuted, ...
         'DisplayName', 'd2 shuffled');
@@ -337,15 +401,13 @@ if makePlots
       legendHandles(end + 1) = hCvPerm; %#ok<AGROW>
       legendLabels{end + 1} = 'CV shuffled'; %#ok<AGROW>
     end
-    if useLog10D2 && all(meanD2(~isnan(meanD2)) > 0)
-      set(ax, 'YScale', 'log');
-    end
     if ~isempty(d2YLim)
       ylim(ax, d2YLim);
     end
-    set(ax, 'YColor', 'k');
+    set(ax, 'YScale', 'linear', 'YColor', 'k');
     if k == 1
-      ylabel(ax, 'mean d2', 'FontSize', plotConfig.axisLabelFontSize);
+      ylabel(ax, d2YLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
+        'Interpreter', d2LabelInterpreter);
     end
 
     apply_manuscript_axes_style(ax, plotConfig, 'Window size (s)', '', ...
@@ -361,33 +423,113 @@ if makePlots
     end
     hold(ax, 'off');
   end
-  if enablePermutations
-    titleSuffix = sprintf('non-overlapping tiles; %d circular shuffles', nShuffles);
+  if equalizeWindowCounts
+    tileModeTag = 'equalized n (centers from max W)';
   else
-    titleSuffix = 'non-overlapping tiles';
+    tileModeTag = 'non-overlapping tiles';
+  end
+  if enablePermutations
+    titleSuffix = sprintf('%s; %d circular shuffles', tileModeTag, nShuffles);
+  else
+    titleSuffix = tileModeTag;
+  end
+  if useSubsampling
+    titleSuffix = sprintf('%s; subsamp %d x %d', titleSuffix, ...
+      nSubsamples, nNeuronsSubsample);
   end
   sgtitle(tl, sprintf('d2 vs window size across tasks (%s; %s)', ...
     brainArea, titleSuffix), 'Interpreter', 'none', ...
     'FontSize', plotConfig.sgtitleFontSize);
 
+  if equalizeWindowCounts
+    equalizeTag = '_equalizedN';
+  else
+    equalizeTag = '';
+  end
+  if enablePermutations
+    shuffleTag = '_shuffle';
+  else
+    shuffleTag = '';
+  end
+  if useSubsampling
+    subsampleTag = sprintf('_subsamp%d', nNeuronsSubsample);
+  else
+    subsampleTag = '';
+  end
+  if useLog10D2
+    logTag = '_log10';
+  else
+    logTag = '';
+  end
+  if isempty(figureTag)
+    sessionTag = '';
+  else
+    sessionTag = ['_' matlab.lang.makeValidName(char(string(figureTag)))];
+  end
+
   if saveFigure
-    if enablePermutations
-      shuffleTag = '_shuffle';
-    else
-      shuffleTag = '';
-    end
-    if isempty(figureTag)
-      sessionTag = '';
-    else
-      sessionTag = ['_' matlab.lang.makeValidName(char(string(figureTag)))];
-    end
     outPng = fullfile(saveDir, sprintf( ...
-      'criticality_d2_vs_windowSize_%s%s%s.png', areaTag, shuffleTag, sessionTag));
+      'criticality_d2_vs_windowSize_%s%s%s%s%s%s.png', ...
+      areaTag, equalizeTag, subsampleTag, shuffleTag, logTag, sessionTag));
     exportgraphics(figMain, outPng, 'Resolution', 300);
     fprintf('Saved figure: %s\n', outPng);
   end
   if closeFigure && isgraphics(figMain)
     close(figMain);
+  end
+
+  % Overlay: mean d2 only, all sessions on one axis
+  figOverlay = figure('Color', 'w', 'Name', 'd2 vs window size (overlay)');
+  set(figOverlay, 'Units', 'pixels', 'Position', ...
+    [round(0.12 * screenSize(3)), round(0.30 * screenSize(4)), ...
+    round(0.55 * screenSize(3)), round(0.42 * screenSize(4))]);
+  axOverlay = axes(figOverlay);
+  hold(axOverlay, 'on');
+  legendHandlesOverlay = gobjects(0);
+  legendLabelsOverlay = {};
+  d2OverlayRange = [];
+  for k = 1:numel(plotOrder)
+    e = find(arrayfun(@(r) isfield(r, 'example') && ~isempty(r.example) ...
+      && strcmpi(r.example.sessionType, plotOrder{k}), exampleResults), 1);
+    if isempty(e) || ~isfield(exampleResults(e), 'meanD2') ...
+        || isempty(exampleResults(e).meanD2)
+      continue;
+    end
+    er = exampleResults(e);
+    colorD2 = colors_for_tasks(er.example.sessionType);
+    [meanD2Plot, semD2Neg, semD2Pos] = d2_series_for_plot(er.meanD2, er.semD2, useLog10D2);
+    hD2 = errorbar(axOverlay, windowsToTest, meanD2Plot, semD2Neg, semD2Pos, '-o', ...
+      'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
+      'Color', colorD2, 'MarkerFaceColor', colorD2, ...
+      'DisplayName', er.example.displayLabel);
+    legendHandlesOverlay(end + 1) = hD2; %#ok<AGROW>
+    legendLabelsOverlay{end + 1} = er.example.displayLabel; %#ok<AGROW>
+    d2OverlayRange = [d2OverlayRange, meanD2Plot - semD2Neg, ...
+      meanD2Plot + semD2Pos]; %#ok<AGROW>
+  end
+  overlayYLim = padded_ylim(d2OverlayRange);
+  if ~isempty(overlayYLim)
+    ylim(axOverlay, overlayYLim);
+  end
+  apply_manuscript_axes_style(axOverlay, plotConfig, 'Window size (s)', d2YLabel, ...
+    sprintf('d2 vs window size overlay (%s; %s)', brainArea, titleSuffix), ...
+    d2LabelInterpreter);
+  grid(axOverlay, 'on');
+  if ~isempty(legendHandlesOverlay)
+    legend(axOverlay, legendHandlesOverlay, legendLabelsOverlay, ...
+      'Location', 'best', 'FontSize', plotConfig.legendFontSize);
+  end
+  hold(axOverlay, 'off');
+
+  if saveFigure
+    outPngOverlay = fullfile(saveDir, sprintf( ...
+      'criticality_d2_vs_windowSize_overlay_%s%s%s%s%s%s.png', ...
+      areaTag, equalizeTag, subsampleTag, shuffleTag, logTag, sessionTag));
+    exportgraphics(figOverlay, outPngOverlay, 'Resolution', 300);
+    fprintf('Saved figure: %s\n', outPngOverlay);
+  end
+  if closeFigure && isgraphics(figOverlay)
+    close(figOverlay);
   end
 end
 
@@ -452,16 +594,22 @@ opts.minFiringRate = 0.1;
 opts.maxFiringRate = 150;
 end
 
-function [d2YLim, cvYLim] = shared_d2_cv_ylims(exampleResults, plotOrder, enablePermutations)
+function [d2YLim, cvYLim] = shared_d2_cv_ylims(exampleResults, plotOrder, ...
+  enablePermutations, useLog10D2)
 % SHARED_D2_CV_YLIMS - Common y-limits for d2 and CV across task panels
 %
 % Variables:
 %   exampleResults     - Per-example analysis structs
 %   plotOrder          - Task types in panel order
 %   enablePermutations - Include shuffled mean +/- SEM in range
+%   useLog10D2         - If true, limits are in log10(d2) units
 %
 % Goal:
 %   Return [ymin ymax] for left (d2) and right (CV) axes spanning all panels.
+
+if nargin < 4 || isempty(useLog10D2)
+  useLog10D2 = false;
+end
 
 d2Vals = [];
 cvVals = [];
@@ -472,18 +620,17 @@ for k = 1:numel(plotOrder)
     continue;
   end
   er = exampleResults(e);
-  semD2 = er.semD2;
-  semD2(isnan(semD2)) = 0;
-  d2Vals = [d2Vals, er.meanD2 - semD2, er.meanD2 + semD2]; %#ok<AGROW>
+  [meanD2Plot, semD2Neg, semD2Pos] = d2_series_for_plot(er.meanD2, er.semD2, useLog10D2);
+  d2Vals = [d2Vals, meanD2Plot - semD2Neg, meanD2Plot + semD2Pos]; %#ok<AGROW>
   semCv = er.semCv;
   semCv(isnan(semCv)) = 0;
   cvVals = [cvVals, er.meanCv - semCv, er.meanCv + semCv]; %#ok<AGROW>
   if enablePermutations
     if ~isempty(er.meanD2Permuted) && any(isfinite(er.meanD2Permuted))
-      semD2Perm = er.semD2Permuted;
-      semD2Perm(isnan(semD2Perm)) = 0;
-      d2Vals = [d2Vals, er.meanD2Permuted - semD2Perm, ...
-        er.meanD2Permuted + semD2Perm]; %#ok<AGROW>
+      [meanD2PermPlot, semD2PermNeg, semD2PermPos] = d2_series_for_plot( ...
+        er.meanD2Permuted, er.semD2Permuted, useLog10D2);
+      d2Vals = [d2Vals, meanD2PermPlot - semD2PermNeg, ...
+        meanD2PermPlot + semD2PermPos]; %#ok<AGROW>
     end
     if ~isempty(er.meanCvPermuted) && any(isfinite(er.meanCvPermuted))
       semCvPerm = er.semCvPermuted;
@@ -496,6 +643,61 @@ end
 
 d2YLim = padded_ylim(d2Vals);
 cvYLim = padded_ylim(cvVals);
+end
+
+function [yMean, yNeg, yPos] = d2_series_for_plot(meanVals, semVals, useLog10D2)
+% D2_SERIES_FOR_PLOT - Mean and error-bar lengths for d2 or log10(d2)
+%
+% Variables:
+%   meanVals, semVals - Raw mean d2 and SEM
+%   useLog10D2        - If true, convert to log10 space (asymmetric bars)
+%
+% Goal:
+%   Return y, negative error, and positive error for errorbar().
+
+if nargin < 3 || isempty(useLog10D2)
+  useLog10D2 = false;
+end
+if isempty(semVals)
+  semVals = zeros(size(meanVals));
+end
+semVals(isnan(semVals)) = 0;
+if ~useLog10D2
+  yMean = meanVals;
+  yNeg = semVals;
+  yPos = semVals;
+  return;
+end
+
+yMean = log10_safe_numeric(meanVals);
+yLo = log10_safe_numeric(meanVals - semVals);
+yHi = log10_safe_numeric(meanVals + semVals);
+missingLo = isfinite(yMean) & ~isfinite(yLo);
+yLo(missingLo) = yMean(missingLo);
+missingHi = isfinite(yMean) & ~isfinite(yHi);
+yHi(missingHi) = yMean(missingHi);
+yNeg = yMean - yLo;
+yPos = yHi - yMean;
+yNeg(~isfinite(yNeg) | yNeg < 0) = 0;
+yPos(~isfinite(yPos) | yPos < 0) = 0;
+end
+
+function yLabelText = get_d2_axis_label(useLog10D2)
+% GET_D2_AXIS_LABEL - Y-axis text for d2 or log10(d2)
+
+if useLog10D2
+  yLabelText = 'log_{10}(d2)';
+else
+  yLabelText = 'mean d2';
+end
+end
+
+function y = log10_safe_numeric(x)
+% LOG10_SAFE_NUMERIC - log10 with NaN for non-positive values
+
+validMask = isfinite(x) & x > 0;
+y = nan(size(x));
+y(validMask) = log10(x(validMask));
 end
 
 function yLim = padded_ylim(vals)
@@ -516,19 +718,56 @@ end
 yLim = [yMin - pad, yMax + pad];
 end
 
-function [meanD2, semD2, nValid, meanCv, semCv, nCvValid] = sweep_tiled_d2_cv( ...
-  aDataMat, windowsToTest, binSizeSec, pOrder, critType, meanSubtract)
-% SWEEP_TILED_D2_CV - Mean d2 and CV across non-overlapping tiles per window size
+function neuronIdxSubsamples = draw_neuron_subsample_indices( ...
+  numNeurons, nSubsamples, nNeuronsSubsample)
+% DRAW_NEURON_SUBSAMPLE_INDICES - Random neuron subsets (fixed across window sizes)
 %
 % Variables:
-%   aDataMat       - Binned spikes [timeBins x neurons]
-%   windowsToTest  - Window durations (s)
-%   binSizeSec     - Bin width (s)
-%   pOrder, critType, meanSubtract - Analysis options
+%   numNeurons         - Total neurons in the binned collect matrix
+%   nSubsamples        - Number of independent subsets
+%   nNeuronsSubsample  - Neurons per subset
 %
 % Goal:
-%   For each W, tile the session with non-overlapping windows and summarize
-%   d2 and pop-activity CV across tiles.
+%   Draw neuron column indices once so every window size uses the same subsets.
+
+nDraw = min(nNeuronsSubsample, numNeurons);
+neuronIdxSubsamples = cell(1, nSubsamples);
+for s = 1:nSubsamples
+  if nDraw == numNeurons
+    neuronIdxSubsamples{s} = 1:numNeurons;
+  else
+    neuronIdxSubsamples{s} = randperm(numNeurons, nDraw);
+  end
+end
+end
+
+function [meanD2, semD2, nValid, meanCv, semCv, nCvValid] = sweep_tiled_d2_cv( ...
+  aDataMat, windowsToTest, binSizeSec, pOrder, critType, meanSubtract, ...
+  equalizeWindowCounts, neuronIdxSubsamples)
+% SWEEP_TILED_D2_CV - Mean d2 and CV across windows per window size
+%
+% Variables:
+%   aDataMat             - Binned spikes [timeBins x neurons]
+%   windowsToTest        - Window durations (s)
+%   binSizeSec           - Bin width (s)
+%   pOrder, critType, meanSubtract - Analysis options
+%   equalizeWindowCounts - If true, use shared centers from largest-W tiles
+%   neuronIdxSubsamples  - Optional cell of neuron index vectors drawn once
+%                          from the full collect matrix; empty = no subsample
+%
+% Goal:
+%   For each W, place windows and summarize d2 and pop-activity CV.
+%   When equalizeWindowCounts is false, use non-overlapping tiles of length W.
+%   When true, reuse centers of the largest-W non-overlapping tiles for every W.
+%   When neuronIdxSubsamples is provided, per-tile metrics are the mean across
+%   those subsets (same subsets at every W).
+
+if nargin < 7 || isempty(equalizeWindowCounts)
+  equalizeWindowCounts = false;
+end
+if nargin < 8 || isempty(neuronIdxSubsamples)
+  neuronIdxSubsamples = {};
+end
 
 numW = numel(windowsToTest);
 meanD2 = nan(1, numW);
@@ -538,9 +777,15 @@ meanCv = nan(1, numW);
 semCv = nan(1, numW);
 nCvValid = zeros(1, numW);
 
+sharedCenterIdx = [];
+if equalizeWindowCounts
+  sharedCenterIdx = largest_tile_center_indices(aDataMat, windowsToTest, binSizeSec);
+end
+
 for iW = 1:numW
-  [d2PerWindow, cvPerWindow] = tiled_window_d2_cv( ...
-    aDataMat, windowsToTest(iW), binSizeSec, pOrder, critType, meanSubtract);
+  [d2PerWindow, cvPerWindow] = window_metrics_maybe_subsampled( ...
+    aDataMat, windowsToTest(iW), binSizeSec, pOrder, critType, meanSubtract, ...
+    equalizeWindowCounts, sharedCenterIdx, neuronIdxSubsamples);
 
   validMask = ~isnan(d2PerWindow);
   nValid(iW) = sum(validMask);
@@ -559,6 +804,122 @@ for iW = 1:numW
       semCv(iW) = nanstd(cvPerWindow(cvMask)) / sqrt(nCvValid(iW));
     end
   end
+end
+end
+
+function [d2PerWindow, cvPerWindow] = window_metrics_maybe_subsampled( ...
+  aDataMat, winSize, binSizeSec, pOrder, critType, meanSubtract, ...
+  equalizeWindowCounts, sharedCenterIdx, neuronIdxSubsamples)
+% WINDOW_METRICS_MAYBE_SUBSAMPLED - Per-tile d2/CV, optionally mean over neuron subsets
+
+if isempty(neuronIdxSubsamples)
+  if equalizeWindowCounts
+    [d2PerWindow, cvPerWindow] = centered_window_d2_cv( ...
+      aDataMat, winSize, sharedCenterIdx, binSizeSec, ...
+      pOrder, critType, meanSubtract);
+  else
+    [d2PerWindow, cvPerWindow] = tiled_window_d2_cv( ...
+      aDataMat, winSize, binSizeSec, pOrder, critType, meanSubtract);
+  end
+  return;
+end
+
+nSub = numel(neuronIdxSubsamples);
+d2Stack = [];
+cvStack = [];
+for s = 1:nSub
+  aDataMatSub = aDataMat(:, neuronIdxSubsamples{s});
+  if equalizeWindowCounts
+    [d2Sub, cvSub] = centered_window_d2_cv( ...
+      aDataMatSub, winSize, sharedCenterIdx, binSizeSec, ...
+      pOrder, critType, meanSubtract);
+  else
+    [d2Sub, cvSub] = tiled_window_d2_cv( ...
+      aDataMatSub, winSize, binSizeSec, pOrder, critType, meanSubtract);
+  end
+  if isempty(d2Stack)
+    d2Stack = nan(nSub, numel(d2Sub));
+    cvStack = nan(nSub, numel(cvSub));
+  end
+  d2Stack(s, :) = d2Sub;
+  cvStack(s, :) = cvSub;
+end
+d2PerWindow = nanmean(d2Stack, 1);
+cvPerWindow = nanmean(cvStack, 1);
+end
+
+function centerIdx = largest_tile_center_indices(aDataMat, windowsToTest, binSizeSec)
+% LARGEST_TILE_CENTER_INDICES - Sample centers of non-overlapping max-W tiles
+%
+% Variables:
+%   aDataMat      - Binned spikes [timeBins x neurons]
+%   windowsToTest - Window durations (s); max used for tiling
+%   binSizeSec    - Bin width (s)
+%
+% Goal:
+%   Return 1-based bin centers of non-overlapping tiles of the largest window
+%   size, so smaller windows can be placed at the same centers.
+
+centerIdx = [];
+numTimePoints = size(aDataMat, 1);
+maxWinSize = max(windowsToTest);
+winSamples = round(maxWinSize / binSizeSec);
+if winSamples < 1
+  winSamples = 1;
+end
+stepSamples = winSamples;
+numWindows = floor((numTimePoints - winSamples) / stepSamples) + 1;
+if numWindows < 1
+  return;
+end
+centerIdx = zeros(1, numWindows);
+for w = 1:numWindows
+  startIdx = (w - 1) * stepSamples + 1;
+  centerIdx(w) = startIdx + round(winSamples / 2) - 1;
+end
+end
+
+function [d2PerWindow, cvPerWindow] = centered_window_d2_cv( ...
+  aDataMat, winSize, centerIdx, binSizeSec, pOrder, critType, meanSubtract)
+% CENTERED_WINDOW_D2_CV - Per-window d2 and CV at shared sample centers
+%
+% Variables:
+%   aDataMat     - Binned spikes [timeBins x neurons]
+%   winSize      - Window duration (s)
+%   centerIdx    - 1-based bin centers (from largest-W tiles)
+%   binSizeSec   - Bin width (s)
+%   pOrder, critType, meanSubtract - AR / preprocessing options
+%
+% Goal:
+%   Place a window of length winSize at each shared center and return metrics.
+%   Invalid / out-of-bounds placements yield NaN (no edge clamping).
+
+numTimePoints = size(aDataMat, 1);
+winSamples = round(winSize / binSizeSec);
+if winSamples < 1
+  winSamples = 1;
+end
+numWindows = numel(centerIdx);
+d2PerWindow = nan(1, numWindows);
+cvPerWindow = nan(1, numWindows);
+if numWindows < 1
+  return;
+end
+
+halfWin = round(winSamples / 2);
+for w = 1:numWindows
+  startIdx = centerIdx(w) - halfWin + 1;
+  endIdx = startIdx + winSamples - 1;
+  if startIdx < 1 || endIdx > numTimePoints || endIdx <= startIdx
+    continue;
+  end
+
+  wPopActivity = sum(aDataMat(startIdx:endIdx, :), 2);
+  if meanSubtract
+    wPopActivity = wPopActivity - nanmean(wPopActivity);
+  end
+  d2PerWindow(w) = compute_d2_from_pop_activity(wPopActivity, pOrder, critType);
+  cvPerWindow(w) = population_trace_cv(wPopActivity);
 end
 end
 
