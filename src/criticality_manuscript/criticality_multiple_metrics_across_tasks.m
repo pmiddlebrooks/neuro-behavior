@@ -88,7 +88,7 @@ binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 
 % Engagement timing (reach + interval + semicircle); defaults match engagement module fill_*_defaults
-engagementBufferBefore = 1;  % s before each reach/beam-break = engaged
+engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
 engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
 minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
 absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
@@ -124,7 +124,7 @@ splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on b
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 40;
+nSubsamples = 50;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 
