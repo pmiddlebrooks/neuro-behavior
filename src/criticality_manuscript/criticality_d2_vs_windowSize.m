@@ -39,19 +39,22 @@
 %                        per-window circshifts for speed
 %   nShuffles        - Number of whole-session circular permutations
 %   makePlots        - Plot mean d2 / mean CV (data + shuffled if enabled)
+%   overlayCvOnRightAxis - If true, overlay figure adds mean CV on right y-axis
 %   saveFigure       - Export PNG to dropPath/criticality_manuscript
 %   figureTag        - Optional suffix for saved PNG (e.g. reach session name);
 %                      pre-set by batch callers so outputs do not overwrite
 %   closeFigure      - If true, close the figure after plotting / saving
 %   plotConfig       - Optional manuscript axis fonts / line widths
 %
-% Batch callers may pre-set exampleSessions, figureTag, and closeFigure before
-% running this script (see criticality_manuscript/scratch.m).
+% Batch callers may pre-set exampleSessions, figureTag, closeFigure, and
+% overlayCvOnRightAxis before running this script (see scratch.m).
 %
 % Plot colors: d2 = colors_for_tasks(sessionType); CV = muted magenta;
 % shuffled = grayed versions of those observed colors. Legend on first panel
-% only. CV plotted under d2. A second figure overlays mean d2 only for all
-% sessions on one axis (task colors; legend by displayLabel).
+% only. CV plotted under d2. A second figure overlays mean d2 for all
+% sessions on one axis (task colors; legend by displayLabel). Set
+% overlayCvOnRightAxis = true to add overlapping mean CV on a right y-axis
+% (same task colors; square markers for CV, circles for d2).
 %
 % Coefficient of variation (CV): for each popActivity trace,
 % CV = nanstd(x) / |nanmean(x)|. Mean CV at each W is nanmean across tiles.
@@ -90,6 +93,7 @@ end
 if ~exist('closeFigure', 'var') || isempty(closeFigure)
     closeFigure = false;
 end
+    overlayCvOnRightAxis = true;  % overlay figure: add mean CV on right y-axis
 
 dataSource = 'spikes';
 collectStart = 0;
@@ -98,14 +102,14 @@ collectEnd = [];
 brainArea = 'M2356';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 
-windowsToTest = 2:2:120;   % seconds
+windowsToTest = 2:2:90;   % seconds
 binSizeManual = 0.04;      % seconds (fixed across window sizes)
 pOrder = 10;
 critType = 2;
 meanSubtract = false;
 equalizeWindowCounts = false;  % true: same n across W (centers from max W)
 useSubsampling = true;
-nSubsamples = 100;
+nSubsamples = 25;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 useLog10D2 = true;
@@ -290,6 +294,7 @@ results.minNeuronsMultiple = minNeuronsMultiple;
 results.brainArea = brainArea;
 results.enablePermutations = enablePermutations;
 results.nShuffles = nShuffles;
+results.overlayCvOnRightAxis = overlayCvOnRightAxis;
 results.exampleResults = exampleResults;
 
 % Plot — 1x3: spontaneous | interval | reach (shared y-axes)
@@ -478,8 +483,15 @@ if makePlots
         close(figMain);
     end
 
-    % Overlay: mean d2 only, all sessions on one axis
-    figOverlay = figure('Color', 'w', 'Name', 'd2 vs window size (overlay)');
+    % Overlay: mean d2 for all sessions on one axis (optional CV on right)
+    if overlayCvOnRightAxis
+        overlayFigName = 'd2 and CV vs window size (overlay)';
+        overlayTitleMetric = 'd2 and CV vs window size overlay';
+    else
+        overlayFigName = 'd2 vs window size (overlay)';
+        overlayTitleMetric = 'd2 vs window size overlay';
+    end
+    figOverlay = figure('Color', 'w', 'Name', overlayFigName);
     set(figOverlay, 'Units', 'pixels', 'Position', ...
         [round(0.12 * screenSize(3)), round(0.30 * screenSize(4)), ...
         round(0.55 * screenSize(3)), round(0.42 * screenSize(4))]);
@@ -488,6 +500,42 @@ if makePlots
     legendHandlesOverlay = gobjects(0);
     legendLabelsOverlay = {};
     d2OverlayRange = [];
+    cvOverlayRange = [];
+
+    if overlayCvOnRightAxis
+        yyaxis(axOverlay, 'right');
+        for k = 1:numel(plotOrder)
+            e = find(arrayfun(@(r) isfield(r, 'example') && ~isempty(r.example) ...
+                && strcmpi(r.example.sessionType, plotOrder{k}), exampleResults), 1);
+            if isempty(e) || ~isfield(exampleResults(e), 'meanCv') ...
+                    || isempty(exampleResults(e).meanCv)
+                continue;
+            end
+            er = exampleResults(e);
+            colorCv = colors_for_tasks(er.example.sessionType);
+            semCvPlot = er.semCv;
+            semCvPlot(isnan(semCvPlot)) = 0;
+            hCv = errorbar(axOverlay, windowsToTest, er.meanCv, semCvPlot, '-s', ...
+                'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
+                'Color', colorCv, 'MarkerFaceColor', colorCv, ...
+                'DisplayName', sprintf('%s CV', er.example.displayLabel));
+            legendHandlesOverlay(end + 1) = hCv; %#ok<AGROW>
+            legendLabelsOverlay{end + 1} = sprintf('%s CV', er.example.displayLabel); %#ok<AGROW>
+            cvOverlayRange = [cvOverlayRange, er.meanCv - semCvPlot, ...
+                er.meanCv + semCvPlot]; %#ok<AGROW>
+        end
+        cvOverlayYLim = padded_ylim(cvOverlayRange);
+        if isempty(cvOverlayYLim) && ~isempty(cvYLim)
+            cvOverlayYLim = cvYLim;
+        end
+        if ~isempty(cvOverlayYLim)
+            ylim(axOverlay, cvOverlayYLim);
+        end
+        ylabel(axOverlay, 'mean CV', 'FontSize', plotConfig.axisLabelFontSize);
+        set(axOverlay, 'YColor', 'k');
+    end
+
+    yyaxis(axOverlay, 'left');
     for k = 1:numel(plotOrder)
         e = find(arrayfun(@(r) isfield(r, 'example') && ~isempty(r.example) ...
             && strcmpi(r.example.sessionType, plotOrder{k}), exampleResults), 1);
@@ -498,12 +546,16 @@ if makePlots
         er = exampleResults(e);
         colorD2 = colors_for_tasks(er.example.sessionType);
         [meanD2Plot, semD2Neg, semD2Pos] = d2_series_for_plot(er.meanD2, er.semD2, useLog10D2);
+        if overlayCvOnRightAxis
+            d2LegendLabel = sprintf('%s d2', er.example.displayLabel);
+        else
+            d2LegendLabel = er.example.displayLabel;
+        end
         hD2 = errorbar(axOverlay, windowsToTest, meanD2Plot, semD2Neg, semD2Pos, '-o', ...
             'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
-            'Color', colorD2, 'MarkerFaceColor', colorD2, ...
-            'DisplayName', er.example.displayLabel);
+            'Color', colorD2, 'MarkerFaceColor', colorD2, 'DisplayName', d2LegendLabel);
         legendHandlesOverlay(end + 1) = hD2; %#ok<AGROW>
-        legendLabelsOverlay{end + 1} = er.example.displayLabel; %#ok<AGROW>
+        legendLabelsOverlay{end + 1} = d2LegendLabel; %#ok<AGROW>
         d2OverlayRange = [d2OverlayRange, meanD2Plot - semD2Neg, ...
             meanD2Plot + semD2Pos]; %#ok<AGROW>
     end
@@ -511,9 +563,19 @@ if makePlots
     if ~isempty(overlayYLim)
         ylim(axOverlay, overlayYLim);
     end
-    apply_manuscript_axes_style(axOverlay, plotConfig, 'Window size (s)', d2YLabel, ...
-        sprintf('d2 vs window size overlay (%s; %s)', brainArea, titleSuffix), ...
-        d2LabelInterpreter);
+    ylabel(axOverlay, d2YLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
+        'Interpreter', d2LabelInterpreter);
+    set(axOverlay, 'YScale', 'linear', 'YColor', 'k');
+    apply_manuscript_axes_style(axOverlay, plotConfig, 'Window size (s)', '', ...
+        sprintf('%s (%s; %s)', overlayTitleMetric, brainArea, titleSuffix), ...
+        'none');
+    yyaxis(axOverlay, 'left');
+    set(axOverlay, 'YColor', 'k', 'XColor', 'k');
+    if overlayCvOnRightAxis
+        yyaxis(axOverlay, 'right');
+        set(axOverlay, 'YColor', 'k', 'XColor', 'k');
+        yyaxis(axOverlay, 'left');
+    end
     grid(axOverlay, 'on');
     if ~isempty(legendHandlesOverlay)
         legend(axOverlay, legendHandlesOverlay, legendLabelsOverlay, ...
@@ -521,10 +583,15 @@ if makePlots
     end
     hold(axOverlay, 'off');
 
+    if overlayCvOnRightAxis
+        overlayCvTag = '_withCv';
+    else
+        overlayCvTag = '';
+    end
     if saveFigure
         outPngOverlay = fullfile(saveDir, sprintf( ...
-            'criticality_d2_vs_windowSize_overlay_%s%s%s%s%s%s.png', ...
-            areaTag, equalizeTag, subsampleTag, shuffleTag, logTag, sessionTag));
+            'criticality_d2_vs_windowSize_overlay%s_%s%s%s%s%s%s.png', ...
+            overlayCvTag, areaTag, equalizeTag, subsampleTag, shuffleTag, logTag, sessionTag));
         exportgraphics(figOverlay, outPngOverlay, 'Resolution', 300);
         fprintf('Saved figure: %s\n', outPngOverlay);
     end

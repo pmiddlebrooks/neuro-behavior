@@ -61,18 +61,18 @@
 setup_criticality_manuscript_paths('session_avalanche_distributions');
 paths = get_paths();
 
-collectStart = 0;
-collectEnd = 45 * 60;
-collectEnd = [];
-avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
+collectStart = 10;
+collectEnd = 120 * 60;
+% collectEnd = [];
+avWindow = 3*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
 windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
-saveFigure = false;
+saveFigure = true;
 
 % Optional engaged vs non-engaged (reach / interval / semicircle only)
-splitByEngagement = true;
+splitByEngagement = false;
 engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
 engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
 minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
@@ -89,7 +89,7 @@ gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 avalancheDetectionMode = 'fixedBinMedian';
 thresholdMethod = 'quantile10';  % 'median' or 'quantile10' (10th percentile cutoff)
 
-useSubsampling = false;
+useSubsampling = true;
 nSubsamples = 20;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
@@ -112,7 +112,7 @@ plotConfig.tileSpacing = 'compact';
 plotConfig.tilePadding = 'compact';
 plotConfig.legendLocation = 'southwest';
 plotConfig.observedMarkerFaceAlpha = 0.35;
-plotConfig.figureWidthInches = 6.5;  % fits portrait PDF (A4/Letter) with margins
+plotConfig.figureWidthInches = 6.5;  % base width (in); exported size is 1.5x this
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = []; %5 * 60;
@@ -1319,11 +1319,11 @@ function apply_portrait_figure_size(fig, figureWidthInches, nRows, nCols)
 %
 % Variables:
 %   fig               - Figure handle
-%   figureWidthInches - Target width in inches (portrait page with margins)
+%   figureWidthInches - Base width in inches (portrait page with margins)
 %   nRows, nCols      - tiledlayout grid for height estimate
 %
 % Goal:
-%   Keep exported figure width within a portrait PDF page.
+%   Keep exported figure aspect from the portrait layout, scaled 1.5x.
 
 layoutPadIn = 0.55;
 titlePadIn = 0.45;
@@ -1333,6 +1333,9 @@ panelHeight = panelWidth;
 figHeight = nRows * panelHeight + layoutPadIn + titlePadIn;
 maxPortraitHeightIn = 9.5;
 figHeight = min(figHeight, maxPortraitHeightIn);
+figureScale = 1.5;
+figureWidthInches = figureWidthInches * figureScale;
+figHeight = figHeight * figureScale;
 
 set(fig, 'Units', 'inches', 'Position', [1, 1, figureWidthInches, figHeight]);
 set(fig, 'PaperUnits', 'inches', 'PaperSize', [figureWidthInches, figHeight], ...

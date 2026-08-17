@@ -61,7 +61,8 @@ end
 dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
-d2Window = 40;  % seconds; non-overlapping windows
+collectEnd = 120*60;
+d2Window = 45;  % seconds; non-overlapping windows
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
@@ -84,7 +85,7 @@ widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 splitByEngagement = true;
 engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
 engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
-minNonEngagedWindow = 12;    % min gap (s) for non-engaged segments
+minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
 absorbSingleEvents = true;   % merge isolated single events into non-engaged gaps
 
 opts = neuro_behavior_options();
