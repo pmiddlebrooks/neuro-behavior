@@ -14,4 +14,6 @@ function sessionTypes = default_manuscript_session_types()
 
 sessionTypes = order_manuscript_session_types( ...
   {'spontaneous', 'interval', 'semicircle', 'reach'});
+sessionTypes = order_manuscript_session_types( ...
+  {'spontaneous', 'interval', 'semicircle', 'reach'});
 end
