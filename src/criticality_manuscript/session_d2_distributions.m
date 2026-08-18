@@ -13,6 +13,8 @@
 %   collectStart     - Window start (seconds from session onset)
 %   collectEnd       - Window end (seconds)
 %   d2Window         - Non-overlapping window length (seconds)
+%   d2WindowAlign    - Timeline timestamp: 'center' (default) or 'leadingEdge'
+%                      leadingEdge places d2 at the window end (trailing d2Window)
 %   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' uses all valid areas
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   useLog10D2       - If true, plot log10(d2) and log10(shuffled d2)
@@ -63,11 +65,12 @@ collectStart = 0;
 collectEnd = [];
 collectEnd = 120*60;
 d2Window = 45;  % seconds; non-overlapping windows
+d2WindowAlign = 'leadingEdge';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 20;
+nSubsamples = 30;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 nPermutations = 3;  % circular shuffles per window for shuffled d2 distribution
@@ -127,6 +130,8 @@ analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 setup_criticality_manuscript_paths('session_d2_distributions');
 paths = get_paths();
 
+d2WindowAlign = normalize_d2_window_align(d2WindowAlign);
+
 fprintf('\n=== Session d2 Distributions ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 if isempty(collectEnd)
@@ -135,8 +140,8 @@ else
     fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', ...
         collectStart, collectEnd, (collectEnd - collectStart) / 60);
 end
-fprintf('d2 windows: %.1f s; binSize: %.3f s; nPermutations: %d\n', ...
-    d2Window, binSize, nPermutations);
+fprintf('d2 windows: %.1f s (%s); binSize: %.3f s; nPermutations: %d\n', ...
+    d2Window, d2WindowAlign, binSize, nPermutations);
 fprintf('useLog10D2: %d\n', useLog10D2);
 fprintf('splitByEngagement: %d\n', splitByEngagement);
 if useSubsampling
@@ -257,7 +262,7 @@ for iCellRun = 1:numel(cellTypesToRun)
     if plotD2Timeline
         figTime = plot_d2_pop_ethogram_timeline(dataStruct, results, ...
             collectStart, collectEnd, d2Window, binSize, useLog10D2, plotConfig, ...
-            sessionName, cellType, useRelativeTime);
+            sessionName, cellType, useRelativeTime, d2WindowAlign);
         if ~isempty(figTime) && saveFigure
             saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
             if ~exist(saveDir, 'dir')
@@ -269,8 +274,9 @@ for iCellRun = 1:numel(cellTypesToRun)
             else
                 collectTag = sprintf('%.0f-%.0f', collectStart, collectEnd);
             end
-            plotBase = sprintf('session_d2_timeline_%s_%s_win%.0fs_%ss%s', ...
-                sessionName, areaTag, d2Window, collectTag, cell_type_file_tag(cellType));
+            plotBase = sprintf('session_d2_timeline_%s_%s_win%.0fs_%ss_%s%s', ...
+                sessionName, areaTag, d2Window, collectTag, d2WindowAlign, ...
+                cell_type_file_tag(cellType));
             if useLog10D2
                 plotBase = [plotBase, '_log10'];
             end
@@ -999,7 +1005,7 @@ end
 
 function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
     collectStart, collectEnd, d2Window, binSize, useLog10D2, plotConfig, ...
-    sessionName, cellType, useRelativeTime)
+    sessionName, cellType, useRelativeTime, d2WindowAlign)
 % PLOT_D2_POP_ETHOGRAM_TIMELINE - Stacked mean-pop | d2 | ethogram vs time
 %
 % Variables:
@@ -1007,13 +1013,15 @@ function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
 %   results       - criticality_ar_analysis output (d2, startS, popActivityWindows)
 %   binSize       - Spike bin width (s) used in d2 analysis (title only)
 %   useRelativeTime - If true, shift x-axis so t=0 at collectStart (default false)
+%   d2WindowAlign - 'center' (default) or 'leadingEdge' (timestamp = window end)
 %
 % Layout (per brain area column):
 %   Top:    mean popActivity per d2 window (results.popActivityWindows)
 %   Middle: window-wise d2 (and shuffled mean when present)
 %   Bottom: behavior ethogram (frame labels, or semicircle TaskMatrix events)
 %
-% Timebase: results.startS and bhvID use absolute session time by default.
+% Timebase: results.startS are window centers in absolute session time.
+% d2WindowAlign maps those centers to plot times (center or leading edge).
 % Semicircle ethogram (TaskMatrix):
 %   green/red/yellow vertical lines at trialEnd for rewarded/unrewarded/failed
 %   black vertical line at choicePort poke time
@@ -1032,6 +1040,10 @@ end
 if nargin < 11 || isempty(useRelativeTime)
     useRelativeTime = false;
 end
+if nargin < 12 || isempty(d2WindowAlign)
+    d2WindowAlign = 'center';
+end
+d2WindowAlign = normalize_d2_window_align(d2WindowAlign);
 
 dataPrepPath = fullfile(fileparts(mfilename('fullpath')), '..', 'data_prep');
 if exist(dataPrepPath, 'dir')
@@ -1075,7 +1087,8 @@ for a = 1:numAreas
     areaName = results.areas{a};
     tWin = [];
     if isfield(results, 'startS') && a <= numel(results.startS) && ~isempty(results.startS{a})
-        tWin = results.startS{a}(:) - timeShift;
+        tWinAbs = d2_window_align_times(results.startS{a}(:), d2Window, d2WindowAlign);
+        tWin = tWinAbs - timeShift;
     end
 
     axPop = subplot(3, numAreas, a, 'Parent', fig);
@@ -1151,10 +1164,63 @@ cellTag = '';
 if ~isempty(cellType) && ~strcmpi(cellType, 'combined')
     cellTag = sprintf(' | %s', cell_type_label(cellType));
 end
-sgtitle(fig, sprintf('%s%s | mean pop / d2 (%.0fs windows, bin=%.0f ms) / ethogram', ...
-    sessionName, cellTag, d2Window, binSize * 1000), ...
+sgtitle(fig, sprintf('%s%s | mean pop / d2 (%.0fs windows, %s, bin=%.0f ms) / ethogram', ...
+    sessionName, cellTag, d2Window, d2WindowAlign, binSize * 1000), ...
     'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', 'Interpreter', 'none');
 fprintf('Plotted d2 timeline (%d area(s), t=[%.1f, %.1f] s).\n', numAreas, tMin, tMax);
+end
+
+function alignMode = normalize_d2_window_align(d2WindowAlign)
+% NORMALIZE_D2_WINDOW_ALIGN - Canonical 'center' or 'leadingEdge'
+%
+% Variables:
+%   d2WindowAlign - User string (center / leadingEdge and aliases)
+%
+% Goal:
+%   Validate timeline alignment mode. Default is window center.
+
+if nargin < 1 || isempty(d2WindowAlign)
+    alignMode = 'center';
+    return;
+end
+key = lower(strtrim(char(d2WindowAlign)));
+key = strrep(key, '-', '');
+key = strrep(key, '_', '');
+key = strrep(key, ' ', '');
+switch key
+    case {'center', 'centre', 'mid', 'middle'}
+        alignMode = 'center';
+    case {'leadingedge', 'leading', 'lead', 'end', 'trailing'}
+        alignMode = 'leadingEdge';
+    otherwise
+        error('session_d2_distributions:BadD2WindowAlign', ...
+            'd2WindowAlign must be ''center'' or ''leadingEdge'' (got %s).', d2WindowAlign);
+end
+end
+
+function tAlign = d2_window_align_times(startS, d2Window, d2WindowAlign)
+% D2_WINDOW_ALIGN_TIMES - Map stored window-center times to plot times
+%
+% Variables:
+%   startS         - Window center times (s) from results.startS
+%   d2Window       - Window length (s)
+%   d2WindowAlign  - 'center' or 'leadingEdge'
+%
+% Goal:
+%   center: timestamp is the window midpoint (analysis default).
+%   leadingEdge: timestamp is the window end; data are the trailing d2Window.
+
+if nargin < 3 || isempty(d2WindowAlign)
+    d2WindowAlign = 'center';
+end
+d2WindowAlign = normalize_d2_window_align(d2WindowAlign);
+tAlign = startS(:);
+if isempty(tAlign)
+    return;
+end
+if strcmp(d2WindowAlign, 'leadingEdge')
+    tAlign = tAlign + d2Window / 2;
+end
 end
 
 function interp = ternary_tex_if_log10(useLog10D2)

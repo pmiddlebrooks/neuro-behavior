@@ -12,6 +12,7 @@ function sessions = interval_session_list()
 %   sessions - Struct array: sessions(i).subjectName, sessions(i).sessionName
 
 sessions = [
+    struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_04_02')
     struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_04_03')
     % struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_04_04')
     % struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_04_07')

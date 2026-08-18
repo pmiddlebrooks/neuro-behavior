@@ -11,7 +11,9 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
 %   lfpCleanParams - LFP cleaning parameters (if dataSource == 'lfp')
 %   bands - Frequency bands (if dataSource == 'lfp')
 %
-% Goal: Load interval task neural data from paths.intervalDataPath/subjectName/sessionName
+% Goal: Load interval task neural data from paths.intervalDataPath/subjectName/sessionName.
+%   Spike quality uses ci.group (good / mua) when that column is populated;
+%   otherwise units with ci.rf_label == 'real' are kept.
 
     if ~isfield(opts, 'collectEnd')
         opts.collectEnd = 10 * 60;
@@ -27,7 +29,7 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
         end
 
         if opts.useSpikeTimes
-            spikeData = load_spike_times('interval', paths, sessionName, opts);
+            spikeData = load_interval_spike_times(paths, sessionName, opts);
             opts.collectEnd = spikeData.collectEnd;
             opts.collectStart = spikeData.collectStart;
 
@@ -116,4 +118,222 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
     dataStruct.startBlock2 = [];
     dataStruct.reachStart = [];
     dataStruct.reachClass = [];
+end
+
+function spikeData = load_interval_spike_times(paths, sessionName, opts)
+% LOAD_INTERVAL_SPIKE_TIMES - Load interval-task spikes from cluster_info / npy
+%
+% Variables:
+%   paths       - Paths structure from get_paths
+%   sessionName - Session folder under the subject
+%   opts        - Options; requires subjectName. Optional: fsSpike, collectStart,
+%                 collectEnd, removeSome, useMulti (true: good+mua; false: good only)
+%
+% Goal:
+%   Load cluster_info.tsv, spike_times.npy, and spike_clusters.npy for an
+%   interval session. Keep units from ci.group when that column is populated
+%   (good / mua per opts.useMulti); otherwise keep ci.rf_label == 'real'.
+
+    if ~isfield(opts, 'subjectName') || isempty(opts.subjectName)
+        error('opts.subjectName must be set before loading interval spike times');
+    end
+    if ~isfield(opts, 'fsSpike') || isempty(opts.fsSpike)
+        opts.fsSpike = 30000;
+    end
+
+    sessionFolder = fullfile(paths.intervalDataPath, opts.subjectName, sessionName);
+    ci = load_interval_cluster_info(sessionFolder, sessionName);
+
+    spikeTimesPath = fullfile(sessionFolder, 'spike_times.npy');
+    if ~exist(spikeTimesPath, 'file')
+        error('spike_times.npy not found in %s', sessionFolder);
+    end
+    spikeTimes = double(readNPY(spikeTimesPath)) / opts.fsSpike;
+
+    spikeClustersPath = fullfile(sessionFolder, 'spike_clusters.npy');
+    if ~exist(spikeClustersPath, 'file')
+        error('spike_clusters.npy not found in %s', sessionFolder);
+    end
+    spikeClusters = readNPY(spikeClustersPath);
+
+    allGood = interval_quality_mask(ci, opts);
+
+    goodM23 = allGood & strcmp(ci.area, 'M23');
+    goodM56 = allGood & strcmp(ci.area, 'M56');
+    goodDS = allGood & strcmp(ci.area, 'DS');
+    goodVS = allGood & strcmp(ci.area, 'VS');
+    useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
+
+    if ismember('id', ci.Properties.VariableNames)
+        neuronIDs = ci.id(useNeurons);
+    else
+        neuronIDs = ci.cluster_id(useNeurons);
+    end
+    neuronAreas = ci.area(useNeurons);
+
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        opts.collectStart = 0;
+    end
+    if ~isfield(opts, 'collectEnd')
+        opts.collectEnd = [];
+    end
+    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, max(spikeTimes), opts.collectStart);
+
+    validSpikes = ismember(spikeClusters, neuronIDs) & ...
+        spikeTimes >= opts.collectStart & ...
+        spikeTimes <= opts.collectEnd;
+    spikeTimes = spikeTimes(validSpikes);
+    spikeClusters = spikeClusters(validSpikes);
+
+    if isfield(opts, 'removeSome') && opts.removeSome
+        [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
+            filter_interval_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
+    end
+
+    spikeData = struct();
+    spikeData.spikeTimes = spikeTimes;
+    spikeData.spikeClusters = spikeClusters;
+    spikeData.neuronIDs = neuronIDs;
+    spikeData.neuronAreas = cell(size(neuronAreas));
+    for i = 1:length(neuronAreas)
+        spikeData.neuronAreas{i} = char(neuronAreas(i));
+    end
+    spikeData.idLabels = neuronIDs;
+    spikeData.areaLabelsUnique = unique(neuronAreas);
+    spikeData.totalTime = opts.collectEnd - opts.collectStart;
+    spikeData.collectStart = opts.collectStart;
+    spikeData.collectEnd = opts.collectEnd;
+end
+
+function ci = load_interval_cluster_info(sessionFolder, sessionName)
+% LOAD_INTERVAL_CLUSTER_INFO - Read cluster_info.tsv and assign brain areas
+%
+% Variables:
+%   sessionFolder - Path to the interval session directory
+%   sessionName   - Session folder name (for logging)
+%
+% Goal:
+%   Return a cluster_info table with depth 0 = superficial (M23), 3840 = deep
+%   (VS), and an area column from get_brain_area_depth_ranges.
+
+    clusterInfoPath = fullfile(sessionFolder, 'cluster_info.tsv');
+    if ~exist(clusterInfoPath, 'file')
+        error('cluster_info.tsv not found in %s', sessionFolder);
+    end
+    ci = readtable(clusterInfoPath, 'FileType', 'text', 'Delimiter', '\t');
+
+    ci = sortrows(ci, 'depth');
+    ci.depth = 3840 - ci.depth;
+    ci = flipud(ci);
+
+    [m23, m56, cc, ds, vs, depthSource] = get_brain_area_depth_ranges(sessionFolder);
+    if strcmp(depthSource, 'session')
+        fprintf('Using brain_area_depths.mat for %s\n', sessionName);
+    end
+
+    area = cell(size(ci, 1), 1);
+    area(ci.depth >= m23(1) & ci.depth <= m23(2)) = {'M23'};
+    area(ci.depth >= m56(1) & ci.depth <= m56(2)) = {'M56'};
+    area(ci.depth >= cc(1) & ci.depth <= cc(2)) = {'CC'};
+    area(ci.depth >= ds(1) & ci.depth <= ds(2)) = {'DS'};
+    area(ci.depth >= vs(1) & ci.depth <= vs(2)) = {'VS'};
+    ci.area = area;
+end
+
+function allGood = interval_quality_mask(ci, opts)
+% INTERVAL_QUALITY_MASK - Units to keep from cluster_info quality labels
+%
+% Variables:
+%   ci   - cluster_info table
+%   opts - Options; opts.useMulti (default true) includes mua with good
+%
+% Goal:
+%   If ci.group exists and has non-empty labels, keep 'good' (and 'mua' when
+%   opts.useMulti is true). Otherwise keep units with ci.rf_label == 'real'.
+
+    useGroup = ismember('group', ci.Properties.VariableNames) && ...
+        has_nonempty_quality_labels(ci.group);
+
+    if useGroup
+        useMulti = true;
+        if isfield(opts, 'useMulti') && ~isempty(opts.useMulti)
+            useMulti = logical(opts.useMulti);
+        end
+        groupLabel = strtrim(string(ci.group));
+        if useMulti
+            allGood = groupLabel == "good" | groupLabel == "mua";
+            fprintf('Using cluster_info.group (good + mua) for unit quality\n');
+        else
+            allGood = groupLabel == "good";
+            fprintf('Using cluster_info.group (good only) for unit quality\n');
+        end
+    else
+        if ~ismember('rf_label', ci.Properties.VariableNames)
+            error(['cluster_info.tsv has no usable group column and no rf_label ', ...
+                'column in %s'], opts.sessionName);
+        end
+        rfLabel = strtrim(string(ci.rf_label));
+        allGood = rfLabel == "real";
+        fprintf('Using cluster_info.rf_label (real) for unit quality\n');
+    end
+end
+
+function tf = has_nonempty_quality_labels(vals)
+% HAS_NONEMPTY_QUALITY_LABELS - True if any quality label is non-blank
+%
+% Variables:
+%   vals - cluster_info quality column (group or similar)
+%
+% Goal:
+%   Treat a column of empty strings / missing / NaN as unused so loading can
+%   fall back to rf_label.
+
+    if isempty(vals)
+        tf = false;
+        return
+    end
+
+    if isnumeric(vals)
+        tf = any(~isnan(vals(:)));
+        return
+    end
+
+    labelStr = strtrim(string(vals));
+    tf = any(strlength(labelStr) > 0 & ~ismissing(labelStr));
+end
+
+function [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
+    filter_interval_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts)
+% FILTER_INTERVAL_BY_FIRING_RATE - Drop interval units outside rate bounds
+%
+% Variables:
+%   spikeTimes    - Spike times (seconds)
+%   spikeClusters - Cluster id per spike
+%   neuronIDs     - Unit ids to filter
+%   neuronAreas   - Area label per unit
+%   opts          - Options with collectStart, collectEnd, rate bounds
+%
+% Goal:
+%   Keep neurons that pass neuron_firing_rate_filter_spikes and restrict
+%   spikeTimes / spikeClusters to those units.
+
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        timeStart = 0;
+    else
+        timeStart = opts.collectStart;
+    end
+    timeEnd = opts.collectEnd;
+
+    keepNeurons = neuron_firing_rate_filter_spikes(opts, neuronIDs, spikeTimes, ...
+        spikeClusters, timeStart, timeEnd);
+
+    fprintf('\nKeeping %d of %d neurons after firing rate filtering\n', ...
+        sum(keepNeurons), length(keepNeurons));
+
+    neuronIDs = neuronIDs(keepNeurons);
+    neuronAreas = neuronAreas(keepNeurons);
+
+    validSpikes = ismember(spikeClusters, neuronIDs);
+    spikeTimes = spikeTimes(validSpikes);
+    spikeClusters = spikeClusters(validSpikes);
 end

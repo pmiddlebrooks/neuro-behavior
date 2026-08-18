@@ -5,7 +5,8 @@
 % criticality_av_across_tasks.m and plots complementary CCDFs on log-log
 % axes with power-law fits over the viable cutoff range (tau for size,
 % alpha for duration), plus ⟨S⟩(T) with the crackling WLS slope
-% (paramSD = 1/σνz) and printed dcc.
+% (paramSD = 1/σνz) and printed dcc. A count panel under each scatter
+% shows how many avalanches fall at each size or duration (same x-axis).
 %
 % Variables (configure in this section):
 %   sessionType        - 'spontaneous', 'interval', 'reach', 'semicircle', 'schall'
@@ -43,6 +44,7 @@
 %   nShuffles          - Number of independent circular permutations per area
 %   saveAnalysisResults - If true, save sessionResults after %% Analysis
 %   analysisResultsFile - Path to .mat cache; '' = default under dropPath/criticality_manuscript
+%   plotConfig.drawPowerLawFit - If true, overlay tau/alpha slope on [xmin, xmax] (default true)
 %
 % Sections:
 %   %% Analysis  - load session, extract avalanches, optionally save sessionResults
@@ -61,10 +63,10 @@
 setup_criticality_manuscript_paths('session_avalanche_distributions');
 paths = get_paths();
 
-collectStart = 10;
-collectEnd = 120 * 60;
+collectStart = 0;
+collectEnd = 10 * 60;
 % collectEnd = [];
-avWindow = 3*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
+avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
 windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
@@ -97,7 +99,7 @@ minNeuronsMultiple = 1.1;
 splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
-enableCircularPermutations = true;
+enableCircularPermutations = false;
 nShuffles = 5;
 
 saveAnalysisResults = false;
@@ -105,6 +107,7 @@ analysisResultsFile = '';  % default: dropPath/criticality_manuscript/session_av
 
 % Plot formatting (edit and re-run %% Plotting)
 plotConfig = fill_manuscript_plot_config();
+plotConfig.drawPowerLawFit = true;  % overlay tau/alpha slope on the fitted range
 plotConfig.observedMarkerSize = 5;
 plotConfig.shuffleMarkerSize = 4;
 plotConfig.fitLineWidth = 2.5;
@@ -170,7 +173,7 @@ end
 fprintf('splitByEngagement: %d\n', splitByEngagement);
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 
-%% Analysis — load session, extract avalanches, optionally cache results
+% Analysis — load session, extract avalanches, optionally cache results
 subjectNameForLoad = '';
 if exist('subjectName', 'var') && ~isempty(subjectName)
   subjectNameForLoad = subjectName;
@@ -249,7 +252,7 @@ if saveAnalysisResults
   fprintf('\nSaved analysis results: %s\n', resultsFile);
 end
 
-%% Plotting — figures from sessionResults (re-run this section to tweak formatting)
+% Plotting — figures from sessionResults (re-run this section to tweak formatting)
 if ~exist('sessionResults', 'var') || isempty(sessionResults)
   resultsFile = resolve_avalanche_results_file(paths, sessionName, analysisResultsFile);
   if ~isfile(resultsFile)
@@ -493,16 +496,19 @@ nAreas = numel(areaNames);
 
 fig = get_task_figure_handle(plotConfig.sessionType, 'engagement_distributions', '', ...
   'Session avalanche distributions (engagement)');
-tiledlayout(fig, nAreas, 3, ...
+outerLayout = tiledlayout(fig, nAreas, 3, ...
   'TileSpacing', plotConfig.tileSpacing, 'Padding', plotConfig.tilePadding);
 
 for aIdx = 1:nAreas
-  axSize = nexttile((aIdx - 1) * 3 + 1);
-  axDur = nexttile((aIdx - 1) * 3 + 2);
-  axCrack = nexttile((aIdx - 1) * 3 + 3);
+  [axSize, axSizeCount] = add_scatter_count_tiles(outerLayout, (aIdx - 1) * 3 + 1, plotConfig);
+  [axDur, axDurCount] = add_scatter_count_tiles(outerLayout, (aIdx - 1) * 3 + 2, plotConfig);
+  [axCrack, axCrackCount] = add_scatter_count_tiles(outerLayout, (aIdx - 1) * 3 + 3, plotConfig);
   hold(axSize, 'on');
   hold(axDur, 'on');
   hold(axCrack, 'on');
+  hold(axSizeCount, 'on');
+  hold(axDurCount, 'on');
+  hold(axCrackCount, 'on');
 
   for c = 1:numel(classFields)
     if ~isfield(avByClass, classFields{c}) || isempty(avByClass.(classFields{c})) ...
@@ -517,15 +523,24 @@ for aIdx = 1:nAreas
 
     displayName = sprintf('%s (\\tau=%.2f, n=%d)', classNames{c}, avData.tau, avData.nAvalanches);
     plot_engagement_class_ccdf(axSize, avData.sizes, classColors(c, :), displayName, plotConfig);
+    overlay_power_law_ccdf_fit(axSize, avData.sizes, avData.tau, ...
+      avData.minSizeFit, avData.maxSizeFit, classColors(c, :), plotConfig);
+    plot_avalanche_value_counts(axSizeCount, avData.sizes, classColors(c, :), plotConfig);
 
     binSize = resolve_avalanche_duration_bin_size(avData);
     displayNameDur = sprintf('%s (\\alpha=%.2f, n=%d)', classNames{c}, avData.alpha, ...
       avData.nAvalanches);
-    plot_engagement_class_ccdf(axDur, avData.durations * binSize * 1000, classColors(c, :), ...
+    durationsMs = avData.durations * binSize * 1000;
+    plot_engagement_class_ccdf(axDur, durationsMs, classColors(c, :), ...
       displayNameDur, plotConfig);
+    overlay_power_law_ccdf_fit(axDur, durationsMs, avData.alpha, ...
+      avData.minDurFit * binSize * 1000, avData.maxDurFit * binSize * 1000, ...
+      classColors(c, :), plotConfig);
+    plot_avalanche_value_counts(axDurCount, durationsMs, classColors(c, :), plotConfig);
 
     plot_engagement_class_size_given_duration(axCrack, avData, classColors(c, :), ...
       classNames{c}, plotConfig);
+    plot_avalanche_value_counts(axCrackCount, avData.durations, classColors(c, :), plotConfig);
 
     if strcmp(classFields{c}, 'total') && isfield(avData, 'shuffleSizes') ...
         && ~isempty(avData.shuffleSizes)
@@ -534,18 +549,24 @@ for aIdx = 1:nAreas
         plotConfig, true);
       plot_engagement_class_ccdf(axDur, avData.shuffleDurations * binSize * 1000, ...
         shuffleColor, shuffleName, plotConfig, true);
+      plot_avalanche_value_counts(axSizeCount, avData.shuffleSizes, shuffleColor, plotConfig, true);
+      plot_avalanche_value_counts(axDurCount, avData.shuffleDurations * binSize * 1000, ...
+        shuffleColor, plotConfig, true);
     end
   end
 
   set(axSize, 'XScale', 'log', 'YScale', 'log');
   set(axDur, 'XScale', 'log', 'YScale', 'log');
   set(axCrack, 'XScale', 'log', 'YScale', 'log');
-  apply_manuscript_axes_style(axSize, plotConfig, 'Avalanche size', 'P(X \geq x)', ...
+  apply_manuscript_axes_style(axSize, plotConfig, '', 'P(X \geq x)', ...
     sprintf('%s — size', areaNames{aIdx}), 'tex');
-  apply_manuscript_axes_style(axDur, plotConfig, 'Avalanche duration (ms)', 'P(X \geq x)', ...
+  apply_manuscript_axes_style(axDur, plotConfig, '', 'P(X \geq x)', ...
     sprintf('%s — duration', areaNames{aIdx}), 'tex');
-  apply_manuscript_axes_style(axCrack, plotConfig, 'Duration (bins)', '\langleS\rangle(T)', ...
+  apply_manuscript_axes_style(axCrack, plotConfig, '', '\langleS\rangle(T)', ...
     sprintf('%s — crackling', areaNames{aIdx}), 'tex');
+  align_scatter_count_x_axes(axSize, axSizeCount, plotConfig, 'Avalanche size', 'tex');
+  align_scatter_count_x_axes(axDur, axDurCount, plotConfig, 'Avalanche duration (ms)', 'tex');
+  align_scatter_count_x_axes(axCrack, axCrackCount, plotConfig, 'Duration (bins)', 'tex');
   grid(axSize, 'off');
   grid(axDur, 'off');
   grid(axCrack, 'off');
@@ -555,6 +576,9 @@ for aIdx = 1:nAreas
   hold(axSize, 'off');
   hold(axDur, 'off');
   hold(axCrack, 'off');
+  hold(axSizeCount, 'off');
+  hold(axDurCount, 'off');
+  hold(axCrackCount, 'off');
 end
 
 sgtitle(fig, sprintf( ...
@@ -563,7 +587,7 @@ sgtitle(fig, sprintf( ...
   runMeta.sessionName, runMeta.collectStart, runMeta.collectEnd, ...
   avDurations.totalSec / 60, avDurations.engagedSec / 60, avDurations.nonEngagedSec / 60), ...
   'FontWeight', 'bold', 'Interpreter', 'none');
-apply_portrait_figure_size(fig, plotConfig.figureWidthInches, nAreas, 3);
+apply_portrait_figure_size(fig, plotConfig.figureWidthInches, nAreas * 1.5, 3);
 
 if runMeta.saveFigure
   saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
@@ -646,6 +670,93 @@ if isfinite(avData.paramSD) && isfinite(avData.minDurFit) && isfinite(avData.max
 end
 end
 
+function [axScatter, axCount] = add_scatter_count_tiles(parentLayout, tileIndex, plotConfig)
+% ADD_SCATTER_COUNT_TILES - Nested scatter (top) and count (bottom) axes
+%
+% Variables:
+%   parentLayout - Outer tiledlayout (nAreas x 3)
+%   tileIndex    - Tile number in the outer grid
+%   plotConfig   - Uses tileSpacing for the inner stack
+%
+% Goal:
+%   Place a taller scatter panel over a count panel that can share the x-axis.
+
+innerSpacing = 'tight';
+if nargin >= 3 && isstruct(plotConfig) && isfield(plotConfig, 'tileSpacing') ...
+    && ~isempty(plotConfig.tileSpacing)
+  innerSpacing = plotConfig.tileSpacing;
+end
+innerLayout = tiledlayout(parentLayout, 3, 1, ...
+  'TileSpacing', innerSpacing, 'Padding', 'tight');
+innerLayout.Layout.Tile = tileIndex;
+axScatter = nexttile(innerLayout, 1, [2 1]);
+axCount = nexttile(innerLayout, 3);
+end
+
+function plot_avalanche_value_counts(ax, values, lineColor, plotConfig, isShuffle)
+% PLOT_AVALANCHE_VALUE_COUNTS - Number of avalanches at each unique x
+%
+% Variables:
+%   ax         - Axes handle for the count row
+%   values     - Sizes or durations (same units as the scatter above)
+%   lineColor  - RGB marker color
+%   plotConfig - Marker size / alpha
+%   isShuffle  - If true, use smaller shuffle markers
+%
+% Goal:
+%   Scatter unique values vs counts so the panel lines up with the CCDF x-axis.
+
+if nargin < 5 || isempty(isShuffle)
+  isShuffle = false;
+end
+if isempty(values)
+  return;
+end
+values = values(:);
+values = values(isfinite(values) & values > 0);
+if isempty(values)
+  return;
+end
+[uniqueVals, ~, ic] = unique(values);
+counts = accumarray(ic, 1);
+markerSize = plotConfig.observedMarkerSize;
+faceAlpha = plotConfig.observedMarkerFaceAlpha;
+if isShuffle
+  markerSize = plotConfig.shuffleMarkerSize;
+  faceAlpha = 0.25;
+end
+hold(ax, 'on');
+scatter(ax, uniqueVals, counts, markerSize .^ 2, lineColor, 'filled', ...
+  'MarkerFaceAlpha', faceAlpha, 'HandleVisibility', 'off');
+end
+
+function align_scatter_count_x_axes(axScatter, axCount, plotConfig, xLabelText, textInterpreter)
+% ALIGN_SCATTER_COUNT_X_AXES - Shared log x-axis; xlabel only on the count row
+%
+% Variables:
+%   axScatter       - Upper CCDF / crackling axes
+%   axCount         - Lower count axes
+%   plotConfig      - Axis fonts and line widths
+%   xLabelText      - X label for the count row
+%   textInterpreter - Optional interpreter (default 'none')
+%
+% Goal:
+%   Keep scatter and counts on the same x limits/ticks, with counts on log-y.
+
+if nargin < 5 || isempty(textInterpreter)
+  textInterpreter = 'none';
+end
+set(axScatter, 'XTickLabel', []);
+xlabel(axScatter, '');
+set(axCount, 'XScale', 'log', 'YScale', 'log', ...
+  'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth, ...
+  'Box', 'off', 'TickDir', 'out');
+xlabel(axCount, xLabelText, 'FontSize', plotConfig.axisLabelFontSize, ...
+  'Interpreter', textInterpreter);
+ylabel(axCount, 'Count', 'FontSize', plotConfig.axisLabelFontSize);
+linkaxes([axScatter, axCount], 'x');
+end
+
 function plot_session_avalanche_results(sessionResults, paths, plotConfig)
 % PLOT_SESSION_AVALANCHE_RESULTS - Figures from cached avalanche extraction results
 
@@ -674,25 +785,41 @@ for iCellRun = 1:numel(sessionResults.runs)
   figName = sprintf('Session avalanche distributions%s', cell_type_file_tag(runResult.cellType));
   fig = get_task_figure_handle(plotConfig.sessionType, 'distributions', runResult.cellType, figName);
   nAreas = numel(runResult.areaResults);
-  tiledlayout(fig, nAreas, 3, ...
+  outerLayout = tiledlayout(fig, nAreas, 3, ...
     'TileSpacing', plotConfig.tileSpacing, 'Padding', plotConfig.tilePadding);
+  panelPlotConfig = plotConfig;
+  panelPlotConfig.axisSquare = false;
+  panelPlotConfig.showXLabel = false;
 
   for aIdx = 1:numel(runResult.areaResults)
     avData = runResult.areaResults{aIdx};
+    observedColor = colors_for_tasks(plotConfig.sessionType);
 
-    axSize = nexttile((aIdx - 1) * 3 + 1);
+    [axSize, axSizeCount] = add_scatter_count_tiles(outerLayout, (aIdx - 1) * 3 + 1, plotConfig);
     plot_avalanche_ccdf_with_fit(axSize, avData.sizes, avData.tau, ...
       avData.minSizeFit, avData.maxSizeFit, 'Sizes', '\tau', avData.sizeFitInfo, ...
-      avData.shuffleSizes, plotConfig);
+      avData.shuffleSizes, panelPlotConfig);
+    plot_avalanche_value_counts(axSizeCount, avData.sizes, observedColor, plotConfig);
+    plot_avalanche_value_counts(axSizeCount, avData.shuffleSizes, [0.55, 0.55, 0.55], ...
+      plotConfig, true);
+    align_scatter_count_x_axes(axSize, axSizeCount, plotConfig, 'Sizes');
 
-    axDur = nexttile((aIdx - 1) * 3 + 2);
+    [axDur, axDurCount] = add_scatter_count_tiles(outerLayout, (aIdx - 1) * 3 + 2, plotConfig);
     binSize = resolve_avalanche_duration_bin_size(avData);
     plot_avalanche_ccdf_with_fit(axDur, avData.durations * binSize * 1000, avData.alpha, ...
-      avData.minDurFit * binSize, avData.maxDurFit * binSize, 'Durations (ms)', '\alpha', ...
-      avData.durFitInfo, avData.shuffleDurations * binSize * 1000, plotConfig);
+      avData.minDurFit * binSize * 1000, avData.maxDurFit * binSize * 1000, 'Durations (ms)', '\alpha', ...
+      avData.durFitInfo, avData.shuffleDurations * binSize * 1000, panelPlotConfig);
+    plot_avalanche_value_counts(axDurCount, avData.durations * binSize * 1000, observedColor, plotConfig);
+    plot_avalanche_value_counts(axDurCount, avData.shuffleDurations * binSize * 1000, ...
+      [0.55, 0.55, 0.55], plotConfig, true);
+    align_scatter_count_x_axes(axDur, axDurCount, plotConfig, 'Durations (ms)');
 
-    axCrack = nexttile((aIdx - 1) * 3 + 3);
-    plot_size_given_duration_with_fit(axCrack, avData, plotConfig);
+    [axCrack, axCrackCount] = add_scatter_count_tiles(outerLayout, (aIdx - 1) * 3 + 3, plotConfig);
+    plot_size_given_duration_with_fit(axCrack, avData, panelPlotConfig);
+    if isstruct(avData) && isfield(avData, 'durations')
+      plot_avalanche_value_counts(axCrackCount, avData.durations, observedColor, plotConfig);
+    end
+    align_scatter_count_x_axes(axCrack, axCrackCount, plotConfig, 'Duration (bins)', 'tex');
   end
 
   titleSuffix = '';
@@ -704,7 +831,7 @@ for iCellRun = 1:numel(sessionResults.runs)
     format_areas_label(runResult.areaNames), runMeta.collectStart, runMeta.collectEnd, titleSuffix), ...
     'FontWeight', 'bold', 'Interpreter', 'none');
 
-  apply_portrait_figure_size(fig, plotConfig.figureWidthInches, nAreas, 3);
+  apply_portrait_figure_size(fig, plotConfig.figureWidthInches, nAreas * 1.5, 3);
 
   if runMeta.saveFigure
     save_session_avalanche_distribution_figure(fig, paths, runMeta, runResult);
@@ -812,6 +939,9 @@ end
 if ~isfield(plotConfig, 'shuffleMarkerSize') || isempty(plotConfig.shuffleMarkerSize)
   plotConfig.shuffleMarkerSize = 4;
 end
+if ~isfield(plotConfig, 'drawPowerLawFit') || isempty(plotConfig.drawPowerLawFit)
+  plotConfig.drawPowerLawFit = true;
+end
 if ~isfield(plotConfig, 'fitLineWidth') || isempty(plotConfig.fitLineWidth)
   plotConfig.fitLineWidth = 2.5;
 end
@@ -832,6 +962,12 @@ if ~isfield(plotConfig, 'sessionType')
 end
 if ~isfield(plotConfig, 'figureWidthInches') || isempty(plotConfig.figureWidthInches)
   plotConfig.figureWidthInches = 6.5;
+end
+if ~isfield(plotConfig, 'axisSquare') || isempty(plotConfig.axisSquare)
+  plotConfig.axisSquare = true;
+end
+if ~isfield(plotConfig, 'showXLabel') || isempty(plotConfig.showXLabel)
+  plotConfig.showXLabel = true;
 end
 end
 
@@ -1068,6 +1204,51 @@ if ~isempty(extras)
 end
 end
 
+function didPlot = overlay_power_law_ccdf_fit(ax, values, exponent, fitMin, fitMax, lineColor, plotConfig, displayName)
+% OVERLAY_POWER_LAW_CCDF_FIT - Power-law CCDF slope on the fitted range
+%
+% Variables:
+%   ax           - Axes handle
+%   values       - Observed sizes or durations (same units as fitMin/fitMax)
+%   exponent     - tau or alpha
+%   fitMin, fitMax - Fitted scaling range
+%   lineColor    - RGB line color
+%   plotConfig   - Must include drawPowerLawFit and fitLineWidth
+%   displayName  - Optional legend string; omit or '' to hide from legend
+%
+% Goal:
+%   Draw P(X>=x) ~ x^(-(exponent-1)) on [fitMin, fitMax], anchored at the
+%   empirical CCDF at xmin.
+
+didPlot = false;
+if ~isfield(plotConfig, 'drawPowerLawFit') || ~plotConfig.drawPowerLawFit
+  return;
+end
+values = values(:);
+values = values(isfinite(values) & values > 0);
+if numel(values) < 2
+  return;
+end
+if ~(isfinite(exponent) && exponent > 1 && isfinite(fitMin) && isfinite(fitMax) ...
+    && fitMin > 0 && fitMax > fitMin)
+  return;
+end
+yAtMin = mean(values >= fitMin);
+if ~(isfinite(yAtMin) && yAtMin > 0)
+  return;
+end
+xFit = logspace(log10(fitMin), log10(fitMax), 100);
+yFit = (xFit / fitMin) .^ (-(exponent - 1)) * yAtMin;
+if nargin < 8 || isempty(displayName)
+  plot(ax, xFit, yFit, '-', 'Color', lineColor, 'LineWidth', plotConfig.fitLineWidth, ...
+    'HandleVisibility', 'off');
+else
+  plot(ax, xFit, yFit, '-', 'Color', lineColor, 'LineWidth', plotConfig.fitLineWidth, ...
+    'DisplayName', displayName);
+end
+didPlot = true;
+end
+
 function plot_avalanche_ccdf_with_fit(ax, values, exponent, fitMin, fitMax, xLabelText, exponentLabel, fitInfo, shuffleValues, plotConfig)
 % PLOT_AVALANCHE_CCDF_WITH_FIT - Log-log CCDF with power-law fit segment
 %
@@ -1080,7 +1261,7 @@ function plot_avalanche_ccdf_with_fit(ax, values, exponent, fitMin, fitMax, xLab
 %   exponentLabel - Display name for exponent ('\tau' or '\alpha')
 %   fitInfo       - Optional struct from fit_avalanche_power_law (method, pValue)
 %   shuffleValues - Optional pooled shuffle avalanches for overlay CCDF
-%   plotConfig    - Optional struct with observedMarkerSize, shuffleMarkerSize, etc.
+%   plotConfig    - Marker sizes; drawPowerLawFit overlays the slope on [xmin, xmax]
 %
 % Goal:
 %   Plot empirical CCDF with log x-axis and overlay fit slope on [fitMin, fitMax].
@@ -1126,25 +1307,22 @@ if ~isempty(shuffleValues)
   shufflePlotted = true;
 end
 
-fitPlotted = false;
-if isfinite(exponent) && exponent > 1 && isfinite(fitMin) && isfinite(fitMax) ...
-    && fitMin > 0 && fitMax > fitMin
-  xFit = logspace(log10(fitMin), log10(fitMax), 100);
-  yAtMin = mean(values >= fitMin);
-  yFit = (xFit / fitMin) .^ (-(exponent - 1)) * yAtMin;
-  methodTag = '';
-  if isstruct(fitInfo) && isfield(fitInfo, 'method') && ~isempty(fitInfo.method)
-    methodTag = sprintf(', %s', fitInfo.method);
-  end
-  % plot(ax, xFit, yFit, '-', 'Color', [0.85, 0.2, 0.15], 'LineWidth', plotConfig.fitLineWidth, ...
-  %   'DisplayName', sprintf('Observed fit (%s=%.2f%s)', exponentLabel, exponent, methodTag));
-  % fitPlotted = true;
+methodTag = '';
+if isstruct(fitInfo) && isfield(fitInfo, 'method') && ~isempty(fitInfo.method)
+  methodTag = sprintf(', %s', fitInfo.method);
 end
+fitDisplayName = sprintf('Fit (%s=%.2f%s)', exponentLabel, exponent, methodTag);
+fitPlotted = overlay_power_law_ccdf_fit(ax, values, exponent, fitMin, fitMax, ...
+  [0.85, 0.2, 0.15], plotConfig, fitDisplayName);
 
 set(ax, 'XScale', 'log', 'YScale', 'log', 'FontSize', plotConfig.tickLabelFontSize, ...
   'LineWidth', plotConfig.axesLineWidth);
-axis(ax, 'square');
-xlabel(ax, xLabelText, 'FontSize', plotConfig.axisLabelFontSize);
+if isfield(plotConfig, 'axisSquare') && plotConfig.axisSquare
+  axis(ax, 'square');
+end
+if ~isfield(plotConfig, 'showXLabel') || plotConfig.showXLabel
+  xlabel(ax, xLabelText, 'FontSize', plotConfig.axisLabelFontSize);
+end
 ylabel(ax, 'P(X \geq x)', 'FontSize', plotConfig.axisLabelFontSize);
 % grid(ax, 'on');
 if shufflePlotted || fitPlotted
@@ -1245,8 +1423,12 @@ end
 
 set(ax, 'XScale', 'log', 'YScale', 'log', 'FontSize', plotConfig.tickLabelFontSize, ...
   'LineWidth', plotConfig.axesLineWidth);
-axis(ax, 'square');
-xlabel(ax, 'Duration (bins)', 'FontSize', plotConfig.axisLabelFontSize);
+if isfield(plotConfig, 'axisSquare') && plotConfig.axisSquare
+  axis(ax, 'square');
+end
+if ~isfield(plotConfig, 'showXLabel') || plotConfig.showXLabel
+  xlabel(ax, 'Duration (bins)', 'FontSize', plotConfig.axisLabelFontSize);
+end
 ylabel(ax, '\langleS\rangle(T)', 'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', 'tex');
 if fitPlotted
   legend(ax, 'Location', plotConfig.legendLocation, 'FontSize', plotConfig.tickLabelFontSize, ...
