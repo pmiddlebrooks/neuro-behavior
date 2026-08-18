@@ -103,7 +103,7 @@ brainArea = 'M2356';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 
 windowsToTest = 2:2:90;   % seconds
-binSizeManual = 0.04;      % seconds (fixed across window sizes)
+binSizeManual = 0.025;      % seconds (fixed across window sizes)
 pOrder = 10;
 critType = 2;
 meanSubtract = false;

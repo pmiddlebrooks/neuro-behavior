@@ -98,7 +98,7 @@ opts.maxFiringRate = 200;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = d2Window;
-analysisConfig.stepSize = .1;
+analysisConfig.stepSize = .5;
 analysisConfig.binSize = binSize;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;

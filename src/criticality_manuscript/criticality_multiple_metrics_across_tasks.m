@@ -78,12 +78,12 @@ sessionTypes = order_manuscript_session_types(sessionTypes);
 collectStart = 10;
 collectEnd = 90*60;
 % collectEnd = [];  % [] = full session
-d2Window = 45;
+d2Window = 30;
 prgWindow = d2Window;
-avWindow = 3*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
+avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
-binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
+binSizeD2 = 0.025;   % d2/AR spike bin width (s); overrides AR default
 binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 
@@ -120,7 +120,7 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
@@ -486,7 +486,7 @@ if plotResults
         prgOut.plotData, plotAreas, sessionTypes, collectStart, collectEnd, d2Window, ...
         paths, brainArea, useLog10D2, plotConfig, '', metricsToPlot, avOut.plotData, ...
         finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample, ...
-        activeAnalyses, avWindow);
+        activeAnalyses, avWindow, binSizeD2);
     end
     if plotMetricPairScatters
       plot_multimetric_pair_scatters_across_tasks(arOut.plotData, avOut.plotData, plotAreas, ...
@@ -546,7 +546,7 @@ if plotResults
           plotAreas, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
           useLog10D2, plotConfig, engClass, metricsToPlot, classViews.(engClass).av, ...
           finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample, ...
-          activeAnalyses, avWindow);
+          activeAnalyses, avWindow, binSizeD2);
       end
       if plotMetricPairScatters
         plot_multimetric_pair_scatters_across_tasks( ...
@@ -1375,7 +1375,7 @@ function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, pr
     areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
     useLog10D2, plotConfig, engagementTag, metricsToPlot, avPlotDataDecades, ...
     finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample, activeAnalyses, ...
-    avWindow)
+    avWindow, binSizeD2)
 % PLOT_MULTIMETRIC_SEPARATED_AXES_ACROSS_TASKS - 2x4 panels of session metrics
 %
 % Layout:
@@ -1393,6 +1393,7 @@ sessionTypes = order_manuscript_session_types(sessionTypes);
 %   finalCutoffDivisor      - PRG kappa reported at N/finalCutoffDivisor (ylabel)
 %   enablePermutations      - If true, overlay shuffled/surrogate means in gray
 %   activeAnalyses          - Struct .ar/.av/.prg; inactive panels stay blank
+%   binSizeD2               - d2 spike bin width (s); included in title / filename
 %
 % Goal:
 %   Same session-level data as the combined plot, each metric on its own axis.
@@ -1432,6 +1433,9 @@ if nargin < 20 || isempty(activeAnalyses)
 end
 if nargin < 21
   avWindow = [];
+end
+if nargin < 22 || isempty(binSizeD2)
+  binSizeD2 = [];
 end
 activeAnalyses = fill_active_analyses(activeAnalyses);
 enablePermutations = logical(enablePermutations);
@@ -1661,12 +1665,13 @@ for a = 1:numel(areasToPlot)
   collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
   winPhrase = format_d2_av_window_title_phrase(d2Window, avWindow);
   engTitle = format_engagement_title_tag(engagementTag);
+  binPhrase = format_bin_size_title_phrase(binSizeD2);
   if ~isempty(brainArea)
-    titleStr = sprintf('Separated metrics%s — %s [%s, %s]', ...
-      engTitle, brainArea, collectTag, winPhrase);
+    titleStr = sprintf('Separated metrics%s — %s [%s, %s%s]', ...
+      engTitle, brainArea, collectTag, winPhrase, binPhrase);
   else
-    titleStr = sprintf('Separated metrics%s — %s [%s, %s]', ...
-      engTitle, areaName, collectTag, winPhrase);
+    titleStr = sprintf('Separated metrics%s — %s [%s, %s%s]', ...
+      engTitle, areaName, collectTag, winPhrase, binPhrase);
   end
   if enablePermutations
     titleStr = sprintf('%s (gray = shuffled)', titleStr);
@@ -1675,8 +1680,8 @@ for a = 1:numel(areasToPlot)
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
   plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2, engagementTag, panelMetricKeys, ...
-    useSubsampling, nNeuronsSubsample, avWindow);
+    collectStart, collectEnd, useLog10D2, engagementTag, ...
+    useSubsampling, nNeuronsSubsample, avWindow, binSizeD2);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved separated metrics: %s\n', fullfile(saveDir, plotBase));
@@ -2598,39 +2603,35 @@ end
 end
 
 function plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2, engagementTag, metricsToPlot, ...
-    useSubsampling, nNeuronsSubsample, avWindow)
+    collectStart, collectEnd, useLog10D2, engagementTag, ...
+    useSubsampling, nNeuronsSubsample, avWindow, binSizeD2)
 % MAKE_SEPARATED_METRICS_PLOT_BASENAME - File stem for separated metric panels
 if nargin < 7 || isempty(engagementTag)
   engagementTag = '';
 end
-if nargin < 8 || isempty(metricsToPlot)
-  metricsToPlot = {'d2', 'tau', 'alpha', 'paramSD', 'decades', 'dcc', 'kurtosis', 'djs'};
-end
-if nargin < 9 || isempty(useSubsampling)
+if nargin < 8 || isempty(useSubsampling)
   useSubsampling = false;
 end
-if nargin < 10 || isempty(nNeuronsSubsample)
+if nargin < 9 || isempty(nNeuronsSubsample)
   nNeuronsSubsample = 0;
 end
-if nargin < 11
+if nargin < 10
   avWindow = [];
 end
-if ischar(metricsToPlot) || isstring(metricsToPlot)
-  metricsToPlot = cellstr(metricsToPlot);
+if nargin < 11 || isempty(binSizeD2)
+  binSizeD2 = [];
 end
-metricsToPlot = metricsToPlot(:)';
 collectTag = format_multimetric_collect_tag(collectStart, collectEnd);
 winTag = format_window_sec_file_tag(d2Window);
 avTag = format_window_sec_file_tag(avWindow);
+binTag = format_bin_size_file_tag(binSizeD2);
 if ~isempty(brainArea)
   areaTag = brainArea;
 else
   areaTag = areaName;
 end
-metricTag = strjoin(metricsToPlot, '-');
-plotBase = sprintf('criticality_separated_metrics_%s_%s_win%s_av%s_%s', ...
-  metricTag, areaTag, winTag, avTag, collectTag);
+plotBase = sprintf('criticality_separated_metrics_%s_win%s_bin%s_av%s_%s', ...
+  areaTag, winTag, binTag, avTag, collectTag);
 if ~isempty(engagementTag)
   plotBase = sprintf('%s_%s', plotBase, engagementTag);
 end
@@ -2739,10 +2740,28 @@ else
 end
 end
 
+function tag = format_bin_size_file_tag(binSizeSec)
+% FORMAT_BIN_SIZE_FILE_TAG - 'na' if empty, else e.g. '40ms'
+if isempty(binSizeSec) || ~isfinite(binSizeSec)
+  tag = 'na';
+else
+  tag = sprintf('%.0fms', binSizeSec * 1000);
+end
+end
+
 function phrase = format_d2_av_window_title_phrase(d2Window, avWindow)
 % FORMAT_D2_AV_WINDOW_TITLE_PHRASE - Title fragment for d2 and AV window lengths
 phrase = sprintf('%s d2 windows, %s AV windows', ...
   format_window_sec_file_tag(d2Window), format_window_sec_file_tag(avWindow));
+end
+
+function phrase = format_bin_size_title_phrase(binSizeSec)
+% FORMAT_BIN_SIZE_TITLE_PHRASE - Title fragment for d2 spike bin width
+if isempty(binSizeSec) || ~isfinite(binSizeSec)
+  phrase = '';
+else
+  phrase = sprintf(', %.0f ms d2 bins', binSizeSec * 1000);
+end
 end
 
 function tag = format_subsamp_file_tag(useSubsampling, nNeuronsSubsample)
