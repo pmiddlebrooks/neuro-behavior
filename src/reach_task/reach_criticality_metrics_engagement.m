@@ -222,8 +222,7 @@ if ismember('d2', opts.analyses)
   fprintf('\n--- d2 ---\n');
   fprintf('reachBuffer: %s (windows overlapping [reach-before, reach+after] = engaged)\n', ...
     format_engagement_buffer_label(opts.reachBufferBefore, opts.reachBufferAfter));
-  if isfield(opts, 'cachedArResults') && ~isempty(opts.cachedArResults) ...
-      && isfield(opts.cachedArResults, 'startS')
+  if isfield(opts, 'cachedArResults') && ar_cache_has_window_times(opts.cachedArResults)
     fprintf('Using full-session d2 cache (split windows by engagement).\n');
     resultsD2 = opts.cachedArResults;
   else
@@ -287,8 +286,7 @@ if ismember('kurtosis', opts.analyses)
   fprintf('reachBuffer: %s (blocks overlapping [reach-before, reach+after] = engaged)\n', ...
     format_engagement_buffer_label(opts.reachBufferBefore, opts.reachBufferAfter));
   prgConfig = build_prg_config(opts);
-  if isfield(opts, 'cachedPrgResults') && ~isempty(opts.cachedPrgResults) ...
-      && isfield(opts.cachedPrgResults, 'windowStartS')
+  if isfield(opts, 'cachedPrgResults') && prg_cache_has_window_times(opts.cachedPrgResults)
     fprintf('Using full-session PRG cache (split blocks by engagement).\n');
     resultsPrg = opts.cachedPrgResults;
   else
