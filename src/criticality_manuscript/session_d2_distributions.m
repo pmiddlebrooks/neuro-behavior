@@ -11,7 +11,8 @@
 %   subjectName      - Required for spontaneous/interval/semicircle; '' for reach
 %   dataSource       - 'spikes' or 'lfp'
 %   collectStart     - Window start (seconds from session onset)
-%   collectEnd       - Window end (seconds)
+%   collectEnd       - Window end (seconds); [] = session end. If set past the
+%                      recording, plots stop at the session end.
 %   d2Window         - Non-overlapping window length (seconds)
 %   d2WindowAlign    - Timeline timestamp: 'center' (default) or 'leadingEdge'
 %                      leadingEdge places d2 at the window end (trailing d2Window)
@@ -24,6 +25,8 @@
 %   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled)
 %   plotD2Timeline   - If true, plot mean pop per d2 window, d2, and ethogram vs time
 %                      Semicircle ethogram: TaskMatrix outcome lines + leave-home/poke/end fills
+%                      Interval (no bhv labels yet): correct/error beam-break schematics;
+%                      engagement fills when splitByEngagement
 %   useRelativeTime  - If true, timeline x-axis is relative to collectStart (default false)
 %   binSize          - Spike bin width (s) for d2 analysis (and window popActivity)
 %   saveFigure       - Export PNG/EPS to dropPath/criticality_manuscript
@@ -63,21 +66,21 @@ end
 dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
-collectEnd = 120*60;
-d2Window = 45;  % seconds; non-overlapping windows
-d2WindowAlign = 'leadingEdge';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
+% collectEnd = 120*60;
+d2Window = 90;  % seconds; non-overlapping windows
+d2WindowAlign = 'center';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 30;
+nSubsamples = 40;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 nPermutations = 3;  % circular shuffles per window for shuffled d2 distribution
 plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
-binSize = 0.04;  % s; spike binning for d2 (and window mean popActivity)
+binSize = 0.025;  % s; spike binning for d2 (and window mean popActivity)
 saveFigure = false;
 
 plotConfig = fill_manuscript_plot_config();
@@ -161,6 +164,15 @@ if exist('subjectName', 'var') && ~isempty(subjectName)
 end
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
+
+% Requested collectEnd may be longer than this recording; do not plot past session end
+if ~isempty(collectEnd)
+    sessionEndAbs = session_d2_loaded_session_end(dataStruct);
+    if isfinite(sessionEndAbs)
+        collectEnd = clamp_collect_end_to_session(collectEnd, sessionEndAbs, collectStart);
+        opts.collectEnd = collectEnd;
+    end
+end
 
 [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations, false);
 if ~areaOk
@@ -260,9 +272,15 @@ for iCellRun = 1:numel(cellTypesToRun)
 
     % popActivity | d2 over time | ethogram (time-aligned)
     if plotD2Timeline
+        timelineOpts = struct( ...
+            'splitByEngagement', splitByEngagement, ...
+            'engagementBufferBefore', engagementBufferBefore, ...
+            'engagementBufferAfter', engagementBufferAfter, ...
+            'minNonEngagedWindow', minNonEngagedWindow, ...
+            'absorbSingleEvents', absorbSingleEvents);
         figTime = plot_d2_pop_ethogram_timeline(dataStruct, results, ...
             collectStart, collectEnd, d2Window, binSize, useLog10D2, plotConfig, ...
-            sessionName, cellType, useRelativeTime, d2WindowAlign);
+            sessionName, cellType, useRelativeTime, d2WindowAlign, timelineOpts);
         if ~isempty(figTime) && saveFigure
             saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
             if ~exist(saveDir, 'dir')
@@ -1005,7 +1023,7 @@ end
 
 function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
     collectStart, collectEnd, d2Window, binSize, useLog10D2, plotConfig, ...
-    sessionName, cellType, useRelativeTime, d2WindowAlign)
+    sessionName, cellType, useRelativeTime, d2WindowAlign, timelineOpts)
 % PLOT_D2_POP_ETHOGRAM_TIMELINE - Stacked mean-pop | d2 | ethogram vs time
 %
 % Variables:
@@ -1014,11 +1032,13 @@ function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
 %   binSize       - Spike bin width (s) used in d2 analysis (title only)
 %   useRelativeTime - If true, shift x-axis so t=0 at collectStart (default false)
 %   d2WindowAlign - 'center' (default) or 'leadingEdge' (timestamp = window end)
+%   timelineOpts  - Optional: splitByEngagement + interval engagement buffers
 %
 % Layout (per brain area column):
 %   Top:    mean popActivity per d2 window (results.popActivityWindows)
 %   Middle: window-wise d2 (and shuffled mean when present)
-%   Bottom: behavior ethogram (frame labels, or semicircle TaskMatrix events)
+%   Bottom: behavior ethogram (frame labels, semicircle TaskMatrix, or
+%           interval beam-break schematics)
 %
 % Timebase: results.startS are window centers in absolute session time.
 % d2WindowAlign maps those centers to plot times (center or leading edge).
@@ -1027,6 +1047,9 @@ function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
 %   black vertical line at choicePort poke time
 %   blue fill: leaveHomeLast -> choicePokeTime
 %   yellow fill: choicePokeTime -> trialEnd
+% Interval (until bhv labels exist):
+%   green/red vertical lines at correct/error beam breaks
+%   if splitByEngagement: blue engaged / orange non-engaged fills
 
 if nargin < 8 || isempty(plotConfig)
     plotConfig = fill_manuscript_plot_config();
@@ -1043,7 +1066,11 @@ end
 if nargin < 12 || isempty(d2WindowAlign)
     d2WindowAlign = 'center';
 end
+if nargin < 13 || isempty(timelineOpts)
+    timelineOpts = struct();
+end
 d2WindowAlign = normalize_d2_window_align(d2WindowAlign);
+timelineOpts = fill_d2_timeline_opts(timelineOpts);
 
 dataPrepPath = fullfile(fileparts(mfilename('fullpath')), '..', 'data_prep');
 if exist(dataPrepPath, 'dir')
@@ -1059,6 +1086,7 @@ end
 
 bhvRec = session_d2_behavior_record(dataStructBhv);
 semiEth = session_d2_semicircle_ethogram_record(dataStructBhv);
+intervalEth = session_d2_interval_ethogram_record(dataStructBhv);
 tMaxAbs = session_d2_resolve_timeline_tmax([], results, collectStart, collectEnd, d2Window, ...
     dataStructBhv);
 tMinAbs = collectStart;
@@ -1148,7 +1176,10 @@ for a = 1:numAreas
     hold(axD2, 'off');
 
     axEth = subplot(3, numAreas, 2 * numAreas + a, 'Parent', fig);
-    if ~isempty(semiEth)
+    if ~isempty(intervalEth)
+        session_d2_plot_interval_task_schematic(axEth, intervalEth, tMin, tMax, timeShift, ...
+            tMinAbs, tMaxAbs, timelineOpts);
+    elseif ~isempty(semiEth)
         session_d2_plot_semicircle_ethogram(axEth, semiEth, tMin, tMax, timeShift);
     else
         session_d2_plot_behavior_ethogram(axEth, bhvRec, tMin, tMax);
@@ -1164,8 +1195,12 @@ cellTag = '';
 if ~isempty(cellType) && ~strcmpi(cellType, 'combined')
     cellTag = sprintf(' | %s', cell_type_label(cellType));
 end
-sgtitle(fig, sprintf('%s%s | mean pop / d2 (%.0fs windows, %s, bin=%.0f ms) / ethogram', ...
-    sessionName, cellTag, d2Window, d2WindowAlign, binSize * 1000), ...
+bottomTag = 'ethogram';
+if ~isempty(intervalEth)
+    bottomTag = 'task events';
+end
+sgtitle(fig, sprintf('%s%s | mean pop / d2 (%.0fs windows, %s, bin=%.0f ms) / %s', ...
+    sessionName, cellTag, d2Window, d2WindowAlign, binSize * 1000, bottomTag), ...
     'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', 'Interpreter', 'none');
 fprintf('Plotted d2 timeline (%d area(s), t=[%.1f, %.1f] s).\n', numAreas, tMin, tMax);
 end
@@ -1196,6 +1231,29 @@ switch key
         error('session_d2_distributions:BadD2WindowAlign', ...
             'd2WindowAlign must be ''center'' or ''leadingEdge'' (got %s).', d2WindowAlign);
 end
+end
+
+function timelineOpts = fill_d2_timeline_opts(timelineOpts)
+% FILL_D2_TIMELINE_OPTS - Defaults for interval schematic / engagement fills
+if nargin < 1 || isempty(timelineOpts)
+    timelineOpts = struct();
+end
+if ~isfield(timelineOpts, 'splitByEngagement') || isempty(timelineOpts.splitByEngagement)
+    timelineOpts.splitByEngagement = false;
+end
+if ~isfield(timelineOpts, 'engagementBufferBefore') || isempty(timelineOpts.engagementBufferBefore)
+    timelineOpts.engagementBufferBefore = 1;
+end
+if ~isfield(timelineOpts, 'engagementBufferAfter') || isempty(timelineOpts.engagementBufferAfter)
+    timelineOpts.engagementBufferAfter = 1;
+end
+if ~isfield(timelineOpts, 'minNonEngagedWindow') || isempty(timelineOpts.minNonEngagedWindow)
+    timelineOpts.minNonEngagedWindow = 30;
+end
+if ~isfield(timelineOpts, 'absorbSingleEvents') || isempty(timelineOpts.absorbSingleEvents)
+    timelineOpts.absorbSingleEvents = true;
+end
+timelineOpts.splitByEngagement = logical(timelineOpts.splitByEngagement);
 end
 
 function tAlign = d2_window_align_times(startS, d2Window, d2WindowAlign)
@@ -1234,6 +1292,9 @@ end
 function tMax = session_d2_resolve_timeline_tmax(popTime, results, collectStart, collectEnd, ...
     d2Window, dataStruct)
 % SESSION_D2_RESOLVE_TIMELINE_TMAX - Right edge of shared time axis
+%
+% collectEnd=[] uses the loaded session end. A finite collectEnd is an upper
+% bound and is itself capped at the session end (no empty time after the data).
 
 tMax = nan;
 if ~isempty(popTime)
@@ -1246,16 +1307,46 @@ if isfield(results, 'startS')
         end
     end
 end
+
+sessionEndAbs = session_d2_loaded_session_end(dataStruct);
 if ~isempty(collectEnd) && isfinite(collectEnd)
-    tMax = max(tMax, collectEnd);
-else
-    durationSec = session_d2_session_duration_sec(dataStruct, collectStart);
-    if isfinite(durationSec)
-        tMax = max(tMax, collectStart + durationSec);
+    plotEnd = collectEnd;
+    if isfinite(sessionEndAbs)
+        plotEnd = min(plotEnd, sessionEndAbs);
     end
+else
+    plotEnd = sessionEndAbs;
+    if ~isfinite(plotEnd)
+        durationSec = session_d2_session_duration_sec(dataStruct, collectStart);
+        if isfinite(durationSec)
+            plotEnd = collectStart + durationSec;
+        end
+    end
+end
+if isfinite(plotEnd)
+    tMax = plotEnd;
 end
 if ~isfinite(tMax) || tMax <= collectStart
     tMax = collectStart + 1;
+end
+end
+
+function sessionEnd = session_d2_loaded_session_end(dataStruct)
+% SESSION_D2_LOADED_SESSION_END - Absolute end time (s) of loaded spike data
+
+sessionEnd = nan;
+if isfield(dataStruct, 'spikeData') && isfield(dataStruct.spikeData, 'collectEnd') ...
+        && ~isempty(dataStruct.spikeData.collectEnd)
+    sessionEnd = dataStruct.spikeData.collectEnd;
+    return;
+end
+if isfield(dataStruct, 'spikeTimes') && ~isempty(dataStruct.spikeTimes)
+    sessionEnd = max(dataStruct.spikeTimes);
+    return;
+end
+if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectEnd') ...
+        && ~isempty(dataStruct.opts.collectEnd)
+    sessionEnd = dataStruct.opts.collectEnd;
 end
 end
 
@@ -1338,6 +1429,41 @@ end
 if numel(ethRec.leaveHomeLast) ~= nTrial
     ethRec.leaveHomeLast = nan(nTrial, 1);
 end
+end
+
+function ethRec = session_d2_interval_ethogram_record(dataStruct)
+% SESSION_D2_INTERVAL_ETHOGRAM_RECORD - Correct/error beam breaks for interval schematic
+%
+% Variables:
+%   dataStruct - Loaded interval session (subjectName, sessionName)
+%
+% Goal:
+%   Return [] for non-interval sessions; otherwise pack beam-break outcome times
+%   used by session_d2_plot_interval_task_schematic. Interval sessions do not
+%   yet have frame-wise behavior labels.
+
+ethRec = [];
+if ~isfield(dataStruct, 'sessionType') || ~strcmpi(dataStruct.sessionType, 'interval')
+    return;
+end
+if ~isfield(dataStruct, 'subjectName') || isempty(dataStruct.subjectName) ...
+        || ~isfield(dataStruct, 'sessionName') || isempty(dataStruct.sessionName)
+    return;
+end
+
+paths = get_paths();
+try
+    [eventTimes, eventTypes] = load_interval_beam_break_events( ...
+        paths, dataStruct.subjectName, dataStruct.sessionName, 0.1);
+catch ME
+    warning('session_d2_distributions:IntervalEvents', ...
+        'Could not load interval task events: %s', ME.message);
+    return;
+end
+
+ethRec = struct();
+ethRec.eventTimes = eventTimes(:);
+ethRec.eventTypes = eventTypes(:);
 end
 
 function session_d2_plot_semicircle_ethogram(ax, ethRec, tMin, tMax, timeShift)
@@ -1466,6 +1592,300 @@ if ~isempty(legendHandles)
         'Interpreter', 'tex');
 end
 hold(ax, 'off');
+end
+
+function session_d2_plot_interval_task_schematic(ax, ethRec, tMin, tMax, timeShift, ...
+    tMinAbs, tMaxAbs, timelineOpts)
+% SESSION_D2_PLOT_INTERVAL_TASK_SCHEMATIC - Beam-break events (+ engagement fills)
+%
+% Variables:
+%   ax            - Target axes
+%   ethRec        - From session_d2_interval_ethogram_record
+%   tMin/tMax     - Shared x-limits (already relative when useRelativeTime)
+%   timeShift     - Absolute time subtracted for relative plotting (0 if absolute)
+%   tMinAbs/tMaxAbs - Absolute collect bounds for engagement segments
+%   timelineOpts  - splitByEngagement + buffer / min-gap / absorb flags
+%
+% Goal:
+%   Until interval bhv labels exist, draw correct (green) / error (red) beam
+%   breaks. If splitByEngagement, shade engaged (blue) and non-engaged (orange)
+%   using the same event-buffer rules as the interval engagement module.
+
+if nargin < 5 || isempty(timeShift)
+    timeShift = 0;
+end
+if nargin < 8 || isempty(timelineOpts)
+    timelineOpts = fill_d2_timeline_opts(struct());
+end
+
+hold(ax, 'on');
+if isempty(ethRec) || ~isfield(ethRec, 'eventTimes') || isempty(ethRec.eventTimes)
+    text(ax, mean([tMin tMax]), 0.5, 'no interval task events', ...
+        'HorizontalAlignment', 'center', 'FontSize', 9, 'Color', [0.5 0.5 0.5]);
+    xlim(ax, [tMin, tMax]);
+    ylim(ax, [0 1]);
+    set(ax, 'YTick', [], 'Box', 'off');
+    hold(ax, 'off');
+    return;
+end
+
+yMin = 0;
+yMax = 1;
+engagedColor = [0.15, 0.45, 0.75];
+nonEngagedColor = [0.85, 0.35, 0.15];
+correctColor = [0.2, 0.65, 0.25];
+errorColor = [0.85, 0.2, 0.2];
+lineWidthEvent = 0.9;
+
+legendHandles = gobjects(0);
+eventTimes = ethRec.eventTimes(:);
+eventTypes = ethRec.eventTypes(:);
+if numel(eventTypes) ~= numel(eventTimes)
+    eventTypes = strings(size(eventTimes));
+end
+
+if timelineOpts.splitByEngagement
+    [engagedSegs, nonEngagedSegs] = session_d2_interval_engagement_segments( ...
+        tMinAbs, tMaxAbs, eventTimes, timelineOpts.minNonEngagedWindow, ...
+        timelineOpts.engagementBufferBefore, timelineOpts.engagementBufferAfter, ...
+        timelineOpts.absorbSingleEvents);
+    hNon = session_d2_add_engagement_patches(ax, nonEngagedSegs, nonEngagedColor, ...
+        yMin, yMax, timeShift);
+    if ~isempty(hNon)
+        set(hNon, 'HandleVisibility', 'on', ...
+            'DisplayName', sprintf('Non-engaged (n=%d)', numel(nonEngagedSegs)));
+        legendHandles(end + 1) = hNon; %#ok<AGROW>
+    end
+    hEng = session_d2_add_engagement_patches(ax, engagedSegs, engagedColor, ...
+        yMin, yMax, timeShift);
+    if ~isempty(hEng)
+        set(hEng, 'HandleVisibility', 'on', ...
+            'DisplayName', sprintf('Engaged (n=%d)', numel(engagedSegs)));
+        legendHandles(end + 1) = hEng; %#ok<AGROW>
+    end
+end
+
+correctMask = eventTypes == "correct";
+errorMask = eventTypes == "error";
+hCorrect = gobjects(0);
+hError = gobjects(0);
+for iEvent = 1:numel(eventTimes)
+    x = eventTimes(iEvent) - timeShift;
+    if correctMask(iEvent)
+        hLine = plot(ax, [x, x], [yMin, yMax], 'Color', correctColor, ...
+            'LineWidth', lineWidthEvent, 'HandleVisibility', 'off');
+        if isempty(hCorrect)
+            hCorrect = hLine;
+            set(hCorrect, 'HandleVisibility', 'on', 'DisplayName', ...
+                sprintf('Correct (n=%d)', sum(correctMask)));
+        end
+    elseif errorMask(iEvent)
+        hLine = plot(ax, [x, x], [yMin, yMax], 'Color', errorColor, ...
+            'LineWidth', lineWidthEvent, 'HandleVisibility', 'off');
+        if isempty(hError)
+            hError = hLine;
+            set(hError, 'HandleVisibility', 'on', 'DisplayName', ...
+                sprintf('Error (n=%d)', sum(errorMask)));
+        end
+    else
+        plot(ax, [x, x], [yMin, yMax], 'Color', [0.35, 0.35, 0.35], ...
+            'LineWidth', 0.75, 'HandleVisibility', 'off');
+    end
+end
+if ~isempty(hCorrect)
+    legendHandles(end + 1) = hCorrect; %#ok<AGROW>
+end
+if ~isempty(hError)
+    legendHandles(end + 1) = hError; %#ok<AGROW>
+end
+
+xlim(ax, [tMin, tMax]);
+ylim(ax, [yMin, yMax]);
+ylabel(ax, 'task', 'FontSize', 9);
+set(ax, 'YTick', [], 'Box', 'off', 'TickDir', 'out');
+if ~isempty(legendHandles)
+    legend(ax, legendHandles, 'Location', 'best', 'FontSize', 7, 'Box', 'off');
+end
+hold(ax, 'off');
+end
+
+function h = session_d2_add_engagement_patches(ax, segs, colorVal, yMin, yMax, timeShift)
+% SESSION_D2_ADD_ENGAGEMENT_PATCHES - Shade engagement intervals; one legend handle
+
+h = gobjects(0);
+for i = 1:numel(segs)
+    t0 = segs(i).start - timeShift;
+    t1 = segs(i).end - timeShift;
+    hi = patch(ax, [t0, t1, t1, t0], [yMin, yMin, yMax, yMax], colorVal, ...
+        'FaceAlpha', 0.35, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    if isempty(h)
+        h = hi;
+    end
+end
+end
+
+function [engagedSegs, nonEngagedSegs] = session_d2_interval_engagement_segments( ...
+    collectStart, collectEnd, eventTimes, minNonEngagedWindow, bufferBefore, bufferAfter, ...
+    absorbSingleEvents)
+% SESSION_D2_INTERVAL_ENGAGEMENT_SEGMENTS - Engaged / non-engaged from beam breaks
+%
+% Same rules as interval_criticality_metrics_engagement: each event occupies
+% [event-bufferBefore, event+bufferAfter]; non-engaged gaps must be at least
+% minNonEngagedWindow; isolated single events can be absorbed.
+
+if nargin < 5 || isempty(bufferBefore)
+    bufferBefore = 0;
+end
+if nargin < 6 || isempty(bufferAfter)
+    bufferAfter = bufferBefore;
+end
+if nargin < 7 || isempty(absorbSingleEvents)
+    absorbSingleEvents = true;
+end
+bufferBefore = max(0, bufferBefore);
+bufferAfter = max(0, bufferAfter);
+
+eventTimes = sort(eventTimes(:));
+eventTimes = eventTimes(eventTimes >= collectStart & eventTimes <= collectEnd);
+
+occupied = session_d2_merge_event_buffers( ...
+    eventTimes, bufferBefore, bufferAfter, collectStart, collectEnd);
+absorbedMask = false(1, numel(occupied));
+if absorbSingleEvents && ~isempty(occupied)
+    absorbedMask = session_d2_absorbed_single_event_mask( ...
+        eventTimes, collectStart, collectEnd, minNonEngagedWindow, bufferBefore, bufferAfter);
+end
+
+nonEngagedSegs = struct('start', {}, 'end', {});
+cursor = collectStart;
+iOcc = 1;
+while iOcc <= numel(occupied)
+    if absorbedMask(iOcc)
+        gapStart = cursor;
+        if iOcc < numel(occupied)
+            gapEnd = occupied(iOcc + 1).start;
+        else
+            gapEnd = collectEnd;
+        end
+        if (gapEnd - gapStart) >= minNonEngagedWindow
+            nonEngagedSegs(end + 1).start = gapStart; %#ok<AGROW>
+            nonEngagedSegs(end).end = gapEnd;
+        end
+        cursor = gapEnd;
+    else
+        gapStart = cursor;
+        gapEnd = occupied(iOcc).start;
+        if (gapEnd - gapStart) >= minNonEngagedWindow
+            nonEngagedSegs(end + 1).start = gapStart; %#ok<AGROW>
+            nonEngagedSegs(end).end = gapEnd;
+        end
+        cursor = occupied(iOcc).end;
+    end
+    iOcc = iOcc + 1;
+end
+if (collectEnd - cursor) >= minNonEngagedWindow
+    nonEngagedSegs(end + 1).start = cursor;
+    nonEngagedSegs(end).end = collectEnd;
+end
+
+engagedSegs = session_d2_complement_segments(collectStart, collectEnd, nonEngagedSegs);
+end
+
+function absorbedMask = session_d2_absorbed_single_event_mask( ...
+    eventTimes, collectStart, collectEnd, minNonEngagedWindow, bufferBefore, bufferAfter)
+% SESSION_D2_ABSORBED_SINGLE_EVENT_MASK - Isolated single events to merge into gaps
+
+occupied = session_d2_merge_event_buffers( ...
+    eventTimes, bufferBefore, bufferAfter, collectStart, collectEnd);
+absorbedMask = false(1, numel(occupied));
+if isempty(occupied)
+    return;
+end
+
+for iOcc = 1:numel(occupied)
+    nEventsInOcc = sum(eventTimes >= occupied(iOcc).start & eventTimes <= occupied(iOcc).end);
+    if nEventsInOcc ~= 1
+        continue;
+    end
+    if iOcc == 1
+        gapBeforeStart = collectStart;
+    else
+        gapBeforeStart = occupied(iOcc - 1).end;
+    end
+    gapBeforeEnd = occupied(iOcc).start;
+    gapAfterStart = occupied(iOcc).end;
+    if iOcc == numel(occupied)
+        gapAfterEnd = collectEnd;
+    else
+        gapAfterEnd = occupied(iOcc + 1).start;
+    end
+    if (gapBeforeEnd - gapBeforeStart) >= minNonEngagedWindow && ...
+            (gapAfterEnd - gapAfterStart) >= minNonEngagedWindow
+        absorbedMask(iOcc) = true;
+    end
+end
+end
+
+function occupied = session_d2_merge_event_buffers(eventTimes, bufferBefore, bufferAfter, ...
+    collectStart, collectEnd)
+% SESSION_D2_MERGE_EVENT_BUFFERS - Union of [event-before, event+after]
+
+occupied = struct('start', {}, 'end', {});
+if isempty(eventTimes)
+    return;
+end
+
+starts = max(collectStart, eventTimes - bufferBefore);
+ends = min(collectEnd, eventTimes + bufferAfter);
+valid = ends > starts;
+starts = starts(valid);
+ends = ends(valid);
+if isempty(starts)
+    return;
+end
+
+[starts, ord] = sort(starts);
+ends = ends(ord);
+
+occupied(1).start = starts(1);
+occupied(1).end = ends(1);
+for i = 2:numel(starts)
+    if starts(i) <= occupied(end).end
+        occupied(end).end = max(occupied(end).end, ends(i));
+    else
+        occupied(end + 1).start = starts(i); %#ok<AGROW>
+        occupied(end).end = ends(i);
+    end
+end
+end
+
+function engagedSegs = session_d2_complement_segments(collectStart, collectEnd, nonEngagedSegs)
+% SESSION_D2_COMPLEMENT_SEGMENTS - Intervals in collect window not in nonEngagedSegs
+
+engagedSegs = struct('start', {}, 'end', {});
+if isempty(nonEngagedSegs)
+    engagedSegs(1).start = collectStart;
+    engagedSegs(1).end = collectEnd;
+    return;
+end
+
+starts = [nonEngagedSegs.start];
+ends = [nonEngagedSegs.end];
+[starts, ord] = sort(starts);
+ends = ends(ord);
+
+cursor = collectStart;
+for i = 1:numel(starts)
+    if starts(i) > cursor + eps
+        engagedSegs(end + 1).start = cursor; %#ok<AGROW>
+        engagedSegs(end).end = starts(i);
+    end
+    cursor = max(cursor, ends(i));
+end
+if cursor < collectEnd - eps
+    engagedSegs(end + 1).start = cursor;
+    engagedSegs(end).end = collectEnd;
+end
 end
 
 function session_d2_plot_behavior_ethogram(ax, bhvRec, tMin, tMax)
