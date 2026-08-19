@@ -43,6 +43,9 @@
 %   engagementBufferAfter  - Seconds after each reach/beam-break = engaged (default 1)
 %   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
 %   minNonEngagedWindow - Min gap without events (s) for non-engaged segments
+%   minTimeNonEngaged  - When splitByEngagement, min total non-engaged time (s)
+%                        to plot; 0 = no filter. Below this, non-engaged d2 is
+%                        blanked (computed but omitted from plots).
 %   absorbSingleEvents - Merge isolated single events into non-engaged gaps
 %
 % Goal:
@@ -65,18 +68,18 @@ if ~exist('sessionType', 'var') || isempty(sessionType)
 end
 dataSource = 'spikes';
 collectStart = 0;
+collectEnd = [];
 collectEnd = 120*60;
-% collectEnd = 120*60;
-d2Window = 45;  % seconds; non-overlapping windows
+d2Window = 60;  % seconds; non-overlapping windows
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 30;
-nNeuronsSubsample = 45;
+nSubsamples = 25;
+nNeuronsSubsample = 70;
 minNeuronsMultiple = 1.1;
-nPermutations = 3;  % circular shuffles per window for shuffled d2 distribution
+nPermutations = 2;  % circular shuffles per window for shuffled d2 distribution
 plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
@@ -93,18 +96,20 @@ engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
 engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
 minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
 absorbSingleEvents = true;   % merge isolated single events into non-engaged gaps
+minTimeNonEngaged = 180;     % min total non-engaged time (s) to plot; 0 = no filter
+% Below minTimeNonEngaged, non-engaged d2 stays computed but is blanked in plots
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = 5 * 60;
 opts.firingRateCheckTime = [];
 opts.collectStart = collectStart;
 opts.collectEnd = collectEnd;
-opts.minFiringRate = 0.1;
+opts.minFiringRate = 0.25;
 opts.maxFiringRate = 200;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = d2Window;
-analysisConfig.stepSize = .5;
+analysisConfig.stepSize = 2;
 analysisConfig.binSize = binSize;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;
@@ -137,16 +142,14 @@ d2WindowAlign = normalize_d2_window_align(d2WindowAlign);
 
 fprintf('\n=== Session d2 Distributions ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
-if isempty(collectEnd)
-    fprintf('Collect window: [%.1f, full session] s\n', collectStart);
-else
-    fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', ...
-        collectStart, collectEnd, (collectEnd - collectStart) / 60);
-end
 fprintf('d2 windows: %.1f s (%s); binSize: %.3f s; nPermutations: %d\n', ...
     d2Window, d2WindowAlign, binSize, nPermutations);
 fprintf('useLog10D2: %d\n', useLog10D2);
 fprintf('splitByEngagement: %d\n', splitByEngagement);
+if splitByEngagement
+    fprintf('minTimeNonEngaged: %.1f s (blank non-engaged below this; 0 = off)\n', ...
+        minTimeNonEngaged);
+end
 if useSubsampling
     fprintf('Subsampling: %d subsets x %d neurons (min neurons x %.2f)\n', ...
         nSubsamples, nNeuronsSubsample, minNeuronsMultiple);
@@ -165,13 +168,25 @@ end
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
 
+% Use the loaded collect window (includes session-metadata floors such as collectStartMin)
+loadedStart = session_d2_scalar_time(session_time_origin(dataStruct), 0, @min);
+collectStart = session_d2_scalar_time([collectStart(:); loadedStart], 0, @max);
+opts.collectStart = collectStart;
+
 % Requested collectEnd may be longer than this recording; do not plot past session end
 if ~isempty(collectEnd)
     sessionEndAbs = session_d2_loaded_session_end(dataStruct);
-    if isfinite(sessionEndAbs)
+    if isscalar(sessionEndAbs) && isfinite(sessionEndAbs)
         collectEnd = clamp_collect_end_to_session(collectEnd, sessionEndAbs, collectStart);
         opts.collectEnd = collectEnd;
     end
+end
+
+if isempty(collectEnd)
+    fprintf('Collect window: [%.1f, full session] s\n', collectStart);
+else
+    fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', ...
+        collectStart, collectEnd, (collectEnd - collectStart) / 60);
 end
 
 [dataStruct, areaOk] = apply_manuscript_brain_area_selection(dataStruct, brainArea, brainAreaCombinations, false);
@@ -355,7 +370,7 @@ if splitByEngagement
     engOut = run_session_d2_engagement(sessionType, sessionName, subjectNameForLoad, opts, ...
         analysisConfig, brainArea, brainAreaCombinations, d2Window, useLog10D2, ...
         engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, ...
-        absorbSingleEvents, splitExcitatoryInhibitory, plotConfig);
+        minTimeNonEngaged, absorbSingleEvents, splitExcitatoryInhibitory, plotConfig);
     if saveFigure
         save_session_engagement_d2_figures(engOut, paths, sessionName, brainArea, d2Window, ...
             collectStart, collectEnd, useLog10D2);
@@ -370,7 +385,7 @@ fprintf('\n=== Done ===\n');
 function engOut = run_session_d2_engagement(sessionType, sessionName, subjectName, opts, ...
     analysisConfig, brainArea, brainAreaCombinations, d2Window, useLog10D2, ...
     engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, ...
-    absorbSingleEvents, splitExcitatoryInhibitory, plotConfig)
+    minTimeNonEngaged, absorbSingleEvents, splitExcitatoryInhibitory, plotConfig)
 % RUN_SESSION_D2_ENGAGEMENT - Engaged / non-engaged d2 via engagement modules
 
 if ~is_manuscript_engagement_session_type(sessionType)
@@ -386,6 +401,8 @@ end
 fprintf('\n--- Engagement d2 pipeline ---\n');
 fprintf('engagementBuffer: before=%.3g s, after=%.3g s; minNonEngagedWindow=%.1f s\n', ...
     engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow);
+fprintf('minTimeNonEngaged: %.1f s (blank non-engaged below this; 0 = off)\n', ...
+    minTimeNonEngaged);
 
 if strcmpi(sessionType, 'reach')
     engOpts = reach_criticality_metrics_engagement();
@@ -423,6 +440,7 @@ if isfield(analysisConfig, 'binSize') && ~isempty(analysisConfig.binSize)
     engOpts.binSizeD2 = analysisConfig.binSize;
 end
 engOpts.minNonEngagedWindow = minNonEngagedWindow;
+engOpts.minTimeNonEngaged = minTimeNonEngaged;
 
 bufOpts = struct( ...
     'engagementBufferBefore', engagementBufferBefore, ...
@@ -453,6 +471,143 @@ end
 if isempty(engOut) || ~isfield(engOut, 'd2') || isempty(engOut.d2)
     error('session_d2_distributions:NoEngagementD2', ...
         'Engagement d2 pipeline returned no d2 outputs.');
+end
+engOut = blank_session_d2_non_engaged_if_short(engOut, minTimeNonEngaged, sessionName);
+end
+
+function engOut = blank_session_d2_non_engaged_if_short(engOut, minTimeNonEngaged, sessionName)
+% BLANK_SESSION_D2_NON_ENGAGED_IF_SHORT - Omit non-engaged d2 when time is too short
+%
+% Variables:
+%   engOut             - Engagement pipeline output (d2 split + figHandles)
+%   minTimeNonEngaged  - Min total non-engaged time (s); 0 = no filter
+%   sessionName        - Session id for the log line
+%
+% Goal:
+%   Match criticality_multiple_metrics_across_tasks: if non-engaged duration
+%   is below minTimeNonEngaged, blank non-engaged d2 (keep engaged / total)
+%   and remove Non-engaged traces from already-drawn engagement figures.
+
+if nargin < 2 || isempty(minTimeNonEngaged) || ~(isfinite(minTimeNonEngaged) && minTimeNonEngaged > 0)
+    return;
+end
+if nargin < 3 || isempty(sessionName)
+    sessionName = '';
+end
+
+tSec = session_d2_non_engaged_duration_sec(engOut);
+if ~(isfinite(tSec) && tSec < minTimeNonEngaged)
+    return;
+end
+
+fprintf(['  Blanking non-engaged %s: non-engaged time %.1f s ', ...
+    '< minTimeNonEngaged %.1f s\n'], sessionName, tSec, minTimeNonEngaged);
+
+iNon = session_d2_non_engaged_class_index(engOut);
+if iNon > 0
+    if isfield(engOut, 'd2') && isfield(engOut.d2, 'd2') && numel(engOut.d2.d2) >= iNon
+        for a = 1:numel(engOut.d2.d2{iNon})
+            engOut.d2.d2{iNon}{a} = [];
+        end
+    end
+    if isfield(engOut, 'd2') && isfield(engOut.d2, 'd2Normalized') ...
+            && numel(engOut.d2.d2Normalized) >= iNon
+        for a = 1:numel(engOut.d2.d2Normalized{iNon})
+            engOut.d2.d2Normalized{iNon}{a} = [];
+        end
+    end
+    if isfield(engOut, 'summary') && isstruct(engOut.summary) ...
+            && isfield(engOut.summary, 'metrics')
+        for m = 1:numel(engOut.summary.metrics)
+            if isfield(engOut.summary.metrics{m}, 'stats') ...
+                    && numel(engOut.summary.metrics{m}.stats) >= iNon
+                engOut.summary.metrics{m}.stats(iNon).mean = nan;
+                engOut.summary.metrics{m}.stats(iNon).sem = nan;
+                engOut.summary.metrics{m}.stats(iNon).n = 0;
+            end
+        end
+    end
+end
+
+if isfield(engOut, 'figHandles') && isstruct(engOut.figHandles)
+    metricFigs = {'d2', 'summary'};
+    for iFig = 1:numel(metricFigs)
+        if isfield(engOut.figHandles, metricFigs{iFig})
+            remove_non_engaged_plot_objects(engOut.figHandles.(metricFigs{iFig}));
+        end
+    end
+end
+end
+
+function tSec = session_d2_non_engaged_duration_sec(engOut)
+% SESSION_D2_NON_ENGAGED_DURATION_SEC - Total non-engaged time from d2 split
+
+tSec = nan;
+if isfield(engOut, 'd2') && isstruct(engOut.d2) && isfield(engOut.d2, 'durations') ...
+        && isfield(engOut.d2.durations, 'nonEngagedSec')
+    tSec = engOut.d2.durations.nonEngagedSec;
+    return;
+end
+if isfield(engOut, 'durations') && isstruct(engOut.durations) ...
+        && isfield(engOut.durations, 'd2') && isfield(engOut.durations.d2, 'nonEngagedSec')
+    tSec = engOut.durations.d2.nonEngagedSec;
+end
+end
+
+function iNon = session_d2_non_engaged_class_index(engOut)
+% SESSION_D2_NON_ENGAGED_CLASS_INDEX - Index of Non-engaged in classNames (0 if none)
+
+iNon = 0;
+classNames = {};
+if isfield(engOut, 'd2') && isstruct(engOut.d2) && isfield(engOut.d2, 'classNames')
+    classNames = engOut.d2.classNames;
+elseif isfield(engOut, 'summary') && isstruct(engOut.summary) ...
+        && isfield(engOut.summary, 'classNames')
+    classNames = engOut.summary.classNames;
+end
+if isempty(classNames)
+    iNon = 3;
+    return;
+end
+for i = 1:numel(classNames)
+    name = lower(strrep(char(classNames{i}), ' ', ''));
+    if strcmp(name, 'nonengaged') || strcmp(name, 'non-engaged')
+        iNon = i;
+        return;
+    end
+end
+end
+
+function remove_non_engaged_plot_objects(fig)
+% REMOVE_NON_ENGAGED_PLOT_OBJECTS - Delete Non-engaged histogram/bar objects
+
+if isempty(fig) || ~isgraphics(fig)
+    return;
+end
+objs = findall(fig, '-property', 'DisplayName');
+didDelete = false;
+for i = 1:numel(objs)
+    if ~isgraphics(objs(i))
+        continue;
+    end
+    name = objs(i).DisplayName;
+    if isstring(name)
+        name = char(name);
+    end
+    if ischar(name) && strncmpi(strtrim(name), 'Non-engaged', 11)
+        delete(objs(i));
+        didDelete = true;
+    end
+end
+if ~didDelete
+    return;
+end
+legs = findall(fig, 'Type', 'legend');
+for i = 1:numel(legs)
+    ax = ancestor(legs(i), 'axes');
+    if ~isempty(ax) && isgraphics(ax)
+        legend(ax, 'show');
+    end
 end
 end
 
@@ -1309,6 +1464,11 @@ if isfield(results, 'startS')
 end
 
 sessionEndAbs = session_d2_loaded_session_end(dataStruct);
+collectEnd = session_d2_scalar_time(collectEnd, nan, @max);
+sessionEndAbs = session_d2_scalar_time(sessionEndAbs, nan, @max);
+collectStart = session_d2_scalar_time(collectStart, 0, @min);
+tMax = session_d2_scalar_time(tMax, nan, @max);
+
 if ~isempty(collectEnd) && isfinite(collectEnd)
     plotEnd = collectEnd;
     if isfinite(sessionEndAbs)
@@ -1318,6 +1478,7 @@ else
     plotEnd = sessionEndAbs;
     if ~isfinite(plotEnd)
         durationSec = session_d2_session_duration_sec(dataStruct, collectStart);
+        durationSec = session_d2_scalar_time(durationSec, nan, @max);
         if isfinite(durationSec)
             plotEnd = collectStart + durationSec;
         end
@@ -1328,6 +1489,32 @@ if isfinite(plotEnd)
 end
 if ~isfinite(tMax) || tMax <= collectStart
     tMax = collectStart + 1;
+end
+end
+
+function t = session_d2_scalar_time(t, emptyDefault, reduceFcn)
+% SESSION_D2_SCALAR_TIME - Finite scalar time, or emptyDefault / NaN
+%
+% Variables:
+%   t            - Time value(s)
+%   emptyDefault - Replacement when t is empty / non-finite (default NaN)
+%   reduceFcn    - @min or @max when t has more than one finite value
+
+if nargin < 2
+    emptyDefault = nan;
+end
+if nargin < 3 || isempty(reduceFcn)
+    reduceFcn = @max;
+end
+if isempty(t)
+    t = emptyDefault;
+    return;
+end
+t = t(isfinite(t));
+if isempty(t)
+    t = emptyDefault;
+else
+    t = reduceFcn(t(:));
 end
 end
 

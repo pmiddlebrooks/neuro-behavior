@@ -10,6 +10,7 @@ function dataStruct = load_sliding_window_data(sessionType, dataSource, varargin
 %       'opts' - Options structure (if not provided, creates default).
 %           If opts.firingRateCheckTime is empty, firing-rate filtering uses
 %           the full session duration (opts.collectStart to opts.collectEnd).
+%           Per-session metadata (<task>_session_metadata) is applied here.
 %       'lfpCleanParams' - LFP cleaning parameters structure
 %       'bands' - Frequency bands for LFP (default: alpha, beta, lowGamma, highGamma)
 %       'minBinSize' - Minimum bin size for LFP bands (default: 0.005)
@@ -55,6 +56,7 @@ if isempty(opts)
     opts.minFiringRate = .05;
     opts.maxFiringRate = 200;
 end
+opts = apply_session_load_metadata(sessionType, subjectName, sessionName, opts);
 
 % Initialize LFP parameters if needed
 if strcmp(dataSource, 'lfp')

@@ -48,9 +48,9 @@ sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'interval' , 'schall' 
 
 subjectName = 'ag25290';
 sessionName =  'ag112221';  % Good neural, bad behavior labels
-% sessionName =  'ag112321_1';
+sessionName =  'ag112321_1';
 % sessionName =  'ag112321_2'; 
-sessionName =  'ag112721'; % Good neural, bad behavior labels
+% sessionName =  'ag112721'; % Good neural, bad behavior labels
 % sessionName =  'ag112821'; % Good neural, bad behavior labels
 % sessionName =  'ag112921'; % Good neural, bad behavior labels
 
@@ -73,7 +73,7 @@ subjectName = 'ey9166';
 sessionName =  'ey9166_2026_04_02';
 % sessionName =  'ey9166_2026_04_03';
 sessionName =  'ey9166_2026_04_04';
-sessionName =  'ey9166_2026_04_07';
+% sessionName =  'ey9166_2026_04_07';
 % sessionName =  'ey9166_2026_04_09';
 % 
 % subjectName = 'ey9387';
@@ -103,7 +103,7 @@ sessionName =  'AB6_27-Mar-2025 14_04_12_NeuroBeh';  % GOOD enough (only 4 m23 t
 % sessionName =  'AB6_03-Apr-2025 13_34_09_NeuroBeh';  % BAD (few neurons)
 sessionName =  'AB19_09-Apr-2026 14_28_19_NeuroBeh';  % 
 % sessionName =  'AB19_31-Mar-2026 15_46_45_NeuroBeh';  % 
-% sessionName =  'AB21_06-Apr-2026 18_07_42_NeuroBeh';  % 
+sessionName =  'AB21_06-Apr-2026 18_07_42_NeuroBeh';  % 
 % sessionName =  'Y4_06-Oct-2023 14_14_53_NeuroBeh';  % GOOD
 % sessionName =  'Y12_20-Jan-2026 16_16_42_NeuroBeh';  % 
 % sessionName =  'Y15_26-Aug-2025 12_24_22_NeuroBeh';   % BAD (max is m56 with 19 neurons)

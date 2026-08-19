@@ -10,6 +10,7 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
 %       'opts' - Options structure (default: neuro_behavior_options).
 %           If opts.firingRateCheckTime is empty, firing-rate filtering uses
 %           the full session duration (opts.collectStart to opts.collectEnd).
+%           Per-session metadata (<task>_session_metadata) is applied here.
 %       'lfpCleanParams' - LFP cleaning parameters
 %       'bands' - Frequency bands for LFP
 %       'minBinSize' - Minimum bin size for LFP bands (default 0.005)
@@ -48,6 +49,7 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
         opts.minFiringRate = 0.05;
         opts.maxFiringRate = 200;
     end
+    opts = apply_session_load_metadata(sessionType, subjectName, sessionName, opts);
 
     if strcmp(dataSource, 'lfp')
         if isempty(bands)
