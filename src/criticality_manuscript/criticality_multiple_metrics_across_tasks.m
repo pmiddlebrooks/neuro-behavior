@@ -1,8 +1,8 @@
 %%
 % Criticality Multiple Metrics Across Task Types (Manuscript)
 %
-% Runs d2 (AR), avalanche (AV), and PRG batch analyses, saves outputs,
-% plots aligned multi-metric session summaries on shared axes, and optionally
+% Runs d2 (AR), avalanche (AV), and PRG analyses (per-session cache under
+% dropPath/criticality_manuscript), plots aligned multi-metric session
 % a cross-session metric correlation matrix (pooled across task types).
 %
 % Variables:
@@ -36,14 +36,15 @@
 %                            Unselected metrics stay blank in combined / separated
 %                            / pair-scatter layouts; correlation matrix only
 %                            includes selected families.
-%   loadSavedResults   - If true, load saved .mat outputs when run*Batch false
+%   useSessionCache    - If true (default), load/save per-session pipeline files
+%                        under dropPath/criticality_manuscript/<task>/[<subject>/]<session>/
+%   forceRecompute     - If true, ignore per-session cache and overwrite
 %   plotResults        - Create combined d2/tau/alpha figure(s)
 %   plotMetricPairScatters - 2x2 figure: d2 vs tau, d2 vs alpha,
 %                            paramSD (crackling 1/σνz) vs (α-1)/(τ-1),
 %                            d2 vs paramSD
 %   plotCorrelationMatrix - Pearson corr heatmap across sessions (all tasks);
 %                            only metrics from selected pipelines
-%   saveCombinedBatch  - Save merged outputs for plot-only reruns
 %   enablePermutations - If false, observed metrics only (no shuffles; faster)
 %   useAnchorAffineMap - If true, non-anchor metrics LS-affine-map onto
 %                        anchorMetric (minimize within-session differences).
@@ -62,6 +63,10 @@
 %                        analyses (d2, AV including decades, PRG); make two
 %                        plots (engaged and non-engaged), each including
 %                        spontaneous alongside that class.
+%                        d2/PRG: split windows from full-session cache when
+%                        present (only event times needed). Avalanches: still
+%                        detected on engaged vs non-engaged segments (cannot
+%                        be split from a full-session fit).
 %                        Paired plots share d2-aligned y-limits for comparison.
 %                        Correlation matrix always uses full-session metrics.
 %                        See minTimeNonEngaged for blanking short non-engaged.
@@ -78,12 +83,12 @@ sessionTypes = order_manuscript_session_types(sessionTypes);
 collectStart = 10;
 collectEnd = 90*60;
 % collectEnd = [];  % [] = full session
-d2Window = 45;
+d2Window = 30;
 prgWindow = d2Window;
-avWindow = 3*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
+avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
-binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
+binSizeD2 = 0.025;   % d2/AR spike bin width (s); overrides AR default
 binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 
@@ -109,12 +114,12 @@ runArBatch = true;   % d2
 runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = true;  % kurtosis, JS distance
 runEngagementBatch = true;
-loadSavedResults = false;
+useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
+forceRecompute = false;   % true: reprocess and overwrite per-session cache
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
 plotCorrelationMatrix = true;
-saveCombinedBatch = true;
 enablePermutations = false;
 useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
@@ -124,7 +129,7 @@ splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on 
 
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 30;
+nSubsamples = 40;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 
@@ -137,24 +142,12 @@ prgMethod = 'pca';
 
 plotConfig = fill_manuscript_plot_config();
 
-combinedBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
-  'criticality_multiple_metrics_across_tasks_batch.mat');
-arBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
-  'criticality_ar_across_tasks_batch.mat');
-avBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
-  'criticality_av_across_tasks_batch.mat');
-prgBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
-  'criticality_prg_across_tasks_batch.mat');
-engBatchFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
-  'criticality_multiple_metrics_engagement_batch.mat');
-
-% Resolve which pipelines are active (run or load). Unselected → blank panels.
-useAr = logical(runArBatch) || (logical(loadSavedResults) && isfile(arBatchFile));
-useAv = logical(runAvBatch) || (logical(loadSavedResults) && isfile(avBatchFile));
-usePrg = logical(runPrgBatch) || (logical(loadSavedResults) && isfile(prgBatchFile));
+% Resolve which pipelines are active. Unselected → blank panels.
+useAr = logical(runArBatch);
+useAv = logical(runAvBatch);
+usePrg = logical(runPrgBatch);
 if ~(useAr || useAv || usePrg)
-  error(['Select at least one pipeline: set runArBatch / runAvBatch / runPrgBatch ', ...
-    'true, or loadSavedResults with existing batch files.']);
+  error('Select at least one pipeline: set runArBatch / runAvBatch / runPrgBatch true.');
 end
 
 fprintf('\n=== Criticality Multiple Metrics Across Tasks ===\n');
@@ -198,12 +191,10 @@ fprintf('useAnchorAffineMap: %d\n', useAnchorAffineMap);
 fprintf('anchorMetric: %s\n', anchorMetric);
 fprintf('metricsToPlot: %s\n', strjoin(metricsToPlot, ', '));
 fprintf('splitByEngagement: %d\n', splitByEngagement);
+fprintf('useSessionCache: %d; forceRecompute: %d\n', useSessionCache, forceRecompute);
 fprintf('plotMetricPairScatters: %d\n', plotMetricPairScatters);
 fprintf('plotSeparatedMetrics: %d\n', plotSeparatedMetrics);
 fprintf('plotCorrelationMatrix: %d\n', plotCorrelationMatrix);
-fprintf('Batch files:\n  AR:  %s (exists=%d)\n  AV:  %s (exists=%d)\n  PRG: %s (exists=%d)\n', ...
-  arBatchFile, isfile(arBatchFile), avBatchFile, isfile(avBatchFile), ...
-  prgBatchFile, isfile(prgBatchFile));
 if isempty(d2Window)
   fprintf('Plot filenames will use tag "winfull" (d2Window=[]).\n');
 end
@@ -231,16 +222,12 @@ arOpts = struct( ...
   'nNeuronsSubsample', nNeuronsSubsample, ...
   'minNeuronsMultiple', minNeuronsMultiple, ...
   'enablePermutations', enablePermutations, ...
-  'plotResults', false, ...
-  'saveBatchResults', true, ...
-  'batchResultsFile', arBatchFile);
+  'useSessionCache', useSessionCache, ...
+  'forceRecompute', forceRecompute, ...
+  'plotResults', false);
 
-if useAr && runArBatch
+if useAr
   arOut = criticality_ar_across_tasks(arOpts);
-elseif useAr && loadSavedResults && isfile(arBatchFile)
-  arOptsLoad = arOpts;
-  arOptsLoad.runBatch = false;
-  arOut = criticality_ar_across_tasks(arOptsLoad);
 else
   arOut = [];
   fprintf('Skipping AR (d2) batch.\n');
@@ -264,16 +251,12 @@ avOpts = struct( ...
   'nNeuronsSubsample', nNeuronsSubsample, ...
   'minNeuronsMultiple', minNeuronsMultiple, ...
   'enablePermutations', enablePermutations, ...
-  'plotResults', false, ...
-  'saveBatchResults', true, ...
-  'batchResultsFile', avBatchFile);
+  'useSessionCache', useSessionCache, ...
+  'forceRecompute', forceRecompute, ...
+  'plotResults', false);
 
-if useAv && runAvBatch
+if useAv
   avOut = criticality_av_across_tasks(avOpts);
-elseif useAv && loadSavedResults && isfile(avBatchFile)
-  avOptsLoad = avOpts;
-  avOptsLoad.runBatch = false;
-  avOut = criticality_av_across_tasks(avOptsLoad);
 else
   avOut = [];
   fprintf('Skipping AV batch.\n');
@@ -296,16 +279,12 @@ prgOpts = struct( ...
   'enableSurrogates', enablePermutations, ...
   'finalCutoffDivisor', finalCutoffDivisor, ...
   'prgMethod', prgMethod, ...
-  'plotResults', false, ...
-  'saveBatchResults', true, ...
-  'batchResultsFile', prgBatchFile);
+  'useSessionCache', useSessionCache, ...
+  'forceRecompute', forceRecompute, ...
+  'plotResults', false);
 
-if usePrg && runPrgBatch
+if usePrg
   prgOut = criticality_prg_across_tasks(prgOpts);
-elseif usePrg && loadSavedResults && isfile(prgBatchFile)
-  prgOptsLoad = prgOpts;
-  prgOptsLoad.runBatch = false;
-  prgOut = criticality_prg_across_tasks(prgOptsLoad);
 else
   prgOut = [];
   fprintf('Skipping PRG batch.\n');
@@ -374,64 +353,14 @@ if splitByEngagement
     'finalCutoffDivisor', finalCutoffDivisor, ...
     'prgMethod', prgMethod, ...
     'analyses', {engAnalyses}, ...
-    'batchResultsFile', engBatchFile, ...
+    'useSessionCache', useSessionCache, ...
+    'forceRecompute', forceRecompute, ...
     'plotConfig', plotConfig);
 
-  if runEngagementBatch
-    engOut = run_multimetric_engagement_batch(engOpts);
-  elseif loadSavedResults && isfile(engBatchFile)
-    loadedEng = load(engBatchFile, 'batchResults', 'plotData', 'batchMeta');
-    % Re-aggregate so nonEngagedSec (and other fields) stay current for filtering
-    engPlotData = aggregate_multimetric_engagement_plot_data( ...
-      loadedEng.batchResults, engOpts.sessionTypes, engOpts.useLog10D2);
-    engOut = struct( ...
-      'batchResults', loadedEng.batchResults, ...
-      'plotData', engPlotData, ...
-      'batchMeta', loadedEng.batchMeta);
-    fprintf('\nLoaded engagement batch: %s\n', engBatchFile);
-  else
-    error('Engagement batch required when splitByEngagement. Set runEngagementBatch true or provide %s', ...
-      engBatchFile);
+  if ~runEngagementBatch
+    error('splitByEngagement requires runEngagementBatch true (per-session cache skips already processed sessions).');
   end
-end
-
-combinedOut = struct();
-combinedOut.ar = arOut;
-combinedOut.av = avOut;
-combinedOut.prg = prgOut;
-combinedOut.engagement = engOut;
-combinedOut.sessionTypes = sessionTypes;
-combinedOut.collectStart = collectStart;
-combinedOut.collectEnd = collectEnd;
-combinedOut.d2Window = d2Window;
-combinedOut.prgWindow = prgWindow;
-combinedOut.avWindow = avWindow;
-combinedOut.binSizeD2 = binSizeD2;
-combinedOut.binSizePrg = binSizePrg;
-combinedOut.binSizeAv = binSizeAv;
-combinedOut.engagementBufferBefore = engagementBufferBefore;
-combinedOut.engagementBufferAfter = engagementBufferAfter;
-combinedOut.minNonEngagedWindow = minNonEngagedWindow;
-combinedOut.absorbSingleEvents = absorbSingleEvents;
-combinedOut.minTimeNonEngaged = minTimeNonEngaged;
-combinedOut.thresholdMethod = thresholdMethod;
-combinedOut.brainArea = brainArea;
-combinedOut.useLog10D2 = useLog10D2;
-combinedOut.enablePermutations = enablePermutations;
-combinedOut.anchorMetric = anchorMetric;
-combinedOut.useAnchorAffineMap = useAnchorAffineMap;
-combinedOut.metricsToPlot = metricsToPlot;
-combinedOut.useAr = useAr;
-combinedOut.useAv = useAv;
-combinedOut.usePrg = usePrg;
-combinedOut.splitByEngagement = splitByEngagement;
-combinedOut.plotMetricPairScatters = plotMetricPairScatters;
-combinedOut.plotSeparatedMetrics = plotSeparatedMetrics;
-combinedOut.plotCorrelationMatrix = plotCorrelationMatrix;
-
-if saveCombinedBatch
-  save(combinedBatchFile, '-struct', 'combinedOut', '-v7.3');
-  fprintf('\nSaved combined batch: %s\n', combinedBatchFile);
+  engOut = run_multimetric_engagement_batch(engOpts);
 end
 
 activeAnalyses = struct('ar', useAr, 'av', useAv, 'prg', usePrg);
@@ -3171,8 +3100,53 @@ for s = 1:numSessions
   batchResults(s).label = sessionTable.label{s};
   batchResults(s).success = false;
 
+  analyses = {'d2', 'avalanches', 'kurtosis'};
+  if isfield(opts, 'analyses') && ~isempty(opts.analyses)
+    analyses = opts.analyses;
+  end
+  [cachedPipelines, missingAnalyses] = try_load_engagement_pipeline_caches( ...
+    sessionType, sessionName, subjectName, opts, analyses);
+
+  % Prefer full-session AR/PRG caches: engagement d2/PRG are window splits of
+  % those results. Avalanche class fits cannot be recovered from full-session AV.
+  cachedArResults = [];
+  cachedPrgResults = [];
+  if any(strcmpi(analyses, 'd2'))
+    cachedArResults = try_load_full_session_pipeline_cache( ...
+      'ar', sessionType, sessionName, subjectName, opts);
+    if ~isempty(cachedArResults)
+      cachedPipelines.d2 = [];
+      missingAnalyses = union_analysis_list(missingAnalyses, 'd2');
+    end
+  end
+  if any(strcmpi(analyses, 'kurtosis'))
+    cachedPrgResults = try_load_full_session_pipeline_cache( ...
+      'prg', sessionType, sessionName, subjectName, opts);
+    if ~isempty(cachedPrgResults)
+      cachedPipelines.kurtosis = [];
+      missingAnalyses = union_analysis_list(missingAnalyses, 'kurtosis');
+    end
+  end
+  if any(strcmpi(analyses, 'avalanches')) && any(strcmpi(missingAnalyses, 'avalanches'))
+    fprintf(['  Avalanches: full-session AV cache cannot be split by engagement ', ...
+      '(class-specific segments and thresholds); running segment analysis.\n']);
+  end
+
+  if isempty(missingAnalyses)
+    batchResults(s).d2Split = cachedPipelines.d2;
+    batchResults(s).avalanches = cachedPipelines.avalanches;
+    batchResults(s).kurtosis = cachedPipelines.kurtosis;
+    batchResults(s).success = true;
+    fprintf('  Engagement analysis completed (cached).\n');
+    continue;
+  end
+
   try
     engModOpts = build_multimetric_engagement_module_opts(opts, sessionType);
+    engModOpts.analyses = missingAnalyses;
+    engModOpts.useSessionCache = false;
+    engModOpts.cachedArResults = cachedArResults;
+    engModOpts.cachedPrgResults = cachedPrgResults;
     if strcmpi(sessionType, 'reach')
       sessionOut = reach_criticality_metrics_engagement(sessionName, engModOpts);
     elseif strcmpi(sessionType, 'semicircle')
@@ -3180,9 +3154,17 @@ for s = 1:numSessions
     else
       sessionOut = interval_criticality_metrics_engagement(subjectName, sessionName, engModOpts);
     end
-    analyses = engModOpts.analyses;
     needD2 = any(strcmpi(analyses, 'd2'));
     needAv = any(strcmpi(analyses, 'avalanches'));
+    if ~isempty(cachedPipelines.d2)
+      sessionOut.d2 = cachedPipelines.d2;
+    end
+    if ~isempty(cachedPipelines.avalanches)
+      sessionOut.avalanches = cachedPipelines.avalanches;
+    end
+    if ~isempty(cachedPipelines.kurtosis)
+      sessionOut.kurtosis = cachedPipelines.kurtosis;
+    end
     incomplete = (needD2 && (~isfield(sessionOut, 'd2') || isempty(sessionOut.d2))) ...
       || (needAv && (~isfield(sessionOut, 'avalanches') || isempty(sessionOut.avalanches)));
     if incomplete
@@ -3202,6 +3184,8 @@ for s = 1:numSessions
     if any(strcmpi(analyses, 'kurtosis')) && isempty(batchResults(s).kurtosis)
       fprintf('  Warning: kurtosis/PRG engagement split missing for this session.\n');
     end
+    save_engagement_pipeline_caches(sessionOut, sessionType, sessionName, ...
+      subjectName, opts, missingAnalyses);
     batchResults(s).success = true;
     fprintf('  Engagement analysis completed.\n');
   catch ME
@@ -3261,9 +3245,6 @@ end
 if isfield(opts, 'minTimeNonEngaged')
   batchMeta.minTimeNonEngaged = opts.minTimeNonEngaged;
 end
-
-save(opts.batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
-fprintf('\nSaved engagement batch: %s\n', opts.batchResultsFile);
 
 engOut = struct('batchResults', batchResults, 'plotData', plotData, 'batchMeta', batchMeta);
 end
@@ -3369,6 +3350,7 @@ if isfield(opts, 'analyses') && ~isempty(opts.analyses)
 end
 engModOpts.makePlots = false;
 engModOpts.saveFigure = false;
+engModOpts.useSessionCache = false;
 engModOpts.plotConfig = opts.plotConfig;
 if strcmpi(sessionType, 'reach')
   engModOpts.runD2AccuracyCorrelation = false;
@@ -3376,6 +3358,14 @@ if strcmpi(sessionType, 'reach')
 else
   engModOpts.runD2TrialRateCorrelation = false;
 end
+end
+
+function analyses = union_analysis_list(analyses, analysisName)
+% UNION_ANALYSIS_LIST - Append analysisName if not already in the cell list
+if any(strcmpi(analyses, analysisName))
+  return;
+end
+analyses{end + 1} = analysisName;
 end
 
 function sessionTable = build_multimetric_engagement_session_table(sessionTypes)

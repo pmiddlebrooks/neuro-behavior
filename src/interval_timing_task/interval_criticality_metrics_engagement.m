@@ -232,8 +232,14 @@ if ismember('d2', opts.analyses)
   fprintf('\n--- d2 ---\n');
   fprintf('eventBuffer: %s (windows overlapping [event-before, event+after] = engaged)\n', ...
     format_engagement_buffer_label(opts.eventBufferBefore, opts.eventBufferAfter));
-  arConfig = build_ar_config(opts);
-  resultsD2 = criticality_ar_analysis(dataStruct, arConfig);
+  if isfield(opts, 'cachedArResults') && ~isempty(opts.cachedArResults) ...
+      && isfield(opts.cachedArResults, 'startS')
+    fprintf('Using full-session d2 cache (split windows by engagement).\n');
+    resultsD2 = opts.cachedArResults;
+  else
+    arConfig = build_ar_config(opts);
+    resultsD2 = criticality_ar_analysis(dataStruct, arConfig);
+  end
   if ~isempty(opts.brainArea)
     resultsD2 = filter_ar_results_to_brain_area(resultsD2, opts.brainArea);
   end
@@ -274,7 +280,13 @@ if ismember('kurtosis', opts.analyses)
   fprintf('eventBuffer: %s (blocks overlapping [event-before, event+after] = engaged)\n', ...
     format_engagement_buffer_label(opts.eventBufferBefore, opts.eventBufferAfter));
   prgConfig = build_prg_config(opts);
-  resultsPrg = criticality_prg_analysis(dataStruct, prgConfig);
+  if isfield(opts, 'cachedPrgResults') && ~isempty(opts.cachedPrgResults) ...
+      && isfield(opts.cachedPrgResults, 'windowStartS')
+    fprintf('Using full-session PRG cache (split blocks by engagement).\n');
+    resultsPrg = opts.cachedPrgResults;
+  else
+    resultsPrg = criticality_prg_analysis(dataStruct, prgConfig);
+  end
   if ~isempty(opts.brainArea)
     resultsPrg = filter_prg_results_to_brain_area(resultsPrg, opts.brainArea);
   end
@@ -1560,6 +1572,7 @@ nEngagedWindows = 0;
 nNonEngagedWindows = 0;
 nTotalWindows = 0;
 countedDurations = false;
+splitWinLen = d2Window;
 
 for a = 1:numel(d2Split.areas)
   if a > numel(results.startS) || isempty(results.startS{a})
@@ -1567,8 +1580,9 @@ for a = 1:numel(d2Split.areas)
   end
   % startS is window center relative to collectStart
   centerRel = results.startS{a}(:);
-  winStartAbs = collectStart + centerRel - d2Window / 2;
-  winEndAbs = collectStart + centerRel + d2Window / 2;
+  winLen = resolve_d2_split_window_length(results, a, d2Window);
+  winStartAbs = collectStart + centerRel - winLen / 2;
+  winEndAbs = collectStart + centerRel + winLen / 2;
   engagedMask = window_overlaps_event_buffer(winStartAbs, winEndAbs, reachStart, bufferBefore, bufferAfter);
   nonEngagedMask = ~engagedMask;
   d2Split.windowMask{a} = struct('engaged', engagedMask, 'nonEngaged', nonEngagedMask);
@@ -1578,6 +1592,7 @@ for a = 1:numel(d2Split.areas)
     nTotalWindows = numel(engagedMask);
     nEngagedWindows = sum(engagedMask);
     nNonEngagedWindows = sum(nonEngagedMask);
+    splitWinLen = winLen;
     countedDurations = true;
   end
 
@@ -1612,12 +1627,30 @@ for a = 1:numel(d2Split.areas)
 end
 
 d2Split.durations = struct( ...
-  'totalSec', nTotalWindows * d2Window, ...
-  'engagedSec', nEngagedWindows * d2Window, ...
-  'nonEngagedSec', nNonEngagedWindows * d2Window, ...
+  'totalSec', nTotalWindows * splitWinLen, ...
+  'engagedSec', nEngagedWindows * splitWinLen, ...
+  'nonEngagedSec', nNonEngagedWindows * splitWinLen, ...
   'nTotalWindows', nTotalWindows, ...
   'nEngagedWindows', nEngagedWindows, ...
   'nNonEngagedWindows', nNonEngagedWindows);
+end
+
+function winLen = resolve_d2_split_window_length(results, areaIdx, fallbackWin)
+% RESOLVE_D2_SPLIT_WINDOW_LENGTH - Window length used to compute cached d2
+winLen = fallbackWin;
+if isfield(results, 'd2WindowSize') && ~isempty(results.d2WindowSize)
+  if isscalar(results.d2WindowSize)
+    winLen = results.d2WindowSize;
+  elseif numel(results.d2WindowSize) >= areaIdx
+    winLen = results.d2WindowSize(areaIdx);
+  end
+elseif isfield(results, 'slidingWindowSize') && ~isempty(results.slidingWindowSize)
+  if isscalar(results.slidingWindowSize)
+    winLen = results.slidingWindowSize;
+  elseif numel(results.slidingWindowSize) >= areaIdx
+    winLen = results.slidingWindowSize(areaIdx);
+  end
+end
 end
 
 function fig = plot_engagement_d2_distributions(d2Split, sessionType, sessionName, ...
@@ -1903,13 +1936,15 @@ nEngagedWindows = 0;
 nNonEngagedWindows = 0;
 nTotalWindows = 0;
 countedDurations = false;
+splitWinLen = prgWindow;
 
 for a = 1:numel(prgSplit.areas)
   if a > numel(results.windowStartS) || isempty(results.windowStartS{a})
     continue;
   end
+  winLen = resolve_prg_split_window_length(results, prgWindow);
   winStartAbs = results.windowStartS{a}(:);
-  winEndAbs = winStartAbs + prgWindow;
+  winEndAbs = winStartAbs + winLen;
   engagedMask = window_overlaps_event_buffer(winStartAbs, winEndAbs, reachStart, bufferBefore, bufferAfter);
   nonEngagedMask = ~engagedMask;
 
@@ -1918,6 +1953,7 @@ for a = 1:numel(prgSplit.areas)
     nTotalWindows = numel(engagedMask);
     nEngagedWindows = sum(engagedMask);
     nNonEngagedWindows = sum(nonEngagedMask);
+    splitWinLen = winLen;
     countedDurations = true;
   end
 
@@ -1947,12 +1983,21 @@ for a = 1:numel(prgSplit.areas)
 end
 
 prgSplit.durations = struct( ...
-  'totalSec', nTotalWindows * prgWindow, ...
-  'engagedSec', nEngagedWindows * prgWindow, ...
-  'nonEngagedSec', nNonEngagedWindows * prgWindow, ...
+  'totalSec', nTotalWindows * splitWinLen, ...
+  'engagedSec', nEngagedWindows * splitWinLen, ...
+  'nonEngagedSec', nNonEngagedWindows * splitWinLen, ...
   'nTotalWindows', nTotalWindows, ...
   'nEngagedWindows', nEngagedWindows, ...
   'nNonEngagedWindows', nNonEngagedWindows);
+end
+
+function winLen = resolve_prg_split_window_length(results, fallbackWin)
+% RESOLVE_PRG_SPLIT_WINDOW_LENGTH - Block length used to compute cached PRG
+winLen = fallbackWin;
+if isfield(results, 'params') && isfield(results.params, 'blockWindowSize') ...
+    && ~isempty(results.params.blockWindowSize)
+  winLen = results.params.blockWindowSize;
+end
 end
 
 function fig = plot_engagement_kurtosis_distributions(prgSplit, sessionType, sessionName, ...

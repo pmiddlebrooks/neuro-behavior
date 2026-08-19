@@ -65,15 +65,15 @@ if ~exist('sessionType', 'var') || isempty(sessionType)
 end
 dataSource = 'spikes';
 collectStart = 0;
-collectEnd = [];
+collectEnd = 120*60;
 % collectEnd = 120*60;
-d2Window = 90;  % seconds; non-overlapping windows
+d2Window = 45;  % seconds; non-overlapping windows
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 40;
+nSubsamples = 30;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 nPermutations = 3;  % circular shuffles per window for shuffled d2 distribution
@@ -88,7 +88,7 @@ splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 % Optional engaged vs non-engaged (reach / interval / semicircle only)
-splitByEngagement = true;
+splitByEngagement = false;
 engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
 engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
 minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments

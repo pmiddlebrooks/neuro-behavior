@@ -245,6 +245,8 @@ defaults.enablePermutations = true;
 defaults.nShuffles = 10;
 defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
+defaults.useSessionCache = true;
+defaults.forceRecompute = false;
 % Empty collectEnd / d2Window are sentinels for "full session" — do not replace
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 preserveD2WindowEmpty = isfield(opts, 'd2Window') && isempty(opts.d2Window);
@@ -320,6 +322,12 @@ for s = 1:numSessions
     batchByCell{iCell}(s).results = [];
   end
 
+  [batchByCell, missingIdx] = try_load_across_tasks_session_cache( ...
+    batchByCell, s, cellTypesToRun, sessionType, sessionName, subjectName, opts, 'ar');
+  if isempty(missingIdx)
+    continue;
+  end
+
   try
     loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
     dataStruct = load_session_data(sessionType, opts.dataSource, loadArgs{:});
@@ -357,7 +365,7 @@ for s = 1:numSessions
       sessionConfig.stepSize = sessionDuration;
     end
 
-    for iCell = 1:numel(cellTypesToRun)
+    for iCell = missingIdx
       cellType = cellTypesToRun{iCell};
       try
         dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, ...
@@ -392,6 +400,13 @@ for s = 1:numSessions
     % E/I split requires both populations; drop the whole session if either fails
     if opts.splitExcitatoryInhibitory
       batchByCell = invalidate_ar_session_if_ei_incomplete(batchByCell, cellTypesToRun, s);
+    end
+
+    for iCell = missingIdx
+      if batchByCell{iCell}(s).success
+        save_across_tasks_session_cache(batchByCell{iCell}(s).results, ...
+          sessionType, sessionName, subjectName, opts, 'ar', cellTypesToRun{iCell});
+      end
     end
   catch ME
     if is_skippable_session_analysis_error(ME)

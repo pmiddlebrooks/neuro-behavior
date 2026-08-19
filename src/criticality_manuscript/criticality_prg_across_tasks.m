@@ -225,6 +225,8 @@ defaults.minFiringRate = 0.05;
 defaults.maxFiringRate = 100;
 defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
+defaults.useSessionCache = true;
+defaults.forceRecompute = false;
 % Empty collectEnd / prgWindow are sentinels for "full session" — do not replace
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 preservePrgWindowEmpty = isfield(opts, 'prgWindow') && isempty(opts.prgWindow);
@@ -297,6 +299,12 @@ for s = 1:numSessions
     batchByCell{iCell}(s).results = [];
   end
 
+  [batchByCell, missingIdx] = try_load_across_tasks_session_cache( ...
+    batchByCell, s, cellTypesToRun, sessionType, sessionName, subjectName, opts, 'prg');
+  if isempty(missingIdx)
+    continue;
+  end
+
   try
     loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
     dataStruct = load_session_data(sessionType, opts.dataSource, loadArgs{:});
@@ -333,7 +341,7 @@ for s = 1:numSessions
       sessionConfig.blockWindowSize = sessionDuration;
     end
 
-    for iCell = 1:numel(cellTypesToRun)
+    for iCell = missingIdx
       cellType = cellTypesToRun{iCell};
       try
         dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, ...
@@ -362,6 +370,13 @@ for s = 1:numSessions
           continue;
         end
         rethrow(MECell);
+      end
+    end
+
+    for iCell = missingIdx
+      if batchByCell{iCell}(s).success
+        save_across_tasks_session_cache(batchByCell{iCell}(s).results, ...
+          sessionType, sessionName, subjectName, opts, 'prg', cellTypesToRun{iCell});
       end
     end
   catch ME

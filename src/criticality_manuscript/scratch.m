@@ -264,9 +264,9 @@ else
     end
 
     axPop = subplot(nSubRows, nCols, popAxIdx, 'Parent', figPop);
-    plot(axPop, tSess, sessionBhv(iSess).popActivity, ...
+    plot(axPop, tSess / 60, sessionBhv(iSess).popActivity, ...
       'Color', [0.15 0.15 0.15], 'LineWidth', 0.6);
-    xlim(axPop, [collectStart, tMaxSess]);
+    xlim(axPop, [collectStart, tMaxSess] / 60);
     ylabel(axPop, 'pop', 'FontSize', 9);
     title(axPop, sprintf('%s (%.1f min)', sessionBhv(iSess).label, ...
       sessionBhv(iSess).durationSec / 60), 'Interpreter', 'none', 'FontSize', 10);
@@ -276,7 +276,7 @@ else
     axEth = subplot(nSubRows, nCols, ethAxIdx, 'Parent', figPop);
     scratch_plot_behavior_ethogram(axEth, sessionBhv(iSess), codeColorMap, ...
       collectStart, tMaxSess);
-    xlabel(axEth, 'Time (s)', 'FontSize', 9);
+    xlabel(axEth, 'Time (min)', 'FontSize', 9);
     linkaxes([axPop, axEth], 'x');
   end
 
@@ -1293,15 +1293,17 @@ function scratch_plot_behavior_ethogram(ax, sessionRec, codeColorMap, tMin, tMax
 %   ax           - Target axes (thin strip under popActivity)
 %   sessionRec   - Session struct with .bhvID and .fsBhv
 %   codeColorMap - containers.Map code → RGB (shared across sessions)
-%   tMin, tMax   - Shared x-limits (s)
+%   tMin, tMax   - Shared x-limits (s); plotted as minutes
 
 hold(ax, 'on');
 bhvID = sessionRec.bhvID;
 fsBhv = sessionRec.fsBhv;
+tMinMin = tMin / 60;
+tMaxMin = tMax / 60;
 if isempty(bhvID) || ~(isfinite(fsBhv) && fsBhv > 0)
-  text(ax, mean([tMin tMax]), 0.5, 'no behavior labels', ...
+  text(ax, mean([tMinMin tMaxMin]), 0.5, 'no behavior labels', ...
     'HorizontalAlignment', 'center', 'FontSize', 9, 'Color', [0.5 0.5 0.5]);
-  xlim(ax, [tMin, tMax]);
+  xlim(ax, [tMinMin, tMaxMin]);
   ylim(ax, [0 1]);
   set(ax, 'YTick', [], 'Box', 'off');
   hold(ax, 'off');
@@ -1311,8 +1313,8 @@ end
 bhvID = bhvID(:);
 nFrame = numel(bhvID);
 % bhvID is relative to the loaded collect window; align to shared time axis
-frameStarts = tMin + ((0:nFrame-1)' ) / fsBhv;
-frameEnds = tMin + (1:nFrame)' / fsBhv;
+frameStarts = (tMin + ((0:nFrame-1)' ) / fsBhv) / 60;
+frameEnds = (tMin + (1:nFrame)' / fsBhv) / 60;
 
 % Merge contiguous identical labels into runs
 runCode = bhvID(1);
@@ -1326,7 +1328,7 @@ for i = 2:nFrame
 end
 scratch_fill_ethogram_run(ax, runStart, frameEnds(end), runCode, codeColorMap);
 
-xlim(ax, [tMin, tMax]);
+xlim(ax, [tMinMin, tMaxMin]);
 ylim(ax, [0 1]);
 ylabel(ax, 'bhv', 'FontSize', 9);
 set(ax, 'YTick', [], 'Box', 'off', 'TickDir', 'out');

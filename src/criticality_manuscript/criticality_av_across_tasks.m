@@ -238,6 +238,8 @@ defaults.enablePermutations = true;
 defaults.nShuffles = 5;
 defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
+defaults.useSessionCache = true;
+defaults.forceRecompute = false;
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 preserveAvWindowEmpty = isfield(opts, 'avWindow') && isempty(opts.avWindow);
 opts = merge_struct_defaults(opts, defaults);
@@ -316,6 +318,12 @@ for s = 1:numSessions
     batchByCell{iCell}(s).results = [];
   end
 
+  [batchByCell, missingIdx] = try_load_across_tasks_session_cache( ...
+    batchByCell, s, cellTypesToRun, sessionType, sessionName, subjectName, opts, 'av');
+  if isempty(missingIdx)
+    continue;
+  end
+
   try
     loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
     dataStruct = load_session_data(sessionType, opts.dataSource, loadArgs{:});
@@ -353,7 +361,7 @@ for s = 1:numSessions
       sessionConfig.avStepSize = sessionDuration;
     end
 
-    for iCell = 1:numel(cellTypesToRun)
+    for iCell = missingIdx
       cellType = cellTypesToRun{iCell};
       try
         dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, ...
@@ -382,6 +390,13 @@ for s = 1:numSessions
           continue;
         end
         rethrow(MECell);
+      end
+    end
+
+    for iCell = missingIdx
+      if batchByCell{iCell}(s).success
+        save_across_tasks_session_cache(batchByCell{iCell}(s).results, ...
+          sessionType, sessionName, subjectName, opts, 'av', cellTypesToRun{iCell});
       end
     end
   catch ME
