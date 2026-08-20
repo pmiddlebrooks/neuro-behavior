@@ -24,8 +24,10 @@
 %   nPermutations    - Number of circular permutations per window for shuffled d2
 %   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled)
 %   plotD2Timeline   - If true, plot mean pop per d2 window, d2, and ethogram vs time
-%                      Semicircle ethogram: TaskMatrix outcome lines + leave-home/poke/end fills
+%                      Semicircle ethogram: TaskMatrix outcome lines + leave-home/poke/end fills;
+%                      engagement fills when splitByEngagement
 %                      Interval (no bhv labels yet): correct/error beam-break schematics;
+%                      Reach: correct/error reach-onset schematics;
 %                      engagement fills when splitByEngagement
 %   useRelativeTime  - If true, timeline x-axis is relative to collectStart (default false)
 %   binSize          - Spike bin width (s) for d2 analysis (and window popActivity)
@@ -39,8 +41,11 @@
 %                        reach_task/data/WaveformDATA/*_Neural_WFs.mat
 %   splitByEngagement  - If true (reach/interval/semicircle), also run engaged vs
 %                        non-engaged d2 distributions via the engagement modules
-%   engagementBufferBefore - Seconds before each reach/beam-break = engaged (default 1)
-%   engagementBufferAfter  - Seconds after each reach/beam-break = engaged (default 1)
+%                        (d2 windows must lie fully inside an engaged or
+%                        non-engaged segment; straddlers are skipped)
+%   engagementBufferBefore - Seconds before each engagement event = engaged (default 1)
+%                            (reach onset, interval beam-break, or semicircle TaskMatrix time)
+%   engagementBufferAfter  - Seconds after each engagement event = engaged (default 1)
 %   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
 %   minNonEngagedWindow - Min gap without events (s) for non-engaged segments
 %   minTimeNonEngaged  - When splitByEngagement, min total non-engaged time (s)
@@ -69,15 +74,15 @@ end
 dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
-collectEnd = 120*60;
-d2Window = 60;  % seconds; non-overlapping windows
+% collectEnd = 120*60;
+d2Window = 45;  % seconds; non-overlapping windows
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
 useSubsampling = true;
 nSubsamples = 25;
-nNeuronsSubsample = 70;
+nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 nPermutations = 2;  % circular shuffles per window for shuffled d2 distribution
 plotD2PopActivity = true;
@@ -91,9 +96,9 @@ splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 % Optional engaged vs non-engaged (reach / interval / semicircle only)
-splitByEngagement = false;
-engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
-engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
+splitByEngagement = true;
+engagementBufferBefore = 3;  % s before each engagement event = engaged
+engagementBufferAfter = 1;   % s after each engagement event = engaged
 minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
 absorbSingleEvents = true;   % merge isolated single events into non-engaged gaps
 minTimeNonEngaged = 180;     % min total non-engaged time (s) to plot; 0 = no filter
@@ -1193,7 +1198,7 @@ function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
 %   Top:    mean popActivity per d2 window (results.popActivityWindows)
 %   Middle: window-wise d2 (and shuffled mean when present)
 %   Bottom: behavior ethogram (frame labels, semicircle TaskMatrix, or
-%           interval beam-break schematics)
+%           interval/reach event schematics)
 %
 % Timebase: results.startS are window centers in absolute session time.
 % d2WindowAlign maps those centers to plot times (center or leading edge).
@@ -1202,8 +1207,13 @@ function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
 %   black vertical line at choicePort poke time
 %   blue fill: leaveHomeLast -> choicePokeTime
 %   yellow fill: choicePokeTime -> trialEnd
+%   if splitByEngagement: blue engaged / orange non-engaged fills from
+%   trialStart, choice poke, leave-home first, enter-home, leave-home last
 % Interval (until bhv labels exist):
 %   green/red vertical lines at correct/error beam breaks
+%   if splitByEngagement: blue engaged / orange non-engaged fills
+% Reach:
+%   green/red vertical lines at correct/error reach onsets
 %   if splitByEngagement: blue engaged / orange non-engaged fills
 
 if nargin < 8 || isempty(plotConfig)
@@ -1242,6 +1252,7 @@ end
 bhvRec = session_d2_behavior_record(dataStructBhv);
 semiEth = session_d2_semicircle_ethogram_record(dataStructBhv);
 intervalEth = session_d2_interval_ethogram_record(dataStructBhv);
+reachEth = session_d2_reach_ethogram_record(dataStructBhv);
 tMaxAbs = session_d2_resolve_timeline_tmax([], results, collectStart, collectEnd, d2Window, ...
     dataStructBhv);
 tMinAbs = collectStart;
@@ -1334,8 +1345,12 @@ for a = 1:numAreas
     if ~isempty(intervalEth)
         session_d2_plot_interval_task_schematic(axEth, intervalEth, tMin, tMax, timeShift, ...
             tMinAbs, tMaxAbs, timelineOpts);
+    elseif ~isempty(reachEth)
+        session_d2_plot_reach_task_schematic(axEth, reachEth, tMin, tMax, timeShift, ...
+            tMinAbs, tMaxAbs, timelineOpts);
     elseif ~isempty(semiEth)
-        session_d2_plot_semicircle_ethogram(axEth, semiEth, tMin, tMax, timeShift);
+        session_d2_plot_semicircle_ethogram(axEth, semiEth, tMin, tMax, timeShift, ...
+            tMinAbs, tMaxAbs, timelineOpts);
     else
         session_d2_plot_behavior_ethogram(axEth, bhvRec, tMin, tMax);
     end
@@ -1351,7 +1366,7 @@ if ~isempty(cellType) && ~strcmpi(cellType, 'combined')
     cellTag = sprintf(' | %s', cell_type_label(cellType));
 end
 bottomTag = 'ethogram';
-if ~isempty(intervalEth)
+if ~isempty(intervalEth) || ~isempty(reachEth)
     bottomTag = 'task events';
 end
 sgtitle(fig, sprintf('%s%s | mean pop / d2 (%.0fs windows, %s, bin=%.0f ms) / %s', ...
@@ -1389,7 +1404,7 @@ end
 end
 
 function timelineOpts = fill_d2_timeline_opts(timelineOpts)
-% FILL_D2_TIMELINE_OPTS - Defaults for interval schematic / engagement fills
+% FILL_D2_TIMELINE_OPTS - Defaults for interval/reach schematic / engagement fills
 if nargin < 1 || isempty(timelineOpts)
     timelineOpts = struct();
 end
@@ -1616,6 +1631,34 @@ end
 if numel(ethRec.leaveHomeLast) ~= nTrial
     ethRec.leaveHomeLast = nan(nTrial, 1);
 end
+ethRec.trialStart = pad_ethogram_times(dataStruct, 'trialStart', nTrial);
+ethRec.leaveHomeFirst = pad_ethogram_times(dataStruct, 'leaveHomeFirst', nTrial);
+ethRec.enterHomeStart = pad_ethogram_times(dataStruct, 'enterHomeStart', nTrial);
+% Same timestamps as load_semicircle_beam_break_events (choicePort is not a time)
+ethRec.engagementEventTimes = unique_finite_times([ ...
+    ethRec.trialStart; ...
+    ethRec.choicePokeTime; ...
+    ethRec.leaveHomeFirst; ...
+    ethRec.enterHomeStart; ...
+    ethRec.leaveHomeLast]);
+end
+
+function times = pad_ethogram_times(dataStruct, fieldName, nTrial)
+% PAD_ETHOGRAM_TIMES - Align optional TaskMatrix column to trial count
+
+times = nan(nTrial, 1);
+if isfield(dataStruct, fieldName) && ~isempty(dataStruct.(fieldName))
+    src = dataStruct.(fieldName)(:);
+    nCopy = min(numel(src), nTrial);
+    times(1:nCopy) = src(1:nCopy);
+end
+end
+
+function times = unique_finite_times(times)
+% UNIQUE_FINITE_TIMES - Sorted unique finite timestamps
+
+times = times(isfinite(times));
+times = unique(times(:));
 end
 
 function ethRec = session_d2_interval_ethogram_record(dataStruct)
@@ -1653,7 +1696,41 @@ ethRec.eventTimes = eventTimes(:);
 ethRec.eventTypes = eventTypes(:);
 end
 
-function session_d2_plot_semicircle_ethogram(ax, ethRec, tMin, tMax, timeShift)
+function ethRec = session_d2_reach_ethogram_record(dataStruct)
+% SESSION_D2_REACH_ETHOGRAM_RECORD - Reach onsets and outcome classes for schematic
+%
+% Variables:
+%   dataStruct - Loaded reach session (reachStart, reachClass)
+%
+% Goal:
+%   Return [] for non-reach sessions; otherwise pack reach times used by
+%   session_d2_plot_reach_task_schematic. Correct = class 2/4/6, error = 1/3/5.
+
+ethRec = [];
+if ~isfield(dataStruct, 'sessionType') || ~strcmpi(dataStruct.sessionType, 'reach')
+    return;
+end
+
+ethRec = struct();
+ethRec.reachStart = [];
+ethRec.reachClass = [];
+ethRec.startBlock2 = [];
+if isfield(dataStruct, 'reachStart') && ~isempty(dataStruct.reachStart)
+    ethRec.reachStart = dataStruct.reachStart(:);
+end
+if isfield(dataStruct, 'reachClass') && ~isempty(dataStruct.reachClass)
+    ethRec.reachClass = dataStruct.reachClass(:);
+    if numel(ethRec.reachClass) ~= numel(ethRec.reachStart)
+        ethRec.reachClass = [];
+    end
+end
+if isfield(dataStruct, 'startBlock2') && ~isempty(dataStruct.startBlock2)
+    ethRec.startBlock2 = dataStruct.startBlock2;
+end
+end
+
+function session_d2_plot_semicircle_ethogram(ax, ethRec, tMin, tMax, timeShift, ...
+    tMinAbs, tMaxAbs, timelineOpts)
 % SESSION_D2_PLOT_SEMICIRCLE_ETHOGRAM - TaskMatrix event ethogram for semicircle
 %
 % Variables:
@@ -1661,9 +1738,13 @@ function session_d2_plot_semicircle_ethogram(ax, ethRec, tMin, tMax, timeShift)
 %   ethRec    - From session_d2_semicircle_ethogram_record
 %   tMin/tMax - Shared x-limits (already relative when useRelativeTime)
 %   timeShift - Absolute time subtracted for relative plotting (0 if absolute)
+%   tMinAbs/tMaxAbs - Absolute collect bounds for engagement segments
+%   timelineOpts  - splitByEngagement + buffer / min-gap / absorb flags
 %
 % Goal:
 %   Draw:
+%     if splitByEngagement: blue engaged / orange non-engaged fills from
+%       trialStart, choice poke, leave-home first, enter-home, leave-home last
 %     blue fill: leaveHomeLast -> choicePokeTime
 %     yellow fill: choicePokeTime -> trialEnd
 %     black line at choicePokeTime
@@ -1671,6 +1752,15 @@ function session_d2_plot_semicircle_ethogram(ax, ethRec, tMin, tMax, timeShift)
 
 if nargin < 5 || isempty(timeShift)
     timeShift = 0;
+end
+if nargin < 8 || isempty(timelineOpts)
+    timelineOpts = fill_d2_timeline_opts(struct());
+end
+if nargin < 6 || isempty(tMinAbs)
+    tMinAbs = tMin + timeShift;
+end
+if nargin < 7 || isempty(tMaxAbs)
+    tMaxAbs = tMax + timeShift;
 end
 
 hold(ax, 'on');
@@ -1684,6 +1774,10 @@ if isempty(ethRec) || isempty(ethRec.trialEnd)
     return;
 end
 
+yMin = 0;
+yMax = 1;
+engagedColor = [0.15, 0.45, 0.75];
+nonEngagedColor = [0.85, 0.35, 0.15];
 blueFill = [0.30, 0.55, 0.90];
 yellowFill = [0.95, 0.85, 0.25];
 colorReward = [0.10, 0.70, 0.25];
@@ -1693,6 +1787,8 @@ colorChoice = [0.05, 0.05, 0.05];
 lineWidthEvent = 1.1;
 
 nTrial = numel(ethRec.trialEnd);
+hEng = gobjects(0);
+hNon = gobjects(0);
 hBlue = gobjects(0);
 hYellow = gobjects(0);
 hChoice = gobjects(0);
@@ -1700,7 +1796,27 @@ hReward = gobjects(0);
 hUnrewarded = gobjects(0);
 hFailed = gobjects(0);
 
-% Fills first (behind event lines)
+if timelineOpts.splitByEngagement && isfield(ethRec, 'engagementEventTimes') ...
+        && ~isempty(ethRec.engagementEventTimes)
+    [engagedSegs, nonEngagedSegs] = session_d2_interval_engagement_segments( ...
+        tMinAbs, tMaxAbs, ethRec.engagementEventTimes, timelineOpts.minNonEngagedWindow, ...
+        timelineOpts.engagementBufferBefore, timelineOpts.engagementBufferAfter, ...
+        timelineOpts.absorbSingleEvents);
+    hNon = session_d2_add_engagement_patches(ax, nonEngagedSegs, nonEngagedColor, ...
+        yMin, yMax, timeShift);
+    if ~isempty(hNon)
+        set(hNon, 'HandleVisibility', 'on', ...
+            'DisplayName', sprintf('Non-engaged (n=%d)', numel(nonEngagedSegs)));
+    end
+    hEng = session_d2_add_engagement_patches(ax, engagedSegs, engagedColor, ...
+        yMin, yMax, timeShift);
+    if ~isempty(hEng)
+        set(hEng, 'HandleVisibility', 'on', ...
+            'DisplayName', sprintf('Engaged (n=%d)', numel(engagedSegs)));
+    end
+end
+
+% Trial fills (behind event lines)
 for iTrial = 1:nTrial
     leaveT = ethRec.leaveHomeLast(iTrial) - timeShift;
     pokeT = ethRec.choicePokeTime(iTrial) - timeShift;
@@ -1772,7 +1888,7 @@ ylim(ax, [0 1]);
 ylabel(ax, 'task', 'FontSize', 9);
 set(ax, 'YTick', [], 'Box', 'off', 'TickDir', 'out');
 
-legendHandles = [hBlue, hYellow, hChoice, hReward, hUnrewarded, hFailed];
+legendHandles = [hEng, hNon, hBlue, hYellow, hChoice, hReward, hUnrewarded, hFailed];
 legendHandles = legendHandles(isgraphics(legendHandles));
 if ~isempty(legendHandles)
     legend(ax, legendHandles, 'Location', 'best', 'FontSize', 7, 'Box', 'off', ...
@@ -1884,6 +2000,135 @@ if ~isempty(hCorrect)
 end
 if ~isempty(hError)
     legendHandles(end + 1) = hError; %#ok<AGROW>
+end
+
+xlim(ax, [tMin, tMax]);
+ylim(ax, [yMin, yMax]);
+ylabel(ax, 'task', 'FontSize', 9);
+set(ax, 'YTick', [], 'Box', 'off', 'TickDir', 'out');
+if ~isempty(legendHandles)
+    legend(ax, legendHandles, 'Location', 'best', 'FontSize', 7, 'Box', 'off');
+end
+hold(ax, 'off');
+end
+
+function session_d2_plot_reach_task_schematic(ax, ethRec, tMin, tMax, timeShift, ...
+    tMinAbs, tMaxAbs, timelineOpts)
+% SESSION_D2_PLOT_REACH_TASK_SCHEMATIC - Reach onsets (+ engagement fills)
+%
+% Variables:
+%   ax            - Target axes
+%   ethRec        - From session_d2_reach_ethogram_record
+%   tMin/tMax     - Shared x-limits (already relative when useRelativeTime)
+%   timeShift     - Absolute time subtracted for relative plotting (0 if absolute)
+%   tMinAbs/tMaxAbs - Absolute collect bounds for engagement segments
+%   timelineOpts  - splitByEngagement + buffer / min-gap / absorb flags
+%
+% Goal:
+%   Draw correct (green) / error (red) reach onsets, matching the interval
+%   beam-break schematic. If splitByEngagement, shade engaged (blue) and
+%   non-engaged (orange) using the same event-buffer rules as the reach
+%   engagement module. Optional Block 2 start marker.
+
+if nargin < 5 || isempty(timeShift)
+    timeShift = 0;
+end
+if nargin < 8 || isempty(timelineOpts)
+    timelineOpts = fill_d2_timeline_opts(struct());
+end
+
+hold(ax, 'on');
+if isempty(ethRec) || ~isfield(ethRec, 'reachStart') || isempty(ethRec.reachStart)
+    text(ax, mean([tMin tMax]), 0.5, 'no reach events', ...
+        'HorizontalAlignment', 'center', 'FontSize', 9, 'Color', [0.5 0.5 0.5]);
+    xlim(ax, [tMin, tMax]);
+    ylim(ax, [0 1]);
+    set(ax, 'YTick', [], 'Box', 'off');
+    hold(ax, 'off');
+    return;
+end
+
+yMin = 0;
+yMax = 1;
+engagedColor = [0.15, 0.45, 0.75];
+nonEngagedColor = [0.85, 0.35, 0.15];
+correctColor = [0.2, 0.65, 0.25];
+errorColor = [0.85, 0.2, 0.2];
+lineWidthEvent = 0.9;
+
+legendHandles = gobjects(0);
+reachStart = ethRec.reachStart(:);
+reachClass = [];
+if isfield(ethRec, 'reachClass') && ~isempty(ethRec.reachClass) ...
+        && numel(ethRec.reachClass) == numel(reachStart)
+    reachClass = ethRec.reachClass(:);
+end
+isCorrect = false(size(reachStart));
+isError = false(size(reachStart));
+if ~isempty(reachClass)
+    isCorrect = ismember(reachClass, [2, 4, 6]);
+    isError = ismember(reachClass, [1, 3, 5]);
+end
+
+if timelineOpts.splitByEngagement
+    [engagedSegs, nonEngagedSegs] = session_d2_interval_engagement_segments( ...
+        tMinAbs, tMaxAbs, reachStart, timelineOpts.minNonEngagedWindow, ...
+        timelineOpts.engagementBufferBefore, timelineOpts.engagementBufferAfter, ...
+        timelineOpts.absorbSingleEvents);
+    hNon = session_d2_add_engagement_patches(ax, nonEngagedSegs, nonEngagedColor, ...
+        yMin, yMax, timeShift);
+    if ~isempty(hNon)
+        set(hNon, 'HandleVisibility', 'on', ...
+            'DisplayName', sprintf('Non-engaged (n=%d)', numel(nonEngagedSegs)));
+        legendHandles(end + 1) = hNon; %#ok<AGROW>
+    end
+    hEng = session_d2_add_engagement_patches(ax, engagedSegs, engagedColor, ...
+        yMin, yMax, timeShift);
+    if ~isempty(hEng)
+        set(hEng, 'HandleVisibility', 'on', ...
+            'DisplayName', sprintf('Engaged (n=%d)', numel(engagedSegs)));
+        legendHandles(end + 1) = hEng; %#ok<AGROW>
+    end
+end
+
+hCorrect = gobjects(0);
+hError = gobjects(0);
+for iReach = 1:numel(reachStart)
+    x = reachStart(iReach) - timeShift;
+    if isCorrect(iReach)
+        hLine = plot(ax, [x, x], [yMin, yMax], 'Color', correctColor, ...
+            'LineWidth', lineWidthEvent, 'HandleVisibility', 'off');
+        if isempty(hCorrect)
+            hCorrect = hLine;
+            set(hCorrect, 'HandleVisibility', 'on', 'DisplayName', ...
+                sprintf('Correct (n=%d)', sum(isCorrect)));
+        end
+    elseif isError(iReach)
+        hLine = plot(ax, [x, x], [yMin, yMax], 'Color', errorColor, ...
+            'LineWidth', lineWidthEvent, 'HandleVisibility', 'off');
+        if isempty(hError)
+            hError = hLine;
+            set(hError, 'HandleVisibility', 'on', 'DisplayName', ...
+                sprintf('Error (n=%d)', sum(isError)));
+        end
+    else
+        plot(ax, [x, x], [yMin, yMax], 'Color', [0.35, 0.35, 0.35], ...
+            'LineWidth', 0.75, 'HandleVisibility', 'off');
+    end
+end
+if ~isempty(hCorrect)
+    legendHandles(end + 1) = hCorrect; %#ok<AGROW>
+end
+if ~isempty(hError)
+    legendHandles(end + 1) = hError; %#ok<AGROW>
+end
+
+if isfield(ethRec, 'startBlock2') && ~isempty(ethRec.startBlock2) ...
+        && isfinite(ethRec.startBlock2)
+    xBlock2 = ethRec.startBlock2 - timeShift;
+    hBlock2 = plot(ax, [xBlock2, xBlock2], [yMin, yMax], 'Color', [0.75, 0.10, 0.55], ...
+        'LineWidth', 1.4, 'DisplayName', 'Block 2 start');
+    legendHandles(end + 1) = hBlock2; %#ok<AGROW>
 end
 
 xlim(ax, [tMin, tMax]);

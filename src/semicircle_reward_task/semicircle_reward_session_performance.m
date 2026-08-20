@@ -19,11 +19,11 @@ function out = semicircle_reward_session_performance(subjectName, sessionName, o
 %       .outputDir           - Save directory (default dropPath/semicircle_reward_task/results)
 %
 % Goal:
-%   Load rewarded / unrewarded choice-port beam breaks (TaskMatrix), shade
-%   engaged/non-engaged segments (same definition as
+%   Load TaskMatrix engagement events (trial start, choice poke, leave/enter
+%   home), shade engaged/non-engaged segments (same definition as
 %   semicircle_criticality_metrics_engagement), mark correct (green) and error
-%   (red) events, plot running reward rate and accuracy, and histogram
-%   inter-beam-break intervals to help choose minNonEngagedWindow when the
+%   (red) choice pokes, plot running reward rate and accuracy, and histogram
+%   inter-event intervals to help choose minNonEngagedWindow when the
 %   distribution is bimodal.
 %
 % Returns:
@@ -81,7 +81,10 @@ eventTypes = eventTypesAll(eventInCollect);
 
 fprintf('Collect window: [%.1f, %.1f] s (%.1f min)\n', ...
   collectStart, collectEnd, (collectEnd - collectStart) / 60);
-fprintf('Beam breaks in collect window: %d\n', numel(eventTimes));
+nCorrect = sum(eventTypes == "correct");
+nError = sum(eventTypes == "error");
+fprintf('Engagement events in collect window: %d (%d rewarded pokes, %d unrewarded pokes)\n', ...
+  numel(eventTimes), nCorrect, nError);
 
 [engagedSegs, nonEngagedSegs] = define_reach_engagement_segments( ...
   collectStart, collectEnd, eventTimes, opts.minNonEngagedWindow, ...

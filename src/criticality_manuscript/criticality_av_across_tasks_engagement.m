@@ -1,10 +1,11 @@
 %%
 % Criticality Avalanche Across Task Types — Engagement Split (Manuscript)
 %
-% Like criticality_av_across_tasks.m, but for reach and interval sessions uses
-% reach_criticality_metrics_engagement / interval_criticality_metrics_engagement
-% (analyses={'avalanches'}, makePlots false) for engaged vs non-engaged metrics.
-% Spontaneous sessions use the standard single-window avalanche pipeline.
+% Like criticality_av_across_tasks.m, but for reach, interval, and semicircle
+% sessions uses the engagement modules (analyses={'avalanches'}, makePlots false)
+% for engaged vs non-engaged metrics. Semicircle events are TaskMatrix times
+% (trial start, choice poke, leave/enter home). Spontaneous sessions use the
+% standard single-window avalanche pipeline.
 %
 % Variables (configure in this section):
 %   sessionTypes, dataSource, collectStart, collectEnd

@@ -3,8 +3,9 @@
 %
 % Like criticality_ar_across_tasks.m, but for reach, interval, and semicircle
 % sessions uses the engagement modules (makePlots false) to obtain engaged vs
-% non-engaged window d2 summaries. Spontaneous sessions use the standard
-% all-window d2 pipeline.
+% non-engaged window d2 summaries (windows must lie fully inside an engaged or
+% non-engaged segment). Spontaneous sessions use the standard all-window d2
+% pipeline.
 %
 % Variables (configure in this section):
 %   sessionTypes   - Cell array of session types to include
@@ -18,8 +19,9 @@
 %   useLog10D2, useViolinPlots - Bar means (default) or per-window violin distributions
 %   useSubsampling, nSubsamples, ...
 %   engagementBufferBefore / engagementBufferAfter - Seconds before/after each
-%     reach or beam-break counted as engaged (default 1). Legacy engagementBuffer
-%     (or reachBuffer) sets both sides when before/after are unset.
+%     engagement event counted as engaged (reach onset, interval beam-break,
+%     or semicircle TaskMatrix time). Legacy engagementBuffer (or reachBuffer)
+%     sets both sides when before/after are unset.
 %
 % Goal:
 %   Compare d2 across sessions grouped by task type. Reach/interval/semicircle:

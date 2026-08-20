@@ -21,8 +21,8 @@
 %   splitByEngagement  - If true (reach/interval/semicircle), also run engaged vs
 %                        non-engaged avalanche distributions. Each class uses its
 %                        own population cutoff (or per-tile when avWindow is set).
-%   engagementBufferBefore - Seconds before each reach/beam-break = engaged (default 1)
-%   engagementBufferAfter  - Seconds after each reach/beam-break = engaged (default 1)
+%   engagementBufferBefore - Seconds before each engagement event = engaged (default 1)
+%   engagementBufferAfter  - Seconds after each engagement event = engaged (default 1)
 %   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
 %   minNonEngagedWindow - Min gap without events (s) for non-engaged segments
 %   absorbSingleEvents - Merge isolated single events into non-engaged gaps
@@ -64,19 +64,19 @@ setup_criticality_manuscript_paths('session_avalanche_distributions');
 paths = get_paths();
 
 collectStart = 0;
-collectEnd = 10 * 60;
+collectEnd = 120 * 60;
 % collectEnd = [];
 avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
 windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
-saveFigure = true;
+saveFigure = false;
 
 % Optional engaged vs non-engaged (reach / interval / semicircle only)
-splitByEngagement = false;
-engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
-engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
+splitByEngagement = true;
+engagementBufferBefore = 3;  % s before each engagement event = engaged
+engagementBufferAfter = 1;   % s after each engagement event = engaged
 minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
 absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
 
@@ -100,7 +100,7 @@ splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 enableCircularPermutations = false;
-nShuffles = 5;
+nShuffles = 2;
 
 saveAnalysisResults = false;
 analysisResultsFile = '';  % default: dropPath/criticality_manuscript/session_avalanche_results_<session>.mat

@@ -18,10 +18,9 @@
 %                         class's pop activity (or per-tile when avWindow set).
 %   binSizeD2 / binSizePrg / binSizeAv - Spike bin width (s) for d2, PRG, and
 %                         avalanche analyses; overrides each pipeline default
-%   engagementBufferBefore - Seconds before each reach/beam-break counted as engaged
-%                            (reach: reachBufferBefore; interval: eventBufferBefore)
-%   engagementBufferAfter  - Seconds after each reach/beam-break counted as engaged
-%                            (reach: reachBufferAfter; interval: eventBufferAfter)
+%   engagementBufferBefore - Seconds before each engagement event counted as engaged
+%                            (reach onset, interval beam-break, or semicircle TaskMatrix time)
+%   engagementBufferAfter  - Seconds after each engagement event counted as engaged
 %   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
 %   minNonEngagedWindow - Min gap without events (s) for non-engaged avalanche
 %                        segments (default 30)
@@ -63,10 +62,11 @@
 %                        analyses (d2, AV including decades, PRG); make two
 %                        plots (engaged and non-engaged), each including
 %                        spontaneous alongside that class.
-%                        d2/PRG: split windows from full-session cache when
-%                        present (only event times needed). Avalanches: still
-%                        detected on engaged vs non-engaged segments (cannot
-%                        be split from a full-session fit).
+%                        d2/PRG: a window/block counts only if fully inside an
+%                        engaged or non-engaged segment (straddlers skipped);
+%                        split from full-session cache when present. Avalanches:
+%                        detected on engaged vs non-engaged segments (cannot be
+%                        split from a full-session fit).
 %                        Paired plots share d2-aligned y-limits for comparison.
 %                        Correlation matrix always uses full-session metrics.
 %                        See minTimeNonEngaged for blanking short non-engaged.
@@ -81,7 +81,7 @@
 sessionTypes = default_manuscript_session_types();
 sessionTypes = order_manuscript_session_types(sessionTypes);
 collectStart = [];
-collectEnd = 90*60;
+collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
 d2Window = 30;
 prgWindow = d2Window;
@@ -93,8 +93,8 @@ binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 
 % Engagement timing (reach + interval + semicircle); defaults match engagement module fill_*_defaults
-engagementBufferBefore = 3;  % s before each reach/beam-break = engaged
-engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
+engagementBufferBefore = 3;  % s before each engagement event = engaged
+engagementBufferAfter = 1;   % s after each engagement event = engaged
 minNonEngagedWindow = 30;   % min gap (s) for non-engaged avalanche segments
 absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
 minTimeNonEngaged = 180;      % min total non-engaged time (s) to plot; 0 = no filter
@@ -125,7 +125,7 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
@@ -2413,7 +2413,7 @@ semPlot = ySem;
 semPlot(~isfinite(semPlot)) = 0;
 h = errorbar(ax, xPos, yVals, semPlot, markerSpec, ...
   'Color', color, 'MarkerFaceColor', faceColor, ...
-  'MarkerSize', plotConfig.scatterMarkerSize / 4, ...
+  'MarkerSize', plotConfig.scatterMarkerSize / 5, ...
   'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize);
 end
 
@@ -3107,8 +3107,9 @@ for s = 1:numSessions
   [cachedPipelines, missingAnalyses] = try_load_engagement_pipeline_caches( ...
     sessionType, sessionName, subjectName, opts, analyses);
 
-  % Prefer full-session AR/PRG caches: engagement d2/PRG are window splits of
-  % those results. Avalanche class fits cannot be recovered from full-session AV.
+  % Prefer full-session AR/PRG caches: engagement d2/PRG are full-containment
+  % window splits of those results. Avalanche class fits cannot be recovered
+  % from full-session AV.
   cachedArResults = [];
   cachedPrgResults = [];
   if any(strcmpi(analyses, 'd2'))

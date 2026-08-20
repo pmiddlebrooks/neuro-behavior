@@ -17,8 +17,19 @@ function sessions = semicircle_session_list()
 
 sessions = [
     struct('subjectName', 'AS1', 'sessionName', 'AS1_0618_WellLearned')
+    struct('subjectName', 'AS1', 'sessionName', 'AS1_0622_WellLearned')
     struct('subjectName', 'AS1', 'sessionName', 'AS1_0623_TransitionAfterCompletedTrial_80')
     struct('subjectName', 'AS1', 'sessionName', 'AS1_0624_PoorlyLearned')
+    struct('subjectName', 'AS1', 'sessionName', 'AS1_0625_PoorlyLearned')
+    struct('subjectName', 'AS1', 'sessionName', 'AS1_0719_Learning')
+    ];
+sessions = [
+    struct('subjectName', 'AS1', 'sessionName', 'AS1_0618_WellLearned')
+    struct('subjectName', 'AS1', 'sessionName', 'AS1_0622_WellLearned')
+    struct('subjectName', 'AS1', 'sessionName', 'AS1_0623_TransitionAfterCompletedTrial_80')
+    struct('subjectName', 'AS1', 'sessionName', 'AS1_0624_PoorlyLearned')
+    struct('subjectName', 'AS1', 'sessionName', 'AS1_0625_PoorlyLearned')
+    struct('subjectName', 'AS1', 'sessionName', 'AS1_0719_Learning')
     ];
 
 end

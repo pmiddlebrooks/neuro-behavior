@@ -28,8 +28,10 @@
 %                        reach_task/data/WaveformDATA/*_Neural_WFs.mat
 %   splitByEngagement  - If true (reach/interval/semicircle), also run engaged vs
 %                        non-engaged kurtosis / D_JS via the engagement modules
-%   engagementBufferBefore - Seconds before each reach/beam-break = engaged (default 1)
-%   engagementBufferAfter  - Seconds after each reach/beam-break = engaged (default 1)
+%                        (PRG blocks must lie fully inside an engaged or
+%                        non-engaged segment; straddlers are skipped)
+%   engagementBufferBefore - Seconds before each engagement event = engaged (default 1)
+%   engagementBufferAfter  - Seconds after each engagement event = engaged (default 1)
 %   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
 %   minNonEngagedWindow - Min gap without events (s) for non-engaged segments
 %   absorbSingleEvents - Merge isolated single events into non-engaged gaps
@@ -64,8 +66,8 @@ widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 % Optional engaged vs non-engaged (reach / interval / semicircle only)
 splitByEngagement = false;
-engagementBufferBefore = 1;  % s before each reach/beam-break = engaged
-engagementBufferAfter = 1;   % s after each reach/beam-break = engaged
+engagementBufferBefore = 1;  % s before each engagement event = engaged
+engagementBufferAfter = 1;   % s after each engagement event = engaged
 minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
 absorbSingleEvents = true;   % merge isolated single events into non-engaged gaps
 

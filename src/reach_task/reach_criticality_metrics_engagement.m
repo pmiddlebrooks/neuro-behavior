@@ -12,15 +12,17 @@ function out = reach_criticality_metrics_engagement(sessionName, opts)
 %     Engagement:
 %       .reachBufferBefore   - Seconds before each reach treated as engaged (default 1).
 %       .reachBufferAfter    - Seconds after each reach treated as engaged (default 1).
-%                              d2/kurtosis: windows overlapping
-%                              [reach-before, reach+after] count as engaged even
-%                              without a reach onset inside. Avalanches: that
-%                              interval is excluded from non-engaged gaps.
+%                              Used to build continuous engaged / non-engaged
+%                              segments. d2 and kurtosis: a window/block counts
+%                              as engaged or non-engaged only if it lies fully
+%                              inside one segment (boundary-straddling windows
+%                              are skipped). Avalanches: that buffer interval
+%                              is excluded from non-engaged gaps.
 %       .reachBuffer         - Legacy symmetric alias; if before/after unset, sets both.
-%       .minNonEngagedWindow - Min gap without reaches (s) for non-engaged avalanche segments
+%       .minNonEngagedWindow - Min gap without reaches (s) for non-engaged segments
 %       .absorbSingleReaches - If true (default), isolated single reaches flanked by
 %                              qualifying non-engaged gaps are merged into non-engaged
-%                              time (avalanche segments and d2/kurtosis windows).
+%                              time (segments used by avalanches and d2).
 %     Shared analysis:
 %       .brainArea, .brainAreaCombinations, .dataSource, .saveFigure, .outputDir
 %       .makePlots - If false, skip all figures (batch mode; default true)
@@ -53,8 +55,9 @@ function out = reach_criticality_metrics_engagement(sessionName, opts)
 % Goal:
 %   Test whether criticality metrics differ with task engagement by separating
 %   time near reaches vs away from reaches (reachBufferBefore/After, default 1 s):
-%     d2 / kurtosis - windows overlapping any [reach-before, reach+after] = engaged
-%                     (isolated single reaches may be absorbed; see absorbSingleReaches)
+%     d2 / kurtosis - window/block fully inside an engaged or non-engaged
+%                     segment (straddling windows skipped); segments may absorb
+%                     isolated single reaches (absorbSingleReaches)
 %     avalanches    - continuous gaps >= minNonEngagedWindow (outside reach
 %                     buffers) = non-engaged; complement = engaged; pool
 %                     avalanches across segments of each class (+ full session)
@@ -217,10 +220,11 @@ if opts.makePlots
     collectStart, collectEnd, opts.minNonEngagedWindow, opts.reachBufferBefore, opts.reachBufferAfter, plotConfig);
 end
 
-%% d2: classify non-overlapping windows by reach buffer overlap
+%% d2: classify non-overlapping windows by full containment in engagement segments
 if ismember('d2', opts.analyses)
   fprintf('\n--- d2 ---\n');
-  fprintf('reachBuffer: %s (windows overlapping [reach-before, reach+after] = engaged)\n', ...
+  fprintf(['reachBuffer: %s; d2 windows count only if fully inside an ', ...
+    'engaged or non-engaged segment\n'], ...
     format_engagement_buffer_label(opts.reachBufferBefore, opts.reachBufferAfter));
   if isfield(opts, 'cachedArResults') && ar_cache_has_window_times(opts.cachedArResults)
     fprintf('Using full-session d2 cache (split windows by engagement).\n');
@@ -236,8 +240,8 @@ if ismember('d2', opts.analyses)
     error('No d2 results for brain area "%s".', opts.brainArea);
   end
 
-  d2Split = split_d2_by_reach_engagement(resultsD2, reachStartEngaged, collectStart, ...
-    opts.d2Window, opts.useLog10D2, opts.reachBufferBefore, opts.reachBufferAfter);
+  d2Split = split_d2_by_engagement_segments(resultsD2, engagedSegs, nonEngagedSegs, ...
+    collectStart, opts.d2Window, opts.useLog10D2);
   out.d2 = d2Split;
   out.arResultsD2 = resultsD2;
   out.durations.d2 = d2Split.durations;
@@ -280,10 +284,11 @@ if ismember('d2', opts.analyses)
   end
 end
 
-%% Kurtosis (PRG): classify non-overlapping blocks by reach buffer overlap
+%% Kurtosis (PRG): classify non-overlapping blocks by full containment in segments
 if ismember('kurtosis', opts.analyses)
   fprintf('\n--- Kurtosis (PRG) ---\n');
-  fprintf('reachBuffer: %s (blocks overlapping [reach-before, reach+after] = engaged)\n', ...
+  fprintf(['reachBuffer: %s; PRG blocks count only if fully inside an ', ...
+    'engaged or non-engaged segment\n'], ...
     format_engagement_buffer_label(opts.reachBufferBefore, opts.reachBufferAfter));
   prgConfig = build_prg_config(opts);
   if isfield(opts, 'cachedPrgResults') && prg_cache_has_window_times(opts.cachedPrgResults)
@@ -299,8 +304,8 @@ if ismember('kurtosis', opts.analyses)
     error('No PRG results for brain area "%s".', opts.brainArea);
   end
 
-  prgSplit = split_prg_by_reach_engagement(resultsPrg, reachStartEngaged, opts.prgWindow, ...
-    opts.reachBufferBefore, opts.reachBufferAfter);
+  prgSplit = split_prg_by_engagement_segments(resultsPrg, engagedSegs, nonEngagedSegs, ...
+    opts.prgWindow);
   out.kurtosis = prgSplit;
   out.durations.kurtosis = prgSplit.durations;
   print_engagement_durations('kurtosis', prgSplit.durations);
@@ -1115,8 +1120,8 @@ function summaryStats = build_engagement_metric_summary(d2Split, prgSplit, avByC
 % BUILD_ENGAGEMENT_METRIC_SUMMARY - Mean +/- SEM per engagement class
 %
 % Variables:
-%   d2Split     - Output of split_d2_by_reach_engagement, or []
-%   prgSplit    - Output of split_prg_by_reach_engagement, or []
+%   d2Split     - Output of split_d2_by_engagement_segments, or []
+%   prgSplit    - Output of split_prg_by_engagement_segments, or []
 %   avByClass   - Avalanche results by class (.total, .engaged, .nonEngaged), or []
 %   useLog10D2  - If true, d2 label uses log10(d2)
 %
@@ -1350,6 +1355,10 @@ if isfield(durations, 'totalSec')
     fprintf('  [%d segments]', durations.nNonEngagedSegments);
   end
   fprintf('\n');
+  if isfield(durations, 'nSkippedWindows') && durations.nSkippedWindows > 0
+    fprintf('  Skipped:     %8.1f s (%.2f min)  [%d windows straddling segments]\n', ...
+      durations.skippedSec, durations.skippedSec / 60, durations.nSkippedWindows);
+  end
 end
 end
 
@@ -1357,30 +1366,22 @@ end
 %% d2 split and plot
 %% -------------------------------------------------------------------------
 
-function d2Split = split_d2_by_reach_engagement(results, reachStart, collectStart, ...
-    d2Window, useLog10D2, bufferBefore, bufferAfter)
-% SPLIT_D2_BY_REACH_ENGAGEMENT - Partition window-wise d2 by reach engagement
+function d2Split = split_d2_by_engagement_segments(results, engagedSegs, nonEngagedSegs, ...
+    collectStart, d2Window, useLog10D2)
+% SPLIT_D2_BY_ENGAGEMENT_SEGMENTS - Partition window-wise d2 by full segment containment
 %
 % Variables:
-%   results       - Output of criticality_ar_analysis
-%   reachStart    - Reach onsets in collect window (absolute s)
-%   collectStart  - Collect window start (s); startS is relative to this
-%   d2Window      - Non-overlapping window length (s)
-%   useLog10D2    - If true, store log10(d2) for plotting
-%   bufferBefore  - Seconds before each reach that count as engaged (s)
-%   bufferAfter   - Seconds after each reach that count as engaged (s)
+%   results        - Output of criticality_ar_analysis
+%   engagedSegs    - Continuous engaged intervals (.start, .end)
+%   nonEngagedSegs - Continuous non-engaged intervals (.start, .end)
+%   collectStart   - Collect window start (s); startS is relative to this
+%   d2Window       - Non-overlapping window length (s)
+%   useLog10D2     - If true, store log10(d2) for plotting
 %
 % Goal:
-%   Windows overlapping any [reach - bufferBefore, reach + bufferAfter] are engaged
-%   (including windows with no reach onset but within the buffer). Others are
-%   non-engaged. Total uses all windows. Duration = nWindows * d2Window per class.
-
-if nargin < 6 || isempty(bufferBefore)
-  bufferBefore = 0;
-end
-if nargin < 7 || isempty(bufferAfter)
-  bufferAfter = bufferBefore;
-end
+%   A window counts as engaged or non-engaged only if it lies fully inside one
+%   of those segments. Windows that straddle a segment boundary are skipped for
+%   both classes. Total still uses all windows.
 
 classNames = engagement_class_names();
 d2Split = struct();
@@ -1396,6 +1397,7 @@ end
 
 nEngagedWindows = 0;
 nNonEngagedWindows = 0;
+nSkippedWindows = 0;
 nTotalWindows = 0;
 countedDurations = false;
 splitWinLen = d2Window;
@@ -1409,16 +1411,18 @@ for a = 1:numel(d2Split.areas)
   winLen = resolve_d2_split_window_length(results, a, d2Window);
   winStartAbs = collectStart + centerRel - winLen / 2;
   winEndAbs = collectStart + centerRel + winLen / 2;
-  engagedMask = window_overlaps_reach_buffer(winStartAbs, winEndAbs, reachStart, ...
-    bufferBefore, bufferAfter);
-  nonEngagedMask = ~engagedMask;
-  d2Split.windowMask{a} = struct('engaged', engagedMask, 'nonEngaged', nonEngagedMask);
+  engagedMask = window_fully_inside_segments(winStartAbs, winEndAbs, engagedSegs);
+  nonEngagedMask = window_fully_inside_segments(winStartAbs, winEndAbs, nonEngagedSegs);
+  skippedMask = ~(engagedMask | nonEngagedMask);
+  d2Split.windowMask{a} = struct( ...
+    'engaged', engagedMask, 'nonEngaged', nonEngagedMask, 'skipped', skippedMask);
 
   % Window grid is shared across areas; count session time once
   if ~countedDurations
     nTotalWindows = numel(engagedMask);
     nEngagedWindows = sum(engagedMask);
     nNonEngagedWindows = sum(nonEngagedMask);
+    nSkippedWindows = sum(skippedMask);
     splitWinLen = winLen;
     countedDurations = true;
   end
@@ -1449,17 +1453,35 @@ for a = 1:numel(d2Split.areas)
     end
   end
 
-  fprintf('  %s: total=%d, engaged=%d, non-engaged=%d finite d2 windows\n', ...
-    d2Split.areas{a}, numel(d2Split.d2{1}{a}), numel(d2Split.d2{2}{a}), numel(d2Split.d2{3}{a}));
+  fprintf(['  %s: total=%d, engaged=%d, non-engaged=%d, skipped=%d ', ...
+    'finite d2 windows\n'], ...
+    d2Split.areas{a}, numel(d2Split.d2{1}{a}), numel(d2Split.d2{2}{a}), ...
+    numel(d2Split.d2{3}{a}), sum(skippedMask));
 end
 
 d2Split.durations = struct( ...
   'totalSec', nTotalWindows * splitWinLen, ...
   'engagedSec', nEngagedWindows * splitWinLen, ...
   'nonEngagedSec', nNonEngagedWindows * splitWinLen, ...
+  'skippedSec', nSkippedWindows * splitWinLen, ...
   'nTotalWindows', nTotalWindows, ...
   'nEngagedWindows', nEngagedWindows, ...
-  'nNonEngagedWindows', nNonEngagedWindows);
+  'nNonEngagedWindows', nNonEngagedWindows, ...
+  'nSkippedWindows', nSkippedWindows);
+end
+
+function isInside = window_fully_inside_segments(winStartAbs, winEndAbs, segments)
+% WINDOW_FULLY_INSIDE_SEGMENTS - True if [winStart, winEnd] lies in one segment
+
+isInside = false(size(winStartAbs));
+if isempty(segments)
+  return;
+end
+segStarts = [segments.start];
+segEnds = [segments.end];
+for w = 1:numel(winStartAbs)
+  isInside(w) = any(winStartAbs(w) >= segStarts & winEndAbs(w) <= segEnds);
+end
 end
 
 function winLen = resolve_d2_split_window_length(results, areaIdx, fallbackWin)
@@ -1911,29 +1933,21 @@ end
 %% Kurtosis (PRG) split and plot
 %% -------------------------------------------------------------------------
 
-function prgSplit = split_prg_by_reach_engagement(results, reachStart, prgWindow, ...
-    bufferBefore, bufferAfter)
-% SPLIT_PRG_BY_REACH_ENGAGEMENT - Partition PRG windows by reach engagement
+function prgSplit = split_prg_by_engagement_segments(results, engagedSegs, nonEngagedSegs, ...
+    prgWindow)
+% SPLIT_PRG_BY_ENGAGEMENT_SEGMENTS - Partition PRG blocks by full segment containment
 %
 % Variables:
-%   results      - Output of criticality_prg_analysis
-%   reachStart   - Reach onsets (absolute s)
-%   prgWindow    - Non-overlapping block length (s)
-%   bufferBefore - Seconds before each reach that count as engaged (s)
-%   bufferAfter  - Seconds after each reach that count as engaged (s)
+%   results        - Output of criticality_prg_analysis
+%   engagedSegs    - Continuous engaged intervals (.start, .end)
+%   nonEngagedSegs - Continuous non-engaged intervals (.start, .end)
+%   prgWindow      - Non-overlapping block length (s)
 %
 % Goal:
-%   Blocks overlapping any [reach - bufferBefore, reach + bufferAfter] are engaged
-%   (including blocks with no reach onset but within the buffer). Duration =
-%   nWindows * prgWindow per class (all blocks, including CV-excluded); metric
-%   vectors use valid (non-excluded) windows only.
-
-if nargin < 4 || isempty(bufferBefore)
-  bufferBefore = 0;
-end
-if nargin < 5 || isempty(bufferAfter)
-  bufferAfter = bufferBefore;
-end
+%   A block counts as engaged or non-engaged only if it lies fully inside one
+%   of those segments. Boundary-straddling blocks are skipped for both classes.
+%   Duration uses all blocks (including CV-excluded); metric vectors use valid
+%   windows only.
 
 classNames = engagement_class_names();
 prgSplit = struct();
@@ -1941,6 +1955,7 @@ prgSplit.areas = normalize_results_area_list(results.areas);
 prgSplit.classNames = classNames;
 prgSplit.kappa = cell(1, numel(classNames));
 prgSplit.djs = cell(1, numel(classNames));
+prgSplit.windowMask = cell(1, numel(prgSplit.areas));
 for c = 1:numel(classNames)
   prgSplit.kappa{c} = cell(1, numel(prgSplit.areas));
   prgSplit.djs{c} = cell(1, numel(prgSplit.areas));
@@ -1948,6 +1963,7 @@ end
 
 nEngagedWindows = 0;
 nNonEngagedWindows = 0;
+nSkippedWindows = 0;
 nTotalWindows = 0;
 countedDurations = false;
 splitWinLen = prgWindow;
@@ -1959,15 +1975,18 @@ for a = 1:numel(prgSplit.areas)
   winLen = resolve_prg_split_window_length(results, prgWindow);
   winStartAbs = results.windowStartS{a}(:);
   winEndAbs = winStartAbs + winLen;
-  engagedMask = window_overlaps_reach_buffer(winStartAbs, winEndAbs, reachStart, ...
-    bufferBefore, bufferAfter);
-  nonEngagedMask = ~engagedMask;
+  engagedMask = window_fully_inside_segments(winStartAbs, winEndAbs, engagedSegs);
+  nonEngagedMask = window_fully_inside_segments(winStartAbs, winEndAbs, nonEngagedSegs);
+  skippedMask = ~(engagedMask | nonEngagedMask);
+  prgSplit.windowMask{a} = struct( ...
+    'engaged', engagedMask, 'nonEngaged', nonEngagedMask, 'skipped', skippedMask);
 
   % Block grid is shared across areas; count session time once
   if ~countedDurations
     nTotalWindows = numel(engagedMask);
     nEngagedWindows = sum(engagedMask);
     nNonEngagedWindows = sum(nonEngagedMask);
+    nSkippedWindows = sum(skippedMask);
     splitWinLen = winLen;
     countedDurations = true;
   end
@@ -1992,18 +2011,21 @@ for a = 1:numel(prgSplit.areas)
     end
   end
 
-  fprintf('  %s: total=%d, engaged=%d, non-engaged=%d valid kappa windows\n', ...
+  fprintf(['  %s: total=%d, engaged=%d, non-engaged=%d, skipped=%d ', ...
+    'valid kappa windows\n'], ...
     prgSplit.areas{a}, numel(prgSplit.kappa{1}{a}), numel(prgSplit.kappa{2}{a}), ...
-    numel(prgSplit.kappa{3}{a}));
+    numel(prgSplit.kappa{3}{a}), sum(skippedMask & validMask));
 end
 
 prgSplit.durations = struct( ...
   'totalSec', nTotalWindows * splitWinLen, ...
   'engagedSec', nEngagedWindows * splitWinLen, ...
   'nonEngagedSec', nNonEngagedWindows * splitWinLen, ...
+  'skippedSec', nSkippedWindows * splitWinLen, ...
   'nTotalWindows', nTotalWindows, ...
   'nEngagedWindows', nEngagedWindows, ...
-  'nNonEngagedWindows', nNonEngagedWindows);
+  'nNonEngagedWindows', nNonEngagedWindows, ...
+  'nSkippedWindows', nSkippedWindows);
 end
 
 function winLen = resolve_prg_split_window_length(results, fallbackWin)

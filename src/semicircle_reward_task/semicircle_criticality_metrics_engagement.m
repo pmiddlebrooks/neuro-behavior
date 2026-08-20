@@ -9,8 +9,10 @@ function out = semicircle_criticality_metrics_engagement(subjectName, sessionNam
 %
 % Goal:
 %   Same engagement analyses as the interval-timing module, but engagement
-%   events are rewarded / unrewarded choice-port beam breaks from TaskMatrix
-%   (outcomes 1 and 0). Failed trials (outcome -1) are not engagement events.
+%   events are TaskMatrix timestamps: trialStartTime, choicePort poke time,
+%   leave-home first, enter-home for trial start, and leave-home last.
+%   Failed trials still count when those times are finite. Isolated single
+%   events may be absorbed into non-engaged gaps (absorbSingleEvents).
 %
 % Returns:
 %   With no inputs: default options struct.

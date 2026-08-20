@@ -4,8 +4,10 @@
 % Windowed d2 across task sessions (interval, semicircle, reach — not
 % spontaneous). For each non-overlapping d2 window, records (1) cumulative
 % rewards through the window end (satiation proxy) and (2) the fraction of
-% the window overlapping continuous engaged segments (same definition as
-% interval / semicircle / reach engagement analyses).
+% the window overlapping continuous engaged segments. Marker fill (engaged)
+% uses the same full-containment rule as engagement d2/PRG: the window must
+% lie fully inside an engaged segment (straddlers are not marked engaged).
+% Segment definition matches interval / semicircle / reach engagement analyses.
 %
 % Variables (configure in this section):
 %   sessionTypes   - Task types; spontaneous is dropped if present
@@ -13,7 +15,8 @@
 %   d2Window       - Non-overlapping window length (s)
 %   binSize        - Spike bin width (s) for d2
 %   brainArea, brainAreaCombinations - Area selection
-%   splitByEngagement - If true, marker fill = engaged vs non-engaged windows
+%   splitByEngagement - If true, marker fill = windows fully inside engaged
+%                       segments (straddlers / non-engaged stay open)
 %   engagementBufferBefore / After - Seconds around each event = engaged
 %   minNonEngagedWindow, absorbSingleEvents - Engaged-segment definition
 %                        (gaps >= minNonEngagedWindow without events are non-engaged)
@@ -316,7 +319,9 @@ function [eventTimes, rewardTimes] = load_task_event_and_reward_times( ...
 % LOAD_TASK_EVENT_AND_REWARD_TIMES - Engagement events and rewarded outcomes
 %
 % Goal:
-%   Events = all task responses used for engagement (reaches or choice pokes).
+%   Events = all task responses used for engagement (reaches, interval beam
+%   breaks, or semicircle TaskMatrix times: trial start, choice poke,
+%   leave/enter home).
 %   Rewards = successful / rewarded outcomes only (satiation count).
 
 sessionType = lower(strtrim(char(sessionType)));
@@ -349,6 +354,7 @@ function rows = windows_for_session(arResults, winLenSec, eventTimes, rewardTime
 %
 % startS from criticality_ar_analysis is absolute window-center time (s).
 % engagementFrac = fraction of window overlapping continuous engaged segments.
+% isEngaged = window fully inside an engaged segment (same as engagement d2).
 
 rows = struct('sessionIdx', {}, 'sessionType', {}, 'sessionName', {}, ...
   'subjectName', {}, 'd2', {}, 'nRewards', {}, 'engagementFrac', {}, 'isEngaged', {}, ...
@@ -372,7 +378,7 @@ winEndAbs = centerAbs + winLenSec / 2;
   collectStart, collectEnd, eventTimes, minNonEngagedWindow, bufferBefore, bufferAfter, ...
   absorbSingleEvents);
 engFrac = window_segment_overlap_fraction(winStartAbs, winEndAbs, engagedSegs);
-isEngaged = window_center_in_segments(centerAbs, engagedSegs);
+isEngaged = window_fully_inside_segments(winStartAbs, winEndAbs, engagedSegs);
 
 rewardTimes = sort(rewardTimes(:));
 for w = 1:nWin
@@ -415,15 +421,17 @@ for w = 1:numel(winStartAbs)
 end
 end
 
-function isEngaged = window_center_in_segments(centerAbs, segs)
-% WINDOW_CENTER_IN_SEGMENTS - True if window center falls in any segment
+function isInside = window_fully_inside_segments(winStartAbs, winEndAbs, segments)
+% WINDOW_FULLY_INSIDE_SEGMENTS - True if [winStart, winEnd] lies in one segment
 
-isEngaged = false(size(centerAbs));
-if isempty(segs)
+isInside = false(size(winStartAbs));
+if isempty(segments)
   return;
 end
-for w = 1:numel(centerAbs)
-  isEngaged(w) = any(centerAbs(w) >= [segs.start] & centerAbs(w) <= [segs.end]);
+segStarts = [segments.start];
+segEnds = [segments.end];
+for w = 1:numel(winStartAbs)
+  isInside(w) = any(winStartAbs(w) >= segStarts & winEndAbs(w) <= segEnds);
 end
 end
 

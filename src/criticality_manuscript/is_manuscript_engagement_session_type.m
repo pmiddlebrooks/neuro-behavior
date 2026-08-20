@@ -6,7 +6,8 @@ function tf = is_manuscript_engagement_session_type(sessionType)
 %
 % Goal:
 %   Centralize which tasks have engagement modules. Reach uses reach onsets;
-%   interval and semicircle use reward/error beam breaks.
+%   interval uses reward/error beam breaks; semicircle uses TaskMatrix times
+%   (trial start, choice poke, leave/enter home).
 %
 % Returns:
 %   tf - True if interval, reach, or semicircle
