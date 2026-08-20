@@ -80,7 +80,7 @@
 %% Configuration
 sessionTypes = default_manuscript_session_types();
 sessionTypes = order_manuscript_session_types(sessionTypes);
-collectStart = 10;
+collectStart = [];
 collectEnd = 90*60;
 % collectEnd = [];  % [] = full session
 d2Window = 30;
