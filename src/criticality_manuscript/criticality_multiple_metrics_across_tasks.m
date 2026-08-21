@@ -83,7 +83,7 @@ sessionTypes = order_manuscript_session_types(sessionTypes);
 collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
-d2Window = 30;
+d2Window = 45;
 prgWindow = d2Window;
 avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
