@@ -34,7 +34,7 @@ function out = interval_criticality_metrics_engagement(subjectName, sessionName,
 %       .plotConfig - axisLabelFontSize, tickLabelFontSize, axesLineWidth, ...
 %       .useSubsampling, .nSubsamples, .nNeuronsSubsample, .minNeuronsMultiple
 %     d2:
-%       .d2Window, .binSizeD2, .useLog10D2, .nShufflesD2
+%       .d2Window, .binSizeD2, .useLog10D2, .enablePermutations, .nShufflesD2
 %       .sessionInterval - Target interval duration (s; default 5)
 %       .rewardAttemptBeforeSec - Exclude error trials with poke time before
 %                                 sessionInterval - this value (default 1)
@@ -566,6 +566,10 @@ end
 if ~isfield(opts, 'nShufflesD2') || isempty(opts.nShufflesD2)
   opts.nShufflesD2 = 50;
 end
+if ~isfield(opts, 'enablePermutations') || isempty(opts.enablePermutations)
+  opts.enablePermutations = false;
+end
+opts.enablePermutations = logical(opts.enablePermutations);
 if ~isfield(opts, 'sessionInterval') || isempty(opts.sessionInterval)
   opts.sessionInterval = 5;
 end
@@ -680,9 +684,9 @@ arConfig.analyzeMrBr = false;
 arConfig.pcaFlag = 0;
 arConfig.pcaFirstFlag = 1;
 arConfig.nDim = 4;
-arConfig.enablePermutations = false;
+arConfig.enablePermutations = logical(opts.enablePermutations);
 arConfig.nShuffles = opts.nShufflesD2;
-arConfig.normalizeD2 = true;
+arConfig.normalizeD2 = arConfig.enablePermutations;
 arConfig.useLog10D2 = opts.useLog10D2;
 arConfig.makePlots = false;
 arConfig.saveData = false;

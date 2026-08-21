@@ -7,10 +7,10 @@ function brainAreaDepths = brain_area_depths(sessionType, subjectName, sessionNa
 %   sessionName - Session folder under subject (e.g. 'ag112321_1')
 %
 % Goal:
-%   Load cluster_info.tsv, plot a jittered scatter of unit depths, overlay
-%   default area boundaries from load_data.m, then prompt per area to accept
-%   or edit depth ranges. Save results to brain_area_depths.mat in the
-%   session folder.
+%   Load cluster_info.tsv, plot a jittered scatter of good / mua / real unit
+%   depths (noise excluded), overlay default area boundaries from load_data.m,
+%   then prompt per area to accept or edit depth ranges. Save results to
+%   brain_area_depths.mat in the session folder.
 %
 % Usage (function):
 %   brainAreaDepths = brain_area_depths('spontaneous', 'ag', 'ag112321_1');
@@ -29,6 +29,8 @@ end
 paths = get_paths;
 sessionFolder = get_cluster_session_folder(sessionType, paths, subjectName, sessionName);
 ci = load_cluster_info(sessionFolder);
+nUnitsAll = height(ci);
+ci = ci(quality_unit_mask(ci), :);
 [spikeTimes, spikeClusters] = load_session_spike_trains(sessionFolder);
 ci.firingRateHz = compute_unit_firing_rates(ci, spikeTimes, spikeClusters);
 
@@ -44,7 +46,7 @@ draw_area_border_lines(depthRanges);
 
 fprintf('\nSession: %s / %s (%s)\n', subjectName, sessionName, sessionType);
 fprintf('Folder: %s\n', sessionFolder);
-fprintf('Units in cluster_info: %d\n\n', height(ci));
+fprintf('Units plotted (good / mua / real): %d / %d in cluster_info\n\n', height(ci), nUnitsAll);
 
 for iArea = 1:numel(areaNames)
     areaName = areaNames{iArea};
@@ -169,6 +171,36 @@ spikeTimes = double(readNPY(spikeTimesPath)) / opts.fsSpike;
 spikeClusters = readNPY(spikeClustersPath);
 end
 
+function keepMask = quality_unit_mask(ci)
+% QUALITY_UNIT_MASK - Keep good, mua, or real units (exclude noise)
+%
+% Variables:
+%   ci - cluster_info table
+%
+% Goal:
+%   Return a logical mask for units labeled good or mua (group) or real
+%   (rf_label). Noise and unlabeled units are excluded.
+
+nUnits = height(ci);
+keepMask = false(nUnits, 1);
+varNames = ci.Properties.VariableNames;
+
+if ismember('group', varNames)
+    groupLabel = strtrim(string(ci.group));
+    keepMask = keepMask | groupLabel == "good" | groupLabel == "mua";
+end
+
+if ismember('rf_label', varNames)
+    rfLabel = strtrim(string(ci.rf_label));
+    keepMask = keepMask | rfLabel == "real";
+end
+
+if ~ismember('group', varNames) && ~ismember('rf_label', varNames)
+    warning('cluster_info has no group or rf_label column; plotting all units.');
+    keepMask = true(nUnits, 1);
+end
+end
+
 function clusterIds = get_cluster_ids(ci)
 % GET_CLUSTER_IDS - Unit cluster ids from cluster_info table
 %
@@ -255,8 +287,8 @@ function figHandle = plot_unit_depths(ci, areaNames, depthRanges, sessionType, s
 %   figHandle    - optional existing figure handle
 %
 % Goal:
-%   Plot all units in one jittered vertical column vs depth; marker size
-%   is proportional to ci.firingRateHz when present.
+%   Plot good / mua / real units in one jittered vertical column vs depth;
+%   marker size is proportional to ci.firingRateHz when present.
 
 if nargin < 7 || isempty(figHandle) || ~isvalid(figHandle)
     figHandle = figure('Color', 'w', 'Name', 'Brain area depths');

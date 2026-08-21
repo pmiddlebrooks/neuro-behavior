@@ -31,7 +31,7 @@ function out = reach_criticality_metrics_engagement(sessionName, opts)
 %       .useSubsampling - If true, metrics = mean across neuron subsamples
 %       .nSubsamples, .nNeuronsSubsample, .minNeuronsMultiple - subsampling settings
 %     d2:
-%       .d2Window, .binSizeD2, .useLog10D2, .nShufflesD2
+%       .d2Window, .binSizeD2, .useLog10D2, .enablePermutations, .nShufflesD2
 %       .runD2AccuracyCorrelation - If true (default), correlate d2 with reach
 %                                   accuracy across total and engaged windows
 %       .runD2ReachRateCorrelation - If true (default), correlate d2 with reach
@@ -532,6 +532,10 @@ end
 if ~isfield(opts, 'nShufflesD2') || isempty(opts.nShufflesD2)
   opts.nShufflesD2 = 50;
 end
+if ~isfield(opts, 'enablePermutations') || isempty(opts.enablePermutations)
+  opts.enablePermutations = true;
+end
+opts.enablePermutations = logical(opts.enablePermutations);
 if ~isfield(opts, 'runD2AccuracyCorrelation') || isempty(opts.runD2AccuracyCorrelation)
   opts.runD2AccuracyCorrelation = true;
 end
@@ -656,9 +660,9 @@ arConfig.analyzeMrBr = false;
 arConfig.pcaFlag = 0;
 arConfig.pcaFirstFlag = 1;
 arConfig.nDim = 4;
-arConfig.enablePermutations = true;
+arConfig.enablePermutations = logical(opts.enablePermutations);
 arConfig.nShuffles = opts.nShufflesD2;
-arConfig.normalizeD2 = true;
+arConfig.normalizeD2 = arConfig.enablePermutations;
 arConfig.useLog10D2 = opts.useLog10D2;
 arConfig.makePlots = false;
 arConfig.saveData = false;

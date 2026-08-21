@@ -3,7 +3,7 @@
 %
 % For one session, runs the same AR/d2 pipeline as criticality_ar_across_tasks.m
 % (non-overlapping windows) and plots overlapping probability densities of
-% window-wise d2 for real vs shuffled data.
+% window-wise d2 (and shuffled d2 when enablePermutations).
 %
 % Variables (configure in this section):
 %   sessionType      - 'spontaneous', 'interval', 'reach', 'semicircle', 'schall'
@@ -21,8 +21,9 @@
 %   useLog10D2       - If true, plot log10(d2) and log10(shuffled d2)
 %   useSubsampling   - If true, d2 per window = mean across neuron subsamples
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling (run_criticality_ar.m)
-%   nPermutations    - Number of circular permutations per window for shuffled d2
-%   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled)
+%   enablePermutations - If false, observed d2 only (no circular shuffles; faster)
+%   nPermutations    - Circular permutations per window when enablePermutations
+%   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled if on)
 %   plotD2Timeline   - If true, plot mean pop per d2 window, d2, and ethogram vs time
 %                      Semicircle ethogram: TaskMatrix outcome lines + leave-home/poke/end fills;
 %                      engagement fills when splitByEngagement
@@ -54,8 +55,8 @@
 %   absorbSingleEvents - Merge isolated single events into non-engaged gaps
 %
 % Goal:
-%   Visualize real d2 vs shuffled d2 distributions for one session across
-%   windows, where shuffled values are the mean across permutations per window.
+%   Visualize window-wise d2 distributions for one session. When
+%   enablePermutations, overlay shuffled d2 (mean across permutations per window).
 
 %% Configuration
 % Prefer session identity already set in the workspace (e.g. scratch.m batch).
@@ -84,7 +85,8 @@ useSubsampling = true;
 nSubsamples = 25;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
-nPermutations = 2;  % circular shuffles per window for shuffled d2 distribution
+enablePermutations = true;  % if true, circular shuffles per window for shuffled d2
+nPermutations = 2;  % used only when enablePermutations
 plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
@@ -122,9 +124,9 @@ analysisConfig.analyzeMrBr = false;
 analysisConfig.pcaFlag = 0;
 analysisConfig.pcaFirstFlag = 1;
 analysisConfig.nDim = 4;
-analysisConfig.enablePermutations = nPermutations > 0;
+analysisConfig.enablePermutations = enablePermutations;
 analysisConfig.nShuffles = nPermutations;
-analysisConfig.normalizeD2 = true;
+analysisConfig.normalizeD2 = enablePermutations;
 analysisConfig.useLog10D2 = useLog10D2;
 analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
@@ -147,8 +149,13 @@ d2WindowAlign = normalize_d2_window_align(d2WindowAlign);
 
 fprintf('\n=== Session d2 Distributions ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
-fprintf('d2 windows: %.1f s (%s); binSize: %.3f s; nPermutations: %d\n', ...
-    d2Window, d2WindowAlign, binSize, nPermutations);
+fprintf('d2 windows: %.1f s (%s); binSize: %.3f s\n', ...
+    d2Window, d2WindowAlign, binSize);
+if enablePermutations
+    fprintf('Circular permutations: %d shuffles per window\n', nPermutations);
+else
+    fprintf('Circular permutations: off\n');
+end
 fprintf('useLog10D2: %d\n', useLog10D2);
 fprintf('splitByEngagement: %d\n', splitByEngagement);
 if splitByEngagement
@@ -238,8 +245,8 @@ for iCellRun = 1:numel(cellTypesToRun)
     % Build distributions and plot
     plotData = build_d2_distribution_data(results, useLog10D2);
     if isempty(plotData.areas)
-        error(['No valid d2 distribution data found (%s). Check d2 values and shuffled ' ...
-            'permutation outputs for this session.'], cell_type_label(cellType));
+        error('No valid d2 distribution data found (%s). Check d2 values for this session.', ...
+            cell_type_label(cellType));
     end
 
     fig = plot_d2_distributions(plotData, sessionType, sessionName, d2Window, collectStart, collectEnd, useLog10D2, plotConfig);
@@ -264,7 +271,7 @@ for iCellRun = 1:numel(cellTypesToRun)
         fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
     end
 
-    % d2 vs mean population activity (real and shuffled mean per window)
+    % d2 vs mean population activity (shuffled mean per window if permutations on)
     if plotD2PopActivity
         if splitExcitatoryInhibitory
             eiPopActivityResults{iCellRun} = struct('cellType', cellType, 'results', results);
@@ -408,6 +415,11 @@ fprintf('engagementBuffer: before=%.3g s, after=%.3g s; minNonEngagedWindow=%.1f
     engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow);
 fprintf('minTimeNonEngaged: %.1f s (blank non-engaged below this; 0 = off)\n', ...
     minTimeNonEngaged);
+if isfield(analysisConfig, 'enablePermutations') && analysisConfig.enablePermutations
+    fprintf('Circular permutations: %d shuffles per window\n', analysisConfig.nShuffles);
+else
+    fprintf('Circular permutations: off\n');
+end
 
 if strcmpi(sessionType, 'reach')
     engOpts = reach_criticality_metrics_engagement();
@@ -431,7 +443,9 @@ engOpts.saveFigure = false;
 engOpts.plotConfig = plotConfig;
 engOpts.d2Window = d2Window;
 engOpts.useLog10D2 = useLog10D2;
-if analysisConfig.enablePermutations
+engOpts.enablePermutations = isfield(analysisConfig, 'enablePermutations') ...
+    && logical(analysisConfig.enablePermutations);
+if engOpts.enablePermutations
     engOpts.nShufflesD2 = max(1, analysisConfig.nShuffles);
 else
     engOpts.nShufflesD2 = 1;
@@ -765,7 +779,7 @@ function plotData = build_d2_distribution_data(results, useLog10D2)
 % Goal:
 %   Build per-area vectors for overlapping histogram/PDF plots:
 %   - realD2 values across windows
-%   - shuffledMeanD2 values where each element is mean across permutations for one window
+%   - shuffledMeanD2 values (empty when permutations are off)
 
 plotData = struct();
 plotData.areas = {};
@@ -796,7 +810,7 @@ end
 end
 
 function fig = plot_d2_distributions(plotData, sessionType, sessionName, d2Window, collectStart, collectEnd, useLog10D2, plotConfig)
-% PLOT_D2_DISTRIBUTIONS - Overlapping PDFs of real d2 and shuffled mean d2
+% PLOT_D2_DISTRIBUTIONS - Overlapping PDFs of real d2 (and shuffled mean if present)
 %
 % Variables:
 %   plotData - Struct from build_d2_distribution_data
@@ -804,6 +818,7 @@ function fig = plot_d2_distributions(plotData, sessionType, sessionName, d2Windo
 %
 % Goal:
 %   Plot one tile per area, with shared x-limits and identical bin edges.
+%   Shuffled overlay is omitted when shuffledMeanD2 is empty.
 
 if nargin < 8 || isempty(plotConfig)
     plotConfig = fill_manuscript_plot_config();
@@ -841,9 +856,22 @@ for a = 1:numAreas
         plotData.areas{a}, labelInterpreter);
 end
 
+hasShuffle = false;
+for a = 1:numAreas
+    if has_shuffled_d2_values(plotData.shuffledMeanD2{a})
+        hasShuffle = true;
+        break;
+    end
+end
+if hasShuffle
+    distTag = 'real vs shuffled mean per window';
+else
+    distTag = 'real d2 per window';
+end
 sgtitle(tileLayout, sprintf( ...
-    'Distribution of %s | real vs shuffled mean per window | %s | %.0fs windows%s [%.0f-%.0f s]', ...
-    xLabelText, sessionType, d2Window, make_title_suffix(sessionName), collectStart, collectEnd), ...
+    'Distribution of %s | %s | %s | %.0fs windows%s [%.0f-%.0f s]', ...
+    xLabelText, distTag, sessionType, d2Window, make_title_suffix(sessionName), ...
+    collectStart, collectEnd), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
@@ -878,7 +906,7 @@ label = matlab.lang.makeValidName(label);
 end
 
 function fig = plot_d2_vs_popactivity(results, useLog10D2, d2Window, plotConfig)
-% PLOT_D2_VS_POPACTIVITY - Scatter d2 and shuffled mean d2 vs pop activity per window
+% PLOT_D2_VS_POPACTIVITY - Scatter d2 (and shuffled mean if present) vs pop activity
 
 if nargin < 3 || isempty(d2Window)
     d2Window = results.params.slidingWindowSize;
@@ -1018,17 +1046,19 @@ scatter_manuscript_open(ax, popVec(validMask), d2Vec(validMask), plotConfig, ...
 add_manuscript_scatter_trendline(ax, popVec(validMask), d2Vec(validMask), plotConfig);
 
 shufVec = get_shuffled_mean_d2_per_window(results, areaIdx, useLog10D2);
-if ~isempty(shufVec)
+hasShuffle = false;
+if has_shuffled_d2_values(shufVec)
     shufVec = shufVec(1:numel(d2Vec));
     shufMask = validMask & isfinite(shufVec);
     if any(shufMask)
         scatter_manuscript_open(ax, popVec(shufMask), shufVec(shufMask), plotConfig, ...
             plotColors.shuffled, 'Shuffled mean');
+        hasShuffle = true;
     end
 end
 
 rData = pearson_r(popVec(validMask), d2Vec(validMask));
-if ~isempty(shufVec)
+if hasShuffle
     shufMask = validMask & isfinite(shufVec);
     if any(shufMask)
         rShuf = pearson_r(popVec(shufMask), shufVec(shufMask));
@@ -1040,9 +1070,13 @@ yLabelText = d2YLabel;
 if ~showYLabel
     yLabelText = '';
 end
+if hasShuffle
+    titleStr = sprintf('%s | r_{data}=%.3f, r_{shuf}=%.3f, n=%d', panelTitle, rData, rShuf, nValid);
+else
+    titleStr = sprintf('%s | r_{data}=%.3f, n=%d', panelTitle, rData, nValid);
+end
 apply_manuscript_axes_style(ax, plotConfig, 'Mean pop activity (spikes/bin)', yLabelText, ...
-    sprintf('%s | r_{data}=%.3f, r_{shuf}=%.3f, n=%d', panelTitle, rData, rShuf, nValid), ...
-    labelInterpreter);
+    titleStr, labelInterpreter);
 legend(ax, 'Location', 'best', 'FontSize', plotConfig.legendFontSize);
 grid(ax, 'on');
 hold(ax, 'off');
@@ -1108,14 +1142,21 @@ for a = 1:numel(results.areas)
     end
     rData = pearson_r(popVec(validMask), d2Vec(validMask));
     rShuf = nan;
-    if ~isempty(shufVec)
+    hasShuffle = false;
+    if has_shuffled_d2_values(shufVec)
         shufMask = validMask & isfinite(shufVec);
         if any(shufMask)
             rShuf = pearson_r(popVec(shufMask), shufVec(shufMask));
+            hasShuffle = true;
         end
     end
-    fprintf('  %s: r(data)=%.3f, r(shuffled)=%.3f, n=%d\n', ...
-        results.areas{a}, rData, rShuf, sum(validMask));
+    if hasShuffle
+        fprintf('  %s: r(data)=%.3f, r(shuffled)=%.3f, n=%d\n', ...
+            results.areas{a}, rData, rShuf, sum(validMask));
+    else
+        fprintf('  %s: r(data)=%.3f, n=%d\n', ...
+            results.areas{a}, rData, sum(validMask));
+    end
 end
 end
 
@@ -1159,6 +1200,12 @@ function shufVec = get_shuffled_mean_d2_per_window(results, areaIdx, useLog10D2)
 % GET_SHUFFLED_MEAN_D2_PER_WINDOW - Mean shuffled d2 per window (subsampling-aware)
 
 shufVec = get_per_window_shuffle_mean_d2(results, areaIdx, useLog10D2);
+end
+
+function tf = has_shuffled_d2_values(shufVec)
+% HAS_SHUFFLED_D2_VALUES - True if shuffled d2 has any finite values
+
+tf = ~isempty(shufVec) && any(isfinite(shufVec(:)));
 end
 
 function rVal = pearson_r(x, y)
@@ -1319,7 +1366,7 @@ for a = 1:numAreas
             'MarkerFaceColor', plotColors.data, 'MarkerSize', 5, ...
             'LineWidth', plotConfig.axesLineWidth, 'DisplayName', 'Data');
         shufVec = get_shuffled_mean_d2_per_window(results, a, useLog10D2);
-        if ~isempty(shufVec)
+        if has_shuffled_d2_values(shufVec)
             shufVec = shufVec(1:nPlot);
             shufMask = isfinite(shufVec) & isfinite(tD2);
             if any(shufMask)
