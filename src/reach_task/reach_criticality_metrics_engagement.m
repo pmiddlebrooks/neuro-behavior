@@ -657,9 +657,10 @@ arConfig.binSize = opts.binSizeD2;
 arConfig.useOptimalBinWindowFunction = false;
 arConfig.analyzeD2 = true;
 arConfig.analyzeMrBr = false;
-arConfig.pcaFlag = 0;
-arConfig.pcaFirstFlag = 1;
-arConfig.nDim = 4;
+pcaOpts = resolve_opts_pca_settings(opts);
+arConfig.pcaFlag = pcaOpts.pcaFlag;
+arConfig.pcaFirstFlag = pcaOpts.pcaFirstFlag;
+arConfig.nDim = pcaOpts.nDim;
 arConfig.enablePermutations = logical(opts.enablePermutations);
 arConfig.nShuffles = opts.nShufflesD2;
 arConfig.normalizeD2 = arConfig.enablePermutations;
@@ -727,8 +728,23 @@ avConfig.nSubsamples = opts.nSubsamples;
 avConfig.nNeuronsSubsample = opts.nNeuronsSubsample;
 avConfig.minNeuronsMultiple = opts.minNeuronsMultiple;
 avConfig.pcaFlag = 0;
+if isfield(opts, 'pcaFlag') && ~isempty(opts.pcaFlag)
+  avConfig.pcaFlag = opts.pcaFlag;
+end
+avConfig.pcaFirstFlag = 1;
+if isfield(opts, 'pcaFirstFlag') && ~isempty(opts.pcaFirstFlag)
+  avConfig.pcaFirstFlag = opts.pcaFirstFlag;
+end
+avConfig.nDim = 5;
+if isfield(opts, 'nDim') && ~isempty(opts.nDim)
+  avConfig.nDim = opts.nDim;
+end
 avConfig.gofThreshold = opts.gofThreshold;
 avConfig.powerLawFitMethod = opts.powerLawFitMethod;
+avConfig.compareTailModels = true;
+if isfield(opts, 'compareTailModels') && ~isempty(opts.compareTailModels)
+  avConfig.compareTailModels = opts.compareTailModels;
+end
 avConfig.runClausetPlpva = opts.runClausetPlpva;
 avConfig.clausetPlfitPath = clausetPlfitPath;
 avConfig.plfit2023Path = plfit2023Path;

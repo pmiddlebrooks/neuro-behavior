@@ -233,6 +233,8 @@ analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 analysisConfig.pcaFlag = 0;
+analysisConfig.pcaFirstFlag = 1;
+analysisConfig.nDim = 5;
 analysisConfig.gofThreshold = gofThreshold;
 analysisConfig.powerLawFitMethod = powerLawFitMethod;
 analysisConfig.runClausetPlpva = runClausetPlpva;
@@ -312,6 +314,7 @@ avData.binSize = binSize;
 
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
   neuronIds, timeRange, binSize);
+aDataMat = apply_config_pca_reconstruction(aDataMat, analysisConfig);
 
 [sizes, durations, hasAvalanches] = compute_avalanche_sizes_durations_from_binned( ...
   aDataMat, analysisConfig);

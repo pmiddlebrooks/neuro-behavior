@@ -12,10 +12,15 @@ function metrics = avalanche_power_law_metrics(sizes, durs, config)
 % Returns:
 %   metrics - Struct with tau, alpha, decades, minavS, maxavS, minavD, maxavD,
 %             paramSD (crackling 1/σνz from WLS ⟨S⟩~T^γ over the α duration
-%             power-law range [minavD, maxavD]; see size_given_duration)
+%             power-law range [minavD, maxavD]; see size_given_duration),
+%             sizeFit, durFit (full fit structs, including tailComparison)
 
 metrics = struct('tau', nan, 'alpha', nan, 'decades', nan, ...
-  'minavS', nan, 'maxavS', nan, 'minavD', nan, 'maxavD', nan, 'paramSD', nan);
+  'minavS', nan, 'maxavS', nan, 'minavD', nan, 'maxavD', nan, 'paramSD', nan, ...
+  'sizeFit', struct(), 'durFit', struct(), ...
+  'sizeDecision', '', 'durDecision', '', ...
+  'sizeVuongRExp', nan, 'sizeVuongPExp', nan, ...
+  'durVuongRExp', nan, 'durVuongPExp', nan);
 
 sizeFit = fit_avalanche_power_law(sizes, config);
 durFit = fit_avalanche_power_law(durs, config);
@@ -27,6 +32,12 @@ metrics.minavS = sizeFit.fitMin;
 metrics.maxavS = sizeFit.fitMax;
 metrics.minavD = durFit.fitMin;
 metrics.maxavD = durFit.fitMax;
+metrics.sizeFit = sizeFit;
+metrics.durFit = durFit;
+metrics.sizeDecision = get_tail_decision(sizeFit);
+metrics.durDecision = get_tail_decision(durFit);
+[metrics.sizeVuongRExp, metrics.sizeVuongPExp] = get_vuong_vs_exp(sizeFit);
+[metrics.durVuongRExp, metrics.durVuongPExp] = get_vuong_vs_exp(durFit);
 
 % Measured crackling 1/σνz: fit ⟨S⟩(T) only on avalanches whose duration lies
 % in the same power-law range used for α (and for comparing to (α-1)/(τ-1)).
@@ -42,5 +53,29 @@ if isfinite(durFit.fitMin) && isfinite(durFit.fitMax) && durFit.fitMin < durFit.
       sizesCol(inDurFitRange), dursCol(inDurFitRange), ...
       'durmin', durFit.fitMin, 'durmax', durFit.fitMax);
   end
+end
+end
+
+function decision = get_tail_decision(fitResult)
+decision = '';
+if isstruct(fitResult) && isfield(fitResult, 'tailComparison') ...
+    && isstruct(fitResult.tailComparison) && isfield(fitResult.tailComparison, 'decision')
+  decision = fitResult.tailComparison.decision;
+end
+end
+
+function [vuongR, vuongP] = get_vuong_vs_exp(fitResult)
+vuongR = nan;
+vuongP = nan;
+if ~isstruct(fitResult) || ~isfield(fitResult, 'tailComparison') ...
+    || ~isstruct(fitResult.tailComparison) || ~isfield(fitResult.tailComparison, 'vuongVsExp')
+  return;
+end
+vuong = fitResult.tailComparison.vuongVsExp;
+if isfield(vuong, 'R')
+  vuongR = vuong.R;
+end
+if isfield(vuong, 'pValue')
+  vuongP = vuong.pValue;
 end
 end

@@ -236,6 +236,9 @@ defaults.minFiringRate = 0.05;
 defaults.maxFiringRate = 100;
 defaults.enablePermutations = true;
 defaults.nShuffles = 5;
+defaults.pcaFlag = false;
+defaults.pcaFirstFlag = true;
+defaults.nDim = 5;
 defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
 defaults.useSessionCache = true;
@@ -442,9 +445,10 @@ else
 end
 analysisConfig.analyzeDcc = true;
 analysisConfig.analyzeKappa = false;
-analysisConfig.pcaFlag = 0;
-analysisConfig.pcaFirstFlag = 1;
-analysisConfig.nDim = 5;
+pcaOpts = resolve_opts_pca_settings(opts);
+analysisConfig.pcaFlag = pcaOpts.pcaFlag;
+analysisConfig.pcaFirstFlag = pcaOpts.pcaFirstFlag;
+analysisConfig.nDim = pcaOpts.nDim;
 analysisConfig.enablePermutations = opts.enablePermutations;
 analysisConfig.nShuffles = opts.nShuffles;
 analysisConfig.makePlots = false;

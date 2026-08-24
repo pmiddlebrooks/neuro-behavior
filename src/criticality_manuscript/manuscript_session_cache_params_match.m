@@ -38,6 +38,10 @@ if isfield(requested, 'cellType') && isfield(stored, 'cellType')
   end
 end
 
+if ~pca_cache_params_match(requested, stored)
+  return;
+end
+
 tf = true;
 end
 
@@ -61,4 +65,38 @@ if ischar(b) || isstring(b)
   b = char(b);
 end
 tf = isequaln(a, b);
+end
+
+function tf = pca_cache_params_match(requested, stored)
+% PCA_CACHE_PARAMS_MATCH - Treat missing pca fields as pcaFlag off (legacy caches)
+reqFlag = cache_pca_flag(requested);
+stoFlag = cache_pca_flag(stored);
+if ~reqFlag && ~stoFlag
+  tf = true;
+  return;
+end
+tf = cache_values_equal(reqFlag, stoFlag) ...
+  && cache_values_equal(cache_pca_first_flag(requested), cache_pca_first_flag(stored)) ...
+  && cache_values_equal(cache_pca_n_dim(requested), cache_pca_n_dim(stored));
+end
+
+function tf = cache_pca_flag(s)
+tf = false;
+if isfield(s, 'pcaFlag') && ~isempty(s.pcaFlag)
+  tf = logical(s.pcaFlag);
+end
+end
+
+function tf = cache_pca_first_flag(s)
+tf = true;
+if isfield(s, 'pcaFirstFlag') && ~isempty(s.pcaFirstFlag)
+  tf = logical(s.pcaFirstFlag);
+end
+end
+
+function nDim = cache_pca_n_dim(s)
+nDim = 0;
+if isfield(s, 'nDim') && ~isempty(s.nDim) && isfinite(s.nDim)
+  nDim = s.nDim;
+end
 end

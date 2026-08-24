@@ -9,8 +9,12 @@ function permMetrics = run_av_window_circular_shuffles(windowData, config)
 %   permMetrics - Struct arrays length nShuffles with fields dcc, kappa, decades, tau, alpha, paramSD
 
 nShuffles = config.nShuffles;
+config.compareTailModels = false;
 permMetrics = repmat(struct('dcc', nan, 'kappa', nan, 'decades', nan, ...
-  'tau', nan, 'alpha', nan, 'paramSD', nan), 1, nShuffles);
+  'tau', nan, 'alpha', nan, 'paramSD', nan, ...
+  'sizeDecision', '', 'durDecision', '', ...
+  'sizeVuongRExp', nan, 'sizeVuongPExp', nan, ...
+  'durVuongRExp', nan, 'durVuongPExp', nan), 1, nShuffles);
 
 winSamples = size(windowData, 1);
 nNeurons = size(windowData, 2);

@@ -121,6 +121,14 @@ for aIdx = 1:numel(areasToAnalyze)
     'decades=%.2f, dcc=%.3f (%d windows)\n'], ...
     areas{a}, avData.nAvalanches, avData.tau, avData.alpha, avData.paramSD, ...
     avData.decades, avData.dcc, avData.nSegments);
+  if isfield(avData, 'sizeFitInfo') && isstruct(avData.sizeFitInfo) ...
+      && isfield(avData.sizeFitInfo, 'tailComparison')
+    print_avalanche_tail_comparison(avData.sizeFitInfo.tailComparison, 'Size');
+  end
+  if isfield(avData, 'durFitInfo') && isstruct(avData.durFitInfo) ...
+      && isfield(avData.durFitInfo, 'tailComparison')
+    print_avalanche_tail_comparison(avData.durFitInfo.tailComparison, 'Duration');
+  end
 end
 
 results.params = struct();

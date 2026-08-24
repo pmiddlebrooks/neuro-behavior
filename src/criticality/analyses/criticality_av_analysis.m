@@ -25,6 +25,8 @@ function results = criticality_av_analysis(dataStruct, config)
 %     .makePlots - Create plots (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
 %     .includeM2356 - Include combined M23+M56 area (default: false)
+%     .compareTailModels - Vuong/AIC test of PL vs exponential/lognormal/truncated
+%                          PL on each window's fitted range (default: true; off for shuffles)
 %
 % Goal:
 %   Compute avalanche-based criticality measures (dcc, kappa) in sliding windows.
@@ -127,6 +129,11 @@ function results = criticality_av_analysis(dataStruct, config)
     % Create filename suffix based on PCA flag
     if config.pcaFlag
         filenameSuffix = '_pca';
+        if config.pcaFirstFlag
+            fprintf('PCA reconstruction: first %d components\n', config.nDim);
+        else
+            fprintf('PCA reconstruction: last %d components\n', config.nDim);
+        end
     else
         filenameSuffix = '';
     end
@@ -162,27 +169,7 @@ function results = criticality_av_analysis(dataStruct, config)
         return;
     end
     
-    % For PCA with spike times, we'll bin at a temporary bin size first
-    % Use a small bin size (1ms) for PCA calculation
-    if config.pcaFlag
-        fprintf('\n--- Step 1-2: PCA on original data (binned at 1ms for PCA) ---\n');
-        reconstructedDataMat = cell(1, numAreas);
-        tempBinSize = 0.001;  % 1ms for PCA calculation
-        for a = areasToTest
-            neuronIDs = dataStruct.idLabel{a};
-            % Bin at 1ms for PCA
-            thisDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
-                neuronIDs, timeRange, tempBinSize);
-            [coeff, score, ~, ~, explained, mu] = pca(thisDataMat);
-            forDim = find(cumsum(explained) > 30, 1);
-            forDim = max(3, min(6, forDim));
-            nDim = 1:forDim;
-            reconstructedDataMat{a} = score(:,nDim) * coeff(:,nDim)' + mu;
-        end
-    else
-        reconstructedDataMat = [];  % Not needed if no PCA
-        tempBinSize = [];  % Not used if no PCA
-    end
+    % PCA is applied after bin sizes are known, at the analysis bin size
     
     % Bin size / window size selection
     if is_mean_isi_zero_avalanche_mode(config)
@@ -200,15 +187,8 @@ function results = criticality_av_analysis(dataStruct, config)
         binSize = resolve_avalanche_bin_sizes(dataStruct, areasToTest, timeRange, config);
     elseif config.useOptimalBinWindowFunction
         fprintf('\n--- Step 3: Finding optimal bin/window parameters ---\n');
-        if config.pcaFlag
-            % Use PCA-reconstructed data for parameter optimization
-            [binSize, slidingWindowSize] = find_optimal_parameters_av_pca(...
-                reconstructedDataMat, config, areasToTest, timeRange, tempBinSize, areas);
-        else
-            % Use original spike times for parameter optimization
-            [binSize, slidingWindowSize] = find_optimal_parameters_av(...
-                dataStruct, config, areasToTest, timeRange);
-        end
+        [binSize, slidingWindowSize] = find_optimal_parameters_av(...
+            dataStruct, config, areasToTest, timeRange);
     else
         fprintf('\n--- Step 3: Using user-specified binSize and slidingWindowSize ---\n');
         numAreas = length(areas);
@@ -361,6 +341,7 @@ function results = criticality_av_analysis(dataStruct, config)
     tauPermuted = cell(1, numAreas);
     alphaPermuted = cell(1, numAreas);
     paramSDPermuted = cell(1, numAreas);
+    tailMetrics = cell(1, numAreas);
     for a = 1:numAreas
         dccPermuted{a} = [];
         kappaPermuted{a} = [];
@@ -394,36 +375,13 @@ function results = criticality_av_analysis(dataStruct, config)
             useSubsamplingArea = false;
         end
 
-        % Bin data at area-specific bin size
+        % Bin spikes at the analysis bin size; PCA-reconstruct in that space
+        aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+            neuronIDs, timeRange, binSize(a));
         if config.pcaFlag
-            % Use PCA-reconstructed data: rebin from 1ms to optimal bin size
-            % reconstructedDataMat{a} is [timeBins_1ms x neurons]
-            % We need to downsample to binSize(a)
-            reconstructedMat_1ms = reconstructedDataMat{a};  % [timeBins_1ms x neurons]
-            
-            % Calculate number of bins at optimal bin size
-            totalTime = timeRange(2) - timeRange(1);
-            numBins_1ms = size(reconstructedMat_1ms, 1);
-            numBins_optimal = round(totalTime / binSize(a));
-            
-            % Downsample reconstructed data to optimal bin size
-            % Average across bins within each optimal bin
-            binsPerOptimalBin = binSize(a) / tempBinSize;
-            aDataMat = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
-            for b = 1:numBins_optimal
-                startIdx_1ms = round((b-1) * binsPerOptimalBin) + 1;
-                endIdx_1ms = min(round(b * binsPerOptimalBin), numBins_1ms);
-                if startIdx_1ms <= numBins_1ms
-                    aDataMat(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
-                end
-            end
-            numTimePoints_dcc = size(aDataMat, 1);
-        else
-            % Bin spikes on-demand at area-specific bin size
-            aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
-                neuronIDs, timeRange, binSize(a));
-            numTimePoints_dcc = size(aDataMat, 1);
+            aDataMat = apply_config_pca_reconstruction(aDataMat, config);
         end
+        numTimePoints_dcc = size(aDataMat, 1);
         
         aDataMatNeurons = aDataMat;
         if ~useSubsamplingArea
@@ -438,6 +396,7 @@ function results = criticality_av_analysis(dataStruct, config)
         alpha{a} = nan(1, numWindows);
         paramSD{a} = nan(1, numWindows);
         startS{a} = nan(1, numWindows);
+        tailMetrics{a} = repmat(empty_window_tail_metrics(), 1, numWindows);
         dccNormalized{a} = nan(1, numWindows);
         kappaNormalized{a} = nan(1, numWindows);
         decadesNormalized{a} = nan(1, numWindows);
@@ -510,6 +469,7 @@ function results = criticality_av_analysis(dataStruct, config)
                 tauSub = nan(1, nSubsamplesArea);
                 alphaSub = nan(1, nSubsamplesArea);
                 paramSDSub = nan(1, nSubsamplesArea);
+                tailSub = repmat(empty_window_tail_metrics(), 1, nSubsamplesArea);
                 for s = 1:nSubsamplesArea
                     wPopActivity = sum(windowData(:, neuronIdxSubsamples{s}), 2);
                     fixedThresh = thresholdPerSubsample(s);
@@ -521,6 +481,7 @@ function results = criticality_av_analysis(dataStruct, config)
                     tauSub(s) = avMetrics.tau;
                     alphaSub(s) = avMetrics.alpha;
                     paramSDSub(s) = avMetrics.paramSD;
+                    tailSub(s) = tail_metrics_from_av(avMetrics);
 
                     if config.enablePermutations
                         configShuf = config;
@@ -550,6 +511,7 @@ function results = criticality_av_analysis(dataStruct, config)
                 tau{a}(w) = nanmean(tauSub);
                 alpha{a}(w) = nanmean(alphaSub);
                 paramSD{a}(w) = nanmean(paramSDSub);
+                tailMetrics{a}(w) = average_tail_metrics(tailSub);
             else
                 % Calculate population activity for this window
                 wPopActivity = aDataMat(startIdx:endIdx);
@@ -561,6 +523,7 @@ function results = criticality_av_analysis(dataStruct, config)
                 tau{a}(w) = avMetrics.tau;
                 alpha{a}(w) = avMetrics.alpha;
                 paramSD{a}(w) = avMetrics.paramSD;
+                tailMetrics{a}(w) = tail_metrics_from_av(avMetrics);
             end
         end
         
@@ -571,11 +534,11 @@ function results = criticality_av_analysis(dataStruct, config)
             configPerm = config;
             configPerm.fixedPopulationThreshold = sharedFixedThreshold;
             if config.pcaFlag
-                % Use PCA-reconstructed data for permutations
+                % aDataMatNeurons is already PCA-reconstructed at the analysis bin size
                 [dccPermuted{a}, kappaPermuted{a}, decadesPermuted{a}, ...
                     tauPermuted{a}, alphaPermuted{a}, paramSDPermuted{a}] = ...
-                    perform_circular_permutations_av_pca(reconstructedDataMat{a}, a, binSize(a), ...
-                    slidingWindowSize(a), configPerm, commonCenterTimes, numTimePoints_dcc, timeRange, tempBinSize);
+                    perform_circular_permutations_av_pca(aDataMatNeurons, a, binSize(a), ...
+                    slidingWindowSize(a), configPerm, commonCenterTimes, numTimePoints_dcc, timeRange, binSize(a));
             else
                 % Use original spike times for permutations
                 [dccPermuted{a}, kappaPermuted{a}, decadesPermuted{a}, ...
@@ -665,6 +628,8 @@ function results = criticality_av_analysis(dataStruct, config)
         tauPermuted, alphaPermuted, paramSDPermuted, ...
         dccSubsamples, kappaSubsamples, decadesSubsamples, ...
         tauSubsamples, alphaSubsamples, paramSDSubsamples);
+    results.tailMetrics = tailMetrics;
+    print_av_tail_model_summary(areas, areasToProcess, tailMetrics, config);
     
     % Save results if requested
     if config.saveData
@@ -766,6 +731,7 @@ function config = set_config_defaults(config)
     defaults.plfit2023Path = '';
     defaults.gofThreshold = 0.8;
     defaults.runClausetPlpva = false;
+    defaults.compareTailModels = true;
     
     % Apply defaults
     fields = fieldnames(defaults);
@@ -851,6 +817,7 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
     
     fprintf('  Running %d circular permutations per window for area %s...\n', ...
         config.nShuffles, dataStruct.areas{a});
+    config.compareTailModels = false;
     ticPerm = tic;
     
     numWindows = length(commonCenterTimes);
@@ -898,11 +865,7 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
             
             % Apply PCA if needed
             if config.pcaFlag
-                [coeffPerm, scorePerm, ~, ~, explainedPerm, muPerm] = pca(permutedWindowData);
-                forDimPerm = find(cumsum(explainedPerm) > 30, 1);
-                forDimPerm = max(3, min(6, forDimPerm));
-                nDimPerm = 1:forDimPerm;
-                permutedWindowData = scorePerm(:,nDimPerm) * coeffPerm(:,nDimPerm)' + muPerm;
+                permutedWindowData = apply_config_pca_reconstruction(permutedWindowData, config);
             end
             
             % Calculate population activity for this permuted window
@@ -945,18 +908,20 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
 %   then computes population activity from the shuffled data.
 %
 % Variables:
-%   reconstructedMat_1ms - PCA-reconstructed data matrix [timeBins_1ms x neurons] at tempBinSize
+%   reconstructedMat_1ms - PCA-reconstructed data [timeBins x neurons] at tempBinSize
+%                          (analysis bin size when PCA is done at d2/AV bins)
 %   a - Area index
-%   binSize - Optimal bin size for this area
-%   slidingWindowSize - Optimal window size for this area
+%   binSize - Analysis bin size for this area
+%   slidingWindowSize - Window size for this area
 %   config - Configuration structure
 %   commonCenterTimes - Window center times
-%   numTimePoints - Number of time points at optimal bin size
+%   numTimePoints - Number of time points at analysis bin size
 %   timeRange - [startTime, endTime] in seconds
-%   tempBinSize - Bin size used for PCA (typically 0.001s = 1ms)
+%   tempBinSize - Bin size of reconstructedMat_1ms (same as binSize after analysis-bin PCA)
     
     fprintf('  Running %d circular permutations per window for area %d (using PCA-reconstructed data)...\n', ...
         config.nShuffles, a);
+    config.compareTailModels = false;
     ticPerm = tic;
     
     numWindows = length(commonCenterTimes);
@@ -969,19 +934,21 @@ function [dccPermuted, kappaPermuted, decadesPermuted, ...
     alphaPermuted = nan(numWindows, config.nShuffles);
     paramSDPermuted = nan(numWindows, config.nShuffles);
     
-    % Downsample reconstructed data from 1ms to optimal bin size for full time range
-    totalTime = timeRange(2) - timeRange(1);
-    numBins_1ms = size(reconstructedMat_1ms, 1);
-    numBins_optimal = round(totalTime / binSize);
-    binsPerOptimalBin = binSize / tempBinSize;
-    
-    % Create downsampled data matrix at optimal bin size
-    originalDataMat = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
-    for b = 1:numBins_optimal
-        startIdx_1ms = round((b-1) * binsPerOptimalBin) + 1;
-        endIdx_1ms = min(round(b * binsPerOptimalBin), numBins_1ms);
-        if startIdx_1ms <= numBins_1ms
-            originalDataMat(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
+    % Reconstruction is already at the analysis bin size
+    if abs(tempBinSize - binSize) < 1e-12
+        originalDataMat = reconstructedMat_1ms;
+    else
+        totalTime = timeRange(2) - timeRange(1);
+        numBins_1ms = size(reconstructedMat_1ms, 1);
+        numBins_optimal = round(totalTime / binSize);
+        binsPerOptimalBin = binSize / tempBinSize;
+        originalDataMat = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
+        for b = 1:numBins_optimal
+            startIdx_1ms = round((b-1) * binsPerOptimalBin) + 1;
+            endIdx_1ms = min(round(b * binsPerOptimalBin), numBins_1ms);
+            if startIdx_1ms <= numBins_1ms
+                originalDataMat(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
+            end
         end
     end
     nNeurons = size(originalDataMat, 2);
@@ -1110,6 +1077,9 @@ function results = build_results_structure_av(dataStruct, config, areas, areasTo
     if isfield(config, 'gofThreshold')
         results.params.gofThreshold = config.gofThreshold;
     end
+    if isfield(config, 'compareTailModels')
+        results.params.compareTailModels = config.compareTailModels;
+    end
     
     if config.enablePermutations
         results.enablePermutations = true;
@@ -1205,4 +1175,96 @@ function plot_criticality_av_results(results, plotConfig, config, dataStruct, fi
     
     criticality_av_plot(results, plotConfig, config, dataStruct, filenameSuffix);
 end
+
+function tm = empty_window_tail_metrics()
+tm = struct('sizeDecision', '', 'durDecision', '', ...
+  'sizeVuongRExp', nan, 'sizeVuongPExp', nan, ...
+  'durVuongRExp', nan, 'durVuongPExp', nan);
+end
+
+function tm = tail_metrics_from_av(avMetrics)
+tm = empty_window_tail_metrics();
+if ~isstruct(avMetrics)
+  return;
+end
+if isfield(avMetrics, 'sizeDecision')
+  tm.sizeDecision = avMetrics.sizeDecision;
+end
+if isfield(avMetrics, 'durDecision')
+  tm.durDecision = avMetrics.durDecision;
+end
+if isfield(avMetrics, 'sizeVuongRExp')
+  tm.sizeVuongRExp = avMetrics.sizeVuongRExp;
+end
+if isfield(avMetrics, 'sizeVuongPExp')
+  tm.sizeVuongPExp = avMetrics.sizeVuongPExp;
+end
+if isfield(avMetrics, 'durVuongRExp')
+  tm.durVuongRExp = avMetrics.durVuongRExp;
+end
+if isfield(avMetrics, 'durVuongPExp')
+  tm.durVuongPExp = avMetrics.durVuongPExp;
+end
+end
+
+function tm = average_tail_metrics(tmList)
+tm = empty_window_tail_metrics();
+if isempty(tmList)
+  return;
+end
+tm.sizeVuongRExp = nanmean([tmList.sizeVuongRExp]);
+tm.sizeVuongPExp = nanmean([tmList.sizeVuongPExp]);
+tm.durVuongRExp = nanmean([tmList.durVuongRExp]);
+tm.durVuongPExp = nanmean([tmList.durVuongPExp]);
+tm.sizeDecision = majority_tail_decision({tmList.sizeDecision});
+tm.durDecision = majority_tail_decision({tmList.durDecision});
+end
+
+function decision = majority_tail_decision(decisionList)
+decision = '';
+decisionList = decisionList(~cellfun(@isempty, decisionList));
+if isempty(decisionList)
+  return;
+end
+[unq, ~, ic] = unique(decisionList);
+counts = accumarray(ic, 1);
+[~, idx] = max(counts);
+decision = unq{idx};
+end
+
+function print_av_tail_model_summary(areas, areasToProcess, tailMetrics, config)
+if nargin >= 4 && isstruct(config) && isfield(config, 'compareTailModels') ...
+    && ~config.compareTailModels
+  return;
+end
+fprintf('\n=== Avalanche tail-model comparison (power-law vs exponential) ===\n');
+for a = areasToProcess
+  if numel(tailMetrics) < a || isempty(tailMetrics{a})
+    continue;
+  end
+  tm = tailMetrics{a};
+  print_one_metric_tail_summary(areas{a}, 'size', {tm.sizeDecision}, [tm.sizeVuongRExp], [tm.sizeVuongPExp]);
+  print_one_metric_tail_summary(areas{a}, 'duration', {tm.durDecision}, [tm.durVuongRExp], [tm.durVuongPExp]);
+end
+end
+
+function print_one_metric_tail_summary(areaName, metricName, decisions, vuongR, vuongP)
+nWin = numel(decisions);
+nPl = nnz(strcmp(decisions, 'powerLawPreferred'));
+nExp = nnz(strcmp(decisions, 'exponentialPreferred'));
+nTrunc = nnz(strcmp(decisions, 'truncatedPowerLawPreferred'));
+nIndist = nnz(strcmp(decisions, 'indistinguishableFromExponential') ...
+  | strcmp(decisions, 'indistinguishableFromLognormal'));
+nShort = nnz(strcmp(decisions, 'insufficientRange'));
+nLn = nnz(strcmp(decisions, 'lognormalPreferred'));
+nTested = nnz(~cellfun(@isempty, decisions) & ~strcmp(decisions, 'notTested'));
+fprintf('  %s %s: PL=%d, truncPL=%d, exp=%d, lognormal=%d, indist=%d, short-range=%d / %d windows', ...
+  areaName, metricName, nPl, nTrunc, nExp, nLn, nIndist, nShort, nWin);
+if nTested > 0
+  fprintf('; median Vuong R=%.2f, median p=%.3f', ...
+    nanmedian(vuongR), nanmedian(vuongP));
+end
+fprintf('\n');
+end
+
 

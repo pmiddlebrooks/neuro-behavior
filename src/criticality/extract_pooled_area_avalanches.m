@@ -102,10 +102,18 @@ avData.minSizeFit = plMetrics.minavS;
 avData.maxSizeFit = plMetrics.maxavS;
 avData.minDurFit = plMetrics.minavD;
 avData.maxDurFit = plMetrics.maxavD;
-avData.sizeFitInfo = struct('exponent', plMetrics.tau, 'fitMin', plMetrics.minavS, ...
-  'fitMax', plMetrics.maxavS, 'decades', plMetrics.decades);
-avData.durFitInfo = struct('exponent', plMetrics.alpha, 'fitMin', plMetrics.minavD, ...
-  'fitMax', plMetrics.maxavD);
+if isfield(plMetrics, 'sizeFit') && ~isempty(plMetrics.sizeFit)
+  avData.sizeFitInfo = plMetrics.sizeFit;
+else
+  avData.sizeFitInfo = struct('exponent', plMetrics.tau, 'fitMin', plMetrics.minavS, ...
+    'fitMax', plMetrics.maxavS, 'decades', plMetrics.decades);
+end
+if isfield(plMetrics, 'durFit') && ~isempty(plMetrics.durFit)
+  avData.durFitInfo = plMetrics.durFit;
+else
+  avData.durFitInfo = struct('exponent', plMetrics.alpha, 'fitMin', plMetrics.minavD, ...
+    'fitMax', plMetrics.maxavD);
+end
 avData.nAvalanches = numel(allSizes);
 avData.binSize = binSizeUsed;
 avData.nSegments = numel(analysisWindows);
@@ -147,6 +155,7 @@ avData.binSize = binSize;
 
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
   neuronIds, timeRange, binSize);
+aDataMat = apply_config_pca_reconstruction(aDataMat, analysisConfig);
 
 if isfield(analysisConfig, 'useLocalWindowThreshold') && analysisConfig.useLocalWindowThreshold
   analysisConfig = attach_local_avalanche_window_threshold(analysisConfig, aDataMat);

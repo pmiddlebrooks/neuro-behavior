@@ -139,6 +139,11 @@ function results = criticality_ar_analysis(dataStruct, config)
     % Create filename suffix based on PCA flag
     if config.pcaFlag
         filenameSuffix = '_pca';
+        if config.pcaFirstFlag
+            fprintf('PCA reconstruction: first %d components\n', config.nDim);
+        else
+            fprintf('PCA reconstruction: last %d components\n', config.nDim);
+        end
     else
         filenameSuffix = '';
     end
@@ -190,44 +195,12 @@ function results = criticality_ar_analysis(dataStruct, config)
         timeRange = [0, max(dataStruct.spikeTimes)];
     end
     
-    % For PCA with spike times, we'll bin at a temporary bin size first
-    % Use a small bin size (1ms) for PCA calculation
-    if config.pcaFlag
-        fprintf('\n--- Step 1-2: PCA on original data (binned at 1ms for PCA) ---\n');
-        reconstructedDataMat = cell(1, numAreas);
-        tempBinSize = 0.001;  % 1ms for PCA calculation
-        for a = areasToTest
-            neuronIDs = dataStruct.idLabel{a};
-            % Bin at 1ms for PCA
-            thisDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
-                neuronIDs, timeRange, tempBinSize);
-            [coeff, score, ~, ~, explained, mu] = pca(thisDataMat);
-            forDim = find(cumsum(explained) > 30, 1);
-            forDim = max(3, min(6, forDim));
-            nDim = 1:forDim;
-            reconstructedDataMat{a} = score(:,nDim) * coeff(:,nDim)' + mu;
-        end
-    else
-        reconstructedDataMat = [];  % Not needed if no PCA
-        tempBinSize = [];  % Not used if no PCA
-    end
-    
-    % Find bin and window sizes (either optimal or user-specified)
-    % Always store as binSize and slidingWindowSize vectors (length numAreas)
+    % PCA is applied after bin sizes are known, at the analysis (d2) bin size
     fprintf('\n--- Step 3: Finding bin and window sizes ---\n');
-    if config.pcaFlag
-        % Use PCA-reconstructed data for parameter optimization
-        [binSize, slidingWindowSize, ...
-            binSizeModulated, binSizeUnmodulated, ...
-            slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
-            find_optimal_parameters_from_spikes_pca(reconstructedDataMat, config, modulationResults, areasToTest, timeRange, tempBinSize, areas, dataStruct);
-    else
-        % Use original spike times for parameter optimization
-        [binSize, slidingWindowSize, ...
-            binSizeModulated, binSizeUnmodulated, ...
-            slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
-            find_optimal_parameters_from_spikes(dataStruct, config, modulationResults, areasToTest, timeRange);
-    end
+    [binSize, slidingWindowSize, ...
+        binSizeModulated, binSizeUnmodulated, ...
+        slidingWindowSizeModulated, slidingWindowSizeUnmodulated] = ...
+        find_optimal_parameters_from_spikes(dataStruct, config, modulationResults, areasToTest, timeRange);
     slidingWindowSize(slidingWindowSize < 10) = 10;
     % Initialize modulation parameters if not already set
     if ~config.analyzeModulation
@@ -438,36 +411,13 @@ function results = criticality_ar_analysis(dataStruct, config)
         % Get neuron IDs for this area
         neuronIDs = dataStruct.idLabel{a};
         
-        % Bin data at area-specific bin size
+        % Bin spikes at the analysis (d2) bin size; PCA-reconstruct in that space
+        aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+            neuronIDs, timeRange, binSize(a));
         if config.pcaFlag
-            % Use PCA-reconstructed data: rebin from 1ms to optimal bin size
-            % reconstructedDataMat{a} is [timeBins_1ms x neurons]
-            % We need to downsample to binSize(a)
-            reconstructedMat_1ms = reconstructedDataMat{a};  % [timeBins_1ms x neurons]
-            
-            % Calculate number of bins at optimal bin size
-            totalTime = timeRange(2) - timeRange(1);
-            numBins_1ms = size(reconstructedMat_1ms, 1);
-            numBins_optimal = round(totalTime / binSize(a));
-            
-            % Downsample reconstructed data to optimal bin size
-            % Average across bins within each optimal bin
-            binsPerOptimalBin = binSize(a) / tempBinSize;
-            aDataMat = zeros(numBins_optimal, size(reconstructedMat_1ms, 2));
-            for b = 1:numBins_optimal
-                startIdx_1ms = round((b-1) * binsPerOptimalBin) + 1;
-                endIdx_1ms = min(round(b * binsPerOptimalBin), numBins_1ms);
-                if startIdx_1ms <= numBins_1ms
-                    aDataMat(b, :) = mean(reconstructedMat_1ms(startIdx_1ms:endIdx_1ms, :), 1);
-                end
-            end
-            numTimePoints = size(aDataMat, 1);
-        else
-            % Bin spikes on-demand at area-specific bin size
-            aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
-                neuronIDs, timeRange, binSize(a));
-            numTimePoints = size(aDataMat, 1);
+            aDataMat = apply_config_pca_reconstruction(aDataMat, config);
         end
+        numTimePoints = size(aDataMat, 1);
         
         numNeuronsArea = size(aDataMat, 2);
         popActivityLocal = sum(aDataMat, 2);
@@ -714,16 +664,10 @@ function results = criticality_ar_analysis(dataStruct, config)
             end
             
             % Perform circular permutations if enabled
+            % aDataMat is already PCA-reconstructed when pcaFlag is true
             if config.enablePermutations
-                if config.pcaFlag
-                    % Use PCA-reconstructed data for permutations
-                    [d2PermutedLocal, mrBrPermutedLocal] = perform_circular_permutations_pca(...
-                        reconstructedDataMat{a}, a, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config, timeRange, tempBinSize);
-                else
-                    % Use original binned data for permutations
-                    [d2PermutedLocal, mrBrPermutedLocal] = perform_circular_permutations(...
-                        aDataMat, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config, timeOrigin);
-                end
+                [d2PermutedLocal, mrBrPermutedLocal] = perform_circular_permutations(...
+                    aDataMat, commonCenterTimes, slidingWindowSize(a), binSize(a), numTimePoints, config, timeOrigin);
                 
                 % Normalize d2 by shuffled d2 values if requested
                 if config.normalizeD2 && config.analyzeD2 && ~isempty(d2PermutedLocal)

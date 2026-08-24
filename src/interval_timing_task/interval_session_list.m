@@ -23,7 +23,7 @@ sessions = [
     % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_22')
     % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_22')
     struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_25')
-    struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_26')
+    % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_26')
     % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_27')
     % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_28')
     % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_06_01')

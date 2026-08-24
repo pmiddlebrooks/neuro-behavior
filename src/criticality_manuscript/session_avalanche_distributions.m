@@ -34,9 +34,15 @@
 %   clausetPlfitPath   - Path to .../Power-Law-Fit-Distribution-MATLAB-main/MATLAB Code
 %   plfit2023Path      - Path to folder containing plfit2023.m
 %   runClausetPlpva    - If true and method is 'clauset', run plpva (slow)
+%   compareTailModels  - If true (default), Vuong/AIC-test PL vs exponential,
+%                        lognormal, and truncated PL on the fitted range
 %   saveFigure         - Export PNG/EPS to dropPath/criticality_manuscript
 %   useSubsampling     - If true, pool avalanches from neuron subsamples in the window
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings
+%   pcaFlag            - If true, reconstruct binned activity from nDim PCs before
+%                        avalanche detection (same PCA path as session_d2_distributions)
+%   pcaFirstFlag       - If true, use the first nDim PCs; if false, use the last nDim
+%   nDim               - Number of PCA components to keep when pcaFlag is true
 %   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory;
 %                               also plots summary of tau and alpha fits
 %   widthCutoff        - Peak-to-trough width threshold in ms (narrow <= cutoff = I)
@@ -66,7 +72,7 @@ paths = get_paths();
 collectStart = 0;
 collectEnd = 120 * 60;
 % collectEnd = [];
-avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
+avWindow = 3*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
 windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
@@ -83,6 +89,7 @@ absorbSingleEvents = true;  % merge isolated single events into non-engaged gaps
 % Power-law fitting: 'clauset', 'plfit2023', 'hybrid' = plfit2023 xmax, then Clauset plfit on x <= xmax
 powerLawFitMethod = 'plfit2023';
 runClausetPlpva = false;
+compareTailModels = true;
 
 gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 
@@ -99,7 +106,7 @@ minNeuronsMultiple = 1.1;
 splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
-enableCircularPermutations = false;
+enableCircularPermutations = true;
 nShuffles = 2;
 
 saveAnalysisResults = false;
@@ -108,6 +115,7 @@ analysisResultsFile = '';  % default: dropPath/criticality_manuscript/session_av
 % Plot formatting (edit and re-run %% Plotting)
 plotConfig = fill_manuscript_plot_config();
 plotConfig.drawPowerLawFit = true;  % overlay tau/alpha slope on the fitted range
+plotConfig.drawAlternativeFits = true;  % overlay exponential / lognormal / truncated PL
 plotConfig.observedMarkerSize = 5;
 plotConfig.shuffleMarkerSize = 4;
 plotConfig.fitLineWidth = 2.5;
@@ -144,9 +152,12 @@ analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 analysisConfig.pcaFlag = 0;
+analysisConfig.pcaFirstFlag = 1;  % 1 = first nDim PCs; 0 = last nDim
+analysisConfig.nDim = 5;  % components used when pcaFlag is true
 analysisConfig.gofThreshold = gofThreshold;
 analysisConfig.powerLawFitMethod = powerLawFitMethod;
 analysisConfig.runClausetPlpva = runClausetPlpva;
+analysisConfig.compareTailModels = compareTailModels;
 analysisConfig.enableCircularPermutations = enableCircularPermutations;
 analysisConfig.nShuffles = nShuffles;
 
@@ -157,12 +168,20 @@ analysisConfig.plfit2023Path = plfit2023Path;
 
 fprintf('\n=== Session Avalanche Distributions ===\n');
 fprintf('Power-law fit method: %s\n', powerLawFitMethod);
+fprintf('Compare tail models: %d\n', compareTailModels);
 fprintf('Avalanche detection mode: %s\n', avalancheDetectionMode);
 if ~strcmpi(avalancheDetectionMode, 'meanIsiZero')
   fprintf('thresholdMethod: %s\n', thresholdMethod);
 end
 if useSubsampling
   fprintf('Subsampling: %d subsets x %d neurons\n', nSubsamples, nNeuronsSubsample);
+end
+if analysisConfig.pcaFlag
+  if analysisConfig.pcaFirstFlag
+    fprintf('PCA reconstruction: first %d components\n', analysisConfig.nDim);
+  else
+    fprintf('PCA reconstruction: last %d components\n', analysisConfig.nDim);
+  end
 end
 if splitExcitatoryInhibitory
   fprintf('E/I split: on (widthCutoff = %.3f ms)\n', widthCutoff);
@@ -225,6 +244,7 @@ runMeta = struct( ...
   'brainArea', brainArea, ...
   'brainAreaCombinations', {brainAreaCombinations}, ...
   'powerLawFitMethod', powerLawFitMethod, ...
+  'compareTailModels', compareTailModels, ...
   'avalancheDetectionMode', avalancheDetectionMode, ...
   'enableCircularPermutations', enableCircularPermutations, ...
   'nShuffles', nShuffles, ...
@@ -423,6 +443,10 @@ engOpts.makePlots = false;
 engOpts.saveFigure = false;
 engOpts.plotConfig = plotConfig;
 engOpts.powerLawFitMethod = analysisConfig.powerLawFitMethod;
+engOpts.compareTailModels = true;
+if isfield(analysisConfig, 'compareTailModels')
+  engOpts.compareTailModels = analysisConfig.compareTailModels;
+end
 engOpts.avalancheDetectionMode = analysisConfig.avalancheDetectionMode;
 engOpts.thresholdMethod = analysisConfig.thresholdMethod;
 engOpts.gofThreshold = analysisConfig.gofThreshold;
@@ -433,6 +457,9 @@ engOpts.nSubsamples = analysisConfig.nSubsamples;
 engOpts.nNeuronsSubsample = analysisConfig.nNeuronsSubsample;
 engOpts.minNeuronsMultiple = analysisConfig.minNeuronsMultiple;
 engOpts.nMinNeurons = analysisConfig.nMinNeurons;
+engOpts.pcaFlag = analysisConfig.pcaFlag;
+engOpts.pcaFirstFlag = analysisConfig.pcaFirstFlag;
+engOpts.nDim = analysisConfig.nDim;
 engOpts.avWindow = runMeta.avWindow;
 engOpts.minNonEngagedWindow = runMeta.minNonEngagedWindow;
 [bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
@@ -525,6 +552,14 @@ for aIdx = 1:nAreas
     plot_engagement_class_ccdf(axSize, avData.sizes, classColors(c, :), displayName, plotConfig);
     overlay_power_law_ccdf_fit(axSize, avData.sizes, avData.tau, ...
       avData.minSizeFit, avData.maxSizeFit, classColors(c, :), plotConfig);
+    if c == 1
+      sizeOverlay = avData.sizeFitInfo;
+      if isstruct(sizeOverlay)
+        sizeOverlay.fitMin = avData.minSizeFit;
+        sizeOverlay.fitMax = avData.maxSizeFit;
+      end
+      overlay_avalanche_alternative_ccdfs(axSize, avData.sizes, sizeOverlay, plotConfig);
+    end
     plot_avalanche_value_counts(axSizeCount, avData.sizes, classColors(c, :), plotConfig);
 
     binSize = resolve_avalanche_duration_bin_size(avData);
@@ -536,6 +571,14 @@ for aIdx = 1:nAreas
     overlay_power_law_ccdf_fit(axDur, durationsMs, avData.alpha, ...
       avData.minDurFit * binSize * 1000, avData.maxDurFit * binSize * 1000, ...
       classColors(c, :), plotConfig);
+    if c == 1
+      durOverlay = avData.durFitInfo;
+      if isstruct(durOverlay)
+        durOverlay.fitMin = avData.minDurFit * binSize * 1000;
+        durOverlay.fitMax = avData.maxDurFit * binSize * 1000;
+      end
+      overlay_avalanche_alternative_ccdfs(axDur, durationsMs, durOverlay, plotConfig);
+    end
     plot_avalanche_value_counts(axDurCount, durationsMs, classColors(c, :), plotConfig);
 
     plot_engagement_class_size_given_duration(axCrack, avData, classColors(c, :), ...
@@ -836,6 +879,8 @@ for iCellRun = 1:numel(sessionResults.runs)
   if runMeta.saveFigure
     save_session_avalanche_distribution_figure(fig, paths, runMeta, runResult);
   end
+
+  plot_session_avalanche_semilog_ccdfs(runResult, runMeta, paths, plotConfig);
 end
 
 if runMeta.splitExcitatoryInhibitory && ~isempty(sessionResults.eiSummary)
@@ -906,7 +951,15 @@ if isfield(avData, 'dcc') && isfinite(avData.dcc)
 else
   fprintf('  dcc = |γ_pred - paramSD|: nan\n');
 end
-fprintf('  n = %d avalanches\n', avData.nAvalanches);
+  fprintf('  n = %d avalanches\n', avData.nAvalanches);
+  if isfield(avData, 'sizeFitInfo') && isstruct(avData.sizeFitInfo) ...
+      && isfield(avData.sizeFitInfo, 'tailComparison')
+    print_avalanche_tail_comparison(avData.sizeFitInfo.tailComparison, 'Size');
+  end
+  if isfield(avData, 'durFitInfo') && isstruct(avData.durFitInfo) ...
+      && isfield(avData.durFitInfo, 'tailComparison')
+    print_avalanche_tail_comparison(avData.durFitInfo.tailComparison, 'Duration');
+  end
 if enableCircularPermutations && ~isempty(avData.shuffleSizes)
   fprintf('  Shuffle (pooled): n = %d avalanches over %d shuffles\n', ...
     numel(avData.shuffleSizes), avData.nShufflesCompleted);
@@ -941,6 +994,9 @@ if ~isfield(plotConfig, 'shuffleMarkerSize') || isempty(plotConfig.shuffleMarker
 end
 if ~isfield(plotConfig, 'drawPowerLawFit') || isempty(plotConfig.drawPowerLawFit)
   plotConfig.drawPowerLawFit = true;
+end
+if ~isfield(plotConfig, 'drawAlternativeFits') || isempty(plotConfig.drawAlternativeFits)
+  plotConfig.drawAlternativeFits = true;
 end
 if ~isfield(plotConfig, 'fitLineWidth') || isempty(plotConfig.fitLineWidth)
   plotConfig.fitLineWidth = 2.5;
@@ -1040,6 +1096,7 @@ avData.binSize = binSize;
 
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
   neuronIds, timeRange, binSize);
+aDataMat = apply_config_pca_reconstruction(aDataMat, analysisConfig);
 
 [sizes, durations, hasAvalanches] = compute_avalanche_sizes_durations_from_binned( ...
   aDataMat, analysisConfig);
@@ -1315,6 +1372,16 @@ fitDisplayName = sprintf('Fit (%s=%.2f%s)', exponentLabel, exponent, methodTag);
 fitPlotted = overlay_power_law_ccdf_fit(ax, values, exponent, fitMin, fitMax, ...
   [0.85, 0.2, 0.15], plotConfig, fitDisplayName);
 
+overlayInfo = fitInfo;
+if isstruct(overlayInfo)
+  overlayInfo.fitMin = fitMin;
+  overlayInfo.fitMax = fitMax;
+end
+overlay_avalanche_alternative_ccdfs(ax, values, overlayInfo, plotConfig);
+altPlotted = isstruct(fitInfo) && isfield(fitInfo, 'tailComparison') ...
+  && isstruct(fitInfo.tailComparison) && isfield(fitInfo.tailComparison, 'xGrid') ...
+  && ~isempty(fitInfo.tailComparison.xGrid);
+
 set(ax, 'XScale', 'log', 'YScale', 'log', 'FontSize', plotConfig.tickLabelFontSize, ...
   'LineWidth', plotConfig.axesLineWidth);
 if isfield(plotConfig, 'axisSquare') && plotConfig.axisSquare
@@ -1324,14 +1391,18 @@ if ~isfield(plotConfig, 'showXLabel') || plotConfig.showXLabel
   xlabel(ax, xLabelText, 'FontSize', plotConfig.axisLabelFontSize);
 end
 ylabel(ax, 'P(X \geq x)', 'FontSize', plotConfig.axisLabelFontSize);
-% grid(ax, 'on');
-if shufflePlotted || fitPlotted
+if shufflePlotted || fitPlotted || altPlotted
   legend(ax, 'Location', plotConfig.legendLocation, 'FontSize', plotConfig.tickLabelFontSize);
 end
 
 pText = '';
 if isstruct(fitInfo) && isfield(fitInfo, 'pValue') && isfinite(fitInfo.pValue)
   pText = sprintf(', p=%.2f', fitInfo.pValue);
+end
+if isstruct(fitInfo) && isfield(fitInfo, 'tailComparison') ...
+    && isstruct(fitInfo.tailComparison) && isfield(fitInfo.tailComparison, 'decision') ...
+    && ~isempty(fitInfo.tailComparison.decision)
+  pText = sprintf('%s, %s', pText, fitInfo.tailComparison.decision);
 end
 if fitPlotted
   title(ax, sprintf('%s (%s = %.2f, x_{min}=%.3g, x_{max}=%.3g%s)', ...
@@ -1445,6 +1516,111 @@ if isfinite(paramSD)
 else
   title(ax, '⟨S⟩(T)');
 end
+hold(ax, 'off');
+end
+
+function plot_session_avalanche_semilog_ccdfs(runResult, runMeta, paths, plotConfig)
+% PLOT_SESSION_AVALANCHE_SEMILOG_CCDFS - Linear-x / log-y CCDFs (exponential is a line)
+%
+% Variables:
+%   runResult  - One cell-type run with .areaResults
+%   runMeta    - Session metadata (names, save flags)
+%   paths      - Uses .dropPath when saving
+%   plotConfig - Marker / font options
+%
+% Goal:
+%   Exponential tails are straight on semi-log CCDFs; power-laws curve. Plot
+%   size and duration CCDFs with alternative-model overlays for that check.
+
+if isempty(runResult.areaResults)
+  return;
+end
+plotConfig = fill_default_avalanche_plot_config(plotConfig);
+
+figName = sprintf('Session avalanche semi-log CCDFs%s', cell_type_file_tag(runResult.cellType));
+fig = get_task_figure_handle(plotConfig.sessionType, 'distributions_semilog', ...
+  runResult.cellType, figName);
+nAreas = numel(runResult.areaResults);
+tl = tiledlayout(fig, nAreas, 2, 'TileSpacing', plotConfig.tileSpacing, ...
+  'Padding', plotConfig.tilePadding);
+
+for aIdx = 1:nAreas
+  avData = runResult.areaResults{aIdx};
+  axSize = nexttile(tl);
+  plot_avalanche_semilog_ccdf(axSize, avData.sizes, avData.sizeFitInfo, avData.minSizeFit, ...
+    avData.maxSizeFit, 'Avalanche size', plotConfig);
+
+  axDur = nexttile(tl);
+  binSize = resolve_avalanche_duration_bin_size(avData);
+  durOverlay = avData.durFitInfo;
+  if isstruct(durOverlay)
+    durOverlay.fitMin = avData.minDurFit * binSize * 1000;
+    durOverlay.fitMax = avData.maxDurFit * binSize * 1000;
+  end
+  plot_avalanche_semilog_ccdf(axDur, avData.durations * binSize * 1000, durOverlay, ...
+    avData.minDurFit * binSize * 1000, avData.maxDurFit * binSize * 1000, ...
+    'Avalanche duration (ms)', plotConfig);
+end
+
+sgtitle(fig, sprintf('%s — semi-log CCDFs (exponential is linear) [%.0f–%.0f s]', ...
+  runMeta.sessionName, runMeta.collectStart, runMeta.collectEnd), ...
+  'FontWeight', 'bold', 'Interpreter', 'none');
+apply_portrait_figure_size(fig, plotConfig.figureWidthInches, nAreas * 1.5, 2);
+
+if isfield(runMeta, 'saveFigure') && runMeta.saveFigure
+  saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+  if ~exist(saveDir, 'dir')
+    mkdir(saveDir);
+  end
+  areaTag = format_areas_label(runResult.areaNames);
+  plotBase = sprintf('session_avalanche_semilog_%s_%s_%s_%.0f-%.0fs%s', ...
+    runMeta.sessionName, areaTag, runMeta.powerLawFitMethod, ...
+    runMeta.collectStart, runMeta.collectEnd, cell_type_file_tag(runResult.cellType));
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
+  exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
+  fprintf('\nSaved semi-log figure: %s\n', fullfile(saveDir, plotBase));
+end
+end
+
+function plot_avalanche_semilog_ccdf(ax, values, fitInfo, fitMin, fitMax, xLabelText, plotConfig)
+% PLOT_AVALANCHE_SEMILOG_CCDF - Empirical CCDF on log-y / linear-x with model overlays
+
+values = values(isfinite(values) & values > 0);
+cla(ax);
+if isempty(values)
+  title(ax, sprintf('%s (no data)', xLabelText));
+  return;
+end
+uniqueVals = unique(values);
+cdfY = arrayfun(@(x) mean(values >= x), uniqueVals);
+observedColor = colors_for_tasks(plotConfig.sessionType);
+hold(ax, 'on');
+scatter(ax, uniqueVals, cdfY, plotConfig.observedMarkerSize .^ 2, 'filled', ...
+  'MarkerEdgeColor', observedColor, 'MarkerFaceColor', observedColor, ...
+  'MarkerFaceAlpha', plotConfig.observedMarkerFaceAlpha, 'DisplayName', 'Obs');
+
+overlayInfo = fitInfo;
+if isstruct(overlayInfo)
+  overlayInfo.fitMin = fitMin;
+  overlayInfo.fitMax = fitMax;
+end
+if isfinite(fitMin) && isfinite(fitMax) && isstruct(fitInfo) && isfield(fitInfo, 'exponent')
+  overlay_power_law_ccdf_fit(ax, values, fitInfo.exponent, fitMin, fitMax, ...
+    [0.85, 0.2, 0.15], plotConfig, 'PL');
+end
+overlay_avalanche_alternative_ccdfs(ax, values, overlayInfo, plotConfig);
+
+set(ax, 'YScale', 'log', 'XScale', 'linear', 'FontSize', plotConfig.tickLabelFontSize, ...
+  'LineWidth', plotConfig.axesLineWidth, 'Box', 'off', 'TickDir', 'out');
+xlabel(ax, xLabelText, 'FontSize', plotConfig.axisLabelFontSize);
+ylabel(ax, 'P(X \geq x)', 'FontSize', plotConfig.axisLabelFontSize);
+legend(ax, 'Location', plotConfig.legendLocation, 'FontSize', plotConfig.tickLabelFontSize);
+decisionText = '';
+if isstruct(fitInfo) && isfield(fitInfo, 'tailComparison') ...
+    && isstruct(fitInfo.tailComparison) && isfield(fitInfo.tailComparison, 'decision')
+  decisionText = sprintf(' (%s)', fitInfo.tailComparison.decision);
+end
+title(ax, sprintf('%s%s', xLabelText, decisionText), 'Interpreter', 'none');
 hold(ax, 'off');
 end
 

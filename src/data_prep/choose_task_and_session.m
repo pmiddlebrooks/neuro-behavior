@@ -63,8 +63,10 @@ sessionName =  'ag112321_1';
 % sessionName =  'kw092921';  % Ok... few M56
 
 subjectName = 'ey9166';
-sessionName =  'ey9166_2026_03_27';  % Good neural, bad behavior labels
-
+sessionName =  'ey9166_2026_03_24';  % Good neural, bad behavior labels
+sessionName =  'ey9166_2026_03_26';  % Good neural, bad behavior labels
+% sessionName =  'ey9166_2026_03_27';  % Good neural, bad behavior labels
+% 
 
 %% =============================    Interval Data Loading    =============================
 % Data type selection
@@ -75,12 +77,12 @@ subjectName = 'ey9290';
 subjectName = 'ey9166';
 sessionName =  'ey9166_2026_04_02';
 % sessionName =  'ey9166_2026_04_03';
-sessionName =  'ey9166_2026_04_04';
+% sessionName =  'ey9166_2026_04_04';
 % sessionName =  'ey9166_2026_04_07';
 % sessionName =  'ey9166_2026_04_09';
 % 
-subjectName = 'ey9387';
-sessionName =  'ey9387_2026_05_19';
+% subjectName = 'ey9387';
+% sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
 % sessionName =  'ey9387_2026_05_21';
 % sessionName =  'ey9387_2026_05_22';

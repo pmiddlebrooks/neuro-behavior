@@ -7,14 +7,14 @@ function metrics = compute_av_metrics_from_pop_activity(wPopActivity, config, fi
 %   fixedThreshold - Optional shared cutoff (full collect range); [] = recompute
 %
 % Returns:
-%   metrics - Struct with dcc, kappa, decades, tau, alpha, paramSD (NaN if no avalanches)
+%   metrics - Struct with dcc, kappa, decades, tau, alpha, paramSD, and optional
+%             tail-model comparison fields (NaN / '' if no avalanches)
 
 if nargin < 3
   fixedThreshold = [];
 end
 
-metrics = struct('dcc', nan, 'kappa', nan, 'decades', nan, ...
-  'tau', nan, 'alpha', nan, 'paramSD', nan);
+metrics = empty_av_window_metrics();
 
 wPopActivity = apply_avalanche_population_threshold(wPopActivity(:), config, fixedThreshold);
 zeroBins = find(wPopActivity == 0);
@@ -31,4 +31,18 @@ metrics.decades = plMetrics.decades;
 metrics.tau = plMetrics.tau;
 metrics.alpha = plMetrics.alpha;
 metrics.paramSD = plMetrics.paramSD;
+metrics.sizeDecision = plMetrics.sizeDecision;
+metrics.durDecision = plMetrics.durDecision;
+metrics.sizeVuongRExp = plMetrics.sizeVuongRExp;
+metrics.sizeVuongPExp = plMetrics.sizeVuongPExp;
+metrics.durVuongRExp = plMetrics.durVuongRExp;
+metrics.durVuongPExp = plMetrics.durVuongPExp;
+end
+
+function metrics = empty_av_window_metrics()
+metrics = struct('dcc', nan, 'kappa', nan, 'decades', nan, ...
+  'tau', nan, 'alpha', nan, 'paramSD', nan, ...
+  'sizeDecision', '', 'durDecision', '', ...
+  'sizeVuongRExp', nan, 'sizeVuongPExp', nan, ...
+  'durVuongRExp', nan, 'durVuongPExp', nan);
 end

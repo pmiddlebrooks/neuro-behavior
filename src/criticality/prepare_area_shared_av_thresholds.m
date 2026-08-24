@@ -21,6 +21,7 @@ binSizeVec = resolve_avalanche_bin_sizes(dataStruct, areaIndex, timeRange, analy
 binSize = binSizeVec(areaIndex);
 aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
   neuronIds, timeRange, binSize);
+aDataMat = apply_config_pca_reconstruction(aDataMat, analysisConfig);
 threshInfo = prepare_shared_avalanche_threshold_info(aDataMat, analysisConfig);
 threshInfo.binSize = binSize;
 threshInfo.areaIndex = areaIndex;

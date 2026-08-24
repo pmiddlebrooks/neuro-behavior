@@ -66,6 +66,7 @@ for aIdx = 1:numel(areasToAnalyze)
     end
     continue;
   end
+  aDataMat = apply_config_pca_reconstruction(aDataMat, analysisConfig);
 
   % Keep collect-range neuron subsets; recompute cutoffs on class activity only
   if ~isempty(baseInfo) && isfield(baseInfo, 'useSubsampling') && baseInfo.useSubsampling ...

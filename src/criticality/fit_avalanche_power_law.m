@@ -9,6 +9,8 @@ function fitResult = fit_avalanche_power_law(values, config)
 %     .plfit2023Path      - Path containing plfit2023.m (hybrid / plfit2023)
 %     .gofThreshold       - For plfit2023 and hybrid (default 0.8)
 %     .runClausetPlpva    - If true, run plpva on Clauset tail (clauset / hybrid)
+%     .compareTailModels  - If true (default), Vuong/AIC-test PL vs exponential,
+%                           lognormal, and truncated PL on [fitMin, fitMax]
 %
 % Goal:
 %   Unified interface for Clauset plfit, legacy plfit2023, and hybrid fitting.
@@ -17,11 +19,12 @@ function fitResult = fit_avalanche_power_law(values, config)
 %   KS-optimal xmin and exponent (Clauset).
 %
 % Returns:
-%   fitResult - Struct with exponent, fitMin, fitMax, decades, method, etc.
+%   fitResult - Struct with exponent, fitMin, fitMax, decades, method, and
+%               .tailComparison from compare_avalanche_tail_models.
 
 fitResult = struct('exponent', nan, 'fitMin', nan, 'fitMax', nan, ...
   'decades', nan, 'method', '', 'logLikelihood', nan, ...
-  'pValue', nan, 'ksGof', nan, 'nTail', 0);
+  'pValue', nan, 'ksGof', nan, 'nTail', 0, 'tailComparison', struct());
 
 values = values(isfinite(values) & values > 0);
 if numel(values) < 2
@@ -48,6 +51,17 @@ switch method
   otherwise
     error(['Unknown powerLawFitMethod "%s". Use ''clauset'', ''plfit2023'', ', ...
       'or ''hybrid''.'], method);
+end
+
+compareTailModels = true;
+if isfield(config, 'compareTailModels') && ~isempty(config.compareTailModels)
+  compareTailModels = logical(config.compareTailModels);
+end
+if compareTailModels
+  fitResult.tailComparison = compare_avalanche_tail_models(values, fitResult);
+else
+  fitResult.tailComparison = struct('decision', 'notTested', ...
+    'decisionReason', 'compareTailModels is false');
 end
 end
 

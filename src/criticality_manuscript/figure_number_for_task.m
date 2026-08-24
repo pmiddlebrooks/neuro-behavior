@@ -3,7 +3,7 @@ function figNumber = figure_number_for_task(sessionType, plotKind, cellType)
 %
 % Variables:
 %   sessionType - 'spontaneous', 'interval', 'reach', 'semicircle', or 'schall'
-%   plotKind    - 'distributions', 'ei_summary', or 'bin_size_sweep'
+%   plotKind    - 'distributions', 'distributions_semilog', 'ei_summary', or 'bin_size_sweep'
 %   cellType    - '', 'all', 'excitatory', or 'inhibitory' (distributions only)
 %
 % Returns:
@@ -39,6 +39,8 @@ switch lower(strtrim(char(plotKind)))
     figNumber = baseNumber + 10;
   case 'bin_size_sweep'
     figNumber = baseNumber + 20;
+  case 'distributions_semilog'
+    figNumber = baseNumber + 30 + cell_type_figure_offset(cellType);
   otherwise
     figNumber = baseNumber + cell_type_figure_offset(cellType);
 end

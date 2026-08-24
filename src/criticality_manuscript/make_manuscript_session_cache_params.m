@@ -47,6 +47,16 @@ if isfield(opts, 'useSubsampling') && opts.useSubsampling ...
     cacheParams.nSubsamples = opts.nSubsamples;
   end
 end
+pcaOpts = resolve_opts_pca_settings(opts);
+cacheParams.pcaFlag = false;
+cacheParams.pcaFirstFlag = true;
+cacheParams.nDim = 0;
+% Neural PCA reconstruction changes AR/AV (and engagement d2/av) results
+if ~strcmp(kindGroup, 'prg') && pcaOpts.pcaFlag
+  cacheParams.pcaFlag = true;
+  cacheParams.pcaFirstFlag = pcaOpts.pcaFirstFlag;
+  cacheParams.nDim = pcaOpts.nDim;
+end
 cacheParams.analyses = '';
 cacheParams.cellType = '';
 if isfield(opts, 'cacheCellType') && ~isempty(opts.cacheCellType)

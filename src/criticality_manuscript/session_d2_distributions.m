@@ -75,18 +75,18 @@ end
 dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
-% collectEnd = 120*60;
+collectEnd = 120*60;
 d2Window = 45;  % seconds; non-overlapping windows
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
 useSubsampling = true;
-nSubsamples = 25;
+nSubsamples = 20;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
 enablePermutations = true;  % if true, circular shuffles per window for shuffled d2
-nPermutations = 2;  % used only when enablePermutations
+nPermutations = 3;  % used only when enablePermutations
 plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
@@ -98,7 +98,7 @@ splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 % Optional engaged vs non-engaged (reach / interval / semicircle only)
-splitByEngagement = true;
+splitByEngagement = false;
 engagementBufferBefore = 3;  % s before each engagement event = engaged
 engagementBufferAfter = 1;   % s after each engagement event = engaged
 minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
@@ -123,7 +123,7 @@ analysisConfig.analyzeD2 = true;
 analysisConfig.analyzeMrBr = false;
 analysisConfig.pcaFlag = 0;
 analysisConfig.pcaFirstFlag = 1;
-analysisConfig.nDim = 4;
+analysisConfig.nDim = 5;
 analysisConfig.enablePermutations = enablePermutations;
 analysisConfig.nShuffles = nPermutations;
 analysisConfig.normalizeD2 = enablePermutations;
@@ -819,6 +819,8 @@ function fig = plot_d2_distributions(plotData, sessionType, sessionName, d2Windo
 % Goal:
 %   Plot one tile per area, with shared x-limits and identical bin edges.
 %   Shuffled overlay is omitted when shuffledMeanD2 is empty.
+%   When shuffled values are present, each panel ylim follows the observed
+%   PDF (shuffled bars may clip) so the data distribution stays readable.
 
 if nargin < 8 || isempty(plotConfig)
     plotConfig = fill_manuscript_plot_config();
