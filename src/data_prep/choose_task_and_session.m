@@ -62,6 +62,9 @@ sessionName =  'ag112321_1';
 % sessionName =  'kw092821';  % Bad M56, Good DS, bad behavior labels for first ~200 min
 % sessionName =  'kw092921';  % Ok... few M56
 
+subjectName = 'ey9166';
+sessionName =  'ey9166_2026_03_27';  % Good neural, bad behavior labels
+
 
 %% =============================    Interval Data Loading    =============================
 % Data type selection
@@ -81,6 +84,7 @@ sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
 % sessionName =  'ey9387_2026_05_21';
 % sessionName =  'ey9387_2026_05_22';
+% sessionName =  'ey9387_2026_05_25';
 % sessionName =  'ey9387_2026_05_25';
 % sessionName =  'ey9387_2026_05_26';
 % sessionName =  'ey9387_2026_05_27';

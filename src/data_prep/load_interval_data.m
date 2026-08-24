@@ -156,7 +156,7 @@ function spikeData = load_interval_spike_times(paths, sessionName, opts)
     end
     spikeClusters = readNPY(spikeClustersPath);
 
-    allGood = interval_quality_mask(ci, opts);
+    allGood = cluster_quality_mask(ci, opts);
 
     goodM23 = allGood & strcmp(ci.area, 'M23');
     goodM56 = allGood & strcmp(ci.area, 'M56');
@@ -238,68 +238,6 @@ function ci = load_interval_cluster_info(sessionFolder, sessionName)
     area(ci.depth >= ds(1) & ci.depth <= ds(2)) = {'DS'};
     area(ci.depth >= vs(1) & ci.depth <= vs(2)) = {'VS'};
     ci.area = area;
-end
-
-function allGood = interval_quality_mask(ci, opts)
-% INTERVAL_QUALITY_MASK - Units to keep from cluster_info quality labels
-%
-% Variables:
-%   ci   - cluster_info table
-%   opts - Options; opts.useMulti (default true) includes mua with good
-%
-% Goal:
-%   If ci.group exists and has non-empty labels, keep 'good' (and 'mua' when
-%   opts.useMulti is true). Otherwise keep units with ci.rf_label == 'real'.
-
-    useGroup = ismember('group', ci.Properties.VariableNames) && ...
-        has_nonempty_quality_labels(ci.group);
-
-    if useGroup
-        useMulti = true;
-        if isfield(opts, 'useMulti') && ~isempty(opts.useMulti)
-            useMulti = logical(opts.useMulti);
-        end
-        groupLabel = strtrim(string(ci.group));
-        if useMulti
-            allGood = groupLabel == "good" | groupLabel == "mua";
-            fprintf('Using cluster_info.group (good + mua) for unit quality\n');
-        else
-            allGood = groupLabel == "good";
-            fprintf('Using cluster_info.group (good only) for unit quality\n');
-        end
-    else
-        if ~ismember('rf_label', ci.Properties.VariableNames)
-            error(['cluster_info.tsv has no usable group column and no rf_label ', ...
-                'column in %s'], opts.sessionName);
-        end
-        rfLabel = strtrim(string(ci.rf_label));
-        allGood = rfLabel == "real";
-        fprintf('Using cluster_info.rf_label (real) for unit quality\n');
-    end
-end
-
-function tf = has_nonempty_quality_labels(vals)
-% HAS_NONEMPTY_QUALITY_LABELS - True if any quality label is non-blank
-%
-% Variables:
-%   vals - cluster_info quality column (group or similar)
-%
-% Goal:
-%   Treat a column of empty strings / missing / NaN as unused so loading can
-%   fall back to rf_label.
-
-    if isempty(vals)
-        tf = false;
-        return
-    end
-
-    if isnumeric(vals)
-        tf = any(~isnan(vals(:)));
-        return
-    end
-
-    labelStr = strtrim(string(vals));
-    tf = any(strlength(labelStr) > 0 & ~ismissing(labelStr));
 end
 
 function [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...

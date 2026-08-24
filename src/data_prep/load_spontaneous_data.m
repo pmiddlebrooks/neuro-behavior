@@ -125,20 +125,17 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
                 spikeDataRaw.bhvDur = dataBhv.Dur;
             end
             
-            % Find the neuron clusters (ids) in each brain region
-            useMulti = 1;
-            if ~useMulti
-                allGood = strcmp(spikeDataRaw.ci.group, 'good');
-            else
-                allGood = strcmp(spikeDataRaw.ci.group, 'good') | (strcmp(spikeDataRaw.ci.group, 'mua'));
-                warning('Warning in load_spontaneous_data: you are loading muas with the good spiking units.');
+            % Quality: Phy group when curated; otherwise rf_label == 'real'
+            if ~isfield(opts, 'useMulti') || isempty(opts.useMulti)
+                opts.useMulti = true;
             end
-            
+            allGood = cluster_quality_mask(spikeDataRaw.ci, opts);
+
             goodM23 = allGood & strcmp(spikeDataRaw.ci.area, 'M23');
             goodM56 = allGood & strcmp(spikeDataRaw.ci.area, 'M56');
             goodDS = allGood & strcmp(spikeDataRaw.ci.area, 'DS');
             goodVS = allGood & strcmp(spikeDataRaw.ci.area, 'VS');
-            
+
             % Which neurons to use in the neural matrix
             opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
             

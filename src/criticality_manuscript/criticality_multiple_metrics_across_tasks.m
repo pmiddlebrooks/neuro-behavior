@@ -128,7 +128,7 @@ metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to s
 splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
-useSubsampling = true;
+useSubsampling = false;
 nSubsamples = 40;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;

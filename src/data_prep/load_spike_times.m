@@ -115,22 +115,15 @@ function spikeData = load_spike_times_spontaneous(paths, sessionName, opts)
     
     % Load spike data
     data = load_data(opts, 'spikes');
-    % Set collectEnd if not set
 
+    % Quality: Phy group when curated; otherwise rf_label == 'real'
+    allGood = cluster_quality_mask(data.ci, opts);
 
-    % Find qualifying neurons
-    useMulti = 1;
-    if ~useMulti
-        allGood = strcmp(data.ci.group, 'good');
-    else
-        allGood = strcmp(data.ci.group, 'good') | strcmp(data.ci.group, 'mua');
-    end
-    
     goodM23 = allGood & strcmp(data.ci.area, 'M23');
     goodM56 = allGood & strcmp(data.ci.area, 'M56');
     goodDS = allGood & strcmp(data.ci.area, 'DS');
     goodVS = allGood & strcmp(data.ci.area, 'VS');
-    
+
     opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
     
     % Get neuron IDs and areas
@@ -194,12 +187,8 @@ function spikeData = load_spike_times_interval(paths, sessionName, opts)
 
     data = load_data(opts, 'spikes');
 
-    useMulti = 1;
-    if ~useMulti
-        allGood = strcmp(data.ci.group, 'good');
-    else
-        allGood = strcmp(data.ci.group, 'good') | strcmp(data.ci.group, 'mua');
-    end
+    % Quality: Phy group when curated; otherwise rf_label == 'real'
+    allGood = cluster_quality_mask(data.ci, opts);
 
     goodM23 = allGood & strcmp(data.ci.area, 'M23');
     goodM56 = allGood & strcmp(data.ci.area, 'M56');
