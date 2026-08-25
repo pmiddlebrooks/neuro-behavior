@@ -11,6 +11,10 @@ function spikeData = load_spike_times(sessionType, paths, sessionName, opts)
 %   sessionName - Session name (format depends on sessionType)
 %   opts - Options structure with firing rate filtering parameters
 %
+% Spike times are filtered so that each unit (good, mua, or real) keeps only
+% the first spike when more than one occurs within 1.5 ms. Local coincident
+% artifacts are then removed per area (unique-unit bursts in 1 ms bins).
+%
 % Returns:
 %   spikeData - Structure with fields:
 %       .spikeTimes - Vector of all spike times (seconds)
@@ -82,12 +86,9 @@ function spikeData = load_spike_times_reach(paths, sessionName, opts)
                   spikeTimes <= opts.collectEnd;
     spikeTimes = spikeTimes(validSpikes);
     spikeClusters = spikeClusters(validSpikes);
-    
-    % Apply firing rate filtering if requested
-    if opts.removeSome
-        [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
-            filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
-    end
+
+    [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
+        apply_spike_quality_filters(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
     
     % Build output structure
     spikeData = struct();
@@ -153,12 +154,12 @@ function spikeData = load_spike_times_spontaneous(paths, sessionName, opts)
     spikeTimes = spikeTimes(validSpikes);
     spikeClusters = spikeClusters(validSpikes);
     
-    % Apply firing rate filtering if requested
-    if opts.removeSome
+    % ISI already applied in load_data; apply firing rate filtering if requested
+    if isfield(opts, 'removeSome') && opts.removeSome
         [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
             filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
     end
-    
+
     % Build output structure
     spikeData = struct();
     spikeData.spikeTimes = spikeTimes;
@@ -221,7 +222,8 @@ function spikeData = load_spike_times_interval(paths, sessionName, opts)
     spikeTimes = spikeTimes(validSpikes);
     spikeClusters = spikeClusters(validSpikes);
 
-    if opts.removeSome
+    % ISI already applied in load_data; apply firing rate filtering if requested
+    if isfield(opts, 'removeSome') && opts.removeSome
         [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
             filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
     end
@@ -300,10 +302,8 @@ function spikeData = load_spike_times_semicircle(paths, sessionName, opts)
     spikeTimes = spikeTimes(validSpikes);
     spikeClusters = spikeClusters(validSpikes);
 
-    if opts.removeSome
-        [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
-            filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
-    end
+    [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
+        apply_spike_quality_filters(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
 
     spikeData = struct();
     spikeData.spikeTimes = spikeTimes;
@@ -455,12 +455,9 @@ function spikeData = load_spike_times_schall(paths, sessionName, opts)
     % Create neuron IDs (matching neural_matrix_schall_fef.m line 63)
     neuronIDs = 1:nUnits;
     neuronAreas = repmat({'FEF'}, nUnits, 1);  % All Schall data is FEF
-    
-    % Apply firing rate filtering if requested
-    if opts.removeSome
-        [allSpikeTimes, allSpikeClusters, neuronIDs, neuronAreas] = ...
-            filter_by_firing_rate(allSpikeTimes, allSpikeClusters, neuronIDs, neuronAreas, opts);
-    end
+
+    [allSpikeTimes, allSpikeClusters, neuronIDs, neuronAreas] = ...
+        apply_spike_quality_filters(allSpikeTimes, allSpikeClusters, neuronIDs, neuronAreas, opts);
 
     % Build output structure
     spikeData = struct();
@@ -535,12 +532,9 @@ function spikeData = load_spike_times_hong(paths, sessionName, opts)
             neuronAreas{i} = 'SC';
         end
     end
-    
-    % Apply firing rate filtering if requested
-    if opts.removeSome
-        [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
-            filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
-    end
+
+    [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
+        apply_spike_quality_filters(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
     
     % Build output structure
     % Note: collectEnd is stored as absolute time for consistency with other session types
@@ -556,6 +550,31 @@ function spikeData = load_spike_times_hong(paths, sessionName, opts)
     spikeData.totalTime = opts.collectEnd;  % Duration
     spikeData.collectStart = opts.collectStart;
     spikeData.collectEnd = absoluteCollectEnd;  % Absolute time for consistency
+end
+
+function [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
+    apply_spike_quality_filters(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts)
+% APPLY_SPIKE_QUALITY_FILTERS - ISI, local coincidence, then optional rate filter
+%
+% Variables:
+%   spikeTimes    - Spike times in seconds
+%   spikeClusters - Unit ID per spike
+%   neuronIDs     - Unit IDs to keep
+%   neuronAreas   - Area label per unit
+%   opts          - Options; opts.removeSome enables firing-rate filtering
+%
+% Goal:
+%   Drop extra spikes within 1.5 ms on the same unit, drop local multi-unit
+%   coincident artifacts per area, then apply firing-rate filtering when
+%   requested.
+
+    [spikeTimes, spikeClusters] = filter_isi_violations(spikeTimes, spikeClusters);
+    [spikeTimes, spikeClusters] = filter_coincidence_artifacts( ...
+        spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
+    if isfield(opts, 'removeSome') && opts.removeSome
+        [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
+            filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
+    end
 end
 
 function [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...

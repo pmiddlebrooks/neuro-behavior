@@ -10,7 +10,8 @@ function criticality_ar_plot(results, plotConfig, config, dataStruct, filenameSu
 %
 % Goal:
 %   Create time series plots of d2 and population activity with optional
-%   permutation shading and reach onset markers.
+%   permutation shading and reach onset markers. Only requested brain areas
+%   (config.brainAreas / results.params.areasToTest) get axes.
 
 srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
 addpath(srcRoot);
@@ -169,8 +170,13 @@ else
     plotBehaviorProportion = false;
 end
 
-% Get areas to plot
-areasToTest = 1:length(areas);
+% Get areas to plot (requested only; skip empty unanalyzed areas)
+areasToTest = resolve_ar_plot_area_indices(results, config, dataStruct, areas, startS);
+if isempty(areasToTest)
+    warning('No requested brain areas with valid startS data found. Skipping plot.');
+    return;
+end
+fprintf('Plotting brain areas: %s\n', strjoin(areas(areasToTest), ', '));
 
 sessionType = results.sessionType;
 slidingWindowSize = results.params.slidingWindowSize;
@@ -195,7 +201,12 @@ if useSoftwareRenderer
     set(gcf, 'Renderer', 'zbuffer');
 end
 
-numRows = length(areasToTest) + 1;  % Add one row for combined d2 plot
+plotCombinedOverlay = numel(areasToTest) > 1;
+if plotCombinedOverlay
+    numRows = numel(areasToTest) + 1;  % overlay + one row per requested area
+else
+    numRows = numel(areasToTest);
+end
 
 % Use tight_subplot if available, otherwise use subplot
 useTightSubplot = exist('tight_subplot', 'file');
@@ -212,111 +223,86 @@ end
 % Colors: M23 (pink), M56 (green), DS (blue), VS (magenta), M2356 (orange)
 areaColors = {[1 0.6 0.6], [0 .8 0], [0 0 1], [1 .4 1], [1 0.5 0]};  % Red, Green, Blue, Magenta, Orange
 
-% First row: Plot all d2 traces together
-if useTightSubplot
-    axes(ha(1));
-else
-    subplot(numRows, 1, 1);
-end
-hold on;
-
-% Find first non-empty startS for plotting reference
-firstNonEmptyArea = [];
-for a = areasToTest
-    if ~isempty(startS{a})
-        firstNonEmptyArea = a;
-        break;
+% Overlay row: all requested d2 traces together (skip when only one area)
+if plotCombinedOverlay
+    if useTightSubplot
+        axes(ha(1));
+    else
+        subplot(numRows, 1, 1);
     end
-end
-if isempty(firstNonEmptyArea)
-    % No areas have data, cannot plot
-    warning('No areas with valid startS data found. Skipping plot.');
-    return;
-end
+    hold on;
 
-% Add event markers first (so they appear behind the data)
-if ~strcmp(dataStruct.sessionType, 'schall')
-add_event_markers(dataStruct, startS, 'firstNonEmptyArea', firstNonEmptyArea);
-end
-
-if analyzeD2
-    % Find common time range across all areas
-    allStartS = [];
-    for a = areasToTest
-        if ~isempty(startS{a})
-            allStartS = [allStartS, startS{a}];
-        end
+    firstNonEmptyArea = areasToTest(1);
+    if ~strcmp(dataStruct.sessionType, 'schall')
+        add_event_markers(dataStruct, startS, 'firstNonEmptyArea', firstNonEmptyArea);
     end
-    if ~isempty(allStartS)
-        xLimitsCombined = [min(allStartS), max(allStartS)];
 
-        % Collect all d2 values to find maximum
-        allD2Values = [];
-        for idx = 1:length(areasToTest)
-            a = areasToTest(idx);
-            if ~isempty(d2ToPlot{a})
-                allD2Values = [allD2Values; d2ToPlot{a}(:)];
+    if analyzeD2
+        allStartS = [];
+        for a = areasToTest
+            if ~isempty(startS{a})
+                allStartS = [allStartS, startS{a}]; %#ok<AGROW>
             end
         end
+        if ~isempty(allStartS)
+            xLimitsCombined = [min(allStartS), max(allStartS)];
 
-
-        % Plot d2 metrics
-        for idx = 1:length(areasToTest)
-            a = areasToTest(idx);
-            if ~isempty(d2ToPlot{a}) && ~isempty(startS{a})
-                validIdx = ~isnan(d2ToPlot{a});
-                if any(validIdx)
-                    [xLine, yLine] = downsample_series(startS{a}(validIdx), d2ToPlot{a}(validIdx));
-                    plot(xLine, yLine, '-', ...
-                        'Color', areaColors{min(a, length(areaColors))}, ...
-                        'LineWidth', 3, 'DisplayName', areas{a});
+            for idx = 1:length(areasToTest)
+                a = areasToTest(idx);
+                if ~isempty(d2ToPlot{a}) && ~isempty(startS{a})
+                    validIdx = ~isnan(d2ToPlot{a});
+                    if any(validIdx)
+                        [xLine, yLine] = downsample_series(startS{a}(validIdx), d2ToPlot{a}(validIdx));
+                        plot(xLine, yLine, '-', ...
+                            'Color', areaColors{min(a, length(areaColors))}, ...
+                            'LineWidth', 3, 'DisplayName', areas{a});
+                    end
                 end
             end
-        end
 
-        % Reference at shuffled mean: 1.0 on linear normalized scale, 0 on log10 scale
-        if normalizeD2 && ~useLog10D2
-            yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
-        elseif normalizeD2 && useLog10D2
-            yline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'log_{10}(shuffled mean)');
-        end
+            if normalizeD2 && ~useLog10D2
+                yline(1.0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'Shuffled mean');
+            elseif normalizeD2 && useLog10D2
+                yline(0, 'k--', 'LineWidth', 1, 'Alpha', 0.5, 'DisplayName', 'log_{10}(shuffled mean)');
+            end
 
-        
-        xlim(xLimitsCombined);
-        if ~isempty(yLimShared)
-            ylim(yLimShared);
-        end
-        ylabel(d2Label);
-        if useLog10D2 && normalizeD2
-            title('All Areas - log_{10}(d2 normalized)');
-        elseif useLog10D2
-            title('All Areas - log_{10}(d2)');
-        elseif normalizeD2
-            title('All Areas - d2 (Normalized)');
-        else
-            title('All Areas - d2');
-        end
-        if length(areasToTest) > 1
+            xlim(xLimitsCombined);
+            if ~isempty(yLimShared)
+                ylim(yLimShared);
+            end
+            ylabel(d2Label);
+            if useLog10D2 && normalizeD2
+                title('Requested areas - log_{10}(d2 normalized)');
+            elseif useLog10D2
+                title('Requested areas - log_{10}(d2)');
+            elseif normalizeD2
+                title('Requested areas - d2 (Normalized)');
+            else
+                title('Requested areas - d2');
+            end
             legend('Location', 'best');
+            grid on;
+            set(gca, 'YTickLabelMode', 'auto');
+            set(gca, 'YTickMode', 'auto');
         end
-        grid on;
-        set(gca, 'YTickLabelMode', 'auto');
-        set(gca, 'YTickMode', 'auto');
     end
 end
 
-% Subsequent rows: Individual area plots
+% Individual requested-area plots
 for idx = 1:length(areasToTest)
     a = areasToTest(idx);
-    if useTightSubplot
-        axes(ha(idx + 1));
+    if plotCombinedOverlay
+        rowIdx = idx + 1;
     else
-        subplot(numRows, 1, idx + 1);
+        rowIdx = idx;
     end
-    hold on;  % +1 because first row is the combined plot
+    if useTightSubplot
+        axes(ha(rowIdx));
+    else
+        subplot(numRows, 1, rowIdx);
+    end
+    hold on;
 
-    % Add event markers first (so they appear behind the data)
-    % Map idx to actual area index
     actualAreaIdx = areasToTest(idx);
     add_event_markers(dataStruct, startS, 'areaIdx', actualAreaIdx);
 
@@ -697,4 +683,70 @@ function [xOut, varargout] = downsample_plot_series(x, maxPts, varargin)
         if iscolumn(yOut), yOut = yOut'; end
         varargout{i} = yOut;
     end
+end
+
+function areasToTest = resolve_ar_plot_area_indices(results, config, dataStruct, areas, startS)
+% RESOLVE_AR_PLOT_AREA_INDICES - Indices of requested areas that have data
+%
+% Variables:
+%   results, config, dataStruct - Analysis outputs and options
+%   areas - Area name cell from results
+%   startS - Per-area window times (empty = not analyzed)
+%
+% Goal:
+%   Plot only requested brain areas (config/results/dataStruct), never empty
+%   unrequested axes.
+
+areasToTest = [];
+requestedNames = {};
+if isfield(config, 'brainAreas') && ~isempty(config.brainAreas)
+    requestedNames = config.brainAreas;
+elseif isfield(results, 'params') && isfield(results.params, 'brainAreas') ...
+        && ~isempty(results.params.brainAreas)
+    requestedNames = results.params.brainAreas;
+end
+if ~isempty(requestedNames)
+    areasToTest = area_names_to_indices(areas, requestedNames);
+end
+
+if isempty(areasToTest) && isfield(results, 'params') ...
+        && isfield(results.params, 'areasToTest') && ~isempty(results.params.areasToTest)
+    areasToTest = results.params.areasToTest(:)';
+end
+
+if isempty(areasToTest) && ~isempty(dataStruct) && isstruct(dataStruct) ...
+        && isfield(dataStruct, 'areasToTest') && ~isempty(dataStruct.areasToTest)
+    areasToTest = dataStruct.areasToTest(:)';
+end
+
+if isempty(areasToTest)
+    areasToTest = 1:numel(areas);
+end
+
+areasToTest = unique(areasToTest, 'stable');
+areasToTest = areasToTest(areasToTest >= 1 & areasToTest <= numel(areas));
+
+keepMask = false(size(areasToTest));
+for i = 1:numel(areasToTest)
+    a = areasToTest(i);
+    keepMask(i) = a <= numel(startS) && ~isempty(startS{a});
+end
+if any(keepMask)
+    areasToTest = areasToTest(keepMask);
+end
+end
+
+function idx = area_names_to_indices(areas, areaNames)
+% AREA_NAMES_TO_INDICES - Map requested area names onto results.areas indices
+if ischar(areaNames) || isstring(areaNames)
+    areaNames = cellstr(areaNames);
+end
+idx = [];
+for i = 1:numel(areaNames)
+    thisName = char(areaNames{i});
+    matchIdx = find(strcmp(areas, thisName));
+    if ~isempty(matchIdx)
+        idx = [idx, matchIdx(:)']; %#ok<AGROW>
+    end
+end
 end

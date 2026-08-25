@@ -1236,6 +1236,12 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.params.slidingWindowSize = config.slidingWindowSize;
     results.params.stepSize = config.stepSize;
     results.params.timeOrigin = session_time_origin(dataStruct);
+    results.params.areasToTest = areasToTest;
+    if isfield(config, 'brainAreas') && ~isempty(config.brainAreas)
+        results.params.brainAreas = config.brainAreas;
+    else
+        results.params.brainAreas = areas(areasToTest);
+    end
     results.params.analyzeD2 = config.analyzeD2;
     results.params.analyzeMrBr = config.analyzeMrBr;
     results.params.pcaFlag = config.pcaFlag;

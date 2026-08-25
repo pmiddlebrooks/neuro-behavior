@@ -11,6 +11,8 @@
 %
 % Plotting options (in config below):
 %   config.useLog10D2 - if true, plot log10(d2); values <= 0 become NaN
+%   brainArea - '' = all areas; 'M56' = one area; 'M23M56' or 'M2356' = merged
+%               (same combinations as session_d2_distributions.m)
 
 % Want to parallelize the area-wise analysis?
 runParallel = 0;
@@ -43,6 +45,10 @@ end
 if exist(analysesPath, 'dir')
     addpath(analysesPath);
 end
+manuscriptPath = fullfile(srcPath, 'criticality_manuscript');
+if exist(manuscriptPath, 'dir')
+    addpath(manuscriptPath);
+end
 addpath(basePath);
 
 % Configure variables
@@ -55,13 +61,17 @@ opts.collectEnd = [];
 if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
 opts.collectEnd = [];
 end
-opts.minFiringRate = .05;
+opts.minFiringRate = .25;
 opts.maxFiringRate = 150;
 
 subjectNameForLoad = '';
 if exist('subjectName', 'var') && ~isempty(subjectName)
     subjectNameForLoad = subjectName;
 end
+
+% Single or merged area (e.g. 'M56', 'M23M56', 'M2356'); '' = all loaded areas
+brainArea = 'M23M56';
+brainAreaCombinations = default_manuscript_brain_area_combinations();
 
 % Load and plot existing results if requested
 if loadAndPlot
@@ -74,6 +84,7 @@ if loadAndPlot
     fprintf('Loading data using load_sliding_window_data...\n');
     loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
     dataStruct = load_sliding_window_data(sessionType, 'spikes', loadArgs{:});
+    dataStruct = apply_run_ar_brain_area_selection(dataStruct, brainArea, brainAreaCombinations);
     
     % Find results file
     sessionNameForPath = '';
@@ -118,6 +129,11 @@ if loadAndPlot
     end
     if isfield(results.params, 'normalizeD2')
         config.normalizeD2 = results.params.normalizeD2;
+    end
+    if isfield(results.params, 'brainAreas') && ~isempty(results.params.brainAreas)
+        config.brainAreas = results.params.brainAreas;
+    elseif isfield(results.params, 'areasToTest') && ~isempty(results.params.areasToTest)
+        config.brainAreas = results.areas(results.params.areasToTest);
     end
     
     % Add saveDir from dataStruct (needed for plotting)
@@ -240,16 +256,17 @@ if exist('sessionType', 'var') && exist('dataSource', 'var')
     fprintf('Loading data using load_sliding_window_data...\n');
     loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
     dataStruct = load_sliding_window_data(sessionType, dataSource, loadArgs{:});
+    dataStruct = apply_run_ar_brain_area_selection(dataStruct, brainArea, brainAreaCombinations);
 else
     error('sessionType and dataSource must be defined, or data must be pre-loaded in workspace');
 end
 
 % Set up configuration from workspace variables
-% (These should be set before running this script)config = struct();
+% (These should be set before running this script)
+config = struct();
 config.slidingWindowSize = 30; % Default window size
 config.binSize = .025; % Default bin size
-config.stepSize = .5; % Default step size
-config.stepSize = 30; % Default step size
+config.stepSize = .1; % Default step size
 config.minSpikesPerBin = 2.5;
 config.minBinsPerWindow = 1000;
 
@@ -274,17 +291,20 @@ config.normalizeD2 = false;  % Normalize d2 by shuffled d2 values
 config.useLog10D2 = true;  % If true, plot log10(d2); values <= 0 become NaN
 config.maxSpikesPerBin = 50;  % Maximum spikes per bin for filtering
 config.nMinNeurons = 10;  % Minimum number of neurons required per area (no subsampling)
-config.includeM2356 = false;  % Set to true to include combined M23+M56 area
+% Combined M23+M56 is created via brainArea / brainAreaCombinations above
+config.includeM2356 = false;
 
 if strcmp(sessionType, 'spontaneous')
     config.behaviorNumeratorIDs = 5:10;
     config.behaviorDenominatorIDs = [config.behaviorNumeratorIDs, 0:2, 15:17];
 end
 
-% Optional list of brain areas (by name) to analyze.
-% Example: {'M23', 'M56'}; leave empty to analyze all available areas.
-config.brainAreas = {'M23', 'M56'};
-config.brainAreas = [];
+% Restrict analysis to brainArea when set; [] = all areas in dataStruct
+if ~isempty(brainArea)
+    config.brainAreas = {char(brainArea)};
+else
+    config.brainAreas = [];
+end
 
 % Optional neural subsampling configuration
 % When useSubsampling is true:
@@ -322,4 +342,22 @@ results = criticality_ar_analysis(dataStruct, config);
 
 
 fprintf('\n=== Analysis Complete ===\n');
+
+function dataStruct = apply_run_ar_brain_area_selection(dataStruct, brainArea, brainAreaCombinations)
+% APPLY_RUN_AR_BRAIN_AREA_SELECTION - Merge/restrict areas like session_d2_distributions
+%
+% Variables:
+%   dataStruct              - Loaded session struct
+%   brainArea               - '' = all; single name or combined name (e.g. M23M56)
+%   brainAreaCombinations   - Cell of structs with .name and .areas
+%
+% Goal:
+%   Create combined areas (M23+M56) when requested and set areasToTest.
+
+[dataStruct, areaOk] = apply_manuscript_brain_area_selection( ...
+    dataStruct, brainArea, brainAreaCombinations);
+if ~isempty(brainArea) && ~areaOk
+    error('Brain area "%s" not available in this session.', brainArea);
+end
+end
 

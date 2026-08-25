@@ -55,5 +55,7 @@ opts.removeSome = true;
 opts.firingRateCheckTime = 5 * 60; % empty [] checks min/max rate over full session
 opts.minFiringRate = 0.5;
 opts.maxFiringRate = 40;
-
+opts.coincidenceBinSec = .010;
+opts.coincidenceMinUnits = 6;
+opts.coincidenceMinFraction = .25;
 end
