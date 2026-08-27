@@ -26,8 +26,8 @@
 brainArea = 'M23M56';
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
-collectStart = 150;
-collectEnd = 210;          % [] = full loaded session
+collectStart = 1145;
+collectEnd = 1165;          % [] = full loaded session
 binSize = 0.025;          % s
 
 % Load session

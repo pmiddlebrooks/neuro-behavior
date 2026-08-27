@@ -58,9 +58,6 @@ opts.firingRateCheckTime = [];
 opts.collectStart = 0;
 opts.collectEnd = 45*60;
 opts.collectEnd = [];
-if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
-opts.collectEnd = [];
-end
 opts.minFiringRate = .25;
 opts.maxFiringRate = 150;
 
