@@ -21,10 +21,13 @@ function results = criticality_ar_analysis(dataStruct, config)
 %     .brainAreas - Optional cell array of area name strings to analyze
 %                   (e.g. {'M23','M56'}). If empty or not provided, all
 %                   areas are analyzed.
+%     .sdfFlag - If true, smooth each neuron with spike_density_function
+%                on a 1 ms grid, then downsample to binSize before AR (default: false)
+%     .sdfSigmaMs - Gaussian SDF sigma in milliseconds (default: 10)
 %
 % Goal:
 %   Compute d2 and/or mrBr criticality measures in sliding windows for spike data.
-%   Supports PCA, modulation analysis, and permutation testing.
+%   Supports PCA, optional SDF smoothing, modulation analysis, and permutation testing.
 %
 % Returns:
 %   results - Structure with d2, mrBr, startS, popActivity, and params.
@@ -47,6 +50,11 @@ function results = criticality_ar_analysis(dataStruct, config)
         config = struct();
     end
     config = set_config_defaults(config);
+    if config.sdfFlag
+        if isempty(config.sdfSigmaMs) || ~isfinite(config.sdfSigmaMs) || config.sdfSigmaMs <= 0
+            error('config.sdfSigmaMs must be a positive scalar when config.sdfFlag is true.');
+        end
+    end
     
     sessionType = dataStruct.sessionType;
     areas = dataStruct.areas;
@@ -136,16 +144,18 @@ function results = criticality_ar_analysis(dataStruct, config)
     fprintf('Window size: %.2f s\n', config.slidingWindowSize);
     fprintf('Analyze d2: %d, Analyze mrBr: %d\n', config.analyzeD2, config.analyzeMrBr);
     
-    % Create filename suffix based on PCA flag
+    % Create filename suffix based on PCA and SDF flags
+    filenameSuffix = format_ar_file_suffix(config);
     if config.pcaFlag
-        filenameSuffix = '_pca';
         if config.pcaFirstFlag
             fprintf('PCA reconstruction: first %d components\n', config.nDim);
         else
             fprintf('PCA reconstruction: last %d components\n', config.nDim);
         end
-    else
-        filenameSuffix = '';
+    end
+    if config.sdfFlag
+        fprintf('SDF smoothing: 1 ms raster, Gaussian sigma = %g ms, then downsample to binSize\n', ...
+            config.sdfSigmaMs);
     end
     
     % Setup results path (always create for potential plotting use)
@@ -411,9 +421,14 @@ function results = criticality_ar_analysis(dataStruct, config)
         % Get neuron IDs for this area
         neuronIDs = dataStruct.idLabel{a};
         
-        % Bin spikes at the analysis (d2) bin size; PCA-reconstruct in that space
-        aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
-            neuronIDs, timeRange, binSize(a));
+        % Bin spikes at the analysis (d2) bin size; optional SDF, then PCA
+        if config.sdfFlag
+            aDataMat = bin_spikes_with_sdf(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                neuronIDs, timeRange, binSize(a), config.sdfSigmaMs);
+        else
+            aDataMat = bin_spikes(dataStruct.spikeTimes, dataStruct.spikeClusters, ...
+                neuronIDs, timeRange, binSize(a));
+        end
         if config.pcaFlag
             aDataMat = apply_config_pca_reconstruction(aDataMat, config);
         end
@@ -805,6 +820,8 @@ function config = set_config_defaults(config)
     defaults.nNeuronsSubsample = 10;     % Number of neurons per subsample
     defaults.minNeuronsMultiple = 1.0;   % Minimum neuron requirement multiplier (round(nNeuronsSubsample * minNeuronsMultiple))
     defaults.brainAreas = {};            % Optional list of area name strings to analyze; empty = all areas
+    defaults.sdfFlag = false;            % Smooth 1 ms rasters with SDF before AR/d2
+    defaults.sdfSigmaMs = 10;            % Gaussian SDF sigma (ms); spike_density_function uses 1 ms samples
     
     % Apply defaults
     fields = fieldnames(defaults);
@@ -1247,6 +1264,8 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.params.pcaFlag = config.pcaFlag;
     results.params.pcaFirstFlag = config.pcaFirstFlag;
     results.params.nDim = config.nDim;
+    results.params.sdfFlag = config.sdfFlag;
+    results.params.sdfSigmaMs = config.sdfSigmaMs;
     results.params.pOrder = config.pOrder;
     results.params.critType = config.critType;
     results.params.normalizeD2 = config.normalizeD2;

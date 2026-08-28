@@ -76,10 +76,12 @@ spikeDensityFunction = zeros(nTrial, sdfDuration);
 halfLength = ceil(sdfDuration / 2);
 switch Kernel.method
     case 'gaussian'
-        k = -halfLength : halfLength;
+        % Kernel is always cropped to +/- 50 samples (ms on a 1 ms raster).
+        % Build that support directly so long rasters do not allocate a
+        % session-length kernel only to throw most of it away.
+        kernelHalf = 50;
+        k = -kernelHalf : kernelHalf;
         kernelShape = normpdf(k, 0, Kernel.sigma);
-        kernelCenter = ceil(length(kernelShape)/2);
-        kernelShape = kernelShape(kernelCenter-50 : kernelCenter+50);
         
     case 'postsynaptic potential'
         kernelHalfLength = round(Kernel.decay * 8);

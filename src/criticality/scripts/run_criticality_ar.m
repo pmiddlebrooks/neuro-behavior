@@ -13,6 +13,7 @@
 %   config.useLog10D2 - if true, plot log10(d2); values <= 0 become NaN
 %   brainArea - '' = all areas; 'M56' = one area; 'M23M56' or 'M2356' = merged
 %               (same combinations as session_d2_distributions.m)
+%   config.sdfFlag / config.sdfSigmaMs - optional 1 ms Gaussian SDF before AR
 
 % Want to parallelize the area-wise analysis?
 runParallel = 0;
@@ -33,22 +34,8 @@ swDataPrepPath = fullfile(srcPath, 'sliding_window_prep', 'data_prep');
 swUtilsPath = fullfile(srcPath, 'sliding_window_prep', 'utils');
 analysesPath = fullfile(basePath, '..', 'analyses');
 
-if exist(swDataPrepPath, 'dir')
-    addpath(swDataPrepPath);
-end
-if exist(swUtilsPath, 'dir')
-    addpath(swUtilsPath);
-end
-if exist(srcPath, 'dir')
-    addpath(srcPath);
-end
-if exist(analysesPath, 'dir')
-    addpath(analysesPath);
-end
+
 manuscriptPath = fullfile(srcPath, 'criticality_manuscript');
-if exist(manuscriptPath, 'dir')
-    addpath(manuscriptPath);
-end
 addpath(basePath);
 
 % Configure variables
@@ -70,6 +57,11 @@ end
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 
+% PCA / SDF flags (filename suffix for save and for loadAndPlot)
+pcaFlag = 0;
+sdfFlag = true;    % Smooth 1 ms rasters with SDF, then downsample to binSize
+sdfSigmaMs = 50;   % Gaussian SDF sigma (ms)
+
 % Load and plot existing results if requested
 if loadAndPlot
     % Require sessionType to be defined
@@ -89,11 +81,9 @@ if loadAndPlot
         sessionNameForPath = sessionName;
     end
     
-    % Build filename suffix from config if available
-    filenameSuffix = '';
-    if exist('config', 'var') && isfield(config, 'pcaFlag') && config.pcaFlag
-        filenameSuffix = '_pca';
-    end
+    % Build filename suffix from PCA / SDF flags above
+    filenameSuffix = format_ar_file_suffix(struct( ...
+        'pcaFlag', pcaFlag, 'sdfFlag', sdfFlag, 'sdfSigmaMs', sdfSigmaMs));
     
     resultsPath = create_results_path('criticality_ar', sessionType, sessionNameForPath, ...
         dataStruct.saveDir, 'filenameSuffix', filenameSuffix, 'createDir', false);
@@ -131,6 +121,15 @@ if loadAndPlot
         config.brainAreas = results.params.brainAreas;
     elseif isfield(results.params, 'areasToTest') && ~isempty(results.params.areasToTest)
         config.brainAreas = results.areas(results.params.areasToTest);
+    end
+    if isfield(results.params, 'sdfFlag')
+        config.sdfFlag = results.params.sdfFlag;
+    end
+    if isfield(results.params, 'sdfSigmaMs')
+        config.sdfSigmaMs = results.params.sdfSigmaMs;
+    end
+    if isfield(results.params, 'pcaFlag')
+        config.pcaFlag = results.params.pcaFlag;
     end
     
     % Add saveDir from dataStruct (needed for plotting)
@@ -261,20 +260,22 @@ end
 % Set up configuration from workspace variables
 % (These should be set before running this script)
 config = struct();
-config.slidingWindowSize = 30; % Default window size
-config.binSize = .025; % Default bin size
-config.stepSize = .1; % Default step size
+config.slidingWindowSize = 60; % Default window size
+config.binSize = .05; % Default bin size
+config.stepSize = .5; % Default step size
 config.minSpikesPerBin = 2.5;
 config.minBinsPerWindow = 1000;
 
 % Analysis flags (set these before running)
 config.analyzeD2 = true;
 config.analyzeMrBr = false;
-config.pcaFlag = 0;
+config.pcaFlag = pcaFlag;
 config.pcaFirstFlag = 1;  % Use first nDim if 1, last nDim if 0
 config.nDim = 4;  % Number of PCA dimensions
+config.sdfFlag = sdfFlag;
+config.sdfSigmaMs = sdfSigmaMs;
 config.enablePermutations = true;
-config.nShuffles = 20;
+config.nShuffles = 5;
 config.analyzeModulation = false;
 config.makePlots = true;
 config.saveData = false;  % Set to false to skip saving results
