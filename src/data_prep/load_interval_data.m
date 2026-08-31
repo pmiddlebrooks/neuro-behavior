@@ -186,8 +186,6 @@ function spikeData = load_interval_spike_times(paths, sessionName, opts)
     spikeClusters = spikeClusters(validSpikes);
 
     [spikeTimes, spikeClusters] = filter_isi_violations(spikeTimes, spikeClusters);
-    [spikeTimes, spikeClusters] = filter_coincidence_artifacts( ...
-        spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
 
     if isfield(opts, 'removeSome') && opts.removeSome
         [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...

@@ -150,14 +150,6 @@ switch dataType
 
         % Drop extra spikes within 1.5 ms on the same unit (good, mua, or real)
         [spikeTimes, spikeClusters] = filter_isi_violations(spikeTimes, spikeClusters);
-        if ismember('id', ci.Properties.VariableNames)
-            ciIds = ci.id;
-        else
-            ciIds = ci.cluster_id;
-        end
-        keepUnits = cluster_quality_mask(ci, opts);
-        [spikeTimes, spikeClusters] = filter_coincidence_artifacts( ...
-            spikeTimes, spikeClusters, ciIds(keepUnits), ci.area(keepUnits), opts);
 
         if isempty(opts.collectEnd)
     opts.collectEnd = spikeTimes(end);

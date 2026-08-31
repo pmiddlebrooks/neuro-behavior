@@ -63,9 +63,9 @@ sessionName =  'ag112321_1';
 % sessionName =  'kw092921';  % Ok... few M56
 
 subjectName = 'ey9166';
-sessionName =  'ey9166_2026_03_24';  % Good neural, bad behavior labels
-sessionName =  'ey9166_2026_03_26';  % Good neural, bad behavior labels
-% sessionName =  'ey9166_2026_03_27';  % Good neural, bad behavior labels
+sessionName =  'ey9166_2026_03_24';  % 
+sessionName =  'ey9166_2026_03_26';  % 
+% sessionName =  'ey9166_2026_03_27';  % 
 % 
 
 %% =============================    Interval Data Loading    =============================

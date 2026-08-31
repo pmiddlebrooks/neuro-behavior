@@ -12,8 +12,7 @@ function spikeData = load_spike_times(sessionType, paths, sessionName, opts)
 %   opts - Options structure with firing rate filtering parameters
 %
 % Spike times are filtered so that each unit (good, mua, or real) keeps only
-% the first spike when more than one occurs within 1.5 ms. Local coincident
-% artifacts are then removed per area (unique-unit bursts in 1 ms bins).
+% the first spike when more than one occurs within 1.5 ms.
 %
 % Returns:
 %   spikeData - Structure with fields:
@@ -554,7 +553,7 @@ end
 
 function [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
     apply_spike_quality_filters(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts)
-% APPLY_SPIKE_QUALITY_FILTERS - ISI, local coincidence, then optional rate filter
+% APPLY_SPIKE_QUALITY_FILTERS - ISI refractory filter, then optional rate filter
 %
 % Variables:
 %   spikeTimes    - Spike times in seconds
@@ -564,13 +563,10 @@ function [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
 %   opts          - Options; opts.removeSome enables firing-rate filtering
 %
 % Goal:
-%   Drop extra spikes within 1.5 ms on the same unit, drop local multi-unit
-%   coincident artifacts per area, then apply firing-rate filtering when
-%   requested.
+%   Drop extra spikes within 1.5 ms on the same unit (good, mua, or real),
+%   then apply firing-rate filtering when requested.
 
     [spikeTimes, spikeClusters] = filter_isi_violations(spikeTimes, spikeClusters);
-    [spikeTimes, spikeClusters] = filter_coincidence_artifacts( ...
-        spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
     if isfield(opts, 'removeSome') && opts.removeSome
         [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
             filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
