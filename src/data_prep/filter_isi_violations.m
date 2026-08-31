@@ -13,7 +13,7 @@ function [spikeTimes, spikeClusters] = filter_isi_violations(spikeTimes, spikeCl
 
     if nargin < 3 || isempty(minIsiSec)
         minIsiSec = 0.0015;
-        minIsiSec = 0.002;
+        minIsiSec = 0.0015;
     end
 
     if isempty(spikeTimes)

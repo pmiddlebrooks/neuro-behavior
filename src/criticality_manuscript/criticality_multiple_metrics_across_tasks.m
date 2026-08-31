@@ -120,7 +120,7 @@ runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = true;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
-forceRecompute = false;   % true: reprocess and overwrite per-session cache
+forceRecompute = true;   % true: reprocess and overwrite per-session cache
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
@@ -133,7 +133,7 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
