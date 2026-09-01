@@ -110,6 +110,9 @@ else
   fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', opts.avWindow);
 end
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
+if ~isempty(opts.subjectName)
+  fprintf('Subject filter: %s\n', char(opts.subjectName));
+end
 if ~isempty(opts.brainArea)
   fprintf('Brain area: %s (single-area analysis)\n', opts.brainArea);
 else
@@ -117,6 +120,10 @@ else
 end
 
 sessionTable = build_session_table(opts.sessionTypes);
+if ~isempty(opts.subjectName)
+  sessionTable = filter_manuscript_session_table_by_subject(sessionTable, opts.subjectName);
+  fprintf('Sessions after subject filter (%s): %d\n', char(opts.subjectName), size(sessionTable, 1));
+end
 numSessions = size(sessionTable, 1);
 fprintf('Total sessions: %d\n', numSessions);
 if numSessions == 0
@@ -243,6 +250,7 @@ defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
 defaults.useSessionCache = true;
 defaults.forceRecompute = false;
+defaults.subjectName = '';
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 preserveAvWindowEmpty = isfield(opts, 'avWindow') && isempty(opts.avWindow);
 opts = merge_struct_defaults(opts, defaults);

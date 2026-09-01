@@ -89,6 +89,14 @@ if opts.splitExcitatoryInhibitory
   fprintf('E/I split: on (widthCutoff = %.3f ms)\n', opts.widthCutoff);
 end
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
+if ~isempty(opts.subjectName)
+  fprintf('Subject filter: %s\n', char(opts.subjectName));
+end
+fprintf('d2Method: %s\n', char(opts.d2Method));
+if strcmp(opts.d2Method, 'kl')
+  fprintf('KL fit: %s; klErrBars=%d; klParallel=%d\n', ...
+    char(opts.klFitMethod), opts.klErrBars, opts.klParallel);
+end
 if ~isempty(opts.brainArea)
   fprintf('Brain area: %s (single-area analysis)\n', opts.brainArea);
 else
@@ -96,6 +104,10 @@ else
 end
 
 sessionTable = build_session_table(opts.sessionTypes);
+if ~isempty(opts.subjectName)
+  sessionTable = filter_manuscript_session_table_by_subject(sessionTable, opts.subjectName);
+  fprintf('Sessions after subject filter (%s): %d\n', char(opts.subjectName), size(sessionTable, 1));
+end
 numSessions = size(sessionTable, 1);
 fprintf('Total sessions: %d\n', numSessions);
 if numSessions == 0
@@ -250,6 +262,11 @@ defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
 defaults.useSessionCache = true;
 defaults.forceRecompute = false;
+defaults.subjectName = '';
+defaults.d2Method = 'euclidean';
+defaults.klFitMethod = 'MaxLikelihood';
+defaults.klErrBars = false;
+defaults.klParallel = false;
 % Empty collectEnd / d2Window are sentinels for "full session" — do not replace
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 preserveD2WindowEmpty = isfield(opts, 'd2Window') && isempty(opts.d2Window);
@@ -261,6 +278,17 @@ if preserveD2WindowEmpty
   opts.d2Window = [];
 end
 opts.sessionTypes = order_manuscript_session_types(opts.sessionTypes);
+opts.d2Method = lower(strtrim(char(opts.d2Method)));
+if ~ismember(opts.d2Method, {'euclidean', 'kl'})
+  error('d2Method must be ''euclidean'' or ''kl'' (got "%s").', opts.d2Method);
+end
+opts.klFitMethod = char(opts.klFitMethod);
+opts.klErrBars = logical(opts.klErrBars);
+opts.klParallel = logical(opts.klParallel);
+if strcmp(opts.d2Method, 'kl') && opts.klErrBars ...
+    && ~strcmp(opts.klFitMethod, 'MaxLikelihood')
+  error('KL error bars require klFitMethod = ''MaxLikelihood'' (S2.5 Hessian).');
+end
 end
 
 function batchMeta = pack_ar_across_tasks_batch_meta(opts)
@@ -282,6 +310,7 @@ function batchByCell = run_ar_across_tasks_batch(sessionTable, opts, paths)
 % RUN_AR_ACROSS_TASKS_BATCH - Per-session d2 analysis (optional E/I split)
 
 analysisConfig = build_ar_analysis_config(opts);
+maybe_start_kl_d2_parallel_pool(opts.d2Method, opts.klErrBars, opts.klParallel);
 loadOpts = neuro_behavior_options();
 loadOpts.firingRateCheckTime = opts.firingRateCheckTime;
 loadOpts.collectStart = opts.collectStart;
@@ -513,6 +542,10 @@ analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.pOrder = 10;
 analysisConfig.critType = 2;
+analysisConfig.d2Method = opts.d2Method;
+analysisConfig.klFitMethod = opts.klFitMethod;
+analysisConfig.klErrBars = opts.klErrBars;
+analysisConfig.klParallel = opts.klParallel;
 analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 1000;
 analysisConfig.maxSpikesPerBin = 100;

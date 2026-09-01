@@ -87,6 +87,9 @@ if opts.splitExcitatoryInhibitory
   fprintf('E/I split: on (widthCutoff = %.3f ms)\n', opts.widthCutoff);
 end
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
+if ~isempty(opts.subjectName)
+  fprintf('Subject filter: %s\n', char(opts.subjectName));
+end
 if ~isempty(opts.brainArea)
   fprintf('Brain area: %s (single-area analysis)\n', opts.brainArea);
 else
@@ -94,6 +97,10 @@ else
 end
 
 sessionTable = build_session_table(opts.sessionTypes);
+if ~isempty(opts.subjectName)
+  sessionTable = filter_manuscript_session_table_by_subject(sessionTable, opts.subjectName);
+  fprintf('Sessions after subject filter (%s): %d\n', char(opts.subjectName), size(sessionTable, 1));
+end
 numSessions = size(sessionTable, 1);
 fprintf('Total sessions: %d\n', numSessions);
 if numSessions == 0
@@ -227,6 +234,7 @@ defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
 defaults.useSessionCache = true;
 defaults.forceRecompute = false;
+defaults.subjectName = '';
 % Empty collectEnd / prgWindow are sentinels for "full session" — do not replace
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 preservePrgWindowEmpty = isfield(opts, 'prgWindow') && isempty(opts.prgWindow);

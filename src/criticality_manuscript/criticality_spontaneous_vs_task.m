@@ -1,94 +1,70 @@
 %%
-% Criticality Multiple Metrics Across Task Types (Manuscript)
+% Criticality Spontaneous vs Task (Manuscript)
 %
-% Runs d2 (AR), avalanche (AV), and PRG analyses (per-session cache under
-% dropPath/criticality_manuscript), plots aligned multi-metric session
-% a cross-session metric correlation matrix (pooled across task types).
+% Same multi-metric pipeline as criticality_multiple_metrics_across_tasks.m,
+% but for one subject: all spontaneous sessions first, then that subject's
+% sessions of one task (reach, interval, or semicircle).
 %
 % Variables:
-%   sessionTypes, collectStart, collectEnd, d2Window, prgWindow, brainArea, areasToPlot
-%   d2Window / prgWindow - Analysis window length (s); [] = one window over the
-%                         full collect duration per session
-%   avWindow             - Avalanche analysis tile (s); [] = full collect with
-%                         one shared population threshold (total class). When
-%                         set, each tile gets its own threshold from that
-%                         tile's pop activity; avalanches are pooled and fit
-%                         once (not averaged). With splitByEngagement, engaged
-%                         and non-engaged each use a distinct cutoff from that
-%                         class's pop activity (or per-tile when avWindow set).
-%   binSizeD2 / binSizePrg / binSizeAv - Spike bin width (s) for d2, PRG, and
-%                         avalanche analyses; overrides each pipeline default
-%   engagementBufferBefore - Seconds before each engagement event counted as engaged
-%                            (reach onset, interval beam-break, or semicircle TaskMatrix time)
-%   engagementBufferAfter  - Seconds after each engagement event counted as engaged
-%   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
-%   minNonEngagedWindow - Min gap without events (s) for non-engaged avalanche
-%                        segments (default 30)
-%   absorbSingleEvents - If true, isolated single events flanked by qualifying
-%                        non-engaged gaps are merged into non-engaged time
-%   minTimeNonEngaged  - When splitByEngagement, min total non-engaged time (s)
-%                        to keep non-engaged metrics; shorter sessions stay on
-%                        the x-axis but plot blank (NaN) so plots stay aligned
-%   thresholdMethod    - Avalanche population cutoff: 'median' or 'quantile10'
-%   runArBatch, runAvBatch, runPrgBatch - Select which pipelines to run
-%                            (any non-empty combination of d2 / avalanche / PRG).
-%                            Unselected metrics stay blank in combined / separated
-%                            / pair-scatter layouts; correlation matrix only
-%                            includes selected families.
-%   useSessionCache    - If true (default), load/save per-session pipeline files
-%                        under dropPath/criticality_manuscript/<task>/[<subject>/]<session>/
-%   forceRecompute     - If true, ignore per-session cache and overwrite
-%   plotResults        - Create combined d2/tau/alpha figure(s)
-%   plotMetricPairScatters - 2x2 figure: d2 vs tau, d2 vs alpha,
-%                            paramSD (crackling 1/σνz) vs (α-1)/(τ-1),
-%                            d2 vs paramSD
-%   plotCorrelationMatrix - Pearson corr heatmap across sessions (all tasks);
-%                            only metrics from selected pipelines
-%   enablePermutations - If false, observed metrics only (no shuffles; faster)
-%   pcaFlag            - If true, reconstruct binned activity from nDim PCs
-%                        before d2 and avalanche analyses (same as session d2/AV)
-%   pcaFirstFlag       - If true, use first nDim PCs; if false, use last nDim
-%   nDim               - Number of PCA components when pcaFlag is true
-%                        (plot/cache names get _pca_<nDim> when pcaFlag is on)
-%   useAnchorAffineMap - If true, non-anchor metrics LS-affine-map onto
-%                        anchorMetric (minimize within-session differences).
-%                        If false, markers still share one x-axis (slight
-%                        offsets); secondary metrics use independent range
-%                        maps onto the primary display ylim, with right-side
-%                        axes showing native tau/alpha ticks.
-%   plotSeparatedMetrics - 2x4 figure: d2/tau/alpha/paramSD (top) and
-%                          decades/dcc/kurtosis/D_JS (bottom); consecutive sessions
-%                          linked within each task type on each panel.
-%                          When enablePermutations is true, shuffled/surrogate
-%                          session summaries are overlaid in gray.
-%   anchorMetric       - 'd2', 'tau', or 'alpha' (primary / left axis)
-%   metricsToPlot      - Subset of {'d2','tau','alpha'} markers to draw
-%   splitByEngagement  - If true, interval/reach use engaged vs non-engaged
-%                        analyses (d2, AV including decades, PRG); make two
-%                        plots (engaged and non-engaged), each including
-%                        spontaneous alongside that class.
-%                        d2/PRG: a window/block counts only if fully inside an
-%                        engaged or non-engaged segment (straddlers skipped);
-%                        split from full-session cache when present. Avalanches:
-%                        detected on engaged vs non-engaged segments (cannot be
-%                        split from a full-session fit).
-%                        Paired plots share d2-aligned y-limits for comparison.
-%                        Correlation matrix always uses full-session metrics.
-%                        See minTimeNonEngaged for blanking short non-engaged.
+%   subjectName, taskType, d2Method
+%   subjectName - Must match spontaneous_session_list (and interval/semicircle
+%                 subjectName, or the reach session-name prefix, e.g. Y15, AB6)
+%   taskType    - 'reach', 'interval', or 'semicircle'
+%   d2Method    - 'euclidean' (Yule-Walker + getFixedPointDistance2) or 'kl'
+%                 (Sooter et al. KL-rate d2 from prox_crit_toolkit)
+%   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
+%                 (prox_crit_toolkit / Sooter et al. S2.5). Error bars require
+%                 MaxLikelihood and are slow (one extra KL min per AR coefficient).
+%   Remaining options match criticality_multiple_metrics_across_tasks.m
 %
 % Goal:
-%   One session-grouped plot per brain area with d2, tau, and alpha per session.
-%   Optionally anchor non-anchor metrics onto the chosen metric's y-scale via
-%   affine maps. Optional pair scatters, separated metric panels, and
-%   correlation matrix across sessions.
+%   Compare spontaneous vs task criticality for one animal, with spontaneous
+%   sessions plotted left-most.
 
 %% Configuration
-sessionTypes = default_manuscript_session_types();
-sessionTypes = order_manuscript_session_types(sessionTypes);
+subjectName = 'ey9166';
+taskType = 'interval';          % 'reach', 'interval', or 'semicircle'
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
+% prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
+klFitMethod = 'MaxLikelihood';  % required for error bars
+klErrBars = true;
+runParallel = false;
+klParallel = runParallel;
+
+taskType = lower(strtrim(char(taskType)));
+if ~ismember(taskType, {'reach', 'interval', 'semicircle'})
+  error('taskType must be ''reach'', ''interval'', or ''semicircle'' (got "%s").', taskType);
+end
+if isempty(subjectName)
+  error('Set subjectName to a subject in spontaneous_session_list / the task session list.');
+end
+d2Method = lower(strtrim(char(d2Method)));
+if ~ismember(d2Method, {'euclidean', 'kl'})
+  error('d2Method must be ''euclidean'' or ''kl'' (got "%s").', d2Method);
+end
+if strcmp(d2Method, 'kl')
+  klFitMethod = char(strtrim(klFitMethod));
+  if ~ismember(klFitMethod, {'MaxLikelihood', 'YuleWalker'})
+    error('klFitMethod must be ''MaxLikelihood'' or ''YuleWalker'' (got "%s").', klFitMethod);
+  end
+  klErrBars = logical(klErrBars);
+  runParallel = logical(runParallel);
+  klParallel = logical(klParallel);
+  if klErrBars && ~strcmp(klFitMethod, 'MaxLikelihood')
+    error('KL error bars require klFitMethod = ''MaxLikelihood'' (S2.5 Hessian).');
+  end
+else
+  klFitMethod = 'MaxLikelihood';
+  klErrBars = false;
+  runParallel = false;
+  klParallel = false;
+end
+
+sessionTypes = order_manuscript_session_types({'spontaneous', taskType});
 collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
-d2Window = 45;
+d2Window = 30;
 prgWindow = d2Window;
 avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
@@ -106,7 +82,7 @@ minTimeNonEngaged = 180;      % min total non-engaged time (s) to plot; 0 = no f
 % Sessions below minTimeNonEngaged stay in non-engaged plots but are blanked
 
 % Paths first — needed by default_manuscript_brain_area_combinations / plotConfig
-setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
+setup_criticality_manuscript_paths('criticality_spontaneous_vs_task');
 paths = get_paths();
 
 brainArea = 'M23M56';
@@ -117,10 +93,10 @@ areasToPlot = {};
 % Pipeline selection — any combination of d2 (AR), avalanche (AV), PRG
 runArBatch = true;   % d2
 runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
-runPrgBatch = true;  % kurtosis, JS distance
+runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
-forceRecompute = true;   % true: reprocess and overwrite per-session cache
+forceRecompute = false;   % true: reprocess and overwrite per-session cache
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
@@ -133,7 +109,7 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
@@ -149,6 +125,22 @@ finalCutoffDivisor = 16;
 prgMethod = 'pca';
 
 plotConfig = fill_manuscript_plot_config();
+plotConfig.fileTag = sprintf('spont_vs_%s_%s_d2%s', ...
+  matlab.lang.makeValidName(char(taskType)), ...
+  matlab.lang.makeValidName(char(subjectName)), ...
+  matlab.lang.makeValidName(char(d2Method)));
+if strcmp(d2Method, 'kl')
+  plotConfig.fileTag = sprintf('%s_%s', plotConfig.fileTag, ...
+    matlab.lang.makeValidName(char(klFitMethod)));
+  if klErrBars
+    plotConfig.fileTag = [plotConfig.fileTag, '_klerr']; %#ok<AGROW>
+  end
+end
+plotConfig.subjectName = char(subjectName);
+plotConfig.taskType = taskType;
+plotConfig.d2Method = d2Method;
+plotConfig.klFitMethod = klFitMethod;
+plotConfig.klErrBars = klErrBars;
 
 % Resolve which pipelines are active. Unselected → blank panels.
 useAr = logical(runArBatch);
@@ -158,7 +150,14 @@ if ~(useAr || useAv || usePrg)
   error('Select at least one pipeline: set runArBatch / runAvBatch / runPrgBatch true.');
 end
 
-fprintf('\n=== Criticality Multiple Metrics Across Tasks ===\n');
+fprintf('\n=== Criticality Spontaneous vs Task ===\n');
+fprintf('Subject: %s\n', char(subjectName));
+fprintf('Task: %s (spontaneous sessions plotted first)\n', taskType);
+fprintf('d2Method: %s\n', d2Method);
+if strcmp(d2Method, 'kl')
+  fprintf('KL fit: %s; klErrBars=%d; klParallel=%d\n', ...
+    klFitMethod, klErrBars, klParallel);
+end
 fprintf('Pipelines: AR(d2)=%d  AV=%d  PRG=%d\n', useAr, useAv, usePrg);
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 if isempty(collectEnd)
@@ -224,6 +223,20 @@ end
 set_manuscript_av_window(avWindow);
 pcaFileTag = format_pca_file_tag(pcaFlag, nDim, pcaFirstFlag);
 
+previewSpont = filter_manuscript_session_table_by_subject( ...
+  build_preview_session_table({'spontaneous'}), subjectName);
+previewTask = filter_manuscript_session_table_by_subject( ...
+  build_preview_session_table({taskType}), subjectName);
+fprintf('Matched sessions: %d spontaneous, %d %s\n', ...
+  height(previewSpont), height(previewTask), taskType);
+if height(previewSpont) == 0
+  error('No spontaneous sessions for subject "%s" in spontaneous_session_list.', subjectName);
+end
+if height(previewTask) == 0
+  error('No %s sessions for subject "%s" in the task session list.', taskType, subjectName);
+end
+maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel);
+
 % AR batch (d2) — full-session metrics across all requested session types
 arOpts = struct( ...
   'sessionTypes', {sessionTypes}, ...
@@ -245,7 +258,12 @@ arOpts = struct( ...
   'nDim', nDim, ...
   'useSessionCache', useSessionCache, ...
   'forceRecompute', forceRecompute, ...
-  'plotResults', false);
+  'plotResults', false, ...
+  'subjectName', subjectName, ...
+  'd2Method', d2Method, ...
+  'klFitMethod', klFitMethod, ...
+  'klErrBars', klErrBars, ...
+  'klParallel', klParallel);
 
 if useAr
   arOut = criticality_ar_across_tasks(arOpts);
@@ -277,7 +295,8 @@ avOpts = struct( ...
   'nDim', nDim, ...
   'useSessionCache', useSessionCache, ...
   'forceRecompute', forceRecompute, ...
-  'plotResults', false);
+  'plotResults', false, ...
+  'subjectName', subjectName);
 
 if useAv
   avOut = criticality_av_across_tasks(avOpts);
@@ -305,7 +324,8 @@ prgOpts = struct( ...
   'prgMethod', prgMethod, ...
   'useSessionCache', useSessionCache, ...
   'forceRecompute', forceRecompute, ...
-  'plotResults', false);
+  'plotResults', false, ...
+  'subjectName', subjectName);
 
 if usePrg
   prgOut = criticality_prg_across_tasks(prgOpts);
@@ -382,7 +402,12 @@ if splitByEngagement
     'analyses', {engAnalyses}, ...
     'useSessionCache', useSessionCache, ...
     'forceRecompute', forceRecompute, ...
-    'plotConfig', plotConfig);
+    'plotConfig', plotConfig, ...
+    'subjectName', subjectName, ...
+    'd2Method', d2Method, ...
+    'klFitMethod', klFitMethod, ...
+    'klErrBars', klErrBars, ...
+    'klParallel', klParallel);
 
   if ~runEngagementBatch
     error('splitByEngagement requires runEngagementBatch true (per-session cache skips already processed sessions).');
@@ -704,11 +729,13 @@ for iArea = 1:numel(areasToPlot)
   end
   titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample);
   titleStr = append_pca_title_tag(titleStr, pcaFileTag);
+  titleStr = append_spontaneous_vs_task_title_tag(titleStr, plotConfig);
   title(ax, titleStr, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
 
   plotBase = make_correlation_matrix_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, useSubsampling, nNeuronsSubsample, avWindow, pcaFileTag);
   plotBase = [plotBase, '_invMetrics']; %#ok<AGROW>
+  plotBase = prepend_manuscript_plot_file_tag(plotBase, plotConfig);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved correlation matrix: %s\n', fullfile(saveDir, plotBase));
@@ -1331,11 +1358,13 @@ for a = 1:numel(areasToPlot)
   end
   titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample);
   titleStr = append_pca_title_tag(titleStr, pcaFileTag);
+  titleStr = append_spontaneous_vs_task_title_tag(titleStr, plotConfig);
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
   plotBase = make_multimetric_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, anchorMetric, engagementTag, metricsToPlot, ...
     useAnchorAffineMap, useSubsampling, nNeuronsSubsample, avWindow, pcaFileTag);
+  plotBase = prepend_manuscript_plot_file_tag(plotBase, plotConfig);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
@@ -1667,11 +1696,13 @@ for a = 1:numel(areasToPlot)
   end
   titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample);
   titleStr = append_pca_title_tag(titleStr, pcaFileTag);
+  titleStr = append_spontaneous_vs_task_title_tag(titleStr, plotConfig);
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
   plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, engagementTag, ...
     useSubsampling, nNeuronsSubsample, avWindow, binSizeD2, pcaFileTag);
+  plotBase = prepend_manuscript_plot_file_tag(plotBase, plotConfig);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved separated metrics: %s\n', fullfile(saveDir, plotBase));
@@ -1993,11 +2024,13 @@ for a = 1:numel(areasToPlot)
   end
   titleStr = append_subsamp_title_tag(titleStr, useSubsampling, nNeuronsSubsample);
   titleStr = append_pca_title_tag(titleStr, pcaFileTag);
+  titleStr = append_spontaneous_vs_task_title_tag(titleStr, plotConfig);
   sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold');
 
   plotBase = make_pair_scatter_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, engagementTag, useSubsampling, nNeuronsSubsample, ...
     avWindow, pcaFileTag);
+  plotBase = prepend_manuscript_plot_file_tag(plotBase, plotConfig);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved pair scatters: %s\n', fullfile(saveDir, plotBase));
@@ -2795,6 +2828,35 @@ end
 titleStr = sprintf('%s; %s', titleStr, pcaFileTag);
 end
 
+function titleStr = append_spontaneous_vs_task_title_tag(titleStr, plotConfig)
+% APPEND_SPONTANEOUS_VS_TASK_TITLE_TAG Subject, task, and d2 method on figure titles
+if nargin < 2 || isempty(plotConfig) || ~isstruct(plotConfig)
+  return;
+end
+bits = {};
+if isfield(plotConfig, 'subjectName') && ~isempty(plotConfig.subjectName)
+  bits{end + 1} = char(plotConfig.subjectName); %#ok<AGROW>
+end
+if isfield(plotConfig, 'taskType') && ~isempty(plotConfig.taskType)
+  bits{end + 1} = sprintf('vs %s', char(plotConfig.taskType)); %#ok<AGROW>
+end
+if isfield(plotConfig, 'd2Method') && ~isempty(plotConfig.d2Method)
+  bits{end + 1} = sprintf('d2-%s', char(plotConfig.d2Method)); %#ok<AGROW>
+end
+if isfield(plotConfig, 'd2Method') && strcmpi(char(plotConfig.d2Method), 'kl')
+  if isfield(plotConfig, 'klFitMethod') && ~isempty(plotConfig.klFitMethod)
+    bits{end + 1} = char(plotConfig.klFitMethod); %#ok<AGROW>
+  end
+  if isfield(plotConfig, 'klErrBars') && logical(plotConfig.klErrBars)
+    bits{end + 1} = 'klerr'; %#ok<AGROW>
+  end
+end
+if isempty(bits)
+  return;
+end
+titleStr = sprintf('%s; %s', titleStr, strjoin(bits, ' '));
+end
+
 function tag = format_multimetric_collect_tag(collectStart, collectEnd)
 if isempty(collectEnd)
   tag = sprintf('%.0f-full', collectStart);
@@ -3287,6 +3349,11 @@ fprintf('\n=== Engagement batch (%s) ===\n', analysesTag);
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
 
 sessionTable = build_multimetric_engagement_session_table(opts.sessionTypes);
+if isfield(opts, 'subjectName') && ~isempty(opts.subjectName)
+  sessionTable = filter_manuscript_session_table_by_subject(sessionTable, opts.subjectName);
+  fprintf('Engagement sessions after subject filter (%s): %d\n', ...
+    char(opts.subjectName), size(sessionTable, 1));
+end
 numSessions = size(sessionTable, 1);
 fprintf('Engagement sessions: %d\n', numSessions);
 if numSessions == 0
@@ -3552,6 +3619,18 @@ if isfield(opts, 'finalCutoffDivisor') && ~isempty(opts.finalCutoffDivisor)
   engModOpts.finalCutoffDivisor = opts.finalCutoffDivisor;
 end
 engModOpts.enableCircularPermutations = logical(opts.enablePermutations);
+if isfield(opts, 'd2Method') && ~isempty(opts.d2Method)
+  engModOpts.d2Method = opts.d2Method;
+end
+if isfield(opts, 'klFitMethod') && ~isempty(opts.klFitMethod)
+  engModOpts.klFitMethod = opts.klFitMethod;
+end
+if isfield(opts, 'klErrBars') && ~isempty(opts.klErrBars)
+  engModOpts.klErrBars = logical(opts.klErrBars);
+end
+if isfield(opts, 'klParallel') && ~isempty(opts.klParallel)
+  engModOpts.klParallel = logical(opts.klParallel);
+end
 if opts.enablePermutations
   engModOpts.nShuffles = 5;
   engModOpts.nShufflesD2 = 10;
@@ -3619,6 +3698,39 @@ if ~is_manuscript_engagement_session_type(sessionType)
   return;
 end
 entries = manuscript_sessions_for_type(sessionType);
+end
+
+function sessionTable = build_preview_session_table(sessionTypes)
+% BUILD_PREVIEW_SESSION_TABLE Flatten manuscript session lists for subject checks
+%
+% Variables:
+%   sessionTypes - Cell of types to load (e.g. {'spontaneous'} or {'interval'})
+%
+% Goal:
+%   Same flattening as the AR/AV/PRG session tables, including spontaneous,
+%   so the script can error before running batches if this subject has no
+%   spontaneous or no task sessions.
+%
+% Returns:
+%   sessionTable - sessionType, sessionName, subjectName columns
+sessionTypeCol = {};
+sessionNameCol = {};
+subjectNameCol = {};
+for t = 1:numel(sessionTypes)
+  sessionType = sessionTypes{t};
+  entries = manuscript_sessions_for_type(sessionType);
+  for i = 1:numel(entries)
+    sessionTypeCol{end + 1, 1} = sessionType; %#ok<AGROW>
+    sessionNameCol{end + 1, 1} = entries(i).sessionName; %#ok<AGROW>
+    if isfield(entries, 'subjectName')
+      subjectNameCol{end + 1, 1} = entries(i).subjectName; %#ok<AGROW>
+    else
+      subjectNameCol{end + 1, 1} = ''; %#ok<AGROW>
+    end
+  end
+end
+sessionTable = table(sessionTypeCol, sessionNameCol, subjectNameCol, ...
+  'VariableNames', {'sessionType', 'sessionName', 'subjectName'});
 end
 
 function plotData = aggregate_multimetric_engagement_plot_data(batchResults, sessionTypes, useLog10D2)

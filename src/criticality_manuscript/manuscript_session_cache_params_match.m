@@ -42,6 +42,10 @@ if ~pca_cache_params_match(requested, stored)
   return;
 end
 
+if ~d2_method_cache_params_match(requested, stored)
+  return;
+end
+
 tf = true;
 end
 
@@ -98,5 +102,42 @@ function nDim = cache_pca_n_dim(s)
 nDim = 0;
 if isfield(s, 'nDim') && ~isempty(s.nDim) && isfinite(s.nDim)
   nDim = s.nDim;
+end
+end
+
+function tf = d2_method_cache_params_match(requested, stored)
+% D2_METHOD_CACHE_PARAMS_MATCH Missing method treated as euclidean (legacy caches)
+reqMethod = cache_d2_method(requested);
+stoMethod = cache_d2_method(stored);
+if ~cache_values_equal(reqMethod, stoMethod)
+  tf = false;
+  return;
+end
+if ~strcmp(reqMethod, 'kl')
+  tf = true;
+  return;
+end
+tf = cache_values_equal(cache_kl_fit_method(requested), cache_kl_fit_method(stored)) ...
+  && cache_values_equal(cache_kl_err_bars(requested), cache_kl_err_bars(stored));
+end
+
+function d2Method = cache_d2_method(s)
+d2Method = 'euclidean';
+if isfield(s, 'd2Method') && ~isempty(s.d2Method)
+  d2Method = lower(strtrim(char(s.d2Method)));
+end
+end
+
+function klFitMethod = cache_kl_fit_method(s)
+klFitMethod = 'MaxLikelihood';
+if isfield(s, 'klFitMethod') && ~isempty(s.klFitMethod)
+  klFitMethod = char(s.klFitMethod);
+end
+end
+
+function tf = cache_kl_err_bars(s)
+tf = false;
+if isfield(s, 'klErrBars') && ~isempty(s.klErrBars)
+  tf = logical(s.klErrBars);
 end
 end

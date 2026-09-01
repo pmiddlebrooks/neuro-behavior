@@ -24,6 +24,11 @@ function results = criticality_ar_analysis(dataStruct, config)
 %     .sdfFlag - If true, smooth each neuron with spike_density_function
 %                on a 1 ms grid, then downsample to binSize before AR (default: false)
 %     .sdfSigmaMs - Gaussian SDF sigma in milliseconds (default: 10)
+%     .d2Method - 'euclidean' (Yule-Walker + getFixedPointDistance2, default)
+%                 or 'kl' (Sooter et al. calc_db KL-rate)
+%     .klFitMethod - KL fit (default: 'MaxLikelihood')
+%     .klErrBars - If true, KL Hessian error bars (default: false)
+%     .klParallel - If true, parallelize KL error-bar gradient (default: false)
 %
 % Goal:
 %   Compute d2 and/or mrBr criticality measures in sliding windows for spike data.
@@ -142,7 +147,8 @@ function results = criticality_ar_analysis(dataStruct, config)
     fprintf('Data type: %s\n', sessionType);
     fprintf('Number of areas: %d\n', numAreas);
     fprintf('Window size: %.2f s\n', config.slidingWindowSize);
-    fprintf('Analyze d2: %d, Analyze mrBr: %d\n', config.analyzeD2, config.analyzeMrBr);
+    fprintf('Analyze d2: %d (%s), Analyze mrBr: %d\n', ...
+        config.analyzeD2, config.d2Method, config.analyzeMrBr);
     
     % Create filename suffix based on PCA and SDF flags
     filenameSuffix = format_ar_file_suffix(config);
@@ -551,8 +557,9 @@ function results = criticality_ar_analysis(dataStruct, config)
                     end
                     
                     if config.analyzeD2
-                        [varphi, ~] = myYuleWalker3(double(wPopActivitySub), config.pOrder);
-                        d2Subsamples(w, s) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                        d2Subsamples(w, s) = compute_d2_from_pop_trace( ...
+                            double(wPopActivitySub), config.pOrder, config.critType, ...
+                            binSize(a), config.d2Method, config);
                     end
                 end
                 
@@ -671,8 +678,9 @@ function results = criticality_ar_analysis(dataStruct, config)
                 end
                 
                 if config.analyzeD2
-                    [varphi, ~] = myYuleWalker3(double(wPopActivity), config.pOrder);
-                    d2Local(w) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                    d2Local(w) = compute_d2_from_pop_trace( ...
+                        double(wPopActivity), config.pOrder, config.critType, ...
+                        binSize(a), config.d2Method, config);
                 else
                     d2Local(w) = nan;
                 end
@@ -807,6 +815,10 @@ function config = set_config_defaults(config)
     defaults.minBinsPerWindow = 1000;
     defaults.pOrder = 10;
     defaults.critType = 2;
+    defaults.d2Method = 'euclidean';  % 'euclidean' or 'kl' (Sooter calc_db)
+    defaults.klFitMethod = 'MaxLikelihood';
+    defaults.klErrBars = false;
+    defaults.klParallel = false;
     defaults.modulationThreshold = 2;
     defaults.modulationBinSize = nan;
     defaults.modulationBaseWindow = [-3, -2];
@@ -1115,8 +1127,9 @@ function [d2Permuted, mrBrPermuted] = perform_circular_permutations(aDataMat, co
             end
             
             if config.analyzeD2
-                [varphi, ~] = myYuleWalker3(double(wPopActivity), config.pOrder);
-                d2Permuted(w, s) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                d2Permuted(w, s) = compute_d2_from_pop_trace( ...
+                    double(wPopActivity), config.pOrder, config.critType, ...
+                    binSize, config.d2Method, config);
             end
         end
     end
@@ -1201,8 +1214,9 @@ function [d2Permuted, mrBrPermuted] = perform_circular_permutations_pca(reconstr
             end
             
             if config.analyzeD2
-                [varphi, ~] = myYuleWalker3(double(wPopActivity), config.pOrder);
-                d2Permuted(w, s) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                d2Permuted(w, s) = compute_d2_from_pop_trace( ...
+                    double(wPopActivity), config.pOrder, config.critType, ...
+                    binSize, config.d2Method, config);
             end
         end
     end
@@ -1268,6 +1282,10 @@ function results = build_results_structure(dataStruct, config, areas, areasToTes
     results.params.sdfSigmaMs = config.sdfSigmaMs;
     results.params.pOrder = config.pOrder;
     results.params.critType = config.critType;
+    results.params.d2Method = config.d2Method;
+    results.params.klFitMethod = config.klFitMethod;
+    results.params.klErrBars = config.klErrBars;
+    results.params.klParallel = config.klParallel;
     results.params.normalizeD2 = config.normalizeD2;
     if isfield(config, 'useLog10D2')
         results.params.useLog10D2 = config.useLog10D2;

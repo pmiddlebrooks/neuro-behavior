@@ -57,6 +57,20 @@ if ~strcmp(kindGroup, 'prg') && pcaOpts.pcaFlag
   cacheParams.pcaFirstFlag = pcaOpts.pcaFirstFlag;
   cacheParams.nDim = pcaOpts.nDim;
 end
+cacheParams.d2Method = 'euclidean';
+if strcmp(kindGroup, 'd2') && isfield(opts, 'd2Method') && ~isempty(opts.d2Method)
+  cacheParams.d2Method = lower(strtrim(char(opts.d2Method)));
+end
+cacheParams.klFitMethod = 'MaxLikelihood';
+cacheParams.klErrBars = false;
+if strcmp(kindGroup, 'd2') && strcmp(cacheParams.d2Method, 'kl')
+  if isfield(opts, 'klFitMethod') && ~isempty(opts.klFitMethod)
+    cacheParams.klFitMethod = char(opts.klFitMethod);
+  end
+  if isfield(opts, 'klErrBars') && ~isempty(opts.klErrBars)
+    cacheParams.klErrBars = logical(opts.klErrBars);
+  end
+end
 cacheParams.analyses = '';
 cacheParams.cellType = '';
 if isfield(opts, 'cacheCellType') && ~isempty(opts.cacheCellType)

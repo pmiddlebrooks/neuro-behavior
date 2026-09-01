@@ -32,6 +32,8 @@ function out = reach_criticality_metrics_engagement(sessionName, opts)
 %       .nSubsamples, .nNeuronsSubsample, .minNeuronsMultiple - subsampling settings
 %     d2:
 %       .d2Window, .binSizeD2, .useLog10D2, .enablePermutations, .nShufflesD2
+%       .d2Method - 'euclidean' (default) or 'kl' (Sooter calc_db)
+%       .klFitMethod, .klErrBars, .klParallel - KL d2 (S2.5; used when d2Method='kl')
 %       .runD2AccuracyCorrelation - If true (default), correlate d2 with reach
 %                                   accuracy across total and engaged windows
 %       .runD2ReachRateCorrelation - If true (default), correlate d2 with reach
@@ -529,6 +531,22 @@ end
 if ~isfield(opts, 'useLog10D2') || isempty(opts.useLog10D2)
   opts.useLog10D2 = true;
 end
+if ~isfield(opts, 'd2Method') || isempty(opts.d2Method)
+  opts.d2Method = 'euclidean';
+else
+  opts.d2Method = lower(strtrim(char(opts.d2Method)));
+end
+if ~isfield(opts, 'klFitMethod') || isempty(opts.klFitMethod)
+  opts.klFitMethod = 'MaxLikelihood';
+end
+if ~isfield(opts, 'klErrBars') || isempty(opts.klErrBars)
+  opts.klErrBars = false;
+end
+opts.klErrBars = logical(opts.klErrBars);
+if ~isfield(opts, 'klParallel') || isempty(opts.klParallel)
+  opts.klParallel = false;
+end
+opts.klParallel = logical(opts.klParallel);
 if ~isfield(opts, 'nShufflesD2') || isempty(opts.nShufflesD2)
   opts.nShufflesD2 = 50;
 end
@@ -669,6 +687,10 @@ arConfig.makePlots = false;
 arConfig.saveData = false;
 arConfig.pOrder = 10;
 arConfig.critType = 2;
+arConfig.d2Method = opts.d2Method;
+arConfig.klFitMethod = opts.klFitMethod;
+arConfig.klErrBars = opts.klErrBars;
+arConfig.klParallel = opts.klParallel;
 arConfig.minSpikesPerBin = 2.5;
 arConfig.minBinsPerWindow = 1000;
 arConfig.maxSpikesPerBin = 100;
