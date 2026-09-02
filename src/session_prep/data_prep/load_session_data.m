@@ -11,6 +11,8 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
 %           If opts.firingRateCheckTime is empty, firing-rate filtering uses
 %           the full session duration (opts.collectStart to opts.collectEnd).
 %           Per-session metadata (<task>_session_metadata) is applied here.
+%           collectStart / collectEnd (and collectStartMin / collectEndMax)
+%           are seconds, same as neuro_behavior_options.
 %       'lfpCleanParams' - LFP cleaning parameters
 %       'bands' - Frequency bands for LFP
 %       'minBinSize' - Minimum bin size for LFP bands (default 0.005)

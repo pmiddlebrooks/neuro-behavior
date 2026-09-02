@@ -29,25 +29,16 @@ data = load_data(opts, 'spikes');
 areaMapping = containers.Map({'M23', 'M56', 'DS', 'VS'}, {1, 2, 3, 4});
 
 
-% Define good neurons
-    useMulti = 1;
-    if ~useMulti
-    allGood = strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good');
-    else
-    allGood = (strcmp(data.ci.group, 'good') & strcmp(data.ci.KSLabel, 'good')) | (strcmp(data.ci.group, 'mua') & strcmp(data.ci.KSLabel, 'mua'));
-warning('on','all');
-warning('Warning in get_standard_data: you are loading muas with the good spiking units.')
-    end
-    
-    goodM23 = allGood & strcmp(data.ci.area, 'M23');
-    goodM56= allGood & strcmp(data.ci.area, 'M56');
-    goodCC = allGood & strcmp(data.ci.area, 'CC');
-    goodDS = allGood & strcmp(data.ci.area, 'DS');
-    goodVS = allGood & strcmp(data.ci.area, 'VS');
+% Define neurons already accepted as good / mua / real in load_data
+    inM23 = strcmp(data.ci.area, 'M23');
+    inM56 = strcmp(data.ci.area, 'M56');
+    inCC = strcmp(data.ci.area, 'CC');
+    inDS = strcmp(data.ci.area, 'DS');
+    inVS = strcmp(data.ci.area, 'VS');
 
     % which neurons to use in the neural matrix
-    opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS | goodCC);
-    opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
+    opts.useNeurons = find(inM23 | inM56 | inDS | inVS | inCC);
+    opts.useNeurons = find(inM23 | inM56 | inDS | inVS);
 
 % Define neuron IDs
 if ismember('id', data.ci.Properties.VariableNames)

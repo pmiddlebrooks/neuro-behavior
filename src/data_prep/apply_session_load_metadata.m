@@ -9,8 +9,10 @@ function [opts, metadata] = apply_session_load_metadata(sessionType, subjectName
 %
 % Goal:
 %   Look up <task>_session_metadata(subjectName, sessionName) and apply
-%   overrides. collectStartMin floors collectStart; collectEndMax caps a
-%   finite collectEnd; other nonempty fields copy onto opts.
+%   overrides. collectStart, collectEnd, collectStartMin, and collectEndMax
+%   are seconds (same as neuro_behavior_options; not minutes) and are copied
+%   as-is. collectStartMin floors collectStart; collectEndMax caps a finite
+%   collectEnd; other nonempty fields copy onto opts.
 %
 % Returns:
 %   opts     - Options with session metadata applied
@@ -55,6 +57,7 @@ for iField = 1:numel(fn)
 end
 
 if isfield(metadata, 'collectStartMin') && ~isempty(metadata.collectStartMin)
+  % collectStartMin is seconds; apply as a floor with no unit conversion
   oldStart = [];
   if isfield(opts, 'collectStart')
     oldStart = opts.collectStart;
@@ -65,12 +68,13 @@ if isfield(metadata, 'collectStartMin') && ~isempty(metadata.collectStartMin)
     opts.collectStart = max(oldStart, metadata.collectStartMin);
   end
   if isempty(oldStart) || opts.collectStart ~= oldStart
-    changedMsg{end+1} = sprintf('collectStart %s -> %.3g (min=%.3g)', ...
+    changedMsg{end+1} = sprintf('collectStart %s -> %.3g s (collectStartMin=%.3g s)', ...
       format_opt_value(oldStart), opts.collectStart, metadata.collectStartMin); %#ok<AGROW>
   end
 end
 
 if isfield(metadata, 'collectEndMax') && ~isempty(metadata.collectEndMax)
+  % collectEndMax is seconds; apply as a cap with no unit conversion
   oldEnd = [];
   if isfield(opts, 'collectEnd')
     oldEnd = opts.collectEnd;
@@ -78,7 +82,7 @@ if isfield(metadata, 'collectEndMax') && ~isempty(metadata.collectEndMax)
   if ~isempty(oldEnd) && isfinite(oldEnd)
     opts.collectEnd = min(oldEnd, metadata.collectEndMax);
     if opts.collectEnd ~= oldEnd
-      changedMsg{end+1} = sprintf('collectEnd %.3g -> %.3g (max=%.3g)', ...
+      changedMsg{end+1} = sprintf('collectEnd %.3g s -> %.3g s (collectEndMax=%.3g s)', ...
         oldEnd, opts.collectEnd, metadata.collectEndMax); %#ok<AGROW>
     end
   end

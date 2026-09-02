@@ -52,7 +52,7 @@ sessionName =  'ag112321_1';
 % sessionName =  'ag112321_2'; 
 % sessionName =  'ag112721'; % Good neural, bad behavior labels
 % sessionName =  'ag112821'; % Good neural, bad behavior labels
-% sessionName =  'ag112921'; % Good neural, bad behavior labels
+sessionName =  'ag112921'; % Good neural, bad behavior labels
 
 % subjectName = 'ey4152';
 % sessionName =  'ey042822';  % Good M56, Bad DS, bad behavior labels after 200 min
@@ -62,9 +62,9 @@ sessionName =  'ag112321_1';
 % sessionName =  'kw092821';  % Bad M56, Good DS, bad behavior labels for first ~200 min
 % sessionName =  'kw092921';  % Ok... few M56
 
-subjectName = 'ey9166';
-sessionName =  'ey9166_2026_03_24';  % 
-sessionName =  'ey9166_2026_03_26';  % 
+% subjectName = 'ey9166';
+% sessionName =  'ey9166_2026_03_24';  % 
+% sessionName =  'ey9166_2026_03_26';  % 
 % sessionName =  'ey9166_2026_03_27';  % 
 % 
 
@@ -81,12 +81,11 @@ sessionName =  'ey9166_2026_04_02';
 % sessionName =  'ey9166_2026_04_07';
 % sessionName =  'ey9166_2026_04_09';
 % 
-% subjectName = 'ey9387';
-% sessionName =  'ey9387_2026_05_19';
+subjectName = 'ey9387';
+sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
 % sessionName =  'ey9387_2026_05_21';
 % sessionName =  'ey9387_2026_05_22';
-% sessionName =  'ey9387_2026_05_25';
 % sessionName =  'ey9387_2026_05_25';
 % sessionName =  'ey9387_2026_05_26';
 % sessionName =  'ey9387_2026_05_27';

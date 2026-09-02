@@ -97,41 +97,18 @@ switch dataType
     case 'spikes'
         % Find spike data files in session folder
         searchPath = sessionFolder;
-        
-        % Check for cluster_info.tsv
-        clusterInfoPath = fullfile(searchPath, 'cluster_info.tsv');
-        if ~exist(clusterInfoPath, 'file')
-            error('cluster_info.tsv not found in %s', searchPath);
-        end
-        ci = readtable(clusterInfoPath, "FileType","text",'Delimiter', '\t');
 
-        % some of the depth values aren't in order, so re-sort the data by
-        % depth
-        ci = sortrows(ci, 'depth');
-
-        % Reassign depth so 0 is most superficial (M23) and 3840 is deepest
-        % (VS)
-        ci.depth = 3840 - ci.depth;
-
-        % Flip the ci table so the "top" is M23 and "bottom" is VS
-        ci = flipud(ci);
-
-        % Brain area regions as function of depth from surface (see
-        % get_brain_area_depth_ranges.m). Uses brain_area_depths.mat when present.
-        [m23, m56, cc, ds, vs, depthSource] = get_brain_area_depth_ranges(searchPath);
-        if strcmp(depthSource, 'session')
-            fprintf('Using brain_area_depths.mat for %s\n', opts.sessionName);
+        % cluster_info.tsv if present, else cluster_rf.tsv; rf_label merged when needed
+        ci = load_session_cluster_info(searchPath, opts.sessionName);
+        if ~ismember('area', ci.Properties.VariableNames)
+            error(['Cluster table has no depth/area in %s. ', ...
+                'cluster_info.tsv is required for area assignment; ', ...
+                'cluster_rf.tsv supplies quality labels only.'], searchPath);
         end
 
-
-        area = cell(size(ci, 1), 1);
-        area(ci.depth >= m23(1) & ci.depth <= m23(2)) = {'M23'};
-        area(ci.depth >= m56(1) & ci.depth <= m56(2)) = {'M56'};
-        area(ci.depth >= cc(1) & ci.depth <= cc(2)) = {'CC'};
-        area(ci.depth >= ds(1) & ci.depth <= ds(2)) = {'DS'};
-        area(ci.depth >= vs(1) & ci.depth <= vs(2)) = {'VS'};
-
-        ci.area = area;
+        % Keep good / mua / real units (single mask: cluster_quality_mask.m)
+        allGood = cluster_quality_mask(ci, opts);
+        ci = ci(allGood, :);
 
         % Check for spike_times.npy
         spikeTimesPath = fullfile(searchPath, 'spike_times.npy');
@@ -148,12 +125,24 @@ switch dataType
         end
         spikeClusters = readNPY(spikeClustersPath);
 
+        if ismember('id', ci.Properties.VariableNames)
+            acceptedIds = ci.id;
+        else
+            acceptedIds = ci.cluster_id;
+        end
+        keepSpikes = ismember(spikeClusters, acceptedIds);
+        spikeTimes = spikeTimes(keepSpikes);
+        spikeClusters = spikeClusters(keepSpikes);
+
         % Drop extra spikes within 1.5 ms on the same unit (good, mua, or real)
         [spikeTimes, spikeClusters] = filter_isi_violations(spikeTimes, spikeClusters);
 
         if isempty(opts.collectEnd)
-    opts.collectEnd = spikeTimes(end);
-end
+            if isempty(spikeTimes)
+                error('No spikes from accepted units (good/mua/real) in %s', searchPath);
+            end
+            opts.collectEnd = spikeTimes(end);
+        end
 
         % Return the requested window of data, formatted  so start time is zero,
         dataWindow = spikeTimes >= opts.collectStart & spikeTimes <= (opts.collectEnd);

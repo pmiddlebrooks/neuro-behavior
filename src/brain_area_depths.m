@@ -2,15 +2,18 @@ function brainAreaDepths = brain_area_depths(sessionType, subjectName, sessionNa
 % BRAIN_AREA_DEPTHS - Interactive brain-area depth boundaries for a session
 %
 % Variables:
-%   sessionType - 'spontaneous' or 'interval' (sessions with cluster_info.tsv)
+%   sessionType - Task name: 'spontaneous', 'interval', or any kilosort
+%                 session folder with cluster_info.tsv / cluster_rf.tsv
 %   subjectName - Subject folder under the task data root (e.g. 'ag', 'ey9166')
 %   sessionName - Session folder under subject (e.g. 'ag112321_1')
 %
 % Goal:
-%   Load cluster_info.tsv, plot a jittered scatter of good / mua / real unit
-%   depths (noise excluded), overlay default area boundaries from load_data.m,
-%   then prompt per area to accept or edit depth ranges. Save results to
-%   brain_area_depths.mat in the session folder.
+%   Load cluster_info.tsv (or cluster_rf.tsv), plot a jittered scatter of
+%   good / mua / real unit depths (noise excluded; see cluster_quality_mask),
+%   overlay default area boundaries from load_data.m,
+%   then prompt for a single depth shift (um, positive or negative) applied
+%   to all area range values. Save results to brain_area_depths.mat in the
+%   session folder.
 %
 % Usage (function):
 %   brainAreaDepths = brain_area_depths('spontaneous', 'ag', 'ag112321_1');
@@ -28,9 +31,9 @@ end
 
 paths = get_paths;
 sessionFolder = get_cluster_session_folder(sessionType, paths, subjectName, sessionName);
-ci = load_cluster_info(sessionFolder);
+ci = load_session_cluster_info(sessionFolder, sessionName);
 nUnitsAll = height(ci);
-ci = ci(quality_unit_mask(ci), :);
+ci = ci(cluster_quality_mask(ci, struct('sessionName', sessionName)), :);
 [spikeTimes, spikeClusters] = load_session_spike_trains(sessionFolder);
 ci.firingRateHz = compute_unit_firing_rates(ci, spikeTimes, spikeClusters);
 
@@ -47,26 +50,25 @@ draw_area_border_lines(depthRanges);
 fprintf('\nSession: %s / %s (%s)\n', subjectName, sessionName, sessionType);
 fprintf('Folder: %s\n', sessionFolder);
 fprintf('Units plotted (good / mua / real): %d / %d in cluster_info\n\n', height(ci), nUnitsAll);
+print_depth_ranges(areaNames, depthRanges);
 
-for iArea = 1:numel(areaNames)
-    areaName = areaNames{iArea};
-    currentRange = depthRanges(iArea, :);
-    highlight_area_on_plot(figHandle, ci, areaNames, depthRanges, iArea, sessionType, subjectName, sessionName);
-
-    fprintf('--- %s: depth range [%d, %d] um ---\n', areaName, currentRange(1), currentRange(2));
-    userInput = input('Press Enter to accept, or enter new range as "min max": ', 's');
-
-    if ~isempty(userInput)
-        newRange = parse_depth_range_input(userInput, currentRange);
-        if ~isequal(newRange, currentRange)
-            depthRanges(iArea, :) = newRange;
-            fprintf('Updated %s to [%d, %d] um.\n', areaName, newRange(1), newRange(2));
-            plot_unit_depths(ci, areaNames, depthRanges, sessionType, subjectName, sessionName, figHandle);
-            draw_area_border_lines(depthRanges);
-        end
-    else
-        fprintf('Keeping %s at [%d, %d] um.\n', areaName, currentRange(1), currentRange(2));
+while true
+    userInput = input('Press Enter to accept, or shift all ranges by um (e.g. 80 or -50): ', 's');
+    if isempty(userInput)
+        fprintf('Keeping ranges as shown.\n');
+        break
     end
+
+    depthShift = parse_depth_shift_input(userInput);
+    if isempty(depthShift)
+        continue
+    end
+
+    depthRanges = depthRanges + depthShift;
+    fprintf('Shifted all range values by %d um.\n', depthShift);
+    print_depth_ranges(areaNames, depthRanges);
+    plot_unit_depths(ci, areaNames, depthRanges, sessionType, subjectName, sessionName, figHandle);
+    draw_area_border_lines(depthRanges);
 end
 
 brainAreaDepths = struct();
@@ -96,16 +98,16 @@ fprintf('\nSaved brain area depths to:\n  %s\n', savePath);
 end
 
 function sessionFolder = get_cluster_session_folder(sessionType, paths, subjectName, sessionName)
-% GET_CLUSTER_SESSION_FOLDER - Resolve session folder for cluster_info.tsv
+% GET_CLUSTER_SESSION_FOLDER - Resolve session folder for cluster_info / cluster_rf
 %
 % Variables:
-%   sessionType - 'spontaneous' or 'interval'
+%   sessionType - task name used to pick the data root
 %   paths       - struct from get_paths
 %   subjectName - subject folder under the task data root
 %   sessionName - session folder under subject
 %
 % Goal:
-%   Return the folder containing cluster_info.tsv for this session.
+%   Return the folder containing cluster_info.tsv or cluster_rf.tsv.
 
 if isempty(subjectName)
     error('subjectName is required for %s sessions.', sessionType);
@@ -116,36 +118,25 @@ switch lower(sessionType)
         basePath = paths.spontaneousDataPath;
     case 'interval'
         basePath = paths.intervalDataPath;
+    case 'semicircle'
+        basePath = paths.semicircleDataPath;
+    case 'reach'
+        basePath = paths.reachDataPath;
     otherwise
-        error(['brain_area_depths supports spontaneous and interval sessions ', ...
-            '(cluster_info.tsv). Got sessionType = %s.'], sessionType);
+        error(['brain_area_depths needs a kilosort session folder ', ...
+            '(cluster_info.tsv or cluster_rf.tsv). Got sessionType = %s.'], sessionType);
 end
 
 sessionFolder = fullfile(basePath, subjectName, sessionName);
 
 clusterInfoPath = fullfile(sessionFolder, 'cluster_info.tsv');
+clusterRfPath = fullfile(sessionFolder, 'cluster_rf.tsv');
 if ~isfolder(sessionFolder)
     error('Session folder not found: %s', sessionFolder);
 end
-if ~isfile(clusterInfoPath)
-    error('cluster_info.tsv not found in %s', sessionFolder);
+if ~isfile(clusterInfoPath) && ~isfile(clusterRfPath)
+    error('Neither cluster_info.tsv nor cluster_rf.tsv found in %s', sessionFolder);
 end
-end
-
-function ci = load_cluster_info(sessionFolder)
-% LOAD_CLUSTER_INFO - Load and orient cluster depths like load_data.m
-%
-% Variables:
-%   sessionFolder - path to session directory
-%
-% Goal:
-%   Return cluster_info table with depth 0 = superficial (M23) and 3840 = deep (VS).
-
-clusterInfoPath = fullfile(sessionFolder, 'cluster_info.tsv');
-ci = readtable(clusterInfoPath, 'FileType', 'text', 'Delimiter', '\t');
-ci = sortrows(ci, 'depth');
-ci.depth = 3840 - ci.depth;
-ci = flipud(ci);
 end
 
 function [spikeTimes, spikeClusters] = load_session_spike_trains(sessionFolder)
@@ -169,36 +160,6 @@ if ~isfile(spikeClustersPath)
 end
 spikeTimes = double(readNPY(spikeTimesPath)) / opts.fsSpike;
 spikeClusters = readNPY(spikeClustersPath);
-end
-
-function keepMask = quality_unit_mask(ci)
-% QUALITY_UNIT_MASK - Keep good, mua, or real units (exclude noise)
-%
-% Variables:
-%   ci - cluster_info table
-%
-% Goal:
-%   Return a logical mask for units labeled good or mua (group) or real
-%   (rf_label). Noise and unlabeled units are excluded.
-
-nUnits = height(ci);
-keepMask = false(nUnits, 1);
-varNames = ci.Properties.VariableNames;
-
-if ismember('group', varNames)
-    groupLabel = strtrim(string(ci.group));
-    keepMask = keepMask | groupLabel == "good" | groupLabel == "mua";
-end
-
-if ismember('rf_label', varNames)
-    rfLabel = strtrim(string(ci.rf_label));
-    keepMask = keepMask | rfLabel == "real";
-end
-
-if ~ismember('group', varNames) && ~ismember('rf_label', varNames)
-    warning('cluster_info has no group or rf_label column; plotting all units.');
-    keepMask = true(nUnits, 1);
-end
 end
 
 function clusterIds = get_cluster_ids(ci)
@@ -331,69 +292,32 @@ yl = yline(borderDepths, '--', 'Color', [0.15 0.15 0.15], 'LineWidth', 1.1);
 set(yl, 'HandleVisibility', 'off');
 end
 
-function highlight_area_on_plot(figHandle, ci, areaNames, depthRanges, iArea, sessionType, subjectName, sessionName)
-% HIGHLIGHT_AREA_ON_PLOT - Emphasize units in the current area on the figure
+function print_depth_ranges(areaNames, depthRanges)
+% PRINT_DEPTH_RANGES - Print min/max depth per area
 %
 % Variables:
-%   figHandle    - figure handle
-%   ci           - cluster_info table
-%   areaNames    - area labels
-%   depthRanges  - depth bounds
-%   iArea        - index of area being reviewed
-%   sessionType  - session type string
-%   subjectName  - subject folder name
-%   sessionName  - session name string
-%
-% Goal:
-%   Retitle the figure while the user reviews the current area.
+%   areaNames   - cell of area labels
+%   depthRanges - numAreas x 2 depth bounds
 
-figure(figHandle);
-areaName = areaNames{iArea};
-currentRange = depthRanges(iArea, :);
-areaAssignments = assign_areas(ci.depth, areaNames, depthRanges);
-nUnits = sum(strcmp(areaAssignments, areaName));
-title(sprintf('%s / %s (%s) | reviewing %s [%d, %d] um (%d units)', ...
-    subjectName, sessionName, sessionType, areaName, currentRange(1), currentRange(2), nUnits), ...
-    'Interpreter', 'none');
-end
-
-function areaAssignments = assign_areas(unitDepths, areaNames, depthRanges)
-% ASSIGN_AREAS - Label each unit with a brain area from depth ranges
-%
-% Variables:
-%   unitDepths  - vector of unit depths
-%   areaNames   - area labels
-%   depthRanges - numAreas x 2 bounds
-%
-% Goal:
-%   Return cellstr area label per unit (empty if outside all ranges).
-
-nUnits = numel(unitDepths);
-areaAssignments = repmat({''}, nUnits, 1);
 for iArea = 1:numel(areaNames)
-    inRange = unitDepths >= depthRanges(iArea, 1) & unitDepths <= depthRanges(iArea, 2);
-    areaAssignments(inRange) = areaNames(iArea);
+    fprintf('  %s: [%d, %d] um\n', areaNames{iArea}, depthRanges(iArea, 1), depthRanges(iArea, 2));
 end
 end
 
-function newRange = parse_depth_range_input(userInput, currentRange)
-% PARSE_DEPTH_RANGE_INPUT - Parse user-entered depth range
+function depthShift = parse_depth_shift_input(userInput)
+% PARSE_DEPTH_SHIFT_INPUT - Parse a single um offset (positive or negative)
 %
 % Variables:
-%   userInput     - character vector from input()
-%   currentRange  - fallback 1x2 range
+%   userInput - character vector from input()
 %
 % Goal:
-%   Return validated [minDepth maxDepth] or currentRange on parse failure.
+%   Return a rounded scalar shift, or [] if the input is invalid.
 
-newRange = sscanf(strtrim(userInput), '%f %f');
-if numel(newRange) ~= 2 || any(~isfinite(newRange))
-    warning('Could not parse "%s". Keeping [%d, %d].', userInput, currentRange(1), currentRange(2));
-    newRange = currentRange;
-    return;
+depthShift = sscanf(strtrim(userInput), '%f');
+if numel(depthShift) ~= 1 || ~isfinite(depthShift)
+    warning('Could not parse "%s". Enter one number (e.g. 80 or -50).', userInput);
+    depthShift = [];
+    return
 end
-newRange = round(newRange(:))';
-if newRange(2) < newRange(1)
-    newRange = fliplr(newRange);
-end
+depthShift = round(depthShift);
 end

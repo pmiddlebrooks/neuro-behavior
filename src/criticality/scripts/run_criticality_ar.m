@@ -59,7 +59,7 @@ brainAreaCombinations = default_manuscript_brain_area_combinations();
 
 % PCA / SDF flags (filename suffix for save and for loadAndPlot)
 pcaFlag = 0;
-sdfFlag = true;    % Smooth 1 ms rasters with SDF, then downsample to binSize
+sdfFlag = false;    % Smooth 1 ms rasters with SDF, then downsample to binSize
 sdfSigmaMs = 50;   % Gaussian SDF sigma (ms)
 
 % Load and plot existing results if requested
@@ -260,8 +260,8 @@ end
 % Set up configuration from workspace variables
 % (These should be set before running this script)
 config = struct();
-config.slidingWindowSize = 60; % Default window size
-config.binSize = .05; % Default bin size
+config.slidingWindowSize = 30; % Default window size
+config.binSize = .025; % Default bin size
 config.stepSize = .5; % Default step size
 config.minSpikesPerBin = 2.5;
 config.minBinsPerWindow = 1000;

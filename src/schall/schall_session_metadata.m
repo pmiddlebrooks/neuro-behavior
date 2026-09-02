@@ -12,10 +12,11 @@ function metadata = schall_session_metadata(subjectName, sessionName)
 %
 % Returns:
 %   metadata - Struct of overrides. Recognized fields (all optional):
-%     .collectStartMin - Floor for opts.collectStart (sec):
+%     .collectStartMin - Floor for opts.collectStart (seconds, not minutes):
 %                        collectStart = max(requested, collectStartMin)
-%     .collectEndMax   - Cap for opts.collectEnd (sec); ignored if collectEnd is []
-%     .collectStart, .collectEnd, .minFiringRate, .maxFiringRate, ...
+%     .collectEndMax   - Cap for opts.collectEnd (seconds); ignored if collectEnd is []
+%     .collectStart, .collectEnd - Seconds, same as neuro_behavior_options
+%     .minFiringRate, .maxFiringRate, ...
 %                      - Any neuro_behavior_options field; nonempty values override
 %     .notes           - Comment only; not copied onto opts
 

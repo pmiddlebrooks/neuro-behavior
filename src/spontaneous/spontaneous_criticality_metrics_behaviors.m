@@ -69,7 +69,7 @@ fprintf('\n=== Spontaneous criticality metrics by behavior ===\n');
 fprintf('Session: %s / %s\n', subjectName, sessionName);
 fprintf('Analyses: %s\n', strjoin(opts.analyses, ', '));
 
-%% Load neural session
+% Load neural session
 loadOpts = neuro_behavior_options();
 loadOpts.firingRateCheckTime = opts.firingRateCheckTime;
 loadOpts.collectStart = collectStart;
@@ -128,7 +128,7 @@ out.figHandles = struct();
 plotConfig = opts.plotConfig;
 saveDir = resolve_spontaneous_behavior_save_dir(dataStruct, subjectName, sessionName, opts);
 
-%% d2 and behavior correlations
+% d2 and behavior correlations
 if ismember('d2', opts.analyses)
   fprintf('\n--- d2 ---\n');
   fprintf('d2Window: %.1f s (non-overlapping)\n', opts.d2Window);
@@ -394,7 +394,7 @@ function groups = default_spontaneous_entropy_groups()
 groups = {
   struct('name', 'Inv', 'sourceIDs', [0 1 2])
   struct('name', 'GroomItch', 'sourceIDs', 5:12)
-  struct('name', 'Loco', 'sourceIDs', [13:15])
+  struct('name', 'Loco', 'sourceIDs', [15])
   };
 groups = normalize_behavior_groups(groups);
 end

@@ -1,67 +1,67 @@
 function allGood = cluster_quality_mask(ci, opts)
-% CLUSTER_QUALITY_MASK - Units to keep from cluster_info quality labels
+% CLUSTER_QUALITY_MASK - Keep units labeled good, mua, or real
 %
 % Variables:
-%   ci   - cluster_info table
-%   opts - Options; opts.useMulti (default true) includes mua with good;
+%   ci   - Cluster table from load_session_cluster_info (cluster_info.tsv
+%          and/or cluster_rf.tsv)
+%   opts - Options; opts.useMulti (default true) includes mua;
 %          opts.sessionName used only in error messages
 %
 % Goal:
-%   If ci.group exists and has non-empty labels, keep 'good' (and 'mua' when
-%   opts.useMulti is true). Otherwise keep units with ci.rf_label == 'real'.
-%   Empty Phy group columns (header-only cluster_group.tsv) fall back to rf_label.
+%   Return a logical mask for units to keep. In group and/or rf_label,
+%   accept any of 'good', 'mua', or 'real' (case-insensitive). Empty Phy
+%   group columns (header-only cluster_group.tsv) contribute nothing.
+%
+% This is the single place that defines the good / mua / real unit mask.
 
-    useGroup = ismember('group', ci.Properties.VariableNames) && ...
-        has_nonempty_quality_labels(ci.group);
+    if nargin < 2
+        opts = struct();
+    end
 
-    if useGroup
-        useMulti = true;
-        if isfield(opts, 'useMulti') && ~isempty(opts.useMulti)
-            useMulti = logical(opts.useMulti);
-        end
-        groupLabel = strtrim(string(ci.group));
-        if useMulti
-            allGood = groupLabel == "good" | groupLabel == "mua";
-            fprintf('Using cluster_info.group (good + mua) for unit quality\n');
-        else
-            allGood = groupLabel == "good";
-            fprintf('Using cluster_info.group (good only) for unit quality\n');
-        end
+    nUnits = height(ci);
+    allGood = false(nUnits, 1);
+    usedSources = {};
+
+    useMulti = true;
+    if isfield(opts, 'useMulti') && ~isempty(opts.useMulti)
+        useMulti = logical(opts.useMulti);
+    end
+
+    if useMulti
+        acceptedLabels = ["good", "mua", "real"];
+        labelNote = 'good, mua, or real';
     else
-        if ~ismember('rf_label', ci.Properties.VariableNames)
-            sessionLabel = 'session';
-            if isfield(opts, 'sessionName') && ~isempty(opts.sessionName)
-                sessionLabel = opts.sessionName;
-            end
-            error(['cluster_info.tsv has no usable group column and no rf_label ', ...
-                'column in %s'], sessionLabel);
+        acceptedLabels = ["good", "real"];
+        labelNote = 'good or real';
+    end
+
+    varNames = ci.Properties.VariableNames;
+    qualityColumns = {'group', 'rf_label'};
+    foundQualityColumn = false;
+
+    for iCol = 1:numel(qualityColumns)
+        colName = qualityColumns{iCol};
+        if ~ismember(colName, varNames)
+            continue
         end
-        rfLabel = strtrim(string(ci.rf_label));
-        allGood = rfLabel == "real";
-        fprintf('Using cluster_info.rf_label (real) for unit quality\n');
-    end
-end
-
-function tf = has_nonempty_quality_labels(vals)
-% HAS_NONEMPTY_QUALITY_LABELS - True if any quality label is non-blank
-%
-% Variables:
-%   vals - cluster_info quality column (group or similar)
-%
-% Goal:
-%   Treat a column of empty strings / missing / NaN as unused so loading can
-%   fall back to rf_label.
-
-    if isempty(vals)
-        tf = false;
-        return
+        foundQualityColumn = true;
+        colLabel = lower(strtrim(string(ci.(colName))));
+        colMatch = ismember(colLabel, acceptedLabels);
+        if any(colMatch)
+            allGood = allGood | colMatch;
+            usedSources{end+1} = sprintf('%s (%s)', colName, labelNote); %#ok<AGROW>
+        end
     end
 
-    if isnumeric(vals)
-        tf = any(~isnan(vals(:)));
-        return
+    if ~foundQualityColumn
+        sessionLabel = 'session';
+        if isfield(opts, 'sessionName') && ~isempty(opts.sessionName)
+            sessionLabel = opts.sessionName;
+        end
+        error(['No group or rf_label quality column in %s. ', ...
+            'Need cluster_info.tsv and/or cluster_rf.tsv.'], sessionLabel);
     end
 
-    labelStr = strtrim(string(vals));
-    tf = any(strlength(labelStr) > 0 & ~ismissing(labelStr));
+    fprintf('Unit quality mask (%s): keeping %d / %d units\n', ...
+        strjoin(usedSources, ' | '), sum(allGood), nUnits);
 end

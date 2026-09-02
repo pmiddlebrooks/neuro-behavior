@@ -14,6 +14,9 @@ function spikeData = load_spike_times(sessionType, paths, sessionName, opts)
 % Spike times are filtered so that each unit (good, mua, or real) keeps only
 % the first spike when more than one occurs within 1.5 ms.
 %
+% For kilosort sessions (spontaneous, interval), unit quality is applied once
+% in load_data.m via cluster_quality_mask.m (good, mua, or real).
+%
 % Returns:
 %   spikeData - Structure with fields:
 %       .spikeTimes - Vector of all spike times (seconds)
@@ -30,9 +33,17 @@ function spikeData = load_spike_times(sessionType, paths, sessionName, opts)
         case 'reach'
             spikeData = load_spike_times_reach(paths, sessionName, opts);
         case 'spontaneous'
-            spikeData = load_spike_times_spontaneous(paths, sessionName, opts);
+            if ~isfield(opts, 'subjectName') || isempty(opts.subjectName)
+                error('opts.subjectName must be set before loading spontaneous spike times');
+            end
+            spikeData = load_spike_times_kilosort( ...
+                fullfile(paths.spontaneousDataPath, opts.subjectName), sessionName, opts);
         case 'interval'
-            spikeData = load_spike_times_interval(paths, sessionName, opts);
+            if ~isfield(opts, 'subjectName') || isempty(opts.subjectName)
+                error('opts.subjectName must be set before loading interval spike times');
+            end
+            spikeData = load_spike_times_kilosort( ...
+                fullfile(paths.intervalDataPath, opts.subjectName), sessionName, opts);
         case 'semicircle'
             spikeData = load_spike_times_semicircle(paths, sessionName, opts);
         case 'schall'
@@ -102,107 +113,33 @@ function spikeData = load_spike_times_reach(paths, sessionName, opts)
     spikeData.collectEnd = opts.collectEnd;
 end
 
-function spikeData = load_spike_times_spontaneous(paths, sessionName, opts)
-% LOAD_SPIKE_TIMES_SPONTANEOUS - Load spike times for spontaneous data
+function spikeData = load_spike_times_kilosort(dataPath, sessionName, opts)
+% LOAD_SPIKE_TIMES_KILOSORT - Spike times for sessions with cluster_info / cluster_rf
+%
+% Variables:
+%   dataPath    - Subject folder (parent of sessionName)
+%   sessionName - Session folder name
+%   opts        - Options; collectStart, collectEnd, removeSome
+%
+% Goal:
+%   Load via load_data (good / mua / real already applied in cluster_quality_mask)
+%   and keep units in M23, M56, DS, and VS.
 
-    if ~isfield(opts, 'subjectName') || isempty(opts.subjectName)
-        error('opts.subjectName must be set before loading spontaneous spike times');
-    end
-
-    opts.dataPath = fullfile(paths.spontaneousDataPath, opts.subjectName);
-    opts.sessionName = sessionName;
-    
-    
-    % Load spike data
-    data = load_data(opts, 'spikes');
-
-    % Quality: Phy group when curated; otherwise rf_label == 'real'
-    allGood = cluster_quality_mask(data.ci, opts);
-
-    goodM23 = allGood & strcmp(data.ci.area, 'M23');
-    goodM56 = allGood & strcmp(data.ci.area, 'M56');
-    goodDS = allGood & strcmp(data.ci.area, 'DS');
-    goodVS = allGood & strcmp(data.ci.area, 'VS');
-
-    opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
-    
-    % Get neuron IDs and areas
-    if ismember('id', data.ci.Properties.VariableNames)
-        neuronIDs = data.ci.id(opts.useNeurons);
-    else
-        neuronIDs = data.ci.cluster_id(opts.useNeurons);
-    end
-    neuronAreas = data.ci.area(opts.useNeurons);
-    
-    % Extract all spike times and clusters
-    spikeTimes = data.spikeTimes;
-    spikeClusters = data.spikeClusters;
-
-    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
-        opts.collectStart = 0;
-    end
-    if ~isfield(opts, 'collectEnd')
-        opts.collectEnd = [];
-    end
-    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, max(spikeTimes), opts.collectStart);
-    
-    % Filter to qualifying neurons and time range
-    validSpikes = ismember(spikeClusters, neuronIDs) & ...
-                  spikeTimes >= opts.collectStart & ...
-                  spikeTimes <= opts.collectEnd;
-    spikeTimes = spikeTimes(validSpikes);
-    spikeClusters = spikeClusters(validSpikes);
-    
-    % ISI already applied in load_data; apply firing rate filtering if requested
-    if isfield(opts, 'removeSome') && opts.removeSome
-        [spikeTimes, spikeClusters, neuronIDs, neuronAreas] = ...
-            filter_by_firing_rate(spikeTimes, spikeClusters, neuronIDs, neuronAreas, opts);
-    end
-
-    % Build output structure
-    spikeData = struct();
-    spikeData.spikeTimes = spikeTimes;
-    spikeData.spikeClusters = spikeClusters;
-    spikeData.neuronIDs = neuronIDs;
-    spikeData.neuronAreas = cell(size(neuronAreas));
-    for i = 1:length(neuronAreas)
-        spikeData.neuronAreas{i} = char(neuronAreas(i));
-    end
-    spikeData.idLabels = neuronIDs;
-    spikeData.areaLabelsUnique = unique(neuronAreas);
-    spikeData.totalTime = opts.collectEnd - opts.collectStart;
-    spikeData.collectStart = opts.collectStart;
-    spikeData.collectEnd = opts.collectEnd;
-end
-
-function spikeData = load_spike_times_interval(paths, sessionName, opts)
-% LOAD_SPIKE_TIMES_INTERVAL - Load spike times for interval timing task data
-
-    if ~isfield(opts, 'subjectName') || isempty(opts.subjectName)
-        error('opts.subjectName must be set before loading interval spike times');
-    end
-
-    opts.dataPath = fullfile(paths.intervalDataPath, opts.subjectName);
+    opts.dataPath = dataPath;
     opts.sessionName = sessionName;
 
     data = load_data(opts, 'spikes');
 
-    % Quality: Phy group when curated; otherwise rf_label == 'real'
-    allGood = cluster_quality_mask(data.ci, opts);
-
-    goodM23 = allGood & strcmp(data.ci.area, 'M23');
-    goodM56 = allGood & strcmp(data.ci.area, 'M56');
-    goodDS = allGood & strcmp(data.ci.area, 'DS');
-    goodVS = allGood & strcmp(data.ci.area, 'VS');
-
-    opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
+    inAreas = strcmp(data.ci.area, 'M23') | strcmp(data.ci.area, 'M56') | ...
+        strcmp(data.ci.area, 'DS') | strcmp(data.ci.area, 'VS');
+    useNeurons = find(inAreas);
 
     if ismember('id', data.ci.Properties.VariableNames)
-        neuronIDs = data.ci.id(opts.useNeurons);
+        neuronIDs = data.ci.id(useNeurons);
     else
-        neuronIDs = data.ci.cluster_id(opts.useNeurons);
+        neuronIDs = data.ci.cluster_id(useNeurons);
     end
-    neuronAreas = data.ci.area(opts.useNeurons);
+    neuronAreas = data.ci.area(useNeurons);
 
     spikeTimes = data.spikeTimes;
     spikeClusters = data.spikeClusters;
@@ -213,7 +150,12 @@ function spikeData = load_spike_times_interval(paths, sessionName, opts)
     if ~isfield(opts, 'collectEnd')
         opts.collectEnd = [];
     end
-    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, max(spikeTimes), opts.collectStart);
+    if isempty(spikeTimes)
+        sessionEnd = opts.collectStart;
+    else
+        sessionEnd = max(spikeTimes);
+    end
+    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, sessionEnd, opts.collectStart);
 
     validSpikes = ismember(spikeClusters, neuronIDs) & ...
         spikeTimes >= opts.collectStart & ...

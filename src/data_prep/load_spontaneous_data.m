@@ -17,8 +17,9 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
 %   opts.collectEnd = [] means analyze the full session (resolved from spikes
 %   before behavior labels are loaded).
 
+    % collectStart / collectEnd are seconds (same as neuro_behavior_options)
     if ~isfield(opts, 'collectEnd')
-        opts.collectEnd = 10 * 60;
+        opts.collectEnd = 10 * 60;  % seconds
     end
 
     opts.dataPath = fullfile(paths.spontaneousDataPath, subjectName);
@@ -125,19 +126,10 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
                 spikeDataRaw.bhvDur = dataBhv.Dur;
             end
             
-            % Quality: Phy group when curated; otherwise rf_label == 'real'
-            if ~isfield(opts, 'useMulti') || isempty(opts.useMulti)
-                opts.useMulti = true;
-            end
-            allGood = cluster_quality_mask(spikeDataRaw.ci, opts);
-
-            goodM23 = allGood & strcmp(spikeDataRaw.ci.area, 'M23');
-            goodM56 = allGood & strcmp(spikeDataRaw.ci.area, 'M56');
-            goodDS = allGood & strcmp(spikeDataRaw.ci.area, 'DS');
-            goodVS = allGood & strcmp(spikeDataRaw.ci.area, 'VS');
-
-            % Which neurons to use in the neural matrix
-            opts.useNeurons = find(goodM23 | goodM56 | goodDS | goodVS);
+            % ci is already good / mua / real from load_data (cluster_quality_mask)
+            inAreas = strcmp(spikeDataRaw.ci.area, 'M23') | strcmp(spikeDataRaw.ci.area, 'M56') | ...
+                strcmp(spikeDataRaw.ci.area, 'DS') | strcmp(spikeDataRaw.ci.area, 'VS');
+            opts.useNeurons = find(inAreas);
             
             % Create neural matrix
             [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(spikeDataRaw, opts);

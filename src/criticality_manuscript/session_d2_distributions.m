@@ -19,11 +19,14 @@
 %   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' uses all valid areas
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   useLog10D2       - If true, plot log10(d2) and log10(shuffled d2)
-%   useSubsampling   - If true, d2 per window = mean across neuron subsamples
+%   useSubsampling   - If true, d2 per window = mean across neuron subsamples;
+%                      SEM across subsamples is drawn as error bars on window
+%                      data points (timeline and d2 vs pop activity)
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling (run_criticality_ar.m)
 %   enablePermutations - If false, observed d2 only (no circular shuffles; faster)
 %   nPermutations    - Circular permutations per window when enablePermutations
-%   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled if on)
+%   plotD2PopActivity - If true, scatter d2 vs mean pop activity (+ shuffled if on);
+%                      subsample SEM error bars on data points when useSubsampling
 %   plotD2Timeline   - If true, plot mean pop per d2 window, d2, and ethogram vs time
 %                      Semicircle ethogram: TaskMatrix outcome lines + leave-home/poke/end fills;
 %                      engagement fills when splitByEngagement
@@ -75,13 +78,13 @@ end
 dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
-collectEnd = 120*60;
+% collectEnd = 120*60;
 d2Window = 45;  % seconds; non-overlapping windows
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = true;
-useSubsampling = true;
+useSubsampling = false;
 nSubsamples = 20;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
@@ -721,7 +724,8 @@ if isempty(areaIdx)
 end
 
 cellFields = {'d2', 'd2Normalized', 'startS', 'd2Permuted', 'mrBrPermuted', ...
-    'd2PermutedMean', 'd2PermutedSEM', 'popActivityWindows', 'popActivityFull'};
+    'd2PermutedMean', 'd2PermutedSEM', 'popActivityWindows', 'popActivityFull', ...
+    'd2Subsamples', 'd2NormalizedSubsamples'};
 
 results.areas = results.areas(areaIdx);
 for f = 1:length(cellFields)
@@ -1012,6 +1016,9 @@ end
 function [yVals, rData, rShuf, nValid] = plot_d2_popactivity_panel(ax, results, areaIdx, ...
     useLog10D2, plotConfig, panelTitle, d2YLabel, labelInterpreter, showYLabel)
 % PLOT_D2_POPACTIVITY_PANEL - One scatter panel of d2 vs mean pop activity
+%
+% When useSubsampling stored d2Subsamples, vertical SEM whiskers are drawn
+% on the observed (data) points.
 
 if nargin < 10 || isempty(showYLabel)
     showYLabel = true;
@@ -1043,6 +1050,8 @@ if ~any(validMask)
     return;
 end
 
+d2Sem = get_subsample_sem_d2_per_window(results, areaIdx, useLog10D2);
+add_subsample_sem_errorbars(ax, popVec, d2Vec, d2Sem, validMask, plotColors.data, plotConfig);
 scatter_manuscript_open(ax, popVec(validMask), d2Vec(validMask), plotConfig, ...
     plotColors.data, 'Data');
 add_manuscript_scatter_trendline(ax, popVec(validMask), d2Vec(validMask), plotConfig);
@@ -1089,6 +1098,15 @@ function yVals = collect_d2_popactivity_y_values(results, areaIdx, useLog10D2)
 
 [d2Vec, ~, validMask] = get_aligned_d2_popactivity(results, areaIdx, useLog10D2);
 yVals = d2Vec(validMask);
+d2Sem = get_subsample_sem_d2_per_window(results, areaIdx, useLog10D2);
+if ~isempty(d2Sem) && ~isempty(d2Vec)
+    d2Sem = d2Sem(1:numel(d2Vec));
+    semMask = validMask & isfinite(d2Sem);
+    if any(semMask)
+        yVals = [yVals(:); d2Vec(semMask) - d2Sem(semMask); ...
+            d2Vec(semMask) + d2Sem(semMask)]; %#ok<AGROW>
+    end
+end
 shufVec = get_shuffled_mean_d2_per_window(results, areaIdx, useLog10D2);
 if ~isempty(shufVec) && ~isempty(d2Vec)
     shufVec = shufVec(1:numel(d2Vec));
@@ -1204,6 +1222,71 @@ function shufVec = get_shuffled_mean_d2_per_window(results, areaIdx, useLog10D2)
 shufVec = get_per_window_shuffle_mean_d2(results, areaIdx, useLog10D2);
 end
 
+function d2Sem = get_subsample_sem_d2_per_window(results, areaIdx, useLog10D2)
+% GET_SUBSAMPLE_SEM_D2_PER_WINDOW - SEM of d2 across neuron subsamples
+%
+% Variables:
+%   results      - Output from criticality_ar_analysis
+%   areaIdx      - Area index
+%   useLog10D2   - If true, SEM is of log10(subsample d2)
+%
+% Goal:
+%   Per-window SEM for error bars when useSubsampling stored d2Subsamples.
+%   Empty when subsampling was off or the subsample matrix is missing.
+
+d2Sem = [];
+if ~isfield(results, 'd2Subsamples') || areaIdx > numel(results.d2Subsamples) ...
+        || isempty(results.d2Subsamples{areaIdx})
+    return;
+end
+
+subMat = results.d2Subsamples{areaIdx};
+if useLog10D2
+    subMat = log10_safe_numeric(subMat);
+end
+nSub = sum(isfinite(subMat), 2);
+d2Sem = nanstd(subMat, 0, 2) ./ sqrt(max(nSub, 1));
+d2Sem(nSub <= 1) = 0;
+end
+
+function add_subsample_sem_errorbars(ax, xVals, yVals, ySem, validMask, barColor, plotConfig)
+% ADD_SUBSAMPLE_SEM_ERRORBARS - Vertical SEM whiskers on window-wise points
+%
+% Variables:
+%   ax, xVals, yVals - Axes and aligned window coordinates
+%   ySem             - Per-window subsample SEM (empty if unused)
+%   validMask        - Finite data mask (same length as plotted y)
+%   barColor         - RGB for whiskers
+%   plotConfig       - CapSize / lineWidth from fill_manuscript_plot_config
+%
+% Goal:
+%   Draw SEM error bars behind markers. No-op when ySem is empty.
+
+if isempty(ySem) || isempty(xVals) || isempty(yVals)
+    return;
+end
+nPlot = min([numel(xVals), numel(yVals), numel(ySem)]);
+if nargin < 5 || isempty(validMask)
+    validMask = true(nPlot, 1);
+end
+validMask = validMask(:);
+validMask = validMask(1:nPlot);
+xVals = xVals(1:nPlot);
+yVals = yVals(1:nPlot);
+ySem = ySem(1:nPlot);
+semMask = validMask & isfinite(xVals) & isfinite(yVals) & isfinite(ySem);
+if ~any(semMask)
+    return;
+end
+if nargin < 7 || isempty(plotConfig)
+    plotConfig = fill_manuscript_plot_config();
+end
+errorbar(ax, xVals(semMask), yVals(semMask), ySem(semMask), ...
+    'LineStyle', 'none', 'Marker', 'none', 'Color', barColor, ...
+    'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize, ...
+    'HandleVisibility', 'off');
+end
+
 function tf = has_shuffled_d2_values(shufVec)
 % HAS_SHUFFLED_D2_VALUES - True if shuffled d2 has any finite values
 
@@ -1245,7 +1328,8 @@ function fig = plot_d2_pop_ethogram_timeline(dataStructBhv, results, ...
 %
 % Layout (per brain area column):
 %   Top:    mean popActivity per d2 window (results.popActivityWindows)
-%   Middle: window-wise d2 (and shuffled mean when present)
+%   Middle: window-wise d2 (and shuffled mean when present);
+%           subsample SEM error bars when useSubsampling stored d2Subsamples
 %   Bottom: behavior ethogram (frame labels, semicircle TaskMatrix, or
 %           interval/reach event schematics)
 %
@@ -1364,6 +1448,9 @@ for a = 1:numAreas
         nPlot = min(numel(d2Vec), numel(tWin));
         tD2 = tWin(1:nPlot);
         d2Vec = d2Vec(1:nPlot);
+        d2Sem = get_subsample_sem_d2_per_window(results, a, useLog10D2);
+        add_subsample_sem_errorbars(axD2, tD2, d2Vec, d2Sem, isfinite(d2Vec) & isfinite(tD2), ...
+            plotColors.data, plotConfig);
         plot(axD2, tD2, d2Vec, '-o', 'Color', plotColors.data, ...
             'MarkerFaceColor', plotColors.data, 'MarkerSize', 5, ...
             'LineWidth', plotConfig.axesLineWidth, 'DisplayName', 'Data');

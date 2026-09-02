@@ -91,69 +91,8 @@ switch dataType
 
 
     case 'spikes'
-        % Find spike data files in session folder
-        searchPath = sessionFolder;
-        
-        % Check for cluster_info.tsv
-        clusterInfoPath = fullfile(searchPath, 'cluster_info.tsv');
-        if ~exist(clusterInfoPath, 'file')
-            error('cluster_info.tsv not found in %s', searchPath);
-        end
-        ci = readtable(clusterInfoPath, "FileType","text",'Delimiter', '\t');
-
-        % some of the depth values aren't in order, so re-sort the data by
-        % depth
-        ci = sortrows(ci, 'depth');
-
-        % Reassign depth so 0 is most superficial (M23) and 3840 is deepest
-        % (VS)
-        ci.depth = 3840 - ci.depth;
-
-        % Flip the ci table so the "top" is M23 and "bottom" is VS
-        ci = flipud(ci);
-
-        % Brain area regions as function of depth from surface (see
-        % get_brain_area_depth_ranges.m). Uses brain_area_depths.mat when present.
-        [m23, m56, cc, ds, vs, depthSource] = get_brain_area_depth_ranges(searchPath);
-        if strcmp(depthSource, 'session')
-            fprintf('Using brain_area_depths.mat for %s\n', opts.sessionName);
-        end
-
-
-        area = cell(size(ci, 1), 1);
-        area(ci.depth >= m23(1) & ci.depth <= m23(2)) = {'M23'};
-        area(ci.depth >= m56(1) & ci.depth <= m56(2)) = {'M56'};
-        area(ci.depth >= cc(1) & ci.depth <= cc(2)) = {'CC'};
-        area(ci.depth >= ds(1) & ci.depth <= ds(2)) = {'DS'};
-        area(ci.depth >= vs(1) & ci.depth <= vs(2)) = {'VS'};
-
-        ci.area = area;
-
-        % Check for spike_times.npy
-        spikeTimesPath = fullfile(searchPath, 'spike_times.npy');
-        if ~exist(spikeTimesPath, 'file')
-            error('spike_times.npy not found in %s', searchPath);
-        end
-        spikeTimes = readNPY(spikeTimesPath);
-        spikeTimes = double(spikeTimes) / opts.fsSpike;
-        
-        % Check for spike_clusters.npy
-        spikeClustersPath = fullfile(searchPath, 'spike_clusters.npy');
-        if ~exist(spikeClustersPath, 'file')
-            error('spike_clusters.npy not found in %s', searchPath);
-        end
-        spikeClusters = readNPY(spikeClustersPath);
-
-        % Return the requested window of data, formatted  so start time is zero,
-        dataWindow = spikeTimes >= opts.collectStart & spikeTimes < (opts.collectEnd);
-        spikeTimes = spikeTimes(dataWindow);
-        warning('You changed load_data.m so spikes are not shifted to zero (they load at their actual time). This might affect many analyses that use get_standard_data.m')
-        % spikeTimes = spikeTimes - opts.collectStart;
-        spikeClusters = spikeClusters(dataWindow);
-
-        data.ci = ci;
-        data.spikeTimes = spikeTimes;
-        data.spikeClusters = spikeClusters;
+        % Shared kilosort path: cluster_info/cluster_rf, good/mua/real mask
+        data = load_data(opts, 'spikes');
 
     case 'lfp'
         data = readmatrix(fullfile(sessionFolder, 'lfp.txt'));
