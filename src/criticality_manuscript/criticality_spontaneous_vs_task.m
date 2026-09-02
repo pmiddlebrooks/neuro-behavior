@@ -15,6 +15,8 @@
 %   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
 %                 (prox_crit_toolkit / Sooter et al. S2.5). Error bars require
 %                 MaxLikelihood and are slow (one extra KL min per AR coefficient).
+%   runParallel, nWorkers - If runParallel, start a parpool with nWorkers
+%                 workers (capped at feature('numcores')) for KL error bars.
 %   Remaining options match criticality_multiple_metrics_across_tasks.m
 %
 % Goal:
@@ -24,11 +26,12 @@
 %% Configuration
 subjectName = 'ey9166';
 taskType = 'interval';          % 'reach', 'interval', or 'semicircle'
-d2Method = 'euclidean';         % 'euclidean' or 'kl'
+d2Method = 'kl';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = true;
-runParallel = false;
+runParallel = true;
+nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
 klParallel = runParallel;
 
 taskType = lower(strtrim(char(taskType)));
@@ -109,7 +112,7 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = true;
 useSubsampling = true;
@@ -155,8 +158,8 @@ fprintf('Subject: %s\n', char(subjectName));
 fprintf('Task: %s (spontaneous sessions plotted first)\n', taskType);
 fprintf('d2Method: %s\n', d2Method);
 if strcmp(d2Method, 'kl')
-  fprintf('KL fit: %s; klErrBars=%d; klParallel=%d\n', ...
-    klFitMethod, klErrBars, klParallel);
+  fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
+    klFitMethod, klErrBars, klParallel, nWorkers);
 end
 fprintf('Pipelines: AR(d2)=%d  AV=%d  PRG=%d\n', useAr, useAv, usePrg);
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
@@ -235,7 +238,7 @@ end
 if height(previewTask) == 0
   error('No %s sessions for subject "%s" in the task session list.', taskType, subjectName);
 end
-maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel);
+maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
 % AR batch (d2) — full-session metrics across all requested session types
 arOpts = struct( ...

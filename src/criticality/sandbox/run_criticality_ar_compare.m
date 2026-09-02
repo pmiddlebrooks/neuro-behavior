@@ -10,8 +10,11 @@
 % KL-rate error bars require MaxLikelihood AR fitting and are slow
 % (one extra KL minimization per AR coefficient). Use a larger stepSize
 % for a first pass; set config.klErrBars = false to skip uncertainty.
+% If runParallel is true, nWorkers sets the parpool size (capped at
+% feature('numcores')).
 
 runParallel = 1;
+nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
 
 % Set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
@@ -24,6 +27,7 @@ swUtilsPath = fullfile(srcPath, 'sliding_window_prep', 'utils');
 analysesPath = fullfile(critPath, 'analyses');
 scriptsPath = fullfile(critPath, 'scripts');
 manuscriptPath = fullfile(srcPath, 'criticality_manuscript');
+addpath(critPath);
 
 opts = neuro_behavior_options;
 opts.firingRateCheckTime = 20 * 60;
@@ -228,13 +232,7 @@ else
 end
 
 if runParallel
-    currentPool = gcp('nocreate');
-    if isempty(currentPool)
-        parpool('local', min(3, feature('numcores')));
-        fprintf('Started parallel pool for calc_db gradient error bars\n');
-    else
-        fprintf('Using existing parallel pool with %d workers\n', currentPool.NumWorkers);
-    end
+    maybe_start_kl_d2_parallel_pool('kl', config.klErrBars, true, nWorkers);
 end
 
 results = criticality_ar_compare_analysis(dataStruct, config);
