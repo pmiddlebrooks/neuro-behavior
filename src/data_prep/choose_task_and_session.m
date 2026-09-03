@@ -62,8 +62,8 @@ sessionName =  'ag112921'; % Good neural, bad behavior labels
 % sessionName =  'kw092821';  % Bad M56, Good DS, bad behavior labels for first ~200 min
 % sessionName =  'kw092921';  % Ok... few M56
 
-% subjectName = 'ey9166';
-% sessionName =  'ey9166_2026_03_24';  % 
+subjectName = 'ey9166';
+sessionName =  'ey9166_2026_03_24';  % 
 % sessionName =  'ey9166_2026_03_26';  % 
 % sessionName =  'ey9166_2026_03_27';  % 
 % 
@@ -125,7 +125,7 @@ sessionName =  'Y12_20-Jan-2026 16_16_42_NeuroBeh';  %
 %% =============================    Semicircle Reward Task Data Loading    =============================
 sessionType = 'semicircle';  % 'reach' , 'spontaneous' , 'interval' , 'semicircle' , 'schall' , 'hong'
 
-subjectName = 'ey9166';
+subjectName = 'AS1';
 sessionName = 'AS1_0618_WellLearned';
 sessionName = 'AS1_0622_WellLearned';
 % sessionName = 'AS1_0623_TransitionAfterCompletedTrial_80';
