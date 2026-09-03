@@ -3,13 +3,16 @@
 %
 % Same multi-metric pipeline as criticality_multiple_metrics_across_tasks.m,
 % but for one subject: all spontaneous sessions first, then that subject's
-% sessions of one task (reach, interval, or semicircle).
+% sessions of one or more selected tasks (reach, interval, and/or semicircle).
+% Each selected task may contribute multiple sessions.
 %
 % Variables:
-%   subjectName, taskType, d2Method
+%   subjectName, taskTypes, d2Method
 %   subjectName - Must match spontaneous_session_list (and interval/semicircle
 %                 subjectName, or the reach session-name prefix, e.g. Y15, AB6)
-%   taskType    - 'reach', 'interval', or 'semicircle'
+%   taskTypes   - One or more of 'reach', 'interval', 'semicircle' (char,
+%                 string, or cell). Spontaneous is always included and plotted
+%                 left-most; selected tasks follow in manuscript plot order.
 %   d2Method    - 'euclidean' (Yule-Walker + getFixedPointDistance2) or 'kl'
 %                 (Sooter et al. KL-rate d2 from prox_crit_toolkit)
 %   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
@@ -20,50 +23,28 @@
 %   Remaining options match criticality_multiple_metrics_across_tasks.m
 %
 % Goal:
-%   Compare spontaneous vs task criticality for one animal, with spontaneous
-%   sessions plotted left-most.
+%   Compare spontaneous vs selected-task criticality for one animal, with
+%   spontaneous sessions plotted left-most and tasks grouped as in the
+%   across-tasks manuscript plots.
 
 %% Configuration
 subjectName = 'ey9166';
-taskType = 'interval';          % 'reach', 'interval', or 'semicircle'
+taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
+% taskTypes = {'interval', 'reach'};
 d2Method = 'kl';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
 runParallel = true;
-nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
+nWorkers = 5;  % used only when runParallel is true; capped at feature('numcores')
 klParallel = runParallel;
 
-taskType = lower(strtrim(char(taskType)));
-if ~ismember(taskType, {'reach', 'interval', 'semicircle'})
-  error('taskType must be ''reach'', ''interval'', or ''semicircle'' (got "%s").', taskType);
-end
+taskTypes = normalize_selected_task_types(taskTypes);
 if isempty(subjectName)
   error('Set subjectName to a subject in spontaneous_session_list / the task session list.');
 end
-d2Method = lower(strtrim(char(d2Method)));
-if ~ismember(d2Method, {'euclidean', 'kl'})
-  error('d2Method must be ''euclidean'' or ''kl'' (got "%s").', d2Method);
-end
-if strcmp(d2Method, 'kl')
-  klFitMethod = char(strtrim(klFitMethod));
-  if ~ismember(klFitMethod, {'MaxLikelihood', 'YuleWalker'})
-    error('klFitMethod must be ''MaxLikelihood'' or ''YuleWalker'' (got "%s").', klFitMethod);
-  end
-  klErrBars = logical(klErrBars);
-  runParallel = logical(runParallel);
-  klParallel = logical(klParallel);
-  if klErrBars && ~strcmp(klFitMethod, 'MaxLikelihood')
-    error('KL error bars require klFitMethod = ''MaxLikelihood'' (S2.5 Hessian).');
-  end
-else
-  klFitMethod = 'MaxLikelihood';
-  klErrBars = false;
-  runParallel = false;
-  klParallel = false;
-end
 
-sessionTypes = order_manuscript_session_types({'spontaneous', taskType});
+sessionTypes = order_manuscript_session_types([{'spontaneous'}, taskTypes]);
 collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
@@ -88,6 +69,12 @@ minTimeNonEngaged = 180;      % min total non-engaged time (s) to plot; 0 = no f
 setup_criticality_manuscript_paths('criticality_spontaneous_vs_task');
 paths = get_paths();
 
+[d2Method, klFitMethod, klErrBars, klParallel] = normalize_kl_d2_options( ...
+  d2Method, klFitMethod, klErrBars, klParallel);
+if ~strcmp(d2Method, 'kl')
+  runParallel = false;
+end
+
 brainArea = 'M23M56';
 % brainArea = 'M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
@@ -104,7 +91,7 @@ plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
 plotCorrelationMatrix = true;
-enablePermutations = false;
+enablePermutations = true;
 pcaFlag = false;           % reconstruct from nDim PCs before d2 / avalanches
 pcaFirstFlag = true;       % true = first nDim PCs; false = last nDim
 nDim = 5;
@@ -112,10 +99,10 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
 
-useLog10D2 = true;
-useSubsampling = true;
+useLog10D2 = false;
+useSubsampling = false;
 nSubsamples = 40;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
@@ -128,8 +115,10 @@ finalCutoffDivisor = 16;
 prgMethod = 'pca';
 
 plotConfig = fill_manuscript_plot_config();
+taskFileTag = strjoin(cellfun(@(t) matlab.lang.makeValidName(char(t)), ...
+  taskTypes, 'UniformOutput', false), '_');
 plotConfig.fileTag = sprintf('spont_vs_%s_%s_d2%s', ...
-  matlab.lang.makeValidName(char(taskType)), ...
+  taskFileTag, ...
   matlab.lang.makeValidName(char(subjectName)), ...
   matlab.lang.makeValidName(char(d2Method)));
 if strcmp(d2Method, 'kl')
@@ -140,7 +129,8 @@ if strcmp(d2Method, 'kl')
   end
 end
 plotConfig.subjectName = char(subjectName);
-plotConfig.taskType = taskType;
+plotConfig.taskTypes = taskTypes;
+plotConfig.taskType = strjoin(taskTypes, ', ');
 plotConfig.d2Method = d2Method;
 plotConfig.klFitMethod = klFitMethod;
 plotConfig.klErrBars = klErrBars;
@@ -155,7 +145,7 @@ end
 
 fprintf('\n=== Criticality Spontaneous vs Task ===\n');
 fprintf('Subject: %s\n', char(subjectName));
-fprintf('Task: %s (spontaneous sessions plotted first)\n', taskType);
+fprintf('Tasks: %s (spontaneous sessions plotted first)\n', strjoin(taskTypes, ', '));
 fprintf('d2Method: %s\n', d2Method);
 if strcmp(d2Method, 'kl')
   fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
@@ -228,16 +218,20 @@ pcaFileTag = format_pca_file_tag(pcaFlag, nDim, pcaFirstFlag);
 
 previewSpont = filter_manuscript_session_table_by_subject( ...
   build_preview_session_table({'spontaneous'}), subjectName);
-previewTask = filter_manuscript_session_table_by_subject( ...
-  build_preview_session_table({taskType}), subjectName);
-fprintf('Matched sessions: %d spontaneous, %d %s\n', ...
-  height(previewSpont), height(previewTask), taskType);
 if height(previewSpont) == 0
   error('No spontaneous sessions for subject "%s" in spontaneous_session_list.', subjectName);
 end
-if height(previewTask) == 0
-  error('No %s sessions for subject "%s" in the task session list.', taskType, subjectName);
+matchBits = {sprintf('%d spontaneous', height(previewSpont))};
+for iTask = 1:numel(taskTypes)
+  previewTask = filter_manuscript_session_table_by_subject( ...
+    build_preview_session_table(taskTypes(iTask)), subjectName);
+  matchBits{end + 1} = sprintf('%d %s', height(previewTask), taskTypes{iTask}); %#ok<AGROW>
+  if height(previewTask) == 0
+    error('No %s sessions for subject "%s" in the task session list.', ...
+      taskTypes{iTask}, subjectName);
+  end
 end
+fprintf('Matched sessions: %s\n', strjoin(matchBits, ', '));
 maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
 % AR batch (d2) — full-session metrics across all requested session types
@@ -2840,8 +2834,9 @@ bits = {};
 if isfield(plotConfig, 'subjectName') && ~isempty(plotConfig.subjectName)
   bits{end + 1} = char(plotConfig.subjectName); %#ok<AGROW>
 end
-if isfield(plotConfig, 'taskType') && ~isempty(plotConfig.taskType)
-  bits{end + 1} = sprintf('vs %s', char(plotConfig.taskType)); %#ok<AGROW>
+taskLabel = format_spontaneous_vs_task_title_tasks(plotConfig);
+if ~isempty(taskLabel)
+  bits{end + 1} = sprintf('vs %s', taskLabel); %#ok<AGROW>
 end
 if isfield(plotConfig, 'd2Method') && ~isempty(plotConfig.d2Method)
   bits{end + 1} = sprintf('d2-%s', char(plotConfig.d2Method)); %#ok<AGROW>
@@ -2858,6 +2853,69 @@ if isempty(bits)
   return;
 end
 titleStr = sprintf('%s; %s', titleStr, strjoin(bits, ' '));
+end
+
+function taskLabel = format_spontaneous_vs_task_title_tasks(plotConfig)
+% FORMAT_SPONTANEOUS_VS_TASK_TITLE_TASKS Join selected task names for titles
+if isfield(plotConfig, 'taskTypes') && ~isempty(plotConfig.taskTypes)
+  taskTypes = plotConfig.taskTypes;
+elseif isfield(plotConfig, 'taskType') && ~isempty(plotConfig.taskType)
+  taskTypes = plotConfig.taskType;
+else
+  taskLabel = '';
+  return;
+end
+if isstring(taskTypes)
+  taskTypes = cellstr(taskTypes);
+elseif ischar(taskTypes)
+  taskTypes = {taskTypes};
+end
+taskTypes = cellfun(@(t) char(t), taskTypes(:)', 'UniformOutput', false);
+taskLabel = strjoin(taskTypes, ', ');
+end
+
+function taskTypes = normalize_selected_task_types(taskTypes)
+% NORMALIZE_SELECTED_TASK_TYPES Validate and order user-selected task types
+%
+% Variables:
+%   taskTypes - Char, string, or cell of 'reach', 'interval', and/or 'semicircle'
+%
+% Goal:
+%   Return a unique row cell in manuscript plot order. Spontaneous is stripped
+%   if present (always prepended separately). Empty or unknown names error.
+allowedTypes = {'reach', 'interval', 'semicircle'};
+if nargin < 1 || isempty(taskTypes)
+  error('Set taskTypes to one or more of ''reach'', ''interval'', ''semicircle''.');
+end
+if isstring(taskTypes)
+  taskTypes = cellstr(taskTypes);
+elseif ischar(taskTypes)
+  taskTypes = {taskTypes};
+elseif ~iscell(taskTypes)
+  error('taskTypes must be a char, string, or cell array of task names.');
+end
+
+normalized = {};
+for i = 1:numel(taskTypes)
+  if isempty(taskTypes{i})
+    continue;
+  end
+  taskName = lower(strtrim(char(taskTypes{i})));
+  if strcmp(taskName, 'spontaneous')
+    continue;
+  end
+  if ~ismember(taskName, allowedTypes)
+    error('taskTypes entries must be ''reach'', ''interval'', or ''semicircle'' (got "%s").', ...
+      taskName);
+  end
+  if ~ismember(taskName, normalized)
+    normalized{end + 1} = taskName; %#ok<AGROW>
+  end
+end
+if isempty(normalized)
+  error('Set taskTypes to one or more of ''reach'', ''interval'', ''semicircle''.');
+end
+taskTypes = order_manuscript_session_types(normalized);
 end
 
 function tag = format_multimetric_collect_tag(collectStart, collectEnd)
@@ -3635,9 +3693,9 @@ if isfield(opts, 'klParallel') && ~isempty(opts.klParallel)
   engModOpts.klParallel = logical(opts.klParallel);
 end
 if opts.enablePermutations
-  engModOpts.nShuffles = 5;
-  engModOpts.nShufflesD2 = 10;
-  engModOpts.nSurrogates = 10;
+  engModOpts.nShuffles = 20;
+  engModOpts.nShufflesD2 = 20;
+  engModOpts.nSurrogates = 20;
 else
   engModOpts.nShuffles = 0;
   engModOpts.nShufflesD2 = 1;

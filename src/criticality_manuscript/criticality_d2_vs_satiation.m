@@ -21,6 +21,10 @@
 %   minNonEngagedWindow, absorbSingleEvents - Engaged-segment definition
 %                        (gaps >= minNonEngagedWindow without events are non-engaged)
 %   useLog10D2     - Plot / correlate log10(d2)
+%   d2Method       - 'euclidean' (Yule-Walker + getFixedPointDistance2) or 'kl'
+%                    (Sooter et al. KL-rate d2 from prox_crit_toolkit)
+%   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
+%   runParallel, nWorkers - If runParallel, start a parpool with nWorkers for KL error bars
 %   useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple
 %   makePlots, saveFigure, closeFigure, plotConfig
 %
@@ -56,6 +60,12 @@ minNonEngagedWindow = 30;
 absorbSingleEvents = true;
 
 useLog10D2 = true;
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
+klFitMethod = 'MaxLikelihood';  % required for error bars
+klErrBars = false;
+runParallel = true;
+nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
+klParallel = runParallel;
 useSubsampling = false;
 nSubsamples = 40;
 nNeuronsSubsample = 45;
@@ -82,6 +92,10 @@ end
   'engagementBufferAfter', engagementBufferAfter), ...
   'engagementBufferBefore', 'engagementBufferAfter', 'engagementBuffer', 1);
 
+[d2Method, klFitMethod, klErrBars, klParallel] = normalize_kl_d2_options( ...
+  d2Method, klFitMethod, klErrBars, klParallel);
+d2PlotTag = format_d2_method_file_tag(d2Method, klFitMethod, klErrBars);
+
 fprintf('\n=== criticality_d2_vs_satiation ===\n');
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 fprintf('d2 windows: %.0f s; binSize: %.3f s; brainArea: %s\n', ...
@@ -91,6 +105,11 @@ fprintf(['splitByEngagement: %d; eventBuffer before=%.3g s after=%.3g s; ', ...
   splitByEngagement, engagementBufferBefore, engagementBufferAfter, ...
   minNonEngagedWindow, absorbSingleEvents);
 fprintf('useLog10D2: %d\n', useLog10D2);
+fprintf('d2Method: %s\n', d2Method);
+if strcmp(d2Method, 'kl')
+  fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
+    klFitMethod, klErrBars, klParallel, nWorkers);
+end
 if useSubsampling
   fprintf('Subsampling: %d x %d neurons\n', nSubsamples, nNeuronsSubsample);
 else
@@ -103,6 +122,11 @@ fprintf('Sessions: %d\n', numSessions);
 
 analysisConfig = build_d2_analysis_config(d2Window, binSize, useLog10D2, ...
   useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple, nMinNeurons);
+analysisConfig.d2Method = d2Method;
+analysisConfig.klFitMethod = klFitMethod;
+analysisConfig.klErrBars = klErrBars;
+analysisConfig.klParallel = klParallel;
+maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
 loadOpts = neuro_behavior_options();
 loadOpts.firingRateCheckTime = [];
@@ -205,6 +229,9 @@ results.pooledStats = pooledStats;
 results.d2Window = d2Window;
 results.brainArea = brainArea;
 results.useLog10D2 = useLog10D2;
+results.d2Method = d2Method;
+results.klFitMethod = klFitMethod;
+results.klErrBars = klErrBars;
 results.splitByEngagement = splitByEngagement;
 results.engagementBufferBefore = engagementBufferBefore;
 results.engagementBufferAfter = engagementBufferAfter;
@@ -231,8 +258,8 @@ if makePlots
       sampTag = '';
     end
     plotBase = fullfile(saveDir, sprintf( ...
-      'criticality_d2_vs_satiation_%s_win%.0fs%s%s', ...
-      areaTag, d2Window, sampTag, logTag));
+      'criticality_d2_vs_satiation_%s_win%.0fs%s%s%s', ...
+      areaTag, d2Window, sampTag, logTag, d2PlotTag));
     exportgraphics(fig, [plotBase, '.png'], 'Resolution', 300);
     exportgraphics(fig, [plotBase, '.eps'], 'ContentType', 'vector');
     fprintf('Saved figure: %s\n', plotBase);

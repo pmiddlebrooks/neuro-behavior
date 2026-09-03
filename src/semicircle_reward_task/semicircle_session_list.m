@@ -16,20 +16,12 @@ function sessions = semicircle_session_list()
 %   paths.semicircleDataPath/<subjectName>/<sessionName>.mat
 
 sessions = [
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0618_WellLearned')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0622_WellLearned')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0623_TransitionAfterCompletedTrial_80')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0624_PoorlyLearned')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0625_PoorlyLearned')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0719_Learning')
-    ];
-sessions = [
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0618_WellLearned')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0622_WellLearned')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0623_TransitionAfterCompletedTrial_80')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0624_PoorlyLearned')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0625_PoorlyLearned')
-    struct('subjectName', 'AS1', 'sessionName', 'AS1_0719_Learning')
+    struct('subjectName', 'ey9166', 'sessionName', 'AS1_0618_WellLearned')
+    struct('subjectName', 'ey9166', 'sessionName', 'AS1_0622_WellLearned')
+    struct('subjectName', 'ey9166', 'sessionName', 'AS1_0623_TransitionAfterCompletedTrial_80')
+    struct('subjectName', 'ey9166', 'sessionName', 'AS1_0624_PoorlyLearned')
+    struct('subjectName', 'ey9166', 'sessionName', 'AS1_0625_PoorlyLearned')
+    struct('subjectName', 'ey9166', 'sessionName', 'AS1_0719_Learning')
     ];
 
 end

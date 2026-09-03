@@ -25,6 +25,10 @@
 %   windowsToTest    - Vector of window durations (s)
 %   binSizeManual    - Fixed bin width (s) across window sizes
 %   pOrder, critType - AR / d2 parameters
+%   d2Method         - 'euclidean' (Yule-Walker + getFixedPointDistance2) or 'kl'
+%                      (Sooter et al. KL-rate d2 from prox_crit_toolkit)
+%   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
+%   runParallel, nWorkers - If runParallel, start a parpool with nWorkers for KL error bars
 %   meanSubtract     - If true, subtract mean pop activity within each window
 %   equalizeWindowCounts - If true, match n windows across sizes using
 %                        centers of the largest-W tiles (see above)
@@ -106,6 +110,12 @@ windowsToTest = 2:2:90;   % seconds
 binSizeManual = 0.025;      % seconds (fixed across window sizes)
 pOrder = 10;
 critType = 2;
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
+klFitMethod = 'MaxLikelihood';  % required for error bars
+klErrBars = false;
+runParallel = true;
+nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
+klParallel = runParallel;
 meanSubtract = false;
 equalizeWindowCounts = false;  % true: same n across W (centers from max W)
 useSubsampling = true;
@@ -122,6 +132,7 @@ fprintf('\n=== criticality_d2_vs_windowSize ===\n');
 fprintf('Windows (s): %s\n', mat2str(windowsToTest([1, end]), 3));
 fprintf('binSize = %.3f s; pOrder = %d; brainArea = %s\n', ...
     binSizeManual, pOrder, brainArea);
+fprintf('d2Method: %s\n', d2Method);
 if equalizeWindowCounts
     fprintf(['Window placement: equalized n (smaller W centered on ', ...
         'largest-W tile centers)\n']);
@@ -141,6 +152,16 @@ else
 end
 
 validate_example_sessions(exampleSessions);
+
+[d2Method, klFitMethod, klErrBars, klParallel] = normalize_kl_d2_options( ...
+    d2Method, klFitMethod, klErrBars, klParallel);
+d2Opts = struct('klFitMethod', klFitMethod, 'klErrBars', klErrBars, 'klParallel', klParallel);
+d2PlotTag = format_d2_method_file_tag(d2Method, klFitMethod, klErrBars);
+if strcmp(d2Method, 'kl')
+    fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
+        klFitMethod, klErrBars, klParallel, nWorkers);
+end
+maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
 % Analysis — one example session per task type
 numExamples = numel(exampleSessions);
@@ -212,7 +233,7 @@ for e = 1:numExamples
 
     [meanD2, semD2, nValid, meanCv, semCv, nCvValid] = sweep_tiled_d2_cv( ...
         aDataMat, windowsToTest, binSizeSec, pOrder, critType, meanSubtract, ...
-        equalizeWindowCounts, neuronIdxSubsamples);
+        equalizeWindowCounts, neuronIdxSubsamples, d2Method, d2Opts);
 
     for iW = 1:numW
         fprintf('  W = %5.1f s: nValid = %4d, mean d2 = %.4g, mean CV = %.3g (n_CV = %d)\n', ...
@@ -234,7 +255,7 @@ for e = 1:numExamples
             permutedDataMat = circular_permute_neurons(aDataMat);
             [meanD2Shuf, ~, ~, meanCvShuf, ~, ~] = sweep_tiled_d2_cv( ...
                 permutedDataMat, windowsToTest, binSizeSec, pOrder, critType, meanSubtract, ...
-                equalizeWindowCounts, neuronIdxSubsamples);
+                equalizeWindowCounts, neuronIdxSubsamples, d2Method, d2Opts);
             d2PermPerShuffle(s, :) = meanD2Shuf;
             cvPermPerShuffle(s, :) = meanCvShuf;
         end
@@ -285,6 +306,9 @@ results.windowsToTest = windowsToTest;
 results.binSizeManual = binSizeManual;
 results.pOrder = pOrder;
 results.critType = critType;
+results.d2Method = d2Method;
+results.klFitMethod = klFitMethod;
+results.klErrBars = klErrBars;
 results.meanSubtract = meanSubtract;
 results.equalizeWindowCounts = equalizeWindowCounts;
 results.useSubsampling = useSubsampling;
@@ -474,8 +498,8 @@ if makePlots
 
     if saveFigure
         outPng = fullfile(saveDir, sprintf( ...
-            'criticality_d2_vs_windowSize_%s%s%s%s%s%s.png', ...
-            areaTag, equalizeTag, subsampleTag, shuffleTag, logTag, sessionTag));
+            'criticality_d2_vs_windowSize_%s%s%s%s%s%s%s.png', ...
+            areaTag, equalizeTag, subsampleTag, shuffleTag, logTag, sessionTag, d2PlotTag));
         exportgraphics(figMain, outPng, 'Resolution', 300);
         fprintf('Saved figure: %s\n', outPng);
     end
@@ -590,8 +614,8 @@ if makePlots
     end
     if saveFigure
         outPngOverlay = fullfile(saveDir, sprintf( ...
-            'criticality_d2_vs_windowSize_overlay%s_%s%s%s%s%s%s.png', ...
-            overlayCvTag, areaTag, equalizeTag, subsampleTag, shuffleTag, logTag, sessionTag));
+            'criticality_d2_vs_windowSize_overlay%s_%s%s%s%s%s%s%s.png', ...
+            overlayCvTag, areaTag, equalizeTag, subsampleTag, shuffleTag, logTag, sessionTag, d2PlotTag));
         exportgraphics(figOverlay, outPngOverlay, 'Resolution', 300);
         fprintf('Saved figure: %s\n', outPngOverlay);
     end
@@ -810,7 +834,7 @@ end
 
 function [meanD2, semD2, nValid, meanCv, semCv, nCvValid] = sweep_tiled_d2_cv( ...
     aDataMat, windowsToTest, binSizeSec, pOrder, critType, meanSubtract, ...
-    equalizeWindowCounts, neuronIdxSubsamples)
+    equalizeWindowCounts, neuronIdxSubsamples, d2Method, d2Opts)
 % SWEEP_TILED_D2_CV - Mean d2 and CV across windows per window size
 %
 % Variables:
@@ -835,6 +859,12 @@ end
 if nargin < 8 || isempty(neuronIdxSubsamples)
     neuronIdxSubsamples = {};
 end
+if nargin < 9 || isempty(d2Method)
+    d2Method = 'euclidean';
+end
+if nargin < 10 || isempty(d2Opts)
+    d2Opts = struct();
+end
 
 numW = numel(windowsToTest);
 meanD2 = nan(1, numW);
@@ -852,7 +882,7 @@ end
 for iW = 1:numW
     [d2PerWindow, cvPerWindow] = window_metrics_maybe_subsampled( ...
         aDataMat, windowsToTest(iW), binSizeSec, pOrder, critType, meanSubtract, ...
-        equalizeWindowCounts, sharedCenterIdx, neuronIdxSubsamples);
+        equalizeWindowCounts, sharedCenterIdx, neuronIdxSubsamples, d2Method, d2Opts);
 
     validMask = ~isnan(d2PerWindow);
     nValid(iW) = sum(validMask);
@@ -876,17 +906,24 @@ end
 
 function [d2PerWindow, cvPerWindow] = window_metrics_maybe_subsampled( ...
     aDataMat, winSize, binSizeSec, pOrder, critType, meanSubtract, ...
-    equalizeWindowCounts, sharedCenterIdx, neuronIdxSubsamples)
+    equalizeWindowCounts, sharedCenterIdx, neuronIdxSubsamples, d2Method, d2Opts)
 % WINDOW_METRICS_MAYBE_SUBSAMPLED - Per-tile d2/CV, optionally mean over neuron subsets
+
+if nargin < 10 || isempty(d2Method)
+    d2Method = 'euclidean';
+end
+if nargin < 11 || isempty(d2Opts)
+    d2Opts = struct();
+end
 
 if isempty(neuronIdxSubsamples)
     if equalizeWindowCounts
         [d2PerWindow, cvPerWindow] = centered_window_d2_cv( ...
             aDataMat, winSize, sharedCenterIdx, binSizeSec, ...
-            pOrder, critType, meanSubtract);
+            pOrder, critType, meanSubtract, d2Method, d2Opts);
     else
         [d2PerWindow, cvPerWindow] = tiled_window_d2_cv( ...
-            aDataMat, winSize, binSizeSec, pOrder, critType, meanSubtract);
+            aDataMat, winSize, binSizeSec, pOrder, critType, meanSubtract, d2Method, d2Opts);
     end
     return;
 end
@@ -899,10 +936,10 @@ for s = 1:nSub
     if equalizeWindowCounts
         [d2Sub, cvSub] = centered_window_d2_cv( ...
             aDataMatSub, winSize, sharedCenterIdx, binSizeSec, ...
-            pOrder, critType, meanSubtract);
+            pOrder, critType, meanSubtract, d2Method, d2Opts);
     else
         [d2Sub, cvSub] = tiled_window_d2_cv( ...
-            aDataMatSub, winSize, binSizeSec, pOrder, critType, meanSubtract);
+            aDataMatSub, winSize, binSizeSec, pOrder, critType, meanSubtract, d2Method, d2Opts);
     end
     if isempty(d2Stack)
         d2Stack = nan(nSub, numel(d2Sub));
@@ -947,7 +984,7 @@ end
 end
 
 function [d2PerWindow, cvPerWindow] = centered_window_d2_cv( ...
-    aDataMat, winSize, centerIdx, binSizeSec, pOrder, critType, meanSubtract)
+    aDataMat, winSize, centerIdx, binSizeSec, pOrder, critType, meanSubtract, d2Method, d2Opts)
 % CENTERED_WINDOW_D2_CV - Per-window d2 and CV at shared sample centers
 %
 % Variables:
@@ -985,13 +1022,14 @@ for w = 1:numWindows
     if meanSubtract
         wPopActivity = wPopActivity - nanmean(wPopActivity);
     end
-    d2PerWindow(w) = compute_d2_from_pop_activity(wPopActivity, pOrder, critType);
+    d2PerWindow(w) = compute_d2_from_pop_activity( ...
+        wPopActivity, pOrder, critType, binSizeSec, d2Method, d2Opts);
     cvPerWindow(w) = population_trace_cv(wPopActivity);
 end
 end
 
 function [d2PerWindow, cvPerWindow] = tiled_window_d2_cv( ...
-    aDataMat, winSize, binSizeSec, pOrder, critType, meanSubtract)
+    aDataMat, winSize, binSizeSec, pOrder, critType, meanSubtract, d2Method, d2Opts)
 % TILED_WINDOW_D2_CV - Per-tile d2 and CV for one window size
 %
 % Variables:
@@ -1027,7 +1065,8 @@ for w = 1:numWindows
     if meanSubtract
         wPopActivity = wPopActivity - nanmean(wPopActivity);
     end
-    d2PerWindow(w) = compute_d2_from_pop_activity(wPopActivity, pOrder, critType);
+    d2PerWindow(w) = compute_d2_from_pop_activity( ...
+        wPopActivity, pOrder, critType, binSizeSec, d2Method, d2Opts);
     cvPerWindow(w) = population_trace_cv(wPopActivity);
 end
 end
@@ -1052,31 +1091,30 @@ for n = 1:numNeurons
 end
 end
 
-function d2Val = compute_d2_from_pop_activity(wPopActivity, pOrder, critType)
+function d2Val = compute_d2_from_pop_activity(wPopActivity, pOrder, critType, binSizeSec, d2Method, d2Opts)
 % COMPUTE_D2_FROM_POP_ACTIVITY - Scalar d2 for one pop-activity window
 %
 % Variables:
 %   wPopActivity - Population spike-count vector [timeBins x 1]
-%   pOrder       - AR order for myYuleWalker3
-%   critType     - Criticality type for getFixedPointDistance2
+%   pOrder       - AR order
+%   critType     - tRG beta (usually 2)
+%   binSizeSec   - Bin duration (s); required for KL-rate d2
+%   d2Method     - 'euclidean' or 'kl'
+%   d2Opts       - Optional KL options (klFitMethod, klErrBars, klParallel)
 %
 % Goal:
-%   Return scalar d2 for one window; NaN on failure.
+%   Return scalar Euclidean or KL-rate d2 for one window; NaN on failure.
 
-d2Val = nan;
-if isempty(wPopActivity)
-    return;
+if nargin < 4
+    binSizeSec = [];
 end
-v = double(wPopActivity(:));
-if numel(v) <= pOrder
-    return;
+if nargin < 5 || isempty(d2Method)
+    d2Method = 'euclidean';
 end
-try
-    [varphi, ~] = myYuleWalker3(v, pOrder);
-    d2Val = getFixedPointDistance2(pOrder, critType, varphi);
-catch
-    d2Val = nan;
+if nargin < 6 || isempty(d2Opts)
+    d2Opts = struct();
 end
+d2Val = compute_d2_from_pop_trace(wPopActivity, pOrder, critType, binSizeSec, d2Method, d2Opts);
 end
 
 function cvProp = population_trace_cv(wPopActivity)

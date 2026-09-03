@@ -18,6 +18,8 @@
 %   runBatch       - If true, run criticality_ar_analysis per session
 %   plotResults    - If true, create summary figures after batch
 %   useLog10D2     - If true, aggregate and plot log10(d2); values <= 0 become NaN (default true)
+%   d2Method       - 'euclidean' (default) or 'kl' (Sooter et al. KL-rate d2)
+%   klFitMethod, klErrBars, klParallel, nWorkers - KL d2 options (see run_criticality_ar.m)
 %   useSubsampling - If true, d2 per window = mean across neuron subsamples; shuffled
 %                    summary = mean across subsamples of per-subsample shuffle means
 %   nSubsamples, nNeuronsSubsample, minNeuronsMultiple - subsampling settings (see run_criticality_ar.m)
@@ -199,7 +201,7 @@ for iCell = 1:numel(cellTypesToRun)
     if ~opts.splitExcitatoryInhibitory
       plot_ar_across_tasks(plotDataCell, commonAreas, opts.sessionTypes, opts.collectStart, ...
         opts.collectEnd, opts.d2Window, paths, opts.brainArea, opts.useLog10D2, cellType, ...
-        opts.enablePermutations);
+        opts.enablePermutations, format_d2_method_file_tag(opts.d2Method, opts.klFitMethod, opts.klErrBars));
     end
   end
 end
@@ -211,7 +213,8 @@ if opts.plotResults && opts.splitExcitatoryInhibitory
   fprintf('\n=== E/I summary plots (combined / excitatory / inhibitory) ===\n');
   plot_ar_ei_summary_across_tasks(plotDataByCell, cellTypesToRun, commonAreasUnion, ...
     opts.sessionTypes, opts.collectStart, opts.collectEnd, opts.d2Window, paths, ...
-    opts.brainArea, opts.useLog10D2, opts.enablePermutations);
+    opts.brainArea, opts.useLog10D2, opts.enablePermutations, ...
+    format_d2_method_file_tag(opts.d2Method, opts.klFitMethod, opts.klErrBars));
 end
 
 fprintf('\n=== Done ===\n');
@@ -267,6 +270,7 @@ defaults.d2Method = 'euclidean';
 defaults.klFitMethod = 'MaxLikelihood';
 defaults.klErrBars = false;
 defaults.klParallel = false;
+defaults.nWorkers = [];
 % Empty collectEnd / d2Window are sentinels for "full session" — do not replace
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 preserveD2WindowEmpty = isfield(opts, 'd2Window') && isempty(opts.d2Window);
@@ -278,17 +282,8 @@ if preserveD2WindowEmpty
   opts.d2Window = [];
 end
 opts.sessionTypes = order_manuscript_session_types(opts.sessionTypes);
-opts.d2Method = lower(strtrim(char(opts.d2Method)));
-if ~ismember(opts.d2Method, {'euclidean', 'kl'})
-  error('d2Method must be ''euclidean'' or ''kl'' (got "%s").', opts.d2Method);
-end
-opts.klFitMethod = char(opts.klFitMethod);
-opts.klErrBars = logical(opts.klErrBars);
-opts.klParallel = logical(opts.klParallel);
-if strcmp(opts.d2Method, 'kl') && opts.klErrBars ...
-    && ~strcmp(opts.klFitMethod, 'MaxLikelihood')
-  error('KL error bars require klFitMethod = ''MaxLikelihood'' (S2.5 Hessian).');
-end
+[opts.d2Method, opts.klFitMethod, opts.klErrBars, opts.klParallel] = ...
+  normalize_kl_d2_options(opts.d2Method, opts.klFitMethod, opts.klErrBars, opts.klParallel);
 end
 
 function batchMeta = pack_ar_across_tasks_batch_meta(opts)
@@ -310,7 +305,7 @@ function batchByCell = run_ar_across_tasks_batch(sessionTable, opts, paths)
 % RUN_AR_ACROSS_TASKS_BATCH - Per-session d2 analysis (optional E/I split)
 
 analysisConfig = build_ar_analysis_config(opts);
-maybe_start_kl_d2_parallel_pool(opts.d2Method, opts.klErrBars, opts.klParallel);
+maybe_start_kl_d2_parallel_pool(opts.d2Method, opts.klErrBars, opts.klParallel, opts.nWorkers);
 loadOpts = neuro_behavior_options();
 loadOpts.firingRateCheckTime = opts.firingRateCheckTime;
 loadOpts.collectStart = opts.collectStart;
@@ -865,7 +860,7 @@ for m = 1:length(metricFields)
 end
 end
 
-function plot_ar_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, cellType, enablePermutations)
+function plot_ar_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, cellType, enablePermutations, d2PlotTag)
 % PLOT_AR_ACROSS_TASKS - Raw+shuffled d2 and normalized d2 by session type
 sessionTypes = order_manuscript_session_types(sessionTypes);
 
@@ -884,6 +879,9 @@ if nargin < 10 || isempty(cellType)
 end
 if nargin < 11 || isempty(enablePermutations)
   enablePermutations = true;
+end
+if nargin < 12 || isempty(d2PlotTag)
+  d2PlotTag = '';
 end
 useLog10D2 = logical(useLog10D2);
 enablePermutations = logical(enablePermutations);
@@ -948,7 +946,7 @@ for a = 1:length(areasToPlot)
 
   plotBaseRaw = make_ar_plot_basename('criticality_ar_across_tasks_raw', areaName, brainArea, ...
     d2Window, collectStart, collectEnd, length(areasToPlot) > 1, useLog10D2);
-  plotBaseRaw = [plotBaseRaw, cellTag];
+  plotBaseRaw = [plotBaseRaw, cellTag, d2PlotTag];
   exportgraphics(figRaw, fullfile(saveDir, [plotBaseRaw, '.png']), 'Resolution', 300);
   exportgraphics(figRaw, fullfile(saveDir, [plotBaseRaw, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseRaw));
@@ -980,7 +978,7 @@ for a = 1:length(areasToPlot)
 
   plotBaseNorm = make_ar_plot_basename('criticality_ar_across_tasks_normalized', areaName, brainArea, ...
     d2Window, collectStart, collectEnd, length(areasToPlot) > 1, useLog10D2);
-  plotBaseNorm = [plotBaseNorm, cellTag];
+  plotBaseNorm = [plotBaseNorm, cellTag, d2PlotTag];
   exportgraphics(figNorm, fullfile(saveDir, [plotBaseNorm, '.png']), 'Resolution', 300);
   exportgraphics(figNorm, fullfile(saveDir, [plotBaseNorm, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseNorm));
@@ -991,7 +989,7 @@ end
 
 function plot_ar_ei_summary_across_tasks(plotDataByCell, cellTypesToRun, areasToPlot, ...
     sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-    enablePermutations)
+    enablePermutations, d2PlotTag)
 % PLOT_AR_EI_SUMMARY_ACROSS_TASKS - Combined / E / I on one axes per area
 %
 % Variables:
@@ -1007,6 +1005,9 @@ function plot_ar_ei_summary_across_tasks(plotDataByCell, cellTypesToRun, areasTo
 
 if nargin < 11 || isempty(enablePermutations)
   enablePermutations = true;
+end
+if nargin < 12 || isempty(d2PlotTag)
+  d2PlotTag = '';
 end
 useLog10D2 = logical(useLog10D2);
 enablePermutations = logical(enablePermutations);
@@ -1063,6 +1064,7 @@ for a = 1:numel(areasToPlot)
 
   plotBaseRaw = make_ar_plot_basename('criticality_ar_across_tasks_ei_summary_raw', ...
     areaName, brainArea, d2Window, collectStart, collectEnd, numel(areasToPlot) > 1, useLog10D2);
+  plotBaseRaw = [plotBaseRaw, d2PlotTag];
   exportgraphics(figRaw, fullfile(saveDir, [plotBaseRaw, '.png']), 'Resolution', 300);
   exportgraphics(figRaw, fullfile(saveDir, [plotBaseRaw, '.eps']), 'ContentType', 'vector');
   fprintf('Saved E/I summary: %s\n', fullfile(saveDir, plotBaseRaw));
@@ -1091,6 +1093,7 @@ for a = 1:numel(areasToPlot)
 
   plotBaseNorm = make_ar_plot_basename('criticality_ar_across_tasks_ei_summary_normalized', ...
     areaName, brainArea, d2Window, collectStart, collectEnd, numel(areasToPlot) > 1, useLog10D2);
+  plotBaseNorm = [plotBaseNorm, d2PlotTag];
   exportgraphics(figNorm, fullfile(saveDir, [plotBaseNorm, '.png']), 'Resolution', 300);
   exportgraphics(figNorm, fullfile(saveDir, [plotBaseNorm, '.eps']), 'ContentType', 'vector');
   fprintf('Saved E/I summary: %s\n', fullfile(saveDir, plotBaseNorm));

@@ -16,6 +16,10 @@
 %   brainAreaCombinations  - Merged areas: struct('name', 'M23M56', 'areas', {{'M23','M56'}})
 %   saveFigure       - Export PNG to dropPath/criticality_manuscript
 %   plotD2PopActivity - If true, scatter d2 vs mean pop activity per window (3 panels)
+%   d2Method         - 'euclidean' (Yule-Walker + getFixedPointDistance2) or 'kl'
+%                      (Sooter et al. KL-rate d2 from prox_crit_toolkit)
+%   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
+%   runParallel, nWorkers - If runParallel, start a parpool with nWorkers for KL error bars
 %
 % Goal:
 %   Illustrate session-wise d2 time courses across task types using the same
@@ -57,6 +61,12 @@ useSubsampling = true;
 nSubsamples = 50;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
+klFitMethod = 'MaxLikelihood';  % required for error bars
+klErrBars = false;
+runParallel = true;
+nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
+klParallel = runParallel;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = slidingWindowSize;
@@ -76,6 +86,10 @@ analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.pOrder = 10;
 analysisConfig.critType = 2;
+analysisConfig.d2Method = d2Method;
+analysisConfig.klFitMethod = klFitMethod;
+analysisConfig.klErrBars = klErrBars;
+analysisConfig.klParallel = klParallel;
 analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 1000;
 analysisConfig.maxSpikesPerBin = 50;
@@ -85,13 +99,28 @@ analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 % Paths
+setup_criticality_manuscript_paths('criticality_d2_sliding_examples');
 paths = get_paths();
+
+[d2Method, klFitMethod, klErrBars, klParallel] = normalize_kl_d2_options( ...
+  d2Method, klFitMethod, klErrBars, klParallel);
+analysisConfig.d2Method = d2Method;
+analysisConfig.klFitMethod = klFitMethod;
+analysisConfig.klErrBars = klErrBars;
+analysisConfig.klParallel = klParallel;
+d2PlotTag = format_d2_method_file_tag(d2Method, klFitMethod, klErrBars);
 
 
 fprintf('\n=== Criticality d2 sliding-window examples ===\n');
 fprintf('Window: %.1f s, step: %.2f s (overlapping)\n', slidingWindowSize, stepSize);
 fprintf('Brain area: %s\n', brainArea);
 fprintf('useLog10D2: %d\n', useLog10D2);
+fprintf('d2Method: %s\n', d2Method);
+if strcmp(d2Method, 'kl')
+  fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
+    klFitMethod, klErrBars, klParallel, nWorkers);
+end
+maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
 validate_example_sessions(exampleSessions);
 
@@ -147,13 +176,13 @@ if saveFigure
   if ~exist(saveDir, 'dir')
     mkdir(saveDir);
   end
-  plotPath = fullfile(saveDir, sprintf('criticality_d2_sliding_examples_%s_win%.0fs_step%.1fs.png', ...
-    brainArea, slidingWindowSize, stepSize));
+  plotPath = fullfile(saveDir, sprintf('criticality_d2_sliding_examples_%s_win%.0fs_step%.1fs%s.png', ...
+    brainArea, slidingWindowSize, stepSize, d2PlotTag));
   exportgraphics(fig, plotPath, 'Resolution', 300);
   fprintf('\nSaved figure: %s\n', plotPath);
   if plotD2PopActivity
-    plotPathPop = fullfile(saveDir, sprintf('criticality_d2_sliding_popactivity_%s_win%.0fs_step%.1fs.png', ...
-      brainArea, slidingWindowSize, stepSize));
+    plotPathPop = fullfile(saveDir, sprintf('criticality_d2_sliding_popactivity_%s_win%.0fs_step%.1fs%s.png', ...
+      brainArea, slidingWindowSize, stepSize, d2PlotTag));
     exportgraphics(figPop, plotPathPop, 'Resolution', 300);
     fprintf('Saved figure: %s\n', plotPathPop);
   end

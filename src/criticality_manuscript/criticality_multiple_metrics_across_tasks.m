@@ -29,7 +29,11 @@
 %   minTimeNonEngaged  - When splitByEngagement, min total non-engaged time (s)
 %                        to keep non-engaged metrics; shorter sessions stay on
 %                        the x-axis but plot blank (NaN) so plots stay aligned
-%   thresholdMethod    - Avalanche population cutoff: 'median' or 'quantile10'
+%   d2Method           - 'euclidean' (Yule-Walker + getFixedPointDistance2) or 'kl'
+%                        (Sooter et al. KL-rate d2 from prox_crit_toolkit)
+%   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
+%   runParallel, nWorkers - If runParallel, start a parpool with nWorkers
+%                           workers (capped at feature('numcores')) for KL error bars.
 %   runArBatch, runAvBatch, runPrgBatch - Select which pipelines to run
 %                            (any non-empty combination of d2 / avalanche / PRG).
 %                            Unselected metrics stay blank in combined / separated
@@ -85,6 +89,13 @@
 %% Configuration
 sessionTypes = default_manuscript_session_types();
 sessionTypes = order_manuscript_session_types(sessionTypes);
+d2Method = 'kl';         % 'euclidean' or 'kl'
+% prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
+klFitMethod = 'MaxLikelihood';  % required for error bars
+klErrBars = false;
+runParallel = true;
+nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
+klParallel = runParallel;
 collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
@@ -109,6 +120,9 @@ minTimeNonEngaged = 180;      % min total non-engaged time (s) to plot; 0 = no f
 setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
 paths = get_paths();
 
+[d2Method, klFitMethod, klErrBars, klParallel] = normalize_kl_d2_options( ...
+  d2Method, klFitMethod, klErrBars, klParallel);
+
 brainArea = 'M23M56';
 % brainArea = 'M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
@@ -120,7 +134,7 @@ runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = true;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
-forceRecompute = true;   % true: reprocess and overwrite per-session cache
+forceRecompute = false;   % true: reprocess and overwrite per-session cache
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
@@ -135,7 +149,7 @@ metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to s
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
 splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
 
-useLog10D2 = true;
+useLog10D2 = false;
 useSubsampling = true;
 nSubsamples = 40;
 nNeuronsSubsample = 45;
@@ -149,6 +163,13 @@ finalCutoffDivisor = 16;
 prgMethod = 'pca';
 
 plotConfig = fill_manuscript_plot_config();
+d2FileTag = format_d2_method_file_tag(d2Method, klFitMethod, klErrBars);
+if ~isempty(d2FileTag)
+  plotConfig.fileTag = d2FileTag(2:end);
+end
+plotConfig.d2Method = d2Method;
+plotConfig.klFitMethod = klFitMethod;
+plotConfig.klErrBars = klErrBars;
 
 % Resolve which pipelines are active. Unselected → blank panels.
 useAr = logical(runArBatch);
@@ -160,6 +181,11 @@ end
 
 fprintf('\n=== Criticality Multiple Metrics Across Tasks ===\n');
 fprintf('Pipelines: AR(d2)=%d  AV=%d  PRG=%d\n', useAr, useAv, usePrg);
+fprintf('d2Method: %s\n', d2Method);
+if strcmp(d2Method, 'kl')
+  fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
+    klFitMethod, klErrBars, klParallel, nWorkers);
+end
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 if isempty(collectEnd)
   fprintf('Collect window: [%.1f, full] s\n', collectStart);
@@ -223,6 +249,7 @@ if isempty(prgWindow)
 end
 set_manuscript_av_window(avWindow);
 pcaFileTag = format_pca_file_tag(pcaFlag, nDim, pcaFirstFlag);
+maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
 % AR batch (d2) — full-session metrics across all requested session types
 arOpts = struct( ...
@@ -245,7 +272,12 @@ arOpts = struct( ...
   'nDim', nDim, ...
   'useSessionCache', useSessionCache, ...
   'forceRecompute', forceRecompute, ...
-  'plotResults', false);
+  'plotResults', false, ...
+  'd2Method', d2Method, ...
+  'klFitMethod', klFitMethod, ...
+  'klErrBars', klErrBars, ...
+  'klParallel', klParallel, ...
+  'nWorkers', nWorkers);
 
 if useAr
   arOut = criticality_ar_across_tasks(arOpts);
@@ -382,7 +414,11 @@ if splitByEngagement
     'analyses', {engAnalyses}, ...
     'useSessionCache', useSessionCache, ...
     'forceRecompute', forceRecompute, ...
-    'plotConfig', plotConfig);
+    'plotConfig', plotConfig, ...
+    'd2Method', d2Method, ...
+    'klFitMethod', klFitMethod, ...
+    'klErrBars', klErrBars, ...
+    'klParallel', klParallel);
 
   if ~runEngagementBatch
     error('splitByEngagement requires runEngagementBatch true (per-session cache skips already processed sessions).');
@@ -709,6 +745,7 @@ for iArea = 1:numel(areasToPlot)
   plotBase = make_correlation_matrix_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, useSubsampling, nNeuronsSubsample, avWindow, pcaFileTag);
   plotBase = [plotBase, '_invMetrics']; %#ok<AGROW>
+  plotBase = prepend_manuscript_plot_file_tag(plotBase, plotConfig);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved correlation matrix: %s\n', fullfile(saveDir, plotBase));
@@ -1336,6 +1373,7 @@ for a = 1:numel(areasToPlot)
   plotBase = make_multimetric_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, anchorMetric, engagementTag, metricsToPlot, ...
     useAnchorAffineMap, useSubsampling, nNeuronsSubsample, avWindow, pcaFileTag);
+  plotBase = prepend_manuscript_plot_file_tag(plotBase, plotConfig);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
@@ -1672,6 +1710,7 @@ for a = 1:numel(areasToPlot)
   plotBase = make_separated_metrics_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, engagementTag, ...
     useSubsampling, nNeuronsSubsample, avWindow, binSizeD2, pcaFileTag);
+  plotBase = prepend_manuscript_plot_file_tag(plotBase, plotConfig);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved separated metrics: %s\n', fullfile(saveDir, plotBase));
@@ -1998,6 +2037,7 @@ for a = 1:numel(areasToPlot)
   plotBase = make_pair_scatter_plot_basename(areaName, brainArea, d2Window, ...
     collectStart, collectEnd, useLog10D2, engagementTag, useSubsampling, nNeuronsSubsample, ...
     avWindow, pcaFileTag);
+  plotBase = prepend_manuscript_plot_file_tag(plotBase, plotConfig);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
   exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
   fprintf('Saved pair scatters: %s\n', fullfile(saveDir, plotBase));
@@ -3552,6 +3592,18 @@ if isfield(opts, 'finalCutoffDivisor') && ~isempty(opts.finalCutoffDivisor)
   engModOpts.finalCutoffDivisor = opts.finalCutoffDivisor;
 end
 engModOpts.enableCircularPermutations = logical(opts.enablePermutations);
+if isfield(opts, 'd2Method') && ~isempty(opts.d2Method)
+  engModOpts.d2Method = opts.d2Method;
+end
+if isfield(opts, 'klFitMethod') && ~isempty(opts.klFitMethod)
+  engModOpts.klFitMethod = opts.klFitMethod;
+end
+if isfield(opts, 'klErrBars') && ~isempty(opts.klErrBars)
+  engModOpts.klErrBars = logical(opts.klErrBars);
+end
+if isfield(opts, 'klParallel') && ~isempty(opts.klParallel)
+  engModOpts.klParallel = logical(opts.klParallel);
+end
 if opts.enablePermutations
   engModOpts.nShuffles = 5;
   engModOpts.nShufflesD2 = 10;

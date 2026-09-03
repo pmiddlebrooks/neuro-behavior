@@ -2,11 +2,13 @@ function filenameSuffix = format_ar_file_suffix(config)
 % FORMAT_AR_FILE_SUFFIX - Results/plot filename tag for AR PCA and SDF options
 %
 % Variables:
-%   config - AR config struct. Uses .pcaFlag, .sdfFlag, .sdfSigmaMs
+%   config - AR config struct. Uses .pcaFlag, .sdfFlag, .sdfSigmaMs,
+%            .d2Method, .klFitMethod, .klErrBars
 %
 % Goal:
-%   Keep count-based and SDF (and PCA) caches from overwriting each other.
-%   Examples: '', '_pca', '_sdf_10', '_pca_sdf_10'.
+%   Keep count-based and SDF (and PCA) caches from overwriting each other,
+%   and keep Euclidean vs KL d2 results in separate files.
+%   Examples: '', '_pca', '_sdf_10', '_pca_sdf_10', '_d2kl'.
 
 filenameSuffix = '';
 if nargin < 1 || isempty(config) || ~isstruct(config)
@@ -28,4 +30,18 @@ if isfield(config, 'sdfFlag') && ~isempty(config.sdfFlag) && config.sdfFlag
         filenameSuffix = sprintf('%s_sdf_%g', filenameSuffix, sdfSigmaMs);
     end
 end
+
+d2Method = 'euclidean';
+if isfield(config, 'd2Method') && ~isempty(config.d2Method)
+    d2Method = config.d2Method;
+end
+klFitMethod = 'MaxLikelihood';
+if isfield(config, 'klFitMethod') && ~isempty(config.klFitMethod)
+    klFitMethod = config.klFitMethod;
+end
+klErrBars = false;
+if isfield(config, 'klErrBars') && ~isempty(config.klErrBars)
+    klErrBars = config.klErrBars;
+end
+filenameSuffix = [filenameSuffix, format_d2_method_file_tag(d2Method, klFitMethod, klErrBars)];
 end

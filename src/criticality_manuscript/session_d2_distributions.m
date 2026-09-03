@@ -35,6 +35,10 @@
 %                      engagement fills when splitByEngagement
 %   useRelativeTime  - If true, timeline x-axis is relative to collectStart (default false)
 %   binSize          - Spike bin width (s) for d2 analysis (and window popActivity)
+%   d2Method         - 'euclidean' (Yule-Walker + getFixedPointDistance2) or 'kl'
+%                      (Sooter et al. KL-rate d2 from prox_crit_toolkit)
+%   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
+%   runParallel, nWorkers - If runParallel, start a parpool with nWorkers for KL error bars
 %   saveFigure       - Export PNG/EPS to dropPath/criticality_manuscript
 %   plotConfig       - Axis fonts/line widths (see fill_manuscript_plot_config)
 %   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory;
@@ -94,6 +98,12 @@ plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
 binSize = 0.025;  % s; spike binning for d2 (and window mean popActivity)
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
+klFitMethod = 'MaxLikelihood';  % required for error bars
+klErrBars = false;
+runParallel = true;
+nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
+klParallel = runParallel;
 saveFigure = false;
 
 plotConfig = fill_manuscript_plot_config();
@@ -135,6 +145,10 @@ analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.pOrder = 10;
 analysisConfig.critType = 2;
+analysisConfig.d2Method = d2Method;
+analysisConfig.klFitMethod = klFitMethod;
+analysisConfig.klErrBars = klErrBars;
+analysisConfig.klParallel = klParallel;
 analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 1000;
 analysisConfig.maxSpikesPerBin = 100;
@@ -148,12 +162,25 @@ analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
 setup_criticality_manuscript_paths('session_d2_distributions');
 paths = get_paths();
 
+[d2Method, klFitMethod, klErrBars, klParallel] = normalize_kl_d2_options( ...
+    d2Method, klFitMethod, klErrBars, klParallel);
+analysisConfig.d2Method = d2Method;
+analysisConfig.klFitMethod = klFitMethod;
+analysisConfig.klErrBars = klErrBars;
+analysisConfig.klParallel = klParallel;
+d2PlotTag = format_d2_method_file_tag(d2Method, klFitMethod, klErrBars);
+
 d2WindowAlign = normalize_d2_window_align(d2WindowAlign);
 
 fprintf('\n=== Session d2 Distributions ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('d2 windows: %.1f s (%s); binSize: %.3f s\n', ...
     d2Window, d2WindowAlign, binSize);
+fprintf('d2Method: %s\n', d2Method);
+if strcmp(d2Method, 'kl')
+    fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
+        klFitMethod, klErrBars, klParallel, nWorkers);
+end
 if enablePermutations
     fprintf('Circular permutations: %d shuffles per window\n', nPermutations);
 else
@@ -174,6 +201,7 @@ end
 if splitExcitatoryInhibitory
     fprintf('E/I split: on (widthCutoff = %.3f ms)\n', widthCutoff);
 end
+maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
 % Load session and run d2 analysis
 subjectNameForLoad = '';
@@ -269,6 +297,7 @@ for iCellRun = 1:numel(cellTypesToRun)
         if useLog10D2
             plotBase = [plotBase, '_log10'];
         end
+        plotBase = [plotBase, d2PlotTag];
         exportgraphics(fig, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
         exportgraphics(fig, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
         fprintf('\nSaved figure: %s\n', fullfile(saveDir, plotBase));
@@ -293,6 +322,7 @@ for iCellRun = 1:numel(cellTypesToRun)
                 if useLog10D2
                     plotBase = [plotBase, '_log10'];
                 end
+                plotBase = [plotBase, d2PlotTag];
                 exportgraphics(figPop, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
                 exportgraphics(figPop, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
                 fprintf('Saved figure: %s\n', fullfile(saveDir, plotBase));
@@ -328,6 +358,7 @@ for iCellRun = 1:numel(cellTypesToRun)
             if useLog10D2
                 plotBase = [plotBase, '_log10'];
             end
+            plotBase = [plotBase, d2PlotTag];
             exportgraphics(figTime, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
             exportgraphics(figTime, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
             fprintf('Saved timeline figure: %s\n', fullfile(saveDir, plotBase));
@@ -352,6 +383,7 @@ if plotD2PopActivity && splitExcitatoryInhibitory
         if useLog10D2
             plotBase = [plotBase, '_log10'];
         end
+        plotBase = [plotBase, d2PlotTag];
         exportgraphics(figPopEi, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
         exportgraphics(figPopEi, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
         fprintf('\nSaved E/I pop-activity figure: %s\n', fullfile(saveDir, plotBase));
@@ -375,6 +407,7 @@ if splitExcitatoryInhibitory
         if useLog10D2
             plotBase = [plotBase, '_log10'];
         end
+        plotBase = [plotBase, d2PlotTag];
         exportgraphics(figEiSummary, fullfile(saveDir, [plotBase, '.png']), 'Resolution', 300);
         exportgraphics(figEiSummary, fullfile(saveDir, [plotBase, '.eps']), 'ContentType', 'vector');
         fprintf('\nSaved E/I summary figure: %s\n', fullfile(saveDir, plotBase));
@@ -388,7 +421,7 @@ if splitByEngagement
         minTimeNonEngaged, absorbSingleEvents, splitExcitatoryInhibitory, plotConfig);
     if saveFigure
         save_session_engagement_d2_figures(engOut, paths, sessionName, brainArea, d2Window, ...
-            collectStart, collectEnd, useLog10D2);
+            collectStart, collectEnd, useLog10D2, d2PlotTag);
     end
 end
 
@@ -460,6 +493,18 @@ engOpts.minNeuronsMultiple = analysisConfig.minNeuronsMultiple;
 engOpts.nMinNeurons = analysisConfig.nMinNeurons;
 if isfield(analysisConfig, 'binSize') && ~isempty(analysisConfig.binSize)
     engOpts.binSizeD2 = analysisConfig.binSize;
+end
+if isfield(analysisConfig, 'd2Method') && ~isempty(analysisConfig.d2Method)
+    engOpts.d2Method = analysisConfig.d2Method;
+end
+if isfield(analysisConfig, 'klFitMethod') && ~isempty(analysisConfig.klFitMethod)
+    engOpts.klFitMethod = analysisConfig.klFitMethod;
+end
+if isfield(analysisConfig, 'klErrBars') && ~isempty(analysisConfig.klErrBars)
+    engOpts.klErrBars = logical(analysisConfig.klErrBars);
+end
+if isfield(analysisConfig, 'klParallel') && ~isempty(analysisConfig.klParallel)
+    engOpts.klParallel = logical(analysisConfig.klParallel);
 end
 engOpts.minNonEngagedWindow = minNonEngagedWindow;
 engOpts.minTimeNonEngaged = minTimeNonEngaged;
@@ -634,7 +679,7 @@ end
 end
 
 function save_session_engagement_d2_figures(engOut, paths, sessionName, brainArea, d2Window, ...
-    collectStart, collectEnd, useLog10D2)
+    collectStart, collectEnd, useLog10D2, d2PlotTag)
 % SAVE_SESSION_ENGAGEMENT_D2_FIGURES - Export engagement d2 (+ segments) figures
 
 saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
@@ -678,6 +723,9 @@ for iFig = 1:numel(figNames)
         fileTags{iFig}, sessionName, areaTag, d2Window, collectTag);
     if useLog10D2 && strcmp(figField, 'd2')
         plotBase = [plotBase, '_log10']; %#ok<AGROW>
+    end
+    if nargin >= 9 && ~isempty(d2PlotTag)
+        plotBase = [plotBase, d2PlotTag]; %#ok<AGROW>
     end
     exportgraphics(engOut.figHandles.(figField), fullfile(saveDir, [plotBase, '.png']), ...
         'Resolution', 300);

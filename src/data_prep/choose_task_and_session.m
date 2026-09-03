@@ -125,7 +125,7 @@ sessionName =  'Y12_20-Jan-2026 16_16_42_NeuroBeh';  %
 %% =============================    Semicircle Reward Task Data Loading    =============================
 sessionType = 'semicircle';  % 'reach' , 'spontaneous' , 'interval' , 'semicircle' , 'schall' , 'hong'
 
-subjectName = 'AS1';
+subjectName = 'ey9166';
 sessionName = 'AS1_0618_WellLearned';
 sessionName = 'AS1_0622_WellLearned';
 % sessionName = 'AS1_0623_TransitionAfterCompletedTrial_80';

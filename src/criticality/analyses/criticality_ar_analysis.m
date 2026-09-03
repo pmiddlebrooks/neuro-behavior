@@ -42,6 +42,7 @@ function results = criticality_ar_analysis(dataStruct, config)
     % Add paths
     srcRoot = fullfile(fileparts(mfilename('fullpath')), '..', '..');
     addpath(srcRoot);
+    addpath(fullfile(srcRoot, 'criticality'));
     add_figure_tools_path();
     addpath(fullfile(srcRoot, 'sliding_window_prep', 'utils'));
     addpath(fullfile(srcRoot, 'data_prep'));
@@ -149,6 +150,10 @@ function results = criticality_ar_analysis(dataStruct, config)
     fprintf('Window size: %.2f s\n', config.slidingWindowSize);
     fprintf('Analyze d2: %d (%s), Analyze mrBr: %d\n', ...
         config.analyzeD2, config.d2Method, config.analyzeMrBr);
+    if strcmp(config.d2Method, 'kl')
+        fprintf('KL d2: fit=%s; klErrBars=%d; klParallel=%d\n', ...
+            char(config.klFitMethod), config.klErrBars, config.klParallel);
+    end
     
     % Create filename suffix based on PCA and SDF flags
     filenameSuffix = format_ar_file_suffix(config);
@@ -842,6 +847,9 @@ function config = set_config_defaults(config)
             config.(fields{i}) = defaults.(fields{i});
         end
     end
+    [config.d2Method, config.klFitMethod, config.klErrBars, config.klParallel] = ...
+        normalize_kl_d2_options(config.d2Method, config.klFitMethod, ...
+        config.klErrBars, config.klParallel);
 end
 
 function modulationResults = perform_modulation_analysis(dataStruct, config)

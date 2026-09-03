@@ -14,9 +14,21 @@
 %   brainArea - '' = all areas; 'M56' = one area; 'M23M56' or 'M2356' = merged
 %               (same combinations as session_d2_distributions.m)
 %   config.sdfFlag / config.sdfSigmaMs - optional 1 ms Gaussian SDF before AR
+%   d2Method - 'euclidean' (Yule-Walker + getFixedPointDistance2) or 'kl'
+%              (Sooter et al. KL-rate d2 from prox_crit_toolkit)
+%   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
+%   runParallel, nWorkers - If runParallel, start a parpool with nWorkers
+%                           (also used for KL error-bar gradient)
 
-% Want to parallelize the area-wise analysis?
+% Want to parallelize the area-wise analysis / KL error-bar gradient?
 runParallel = 0;
+nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
+
+% Euclidean d2 (Yule-Walker) or Sooter et al. KL-rate d2
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
+klFitMethod = 'MaxLikelihood';  % required for error bars
+klErrBars = false;
+klParallel = runParallel;
 
 % Set to 1 to load and plot existing results instead of running analysis
 loadAndPlot = 0;
@@ -33,10 +45,14 @@ srcPath = fullfile(basePath, '..', '..');     % src
 swDataPrepPath = fullfile(srcPath, 'sliding_window_prep', 'data_prep');
 swUtilsPath = fullfile(srcPath, 'sliding_window_prep', 'utils');
 analysesPath = fullfile(basePath, '..', 'analyses');
-
-
+critPath = fullfile(basePath, '..');
 manuscriptPath = fullfile(srcPath, 'criticality_manuscript');
 addpath(basePath);
+addpath(critPath);
+addpath(analysesPath);
+
+[d2Method, klFitMethod, klErrBars, klParallel] = normalize_kl_d2_options( ...
+    d2Method, klFitMethod, klErrBars, klParallel);
 
 % Configure variables
 opts = neuro_behavior_options;
@@ -83,7 +99,8 @@ if loadAndPlot
     
     % Build filename suffix from PCA / SDF flags above
     filenameSuffix = format_ar_file_suffix(struct( ...
-        'pcaFlag', pcaFlag, 'sdfFlag', sdfFlag, 'sdfSigmaMs', sdfSigmaMs));
+        'pcaFlag', pcaFlag, 'sdfFlag', sdfFlag, 'sdfSigmaMs', sdfSigmaMs, ...
+        'd2Method', d2Method, 'klFitMethod', klFitMethod, 'klErrBars', klErrBars));
     
     resultsPath = create_results_path('criticality_ar', sessionType, sessionNameForPath, ...
         dataStruct.saveDir, 'filenameSuffix', filenameSuffix, 'createDir', false);
@@ -130,6 +147,18 @@ if loadAndPlot
     end
     if isfield(results.params, 'pcaFlag')
         config.pcaFlag = results.params.pcaFlag;
+    end
+    if isfield(results.params, 'd2Method')
+        config.d2Method = results.params.d2Method;
+    end
+    if isfield(results.params, 'klFitMethod')
+        config.klFitMethod = results.params.klFitMethod;
+    end
+    if isfield(results.params, 'klErrBars')
+        config.klErrBars = results.params.klErrBars;
+    end
+    if isfield(results.params, 'klParallel')
+        config.klParallel = results.params.klParallel;
     end
     
     % Add saveDir from dataStruct (needed for plotting)
@@ -285,6 +314,10 @@ config.useOptimalBinWindowFunction = false;
 % Additional parameters
 config.pOrder = 10;
 config.critType = 2;
+config.d2Method = d2Method;
+config.klFitMethod = klFitMethod;
+config.klErrBars = klErrBars;
+config.klParallel = klParallel;
 config.normalizeD2 = false;  % Normalize d2 by shuffled d2 values
 config.useLog10D2 = true;  % If true, plot log10(d2); values <= 0 become NaN
 config.maxSpikesPerBin = 50;  % Maximum spikes per bin for filtering
@@ -324,17 +357,18 @@ config.modulationPlotFlag = false;  % Set to true to generate modulation analysi
 % (set by load_sliding_window_data)
 
 % Run analysis
-% Optional parallel pool for area-wise processing (similar to LZC sliding analysis)
+% Optional parallel pool for area-wise processing and/or KL error-bar gradient
 if runParallel
     currentPool = gcp('nocreate');
     if isempty(currentPool)
-        NumWorkers = min(3, length(dataStruct.areas));
-        parpool('local', NumWorkers);
-        fprintf('Started parallel pool with %d workers\n', NumWorkers);
+        numWorkersUse = min(nWorkers, feature('numcores'));
+        parpool('local', numWorkersUse);
+        fprintf('Started parallel pool with %d workers\n', numWorkersUse);
     else
         fprintf('Using existing parallel pool with %d workers\n', currentPool.NumWorkers);
     end
 end
+maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
 results = criticality_ar_analysis(dataStruct, config);
 
