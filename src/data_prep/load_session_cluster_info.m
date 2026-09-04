@@ -20,10 +20,10 @@ function ci = load_session_cluster_info(sessionFolder, sessionName)
     clusterRfPath = fullfile(sessionFolder, 'cluster_rf.tsv');
 
     if isfile(clusterInfoPath)
-        ci = readtable(clusterInfoPath, 'FileType', 'text', 'Delimiter', '\t');
+        ci = read_tsv_table(clusterInfoPath);
         clusterFileUsed = 'cluster_info.tsv';
     elseif isfile(clusterRfPath)
-        ci = readtable(clusterRfPath, 'FileType', 'text', 'Delimiter', '\t');
+        ci = read_tsv_table(clusterRfPath);
         clusterFileUsed = 'cluster_rf.tsv';
     else
         error('Neither cluster_info.tsv nor cluster_rf.tsv found in %s', sessionFolder);
@@ -32,7 +32,7 @@ function ci = load_session_cluster_info(sessionFolder, sessionName)
     fprintf('Loaded cluster metadata from %s\n', clusterFileUsed);
 
     if ~ismember('rf_label', ci.Properties.VariableNames) && isfile(clusterRfPath)
-        rfTable = readtable(clusterRfPath, 'FileType', 'text', 'Delimiter', '\t');
+        rfTable = read_tsv_table(clusterRfPath);
         ci = merge_rf_label(ci, rfTable);
         fprintf('Merged rf_label from cluster_rf.tsv into %s\n', clusterFileUsed);
     end

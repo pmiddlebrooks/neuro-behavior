@@ -91,7 +91,7 @@ sessionTypes = default_manuscript_session_types();
 sessionTypes = order_manuscript_session_types(sessionTypes);
 d2Method = 'kl';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
-klFitMethod = 'MaxLikelihood';  % required for error bars
+klFitMethod = 'MaxLikelihood';  % required for error bars`
 klErrBars = false;
 runParallel = true;
 nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
@@ -100,8 +100,10 @@ collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
 d2Window = 45;
+d2Window = [];
 prgWindow = d2Window;
 avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
+avWindow = [];   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
 binSizeD2 = 0.025;   % d2/AR spike bin width (s); overrides AR default
@@ -139,7 +141,7 @@ plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
 plotCorrelationMatrix = true;
-enablePermutations = false;
+enablePermutations = true;
 pcaFlag = false;           % reconstruct from nDim PCs before d2 / avalanches
 pcaFirstFlag = true;       % true = first nDim PCs; false = last nDim
 nDim = 5;
@@ -3605,7 +3607,7 @@ if isfield(opts, 'klParallel') && ~isempty(opts.klParallel)
   engModOpts.klParallel = logical(opts.klParallel);
 end
 if opts.enablePermutations
-  engModOpts.nShuffles = 5;
+  engModOpts.nShuffles = 10;
   engModOpts.nShufflesD2 = 10;
   engModOpts.nSurrogates = 10;
 else

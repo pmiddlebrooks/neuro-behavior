@@ -81,8 +81,8 @@ sessionName =  'ey9166_2026_04_02';
 % sessionName =  'ey9166_2026_04_07';
 % sessionName =  'ey9166_2026_04_09';
 % 
-subjectName = 'ey9387';
-sessionName =  'ey9387_2026_05_19';
+% subjectName = 'ey9387';
+% sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
 % sessionName =  'ey9387_2026_05_21';
 % sessionName =  'ey9387_2026_05_22';

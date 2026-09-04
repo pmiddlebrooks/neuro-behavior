@@ -29,7 +29,7 @@ switch dataType
         end
         
         fileName = csvFiles(1).name;
-        dataFull = readtable(fullfile(searchPath, fileName));
+        dataFull = read_delimited_table(fullfile(searchPath, fileName), ',');
         if isempty(opts.collectEnd)
             opts.collectEnd = dataFull.Time(end);
         end

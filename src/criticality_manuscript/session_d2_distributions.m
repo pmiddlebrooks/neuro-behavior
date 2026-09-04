@@ -68,17 +68,7 @@
 %% Configuration
 % Prefer session identity already set in the workspace (e.g. scratch.m batch).
 % Otherwise default to a semicircle example session.
-if ~exist('sessionType', 'var') || isempty(sessionType)
-    % sessionType = 'interval';
-    % subjectName = 'ey9166';
-    % sessionName = 'ey9166_2026_04_03';
 
-    sessionType = 'semicircle';
-    subjectName = 'AS1';
-    sessionName = 'AS1_0618_WellLearned';
-    % sessionName = 'AS1_0623_TransitionAfterCompletedTrial_80';
-    % sessionName = 'AS1_0624_PoorlyLearned';
-end
 dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
@@ -86,6 +76,7 @@ collectEnd = 120*60;
 d2Window = 45;  % seconds; non-overlapping windows
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
+brainArea = 'DS';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = false;
 useSubsampling = false;

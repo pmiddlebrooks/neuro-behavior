@@ -84,8 +84,7 @@ if ~isfield(waveformData, 'sp_waveforms')
     error('Expected variable sp_waveforms in %s', waveformsFile);
 end
 
-ci = readtable(fullfile(sessionFolder, 'cluster_info.tsv'), ...
-    'FileType', 'text', 'Delimiter', '\t');
+ci = read_tsv_table(fullfile(sessionFolder, 'cluster_info.tsv'));
 unitWidths = build_kilosort_unit_width_lookup(waveformData.sp_waveforms, ci, fsSpike);
 
 meta = struct('source', 'kilosort', 'waveformsFile', waveformsFile);

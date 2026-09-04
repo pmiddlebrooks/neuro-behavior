@@ -447,9 +447,10 @@ for s = 1:numSessions
     for st = 1:length(ME.stack)
       fprintf('    %s (line %d)\n', ME.stack(st).name, ME.stack(st).line);
     end
-    error('criticality_ar_across_tasks:SessionFailed', ...
+    wrapped = MException('criticality_ar_across_tasks:SessionFailed', ...
       'Batch stopped at session %d/%d [%s] %s: %s', ...
       s, numSessions, sessionType, sessionName, ME.message);
+    throw(wrapped.addCause(ME));
   end
 end
 end
