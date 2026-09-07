@@ -3531,7 +3531,11 @@ else
   engModOpts = interval_criticality_metrics_engagement();
 end
 
-engModOpts.collectStart = opts.collectStart;
+% Empty collectStart stays 0 from the engagement-module defaults (metadata
+% may still floor it during load). Do not copy [] over that default.
+if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+  engModOpts.collectStart = opts.collectStart;
+end
 engModOpts.collectEnd = opts.collectEnd;
 engModOpts.brainArea = opts.brainArea;
 engModOpts.brainAreaCombinations = opts.brainAreaCombinations;

@@ -98,7 +98,8 @@ switch dataType
         % Find spike data files in session folder
         searchPath = sessionFolder;
 
-        % cluster_info.tsv if present, else cluster_rf.tsv; rf_label merged when needed
+        % cluster_rf.tsv if present (quality source of truth), else cluster_info.tsv;
+        % depth/area are copied from cluster_info when cluster_rf lacks them
         ci = load_session_cluster_info(searchPath, opts.sessionName);
         if ~ismember('area', ci.Properties.VariableNames)
             error(['Cluster table has no depth/area in %s. ', ...
@@ -137,11 +138,14 @@ switch dataType
         % Drop extra spikes within 1.5 ms on the same unit (good, mua, or real)
         [spikeTimes, spikeClusters] = filter_isi_violations(spikeTimes, spikeClusters);
 
-        if isempty(opts.collectEnd)
-            if isempty(spikeTimes)
-                error('No spikes from accepted units (good/mua/real) in %s', searchPath);
-            end
-            opts.collectEnd = spikeTimes(end);
+        if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+            opts.collectStart = 0;
+        end
+        if isempty(spikeTimes)
+            error('No spikes from accepted units (good/mua/real) in %s', searchPath);
+        end
+        if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
+            opts.collectEnd = max(spikeTimes);
         end
 
         % Return the requested window of data, formatted  so start time is zero,

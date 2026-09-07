@@ -86,7 +86,7 @@ runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
-forceRecompute = false;   % true: reprocess and overwrite per-session cache
+forceRecompute = true;   % true: reprocess and overwrite per-session cache
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
@@ -99,7 +99,7 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = false;
 useSubsampling = false;
@@ -3617,7 +3617,11 @@ else
   engModOpts = interval_criticality_metrics_engagement();
 end
 
-engModOpts.collectStart = opts.collectStart;
+% Empty collectStart stays 0 from the engagement-module defaults (metadata
+% may still floor it during load). Do not copy [] over that default.
+if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+  engModOpts.collectStart = opts.collectStart;
+end
 engModOpts.collectEnd = opts.collectEnd;
 engModOpts.brainArea = opts.brainArea;
 engModOpts.brainAreaCombinations = opts.brainAreaCombinations;

@@ -123,12 +123,26 @@ function spikeData = load_spike_times_kilosort(dataPath, sessionName, opts)
 %
 % Goal:
 %   Load via load_data (good / mua / real already applied in cluster_quality_mask)
-%   and keep units in M23, M56, DS, and VS.
+%   and keep units in M23, M56, DS, and VS. Measure sessionEnd from the full
+%   accepted-spike recording before applying collectEnd, so an empty
+%   collectStart or a requested end past the recording cannot collapse the
+%   window to [0, 0].
 
     opts.dataPath = dataPath;
     opts.sessionName = sessionName;
 
-    data = load_data(opts, 'spikes');
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        opts.collectStart = 0;
+    end
+    requestedCollectEnd = [];
+    if isfield(opts, 'collectEnd') && ~isempty(opts.collectEnd)
+        requestedCollectEnd = opts.collectEnd;
+    end
+
+    % Load unwindowed spikes so session length is not inferred from an empty window
+    optsForLoad = opts;
+    optsForLoad.collectEnd = [];
+    data = load_data(optsForLoad, 'spikes');
 
     inAreas = strcmp(data.ci.area, 'M23') | strcmp(data.ci.area, 'M56') | ...
         strcmp(data.ci.area, 'DS') | strcmp(data.ci.area, 'VS');
@@ -144,18 +158,13 @@ function spikeData = load_spike_times_kilosort(dataPath, sessionName, opts)
     spikeTimes = data.spikeTimes;
     spikeClusters = data.spikeClusters;
 
-    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
-        opts.collectStart = 0;
-    end
-    if ~isfield(opts, 'collectEnd')
-        opts.collectEnd = [];
-    end
     if isempty(spikeTimes)
-        sessionEnd = opts.collectStart;
-    else
-        sessionEnd = max(spikeTimes);
+        error('load_spike_times_kilosort:NoSpikes', ...
+            'No spikes from accepted units in session %s.', sessionName);
     end
-    opts.collectEnd = clamp_collect_end_to_session(opts.collectEnd, sessionEnd, opts.collectStart);
+    sessionEnd = max(spikeTimes);
+    opts.collectEnd = clamp_collect_end_to_session( ...
+        requestedCollectEnd, sessionEnd, opts.collectStart);
 
     validSpikes = ismember(spikeClusters, neuronIDs) & ...
         spikeTimes >= opts.collectStart & ...

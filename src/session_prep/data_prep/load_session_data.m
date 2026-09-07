@@ -52,6 +52,10 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
         opts.maxFiringRate = 200;
     end
     opts = apply_session_load_metadata(sessionType, subjectName, sessionName, opts);
+    % Empty collectStart means session onset (0), or collectStartMin from metadata
+    if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
+        opts.collectStart = 0;
+    end
 
     if strcmp(dataSource, 'lfp')
         if isempty(bands)

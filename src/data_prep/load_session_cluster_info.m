@@ -6,11 +6,13 @@ function ci = load_session_cluster_info(sessionFolder, sessionName)
 %   sessionName   - Session folder name (for logging; optional)
 %
 % Goal:
-%   Load cluster_info.tsv when present; otherwise load cluster_rf.tsv.
-%   If cluster_info is missing rf_label, merge it from cluster_rf.tsv.
-%   Orient depth so 0 is superficial (M23) and 3840 is deep (VS), then
-%   assign ci.area from get_brain_area_depth_ranges. Units with depth < 0
-%   are labeled noise in group and/or rf_label so they are not accepted.
+%   Prefer cluster_rf.tsv when it exists (quality labels are the source of
+%   truth). Fall back to cluster_info.tsv if cluster_rf.tsv is absent.
+%   Depth and other non-quality columns are copied from cluster_info when
+%   cluster_rf lacks them. Orient depth so 0 is superficial (M23) and 3840
+%   is deep (VS), then assign ci.area from get_brain_area_depth_ranges.
+%   Units with depth < 0 are labeled noise in group and/or rf_label so they
+%   are not accepted.
 
     if nargin < 2
         sessionName = '';
@@ -19,23 +21,22 @@ function ci = load_session_cluster_info(sessionFolder, sessionName)
     clusterInfoPath = fullfile(sessionFolder, 'cluster_info.tsv');
     clusterRfPath = fullfile(sessionFolder, 'cluster_rf.tsv');
 
-    if isfile(clusterInfoPath)
-        ci = read_tsv_table(clusterInfoPath);
-        clusterFileUsed = 'cluster_info.tsv';
-    elseif isfile(clusterRfPath)
+    if isfile(clusterRfPath)
         ci = read_tsv_table(clusterRfPath);
         clusterFileUsed = 'cluster_rf.tsv';
+        if isfile(clusterInfoPath)
+            infoTable = read_tsv_table(clusterInfoPath);
+            ci = merge_cluster_info_metadata(ci, infoTable);
+            fprintf('Merged depth/metadata from cluster_info.tsv into cluster_rf.tsv\n');
+        end
+    elseif isfile(clusterInfoPath)
+        ci = read_tsv_table(clusterInfoPath);
+        clusterFileUsed = 'cluster_info.tsv';
     else
-        error('Neither cluster_info.tsv nor cluster_rf.tsv found in %s', sessionFolder);
+        error('Neither cluster_rf.tsv nor cluster_info.tsv found in %s', sessionFolder);
     end
 
     fprintf('Loaded cluster metadata from %s\n', clusterFileUsed);
-
-    if ~ismember('rf_label', ci.Properties.VariableNames) && isfile(clusterRfPath)
-        rfTable = read_tsv_table(clusterRfPath);
-        ci = merge_rf_label(ci, rfTable);
-        fprintf('Merged rf_label from cluster_rf.tsv into %s\n', clusterFileUsed);
-    end
 
     if ismember('depth', ci.Properties.VariableNames)
         ci = sortrows(ci, 'depth');
@@ -112,27 +113,55 @@ function ci = assign_noise_for_negative_depth(ci, belowSurface)
         sum(belowSurface), strjoin(updatedCols, ', '));
 end
 
-function ci = merge_rf_label(ci, rfTable)
-% MERGE_RF_LABEL - Add rf_label from cluster_rf.tsv onto the cluster table
+function ci = merge_cluster_info_metadata(ci, infoTable)
+% MERGE_CLUSTER_INFO_METADATA - Copy non-quality columns from cluster_info
 %
 % Variables:
-%   ci      - cluster_info (or similar) table
-%   rfTable - table with cluster_id/id and rf_label
+%   ci        - Primary table (cluster_rf.tsv)
+%   infoTable - cluster_info.tsv table, aligned by cluster id
 %
 % Goal:
-%   Align rf_label rows to ci by cluster id.
+%   Fill columns that cluster_rf does not have (especially depth) from
+%   cluster_info. Quality labels (group, rf_label) stay on ci so
+%   cluster_rf remains the quality source of truth.
 
-    if ~ismember('rf_label', rfTable.Properties.VariableNames)
-        error('cluster_rf.tsv must contain an rf_label column');
-    end
-
+    skipFields = {'group', 'rf_label'};
     ciIds = cluster_id_column(ci);
-    rfIds = cluster_id_column(rfTable);
-    [tf, loc] = ismember(ciIds, rfIds);
-    rfLabel = strings(height(ci), 1);
-    rfVals = strtrim(string(rfTable.rf_label));
-    rfLabel(tf) = rfVals(loc(tf));
-    ci.rf_label = cellstr(rfLabel);
+    infoIds = cluster_id_column(infoTable);
+    [tf, loc] = ismember(ciIds, infoIds);
+    infoFields = infoTable.Properties.VariableNames;
+    ciFields = ci.Properties.VariableNames;
+
+    for iField = 1:numel(infoFields)
+        fieldName = infoFields{iField};
+        if any(strcmp(fieldName, skipFields)) || ismember(fieldName, ciFields)
+            continue
+        end
+        infoVals = infoTable.(fieldName);
+        mergedVals = empty_like_column(infoVals, height(ci));
+        if any(tf)
+            mergedVals(tf) = infoVals(loc(tf));
+        end
+        ci.(fieldName) = mergedVals;
+    end
+end
+
+function col = empty_like_column(templateCol, nRows)
+% EMPTY_LIKE_COLUMN - nRows placeholder matching templateCol's type
+
+    if iscell(templateCol)
+        col = repmat({''}, nRows, 1);
+    elseif isstring(templateCol)
+        col = strings(nRows, 1);
+    elseif iscategorical(templateCol)
+        col = categorical(repmat({''}, nRows, 1));
+    elseif isnumeric(templateCol)
+        col = nan(nRows, 1);
+    elseif islogical(templateCol)
+        col = false(nRows, 1);
+    else
+        col = cell(nRows, 1);
+    end
 end
 
 function clusterIds = cluster_id_column(clusterTable)

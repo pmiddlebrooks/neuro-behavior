@@ -7,8 +7,10 @@ function tbl = read_delimited_table(filePath, delimiter)
 %
 % Goal:
 %   Avoid readtable/detectImportOptions, which throw Unrecognized field
-%   name "text" on this MATLAB for text/CSV/TSV imports. Infer numeric vs
-%   text from the first data row and scan with a mixed format.
+%   name "text" on this MATLAB for text/CSV/TSV imports. Parse every data
+%   line (textscan with WhiteSpace '' only reads the first row). Infer
+%   numeric vs text from all rows so an empty first-row field does not
+%   mis-type a later text column.
 
     if nargin < 1 || isempty(filePath)
         error('read_delimited_table:MissingFile', 'filePath is required.');
@@ -20,82 +22,56 @@ function tbl = read_delimited_table(filePath, delimiter)
         error('read_delimited_table:NotFound', 'File not found: %s', filePath);
     end
 
-    fid = fopen(filePath, 'rt');
-    if fid < 0
-        error('read_delimited_table:OpenFailed', 'Could not open %s', filePath);
+    rawText = fileread(filePath);
+    if ~isempty(rawText) && double(rawText(1)) == 65279
+        rawText = rawText(2:end);
     end
-    closer = onCleanup(@() fclose(fid));
-
-    headerLine = fgetl(fid);
-    if ~ischar(headerLine)
+    lines = regexp(rawText, '\r\n|\n|\r', 'split');
+    lines = lines(:);
+    if ~isempty(lines) && isempty(lines{end})
+        lines(end) = [];
+    end
+    if isempty(lines)
         error('read_delimited_table:EmptyFile', 'No header row in %s', filePath);
     end
-    if ~isempty(headerLine) && headerLine(1) == char(65279)
-        headerLine = headerLine(2:end);
-    end
 
+    headerLine = lines{1};
     rawNames = strsplit(headerLine, delimiter, 'CollapseDelimiters', false);
     varNames = matlab.lang.makeValidName(rawNames);
     varNames = matlab.lang.makeUniqueStrings(varNames, {}, namelengthmax);
     nCols = numel(varNames);
 
-    dataStartPos = ftell(fid);
-    firstDataLine = fgetl(fid);
-    if ~ischar(firstDataLine)
+    dataLines = lines(2:end);
+    nRows = numel(dataLines);
+    if nRows == 0
         tbl = table('Size', [0, nCols], 'VariableTypes', repmat({'double'}, 1, nCols), ...
             'VariableNames', varNames);
         return
     end
 
-    isNumericCol = classify_delimited_columns(firstDataLine, delimiter, nCols);
-    formatSpec = build_delimited_format(isNumericCol);
-    fseek(fid, dataStartPos, 'bof');
-
-    rawCols = textscan(fid, formatSpec, ...
-        'Delimiter', delimiter, ...
-        'MultipleDelimsAsOne', false, ...
-        'WhiteSpace', '', ...
-        'EndOfLine', '\n');
-
-    nRows = 0;
-    if ~isempty(rawCols)
-        nRows = max(cellfun(@numel, rawCols));
+    cells = repmat({''}, nRows, nCols);
+    for iRow = 1:nRows
+        parts = strsplit(dataLines{iRow}, delimiter, 'CollapseDelimiters', false);
+        nTake = min(nCols, numel(parts));
+        cells(iRow, 1:nTake) = parts(1:nTake);
     end
 
     tableCols = cell(1, nCols);
     for iCol = 1:nCols
-        colVals = rawCols{iCol};
-        if isNumericCol(iCol)
-            if numel(colVals) < nRows
-                colVals(nRows, 1) = NaN;
-            end
-            tableCols{iCol} = colVals(:);
+        colVals = strtrim(cells(:, iCol));
+        if column_is_numeric(colVals)
+            tableCols{iCol} = str2double(colVals);
         else
-            if numel(colVals) < nRows
-                colVals(nRows, 1) = {''};
-            end
-            tableCols{iCol} = colVals(:);
+            tableCols{iCol} = colVals;
         end
     end
     tbl = table(tableCols{:}, 'VariableNames', varNames);
 end
 
-function isNumericCol = classify_delimited_columns(firstDataLine, delimiter, nCols)
-% CLASSIFY_DELIMITED_COLUMNS - Numeric columns from the first data row
+function tf = column_is_numeric(colVals)
+% COLUMN_IS_NUMERIC - True if every nonempty token parses as a number
 
-    parts = strsplit(firstDataLine, delimiter, 'CollapseDelimiters', false);
-    isNumericCol = false(1, nCols);
-    nCheck = min(nCols, numel(parts));
-    for iCol = 1:nCheck
-        token = strtrim(parts{iCol});
-        isNumericCol(iCol) = isempty(token) || ~isnan(str2double(token));
-    end
-end
-
-function formatSpec = build_delimited_format(isNumericCol)
-% BUILD_DELIMITED_FORMAT - textscan format: %f numeric, %s text
-
-    tokens = repmat({'%s'}, 1, numel(isNumericCol));
-    tokens(isNumericCol) = {'%f'};
-    formatSpec = [tokens{:}];
+    emptyMask = cellfun(@isempty, colVals);
+    nums = str2double(colVals);
+    tf = all(emptyMask | ~isnan(nums));
 end

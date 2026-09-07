@@ -469,7 +469,9 @@ function opts = fill_engagement_opts_defaults(opts)
 if ~isfield(opts, 'collectStart') || isempty(opts.collectStart)
   opts.collectStart = 0;
 end
-if ~isfield(opts, 'collectEnd')
+% [] = full session; a non-positive / inverted end is treated the same
+if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd) ...
+    || opts.collectEnd <= opts.collectStart
   opts.collectEnd = [];
 end
 if ~isfield(opts, 'minFiringRate') || isempty(opts.minFiringRate)
