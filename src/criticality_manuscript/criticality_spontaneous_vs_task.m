@@ -76,7 +76,7 @@ if ~strcmp(d2Method, 'kl')
 end
 
 brainArea = 'M23M56';
-% brainArea = 'M56';
+brainArea = 'DS';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 
@@ -86,7 +86,7 @@ runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
-forceRecompute = true;   % true: reprocess and overwrite per-session cache
+forceRecompute = false;   % true: reprocess and overwrite per-session cache
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
@@ -3617,11 +3617,7 @@ else
   engModOpts = interval_criticality_metrics_engagement();
 end
 
-% Empty collectStart stays 0 from the engagement-module defaults (metadata
-% may still floor it during load). Do not copy [] over that default.
-if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
-  engModOpts.collectStart = opts.collectStart;
-end
+engModOpts.collectStart = opts.collectStart;
 engModOpts.collectEnd = opts.collectEnd;
 engModOpts.brainArea = opts.brainArea;
 engModOpts.brainAreaCombinations = opts.brainAreaCombinations;
