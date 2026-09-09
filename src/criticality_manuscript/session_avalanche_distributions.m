@@ -72,10 +72,11 @@ paths = get_paths();
 collectStart = 0;
 collectEnd = 120 * 60;
 % collectEnd = [];
-avWindow = 3*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
+avWindow = 10*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-window thresholds
 windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
+brainArea = 'DS';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 saveFigure = false;
 
@@ -98,7 +99,7 @@ gofThreshold = 0.8;  % used for 'plfit2023' and 'hybrid'
 avalancheDetectionMode = 'fixedBinMedian';
 thresholdMethod = 'quantile10';  % 'median' or 'quantile10' (10th percentile cutoff)
 
-useSubsampling = true;
+useSubsampling = false;
 nSubsamples = 20;
 nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.1;
@@ -107,7 +108,7 @@ splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 enableCircularPermutations = true;
-nShuffles = 2;
+nShuffles = 3;
 
 saveAnalysisResults = false;
 analysisResultsFile = '';  % default: dropPath/criticality_manuscript/session_avalanche_results_<session>.mat
