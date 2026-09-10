@@ -76,7 +76,7 @@ if ~strcmp(d2Method, 'kl')
 end
 
 brainArea = 'M23M56';
-brainArea = 'DS';
+brainArea = 'VS';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 
