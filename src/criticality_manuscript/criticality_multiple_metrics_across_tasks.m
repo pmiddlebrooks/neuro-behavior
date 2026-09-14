@@ -100,10 +100,10 @@ collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
 d2Window = 45;
-d2Window = [];
+% d2Window = [];s
 prgWindow = d2Window;
 avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
-avWindow = [];   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
+% avWindow = [];   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
 binSizeD2 = 0.025;   % d2/AR spike bin width (s); overrides AR default
