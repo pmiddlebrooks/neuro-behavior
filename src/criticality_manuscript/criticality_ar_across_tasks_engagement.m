@@ -17,6 +17,11 @@
 %   runBatch, plotResults - Run analysis and/or figures independently
 %   saveBatchResults, batchResultsFile - Save/load batch for plot-only reruns
 %   useLog10D2, useViolinPlots - Bar means (default) or per-window violin distributions
+%   d2Method           - 'euclidean' (Yule-Walker + getFixedPointDistance2) or 'kl'
+%                        (Sooter et al. KL-rate d2 from prox_crit_toolkit)
+%   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
+%   runParallel, nWorkers - If runParallel, start a parpool with nWorkers
+%                           workers (capped at feature('numcores')) for KL error bars.
 %   useSubsampling, nSubsamples, ...
 %   engagementBufferBefore / engagementBufferAfter - Seconds before/after each
 %     engagement event counted as engaged (reach onset, interval beam-break,
@@ -50,6 +55,13 @@ batchResultsFile = '';  % default: dropPath/criticality_manuscript/criticality_a
 useLog10D2 = true;
 useViolinPlots = false;
 
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
+klFitMethod = 'MaxLikelihood';  % required for error bars
+klErrBars = false;
+runParallel = true;
+nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
+klParallel = runParallel;
+
 useSubsampling = true;
 nSubsamples = 25;
 nNeuronsSubsample = 50;
@@ -78,6 +90,10 @@ analysisConfig.makePlots = false;
 analysisConfig.saveData = false;
 analysisConfig.pOrder = 10;
 analysisConfig.critType = 2;
+analysisConfig.d2Method = d2Method;
+analysisConfig.klFitMethod = klFitMethod;
+analysisConfig.klErrBars = klErrBars;
+analysisConfig.klParallel = klParallel;
 analysisConfig.minSpikesPerBin = 2.5;
 analysisConfig.minBinsPerWindow = 1000;
 analysisConfig.maxSpikesPerBin = 100;
@@ -101,6 +117,16 @@ opts.absorbSingleEvents = absorbSingleEvents;
 plotConfig = fill_manuscript_plot_config();
 
 % Paths
+setup_criticality_manuscript_paths('criticality_ar_across_tasks_engagement');
+paths = get_paths();
+
+[d2Method, klFitMethod, klErrBars, klParallel] = normalize_kl_d2_options( ...
+  d2Method, klFitMethod, klErrBars, klParallel);
+analysisConfig.d2Method = d2Method;
+analysisConfig.klFitMethod = klFitMethod;
+analysisConfig.klErrBars = klErrBars;
+analysisConfig.klParallel = klParallel;
+d2PlotTag = format_d2_method_file_tag(d2Method, klFitMethod, klErrBars);
 
 if isempty(batchResultsFile)
   batchResultsFile = fullfile(paths.dropPath, 'criticality_manuscript', ...
@@ -112,10 +138,16 @@ fprintf('Collect window: [%.1f, %s] s\n', collectStart, format_collect_end_label
 fprintf('d2 windows: %.1f s, non-overlapping\n', d2Window);
 fprintf('useLog10D2: %d\n', useLog10D2);
 fprintf('useViolinPlots: %d\n', useViolinPlots);
+fprintf('d2Method: %s\n', d2Method);
+if strcmp(d2Method, 'kl')
+  fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
+    klFitMethod, klErrBars, klParallel, nWorkers);
+end
 fprintf('Session types: %s\n', strjoin(sessionTypes, ', '));
 
 %% Batch analysis
 if runBatch
+  maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
   sessionTable = build_engagement_session_table(sessionTypes);
   numSessions = size(sessionTable, 1);
   fprintf('Total sessions: %d\n', numSessions);
@@ -193,7 +225,11 @@ if runBatch
     'd2Window', d2Window, ...
     'brainArea', brainArea, ...
     'areasToPlot', {areasToPlot}, ...
-    'plotConfig', plotConfig);
+    'plotConfig', plotConfig, ...
+    'd2Method', d2Method, ...
+    'klFitMethod', klFitMethod, ...
+    'klErrBars', klErrBars, ...
+    'klParallel', klParallel);
   if saveBatchResults
     save(batchResultsFile, 'batchResults', 'plotData', 'batchMeta', '-v7.3');
     fprintf('\nSaved batch results: %s\n', batchResultsFile);
@@ -217,6 +253,21 @@ else
   if isfield(batchMeta, 'plotConfig') && ~isempty(batchMeta.plotConfig)
     plotConfig = fill_manuscript_plot_config(batchMeta.plotConfig);
   end
+  if isfield(batchMeta, 'd2Method') && ~isempty(batchMeta.d2Method)
+    d2Method = batchMeta.d2Method;
+  end
+  if isfield(batchMeta, 'klFitMethod') && ~isempty(batchMeta.klFitMethod)
+    klFitMethod = batchMeta.klFitMethod;
+  end
+  if isfield(batchMeta, 'klErrBars') && ~isempty(batchMeta.klErrBars)
+    klErrBars = batchMeta.klErrBars;
+  end
+  if isfield(batchMeta, 'klParallel') && ~isempty(batchMeta.klParallel)
+    klParallel = batchMeta.klParallel;
+  end
+  [d2Method, klFitMethod, klErrBars, klParallel] = normalize_kl_d2_options( ...
+    d2Method, klFitMethod, klErrBars, klParallel);
+  d2PlotTag = format_d2_method_file_tag(d2Method, klFitMethod, klErrBars);
   fprintf('\nLoaded batch results: %s\n', batchResultsFile);
 end
 
@@ -243,7 +294,7 @@ if plotResults
   fprintf('\n=== Plotting ===\n');
   fprintf('Areas: %s\n', strjoin(commonAreas, ', '));
   plot_engagement_ar_across_tasks(plotData, commonAreas, sessionTypes, collectStart, ...
-    collectEnd, d2Window, paths, brainArea, useLog10D2, useViolinPlots, plotConfig);
+    collectEnd, d2Window, paths, brainArea, useLog10D2, useViolinPlots, plotConfig, d2PlotTag);
 end
 
 fprintf('\n=== Done ===\n');
@@ -315,6 +366,18 @@ engOpts.analyses = {'d2'};
 engOpts.makePlots = false;
 engOpts.saveFigure = false;
 engOpts.plotConfig = plotConfig;
+if isfield(analysisConfig, 'd2Method') && ~isempty(analysisConfig.d2Method)
+  engOpts.d2Method = analysisConfig.d2Method;
+end
+if isfield(analysisConfig, 'klFitMethod') && ~isempty(analysisConfig.klFitMethod)
+  engOpts.klFitMethod = analysisConfig.klFitMethod;
+end
+if isfield(analysisConfig, 'klErrBars') && ~isempty(analysisConfig.klErrBars)
+  engOpts.klErrBars = logical(analysisConfig.klErrBars);
+end
+if isfield(analysisConfig, 'klParallel') && ~isempty(analysisConfig.klParallel)
+  engOpts.klParallel = logical(analysisConfig.klParallel);
+end
 
 [bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
   opts, 'engagementBufferBefore', 'engagementBufferAfter', 'engagementBuffer', 1);
@@ -675,7 +738,7 @@ end
 end
 
 function plot_engagement_ar_across_tasks(plotData, areasToPlot, sessionTypes, collectStart, ...
-    collectEnd, d2Window, paths, brainArea, useLog10D2, useViolinPlots, plotConfig)
+    collectEnd, d2Window, paths, brainArea, useLog10D2, useViolinPlots, plotConfig, d2PlotTag)
 % PLOT_ENGAGEMENT_AR_ACROSS_TASKS - Raw and normalized d2 across sessions
 sessionTypes = order_manuscript_session_types(sessionTypes);
 
@@ -684,6 +747,9 @@ if nargin < 10 || isempty(useViolinPlots)
 end
 if nargin < 11 || isempty(plotConfig)
   plotConfig = fill_manuscript_plot_config();
+end
+if nargin < 12 || isempty(d2PlotTag)
+  d2PlotTag = '';
 end
 
 if useViolinPlots && ~plot_data_has_violin_vectors(plotData, sessionTypes)
@@ -755,6 +821,7 @@ for a = 1:length(areasToPlot)
 
   plotBaseRaw = make_engagement_ar_plot_basename(rawPrefix, ...
     areaName, brainArea, d2Window, collectStart, collectEnd, useLog10D2);
+  plotBaseRaw = [plotBaseRaw, d2PlotTag];
   exportgraphics(figRaw, fullfile(saveDir, [plotBaseRaw, '.png']), 'Resolution', 300);
   exportgraphics(figRaw, fullfile(saveDir, [plotBaseRaw, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseRaw));
@@ -775,6 +842,7 @@ for a = 1:length(areasToPlot)
 
   plotBaseNorm = make_engagement_ar_plot_basename(normPrefix, ...
     areaName, brainArea, d2Window, collectStart, collectEnd, useLog10D2);
+  plotBaseNorm = [plotBaseNorm, d2PlotTag];
   exportgraphics(figNorm, fullfile(saveDir, [plotBaseNorm, '.png']), 'Resolution', 300);
   exportgraphics(figNorm, fullfile(saveDir, [plotBaseNorm, '.eps']), 'ContentType', 'vector');
   fprintf('Saved figure: %s\n', fullfile(saveDir, plotBaseNorm));

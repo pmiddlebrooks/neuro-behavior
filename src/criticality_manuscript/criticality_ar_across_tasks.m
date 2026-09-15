@@ -96,8 +96,13 @@ if ~isempty(opts.subjectName)
 end
 fprintf('d2Method: %s\n', char(opts.d2Method));
 if strcmp(opts.d2Method, 'kl')
-  fprintf('KL fit: %s; klErrBars=%d; klParallel=%d\n', ...
-    char(opts.klFitMethod), opts.klErrBars, opts.klParallel);
+  if isempty(opts.nWorkers)
+    fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=auto\n', ...
+      char(opts.klFitMethod), opts.klErrBars, opts.klParallel);
+  else
+    fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
+      char(opts.klFitMethod), opts.klErrBars, opts.klParallel, opts.nWorkers);
+  end
 end
 if ~isempty(opts.brainArea)
   fprintf('Brain area: %s (single-area analysis)\n', opts.brainArea);
@@ -139,6 +144,7 @@ else
   end
   loaded = load(opts.batchResultsFile);
   batchMeta = loaded.batchMeta;
+  opts = apply_ar_batch_meta_d2_method(opts, batchMeta);
   useLog10D2Load = opts.useLog10D2;
   if isfield(batchMeta, 'useLog10D2')
     useLog10D2Load = batchMeta.useLog10D2;
@@ -238,8 +244,8 @@ defaults.sessionTypes = default_manuscript_session_types();
 defaults.dataSource = 'spikes';
 defaults.collectStart = 0;
 defaults.collectEnd = [];
-defaults.d2Window = 30;
-defaults.binSize = 0.05;
+defaults.d2Window = 45;
+defaults.binSize = 0.025;
 defaults.brainArea = 'M23M56';
 defaults.brainAreaCombinations = default_manuscript_brain_area_combinations();
 defaults.areasToPlot = {};
@@ -247,14 +253,14 @@ defaults.runBatch = true;
 defaults.plotResults = true;
 defaults.saveBatchResults = false;
 defaults.batchResultsFile = '';
-defaults.useLog10D2 = true;
-defaults.useSubsampling = false;
-defaults.nSubsamples = 20;
-defaults.nNeuronsSubsample = 20;
-defaults.minNeuronsMultiple = 1.5;
+defaults.useLog10D2 = false;
+defaults.useSubsampling = true;
+defaults.nSubsamples = 40;
+defaults.nNeuronsSubsample = 45;
+defaults.minNeuronsMultiple = 1.1;
 defaults.nMinNeurons = 30;
 defaults.firingRateCheckTime = [];
-defaults.minFiringRate = 0.05;
+defaults.minFiringRate = 0.1;
 defaults.maxFiringRate = 150;
 defaults.enablePermutations = true;
 defaults.nShuffles = 10;
@@ -266,7 +272,7 @@ defaults.widthCutoff = 0.35;
 defaults.useSessionCache = true;
 defaults.forceRecompute = false;
 defaults.subjectName = '';
-defaults.d2Method = 'euclidean';
+defaults.d2Method = 'kl';
 defaults.klFitMethod = 'MaxLikelihood';
 defaults.klErrBars = false;
 defaults.klParallel = false;
@@ -298,7 +304,40 @@ batchMeta = struct( ...
   'areasToPlot', {opts.areasToPlot}, ...
   'nMinNeurons', opts.nMinNeurons, ...
   'splitExcitatoryInhibitory', opts.splitExcitatoryInhibitory, ...
-  'widthCutoff', opts.widthCutoff);
+  'widthCutoff', opts.widthCutoff, ...
+  'd2Method', opts.d2Method, ...
+  'klFitMethod', opts.klFitMethod, ...
+  'klErrBars', opts.klErrBars, ...
+  'klParallel', opts.klParallel);
+end
+
+function opts = apply_ar_batch_meta_d2_method(opts, batchMeta)
+% APPLY_AR_BATCH_META_D2_METHOD - Restore KL/Euclidean d2 tags from a saved batch
+%
+% Variables:
+%   opts      - Current across-tasks options
+%   batchMeta - Saved batch metadata (may lack d2Method on older files)
+%
+% Goal:
+%   Plot filename tags match the method that produced the loaded results.
+
+if nargin < 2 || isempty(batchMeta)
+  return;
+end
+if isfield(batchMeta, 'd2Method') && ~isempty(batchMeta.d2Method)
+  opts.d2Method = batchMeta.d2Method;
+end
+if isfield(batchMeta, 'klFitMethod') && ~isempty(batchMeta.klFitMethod)
+  opts.klFitMethod = batchMeta.klFitMethod;
+end
+if isfield(batchMeta, 'klErrBars') && ~isempty(batchMeta.klErrBars)
+  opts.klErrBars = batchMeta.klErrBars;
+end
+if isfield(batchMeta, 'klParallel') && ~isempty(batchMeta.klParallel)
+  opts.klParallel = batchMeta.klParallel;
+end
+[opts.d2Method, opts.klFitMethod, opts.klErrBars, opts.klParallel] = ...
+  normalize_kl_d2_options(opts.d2Method, opts.klFitMethod, opts.klErrBars, opts.klParallel);
 end
 
 function batchByCell = run_ar_across_tasks_batch(sessionTable, opts, paths)
