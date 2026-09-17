@@ -89,7 +89,7 @@
 %% Configuration
 sessionTypes = default_manuscript_session_types();
 sessionTypes = order_manuscript_session_types(sessionTypes);
-d2Method = 'kl';         % 'euclidean' or 'kl'
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars`
 klErrBars = false;
