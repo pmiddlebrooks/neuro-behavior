@@ -160,6 +160,7 @@ analysisConfig.klFitMethod = klFitMethod;
 analysisConfig.klErrBars = klErrBars;
 analysisConfig.klParallel = klParallel;
 d2PlotTag = format_d2_method_file_tag(d2Method, klFitMethod, klErrBars);
+plotConfig.d2Method = d2Method;
 
 d2WindowAlign = normalize_d2_window_align(d2WindowAlign);
 
@@ -238,7 +239,7 @@ end
 
 cellTypesToRun = get_session_cell_types_to_run(splitExcitatoryInhibitory);
 if splitExcitatoryInhibitory
-    eiSummary = init_session_ei_summary({'d2'}, {get_d2_axis_label(useLog10D2)});
+    eiSummary = init_session_ei_summary({'d2'}, {get_d2_axis_label(useLog10D2, d2Method)});
     eiPopActivityResults = cell(1, numel(cellTypesToRun));
 end
 
@@ -273,8 +274,10 @@ for iCellRun = 1:numel(cellTypesToRun)
 
     fig = plot_d2_distributions(plotData, sessionType, sessionName, d2Window, collectStart, collectEnd, useLog10D2, plotConfig);
     if splitExcitatoryInhibitory
-        sgtitle(fig, sprintf('%s | %s | width cutoff %.3f ms', ...
-            sessionName, cell_type_label(cellType), widthCutoff), 'Interpreter', 'none');
+        [~, d2TitleLabel] = get_d2_plot_labels(useLog10D2, d2Method);
+        sgtitle(fig, sprintf('%s | %s | %s | width cutoff %.3f ms', ...
+            sessionName, cell_type_label(cellType), d2TitleLabel, widthCutoff), ...
+            'Interpreter', 'none');
     end
 
     if saveFigure
@@ -386,8 +389,10 @@ if splitExcitatoryInhibitory
     if isempty(areaTag)
         areaTag = 'all_areas';
     end
-    summaryTitle = sprintf('%s | %s | d2 mean +/- SEM across windows', sessionName, areaTag);
-    figEiSummary = plot_session_ei_summary(eiSummary, summaryTitle, get_d2_axis_label(useLog10D2), [], [], plotConfig);
+    [d2AxisLabel, d2TitleLabel] = get_d2_plot_labels(useLog10D2, d2Method);
+    summaryTitle = sprintf('%s | %s | %s mean +/- SEM across windows', ...
+        sessionName, areaTag, d2TitleLabel);
+    figEiSummary = plot_session_ei_summary(eiSummary, summaryTitle, d2AxisLabel, [], [], plotConfig);
     if saveFigure
         saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
         if ~exist(saveDir, 'dir')
@@ -741,11 +746,51 @@ end
 metricValues.d2 = d2Vec(isfinite(d2Vec));
 end
 
-function yLabelText = get_d2_axis_label(useLog10D2)
-if useLog10D2
-    yLabelText = 'log_{10}(d2)';
+function [axisLabel, titleLabel, labelInterpreter] = get_d2_plot_labels(useLog10D2, d2Method)
+% GET_D2_PLOT_LABELS - Axis and title text for Euclidean vs KL d2
+%
+% Variables:
+%   useLog10D2 - If true, show log10(d2)
+%   d2Method   - 'euclidean' or 'kl' (default euclidean)
+%
+% Goal:
+%   Name the d2 estimator in plots. KL d2 is labeled in bits/sec.
+
+if nargin < 2 || isempty(d2Method)
+    d2Method = 'euclidean';
+end
+d2Method = lower(strtrim(char(d2Method)));
+if strcmp(d2Method, 'kl')
+    methodParen = 'kl; bits/sec';
 else
-    yLabelText = 'd2';
+    methodParen = 'euclidean';
+end
+
+if useLog10D2
+    axisLabel = sprintf('log_{10}(d2) (%s)', methodParen);
+    titleLabel = sprintf('log10(d2) (%s)', methodParen);
+    labelInterpreter = 'tex';
+else
+    axisLabel = sprintf('d2 (%s)', methodParen);
+    titleLabel = axisLabel;
+    labelInterpreter = 'none';
+end
+end
+
+function yLabelText = get_d2_axis_label(useLog10D2, d2Method)
+% GET_D2_AXIS_LABEL - Axis label from get_d2_plot_labels
+if nargin < 2 || isempty(d2Method)
+    d2Method = 'euclidean';
+end
+[yLabelText, ~, ~] = get_d2_plot_labels(useLog10D2, d2Method);
+end
+
+function d2Method = resolve_plot_d2_method(plotConfig)
+% RESOLVE_PLOT_D2_METHOD - d2Method stored on plotConfig, else euclidean
+d2Method = 'euclidean';
+if nargin >= 1 && isstruct(plotConfig) && isfield(plotConfig, 'd2Method') ...
+        && ~isempty(plotConfig.d2Method)
+    d2Method = lower(strtrim(char(plotConfig.d2Method)));
 end
 end
 
@@ -881,16 +926,11 @@ if isempty(allVals)
 end
 
 [binEdges, xMin, xMax] = build_shared_histogram_bin_edges(allVals, 28);
-if useLog10D2
-    xLabelText = 'log_{10}(d2)';
-    labelInterpreter = 'tex';
-else
-    xLabelText = 'd2';
-    labelInterpreter = 'none';
-end
+[xLabelText, titleLabel, labelInterpreter] = get_d2_plot_labels( ...
+    useLog10D2, resolve_plot_d2_method(plotConfig));
 
 fig = figure('Color', 'w', 'Position', [120 120 900 280 * numAreas], ...
-    'Name', 'd2 distributions');
+    'Name', sprintf('%s distributions', titleLabel));
 tileLayout = tiledlayout(numAreas, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 for a = 1:numAreas
@@ -915,7 +955,7 @@ else
 end
 sgtitle(tileLayout, sprintf( ...
     'Distribution of %s | %s | %s | %.0fs windows%s [%.0f-%.0f s]', ...
-    xLabelText, distTag, sessionType, d2Window, make_title_suffix(sessionName), ...
+    titleLabel, distTag, sessionType, d2Window, make_title_suffix(sessionName), ...
     collectStart, collectEnd), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
@@ -965,15 +1005,11 @@ if ~isfield(results, 'popActivityWindows')
 end
 
 numAreas = numel(results.areas);
+[d2YLabel, d2TitleLabel, labelInterpreter] = get_d2_plot_labels( ...
+    useLog10D2, resolve_plot_d2_method(plotConfig));
 fig = figure('Color', 'w', 'Position', [140 140 420 * numAreas 420], ...
-    'Name', 'd2 vs population activity');
+    'Name', sprintf('%s vs population activity', d2TitleLabel));
 tileLayout = tiledlayout(fig, 1, numAreas, 'TileSpacing', 'compact', 'Padding', 'compact');
-d2YLabel = get_d2_axis_label(useLog10D2);
-if useLog10D2
-    labelInterpreter = 'tex';
-else
-    labelInterpreter = 'none';
-end
 
 allYVals = [];
 axesList = gobjects(numAreas, 1);
@@ -986,7 +1022,8 @@ for a = 1:numAreas
 end
 apply_shared_popactivity_ylim(axesList, allYVals);
 
-sgtitle(tileLayout, sprintf('d2 vs mean population activity per %.0fs window', d2Window), ...
+sgtitle(tileLayout, sprintf('%s vs mean population activity per %.0fs window', ...
+    d2TitleLabel, d2Window), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
@@ -1015,16 +1052,12 @@ end
 
 numAreas = numel(refResults.areas);
 numCols = numel(eiResultsCell);
+[d2YLabel, d2TitleLabel, labelInterpreter] = get_d2_plot_labels( ...
+    useLog10D2, resolve_plot_d2_method(plotConfig));
 fig = figure('Color', 'w', ...
     'Position', [120 120 380 * numCols max(360, 340 * numAreas)], ...
-    'Name', 'd2 vs population activity (E/I split)');
+    'Name', sprintf('%s vs population activity (E/I split)', d2TitleLabel));
 tileLayout = tiledlayout(fig, numAreas, numCols, 'TileSpacing', 'compact', 'Padding', 'compact');
-d2YLabel = get_d2_axis_label(useLog10D2);
-if useLog10D2
-    labelInterpreter = 'tex';
-else
-    labelInterpreter = 'none';
-end
 
 allYVals = [];
 axesList = gobjects(numAreas, numCols);
@@ -1047,8 +1080,8 @@ for col = 1:numCols
 end
 apply_shared_popactivity_ylim(axesList(:), allYVals);
 
-sgtitle(tileLayout, sprintf('%s | d2 vs mean population activity | %.0fs windows | width cutoff %.3f ms', ...
-    sessionName, d2Window, widthCutoff), ...
+sgtitle(tileLayout, sprintf('%s | %s vs mean population activity | %.0fs windows | width cutoff %.3f ms', ...
+    sessionName, d2TitleLabel, d2Window, widthCutoff), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
@@ -1066,7 +1099,7 @@ if nargin < 9 || isempty(labelInterpreter)
     labelInterpreter = 'none';
 end
 if nargin < 8 || isempty(d2YLabel)
-    d2YLabel = get_d2_axis_label(useLog10D2);
+    d2YLabel = get_d2_axis_label(useLog10D2, resolve_plot_d2_method(plotConfig));
 end
 
 plotColors = manuscript_plot_colors();
@@ -1444,8 +1477,9 @@ else
 end
 
 plotColors = manuscript_plot_colors();
-d2YLabel = get_d2_axis_label(useLog10D2);
-fig = figure('Color', 'w', 'Name', sprintf('d2 timeline — %s', sessionName), ...
+[d2YLabel, d2TitleLabel, d2LabelInterpreter] = get_d2_plot_labels( ...
+    useLog10D2, resolve_plot_d2_method(plotConfig));
+fig = figure('Color', 'w', 'Name', sprintf('%s timeline — %s', d2TitleLabel, sessionName), ...
     'Position', [100 80 max(720, 420 * numAreas) 780]);
 
 axesToLink = gobjects(0);
@@ -1511,7 +1545,7 @@ for a = 1:numAreas
     end
     xlim(axD2, [tMin, tMax]);
     ylabel(axD2, d2YLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
-        'Interpreter', ternary_tex_if_log10(useLog10D2));
+        'Interpreter', d2LabelInterpreter);
     set(axD2, 'XTickLabel', [], 'Box', 'off', 'TickDir', 'out', ...
         'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth);
     hold(axD2, 'off');
@@ -1544,8 +1578,8 @@ bottomTag = 'ethogram';
 if ~isempty(intervalEth) || ~isempty(reachEth)
     bottomTag = 'task events';
 end
-sgtitle(fig, sprintf('%s%s | mean pop / d2 (%.0fs windows, %s, bin=%.0f ms) / %s', ...
-    sessionName, cellTag, d2Window, d2WindowAlign, binSize * 1000, bottomTag), ...
+sgtitle(fig, sprintf('%s%s | mean pop / %s (%.0fs windows, %s, bin=%.0f ms) / %s', ...
+    sessionName, cellTag, d2TitleLabel, d2Window, d2WindowAlign, binSize * 1000, bottomTag), ...
     'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', 'Interpreter', 'none');
 fprintf('Plotted d2 timeline (%d area(s), t=[%.1f, %.1f] s).\n', numAreas, tMin, tMax);
 end
