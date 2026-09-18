@@ -89,7 +89,7 @@ plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
 binSize = 0.025;  % s; spike binning for d2 (and window mean popActivity)
-d2Method = 'kl';         % 'euclidean' or 'kl'
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
 runParallel = true;
@@ -117,6 +117,7 @@ opts.collectStart = collectStart;
 opts.collectEnd = collectEnd;
 opts.minFiringRate = 0.25;
 opts.maxFiringRate = 200;
+opts.loadBehaviorLabels = true;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = d2Window;

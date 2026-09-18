@@ -77,6 +77,7 @@ loadOpts.collectEnd = collectEnd;
 loadOpts.minFiringRate = opts.minFiringRate;
 loadOpts.maxFiringRate = opts.maxFiringRate;
 loadOpts.fsBhv = opts.fsBhv;
+loadOpts.loadBehaviorLabels = true;
 
 loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});

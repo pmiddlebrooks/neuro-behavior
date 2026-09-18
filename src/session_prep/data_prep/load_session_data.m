@@ -13,6 +13,8 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
 %           Per-session metadata (<task>_session_metadata) is applied here.
 %           collectStart / collectEnd (and collectStartMin / collectEndMax)
 %           are seconds, same as neuro_behavior_options.
+%           opts.loadBehaviorLabels (default false): if true, spontaneous
+%           loaders read behavior_labels CSVs / bhvID.
 %       'lfpCleanParams' - LFP cleaning parameters
 %       'bands' - Frequency bands for LFP
 %       'minBinSize' - Minimum bin size for LFP bands (default 0.005)
@@ -93,6 +95,9 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
             dataStruct.subjectName = subjectName;
             dataStruct.sessionName = sessionName;
             dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, subjectName, sessionName, lfpCleanParams, bands);
+            if strcmp(dataSource, 'spikes') && is_load_behavior_labels_requested(opts)
+                dataStruct = load_spontaneous_behavior_labels(dataStruct, dataStruct.opts);
+            end
 
         case 'interval'
             if isempty(subjectName) || isempty(sessionName)
@@ -133,4 +138,16 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
     end
 
     fprintf('Session data loading complete. %d areas loaded.\n', length(dataStruct.areas));
+end
+
+function tf = is_load_behavior_labels_requested(opts)
+% IS_LOAD_BEHAVIOR_LABELS_REQUESTED - True only for an explicit true flag
+tf = false;
+if ~isstruct(opts) || ~isfield(opts, 'loadBehaviorLabels') || isempty(opts.loadBehaviorLabels)
+    return;
+end
+flagVal = opts.loadBehaviorLabels;
+if islogical(flagVal) || isnumeric(flagVal)
+    tf = flagVal(1) ~= 0;
+end
 end

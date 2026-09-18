@@ -14,8 +14,9 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
 % Goal: Load from paths.spontaneousDataPath/subjectName/sessionName
 %
 % Notes:
-%   opts.collectEnd = [] means analyze the full session (resolved from spikes
-%   before behavior labels are loaded).
+%   opts.collectEnd = [] means analyze the full session (resolved from spikes).
+%   Behavior CSVs are not loaded here. Call load_spontaneous_behavior_labels
+%   after this function when bhvID is needed.
 
     % collectStart / collectEnd are seconds (same as neuro_behavior_options)
     if ~isfield(opts, 'collectEnd')
@@ -27,9 +28,6 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
     opts.subjectName = subjectName;
     
     if strcmp(dataSource, 'spikes')
-        sessionFolder = fullfile(opts.dataPath, opts.sessionName);
-        hasBehaviorLabels = behavior_labels_available(sessionFolder);
-
         % Check if we should use spike times approach (new) or dataMat (old)
         % Default to spike times if not specified
         if ~isfield(opts, 'useSpikeTimes') || isempty(opts.useSpikeTimes)
@@ -37,7 +35,7 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
         end
         
         if opts.useSpikeTimes
-            % Resolve collectEnd from spikes first ([] = full session), then load behavior
+            % Resolve collectEnd from spikes ([] = full session)
             spikeData = load_spike_times('spontaneous', paths, sessionName, opts);
             opts.collectEnd = spikeData.collectEnd;
             opts.collectStart = spikeData.collectStart;
@@ -86,74 +84,35 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
                     && ~isempty(spikeDataRaw.spikeTimes)
                 opts.collectEnd = max(spikeDataRaw.spikeTimes);
             end
-        end
 
-        if hasBehaviorLabels
-            dataBhv = load_data(opts, 'behavior');
-
-            % Create bhvID for absolute collect window [collectStart, collectEnd]
-            if ~isfield(opts, 'fsBhv')
-                error('behavior needs a sampling frequency, opts.fsBhv, in the opts struct')
-            end
-            collectStartBhv = 0;
-            if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
-                collectStartBhv = opts.collectStart;
-            end
-            [bhvID, bhvTimeOrigin] = build_bhv_id_vector( ...
-                dataBhv, collectStartBhv, opts.collectEnd, opts.fsBhv);
-            dataBhv.StartFrame = abs_time_to_collect_frame( ...
-                dataBhv.StartTime, collectStartBhv, 1 / opts.fsBhv, 'round');
-
-            dataStruct.bhvID = bhvID;
-            dataStruct.bhvTimeOrigin = bhvTimeOrigin;
-            dataStruct.dataBhv = dataBhv;
-            dataStruct.fsBhv = opts.fsBhv;
-        else
-            warning('load_spontaneous_data:NoBehaviorLabels', ...
-                'No behavior_labels CSV in %s; skipping behavior data.', sessionFolder);
-            dataStruct.bhvID = [];
-            dataStruct.bhvTimeOrigin = [];
-            dataStruct.dataBhv = [];
-            if isfield(opts, 'fsBhv') && ~isempty(opts.fsBhv)
-                dataStruct.fsBhv = opts.fsBhv;
-            else
-                dataStruct.fsBhv = [];
-            end
-        end
-
-        if ~opts.useSpikeTimes
-            if hasBehaviorLabels
-                spikeDataRaw.bhvDur = dataBhv.Dur;
-            end
-            
             % ci is already good / mua / real from load_data (cluster_quality_mask)
             inAreas = strcmp(spikeDataRaw.ci.area, 'M23') | strcmp(spikeDataRaw.ci.area, 'M56') | ...
                 strcmp(spikeDataRaw.ci.area, 'DS') | strcmp(spikeDataRaw.ci.area, 'VS');
             opts.useNeurons = find(inAreas);
-            
-            % Create neural matrix
+
             [dataMat, idLabels, areaLabels, removedNeurons] = neural_matrix(spikeDataRaw, opts);
-            
-            % Extract area indices
+
             idM23 = find(strcmp(areaLabels, 'M23'));
             idM56 = find(strcmp(areaLabels, 'M56'));
             idDS = find(strcmp(areaLabels, 'DS'));
             idVS = find(strcmp(areaLabels, 'VS'));
-            
-            % Store in dataStruct
+
             dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
             dataStruct.idMatIdx = {idM23, idM56, idDS, idVS};
             dataStruct.idLabel = {idLabels(idM23), idLabels(idM56), idLabels(idDS), idLabels(idVS)};
             dataStruct.dataMat = dataMat;
-            dataStruct.spikeData = [];  % Initialize empty, can be loaded later if needed
+            dataStruct.spikeData = [];
             dataStruct.spikeTimes = [];
             dataStruct.spikeClusters = [];
             dataStruct.areaLabels = areaLabels;
             dataStruct.removedNeurons = removedNeurons;
-            
+
             fprintf('%d M23\n%d M56\n%d DS\n%d VS\n', length(idM23), length(idM56), length(idDS), length(idVS));
         end
-        
+
+        dataStruct.opts = opts;
+        dataStruct = attach_empty_behavior_fields(dataStruct, opts);
+
     elseif strcmp(dataSource, 'lfp')
         % Load spontaneous LFP data
         if ~isfield(opts, 'fsLfp')
@@ -208,9 +167,15 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
     dataStruct.reachClass = [];
 end
 
-function tf = behavior_labels_available(sessionFolder)
-% BEHAVIOR_LABELS_AVAILABLE - True when a behavior_labels*.csv exists
+function dataStruct = attach_empty_behavior_fields(dataStruct, opts)
+% ATTACH_EMPTY_BEHAVIOR_FIELDS - Placeholder bhv fields (labels loaded separately)
 
-csvFiles = dir(fullfile(sessionFolder, 'behavior_labels*.csv'));
-tf = ~isempty(csvFiles);
+dataStruct.bhvID = [];
+dataStruct.bhvTimeOrigin = [];
+dataStruct.dataBhv = [];
+if isfield(opts, 'fsBhv') && ~isempty(opts.fsBhv)
+    dataStruct.fsBhv = opts.fsBhv;
+else
+    dataStruct.fsBhv = [];
+end
 end

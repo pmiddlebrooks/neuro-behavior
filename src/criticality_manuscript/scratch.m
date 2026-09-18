@@ -18,6 +18,7 @@ collectEnd = [];  % [] = full session
 loadOpts = neuro_behavior_options();
 loadOpts.collectStart = collectStart;
 loadOpts.collectEnd = collectEnd;
+loadOpts.loadBehaviorLabels = true;
 
 loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
 dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
@@ -69,6 +70,7 @@ nSess = numel(sessionList);
 loadOptsBase = neuro_behavior_options();
 loadOptsBase.collectStart = collectStart;
 loadOptsBase.collectEnd = collectEnd;
+loadOptsBase.loadBehaviorLabels = true;
 
 fprintf('\n=== Spontaneous behavior pies (%d sessions) ===\n', nSess);
 if isempty(collectEnd)
@@ -546,13 +548,14 @@ fprintf('Saved session-by-N summary figure: %s\n', fullfile(saveDir, plotBaseSes
 % criticality_multiple_metrics_across_tasks, prints unit counts for brainArea
 % (and component areas when brainArea is a compound merge), then plots counts
 % with the multimetric across-tasks session layout.
+% Spontaneous loads skip behavior_labels CSVs (opts.loadBehaviorLabels=false).
 
 setup_criticality_manuscript_paths('criticality_multiple_metrics_across_tasks');
 paths = get_paths();
 plotConfig = fill_manuscript_plot_config();
 
 sessionTypes = default_manuscript_session_types();
-sessionTypes = {'spontaneous'};
+sessionTypes = {'spontaneous', 'interval', 'semicircle', 'reach'};
 collectStart = 0;
 collectEnd = [];  % [] = full session (matches multiple_metrics)
 collectEnd = 120 * 60;
@@ -599,6 +602,7 @@ loadOpts.collectStart = collectStart;
 loadOpts.collectEnd = collectEnd;
 loadOpts.minFiringRate = minFiringRate;
 loadOpts.maxFiringRate = maxFiringRate;
+loadOpts.loadBehaviorLabels = false;
 
 for iSess = 1:numSessions
   sessionType = sessionTable.sessionType{iSess};
@@ -609,6 +613,7 @@ for iSess = 1:numSessions
   fprintf('Session %d/%d [%s]: %s\n', iSess, numSessions, sessionType, sessionName);
 
   try
+    loadOpts.loadBehaviorLabels = false;
     loadArgs = build_session_load_args(sessionType, sessionName, loadOpts, subjectName);
     dataStruct = load_session_data(sessionType, dataSource, loadArgs{:});
     [dataStruct, areaOk] = apply_manuscript_brain_area_selection( ...

@@ -100,7 +100,7 @@ collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
 d2Window = 45;
-% d2Window = [];s
+% d2Window = [];
 prgWindow = d2Window;
 avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % avWindow = [];   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
@@ -154,8 +154,8 @@ splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on 
 useLog10D2 = false;
 useSubsampling = true;
 nSubsamples = 40;
-nNeuronsSubsample = 45;
-minNeuronsMultiple = 1.1;
+nNeuronsSubsample = 70;
+minNeuronsMultiple = 1.05;
 
 powerLawFitMethod = 'plfit2023';
 avalancheDetectionMode = 'fixedBinMedian';

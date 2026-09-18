@@ -77,6 +77,7 @@ if strcmp(sessionType, 'reach') || strcmp(sessionType, 'hong')
 end
 opts.minFiringRate = .1;
 opts.maxFiringRate = 100;
+opts.loadBehaviorLabels = true;
 
 subjectNameForLoad = '';
 if exist('subjectName', 'var') && ~isempty(subjectName)

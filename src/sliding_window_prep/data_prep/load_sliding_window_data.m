@@ -99,6 +99,10 @@ switch sessionType
         dataStruct.subjectName = subjectName;
         dataStruct.sessionName = sessionName;
         dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts, subjectName, sessionName, lfpCleanParams, bands);
+        if strcmp(dataSource, 'spikes') && isstruct(opts) && isfield(opts, 'loadBehaviorLabels') ...
+                && ~isempty(opts.loadBehaviorLabels) && opts.loadBehaviorLabels(1) ~= 0
+            dataStruct = load_spontaneous_behavior_labels(dataStruct, dataStruct.opts);
+        end
 
     case 'interval'
         if isempty(subjectName) || isempty(sessionName)
