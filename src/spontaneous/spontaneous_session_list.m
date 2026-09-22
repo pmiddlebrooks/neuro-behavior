@@ -29,6 +29,7 @@ sessions = [
     struct('subjectName', 'ag25290', 'sessionName', 'ag112921')   % 
     struct('subjectName', 'ey4152', 'sessionName', 'ey042822')     % good M56, bad DS
     struct('subjectName', 'kw7193', 'sessionName', 'kw092921')     % ok, few M56
+    struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_03_19')     % ok, few M56
     struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_03_24')     % ok, few M56
     struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_03_26')     % ok, few M56
     struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_03_27')     % ok, few M56

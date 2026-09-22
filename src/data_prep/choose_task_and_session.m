@@ -62,8 +62,9 @@ sessionName =  'ey042822';  % Good M56, Bad DS, bad behavior labels after 200 mi
 % sessionName =  'kw092821';  % Bad M56, Good DS, bad behavior labels for first ~200 min
 % sessionName =  'kw092921';  % Ok... few M56
 
-% subjectName = 'ey9166';
-% sessionName =  'ey9166_2026_03_24';  % 
+subjectName = 'ey9166';
+sessionName =  'ey9166_2026_03_19';  % 
+sessionName =  'ey9166_2026_03_24';  % 
 % sessionName =  'ey9166_2026_03_26';  % 
 % sessionName =  'ey9166_2026_03_27';  % 
 % 
@@ -81,18 +82,18 @@ sessionName =  'ey9166_2026_04_02';
 % sessionName =  'ey9166_2026_04_07';
 % sessionName =  'ey9166_2026_04_09';
 % 
-subjectName = 'ey9387';
+% subjectName = 'ey9387';
 % sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
-sessionName =  'ey9387_2026_05_21';
-sessionName =  'ey9387_2026_05_22';
+% sessionName =  'ey9387_2026_05_21';
+% sessionName =  'ey9387_2026_05_22';
 % sessionName =  'ey9387_2026_05_25';
 % sessionName =  'ey9387_2026_05_26';
 % sessionName =  'ey9387_2026_05_27';
 % sessionName =  'ey9387_2026_05_28';
 % sessionName =  'ey9387_2026_06_01';
 % sessionName =  'ey9387_2026_06_02';
-sessionName =  'ey9387_2026_06_05';
+% sessionName =  'ey9387_2026_06_05';
 
 %% =============================    Reach Data Loading    =============================
 sessionType = 'reach';  % 'reach' , 'spontaneous' , 'schall' , 'hong'
