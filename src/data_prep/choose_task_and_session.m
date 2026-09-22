@@ -64,7 +64,7 @@ sessionName =  'ey042822';  % Good M56, Bad DS, bad behavior labels after 200 mi
 
 subjectName = 'ey9166';
 sessionName =  'ey9166_2026_03_19';  % 
-sessionName =  'ey9166_2026_03_24';  % 
+% sessionName =  'ey9166_2026_03_24';  % 
 % sessionName =  'ey9166_2026_03_26';  % 
 % sessionName =  'ey9166_2026_03_27';  % 
 % 
