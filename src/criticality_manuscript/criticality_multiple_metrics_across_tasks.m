@@ -106,7 +106,7 @@ avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window t
 % avWindow = [];   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
-binSizeD2 = 0.025;   % d2/AR spike bin width (s); overrides AR default
+binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
 binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 
@@ -154,7 +154,7 @@ splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on 
 useLog10D2 = false;
 useSubsampling = true;
 nSubsamples = 40;
-nNeuronsSubsample = 70;
+nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.05;
 
 powerLawFitMethod = 'plfit2023';

@@ -17,59 +17,59 @@ sessionFolder = fullfile(opts.dataPath, opts.sessionName);
 
 switch dataType
     case 'behavior'
-        % Behavioral data is stored with an asigned B-SOiD label every frame.
-        % Find any CSV file that begins with "behavior_labels"
-        searchPath = sessionFolder;
-        csvFiles = dir(fullfile(searchPath, 'behavior_labels*.csv'));
-        
-        if isempty(csvFiles)
-            error('No CSV file starting with "behavior_labels" found in %s', searchPath);
-        elseif length(csvFiles) > 1
-            warning('Multiple CSV files starting with "behavior_labels" found. Using first: %s', csvFiles(1).name);
-        end
-        
-        fileName = csvFiles(1).name;
-        dataFull = read_delimited_table(fullfile(searchPath, fileName), ',');
-        if isempty(opts.collectEnd)
-            opts.collectEnd = dataFull.Time(end);
-        end
-
-        % Use a time window of recorded data (integer frame indices)
-        nFrames = height(dataFull);
-        collectStart = 0;
-        if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
-            collectStart = opts.collectStart;
-        end
-        startFrame = max(1, 1 + round(opts.fsBhv * collectStart));
-        endFrame = min(nFrames, max(startFrame, round(opts.fsBhv * opts.collectEnd)));
-        getWindow = startFrame:endFrame;
-        dataWindow = dataFull(getWindow,:);
-        % Keep absolute session times (do not rezero to collectStart)
-        tAbs = dataWindow.Time;
-        bhvID = dataWindow.Code;
-
-        changeBhv = [0; diff(bhvID)]; % nonzeros at all the indices when a new behavior begins
-        changeBhvIdx = find(changeBhv);
-
-        data = table();
-        if isempty(changeBhvIdx)
-            data.StartTime = tAbs(1);
-            data.Dur = max(tAbs(end) - tAbs(1), 0);
-            data.ID = bhvID(1);
-            data.Name = dataWindow.Behavior(1);
+        % Frame-wise behavior_labels*.csv (session root, or session/behavior).
+        % Interval ethograms are bout tables: session/behavior/bouts.csv.
+        [searchPath, behaviorFileKind] = resolve_behavior_file(sessionFolder);
+        if strcmp(behaviorFileKind, 'bouts')
+            data = load_behavior_bouts(fullfile(searchPath, 'bouts.csv'), opts);
         else
-            startTimes = [tAbs(1); tAbs(changeBhvIdx)];
-            data.StartTime = startTimes;
-            data.Dur = [diff(startTimes); max(tAbs(end) - startTimes(end), 0)];
-            data.ID = [bhvID(1); bhvID(changeBhvIdx)];
-            data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
+            csvFiles = dir(fullfile(searchPath, 'behavior_labels*.csv'));
+
+            if isempty(csvFiles)
+                error('No CSV file starting with "behavior_labels" found in %s', searchPath);
+            elseif length(csvFiles) > 1
+                warning('Multiple CSV files starting with "behavior_labels" found. Using first: %s', csvFiles(1).name);
+            end
+
+            fileName = csvFiles(1).name;
+            dataFull = read_delimited_table(fullfile(searchPath, fileName), ',');
+            if isempty(opts.collectEnd)
+                opts.collectEnd = dataFull.Time(end);
+            end
+
+            % Use a time window of recorded data (integer frame indices)
+            nFrames = height(dataFull);
+            collectStart = 0;
+            if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+                collectStart = opts.collectStart;
+            end
+            startFrame = max(1, 1 + round(opts.fsBhv * collectStart));
+            endFrame = min(nFrames, max(startFrame, round(opts.fsBhv * opts.collectEnd)));
+            getWindow = startFrame:endFrame;
+            dataWindow = dataFull(getWindow,:);
+            % Keep absolute session times (do not rezero to collectStart)
+            tAbs = dataWindow.Time;
+            bhvID = dataWindow.Code;
+
+            changeBhv = [0; diff(bhvID)]; % nonzeros at all the indices when a new behavior begins
+            changeBhvIdx = find(changeBhv);
+
+            data = table();
+            if isempty(changeBhvIdx)
+                data.StartTime = tAbs(1);
+                data.Dur = max(tAbs(end) - tAbs(1), 0);
+                data.ID = bhvID(1);
+                data.Name = dataWindow.Behavior(1);
+            else
+                startTimes = [tAbs(1); tAbs(changeBhvIdx)];
+                data.StartTime = startTimes;
+                data.Dur = [diff(startTimes); max(tAbs(end) - startTimes(end), 0)];
+                data.ID = [bhvID(1); bhvID(changeBhvIdx)];
+                data.Name = [dataWindow.Behavior(1); dataWindow.Behavior(changeBhvIdx)];
+            end
+
+            data.Valid = behavior_selection(data, opts);
         end
-
-        data.Valid = behavior_selection(data, opts);
-
-
-
-
 
     case 'kinematics'
         warning('Adjust kinematics loading in load_data.m to get the path/filename correct')
@@ -231,4 +231,112 @@ end
 %     validBhv(actAndLong) = 1;
 % end
 %
+
+end
+
+function [searchPath, behaviorFileKind] = resolve_behavior_file(sessionFolder)
+% RESOLVE_BEHAVIOR_FILE - Locate ethogram files for a session
 %
+% Variables:
+%   sessionFolder - Session directory (parent of an optional behavior folder)
+%
+% Goal:
+%   Frame-wise behavior_labels*.csv in the session root stay where they are
+%   (spontaneous). Interval task ethograms live in sessionFolder/behavior
+%   (behavior_labels*.csv or bouts.csv).
+%
+% Returns:
+%   searchPath       - Folder that contains the behavior file
+%   behaviorFileKind - 'labels' or 'bouts'
+
+labelHere = dir(fullfile(sessionFolder, 'behavior_labels*.csv'));
+if ~isempty(labelHere)
+    searchPath = sessionFolder;
+    behaviorFileKind = 'labels';
+    return;
+end
+
+behaviorDir = fullfile(sessionFolder, 'behavior');
+if isfolder(behaviorDir)
+    labelThere = dir(fullfile(behaviorDir, 'behavior_labels*.csv'));
+    if ~isempty(labelThere)
+        searchPath = behaviorDir;
+        behaviorFileKind = 'labels';
+        return;
+    end
+    if isfile(fullfile(behaviorDir, 'bouts.csv'))
+        searchPath = behaviorDir;
+        behaviorFileKind = 'bouts';
+        return;
+    end
+end
+
+if isfile(fullfile(sessionFolder, 'bouts.csv'))
+    searchPath = sessionFolder;
+    behaviorFileKind = 'bouts';
+    return;
+end
+
+error('No behavior_labels*.csv or bouts.csv found in %s', sessionFolder);
+end
+
+function data = load_behavior_bouts(boutFile, opts)
+% LOAD_BEHAVIOR_BOUTS - Bout table from behavior/bouts.csv
+%
+% Variables:
+%   boutFile - Path to bouts.csv (start_s, end_s, behavior)
+%   opts     - collectStart, collectEnd; minActTime / minNoRepeatTime for Valid
+%
+% Goal:
+%   Return the same bout table as the frame-wise behavior_labels path:
+%   absolute StartTime (s), Dur (s), ID, Name, Valid. IDs are 1..n in order
+%   of first appearance in the file.
+
+fprintf('Loading behavior bouts: %s\n', boutFile);
+boutTable = read_delimited_table(boutFile, ',');
+startS = boutTable.start_s(:);
+endS = boutTable.end_s(:);
+behaviorNames = boutTable.behavior;
+if isstring(behaviorNames)
+    behaviorNames = cellstr(behaviorNames);
+elseif ischar(behaviorNames)
+    behaviorNames = cellstr(behaviorNames);
+end
+behaviorNames = behaviorNames(:);
+
+[~, ~, nameIds] = unique(behaviorNames, 'stable');
+
+collectStart = 0;
+if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+    collectStart = opts.collectStart;
+end
+collectEnd = [];
+if isfield(opts, 'collectEnd')
+    collectEnd = opts.collectEnd;
+end
+if isempty(collectEnd)
+    collectEnd = max(endS);
+end
+
+keepBout = endS > collectStart & startS <= collectEnd;
+startS = max(startS(keepBout), collectStart);
+endS = min(endS(keepBout), collectEnd);
+behaviorNames = behaviorNames(keepBout);
+nameIds = nameIds(keepBout);
+positiveDur = endS > startS;
+startS = startS(positiveDur);
+endS = endS(positiveDur);
+behaviorNames = behaviorNames(positiveDur);
+nameIds = nameIds(positiveDur);
+
+data = table();
+data.StartTime = startS;
+data.Dur = endS - startS;
+data.ID = nameIds;
+data.Name = behaviorNames;
+if isempty(data) || ~isfield(opts, 'minActTime') || ~isfield(opts, 'minNoRepeatTime')
+    data.Valid = ones(height(data), 1);
+else
+    data.Valid = behavior_selection(data, opts);
+end
+end

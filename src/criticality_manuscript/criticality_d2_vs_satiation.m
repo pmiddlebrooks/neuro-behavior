@@ -1037,13 +1037,19 @@ if ~exist(sessionDir, 'dir')
   error('criticality_d2_vs_satiation:SessionNotFound', ...
     'Interval session directory not found: %s', sessionDir);
 end
-csvFiles = dir(fullfile(sessionDir, 'revised_interval_*.csv'));
+behaviorDir = fullfile(sessionDir, 'behavior');
+csvDir = behaviorDir;
+csvFiles = dir(fullfile(behaviorDir, 'revised_interval_*.csv'));
+if isempty(csvFiles)
+  csvDir = sessionDir;
+  csvFiles = dir(fullfile(sessionDir, 'revised_interval_*.csv'));
+end
 if isempty(csvFiles)
   error('criticality_d2_vs_satiation:NoCsv', ...
-    'No revised_interval_*.csv in %s', sessionDir);
+    'No revised_interval_*.csv in %s', behaviorDir);
 end
 [~, newestIdx] = max([csvFiles.datenum]);
-csvPath = fullfile(sessionDir, csvFiles(newestIdx).name);
+csvPath = fullfile(csvDir, csvFiles(newestIdx).name);
 rawTable = readtable(csvPath, 'TextType', 'string');
 varNames = lower(string(rawTable.Properties.VariableNames));
 timeCol = find(contains(varNames, 'timestamp'), 1);

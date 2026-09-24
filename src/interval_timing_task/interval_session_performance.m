@@ -88,20 +88,27 @@ function logTable = interval_session_performance(subjectName, sessionName, sessi
 end
 
 function csvPath = find_interval_csv(sessionDir)
-% FIND_INTERVAL_CSV - Return path to the revised interval CSV in a session folder
+% FIND_INTERVAL_CSV - Return path to the revised interval CSV
 %
 % Variables:
 %   sessionDir - Full path to session data directory
 %
-% Goal: Select the most recent revised_interval_*.csv log file
+% Goal: Select the most recent revised_interval_*.csv. Task logs live in
+%   sessionDir/behavior; fall back to the session folder for older layouts.
 
-    csvFiles = dir(fullfile(sessionDir, 'revised_interval_*.csv'));
+    behaviorDir = fullfile(sessionDir, 'behavior');
+    csvDir = behaviorDir;
+    csvFiles = dir(fullfile(behaviorDir, 'revised_interval_*.csv'));
+    if isempty(csvFiles)
+        csvDir = sessionDir;
+        csvFiles = dir(fullfile(sessionDir, 'revised_interval_*.csv'));
+    end
     if isempty(csvFiles)
         error('interval_session_performance:NoCsv', ...
-            'No revised_interval_*.csv found in %s', sessionDir);
+            'No revised_interval_*.csv found in %s', behaviorDir);
     end
     [~, newestIdx] = max([csvFiles.datenum]);
-    csvPath = fullfile(sessionDir, csvFiles(newestIdx).name);
+    csvPath = fullfile(csvDir, csvFiles(newestIdx).name);
 end
 
 function logTable = parse_interval_log(csvPath)

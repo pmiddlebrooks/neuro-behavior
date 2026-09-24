@@ -11,6 +11,7 @@ if exist('E:/Projects', 'dir')
     nrnDataPath = 'E:/Projects/neuro-behavior/data/raw_ephys/';
     saveDataPath = 'E:/Projects/neuro-behavior/data/';
     dropPath = 'E:/Dropbox/Data/';
+    lfpDataPath = 'E:/lfp_data';
 elseif exist('Z:/middlebrooks/', 'dir')
     homePath = 'Z:/middlebrooks/Projects';
     figureToolsPath = fullfile(homePath, 'figure_tools');
@@ -70,3 +71,11 @@ paths.semicircleResultsPath = semicircleResultsPath;
 paths.schallDataPath = schallDataPath;
 paths.schallResultsPath = schallResultsPath;
 paths.dropPath = dropPath;
+if ~exist('lfpDataPath', 'var') || isempty(lfpDataPath)
+    if exist('E:/lfp_data', 'dir')
+        lfpDataPath = 'E:/lfp_data';
+    else
+        lfpDataPath = fullfile(dropPath, 'lfp_data');
+    end
+end
+paths.lfpDataPath = lfpDataPath;

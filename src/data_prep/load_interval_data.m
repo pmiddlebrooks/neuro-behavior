@@ -13,6 +13,9 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
 %
 % Goal: Load interval task neural data from paths.intervalDataPath/subjectName/sessionName.
 %   Unit quality (good / mua / real) is applied once in load_data via cluster_quality_mask.
+%   Ethogram files (bouts.csv or behavior_labels*.csv) live in
+%   <session>/behavior and are attached when present. Task logs
+%   (revised_interval_*.csv) are in that same folder.
 
     % collectStart / collectEnd are seconds (same as neuro_behavior_options)
     if ~isfield(opts, 'collectEnd')
@@ -68,13 +71,7 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
             error('useSpikeTimes=false is not supported for interval data; set opts.useSpikeTimes=true');
         end
 
-        dataStruct.bhvID = [];
-        dataStruct.dataBhv = [];
-        dataStruct.bhvTimeOrigin = [];
-        if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
-            dataStruct.bhvTimeOrigin = opts.collectStart;
-        end
-        dataStruct.fsBhv = [];
+        dataStruct = attach_interval_behavior(dataStruct, opts);
 
     elseif strcmp(dataSource, 'lfp')
         if ~isfield(opts, 'fsLfp')
@@ -118,4 +115,54 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
     dataStruct.startBlock2 = [];
     dataStruct.reachStart = [];
     dataStruct.reachClass = [];
+end
+
+function dataStruct = attach_interval_behavior(dataStruct, opts)
+% ATTACH_INTERVAL_BEHAVIOR - Ethogram from <session>/behavior when present
+%
+% Variables:
+%   dataStruct - Interval session structure (spikes already loaded)
+%   opts       - collectStart, collectEnd, dataPath, sessionName, fsBhv
+%
+% Goal:
+%   Load bouts.csv or behavior_labels*.csv from the session behavior folder
+%   into bhvID / dataBhv. Sessions without an ethogram keep empty fields.
+
+sessionFolder = fullfile(opts.dataPath, opts.sessionName);
+behaviorDir = fullfile(sessionFolder, 'behavior');
+hasLabels = isfolder(behaviorDir) && ~isempty(dir(fullfile(behaviorDir, 'behavior_labels*.csv')));
+hasBouts = isfolder(behaviorDir) && isfile(fullfile(behaviorDir, 'bouts.csv'));
+hasRootBouts = isfile(fullfile(sessionFolder, 'bouts.csv'));
+
+if ~(hasLabels || hasBouts || hasRootBouts)
+    dataStruct.bhvID = [];
+    dataStruct.dataBhv = [];
+    dataStruct.bhvTimeOrigin = [];
+    if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+        dataStruct.bhvTimeOrigin = opts.collectStart;
+    end
+    dataStruct.fsBhv = [];
+    return;
+end
+
+if ~isfield(opts, 'fsBhv') || isempty(opts.fsBhv)
+    opts.fsBhv = 60;
+end
+
+dataBhv = load_data(opts, 'behavior');
+collectStartBhv = 0;
+if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+    collectStartBhv = opts.collectStart;
+end
+collectEndBhv = opts.collectEnd;
+[bhvID, bhvTimeOrigin] = build_bhv_id_vector( ...
+    dataBhv, collectStartBhv, collectEndBhv, opts.fsBhv);
+dataBhv.StartFrame = abs_time_to_collect_frame( ...
+    dataBhv.StartTime, collectStartBhv, 1 / opts.fsBhv, 'round');
+
+dataStruct.bhvID = bhvID;
+dataStruct.bhvTimeOrigin = bhvTimeOrigin;
+dataStruct.dataBhv = dataBhv;
+dataStruct.fsBhv = opts.fsBhv;
+dataStruct.opts = opts;
 end

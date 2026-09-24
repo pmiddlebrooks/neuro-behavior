@@ -37,15 +37,24 @@ eventTypes = eventTypes(ord);
 end
 
 function csvPath = find_interval_csv(sessionDir)
-% FIND_INTERVAL_CSV - Most recent revised_interval_*.csv in session folder
+% FIND_INTERVAL_CSV - Most recent revised_interval_*.csv
+%
+% Task logs live in sessionDir/behavior. Fall back to the session folder
+% for older layouts that kept the CSV in the session root.
 
-csvFiles = dir(fullfile(sessionDir, 'revised_interval_*.csv'));
+behaviorDir = fullfile(sessionDir, 'behavior');
+csvDir = behaviorDir;
+csvFiles = dir(fullfile(behaviorDir, 'revised_interval_*.csv'));
+if isempty(csvFiles)
+  csvDir = sessionDir;
+  csvFiles = dir(fullfile(sessionDir, 'revised_interval_*.csv'));
+end
 if isempty(csvFiles)
   error('load_interval_beam_break_events:NoCsv', ...
-    'No revised_interval_*.csv found in %s', sessionDir);
+    'No revised_interval_*.csv found in %s', behaviorDir);
 end
 [~, newestIdx] = max([csvFiles.datenum]);
-csvPath = fullfile(sessionDir, csvFiles(newestIdx).name);
+csvPath = fullfile(csvDir, csvFiles(newestIdx).name);
 end
 
 function logTable = parse_interval_log(csvPath)
