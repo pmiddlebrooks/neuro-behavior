@@ -67,7 +67,9 @@ sessionName =  'ey9166_2026_03_19';  %
 % sessionName =  'ey9166_2026_03_24';  % 
 % sessionName =  'ey9166_2026_03_26';  % 
 % sessionName =  'ey9166_2026_03_27';  % 
-% 
+
+% subjectName = 'ey9387';
+% sessionName =  'ey9387_2026_';  % 
 
 %% =============================    Interval Data Loading    =============================
 % Data type selection
@@ -79,7 +81,7 @@ subjectName = 'ey9166';
 sessionName =  'ey9166_2026_04_02';
 % sessionName =  'ey9166_2026_04_03';
 % sessionName =  'ey9166_2026_04_04';
-% sessionName =  'ey9166_2026_04_07';
+sessionName =  'ey9166_2026_04_07';
 % sessionName =  'ey9166_2026_04_09';
 % 
 % subjectName = 'ey9387';
