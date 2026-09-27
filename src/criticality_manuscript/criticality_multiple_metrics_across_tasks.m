@@ -133,7 +133,7 @@ areasToPlot = {};
 % Pipeline selection — any combination of d2 (AR), avalanche (AV), PRG
 runArBatch = true;   % d2
 runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
-runPrgBatch = false;  % kurtosis, JS distance
+runPrgBatch = true;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
 forceRecompute = false;   % true: reprocess and overwrite per-session cache
@@ -154,7 +154,7 @@ splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on 
 useLog10D2 = false;
 useSubsampling = true;
 nSubsamples = 40;
-nNeuronsSubsample = 70;
+nNeuronsSubsample = 45;
 minNeuronsMultiple = 1.05;
 
 powerLawFitMethod = 'plfit2023';
