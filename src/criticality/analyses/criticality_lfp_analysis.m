@@ -16,8 +16,12 @@ function results = criticality_lfp_analysis(dataStruct, config)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
 %
 % Goal:
-%   Compute d2 and/or DFA criticality measures on LFP binned envelopes and raw LFP.
+%   Compute d2 and/or DFA criticality measures on binned LFP band signals and raw LFP.
+%   Band signals come from config.binnedSignalField (default binnedEnvelopes;
+%   session_lfp_criticality uses binnedPower). Raw LFP is mean-binned at
+%   dataStruct.lfpBinSize using opts.fsLfp (not summed as spike counts).
 %   Uses common time points across all analyses with different window sizes.
+%   Set config.saveResults = false to skip writing the results .mat.
 %
 % Returns:
 %   results - Structure with d2, dfa, startS, and params.
@@ -31,16 +35,20 @@ function results = criticality_lfp_analysis(dataStruct, config)
     addpath(fullfile(srcRoot, 'data_prep'));
     addpath(fullfile(fileparts(mfilename('fullpath')), '..'));
     
-    % Validate inputs
-    validate_workspace_vars({'binnedEnvelopes', 'bands', 'bandBinSizes'}, dataStruct, ...
-        'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
-    
-    % Set defaults
+    % Set defaults, then validate the chosen binned-signal field
     config = set_config_defaults_lfp(config);
-    
+    binnedField = config.binnedSignalField;
+
+    validate_workspace_vars({'bands', 'bandBinSizes'}, dataStruct, ...
+        'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
+    if ~isfield(dataStruct, binnedField) || isempty(dataStruct.(binnedField))
+        error('dataStruct.%s is required for LFP criticality analysis.', binnedField);
+    end
+
     areas = dataStruct.areas;
     numBands = size(dataStruct.bands, 1);
-    numAreas = length(dataStruct.binnedEnvelopes);
+    binnedSignals = dataStruct.(binnedField);
+    numAreas = length(binnedSignals);
     
     if isfield(dataStruct, 'areasToTest')
         areasToTest = dataStruct.areasToTest;
@@ -84,10 +92,10 @@ function results = criticality_lfp_analysis(dataStruct, config)
         durations(end+1) = size(dataStruct.lfpPerArea, 1) / dataStruct.opts.fsLfp;
     end
     for a = 1:numAreas
-        if length(dataStruct.binnedEnvelopes) >= a && ~isempty(dataStruct.binnedEnvelopes{a})
+        if length(binnedSignals) >= a && ~isempty(binnedSignals{a})
             for b = 1:numBands
-                if length(dataStruct.binnedEnvelopes{a}) >= b && ~isempty(dataStruct.binnedEnvelopes{a}{b})
-                    durations(end+1) = length(dataStruct.binnedEnvelopes{a}{b}) * dataStruct.bandBinSizes(b);
+                if length(binnedSignals{a}) >= b && ~isempty(binnedSignals{a}{b})
+                    durations(end+1) = length(binnedSignals{a}{b}) * dataStruct.bandBinSizes(b);
                 end
             end
         end
@@ -112,17 +120,21 @@ function results = criticality_lfp_analysis(dataStruct, config)
     dfaEnvWinSize = max(dfaEnvWinSamples_min * max(dataStruct.bandBinSizes), 30);
     dfaLfpWinSamples_min = 2000;
     
-    % Calculate maximum window size
-    maxWindowSize = max(d2WindowSize, dfaEnvWinSize);
-    if hasRawLfp
-        for lb = 1:numLfpBins
-            if isscalar(dataStruct.lfpBinSize)
-                currentLfpBinSizeForMax = dataStruct.lfpBinSize;
-            else
-                currentLfpBinSizeForMax = dataStruct.lfpBinSize(lb);
+    % DFA windows are longer than d2 windows. Skip them when DFA is off so
+    % short sessions can still be analyzed for d2 alone.
+    maxWindowSize = d2WindowSize;
+    if config.analyzeDFA
+        maxWindowSize = max(d2WindowSize, dfaEnvWinSize);
+        if hasRawLfp
+            for lb = 1:numLfpBins
+                if isscalar(dataStruct.lfpBinSize)
+                    currentLfpBinSizeForMax = dataStruct.lfpBinSize;
+                else
+                    currentLfpBinSizeForMax = dataStruct.lfpBinSize(lb);
+                end
+                dfaLfpWinSize = max(dfaLfpWinSamples_min * currentLfpBinSizeForMax, 30);
+                maxWindowSize = max(maxWindowSize, dfaLfpWinSize);
             end
-            dfaLfpWinSize = max(dfaLfpWinSamples_min * currentLfpBinSizeForMax, 30);
-            maxWindowSize = max(maxWindowSize, dfaLfpWinSize);
         end
     end
     
@@ -148,6 +160,8 @@ function results = criticality_lfp_analysis(dataStruct, config)
         dfa{a} = cell(1, numBands);
     end
     
+    d2Lfp = {};
+    dfaLfp = {};
     if hasRawLfp
         d2Lfp = cell(1, numAreas);
         dfaLfp = cell(1, numAreas);
@@ -163,9 +177,9 @@ function results = criticality_lfp_analysis(dataStruct, config)
     for a = areasToTest
         fprintf('\nProcessing area %s...\n', areas{a});
         
-        % Process binned envelopes
-        if length(dataStruct.binnedEnvelopes) >= a && ~isempty(dataStruct.binnedEnvelopes{a})
-            areaEnvelopes = dataStruct.binnedEnvelopes{a};
+        % Process binned band signals (envelopes or power)
+        if length(binnedSignals) >= a && ~isempty(binnedSignals{a})
+            areaEnvelopes = binnedSignals{a};
             
             for b = 1:numBands
                 fprintf('  Processing band %d (%s)...\n', b, dataStruct.bands{b, 1});
@@ -177,10 +191,6 @@ function results = criticality_lfp_analysis(dataStruct, config)
                 
                 % Calculate window sizes in samples
                 d2WinSamples = round(d2WindowSize / bandBinSize);
-                if config.analyzeDFA
-                    dfaWinSamples = round(dfaEnvWinSize / bandBinSize);
-                end
-                
                 if d2WinSamples < config.minSegmentLength
                     fprintf('    Skipping: Not enough samples for d2\n');
                     continue;
@@ -242,15 +252,14 @@ function results = criticality_lfp_analysis(dataStruct, config)
                 fprintf('  Processing raw LFP bin size %.3f s...\n', currentLfpBinSize);
                 tic;
                 
-                % Bin raw LFP
-                binnedLfp = neural_matrix_ms_to_frames(rawSignal, currentLfpBinSize);
+                % Mean-bin raw LFP at the file sampling rate. neural_matrix_ms_to_frames
+                % assumes 1 kHz spike counts and sums samples, which is not an LFP.
+                binnedLfp = bin_continuous_lfp_mean(rawSignal, fsRaw, currentLfpBinSize);
                 numFrames_lfp = size(binnedLfp, 1);
                 
                 % Calculate window sizes
                 d2WinSamples = round(d2WindowSize / currentLfpBinSize);
                 dfaLfpWinSize = max(dfaLfpWinSamples_min * currentLfpBinSize, 30);
-                dfaWinSamples = round(dfaLfpWinSize / currentLfpBinSize);
-                
                 if d2WinSamples < config.minSegmentLength
                     fprintf('    Skipping: Not enough samples for d2\n');
                     continue;
@@ -307,22 +316,29 @@ function results = criticality_lfp_analysis(dataStruct, config)
         d2, dfa, startS, stepSize, d2WindowSize, dfaEnvWinSize, dfaLfpWinSamples_min, ...
         hasRawLfp, d2Lfp, dfaLfp, dataStruct.lfpBinSize);
     
-    % Setup results path
-    if ~isfield(config, 'saveDir') || isempty(config.saveDir)
-        config.saveDir = dataStruct.saveDir;
+    if config.saveResults
+        if ~isfield(config, 'saveDir') || isempty(config.saveDir)
+            config.saveDir = dataStruct.saveDir;
+        end
+
+        sessionNameForPath = '';
+        if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
+            sessionNameForPath = dataStruct.sessionName;
+        end
+
+        dataTypeForPath = '';
+        if isfield(dataStruct, 'dataType') && ~isempty(dataStruct.dataType)
+            dataTypeForPath = dataStruct.dataType;
+        elseif isfield(dataStruct, 'sessionType') && ~isempty(dataStruct.sessionType)
+            dataTypeForPath = dataStruct.sessionType;
+        end
+
+        resultsPath = create_results_path('criticality_lfp', dataTypeForPath, ...
+            sessionNameForPath, config.saveDir);
+
+        save(resultsPath, 'results');
+        fprintf('\nSaved results to: %s\n', resultsPath);
     end
-    
-    sessionNameForPath = '';
-    if isfield(dataStruct, 'sessionName') && ~isempty(dataStruct.sessionName)
-        sessionNameForPath = dataStruct.sessionName;
-    end
-    
-    resultsPath = create_results_path('criticality_lfp', dataStruct.dataType, ...
-        sessionNameForPath, config.saveDir);
-    
-    % Save results
-    save(resultsPath, 'results');
-    fprintf('\nSaved results to: %s\n', resultsPath);
     
     % Plotting
     if config.makePlots
@@ -354,6 +370,8 @@ function config = set_config_defaults_lfp(config)
     defaults.minSegmentLength = 50;
     defaults.pOrder = 10;
     defaults.critType = 2;
+    defaults.saveResults = true;
+    defaults.binnedSignalField = 'binnedEnvelopes';
     
     % Apply defaults
     fields = fieldnames(defaults);
@@ -395,6 +413,30 @@ function results = build_results_structure_lfp(dataStruct, config, areas, areasT
     results.params.analyzeDFA = config.analyzeDFA;
     results.params.pOrder = config.pOrder;
     results.params.critType = config.critType;
+    results.params.binnedSignalField = config.binnedSignalField;
+end
+
+function binnedLfp = bin_continuous_lfp_mean(rawSignal, fs, binSize)
+% BIN_CONTINUOUS_LFP_MEAN - Mean of continuous LFP in non-overlapping bins
+%
+% Variables:
+%   rawSignal - LFP samples (column vector)
+%   fs        - Sampling rate (Hz)
+%   binSize   - Bin width (seconds)
+%
+% Goal:
+%   Downsample raw LFP by averaging samples in each bin so AR/d2 sees the
+%   waveform, not a spike-count sum.
+
+rawSignal = rawSignal(:);
+nPerBin = max(1, round(binSize * fs));
+nBins = floor(numel(rawSignal) / nPerBin);
+if nBins < 1
+    binnedLfp = rawSignal;
+    return;
+end
+rawSignal = rawSignal(1:nBins * nPerBin);
+binnedLfp = mean(reshape(rawSignal, nPerBin, nBins), 1)';
 end
 
 function plot_criticality_lfp_results(results, plotConfig, config, dataStruct)

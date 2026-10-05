@@ -68,8 +68,12 @@ sessionName =  'ey9166_2026_03_19';  %
 % sessionName =  'ey9166_2026_03_26';  % 
 % sessionName =  'ey9166_2026_03_27';  % 
 
-% subjectName = 'ey9387';
-% sessionName =  'ey9387_2026_';  % 
+subjectName = 'ey9387';
+sessionName =  'ey9387_2026_05_03';  % 
+sessionName =  'ey9387_2026_05_04';  % 
+sessionName =  'ey9387_2026_05_06';  % 
+sessionName =  'ey9387_2026_05_08';  % 
+sessionName =  'ey9387_2026_05_11';  % 
 
 %% =============================    Interval Data Loading    =============================
 % Data type selection
@@ -84,13 +88,13 @@ sessionName =  'ey9166_2026_04_02';
 sessionName =  'ey9166_2026_04_07';
 % sessionName =  'ey9166_2026_04_09';
 % 
-% subjectName = 'ey9387';
-% sessionName =  'ey9387_2026_05_19';
+subjectName = 'ey9387';
+sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
 % sessionName =  'ey9387_2026_05_21';
 % sessionName =  'ey9387_2026_05_22';
 % sessionName =  'ey9387_2026_05_25';
-% sessionName =  'ey9387_2026_05_26';
+sessionName =  'ey9387_2026_05_26';
 % sessionName =  'ey9387_2026_05_27';
 % sessionName =  'ey9387_2026_05_28';
 % sessionName =  'ey9387_2026_06_01';

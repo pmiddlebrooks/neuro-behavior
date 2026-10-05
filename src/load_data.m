@@ -162,7 +162,20 @@ switch dataType
     case 'lfp'
         data = readmatrix(fullfile(sessionFolder, 'lfp.txt'));
 
-        data = data(1 + (opts.collectStart * opts.fsLfp) : (opts.collectEnd) * opts.fsLfp, :);
+        collectStart = 0;
+        if isfield(opts, 'collectStart') && ~isempty(opts.collectStart)
+            collectStart = opts.collectStart;
+        end
+        startSample = 1 + collectStart * opts.fsLfp;
+        if startSample < 1
+            startSample = 1;
+        end
+        % Empty collectEnd keeps the recording through the last sample.
+        if ~isfield(opts, 'collectEnd') || isempty(opts.collectEnd)
+            data = data(startSample:end, :);
+        else
+            data = data(startSample : (opts.collectEnd * opts.fsLfp), :);
+        end
 
 end
 

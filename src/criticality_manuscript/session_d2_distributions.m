@@ -83,8 +83,8 @@ useSubsampling = true;
 nSubsamples = 20;
 nNeuronsSubsample = 60;
 minNeuronsMultiple = 1.1;
-enablePermutations = false;  % if true, circular shuffles per window for shuffled d2
-nPermutations = 3;  % used only when enablePermutations
+enablePermutations = true;  % if true, circular shuffles per window for shuffled d2
+nPermutations = 5;  % used only when enablePermutations
 plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart

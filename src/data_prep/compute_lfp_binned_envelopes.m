@@ -47,7 +47,14 @@ function dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanPar
     % Compute binned envelopes for each area
     numAreas = size(dataStruct.lfpPerArea, 2);
     
-    if strcmp(dataStruct.dataType, 'schall')
+    dataTypeName = '';
+    if isfield(dataStruct, 'dataType') && ~isempty(dataStruct.dataType)
+        dataTypeName = dataStruct.dataType;
+    elseif isfield(dataStruct, 'sessionType') && ~isempty(dataStruct.sessionType)
+        dataTypeName = dataStruct.sessionType;
+    end
+
+    if strcmp(dataTypeName, 'schall')
         % Schall: FEF is single area, but may have multiple channels
         if numAreas == 1
             % Single channel - use it directly
