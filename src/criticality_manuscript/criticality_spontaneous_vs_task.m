@@ -28,10 +28,11 @@
 %   across-tasks manuscript plots.
 
 %% Configuration
-subjectName = 'ey9166';
+subjectName = 'ey9387';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
 % taskTypes = {'interval', 'reach'};
-d2Method = 'kl';         % 'euclidean' or 'kl'
+taskTypes = {'interval'};
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
@@ -48,12 +49,12 @@ sessionTypes = order_manuscript_session_types([{'spontaneous'}, taskTypes]);
 collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
-d2Window = 30;
+d2Window = 45;
 prgWindow = d2Window;
 avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
-binSizeD2 = 0.025;   % d2/AR spike bin width (s); overrides AR default
+binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
 binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 
@@ -76,7 +77,7 @@ if ~strcmp(d2Method, 'kl')
 end
 
 brainArea = 'M23M56';
-brainArea = 'VS';
+% brainArea = 'VS';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 
@@ -86,7 +87,7 @@ runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
-forceRecompute = false;   % true: reprocess and overwrite per-session cache
+forceRecompute = true;   % true: reprocess and overwrite per-session cache
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;

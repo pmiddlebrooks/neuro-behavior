@@ -70,10 +70,10 @@ sessionName =  'ey9166_2026_03_19';  %
 
 subjectName = 'ey9387';
 sessionName =  'ey9387_2026_05_03';  % 
-sessionName =  'ey9387_2026_05_04';  % 
-sessionName =  'ey9387_2026_05_06';  % 
-sessionName =  'ey9387_2026_05_08';  % 
-sessionName =  'ey9387_2026_05_11';  % 
+% sessionName =  'ey9387_2026_05_04';  % 
+% sessionName =  'ey9387_2026_05_06';  % 
+% sessionName =  'ey9387_2026_05_08';  % 
+% sessionName =  'ey9387_2026_05_11';  % Don't use: depths are all weird - looks like only a small portion of M56/M23
 
 %% =============================    Interval Data Loading    =============================
 % Data type selection

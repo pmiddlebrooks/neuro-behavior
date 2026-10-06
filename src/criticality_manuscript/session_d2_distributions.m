@@ -88,7 +88,7 @@ nPermutations = 5;  % used only when enablePermutations
 plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
-binSize = 0.025;  % s; spike binning for d2 (and window mean popActivity)
+binSize = 0.04;  % s; spike binning for d2 (and window mean popActivity)
 d2Method = 'euclidean';         % 'euclidean' or 'kl'
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
@@ -121,7 +121,7 @@ opts.loadBehaviorLabels = true;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = d2Window;
-analysisConfig.stepSize = 2;
+analysisConfig.stepSize = 5;
 analysisConfig.binSize = binSize;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;

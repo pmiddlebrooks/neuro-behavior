@@ -36,8 +36,8 @@ sessions = [
     struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_03')     % ok, few M56
     struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_04')     % ok, few M56
     struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_06')     % ok, few M56
-    struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_08')     % ok, few M56
-    struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_11')     % ok, few M56
+    % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_08')     % ok, few M56
+    % struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_11') % depths are all weird - looks like only a small portion of M56/M23
     ];
 % sessions = [
 %     struct('subjectName', 'ag25290', 'sessionName', 'ag112321_1')   % good
