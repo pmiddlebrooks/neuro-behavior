@@ -1,8 +1,8 @@
 %%
 % Session LFP Criticality (Manuscript)
 %
-% For one session and one brain area, cleans the LFP (artifact removal and a
-% zero-mean analysis window), lowpasses at 100 Hz, and runs:
+% For one session and one brain area, bandpasses the LFP (no artifact
+% cleaning), zero-means the analysis window, and runs:
 %   d2        - non-overlapping windows on mean-binned raw LFP and on each
 %               band's binned power (criticality_lfp_analysis)
 %   avalanches - Klaus / Plenz procedure at a 2.5 SD cutoff
@@ -11,7 +11,9 @@
 %                binned power: bins >= mean + nSd * SD
 %
 % d2 distributions for raw and each band are overlaid on one axes, each in
-% its own color. Avalanche size and duration CCDFs use a separate axes for
+% its own color. A second figure plots window-by-window d2 versus time:
+% band-power d2 share one axes, and raw LFP d2 is on its own axes.
+% Avalanche size and duration CCDFs use a separate axes for
 % raw LFP and for each binned power band (same figure).
 %
 % Variables (configure in this section; session identity comes from the
@@ -30,7 +32,8 @@
 %                      100 Hz lowpass (200 Hz bins).
 %   useLog10D2       - If true, plot log10(d2)
 %   pOrder, critType - AR order and criticality type for getFixedPointDistance2
-%   lfpLowpassHz     - Lowpass cutoff passed to clean_lfp_artifacts (default 100)
+%   lfpHighpassHz    - Highpass cutoff (Hz) applied after load (default 1)
+%   lfpLowpassHz     - Lowpass cutoff (Hz) applied after load (default 100)
 %   nSdCutoff        - Avalanche cutoff in SD (default 2.5)
 %   bands            - Band name and [fLow fHigh] rows for lfp_bin_bandpower
 %   powerLawFitMethod - 'clauset', 'plfit2023', or 'hybrid'
@@ -45,9 +48,9 @@
 %   Compare raw-LFP and band-power criticality (d2 and avalanches) in one area.
 
 %% Configuration
-sessionType = 'spontaneous';
-subjectName = 'ag25290';
-sessionName = '112321';
+% sessionType = 'spontaneous';
+% subjectName = 'ag25290';
+% sessionName = '112321';
 
 collectStart = 0;
 collectEnd = [];
@@ -62,6 +65,7 @@ useLog10D2 = false;
 pOrder = 10;
 critType = 2;
 
+lfpHighpassHz = 1;
 lfpLowpassHz = 100;
 nSdCutoff = 2.5;
 
@@ -82,7 +86,7 @@ plotConfig.observedMarkerSize = 5;
 plotConfig.fitLineWidth = 2;
 plotConfig.observedMarkerFaceAlpha = 0.45;
 
-%% Paths and session load
+% Paths and session load
 if ~exist('sessionType', 'var') || isempty(sessionType) || ~exist('sessionName', 'var') || isempty(sessionName)
     error('session_lfp_criticality:MissingSession', ...
         'Set sessionType and sessionName in the workspace before running.');
@@ -106,19 +110,15 @@ opts.collectEnd = collectEnd;
 opts.firingRateCheckTime = [];
 
 lfpCleanParams = struct();
-lfpCleanParams.spikeThresh = 4;
-lfpCleanParams.spikeWinSize = 50;
-lfpCleanParams.notchFreqs = [60 120 180];
+lfpCleanParams.skipArtifactClean = true;
+lfpCleanParams.highpassFreq = lfpHighpassHz;
 lfpCleanParams.lowpassFreq = lfpLowpassHz;
-lfpCleanParams.useHampel = true;
-lfpCleanParams.hampelK = 5;
-lfpCleanParams.hampelNsigma = 3;
-lfpCleanParams.detrendOrder = 'linear';
 
 fprintf('\n=== Session LFP Criticality ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Area: %s\n', brainArea);
-fprintf('LFP clean: artifact removal, zero-mean window, lowpass %.0f Hz\n', lfpLowpassHz);
+fprintf('LFP: no artifact cleaning; bandpass %.0f-%.0f Hz; zero-mean window\n', ...
+    lfpHighpassHz, lfpLowpassHz);
 fprintf('Avalanches: Klaus nLFP / binned-power cutoff = %.1f SD\n', nSdCutoff);
 fprintf('d2 windows: %.1f s, step %.1f s; raw bin %.0f ms\n', ...
     d2Window, d2Step, rawD2BinSize * 1000);
@@ -171,8 +171,10 @@ print_lfp_d2_summary(d2Plot, useLog10D2);
 
 figD2 = plot_lfp_d2_overlap(d2Plot, sessionType, sessionName, areaLabel, ...
     d2Window, collectStart, collectEnd, useLog10D2, plotConfig);
+figD2Time = plot_lfp_d2_timeline(d2Plot, sessionType, sessionName, areaLabel, ...
+    d2Window, collectStart, collectEnd, useLog10D2, plotConfig);
 
-%% Avalanches on raw LFP and each binned power band
+% Avalanches on raw LFP and each binned power band
 [clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();
 fitConfig = struct();
 fitConfig.powerLawFitMethod = powerLawFitMethod;
@@ -186,7 +188,7 @@ avPlot = run_lfp_avalanches(dataStruct, nSdCutoff, fitConfig);
 print_lfp_avalanche_summary(avPlot);
 
 figAv = plot_lfp_avalanche_distributions(avPlot, sessionName, areaLabel, ...
-    nSdCutoff, lfpLowpassHz, plotConfig);
+    nSdCutoff, lfpHighpassHz, lfpLowpassHz, plotConfig);
 
 if saveFigure
     saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
@@ -204,6 +206,15 @@ if saveFigure
     exportgraphics(figD2, fullfile(saveDir, [d2Base, '.eps']), 'ContentType', 'vector');
     fprintf('\nSaved figure: %s\n', fullfile(saveDir, d2Base));
 
+    d2TimeBase = sprintf('session_lfp_d2_timeline_%s_%s_win%.0fs_%s', ...
+        sessionName, areaTag, d2Window, collectTag);
+    if useLog10D2
+        d2TimeBase = [d2TimeBase, '_log10'];
+    end
+    exportgraphics(figD2Time, fullfile(saveDir, [d2TimeBase, '.png']), 'Resolution', 300);
+    exportgraphics(figD2Time, fullfile(saveDir, [d2TimeBase, '.eps']), 'ContentType', 'vector');
+    fprintf('Saved figure: %s\n', fullfile(saveDir, d2TimeBase));
+
     avBase = sprintf('session_lfp_avalanches_%s_%s_%.1fsd_lp%.0f_%s', ...
         sessionName, areaTag, nSdCutoff, lfpLowpassHz, collectTag);
     exportgraphics(figAv, fullfile(saveDir, [avBase, '.png']), 'Resolution', 300);
@@ -217,23 +228,23 @@ fprintf('\n=== Done ===\n');
 
 function [dataStruct, areaLabel, collectStart, collectEnd] = prepare_area_lfp_for_criticality( ...
     dataStruct, brainArea, combinations, collectStart, collectEnd, bands, lfpCleanParams, rawD2BinSize)
-% PREPARE_AREA_LFP_FOR_CRITICALITY - One area, zero-mean, artifact-cleaned, re-binned
+% PREPARE_AREA_LFP_FOR_CRITICALITY - One area, bandpass, zero-mean, re-binned
 %
 % Variables:
-%   dataStruct     - LFP session from load_session_data (already passed through
-%                    clean_lfp_artifacts at lfpCleanParams.lowpassFreq)
+%   dataStruct     - LFP session from load_session_data. Artifact cleaning is
+%                    skipped when lfpCleanParams.skipArtifactClean is true.
 %   brainArea      - Requested area or combined-area name
 %   combinations   - Cell of struct('name', ..., 'areas', {{...}})
 %   collectStart   - Requested start (s)
 %   collectEnd     - Requested end (s); [] = end of the trace after trim rules
 %   bands          - Frequency bands for lfp_bin_bandpower
-%   lfpCleanParams - Cleaning parameters (lowpass already applied at load)
+%   lfpCleanParams - highpassFreq and lowpassFreq for the analysis bandpass
 %   rawD2BinSize   - Bin width (s) stored as dataStruct.lfpBinSize for raw d2
 %
 % Goal:
 %   Restrict LFP to the requested area (average channels for a combined area),
-%   keep the collect window, subtract the mean so the Klaus threshold is about
-%   zero, and recompute binned band power on that trace.
+%   keep the collect window, bandpass, subtract the mean so the Klaus threshold
+%   is about zero, and recompute binned band power on that trace.
 
 if ~isfield(dataStruct, 'lfpPerArea') || isempty(dataStruct.lfpPerArea)
     error('session_lfp_criticality:NoLfp', 'Loaded session has no lfpPerArea.');
@@ -247,6 +258,7 @@ fs = dataStruct.opts.fsLfp;
     brainArea, combinations);
 [trace, collectStart, collectEnd] = trim_lfp_collect_window(trace, fs, ...
     dataStruct.sessionType, collectStart, collectEnd);
+trace = bandpass_analysis_lfp(trace, fs, lfpCleanParams);
 trace = zero_mean_lfp(trace);
 
 dataStruct.lfpPerArea = trace;
@@ -361,15 +373,46 @@ collectStart = signalStart + (i0 - 1) / fs;
 collectEnd = signalStart + i1 / fs;
 end
 
+function trace = bandpass_analysis_lfp(trace, fs, lfpCleanParams)
+% BANDPASS_ANALYSIS_LFP - Zero-phase bandpass of one analysis trace
+%
+% Variables:
+%   trace          - LFP column after the collect window is applied
+%   fs             - Sampling rate (Hz)
+%   lfpCleanParams - .highpassFreq and .lowpassFreq (Hz)
+%
+% Goal:
+%   Limit the trace to the Klaus band (default 1-100 Hz). process_np1_lfp
+%   already lowpassed at 300 Hz. This does not blank peaks or interpolate.
+
+highpassHz = 1;
+lowpassHz = 100;
+if isstruct(lfpCleanParams)
+    if isfield(lfpCleanParams, 'highpassFreq') && ~isempty(lfpCleanParams.highpassFreq)
+        highpassHz = lfpCleanParams.highpassFreq(1);
+    end
+    if isfield(lfpCleanParams, 'lowpassFreq') && ~isempty(lfpCleanParams.lowpassFreq)
+        lowpassHz = lfpCleanParams.lowpassFreq(1);
+    end
+end
+if ~(highpassHz > 0 && lowpassHz > highpassHz && lowpassHz < fs / 2)
+    error('session_lfp_criticality:BadBand', ...
+        'Need 0 < highpass (%.3g) < lowpass (%.3g) < Nyquist (%.3g).', ...
+        highpassHz, lowpassHz, fs / 2);
+end
+trace = bandpass(double(trace(:)), [highpassHz, lowpassHz], fs);
+fprintf('  Bandpass %.0f-%.0f Hz\n', highpassHz, lowpassHz);
+end
+
 function trace = zero_mean_lfp(trace)
 % ZERO_MEAN_LFP - Drop non-finite samples' contribution and subtract the mean
 %
 % Variables:
-%   trace - LFP column already cleaned at load (detrend, artifacts, lowpass)
+%   trace - LFP column after the analysis bandpass
 %
 % Goal:
 %   The analysis window is zero-mean so the 2.5 SD avalanche cutoff is
-%   symmetric about zero. Artifact removal itself is done once, at load.
+%   symmetric about zero.
 
 trace = trace(:, 1);
 bad = ~isfinite(trace);
@@ -387,13 +430,20 @@ function d2Plot = collect_lfp_d2_series(d2Results, useLog10D2)
 %   useLog10D2 - If true, store log10(d2) and drop non-positive values
 %
 % Goal:
-%   Build the series that are overlaid on the d2 distribution figure.
-%   Order is raw LFP, then each band.
+%   Build the series for the d2 distribution and the running-d2 timeline.
+%   Order is raw LFP, then each band. alignedValues stay on startS (NaN
+%   where a window was skipped). values are the finite subset for histograms.
 
 d2Plot = struct();
 d2Plot.names = {};
 d2Plot.values = {};
+d2Plot.alignedValues = {};
+d2Plot.isRaw = false(0, 1);
 d2Plot.binSizeSec = [];
+d2Plot.timeSec = [];
+if isfield(d2Results, 'startS') && ~isempty(d2Results.startS)
+    d2Plot.timeSec = d2Results.startS(:);
+end
 areaIdx = 1;
 
 if isfield(d2Results, 'd2Lfp') && ~isempty(d2Results.d2Lfp) ...
@@ -403,7 +453,7 @@ if isfield(d2Results, 'd2Lfp') && ~isempty(d2Results.d2Lfp) ...
     if isfield(d2Results, 'lfpBinSize') && ~isempty(d2Results.lfpBinSize)
         rawBin = d2Results.lfpBinSize(1);
     end
-    d2Plot = append_d2_series(d2Plot, 'Raw LFP', rawVals, rawBin, useLog10D2);
+    d2Plot = append_d2_series(d2Plot, 'Raw LFP', rawVals, rawBin, useLog10D2, true);
 end
 
 if isfield(d2Results, 'd2') && numel(d2Results.d2) >= areaIdx && ~isempty(d2Results.d2{areaIdx})
@@ -421,21 +471,34 @@ if isfield(d2Results, 'd2') && numel(d2Results.d2) >= areaIdx && ~isempty(d2Resu
         if isempty(bandVals)
             bandVals = nan;
         end
-        d2Plot = append_d2_series(d2Plot, bandName, bandVals(:), bandBin, useLog10D2);
+        d2Plot = append_d2_series(d2Plot, bandName, bandVals(:), bandBin, useLog10D2, false);
     end
 end
 end
 
-function d2Plot = append_d2_series(d2Plot, name, values, binSizeSec, useLog10D2)
-% APPEND_D2_SERIES - Keep finite d2 values for one signal
+function d2Plot = append_d2_series(d2Plot, name, values, binSizeSec, useLog10D2, isRaw)
+% APPEND_D2_SERIES - Store one signal, aligned to window times and as finite values
+%
+% Variables:
+%   d2Plot     - Collector from collect_lfp_d2_series
+%   name       - Legend / summary label
+%   values     - Window-wise d2, same length as timeSec when the band ran
+%   binSizeSec - Bin width used for that signal
+%   useLog10D2 - If true, store log10(d2)
+%   isRaw      - True for the raw LFP trace, false for a power band
+%
+% Goal:
+%   Keep NaNs so the timeline stays on startS, and a finite-only copy for
+%   the distribution histogram.
 
 values = values(:);
 if useLog10D2
     values = log10_safe_numeric(values);
 end
-values = values(isfinite(values));
 d2Plot.names{end + 1} = name;
-d2Plot.values{end + 1} = values;
+d2Plot.alignedValues{end + 1} = values;
+d2Plot.values{end + 1} = values(isfinite(values));
+d2Plot.isRaw(end + 1, 1) = logical(isRaw);
 d2Plot.binSizeSec(end + 1) = binSizeSec;
 end
 
@@ -525,6 +588,135 @@ hold(ax, 'off');
 sgtitle(fig, sprintf('LFP d2 | %s | %s | %s | %.0f s windows%s', ...
     areaLabel, sessionType, sessionName, d2Window, format_title_window(collectStart, collectEnd)), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
+end
+
+function fig = plot_lfp_d2_timeline(d2Plot, sessionType, sessionName, areaLabel, ...
+    d2Window, collectStart, collectEnd, useLog10D2, plotConfig)
+% PLOT_LFP_D2_TIMELINE - Window-wise d2 versus time
+%
+% Variables:
+%   d2Plot     - From collect_lfp_d2_series (alignedValues and timeSec)
+%   d2Window   - Window length (s); times are window centers
+%   useLog10D2 - Y-axis label
+%   plotConfig - Manuscript fonts and line width
+%
+% Goal:
+%   Match the running-d2 panel in session_d2_distributions. Band-power d2
+%   share the top axes. Raw LFP d2 is on the bottom axes. Both use startS.
+
+if nargin < 9 || isempty(plotConfig)
+    plotConfig = fill_manuscript_plot_config();
+end
+
+timeSec = d2Plot.timeSec(:);
+if isempty(timeSec)
+    error('session_lfp_criticality:NoD2Time', ...
+        'No window times (startS) to plot running d2.');
+end
+
+if useLog10D2
+    yLabelText = 'log_{10}(d2)';
+    labelInterpreter = 'tex';
+else
+    yLabelText = 'd2';
+    labelInterpreter = 'none';
+end
+
+bandIdx = find(~d2Plot.isRaw);
+rawIdx = find(d2Plot.isRaw);
+colors = lfp_signal_colors(numel(d2Plot.names));
+lineWidth = 1;
+if isfield(plotConfig, 'axesLineWidth') && ~isempty(plotConfig.axesLineWidth)
+    lineWidth = plotConfig.axesLineWidth;
+end
+
+fig = figure('Color', 'w', 'Position', [140 80 900 640], ...
+    'Name', sprintf('LFP d2 timeline | %s | %s', sessionName, areaLabel));
+tileLayout = tiledlayout(fig, 2, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+axBand = nexttile(tileLayout);
+hold(axBand, 'on');
+for iSig = bandIdx(:)'
+    [tPlot, yPlot] = align_d2_to_time(timeSec, d2Plot.alignedValues{iSig});
+    if ~any(isfinite(yPlot))
+        continue;
+    end
+    plot(axBand, tPlot, yPlot, '-o', 'Color', colors(iSig, :), ...
+        'MarkerFaceColor', colors(iSig, :), 'MarkerSize', 5, ...
+        'LineWidth', lineWidth, 'DisplayName', d2Plot.names{iSig});
+end
+apply_lfp_d2_time_limits(axBand, timeSec, collectStart, collectEnd);
+apply_manuscript_axes_style(axBand, plotConfig, '', yLabelText, 'Band power', ...
+    labelInterpreter);
+set(axBand, 'XTickLabel', []);
+legend(axBand, 'Location', 'northeast', 'FontSize', plotConfig.legendFontSize, ...
+    'Interpreter', 'none');
+grid(axBand, 'on');
+hold(axBand, 'off');
+
+axRaw = nexttile(tileLayout);
+hold(axRaw, 'on');
+if ~isempty(rawIdx)
+    iSig = rawIdx(1);
+    [tPlot, yPlot] = align_d2_to_time(timeSec, d2Plot.alignedValues{iSig});
+    plot(axRaw, tPlot, yPlot, '-o', 'Color', colors(iSig, :), ...
+        'MarkerFaceColor', colors(iSig, :), 'MarkerSize', 5, ...
+        'LineWidth', lineWidth);
+end
+apply_lfp_d2_time_limits(axRaw, timeSec, collectStart, collectEnd);
+apply_manuscript_axes_style(axRaw, plotConfig, 'Time (s)', yLabelText, 'Raw LFP', ...
+    labelInterpreter);
+grid(axRaw, 'on');
+hold(axRaw, 'off');
+
+linkaxes([axBand, axRaw], 'x');
+sgtitle(tileLayout, sprintf('LFP d2 vs time | %s | %s | %s | %.0f s windows%s', ...
+    areaLabel, sessionType, sessionName, d2Window, format_title_window(collectStart, collectEnd)), ...
+    'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
+end
+
+function [tPlot, yPlot] = align_d2_to_time(timeSec, values)
+% ALIGN_D2_TO_TIME - Trim a d2 series to the shared window-center times
+%
+% Variables:
+%   timeSec - startS from criticality_lfp_analysis (s)
+%   values  - One signal's window-wise d2, including NaNs
+%
+% Goal:
+%   Plot each window at its center time. A shorter series is padded with NaN.
+
+tPlot = timeSec(:);
+yPlot = nan(size(tPlot));
+nCopy = min(numel(tPlot), numel(values));
+if nCopy > 0
+    yPlot(1:nCopy) = values(1:nCopy);
+end
+end
+
+function apply_lfp_d2_time_limits(ax, timeSec, collectStart, collectEnd)
+% APPLY_LFP_D2_TIME_LIMITS - X limits from the collect window, else the data
+%
+% Variables:
+%   ax           - Axes already holding the running-d2 line
+%   timeSec      - Window center times (s)
+%   collectStart - Analysis start (s)
+%   collectEnd   - Analysis end (s); empty uses the last window time
+%
+% Goal:
+%   Share the session time range across the band and raw axes.
+
+xMin = timeSec(1);
+xMax = timeSec(end);
+if ~isempty(collectStart) && isfinite(collectStart)
+    xMin = collectStart;
+end
+if ~isempty(collectEnd) && isfinite(collectEnd)
+    xMax = collectEnd;
+end
+if xMax <= xMin
+    xMax = xMin + 1;
+end
+xlim(ax, [xMin, xMax]);
 end
 
 function avPlot = run_lfp_avalanches(dataStruct, nSdCutoff, fitConfig)
@@ -627,7 +819,7 @@ end
 end
 
 function fig = plot_lfp_avalanche_distributions(avPlot, sessionName, areaLabel, ...
-    nSdCutoff, lfpLowpassHz, plotConfig)
+    nSdCutoff, lfpHighpassHz, lfpLowpassHz, plotConfig)
 % PLOT_LFP_AVALANCHE_DISTRIBUTIONS - Size and duration CCDFs, one column per signal
 %
 % Variables:
@@ -676,8 +868,9 @@ for iSig = 1:nSignals
     grid(axDur, 'on');
 end
 
-sgtitle(tileLayout, sprintf(['LFP avalanches | %s | %s | %.1f SD | %.0f Hz lowpass | ', ...
-    'Klaus nLFP (raw) and binned power'], sessionName, areaLabel, nSdCutoff, lfpLowpassHz), ...
+sgtitle(tileLayout, sprintf(['LFP avalanches | %s | %s | %.1f SD | %.0f-%.0f Hz | ', ...
+    'Klaus nLFP (raw) and binned power'], sessionName, areaLabel, nSdCutoff, ...
+    lfpHighpassHz, lfpLowpassHz), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
