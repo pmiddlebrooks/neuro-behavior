@@ -87,12 +87,12 @@ runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
-forceRecompute = true;   % true: reprocess and overwrite per-session cache
+forceRecompute = false;   % true: reprocess and overwrite per-session cache
 plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
 plotCorrelationMatrix = true;
-enablePermutations = true;
+enablePermutations = false;
 pcaFlag = false;           % reconstruct from nDim PCs before d2 / avalanches
 pcaFirstFlag = true;       % true = first nDim PCs; false = last nDim
 nDim = 5;
@@ -105,7 +105,7 @@ splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on 
 useLog10D2 = false;
 useSubsampling = true;
 nSubsamples = 40;
-nNeuronsSubsample = 75;
+nNeuronsSubsample = 50;
 minNeuronsMultiple = 1.1;
 
 powerLawFitMethod = 'plfit2023';
