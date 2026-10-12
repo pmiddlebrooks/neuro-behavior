@@ -13,6 +13,8 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
 %
 % Goal: Load interval task neural data from paths.intervalDataPath/subjectName/sessionName.
 %   Unit quality (good / mua / real) is applied once in load_data via cluster_quality_mask.
+%   LFP is lfp.mat from process_np1_lfp (per-area traces). Legacy lfp.txt is
+%   still accepted by load_area_lfp.
 %   Ethogram files (bouts.csv or behavior_labels*.csv) live in
 %   <session>/behavior and are attached when present. Task logs
 %   (revised_interval_*.csv) are in that same folder.
@@ -74,32 +76,13 @@ function dataStruct = load_interval_data(dataStruct, dataSource, paths, opts, su
         dataStruct = attach_interval_behavior(dataStruct, opts);
 
     elseif strcmp(dataSource, 'lfp')
-        if ~isfield(opts, 'fsLfp')
-            opts.fsLfp = 1250;
-        end
+        [lfpPerArea, areaNames, opts] = load_area_lfp(opts);
+        lfpPerArea = maybe_clean_lfp_artifacts(lfpPerArea, opts.fsLfp, lfpCleanParams);
 
-        lfpData = load_data(opts, 'lfp');
-        lfpData = fliplr(lfpData);
-
-        lfpPerArea = [mean(lfpData(:,[3 5]), 2) mean(lfpData(:,[9 11]), 2) ...
-            mean(lfpData(:,[19 23]), 2) mean(lfpData(:,[30 34]), 2)];
-        clear lfpData;
-
-        lfpPerArea = lowpass(lfpPerArea, 300, opts.fsLfp);
-        lfpPerArea = clean_lfp_artifacts(lfpPerArea, opts.fsLfp, ...
-            'spikeThresh', lfpCleanParams.spikeThresh, ...
-            'spikeWinSize', lfpCleanParams.spikeWinSize, ...
-            'notchFreqs', lfpCleanParams.notchFreqs, ...
-            'lowpassFreq', lfpCleanParams.lowpassFreq, ...
-            'useHampel', lfpCleanParams.useHampel, ...
-            'hampelK', lfpCleanParams.hampelK, ...
-            'hampelNsigma', lfpCleanParams.hampelNsigma, ...
-            'detrendOrder', lfpCleanParams.detrendOrder, ...
-            'visualize', false);
-
-        dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
+        dataStruct.areas = areaNames;
         dataStruct.lfpPerArea = lfpPerArea;
         dataStruct.bands = bands;
+        dataStruct.opts = opts;
         dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanParams, bands);
     end
 

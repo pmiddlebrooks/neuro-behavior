@@ -114,41 +114,13 @@ function dataStruct = load_spontaneous_data(dataStruct, dataSource, paths, opts,
         dataStruct = attach_empty_behavior_fields(dataStruct, opts);
 
     elseif strcmp(dataSource, 'lfp')
-        % Load spontaneous LFP data
-        if ~isfield(opts, 'fsLfp')
-            opts.fsLfp = 1250;
-        end
-        
-        % Load LFP data
-        lfpData = load_data(opts, 'lfp');
-        lfpData = fliplr(lfpData); % flip data so first column (channel) is brain surface
-        
-        % Average channels to create lfpPerArea (incorporating get_standard_data logic)
-        % Channels [3 5] -> M23, [9 11] -> M56, [19 23] -> DS, [30 34] -> VS
-        lfpPerArea = [mean(lfpData(:,[3 5]), 2) mean(lfpData(:,[9 11]), 2) ...
-                      mean(lfpData(:,[19 23]), 2) mean(lfpData(:,[30 34]), 2)];
-        clear lfpData;
-        
-        % Lowpass filter LFP at 300 Hz
-        lfpPerArea = lowpass(lfpPerArea, 300, opts.fsLfp);
-        
-        % Clean LFP artifacts
-        lfpPerArea = clean_lfp_artifacts(lfpPerArea, opts.fsLfp, ...
-            'spikeThresh', lfpCleanParams.spikeThresh, ...
-            'spikeWinSize', lfpCleanParams.spikeWinSize, ...
-            'notchFreqs', lfpCleanParams.notchFreqs, ...
-            'lowpassFreq', lfpCleanParams.lowpassFreq, ...
-            'useHampel', lfpCleanParams.useHampel, ...
-            'hampelK', lfpCleanParams.hampelK, ...
-            'hampelNsigma', lfpCleanParams.hampelNsigma, ...
-            'detrendOrder', lfpCleanParams.detrendOrder, ...
-            'visualize', false);
-        
-        dataStruct.areas = {'M23', 'M56', 'DS', 'VS'};
+        [lfpPerArea, areaNames, opts] = load_area_lfp(opts);
+        lfpPerArea = maybe_clean_lfp_artifacts(lfpPerArea, opts.fsLfp, lfpCleanParams);
+
+        dataStruct.areas = areaNames;
         dataStruct.lfpPerArea = lfpPerArea;
         dataStruct.bands = bands;
-        
-        % Compute binned envelopes
+        dataStruct.opts = opts;
         dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanParams, bands);
     end
     

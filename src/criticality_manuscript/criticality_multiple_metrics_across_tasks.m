@@ -89,7 +89,7 @@
 %% Configuration
 sessionTypes = default_manuscript_session_types();
 sessionTypes = order_manuscript_session_types(sessionTypes);
-d2Method = 'kl';         % 'euclidean' or 'kl'
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars`
 klErrBars = false;
@@ -141,7 +141,7 @@ plotResults = true;
 plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
 plotCorrelationMatrix = true;
-enablePermutations = true;
+enablePermutations = false;
 pcaFlag = false;           % reconstruct from nDim PCs before d2 / avalanches
 pcaFirstFlag = true;       % true = first nDim PCs; false = last nDim
 nDim = 5;
@@ -154,7 +154,7 @@ splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on 
 useLog10D2 = false;
 useSubsampling = true;
 nSubsamples = 40;
-nNeuronsSubsample = 45;
+nNeuronsSubsample = 75;
 minNeuronsMultiple = 1.05;
 
 powerLawFitMethod = 'plfit2023';
