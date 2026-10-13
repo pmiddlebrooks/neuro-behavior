@@ -28,11 +28,11 @@
 %   across-tasks manuscript plots.
 
 %% Configuration
-subjectName = 'ey9387';
+subjectName = 'ey9166';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
 % taskTypes = {'interval', 'reach'};
-taskTypes = {'interval'};
-d2Method = 'euclidean';         % 'euclidean' or 'kl'
+% taskTypes = {'interval'};
+d2Method = 'kl';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
