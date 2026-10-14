@@ -65,7 +65,7 @@ sessionName =  'ey042822';  % Good M56, Bad DS, bad behavior labels after 200 mi
 subjectName = 'ey9166';
 sessionName =  'ey9166_2026_03_19';  % 
 % sessionName =  'ey9166_2026_03_24';  % 
-sessionName =  'ey9166_2026_03_26';  % 
+% sessionName =  'ey9166_2026_03_26';  % 
 % sessionName =  'ey9166_2026_03_27';  % 
 
 % subjectName = 'ey9387';
@@ -85,7 +85,7 @@ subjectName = 'ey9166';
 sessionName =  'ey9166_2026_04_02';
 % sessionName =  'ey9166_2026_04_03';
 sessionName =  'ey9166_2026_04_04';
-sessionName =  'ey9166_2026_04_07';
+% sessionName =  'ey9166_2026_04_07';
 % sessionName =  'ey9166_2026_04_09';
 % 
 % subjectName = 'ey9387';

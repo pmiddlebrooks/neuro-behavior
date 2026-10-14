@@ -28,10 +28,10 @@
 %   across-tasks manuscript plots.
 
 %% Configuration
-subjectName = 'ey9166';
+subjectName = 'ey9387';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
 % taskTypes = {'interval', 'reach'};
-% taskTypes = {'interval'};
+taskTypes = {'interval'};
 d2Method = 'kl';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
@@ -103,9 +103,9 @@ metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to s
 splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = false;
-useSubsampling = true;
+useSubsampling = false;
 nSubsamples = 40;
-nNeuronsSubsample = 50;
+nNeuronsSubsample = 75;
 minNeuronsMultiple = 1.1;
 
 powerLawFitMethod = 'plfit2023';
