@@ -64,15 +64,15 @@ sessionName =  'ey042822';  % Good M56, Bad DS, bad behavior labels after 200 mi
 
 subjectName = 'ey9166';
 sessionName =  'ey9166_2026_03_19';  % 
-% sessionName =  'ey9166_2026_03_24';  % 
-% sessionName =  'ey9166_2026_03_26';  % 
-% sessionName =  'ey9166_2026_03_27';  % 
+sessionName =  'ey9166_2026_03_24';  % 
+sessionName =  'ey9166_2026_03_26';  % 
+sessionName =  'ey9166_2026_03_27';  % 
 
 % subjectName = 'ey9387';
 % sessionName =  'ey9387_2026_05_03';  % 
 % sessionName =  'ey9387_2026_05_04';  % 
 % sessionName =  'ey9387_2026_05_06';  % 
-% sessionName =  'ey9387_2026_05_08';  % 
+% sessionName =  'ey9387_2026_05_08';  % Don't use: depths all weird
 % sessionName =  'ey9387_2026_05_11';  % Don't use: depths are all weird - looks like only a small portion of M56/M23
 
 %% =============================    Interval Data Loading    =============================

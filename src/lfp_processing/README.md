@@ -16,7 +16,13 @@ lfp_processing/
 ├── load_np1_lfp_channel_depths.m    # Channel IDs and surface-referenced depths
 ├── select_area_lfp_channels.m       # Two channels per area (1/3 and 2/3 depth)
 ├── read_np1_lfp_samples.m           # Chunked read across stitched files
-└── np1_lfp_constants.m             # NP1 LFP sample rate, gain, output name
+├── np1_lfp_constants.m              # NP1 LFP sample rate, gain, output name
+├── run_process_np2_lfp.m            # Set session / probe, then run
+├── process_np2_lfp.m                # NP2 pipeline (same lfp.mat output)
+├── find_np2_lfp_files.m             # Match extracted np2-*-ephys_*_lfp.raw
+├── load_np2_lfp_channel_depths.m    # NP2 channel IDs and depths
+├── read_np2_lfp_samples.m           # Chunked int16 read
+└── np2_lfp_constants.m              # NP2 ADC scale, 2500 Hz, gain
 ```
 
 ## Usage
@@ -86,3 +92,21 @@ Used when the session has no `brain_area_depths.mat`:
 | CC | 1241–1540 |
 | DS | 1541–2700 |
 | VS | 2701–3840 |
+
+## Neuropixels 2
+
+`extract_lfp_np2.sh` writes `np2-<probe>-ephys_<date>T<time>_<start>_to_<end>_hrs_lfp.raw` (384 channels, int16, 2500 Hz). Copy that file into `paths.lfpDataPath`, then run `run_process_np2_lfp.m`.
+
+```matlab
+sessionType = 'spontaneous';
+subjectName = 'ey9166';
+sessionName = 'ey9166_2026_05_03';  % matches np2-a-ephys_2026-05-03T...
+probeId = 'a';
+
+process_np2_lfp(sessionType, subjectName, sessionName, ...
+    'brainAreas', {'M23','M56','DS','VS'}, 'probeId', probeId);
+```
+
+The output `lfp.mat` uses the same variables as NP1 (`lfpPerArea`, `lfpMeta`). ADC codes convert as `(sample - 2048) * 3.0517578125` µV (12-bit offset binary, gain 80). Set `apGain` in `np2_lfp_constants.m` to 100 for a quad-base probe, and pass `'nChannels', 1536` when the extract used that frame width.
+
+Channel choice uses `channel_map.npy` and `channel_positions.npy` in the spike session folder when those files exist (`depth = 3840 - phy_y`). Without them, channels are a tip-first bank: ch 0–1 are deepest, rows are 15 µm apart. That bank does not reach the cortical surface on the 0–3840 µm scale, so superficial areas need the spike-sorting channel map.

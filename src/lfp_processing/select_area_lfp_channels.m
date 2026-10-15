@@ -1,9 +1,11 @@
-function areaChan = select_area_lfp_channels(sessionFolder, brainAreas)
-% SELECT_AREA_LFP_CHANNELS - Two NP1 LFP channels per brain area (1/3 and 2/3 depth)
+function areaChan = select_area_lfp_channels(sessionFolder, brainAreas, probeType, nChannels)
+% SELECT_AREA_LFP_CHANNELS - Two LFP channels per brain area (1/3 and 2/3 depth)
 %
 % Variables:
 %   sessionFolder - Session directory (brain_area_depths.mat and channel map)
 %   brainAreas    - Cell of area names, e.g. {'M23','M56','DS','VS'}
+%   probeType     - 'np1' (default) or 'np2'
+%   nChannels     - Raw channel count for NP2 when it is not 384
 %
 % Goal:
 %   Use the same depth ranges as load_session_cluster_info.m /
@@ -14,9 +16,23 @@ function areaChan = select_area_lfp_channels(sessionFolder, brainAreas)
 if nargin < 2 || isempty(brainAreas)
     brainAreas = {'M23', 'M56', 'DS', 'VS'};
 end
+if nargin < 3 || isempty(probeType)
+    probeType = 'np1';
+end
+if nargin < 4
+    nChannels = [];
+end
 brainAreas = normalize_area_names(brainAreas);
 
-[channelIds, orientedDepths, chanMeta] = load_np1_lfp_channel_depths(sessionFolder);
+switch lower(char(probeType))
+    case 'np1'
+        [channelIds, orientedDepths, chanMeta] = load_np1_lfp_channel_depths(sessionFolder);
+    case 'np2'
+        [channelIds, orientedDepths, chanMeta] = load_np2_lfp_channel_depths(sessionFolder, nChannels);
+    otherwise
+        error('select_area_lfp_channels:BadProbe', ...
+            'probeType must be ''np1'' or ''np2''.');
+end
 [m23, m56, cc, ds, vs, depthSource] = get_brain_area_depth_ranges(sessionFolder);
 rangeMap = struct('M23', m23, 'M56', m56, 'CC', cc, 'DS', ds, 'VS', vs);
 
