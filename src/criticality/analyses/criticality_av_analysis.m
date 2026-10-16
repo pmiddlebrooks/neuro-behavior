@@ -22,6 +22,8 @@ function results = criticality_av_analysis(dataStruct, config)
 %     neuron subsample when useSubsampling) and reused for every sliding window.
 %     .avWindow - If set (or via set_manuscript_av_window), tile the collect
 %                 range, recompute the cutoff per tile, pool events, and fit once.
+%     .restrictToAwake - Spontaneous sessions only (default true): use awake
+%                epochs from lfp_sleep_detector (windows or pooled tiles).
 %     .makePlots - Create plots (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
 %     .includeM2356 - Include combined M23+M56 area (default: false)
@@ -319,6 +321,8 @@ function results = criticality_av_analysis(dataStruct, config)
     firstCenterTime = timeOrigin + config.slidingWindowSize / 2;
     lastCenterTime = timeOrigin + totalTime - config.slidingWindowSize / 2;
     commonCenterTimes = firstCenterTime:config.avStepSize:lastCenterTime;
+    commonCenterTimes = keep_windows_during_awake(dataStruct, config, commonCenterTimes, ...
+        config.slidingWindowSize, config.avStepSize, 'center', timeRange);
     
     if isempty(commonCenterTimes)
         error('No valid windows found. Check slidingWindowSize and avStepSize relative to total time.');
@@ -326,7 +330,7 @@ function results = criticality_av_analysis(dataStruct, config)
     
     numWindows = length(commonCenterTimes);
     fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s (stepSize=%.3f s)\n', ...
-        numWindows, firstCenterTime, lastCenterTime, config.avStepSize);
+        numWindows, commonCenterTimes(1), commonCenterTimes(end), config.avStepSize);
     
     % Initialize results
     [dcc, kappa, decades, startS, tau, alpha, paramSD] = deal(cell(1, numAreas));
@@ -732,6 +736,7 @@ function config = set_config_defaults(config)
     defaults.gofThreshold = 0.8;
     defaults.runClausetPlpva = false;
     defaults.compareTailModels = true;
+    defaults.restrictToAwake = true;     % Spontaneous: drop windows that overlap sleep
     
     % Apply defaults
     fields = fieldnames(defaults);

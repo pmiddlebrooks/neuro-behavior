@@ -4,6 +4,8 @@
 % For one session, runs the same PRG pipeline as criticality_prg_across_tasks.m
 % (non-overlapping block windows) and plots overlapping probability densities of
 % window-wise kurtosis for data vs surrogates (Cambrainha-style; see criticality_prg_plot).
+% Spontaneous sessions keep blocks that lie fully inside awake epochs
+% (lfp_sleep_detector).
 %
 % Variables (configure in this section):
 %   sessionType      - 'spontaneous', 'interval', 'reach', 'semicircle', 'schall'

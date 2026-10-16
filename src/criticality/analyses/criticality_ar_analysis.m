@@ -29,6 +29,8 @@ function results = criticality_ar_analysis(dataStruct, config)
 %     .klFitMethod - KL fit (default: 'MaxLikelihood')
 %     .klErrBars - If true, KL Hessian error bars (default: false)
 %     .klParallel - If true, parallelize KL error-bar gradient (default: false)
+%     .restrictToAwake - Spontaneous sessions only (default true): keep windows
+%                that lie fully inside awake epochs from lfp_sleep_detector
 %
 % Goal:
 %   Compute d2 and/or mrBr criticality measures in sliding windows for spike data.
@@ -274,6 +276,8 @@ function results = criticality_ar_analysis(dataStruct, config)
     firstCenterTime = timeOrigin + config.slidingWindowSize / 2;
     lastCenterTime = timeOrigin + totalTime - config.slidingWindowSize / 2;
     commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
+    commonCenterTimes = keep_windows_during_awake(dataStruct, config, commonCenterTimes, ...
+        config.slidingWindowSize, config.stepSize, 'center', timeRange);
     
     if isempty(commonCenterTimes)
         error('No valid windows found. Check slidingWindowSize and stepSize relative to total time.');
@@ -281,7 +285,7 @@ function results = criticality_ar_analysis(dataStruct, config)
     
     numWindows = length(commonCenterTimes);
     fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s (stepSize=%.3f s)\n', ...
-        numWindows, firstCenterTime, lastCenterTime, config.stepSize);
+        numWindows, commonCenterTimes(1), commonCenterTimes(end), config.stepSize);
     
     bhvTimeOrigin = session_time_origin(dataStruct);
     
@@ -839,6 +843,7 @@ function config = set_config_defaults(config)
     defaults.brainAreas = {};            % Optional list of area name strings to analyze; empty = all areas
     defaults.sdfFlag = false;            % Smooth 1 ms rasters with SDF before AR/d2
     defaults.sdfSigmaMs = 10;            % Gaussian SDF sigma (ms); spike_density_function uses 1 ms samples
+    defaults.restrictToAwake = true;     % Spontaneous: drop windows that overlap sleep
     
     % Apply defaults
     fields = fieldnames(defaults);

@@ -46,7 +46,25 @@ if ~d2_method_cache_params_match(requested, stored)
   return;
 end
 
+if ~awake_only_cache_params_match(requested, stored)
+  return;
+end
+
 tf = true;
+end
+
+function tf = awake_only_cache_params_match(requested, stored)
+% AWAKE_ONLY_CACHE_PARAMS_MATCH - Missing awakeOnly matches false (legacy files)
+reqAwake = cache_awake_only(requested);
+stoAwake = cache_awake_only(stored);
+tf = reqAwake == stoAwake;
+end
+
+function tf = cache_awake_only(s)
+tf = false;
+if isfield(s, 'awakeOnly') && ~isempty(s.awakeOnly)
+  tf = logical(s.awakeOnly);
+end
 end
 
 function val = get_cache_field(s, fieldName)

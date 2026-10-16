@@ -17,7 +17,7 @@ for i = 1:numel(analysesToSave)
     continue;
   end
   kind = engagement_pipeline_cache_kind(analysisName);
-  cacheParams = make_manuscript_session_cache_params(kind, opts);
+  cacheParams = make_manuscript_session_cache_params(kind, opts, sessionType);
   cacheFile = manuscript_session_cache_filepath( ...
     sessionType, sessionName, subjectName, cacheParams);
   save_manuscript_session_cache(cacheFile, payload, cacheParams);

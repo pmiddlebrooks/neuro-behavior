@@ -3,7 +3,8 @@
 %
 % Runs momentum-space PRG kurtosis in non-overlapping windows of length
 % prgWindow seconds, batches across session types, and plots session summaries
-% grouped by sessionType.
+% grouped by sessionType. Spontaneous blocks are kept only when they lie fully
+% inside an awake epoch (lfp_sleep_detector).
 %
 % Variables (configure in this section):
 %   sessionTypes   - Cell array of session types to include
@@ -87,6 +88,14 @@ if opts.splitExcitatoryInhibitory
   fprintf('E/I split: on (widthCutoff = %.3f ms)\n', opts.widthCutoff);
 end
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
+if isfield(opts, 'forceRecomputeSessionTypes') && ~isempty(opts.forceRecomputeSessionTypes)
+  fprintf('forceRecomputeSessionTypes: %s\n', ...
+    strjoin(cellstr(opts.forceRecomputeSessionTypes), ', '));
+end
+if isfield(opts, 'forceRecomputeSubject') && ~isempty(opts.forceRecomputeSubject)
+  fprintf('forceRecomputeSubject: %s\n', ...
+    strjoin(cellstr(opts.forceRecomputeSubject), ', '));
+end
 if ~isempty(opts.subjectName)
   fprintf('Subject filter: %s\n', char(opts.subjectName));
 end
@@ -234,6 +243,8 @@ defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
 defaults.useSessionCache = true;
 defaults.forceRecompute = false;
+defaults.forceRecomputeSessionTypes = {};
+defaults.forceRecomputeSubject = '';
 defaults.subjectName = '';
 % Empty collectEnd / prgWindow are sentinels for "full session" — do not replace
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);

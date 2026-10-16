@@ -6,7 +6,7 @@ function save_across_tasks_session_cache(results, sessionType, sessionName, subj
 if ~use_manuscript_session_cache(opts)
   return;
 end
-cacheParams = make_manuscript_session_cache_params(kind, opts);
+cacheParams = make_manuscript_session_cache_params(kind, opts, sessionType);
 cacheParams.cellType = cellType;
 cacheFile = manuscript_session_cache_filepath(sessionType, sessionName, subjectName, cacheParams);
 save_manuscript_session_cache(cacheFile, results, cacheParams);

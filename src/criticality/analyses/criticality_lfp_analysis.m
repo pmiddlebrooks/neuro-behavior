@@ -14,6 +14,8 @@ function results = criticality_lfp_analysis(dataStruct, config)
 %     .plotBinnedEnvelopes - Plot binned envelope results (default: true)
 %     .plotRawLfp - Plot raw LFP results (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
+%     .restrictToAwake - Spontaneous sessions only (default true): keep windows
+%                that lie fully inside awake epochs from lfp_sleep_detector
 %
 % Goal:
 %   Compute d2 and/or DFA criticality measures on binned LFP band signals and raw LFP.
@@ -142,6 +144,9 @@ function results = criticality_lfp_analysis(dataStruct, config)
     firstCenterTime = timeOrigin + maxWindowSize / 2;
     lastCenterTime = timeOrigin + totalSessionDuration - maxWindowSize / 2;
     commonCenterTimes = firstCenterTime:stepSize:lastCenterTime;
+    lfpTimeRange = [timeOrigin, timeOrigin + totalSessionDuration];
+    commonCenterTimes = keep_windows_during_awake(dataStruct, config, commonCenterTimes, ...
+        maxWindowSize, stepSize, 'center', lfpTimeRange);
     
     if isempty(commonCenterTimes)
         error('No valid windows found. Check maxWindowSize and stepSize relative to total session duration.');
@@ -149,7 +154,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
     
     numWindows = length(commonCenterTimes);
     fprintf('\nCommon window centers: %d windows from %.2f s to %.2f s (stepSize=%.3f s)\n', ...
-        numWindows, firstCenterTime, lastCenterTime, stepSize);
+        numWindows, commonCenterTimes(1), commonCenterTimes(end), stepSize);
     
     % Initialize results
     d2 = cell(1, numAreas);
@@ -372,6 +377,7 @@ function config = set_config_defaults_lfp(config)
     defaults.critType = 2;
     defaults.saveResults = true;
     defaults.binnedSignalField = 'binnedEnvelopes';
+    defaults.restrictToAwake = true;     % Spontaneous: drop windows that overlap sleep
     
     % Apply defaults
     fields = fieldnames(defaults);

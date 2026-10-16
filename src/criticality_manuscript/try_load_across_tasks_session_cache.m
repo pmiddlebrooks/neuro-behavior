@@ -6,13 +6,13 @@ function [batchByCell, missingIdx] = try_load_across_tasks_session_cache( ...
 %   missingIdx - Cell-type indices that still need analysis
 
 missingIdx = 1:numel(cellTypesToRun);
-if skip_manuscript_session_cache_load(opts)
+if skip_manuscript_session_cache_load(opts, sessionType, subjectName)
   return;
 end
 
 missingIdx = [];
 for iCell = 1:numel(cellTypesToRun)
-  cacheParams = make_manuscript_session_cache_params(kind, opts);
+  cacheParams = make_manuscript_session_cache_params(kind, opts, sessionType);
   cacheParams.cellType = cellTypesToRun{iCell};
   cacheFile = manuscript_session_cache_filepath(sessionType, sessionName, subjectName, cacheParams);
   [payload, didLoad] = try_load_manuscript_session_cache(cacheFile, cacheParams);

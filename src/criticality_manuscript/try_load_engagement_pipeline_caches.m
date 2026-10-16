@@ -12,7 +12,7 @@ function [loaded, missingAnalyses] = try_load_engagement_pipeline_caches( ...
 
 loaded = struct('d2', [], 'avalanches', [], 'kurtosis', []);
 missingAnalyses = cellstr(analyses(:)');
-if skip_manuscript_session_cache_load(opts)
+if skip_manuscript_session_cache_load(opts, sessionType, subjectName)
   return;
 end
 
@@ -20,7 +20,7 @@ missingAnalyses = {};
 for i = 1:numel(analyses)
   analysisName = analyses{i};
   kind = engagement_pipeline_cache_kind(analysisName);
-  cacheParams = make_manuscript_session_cache_params(kind, opts);
+  cacheParams = make_manuscript_session_cache_params(kind, opts, sessionType);
   cacheFile = manuscript_session_cache_filepath( ...
     sessionType, sessionName, subjectName, cacheParams);
   [payload, didLoad] = try_load_manuscript_session_cache(cacheFile, cacheParams);

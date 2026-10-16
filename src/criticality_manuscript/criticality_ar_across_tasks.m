@@ -3,6 +3,8 @@
 %
 % Runs d2 criticality in non-overlapping windows of length d2Window seconds,
 % batches across session types, and plots session summaries grouped by sessionType.
+% Spontaneous sessions keep only windows that lie fully inside awake epochs
+% (lfp_sleep_detector). Set restrictToAwake false to include sleep.
 %
 % Variables (configure in this section):
 %   sessionTypes   - Cell array of session types to include
@@ -91,6 +93,14 @@ if opts.splitExcitatoryInhibitory
   fprintf('E/I split: on (widthCutoff = %.3f ms)\n', opts.widthCutoff);
 end
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
+if isfield(opts, 'forceRecomputeSessionTypes') && ~isempty(opts.forceRecomputeSessionTypes)
+  fprintf('forceRecomputeSessionTypes: %s\n', ...
+    strjoin(cellstr(opts.forceRecomputeSessionTypes), ', '));
+end
+if isfield(opts, 'forceRecomputeSubject') && ~isempty(opts.forceRecomputeSubject)
+  fprintf('forceRecomputeSubject: %s\n', ...
+    strjoin(cellstr(opts.forceRecomputeSubject), ', '));
+end
 if ~isempty(opts.subjectName)
   fprintf('Subject filter: %s\n', char(opts.subjectName));
 end
@@ -271,6 +281,8 @@ defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
 defaults.useSessionCache = true;
 defaults.forceRecompute = false;
+defaults.forceRecomputeSessionTypes = {};
+defaults.forceRecomputeSubject = '';
 defaults.subjectName = '';
 defaults.d2Method = 'kl';
 defaults.klFitMethod = 'MaxLikelihood';

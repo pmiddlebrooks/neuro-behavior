@@ -1,10 +1,12 @@
-function cacheParams = make_manuscript_session_cache_params(kind, opts)
+function cacheParams = make_manuscript_session_cache_params(kind, opts, sessionType)
 % MAKE_MANUSCRIPT_SESSION_CACHE_PARAMS - Filename / match fields for session cache
 %
 % Variables:
 %   kind - 'ar', 'av', 'prg', 'engagement_d2', 'engagement_av', or 'engagement_prg'
 %   opts - Analysis options (brainArea, collectStart/End, pipeline window,
 %          bin size, useSubsampling, nSubsamples, nNeuronsSubsample)
+%   sessionType - Optional. Spontaneous caches are marked awakeOnly so files
+%          computed before sleep exclusion are not reused.
 %
 % Goal:
 %   Store only keys that affect that pipeline's results (d2 vs AV vs PRG).
@@ -75,6 +77,14 @@ cacheParams.analyses = '';
 cacheParams.cellType = '';
 if isfield(opts, 'cacheCellType') && ~isempty(opts.cacheCellType)
   cacheParams.cellType = char(opts.cacheCellType);
+end
+cacheParams.awakeOnly = false;
+if nargin >= 3 && ~isempty(sessionType) ...
+    && strcmpi(strtrim(char(sessionType)), 'spontaneous')
+  cacheParams.awakeOnly = true;
+  if isfield(opts, 'restrictToAwake') && ~isempty(opts.restrictToAwake)
+    cacheParams.awakeOnly = logical(opts.restrictToAwake);
+  end
 end
 end
 

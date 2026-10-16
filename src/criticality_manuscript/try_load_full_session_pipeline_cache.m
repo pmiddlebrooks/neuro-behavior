@@ -6,10 +6,10 @@ function payload = try_load_full_session_pipeline_cache(kind, sessionType, ...
 % recomputing those pipelines.
 
 payload = [];
-if skip_manuscript_session_cache_load(opts)
+if skip_manuscript_session_cache_load(opts, sessionType, subjectName)
   return;
 end
-cacheParams = make_manuscript_session_cache_params(kind, opts);
+cacheParams = make_manuscript_session_cache_params(kind, opts, sessionType);
 cacheFile = manuscript_session_cache_filepath( ...
   sessionType, sessionName, subjectName, cacheParams);
 [payload, didLoad] = try_load_manuscript_session_cache(cacheFile, cacheParams);

@@ -13,6 +13,7 @@
 % d2 distributions for raw and each band are overlaid on one axes, each in
 % its own color. A second figure plots window-by-window d2 versus time:
 % band-power d2 share one axes, and raw LFP d2 is on its own axes.
+% Spontaneous sessions keep windows inside awake epochs (lfp_sleep_detector).
 % Avalanche size and duration CCDFs use a separate axes for
 % raw LFP and for each binned power band (same figure).
 %
@@ -735,7 +736,8 @@ avPlot = struct();
 avPlot.names = {};
 avPlot.results = {};
 fs = dataStruct.opts.fsLfp;
-rawAv = detect_klaus_avalanches(dataStruct.lfpPerArea(:, 1), 1 / fs, nSdCutoff, 'nlfp');
+rawAv = detect_klaus_on_awake_epochs(dataStruct, dataStruct.lfpPerArea(:, 1), ...
+    1 / fs, nSdCutoff, 'nlfp');
 rawAv = fit_lfp_avalanche_laws(rawAv, fitConfig);
 rawAv.name = 'Raw LFP';
 avPlot = append_av_result(avPlot, rawAv);
@@ -744,11 +746,109 @@ numBands = size(dataStruct.bands, 1);
 for b = 1:numBands
     bandName = char(dataStruct.bands{b, 1});
     bandSignal = dataStruct.binnedPower{1}{b};
-    bandAv = detect_klaus_avalanches(bandSignal, dataStruct.bandBinSizes(b), ...
-        nSdCutoff, 'binnedPower');
+    bandAv = detect_klaus_on_awake_epochs(dataStruct, bandSignal, ...
+        dataStruct.bandBinSizes(b), nSdCutoff, 'binnedPower');
     bandAv = fit_lfp_avalanche_laws(bandAv, fitConfig);
     bandAv.name = bandName;
     avPlot = append_av_result(avPlot, bandAv);
+end
+end
+
+function av = detect_klaus_on_awake_epochs(dataStruct, signal, samplePeriodSec, nSd, mode)
+% DETECT_KLAUS_ON_AWAKE_EPOCHS - Klaus avalanches on awake pieces of one trace
+%
+% Variables:
+%   dataStruct      - Session struct (identity and opts.collectStart)
+%   signal          - Raw LFP or one binned-power trace
+%   samplePeriodSec - Seconds per sample
+%   nSd             - SD cutoff
+%   mode            - 'nlfp' or 'binnedPower'
+%
+% Goal:
+%   Task sessions use the whole trace. Spontaneous sessions run detection on
+%   each awake epoch and pool the avalanches, so a run cannot cross sleep.
+
+signal = signal(:);
+if numel(signal) < 3 || ~(isfinite(samplePeriodSec) && samplePeriodSec > 0)
+    av = detect_klaus_avalanches(signal, samplePeriodSec, nSd, mode);
+    return;
+end
+timeOrigin = 0;
+if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectStart') ...
+        && ~isempty(dataStruct.opts.collectStart)
+    timeOrigin = dataStruct.opts.collectStart;
+end
+timeEnd = timeOrigin + numel(signal) * samplePeriodSec;
+[segments, applyFilter] = resolve_spontaneous_awake_segments( ...
+    dataStruct, struct(), [timeOrigin, timeEnd]);
+if ~applyFilter
+    av = detect_klaus_avalanches(signal, samplePeriodSec, nSd, mode);
+    return;
+end
+if isempty(segments)
+    av = detect_klaus_avalanches([], samplePeriodSec, nSd, mode);
+    fprintf('LFP avalanches (%s): no awake epochs; nothing pooled\n', mode);
+    return;
+end
+
+sizes = [];
+durations = [];
+nEvents = 0;
+nSamples = 0;
+activeWeight = 0;
+deltaTWeight = 0;
+deltaTSum = 0;
+threshold = nan;
+for iSeg = 1:numel(segments)
+    piece = signal_inside_segment(signal, samplePeriodSec, timeOrigin, segments(iSeg));
+    if numel(piece) < 3
+        continue;
+    end
+    segAv = detect_klaus_avalanches(piece, samplePeriodSec, nSd, mode);
+    sizes = [sizes; segAv.sizes(:)]; %#ok<AGROW>
+    durations = [durations; segAv.durations(:)]; %#ok<AGROW>
+    nEvents = nEvents + segAv.nEvents;
+    nSamples = nSamples + numel(piece);
+    if isfield(segAv, 'fractionActive') && isfinite(segAv.fractionActive)
+        activeWeight = activeWeight + segAv.fractionActive * numel(piece);
+    end
+    if isfield(segAv, 'deltaT') && isfinite(segAv.deltaT) && segAv.deltaT > 0
+        deltaTSum = deltaTSum + segAv.deltaT * numel(piece);
+        deltaTWeight = deltaTWeight + numel(piece);
+    end
+    if isfield(segAv, 'threshold') && isfinite(segAv.threshold)
+        threshold = segAv.threshold;
+    end
+end
+
+av = detect_klaus_avalanches([], samplePeriodSec, nSd, mode);
+av.sizes = sizes;
+av.durations = durations;
+if deltaTWeight > 0
+    av.deltaT = deltaTSum / deltaTWeight;
+end
+av.durationsSec = av.durations * av.deltaT;
+av.threshold = threshold;
+av.nEvents = nEvents;
+av.nAvalanches = numel(sizes);
+if nSamples > 0
+    av.fractionActive = activeWeight / nSamples;
+end
+fprintf('LFP avalanches (%s): pooled %d awake epoch(s)\n', mode, numel(segments));
+end
+
+function piece = signal_inside_segment(signal, samplePeriodSec, timeOrigin, segment)
+% SIGNAL_INSIDE_SEGMENT - Samples whose interval lies fully inside one bout
+piece = signal([], 1);
+if ~(isfinite(samplePeriodSec) && samplePeriodSec > 0)
+    return;
+end
+iStart = ceil((segment.start - timeOrigin) / samplePeriodSec + 1 - 1e-9);
+iEnd = floor((segment.end - timeOrigin) / samplePeriodSec);
+iStart = max(1, iStart);
+iEnd = min(numel(signal), iEnd);
+if iEnd >= iStart
+    piece = signal(iStart:iEnd);
 end
 end
 

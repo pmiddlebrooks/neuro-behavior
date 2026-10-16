@@ -5,6 +5,7 @@
 % batches across session types, and plots metrics grouped by sessionType.
 % avWindow tiles the collect range with a local threshold per tile; events
 % are pooled and fit once. Empty avWindow = one shared collect-range threshold.
+% Spontaneous sessions use awake epochs only (lfp_sleep_detector).
 %
 % Variables (configure in this section):
 %   sessionTypes  - Cell array of session types to include
@@ -110,6 +111,14 @@ else
   fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', opts.avWindow);
 end
 fprintf('Session types: %s\n', strjoin(opts.sessionTypes, ', '));
+if isfield(opts, 'forceRecomputeSessionTypes') && ~isempty(opts.forceRecomputeSessionTypes)
+  fprintf('forceRecomputeSessionTypes: %s\n', ...
+    strjoin(cellstr(opts.forceRecomputeSessionTypes), ', '));
+end
+if isfield(opts, 'forceRecomputeSubject') && ~isempty(opts.forceRecomputeSubject)
+  fprintf('forceRecomputeSubject: %s\n', ...
+    strjoin(cellstr(opts.forceRecomputeSubject), ', '));
+end
 if ~isempty(opts.subjectName)
   fprintf('Subject filter: %s\n', char(opts.subjectName));
 end
@@ -250,6 +259,8 @@ defaults.splitExcitatoryInhibitory = false;
 defaults.widthCutoff = 0.35;
 defaults.useSessionCache = true;
 defaults.forceRecompute = false;
+defaults.forceRecomputeSessionTypes = {};
+defaults.forceRecomputeSubject = '';
 defaults.subjectName = '';
 preserveCollectEndEmpty = isfield(opts, 'collectEnd') && isempty(opts.collectEnd);
 preserveAvWindowEmpty = isfield(opts, 'avWindow') && isempty(opts.avWindow);

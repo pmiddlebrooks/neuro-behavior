@@ -50,9 +50,6 @@ if isempty(areasToAnalyze)
     'No valid areas to process (insufficient neurons).');
 end
 
-analysisConfig.sharedThresholdByArea = prepare_shared_av_thresholds_by_area( ...
-  dataStruct, areasToAnalyze, analysisConfig, collectStart, collectEnd);
-
 computeShuffles = false;
 if isfield(analysisConfig, 'enablePermutations') && analysisConfig.enablePermutations
   computeShuffles = true;
@@ -61,7 +58,35 @@ elseif isfield(analysisConfig, 'enableCircularPermutations') ...
   computeShuffles = true;
 end
 
-segments = struct('start', collectStart, 'end', collectEnd);
+timeRange = [collectStart, collectEnd];
+[awakeSegments, applyAwakeFilter] = resolve_spontaneous_awake_segments( ...
+  dataStruct, analysisConfig, timeRange);
+if applyAwakeFilter
+  segments = awakeSegments;
+  if isempty(segments)
+    error('run_session_pooled_avalanche_analysis:NoAwakeTime', ...
+      'Spontaneous session has no awake epochs in [%.1f, %.1f] s.', ...
+      collectStart, collectEnd);
+  end
+  awakeDuration = 0;
+  for iSeg = 1:numel(segments)
+    awakeDuration = awakeDuration + (segments(iSeg).end - segments(iSeg).start);
+  end
+  fprintf('Spontaneous awake-only avalanches: %d epoch(s), %.1f s (sleep excluded)\n', ...
+    numel(segments), awakeDuration);
+else
+  segments = struct('start', collectStart, 'end', collectEnd);
+end
+
+% Neuron subsets come from the collect range. Shared cutoffs that are not
+% recomputed per tile must be fit on awake activity only.
+analysisConfig.sharedThresholdByArea = prepare_shared_av_thresholds_by_area( ...
+  dataStruct, areasToAnalyze, analysisConfig, collectStart, collectEnd);
+if applyAwakeFilter && ~use_local_av_window_thresholds(analysisConfig)
+  analysisConfig.sharedThresholdByArea = prepare_segment_class_av_thresholds_by_area( ...
+    dataStruct, areasToAnalyze, analysisConfig, segments, ...
+    analysisConfig.sharedThresholdByArea, 'awake');
+end
 
 metricNames = {'dcc', 'kappa', 'decades', 'tau', 'alpha', 'paramSD'};
 results = struct();
@@ -90,7 +115,11 @@ for a = 1:numAreas
     results.([metricNames{m}, 'Normalized']){a} = nan;
     results.([metricNames{m}, 'PermutedMean']){a} = nan;
   end
-  results.startS{a} = collectStart;
+  if applyAwakeFilter
+    results.startS{a} = segments(1).start;
+  else
+    results.startS{a} = collectStart;
+  end
   results.slidingWindowSize(a) = avWindowUsed;
 end
 

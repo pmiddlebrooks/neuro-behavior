@@ -21,6 +21,8 @@ function results = criticality_prg_analysis(dataStruct, config)
 %   dataStruct - From load_session_data(); needs spikeTimes, spikeClusters, areas, idLabel
 %   config     - See set_prg_config_defaults(); prgMethod ('pca'|'icg');
 %                surrogateMethod ('isi'|'circular') when enableSurrogates is true.
+%                restrictToAwake (default true) keeps spontaneous blocks that
+%                lie fully inside awake epochs from lfp_sleep_detector.
 %
 % Returns:
 %   results - kappa (N/16), djs (Jensen-Shannon distance to Gaussian at final cutoff),
@@ -108,6 +110,13 @@ function results = criticality_prg_analysis(dataStruct, config)
 
     % Window w covers [windowStartTimes(w), windowStartTimes(w) + blockWindowSize)
     windowStartTimes = timeRange(1) + (0:numWindows - 1) * config.blockWindowSize;
+    windowStartTimes = keep_windows_during_awake(dataStruct, config, windowStartTimes, ...
+        config.blockWindowSize, config.blockWindowSize, 'start', timeRange);
+    numWindows = numel(windowStartTimes);
+    if numWindows < 1
+        error('No complete %.1f s windows inside awake epochs in [%.2f, %.2f] s.', ...
+            config.blockWindowSize, timeRange(1), timeRange(2));
+    end
     fprintf('Non-overlapping windows: %d (%.2f s to %.2f s)\n', ...
         numWindows, windowStartTimes(1), windowStartTimes(end) + config.blockWindowSize);
 
@@ -307,6 +316,7 @@ function config = set_prg_config_defaults(config)
     defaults.brainAreas = {};
     defaults.kappaAxisMax = 20;          % Cap kurtosis axis (y time series, x histograms); use Inf for no cap
     defaults.prgMethod = 'pca';        % 'pca' (momentum-space) or 'icg' (real-space ICG, Morales 2023)
+    defaults.restrictToAwake = true;   % Spontaneous: drop blocks that overlap sleep
 
     fields = fieldnames(defaults);
     for i = 1:numel(fields)

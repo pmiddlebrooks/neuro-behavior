@@ -4,6 +4,8 @@
 % For one session, runs the same AR/d2 pipeline as criticality_ar_across_tasks.m
 % (non-overlapping windows) and plots overlapping probability densities of
 % window-wise d2 (and shuffled d2 when enablePermutations).
+% Spontaneous sessions keep windows that lie fully inside awake epochs
+% (lfp_sleep_detector). Set analysisConfig.restrictToAwake = false to include sleep.
 %
 % Variables (configure in this section):
 %   sessionType      - 'spontaneous', 'interval', 'reach', 'semicircle', 'schall'
