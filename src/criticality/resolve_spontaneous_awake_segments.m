@@ -10,13 +10,14 @@ function [segments, applyFilter] = resolve_spontaneous_awake_segments(dataStruct
 %
 % Goal:
 %   Call lfp_sleep_detector once per spontaneous session and return awake
-%   bouts clipped to timeRange. Task sessions are not filtered. Results are
-%   reused across AR / AV / PRG calls in the same MATLAB session, and saved
-%   under dropPath so a later pipeline does not reload the LFP.
+%   bouts clipped to timeRange. Task sessions are not filtered. A spontaneous
+%   session with no lfp.mat keeps the whole interval. Results are reused
+%   across AR / AV / PRG calls in the same MATLAB session, and saved under
+%   dropPath so a later pipeline does not reload the LFP.
 %
 % Returns:
 %   segments    - Struct array with .start and .end (s). Empty when none.
-%   applyFilter - True only for spontaneous sessions with the filter on.
+%   applyFilter - True only when the filter is on and lfp.mat exists.
 
 segments = struct('start', {}, 'end', {});
 applyFilter = false;
@@ -28,8 +29,14 @@ if nargin < 3 || numel(timeRange) < 2 || ~(timeRange(2) > timeRange(1))
     'timeRange must be [start end] with end > start.');
 end
 
-applyFilter = true;
 [sessionType, subjectName, sessionName] = session_identity(dataStruct);
+if ~spontaneous_session_has_lfp(sessionType, subjectName, sessionName)
+  fprintf('No lfp.mat for %s / %s; using the whole session (sleep not removed).\n', ...
+    subjectName, sessionName);
+  return;
+end
+
+applyFilter = true;
 detectorParams = sleep_detector_call_params(config, timeRange);
 cacheKey = sleep_cache_key(sessionType, subjectName, sessionName, detectorParams);
 

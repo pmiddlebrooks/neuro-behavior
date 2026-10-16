@@ -7,6 +7,7 @@ if ~use_manuscript_session_cache(opts)
   return;
 end
 cacheParams = make_manuscript_session_cache_params(kind, opts, sessionType);
+cacheParams = align_spontaneous_awake_cache(cacheParams, sessionType, subjectName, sessionName);
 cacheParams.cellType = cellType;
 cacheFile = manuscript_session_cache_filepath(sessionType, sessionName, subjectName, cacheParams);
 save_manuscript_session_cache(cacheFile, results, cacheParams);

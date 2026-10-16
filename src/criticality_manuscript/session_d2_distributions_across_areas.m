@@ -5,7 +5,8 @@
 % window-wise d2 between user-specified brain areas and plots:
 %   1) pairwise d2 scatter (one point per shared window)
 %   2) mean popActivity and d2 vs time, areas overlaid in area colors
-% Spontaneous sessions keep windows inside awake epochs (lfp_sleep_detector).
+% Spontaneous sessions include sleep windows so the timeline shows them.
+% Across-session means leave those windows out.
 %
 % Variables (configure in this section):
 %   sessionType, sessionName, subjectName - Set in the workspace before running
@@ -95,6 +96,7 @@ analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
+analysisConfig.restrictToAwake = false;  % keep sleep windows on the session timeline
 
 setup_criticality_manuscript_paths('session_d2_distributions_across_areas');
 paths = get_paths();

@@ -13,7 +13,8 @@
 % d2 distributions for raw and each band are overlaid on one axes, each in
 % its own color. A second figure plots window-by-window d2 versus time:
 % band-power d2 share one axes, and raw LFP d2 is on its own axes.
-% Spontaneous sessions keep windows inside awake epochs (lfp_sleep_detector).
+% Spontaneous sessions include sleep so the session plots show it.
+% Across-session summaries leave sleep out.
 % Avalanche size and duration CCDFs use a separate axes for
 % raw LFP and for each binned power band (same figure).
 %
@@ -165,6 +166,7 @@ d2Config.binnedSignalField = 'binnedPower';
 d2Config.pOrder = pOrder;
 d2Config.critType = critType;
 d2Config.minSegmentLength = 50;
+d2Config.restrictToAwake = false;  % keep sleep windows on the session timeline
 
 d2Results = criticality_lfp_analysis(dataStruct, d2Config);
 d2Plot = collect_lfp_d2_series(d2Results, useLog10D2);
@@ -765,8 +767,8 @@ function av = detect_klaus_on_awake_epochs(dataStruct, signal, samplePeriodSec, 
 %   mode            - 'nlfp' or 'binnedPower'
 %
 % Goal:
-%   Task sessions use the whole trace. Spontaneous sessions run detection on
-%   each awake epoch and pool the avalanches, so a run cannot cross sleep.
+%   This session view uses the whole trace, including spontaneous sleep.
+%   Across-session summaries still drop sleep.
 
 signal = signal(:);
 if numel(signal) < 3 || ~(isfinite(samplePeriodSec) && samplePeriodSec > 0)
@@ -780,7 +782,7 @@ if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectStart') ...
 end
 timeEnd = timeOrigin + numel(signal) * samplePeriodSec;
 [segments, applyFilter] = resolve_spontaneous_awake_segments( ...
-    dataStruct, struct(), [timeOrigin, timeEnd]);
+    dataStruct, struct('restrictToAwake', false), [timeOrigin, timeEnd]);
 if ~applyFilter
     av = detect_klaus_avalanches(signal, samplePeriodSec, nSd, mode);
     return;

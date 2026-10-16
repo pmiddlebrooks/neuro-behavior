@@ -46,9 +46,10 @@
 %                        useSessionCache is on (e.g. {'spontaneous'}). Other
 %                        types still load from cache. With forceRecomputeSubject
 %                        set, only that subject is recomputed inside those types.
-%                        Spontaneous criticality uses only awake epochs
-%                        (lfp_sleep_detector); those caches do not match files
-%                        saved before that filter.
+%                        Spontaneous sessions with lfp.mat use only awake
+%                        epochs (lfp_sleep_detector). Sessions without lfp.mat
+%                        use the whole recording. Awake-only caches do not
+%                        match files saved before that filter.
 %   plotResults        - Create combined d2/tau/alpha figure(s)
 %   plotMetricPairScatters - 2x2 figure: d2 vs tau, d2 vs alpha,
 %                            paramSD (crackling 1/σνz) vs (α-1)/(τ-1),
@@ -144,7 +145,7 @@ runPrgBatch = true;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
 forceRecompute = false;   % true: reprocess and overwrite per-session cache
-forceRecomputeSessionTypes = {};  % e.g. {'spontaneous'} recomputes only that type
+forceRecomputeSessionTypes = {'spontaneous'};  % e.g. {'spontaneous'} recomputes only that type
 forceRecomputeSubject = '';       % e.g. 'ey9387'; with session types set, only this subject
 plotResults = true;
 plotMetricPairScatters = true;

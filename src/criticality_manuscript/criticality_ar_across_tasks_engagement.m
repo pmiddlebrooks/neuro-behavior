@@ -102,6 +102,7 @@ analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
+analysisConfig.restrictToAwake = true;  % spontaneous means exclude sleep
 
 opts = neuro_behavior_options();
 opts.firingRateCheckTime = [];

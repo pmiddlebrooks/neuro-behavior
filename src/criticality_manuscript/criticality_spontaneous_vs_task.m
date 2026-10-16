@@ -22,8 +22,9 @@
 %                 workers (capped at feature('numcores')) for KL error bars.
 %   Remaining options match criticality_multiple_metrics_across_tasks.m
 %   (including useSessionCache, forceRecompute, forceRecomputeSessionTypes,
-%   and forceRecomputeSubject). Spontaneous sessions contribute only awake
-%   epochs from lfp_sleep_detector.
+%   and forceRecomputeSubject). Spontaneous sessions with lfp.mat contribute
+%   only awake epochs from lfp_sleep_detector. Sessions without lfp.mat use
+%   the whole recording.
 %
 % Goal:
 %   Compare spontaneous vs selected-task criticality for one animal, with
@@ -35,7 +36,7 @@ subjectName = 'ey9166';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
 % taskTypes = {'interval', 'reach'};
 % taskTypes = {'interval'};
-d2Method = 'kl';         % 'euclidean' or 'kl'
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
@@ -91,7 +92,7 @@ runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
 forceRecompute = false;   % true: reprocess and overwrite per-session cache
-forceRecomputeSessionTypes = {};  % e.g. {'spontaneous'} recomputes only that type
+forceRecomputeSessionTypes = {'spontaneous'};  % e.g. {'spontaneous'} recomputes only that type
 forceRecomputeSubject = '';       % e.g. 'ey9387'; with session types set, only this subject
 plotResults = true;
 plotMetricPairScatters = true;
@@ -105,10 +106,10 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = true;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
 
 useLog10D2 = false;
-useSubsampling = false;
+useSubsampling = true;
 nSubsamples = 40;
 nNeuronsSubsample = 75;
 minNeuronsMultiple = 1.1;

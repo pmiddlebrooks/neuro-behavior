@@ -417,6 +417,7 @@ analysisConfig.gofThreshold = gofThreshold;
 analysisConfig.runClausetPlpva = false;
 analysisConfig.clausetPlfitPath = clausetPlfitPath;
 analysisConfig.plfit2023Path = plfit2023Path;
+analysisConfig.restrictToAwake = true;  % spontaneous means exclude sleep
 end
 
 function sessionDuration = get_session_collect_duration(dataStruct, opts)

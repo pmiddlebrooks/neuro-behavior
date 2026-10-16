@@ -3,8 +3,9 @@
 %
 % Runs d2 criticality in non-overlapping windows of length d2Window seconds,
 % batches across session types, and plots session summaries grouped by sessionType.
-% Spontaneous sessions keep only windows that lie fully inside awake epochs
-% (lfp_sleep_detector). Set restrictToAwake false to include sleep.
+% Spontaneous sessions with lfp.mat keep only windows inside awake epochs
+% (lfp_sleep_detector). Sessions without lfp.mat use the whole recording.
+% Set restrictToAwake false to include sleep.
 %
 % Variables (configure in this section):
 %   sessionTypes   - Cell array of session types to include
@@ -601,6 +602,10 @@ analysisConfig.useSubsampling = opts.useSubsampling;
 analysisConfig.nSubsamples = opts.nSubsamples;
 analysisConfig.nNeuronsSubsample = opts.nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = opts.minNeuronsMultiple;
+analysisConfig.restrictToAwake = true;
+if isfield(opts, 'restrictToAwake') && ~isempty(opts.restrictToAwake)
+  analysisConfig.restrictToAwake = logical(opts.restrictToAwake);
+end
 end
 
 function commonAreas = resolve_areas_to_plot(plotAreas, areasToPlot, brainArea)

@@ -7,7 +7,8 @@
 % alpha for duration), plus ⟨S⟩(T) with the crackling WLS slope
 % (paramSD = 1/σνz) and printed dcc. A count panel under each scatter
 % shows how many avalanches fall at each size or duration (same x-axis).
-% Spontaneous sessions use awake epochs only (lfp_sleep_detector).
+% Spontaneous sessions include sleep so the session distributions show it.
+% Across-session means leave sleep out.
 %
 % Variables (configure in this section):
 %   sessionType        - 'spontaneous', 'interval', 'reach', 'semicircle', 'schall'
@@ -162,6 +163,7 @@ analysisConfig.runClausetPlpva = runClausetPlpva;
 analysisConfig.compareTailModels = compareTailModels;
 analysisConfig.enableCircularPermutations = enableCircularPermutations;
 analysisConfig.nShuffles = nShuffles;
+analysisConfig.restrictToAwake = false;  % keep sleep tiles in this session view
 
 % Paths
 [clausetPlfitPath, plfit2023Path] = resolve_power_law_paths();

@@ -3,8 +3,9 @@
 %
 % Runs momentum-space PRG kurtosis in non-overlapping windows of length
 % prgWindow seconds, batches across session types, and plots session summaries
-% grouped by sessionType. Spontaneous blocks are kept only when they lie fully
-% inside an awake epoch (lfp_sleep_detector).
+% grouped by sessionType. Spontaneous sessions with lfp.mat keep blocks that
+% lie fully inside an awake epoch (lfp_sleep_detector). Sessions without
+% lfp.mat use the whole recording.
 %
 % Variables (configure in this section):
 %   sessionTypes   - Cell array of session types to include
@@ -447,6 +448,10 @@ analysisConfig.useSubsampling = opts.useSubsampling;
 analysisConfig.nSubsamples = opts.nSubsamples;
 analysisConfig.nNeuronsSubsample = opts.nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = opts.minNeuronsMultiple;
+analysisConfig.restrictToAwake = true;
+if isfield(opts, 'restrictToAwake') && ~isempty(opts.restrictToAwake)
+  analysisConfig.restrictToAwake = logical(opts.restrictToAwake);
+end
 end
 
 function sessionDuration = get_session_collect_duration(dataStruct, opts)

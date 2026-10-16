@@ -13,6 +13,7 @@ end
 missingIdx = [];
 for iCell = 1:numel(cellTypesToRun)
   cacheParams = make_manuscript_session_cache_params(kind, opts, sessionType);
+  cacheParams = align_spontaneous_awake_cache(cacheParams, sessionType, subjectName, sessionName);
   cacheParams.cellType = cellTypesToRun{iCell};
   cacheFile = manuscript_session_cache_filepath(sessionType, sessionName, subjectName, cacheParams);
   [payload, didLoad] = try_load_manuscript_session_cache(cacheFile, cacheParams);
