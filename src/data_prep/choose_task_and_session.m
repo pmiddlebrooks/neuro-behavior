@@ -47,34 +47,39 @@ end
 sessionType = 'spontaneous';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'
 
 subjectName = 'ag25290';
-sessionName =  'ag112221';  % Good neural, bad behavior labels
-sessionName =  'ag112321_1';
-% sessionName =  'ag112321_2'; 
-% sessionName =  'ag112721'; % Good neural, bad behavior labels
-% sessionName =  'ag112821'; % Good neural, bad behavior labels
-sessionName =  'ag112921'; % Good neural, bad behavior labels
+sessionName = 'ag112221';  % Good neural, bad behavior labels
+sessionName = 'ag112321_1';
+sessionName = 'ag112321_2'; 
+% sessionName = 'ag112721'; % Good neural, bad behavior labels
+% sessionName = 'ag112821'; % Good neural, bad behavior labels
+% sessionName = 'ag112921'; % Good neural, bad behavior labels
 
-subjectName = 'ey4152';
-sessionName =  'ey042822';  % Good M56, Bad DS, bad behavior labels after 200 min
-% sessionName =  'ey042922';  % Don't trust: OK M56, Bad everything else
+% subjectName = 'ey4152';
+% sessionName = 'ey042822';  % Good M56, Bad DS, bad behavior labels after 200 min
+% sessionName = 'ey042922';  % Don't trust: OK M56, Bad everything else
 
 % subjectName = 'kw7193';
-% sessionName =  'kw092821';  % Bad M56, Good DS, bad behavior labels for first ~200 min
-% sessionName =  'kw092921';  % Ok... few M56
+% sessionName = 'kw092821';  % Bad M56, Good DS, bad behavior labels for first ~200 min
+% sessionName = 'kw092921';  % Ok... few M56
 
+% Pericles
 % subjectName = 'ey9166';
-% sessionName =  'ey9166_2026_03_19';  % 
-% sessionName =  'ey9166_2026_03_24';  % 
-% sessionName =  'ey9166_2026_03_26';  % 
-% sessionName =  'ey9166_2026_03_27';  % 
+% sessionName = 'ey9166_2026_03_19';  % 
+% sessionName = 'ey9166_2026_03_24';  % 
+% sessionName = 'ey9166_2026_03_26';  % 
+% sessionName = 'ey9166_2026_03_27';  % 
+% 
+% Archimedes
+% subjectName = 'ey9387';
+% sessionName = 'ey9387_2026_05_03';  % 
+% sessionName = 'ey9387_2026_05_04';  % 
+% sessionName = 'ey9387_2026_05_06';  % 
+% sessionName = 'ey9387_2026_05_08';  % Don't use: depths all weird
+% sessionName = 'ey9387_2026_05_11';  % Don't use: depths are all weird - looks like only a small portion of M56/M23
 
-subjectName = 'ey9387';
-% sessionName =  'ey9387_2026_05_03';  % 
-sessionName =  'ey9387_2026_05_04';  % 
-sessionName =  'ey9387_2026_05_06';  % 
-% sessionName =  'ey9387_2026_05_08';  % Don't use: depths all weird
-% sessionName =  'ey9387_2026_05_11';  % Don't use: depths are all weird - looks like only a small portion of M56/M23
-
+% Leonidis
+subjectName = 'ey9755';
+sessionName = 'ey9755_2026_10_08';
 %% =============================    Interval Data Loading    =============================
 % Data type selection
 sessionType = 'interval';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'
@@ -83,11 +88,12 @@ subjectName = 'ey9290';
 
 subjectName = 'ey9166';
 sessionName =  'ey9166_2026_04_02';
-% sessionName =  'ey9166_2026_04_03';
+sessionName =  'ey9166_2026_04_03';
 sessionName =  'ey9166_2026_04_04';
-% sessionName =  'ey9166_2026_04_07';
-% sessionName =  'ey9166_2026_04_09';
+sessionName =  'ey9166_2026_04_07';
+sessionName =  'ey9166_2026_04_09';
 % 
+% ey9887 interval sessions don't have LFP files yet
 % subjectName = 'ey9387';
 % sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
@@ -196,7 +202,10 @@ criticality_sliding_window_av
 
 %% ===========================     LFP SCRIPTS
 % Minimum bin size (for highest frequency band)
-minBinSize = .005;  % 5 ms
+minBinSize = .005;  % 5 ms target; snapped to whole samples at fsLfp
+if exist('opts', 'var') && isfield(opts, 'fsLfp') && ~isempty(opts.fsLfp)
+    minBinSize = snap_lfp_bin_to_samples(minBinSize, opts.fsLfp);
+end
 
 % Compute frequency-dependent bin sizes for each band
 % Higher frequencies get smaller bins, lower frequencies get larger bins
@@ -287,7 +296,7 @@ else
     fprintf('LFP data loaded: %d areas, %d bands/area (each band with different frame counts)\n', numAreas, numBands);
 end
 
-lfpBinSize = 0.005; % 200 Hz
+lfpBinSize = minBinSize;
 % Store bandBinSizes in workspace for use in analysis script
 % This will be used to determine d2StepSize
 %%

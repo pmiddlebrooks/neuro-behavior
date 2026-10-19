@@ -387,7 +387,10 @@ criticality_sliding_window_av
 
 %% ===========================     LFP SCRIPTS
 % Minimum bin size (for highest frequency band)
-minBinSize = .005;  % 5 ms
+minBinSize = .005;  % 5 ms target; snapped to whole samples at fsLfp
+if exist('opts', 'var') && isfield(opts, 'fsLfp') && ~isempty(opts.fsLfp)
+    minBinSize = snap_lfp_bin_to_samples(minBinSize, opts.fsLfp);
+end
 
 % Compute frequency-dependent bin sizes for each band
 % Higher frequencies get smaller bins, lower frequencies get larger bins
@@ -478,7 +481,7 @@ else
     fprintf('LFP data loaded: %d areas, %d bands/area (each band with different frame counts)\n', numAreas, numBands);
 end
 
-lfpBinSize = 0.005; % 200 Hz
+lfpBinSize = minBinSize;
 % Store bandBinSizes in workspace for use in analysis script
 % This will be used to determine d2StepSize
 %%

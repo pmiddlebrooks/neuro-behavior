@@ -2,7 +2,7 @@
 % Set sessionType, subjectName, sessionName, and brainAreas, then run.
 % Split np1-lfp_*.raw files from the same date are stitched in time order.
 % Each area is the mean of two channels near 1/3 and 2/3 of its depth range.
-% Traces are low-passed < 300 Hz, sampled at 1000 Hz, saved as single in lfp.mat.
+% Traces are low-passed < 300 Hz, sampled at 1250 Hz, saved as single in lfp.mat.
 
 sessionType = 'interval';  % 'spontaneous' or 'interval'
 subjectName = 'ey9166';

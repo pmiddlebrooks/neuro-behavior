@@ -30,8 +30,9 @@
 %   brainAreaCombinations - Merged areas: struct('name','M23M56','areas',{{'M23','M56'}})
 %   d2Window         - Non-overlapping d2 window (seconds) when d2Step = d2Window
 %   d2Step           - Step between window centers (seconds)
-%   rawD2BinSize     - Mean-bin width (s) for raw-LFP d2. 0.005 s matches a
-%                      100 Hz lowpass (200 Hz bins).
+%   rawD2BinSize     - Target mean-bin width (s) for raw-LFP d2. 0.005 s
+%                      matches a 100 Hz lowpass (200 Hz bins) and is snapped
+%                      to a whole number of samples at opts.fsLfp.
 %   useLog10D2       - If true, plot log10(d2)
 %   pOrder, critType - AR order and criticality type for getFixedPointDistance2
 %   lfpHighpassHz    - Highpass cutoff (Hz) applied after load (default 1)
@@ -257,6 +258,9 @@ if ~isfield(dataStruct, 'opts') || ~isfield(dataStruct.opts, 'fsLfp') || isempty
 end
 
 fs = dataStruct.opts.fsLfp;
+rawD2BinSize = snap_lfp_bin_to_samples(rawD2BinSize, fs);
+fprintf('Raw LFP d2 bin: %.2f ms (%d samples at %.0f Hz)\n', ...
+    rawD2BinSize * 1000, round(rawD2BinSize * fs), fs);
 [trace, areaLabel] = select_lfp_area_trace(dataStruct.lfpPerArea, dataStruct.areas, ...
     brainArea, combinations);
 [trace, collectStart, collectEnd] = trim_lfp_collect_window(trace, fs, ...

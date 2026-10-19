@@ -33,6 +33,16 @@ minSegmentLength = 50;
 
 % Get bandBinSizes from workspace (calculated in data prep script)
 % Use max bin size for d2StepSize to ensure consistent stepping across bands
+if exist('opts', 'var') && isfield(opts, 'fsLfp') && ~isempty(opts.fsLfp)
+    for b = 1:numel(bandBinSizes)
+        bandBinSizes(b) = snap_lfp_bin_to_samples(bandBinSizes(b), opts.fsLfp);
+    end
+    if exist('lfpBinSize', 'var') && ~isempty(lfpBinSize)
+        for lb = 1:numel(lfpBinSize)
+            lfpBinSize(lb) = snap_lfp_bin_to_samples(lfpBinSize(lb), opts.fsLfp);
+        end
+    end
+end
     maxBinSize = max([bandBinSizes(:); lfpBinSize(:)]);
     d2StepSize = maxBinSize * 2;  % Step size in seconds (how much to slide the window)
     fprintf('Using frequency-dependent bin sizes. Max bin size: %.3f s, d2StepSize: %.3f s\n', maxBinSize, d2StepSize);
@@ -350,8 +360,9 @@ for a = areasToTest
         fsRaw = opts.fsLfp;
 
         for lb = 1:numLfpBins
-            targetBinSize = lfpBinSize(lb);
-            fprintf('    Binning raw LFP with size %.3f s...\n', targetBinSize);
+            targetBinSize = snap_lfp_bin_to_samples(lfpBinSize(lb), fsRaw);
+            lfpBinSize(lb) = targetBinSize;
+            fprintf('    Binning raw LFP with size %.4f s...\n', targetBinSize);
             
             % Simple binning by averaging
             samplesPerBin = round(targetBinSize * fsRaw);

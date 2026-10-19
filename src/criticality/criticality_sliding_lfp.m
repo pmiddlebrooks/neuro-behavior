@@ -83,6 +83,19 @@ fprintf('\n=== LFP Criticality Analysis Setup ===\n');
 fprintf('Number of bands: %d\n', numBands);
 fprintf('Number of areas: %d\n', numAreas);
 
+% Snap bin widths onto the file sample grid (exact at 1000 Hz; 6 samples
+% per 5 ms target at 1250 Hz).
+if exist('opts', 'var') && isfield(opts, 'fsLfp') && ~isempty(opts.fsLfp)
+    for b = 1:numel(bandBinSizes)
+        bandBinSizes(b) = snap_lfp_bin_to_samples(bandBinSizes(b), opts.fsLfp);
+    end
+    if exist('lfpBinSize', 'var') && ~isempty(lfpBinSize)
+        for lb = 1:numel(lfpBinSize)
+            lfpBinSize(lb) = snap_lfp_bin_to_samples(lfpBinSize(lb), opts.fsLfp);
+        end
+    end
+end
+
 % Calculate common step size: 2 * max(bandBinSizes)
 maxBandBinSize = max(bandBinSizes);
 stepSize = 20 * maxBandBinSize;
@@ -304,8 +317,9 @@ for a = areasToTest
         fsRaw = opts.fsLfp;
         
         for lb = 1:numLfpBins
-            targetBinSize = lfpBinSize(lb);
-            fprintf('    Binning raw LFP with size %.3f s...\n', targetBinSize);
+            targetBinSize = snap_lfp_bin_to_samples(lfpBinSize(lb), fsRaw);
+            lfpBinSize(lb) = targetBinSize;
+            fprintf('    Binning raw LFP with size %.4f s...\n', targetBinSize);
             
             % Bin raw LFP signal
             samplesPerBin = round(targetBinSize * fsRaw);

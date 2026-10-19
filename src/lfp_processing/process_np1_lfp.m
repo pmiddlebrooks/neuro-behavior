@@ -18,7 +18,7 @@ function matPath = process_np1_lfp(sessionType, subjectName, sessionName, vararg
 %   Match np1-lfp_*.raw files to the session date, stitch split takes, and
 %   for each requested brain area average the two raw channels nearest 1/3
 %   and 2/3 of that area's depth range (same 3840-minus-phy_y convention as
-%   load_session_cluster_info.m). Low-pass below 300 Hz, resample to 1000 Hz,
+%   load_session_cluster_info.m). Low-pass below 300 Hz, resample to 1250 Hz,
 %   and save single-precision traces plus metadata in lfp.mat.
 %
 % Usage:

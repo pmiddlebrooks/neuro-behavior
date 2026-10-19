@@ -61,7 +61,7 @@ Existing `lfp.mat` is left in place unless you pass `'overwrite', true`.
 1. **Match files by date.** Session `ey9166_2026_04_09` selects `np1-lfp_2026-04-09T*.raw`, including segmented names such as `np1-lfp_2026-03-24T18_56_33_0_to_2_hrs.raw`.
 2. **Stitch splits.** Same-day files are concatenated in timestamp order, then by segment start hour (`_0_to_2_hrs` before `_2_to_4_hrs`). If `params.py` names an `np1-spike_` file with that timestamp, earlier aborted takes from the same day are skipped so LFP lines up with spikes. A truncated last frame (file size not a multiple of 384 channels) is dropped with a warning.
 3. **Pick two channels per area.** Depth uses the same convention as `load_session_cluster_info.m`: `depth = 3840 - phy_y`, so **0 is the surface (M23)** and **3840 is deepest (VS)**. Area bounds come from `brain_area_depths.mat` when present, otherwise the defaults in `get_brain_area_depth_ranges.m`. For each area, the two raw channels nearest **1/3** and **2/3** of that depth span are averaged. The NP1 reference site (channel 191) is not used.
-4. **Filter and downsample.** Convert to µV, low-pass below 300 Hz, resample 2500 Hz → 1000 Hz.
+4. **Filter and downsample.** Convert to µV, low-pass below 300 Hz, resample 2500 Hz → 1250 Hz.
 5. **Save** `lfp.mat` in the spike session folder.
 
 Raw NP1 LFP is 384 channels, uint16, 2500 Hz (Open Ephys Neuropixels plugin). Processing is chunked so the 10–20 GB binaries are never fully loaded.
@@ -70,7 +70,7 @@ Raw NP1 LFP is 384 channels, uint16, 2500 Hz (Open Ephys Neuropixels plugin). Pr
 
 | Variable | Contents |
 |---|---|
-| `lfpPerArea` | `nSamples × nAreas`, `single`, µV, 1000 Hz |
+| `lfpPerArea` | `nSamples × nAreas`, `single`, µV, 1250 Hz |
 | `lfpMeta` | Sampling rates, source files, area names, channel IDs, channel depths, depth ranges |
 
 Load with:
@@ -79,7 +79,7 @@ Load with:
 load(fullfile(sessionFolder, 'lfp.mat'), 'lfpPerArea', 'lfpMeta');
 ```
 
-A 2-hour session with 4 areas is about 120 MB (`single`). That is why this pipeline writes `.mat` rather than CSV.
+A 2-hour session with 4 areas is about 140 MB (`single`). That is why this pipeline writes `.mat` rather than CSV.
 
 ### Default depth ranges (µm from surface)
 

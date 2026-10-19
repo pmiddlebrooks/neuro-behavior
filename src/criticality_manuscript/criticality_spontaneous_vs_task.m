@@ -32,10 +32,10 @@
 %   across-tasks manuscript plots.
 
 %% Configuration
-subjectName = 'ey9166';
+subjectName = 'ey9387';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
 % taskTypes = {'interval', 'reach'};
-% taskTypes = {'interval'};
+taskTypes = {'interval'};
 d2Method = 'euclidean';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
@@ -92,7 +92,7 @@ runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
 forceRecompute = false;   % true: reprocess and overwrite per-session cache
-forceRecomputeSessionTypes = {'spontaneous'};  % e.g. {'spontaneous'} recomputes only that type
+forceRecomputeSessionTypes = {};  % e.g. {'spontaneous'} recomputes only that type
 forceRecomputeSubject = '';       % e.g. 'ey9387'; with session types set, only this subject
 plotResults = true;
 plotMetricPairScatters = true;
@@ -111,7 +111,7 @@ splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on 
 useLog10D2 = false;
 useSubsampling = true;
 nSubsamples = 40;
-nNeuronsSubsample = 75;
+nNeuronsSubsample = 50;
 minNeuronsMultiple = 1.1;
 
 powerLawFitMethod = 'plfit2023';

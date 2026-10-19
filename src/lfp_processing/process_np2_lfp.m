@@ -20,7 +20,7 @@ function matPath = process_np2_lfp(sessionType, subjectName, sessionName, vararg
 %   Read the 2500 Hz int16 LFP written by extract_lfp_np2.sh, convert ADC
 %   codes to microvolts, and for each brain area average the two channels
 %   nearest 1/3 and 2/3 of that area's depth. Low-pass below 300 Hz,
-%   resample to 1000 Hz, and save the same lfp.mat layout as the NP1 pipeline.
+%   resample to 1250 Hz, and save the same lfp.mat layout as the NP1 pipeline.
 %
 % Usage:
 %   process_np2_lfp('spontaneous', 'ey9166', 'ey9166_2026_05_03', 'probeId', 'a');

@@ -58,14 +58,20 @@ function results = criticality_lfp_analysis(dataStruct, config)
         areasToTest = 1:numAreas;
     end
     
-    % Check for raw LFP data
+    % Check for raw LFP data. Bin widths are snapped to whole samples so a
+    % 5 ms target stays exact at 1000 Hz and becomes 6 samples at 1250 Hz.
     hasRawLfp = isfield(dataStruct, 'lfpPerArea') && ~isempty(dataStruct.lfpPerArea) && ...
         isfield(dataStruct, 'lfpBinSize') && ~isempty(dataStruct.lfpBinSize);
+    if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'fsLfp') ...
+            && ~isempty(dataStruct.opts.fsLfp) && dataStruct.opts.fsLfp > 0
+        dataStruct.bandBinSizes = snap_lfp_bin_widths(dataStruct.bandBinSizes, dataStruct.opts.fsLfp);
+    end
     
     if hasRawLfp
         if ~isfield(dataStruct.opts, 'fsLfp')
             error('opts.fsLfp must be defined for raw LFP analysis.');
         end
+        dataStruct.lfpBinSize = snap_lfp_bin_widths(dataStruct.lfpBinSize, dataStruct.opts.fsLfp);
         if isscalar(dataStruct.lfpBinSize)
             numLfpBins = 1;
         else
@@ -420,6 +426,14 @@ function results = build_results_structure_lfp(dataStruct, config, areas, areasT
     results.params.pOrder = config.pOrder;
     results.params.critType = config.critType;
     results.params.binnedSignalField = config.binnedSignalField;
+end
+
+function binWidths = snap_lfp_bin_widths(binWidths, fs)
+% SNAP_LFP_BIN_WIDTHS - Map each bin width onto whole samples at fs
+binWidths = binWidths(:)';
+for iBin = 1:numel(binWidths)
+    binWidths(iBin) = snap_lfp_bin_to_samples(binWidths(iBin), fs);
+end
 end
 
 function binnedLfp = bin_continuous_lfp_mean(rawSignal, fs, binSize)

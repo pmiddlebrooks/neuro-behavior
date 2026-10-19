@@ -2,7 +2,7 @@
 % Point this at the *_lfp.raw file produced by extract_lfp_np2.sh.
 % The date in sessionName must match the date in np2-<probe>-ephys_<date>T*.
 % Each area is the mean of two channels near 1/3 and 2/3 of its depth range.
-% Traces are low-passed < 300 Hz, sampled at 1000 Hz, saved as single in lfp.mat.
+% Traces are low-passed < 300 Hz, sampled at 1250 Hz, saved as single in lfp.mat.
 
 sessionType = 'spontaneous';  % 'spontaneous' or 'interval'
 subjectName = '';             % subject folder, e.g. 'ey9166'

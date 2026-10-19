@@ -14,8 +14,12 @@ function dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanPar
 % Returns:
 %   dataStruct - Updated with binnedEnvelopes, bandBinSizes, etc.
 
-    % Minimum bin size (for highest frequency band)
-    minBinSize = 0.005;  % 5 ms
+    % Minimum bin size (for highest frequency band). Snap to whole samples
+    % so a 5 ms target is exact at 1000 Hz and 6 samples (4.8 ms) at 1250 Hz.
+    minBinSize = 0.005;
+    if isfield(opts, 'fsLfp') && ~isempty(opts.fsLfp) && opts.fsLfp > 0
+        minBinSize = snap_lfp_bin_to_samples(minBinSize, opts.fsLfp);
+    end
     
     % Compute frequency-dependent bin sizes for each band
     numBands = size(bands, 1);
@@ -109,5 +113,5 @@ function dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanPar
     dataStruct.binnedEnvelopes = binnedEnvelopes;
     dataStruct.binnedPower = binnedPower;
     dataStruct.timePoints = timePoints;
-    dataStruct.lfpBinSize = 0.005;  % 200 Hz
+    dataStruct.lfpBinSize = minBinSize;
 end
