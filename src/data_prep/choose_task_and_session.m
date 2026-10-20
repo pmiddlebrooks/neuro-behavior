@@ -63,11 +63,11 @@ sessionName = 'ag112321_2';
 % sessionName = 'kw092921';  % Ok... few M56
 
 % Pericles
-% subjectName = 'ey9166';
+subjectName = 'ey9166';
 % sessionName = 'ey9166_2026_03_19';  % 
 % sessionName = 'ey9166_2026_03_24';  % 
 % sessionName = 'ey9166_2026_03_26';  % 
-% sessionName = 'ey9166_2026_03_27';  % 
+sessionName = 'ey9166_2026_03_27';  % 
 % 
 % Archimedes
 % subjectName = 'ey9387';
@@ -78,8 +78,8 @@ sessionName = 'ag112321_2';
 % sessionName = 'ey9387_2026_05_11';  % Don't use: depths are all weird - looks like only a small portion of M56/M23
 
 % Leonidis
-subjectName = 'ey9755';
-sessionName = 'ey9755_2026_10_08';
+% subjectName = 'ey9755';
+% sessionName = 'ey9755_2026_10_08';
 %% =============================    Interval Data Loading    =============================
 % Data type selection
 sessionType = 'interval';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'

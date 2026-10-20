@@ -74,7 +74,7 @@
 dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
-% collectEnd = 240*60;
+collectEnd = 120*60;
 d2Window = 45;  % seconds; non-overlapping windows
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
@@ -91,7 +91,7 @@ plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
 binSize = 0.04;  % s; spike binning for d2 (and window mean popActivity)
-d2Method = 'euclidean';         % 'euclidean' or 'kl'
+d2Method = 'kl';         % 'euclidean' or 'kl'
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
 runParallel = true;
