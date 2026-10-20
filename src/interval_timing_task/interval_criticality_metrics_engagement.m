@@ -49,14 +49,16 @@ function out = interval_criticality_metrics_engagement(subjectName, sessionName,
 %       .runClausetPlpva, .gofThreshold
 %       .enableCircularPermutations - If true, overlay shuffle CCDF for total only
 %       .nShuffles - Number of circular permutations for total shuffle (default 5)
-%       .avWindow - Analysis tile length (s); [] = full collect / class-level
-%                   threshold. When set, each tile uses its own cutoff from
-%                   that tile's pop activity; events are pooled and fit once.
-%     Avalanche threshold (per engagement class when avWindow is empty):
+%       .avWindow - Analysis tile length (s) for the total class only;
+%                   [] = one threshold over the full collect. When set, each
+%                   total-class tile uses its own cutoff; events are pooled
+%                   and fit once.
+%     Avalanche threshold:
 %       Total: cutoff from the full collect range via thresholdMethod
-%       ('median' or 'quantile10'). Engaged / non-engaged: each class gets its
-%       own cutoff from that class's pooled pop activity (same neuron
-%       subsample indices as total). With avWindow set, per-tile cutoffs.
+%       ('median' or 'quantile10'), or per avWindow tile when avWindow is set.
+%       Engaged / non-engaged: each segment is one window with its own cutoff
+%       from that segment's pop activity (same neuron subsample indices as
+%       total). avWindow does not tile those segments.
 %
 % Goal:
 %   Same analyses as reach_criticality_metrics_engagement, but engagement events
@@ -360,37 +362,55 @@ if ismember('avalanches', opts.analyses)
   print_segment_list('Non-engaged', nonEngagedSegs);
 
   avConfig = build_av_config(opts, clausetPlfitPath, plfit2023Path);
-  if use_local_av_window_thresholds(avConfig)
-    fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', ...
-      avConfig.avWindow);
-  else
-    fprintf(['AV window: full collect (distinct thresholds for total / ', ...
-      'engaged / non-engaged)\n']);
+  runTotalAvalanches = true;
+  if isfield(opts, 'runTotalAvalanches') && ~isempty(opts.runTotalAvalanches)
+    runTotalAvalanches = logical(opts.runTotalAvalanches);
   end
+  if runTotalAvalanches && use_local_av_window_thresholds(avConfig)
+    fprintf('AV window (total): %.0f s (per-window thresholds; pool events, one fit)\n', ...
+      avConfig.avWindow);
+  elseif runTotalAvalanches
+    fprintf('AV window (total): full collect (one shared threshold)\n');
+  end
+  fprintf(['Engaged / non-engaged: each segment is one window with its own ', ...
+    'threshold (avWindow ignored)\n']);
   areasToAnalyze = resolve_areas_to_analyze(dataStruct, opts.brainArea, avConfig.nMinNeurons);
   if isempty(areasToAnalyze)
     error('No areas meet minimum neuron count (%d).', avConfig.nMinNeurons);
   end
   areaNames = dataStruct.areas(areasToAnalyze);
 
-  % Collect-range thresholds for total (+ shared neuron subsets for all classes)
-  sharedCollectByArea = prepare_shared_av_thresholds_by_area( ...
-    dataStruct, areasToAnalyze, avConfig, collectStart, collectEnd);
-  avConfigTotal = avConfig;
-  avConfigTotal.sharedThresholdByArea = sharedCollectByArea;
+  % Shared neuron subsets come from the collect range when subsampling.
+  % The full-session avalanche fit is optional and is not used by the
+  % manuscript engagement plots.
+  useSubsampling = isfield(avConfig, 'useSubsampling') && avConfig.useSubsampling;
+  sharedCollectByArea = cell(1, numel(dataStruct.areas));
+  if runTotalAvalanches || useSubsampling
+    sharedCollectByArea = prepare_shared_av_thresholds_by_area( ...
+      dataStruct, areasToAnalyze, avConfig, collectStart, collectEnd);
+  end
+  avConfigEngaged = mark_per_segment_av_config(avConfig);
   avConfigEngaged = attach_engagement_class_av_thresholds( ...
-    avConfig, dataStruct, areasToAnalyze, engagedSegs, sharedCollectByArea, 'engaged');
+    avConfigEngaged, dataStruct, areasToAnalyze, engagedSegs, sharedCollectByArea, 'engaged');
+  avConfigNonEngaged = mark_per_segment_av_config(avConfig);
   avConfigNonEngaged = attach_engagement_class_av_thresholds( ...
-    avConfig, dataStruct, areasToAnalyze, nonEngagedSegs, sharedCollectByArea, 'non-engaged');
+    avConfigNonEngaged, dataStruct, areasToAnalyze, nonEngagedSegs, sharedCollectByArea, ...
+    'non-engaged');
 
   avByClass = struct();
-  fprintf('Total (full session)');
-  if avConfig.enableCircularPermutations
-    fprintf(', with %d circular shuffles', avConfig.nShuffles);
+  if runTotalAvalanches
+    avConfigTotal = avConfig;
+    avConfigTotal.sharedThresholdByArea = sharedCollectByArea;
+    fprintf('Total (full session)');
+    if avConfig.enableCircularPermutations
+      fprintf(', with %d circular shuffles', avConfig.nShuffles);
+    end
+    fprintf('...\n');
+    avByClass.total = run_pooled_avalanche_analysis( ...
+      dataStruct, areasToAnalyze, avConfigTotal, totalSeg, avConfig.enableCircularPermutations);
+  else
+    fprintf('Skipping full-session avalanches (engaged and non-engaged only).\n');
   end
-  fprintf('...\n');
-  avByClass.total = run_pooled_avalanche_analysis( ...
-    dataStruct, areasToAnalyze, avConfigTotal, totalSeg, avConfig.enableCircularPermutations);
   fprintf('Engaged...\n');
   avByClass.engaged = run_pooled_avalanche_analysis( ...
     dataStruct, areasToAnalyze, avConfigEngaged, engagedSegs, false);
@@ -2346,6 +2366,10 @@ for aIdx = 1:nAreas
   hold(axCrack, 'on');
 
   for c = 1:numel(classFields)
+    if ~isfield(avByClass, classFields{c}) || ~isstruct(avByClass.(classFields{c})) ...
+        || ~isfield(avByClass.(classFields{c}), 'byArea')
+      continue;
+    end
     avData = avByClass.(classFields{c}).byArea{aIdx};
     if ~avData.hasAvalanches
       continue;

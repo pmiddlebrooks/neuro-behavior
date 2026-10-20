@@ -1,9 +1,9 @@
 %%
 % Session d2 Distributions (Manuscript)
 %
-% For one session, runs the same AR/d2 pipeline as criticality_ar_across_tasks.m
-% (non-overlapping windows) and plots overlapping probability densities of
-% window-wise d2 (and shuffled d2 when enablePermutations).
+% For one session, runs the AR/d2 pipeline (window length d2Window, stepped by
+% stepSize) and plots overlapping probability densities of window-wise d2
+% (and shuffled d2 when enablePermutations).
 % Spontaneous sessions include sleep windows so the timeline and distributions
 % show them. Across-session means (criticality_*_across_tasks) leave sleep out.
 %
@@ -15,7 +15,8 @@
 %   collectStart     - Window start (seconds from session onset)
 %   collectEnd       - Window end (seconds); [] = session end. If set past the
 %                      recording, plots stop at the session end.
-%   d2Window         - Non-overlapping window length (seconds)
+%   d2Window         - Window length (seconds)
+%   stepSize         - Seconds between window starts (default 5)
 %   d2WindowAlign    - Timeline timestamp: 'center' (default) or 'leadingEdge'
 %                      leadingEdge places d2 at the window end (trailing d2Window)
 %   brainArea              - Single or merged area (e.g. 'M56', 'M23M56'); '' uses all valid areas
@@ -42,6 +43,18 @@
 %   klFitMethod, klErrBars, klParallel - Used only when d2Method = 'kl'
 %   runParallel, nWorkers - If runParallel, start a parpool with nWorkers for KL error bars
 %   saveFigure       - Export PNG/EPS to dropPath/criticality_manuscript
+%   useSessionCache  - If true (default), load and save per-session d2 files
+%                      under dropPath/criticality_manuscript/<task>/[<subject>/]<session>/
+%                      when this analysis config matches. Plot-only options
+%                      (log scale, timeline alignment, figure export) are not
+%                      part of the key. Files are separate from the across-tasks
+%                      AR cache (that pipeline steps by d2Window and drops sleep).
+%   forceRecompute   - If true, ignore the cache and overwrite it
+%   forceRecomputeSessionTypes - Cell of session types to recompute even when
+%                      useSessionCache is on (e.g. {'spontaneous'}). Other types
+%                      still load from cache.
+%   forceRecomputeSubject - With forceRecomputeSessionTypes set, only this
+%                      subject is recomputed (e.g. 'ey9387')
 %   plotConfig       - Axis fonts/line widths (see fill_manuscript_plot_config)
 %   splitExcitatoryInhibitory - If true, run combined (E+I), excitatory, and inhibitory;
 %                               also plots mean +/- SEM summary across windows;
@@ -74,8 +87,9 @@
 dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
-collectEnd = 120*60;
-d2Window = 45;  % seconds; non-overlapping windows
+% collectEnd = 120*60;
+d2Window = 45;  % seconds; window length
+stepSize = 5;   % seconds between window starts
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge' (window is the trailing d2Window)
 brainArea = 'M23M56';
 % brainArea = 'VS';
@@ -83,7 +97,7 @@ brainAreaCombinations = default_manuscript_brain_area_combinations();
 useLog10D2 = false;
 useSubsampling = false;
 nSubsamples = 20;
-nNeuronsSubsample = 55;
+nNeuronsSubsample = 75;
 minNeuronsMultiple = 1.1;
 enablePermutations = false;  % if true, circular shuffles per window for shuffled d2
 nPermutations = 5;  % used only when enablePermutations
@@ -91,13 +105,17 @@ plotD2PopActivity = true;
 plotD2Timeline = true;  % mean pop per d2 window | d2 vs time | ethogram
 useRelativeTime = false;  % false: absolute session time (default); true: t=0 at collectStart
 binSize = 0.04;  % s; spike binning for d2 (and window mean popActivity)
-d2Method = 'kl';         % 'euclidean' or 'kl'
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
 runParallel = true;
 nWorkers = 3;  % used only when runParallel is true; capped at feature('numcores')
 klParallel = runParallel;
 saveFigure = false;
+useSessionCache = true;   % per-session d2 files; reload when this config matches
+forceRecompute = false;   % true: reprocess and overwrite this session's cache
+forceRecomputeSessionTypes = {};  % e.g. {'spontaneous'} recomputes only that type
+forceRecomputeSubject = '';       % e.g. 'ey9387'; with session types set, only this subject
 
 plotConfig = fill_manuscript_plot_config();
 splitExcitatoryInhibitory = false;
@@ -123,7 +141,7 @@ opts.loadBehaviorLabels = true;
 
 analysisConfig = struct();
 analysisConfig.slidingWindowSize = d2Window;
-analysisConfig.stepSize = 5;
+analysisConfig.stepSize = stepSize;
 analysisConfig.binSize = binSize;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;
@@ -170,8 +188,8 @@ d2WindowAlign = normalize_d2_window_align(d2WindowAlign);
 
 fprintf('\n=== Session d2 Distributions ===\n');
 fprintf('Session [%s]: %s\n', sessionType, sessionName);
-fprintf('d2 windows: %.1f s (%s); binSize: %.3f s\n', ...
-    d2Window, d2WindowAlign, binSize);
+fprintf('d2 windows: %.1f s, step %.1f s (%s); binSize: %.3f s\n', ...
+    d2Window, stepSize, d2WindowAlign, binSize);
 fprintf('d2Method: %s\n', d2Method);
 if strcmp(d2Method, 'kl')
     fprintf('KL fit: %s; klErrBars=%d; klParallel=%d; nWorkers=%d\n', ...
@@ -197,7 +215,13 @@ end
 if splitExcitatoryInhibitory
     fprintf('E/I split: on (widthCutoff = %.3f ms)\n', widthCutoff);
 end
-maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
+fprintf('useSessionCache: %d; forceRecompute: %d\n', useSessionCache, forceRecompute);
+if ~isempty(forceRecomputeSessionTypes)
+    fprintf('forceRecomputeSessionTypes: %s\n', strjoin(cellstr(forceRecomputeSessionTypes), ', '));
+end
+if ~isempty(forceRecomputeSubject)
+    fprintf('forceRecomputeSubject: %s\n', strjoin(cellstr(forceRecomputeSubject), ', '));
+end
 
 % Load session and run d2 analysis
 subjectNameForLoad = '';
@@ -247,19 +271,56 @@ if splitExcitatoryInhibitory
     eiPopActivityResults = cell(1, numel(cellTypesToRun));
 end
 
+cacheOpts = struct( ...
+    'useSessionCache', useSessionCache, ...
+    'forceRecompute', forceRecompute, ...
+    'forceRecomputeSessionTypes', {forceRecomputeSessionTypes}, ...
+    'forceRecomputeSubject', {forceRecomputeSubject}, ...
+    'brainArea', brainArea, ...
+    'collectStart', collectStart, ...
+    'collectEnd', collectEnd, ...
+    'd2Window', d2Window, ...
+    'binSize', binSize, ...
+    'useSubsampling', useSubsampling, ...
+    'nSubsamples', nSubsamples, ...
+    'nNeuronsSubsample', nNeuronsSubsample, ...
+    'pcaFlag', analysisConfig.pcaFlag, ...
+    'pcaFirstFlag', analysisConfig.pcaFirstFlag, ...
+    'nDim', analysisConfig.nDim, ...
+    'd2Method', analysisConfig.d2Method, ...
+    'klFitMethod', analysisConfig.klFitMethod, ...
+    'klErrBars', analysisConfig.klErrBars, ...
+    'restrictToAwake', analysisConfig.restrictToAwake, ...
+    'dataSource', dataSource, ...
+    'widthCutoff', widthCutoff, ...
+    'minFiringRate', opts.minFiringRate, ...
+    'maxFiringRate', opts.maxFiringRate, ...
+    'firingRateCheckTime', opts.firingRateCheckTime);
+
+klPoolStarted = false;
 for iCellRun = 1:numel(cellTypesToRun)
     cellType = cellTypesToRun{iCellRun};
-    dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, widthCutoff, splitExcitatoryInhibitory);
-
-    [dataStructRun, ~] = apply_manuscript_brain_area_selection(dataStructRun, brainArea, brainAreaCombinations);
-
-    results = criticality_ar_analysis(dataStructRun, analysisConfig);
-
-    if ~isempty(brainArea)
-        results = filter_ar_results_to_brain_area(results, brainArea);
-        if isempty(results.areas)
-            error('No d2 results for brain area "%s" (%s).', brainArea, cell_type_label(cellType));
+    [results, didLoadCache] = load_session_d2_cached_results( ...
+        cacheOpts, analysisConfig, sessionType, sessionName, subjectNameForLoad, cellType);
+    if didLoadCache
+        fprintf('  Loaded cached d2 results (%s).\n', cell_type_label(cellType));
+    else
+        if ~klPoolStarted
+            maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
+            klPoolStarted = true;
         end
+        dataStructRun = prepare_session_data_for_cell_type(dataStruct, paths, cellType, widthCutoff, splitExcitatoryInhibitory);
+        [dataStructRun, ~] = apply_manuscript_brain_area_selection(dataStructRun, brainArea, brainAreaCombinations);
+
+        results = criticality_ar_analysis(dataStructRun, analysisConfig);
+        if ~isempty(brainArea)
+            results = filter_ar_results_to_brain_area(results, brainArea);
+            if isempty(results.areas)
+                error('No d2 results for brain area "%s" (%s).', brainArea, cell_type_label(cellType));
+            end
+        end
+        save_session_d2_cached_results(results, cacheOpts, analysisConfig, ...
+            sessionType, sessionName, subjectNameForLoad, cellType);
     end
 
     print_session_d2_summary(results, useLog10D2);
@@ -429,6 +490,217 @@ fprintf('\n=== Done ===\n');
 
 
 %% Local functions
+
+function [results, didLoad] = load_session_d2_cached_results( ...
+    cacheOpts, analysisConfig, sessionType, sessionName, subjectName, cellType)
+% LOAD_SESSION_D2_CACHED_RESULTS - Window-wise d2 when this config was saved
+%
+% Variables:
+%   cacheOpts      - Cache switches and shared key fields (area, window, bin, ...)
+%   analysisConfig - d2 settings that must match the saved run
+%   sessionType, sessionName, subjectName, cellType - Session and population
+%
+% Returns:
+%   results - criticality_ar_analysis output after the brain-area filter, or []
+%   didLoad - True when a matching cache file was used
+
+results = [];
+didLoad = false;
+if skip_manuscript_session_cache_load(cacheOpts, sessionType, subjectName)
+    return;
+end
+cacheParams = make_session_d2_cache_params( ...
+    cacheOpts, analysisConfig, sessionType, sessionName, subjectName, cellType);
+cacheFile = session_d2_cache_filepath(sessionType, sessionName, subjectName, cacheParams);
+[results, didLoad] = try_load_session_d2_cache(cacheFile, cacheParams);
+end
+
+function save_session_d2_cached_results(results, cacheOpts, analysisConfig, ...
+    sessionType, sessionName, subjectName, cellType)
+% SAVE_SESSION_D2_CACHED_RESULTS - Store window-wise d2 for this config
+%
+% Variables:
+%   results        - Area-filtered criticality_ar_analysis output
+%   cacheOpts      - Cache switches and shared key fields
+%   analysisConfig - d2 settings written into the cache key
+%   sessionType, sessionName, subjectName, cellType - Session and population
+%
+% Goal:
+%   Write the same per-session folder layout as the across-tasks runners,
+%   under a session_d2 kind so a different window step is not reused as AR.
+
+if ~use_manuscript_session_cache(cacheOpts)
+    return;
+end
+cacheParams = make_session_d2_cache_params( ...
+    cacheOpts, analysisConfig, sessionType, sessionName, subjectName, cellType);
+cacheFile = session_d2_cache_filepath(sessionType, sessionName, subjectName, cacheParams);
+save_manuscript_session_cache(cacheFile, results, cacheParams);
+end
+
+function cacheParams = make_session_d2_cache_params( ...
+    cacheOpts, analysisConfig, sessionType, sessionName, subjectName, cellType)
+% MAKE_SESSION_D2_CACHE_PARAMS - Key for one session d2 distribution run
+%
+% Variables:
+%   cacheOpts      - Fields consumed by make_manuscript_session_cache_params
+%   analysisConfig - Full d2 config (step, permutations, spike QC, ...)
+%   sessionType, sessionName, subjectName, cellType - Session and population
+%
+% Returns:
+%   cacheParams - Shared manuscript keys plus settings this script can change
+
+cacheParams = make_manuscript_session_cache_params('session_d2', cacheOpts, sessionType);
+cacheParams = align_spontaneous_awake_cache(cacheParams, sessionType, subjectName, sessionName);
+cacheParams.cellType = cellType;
+cacheParams.stepSize = analysisConfig.stepSize;
+cacheParams.dataSource = char(cacheOpts.dataSource);
+cacheParams.enablePermutations = logical(analysisConfig.enablePermutations);
+if cacheParams.enablePermutations
+    cacheParams.nShuffles = analysisConfig.nShuffles;
+else
+    cacheParams.nShuffles = 0;
+end
+cacheParams.normalizeD2 = logical(analysisConfig.normalizeD2);
+cacheParams.minNeuronsMultiple = analysisConfig.minNeuronsMultiple;
+cacheParams.nMinNeurons = analysisConfig.nMinNeurons;
+cacheParams.widthCutoff = cacheOpts.widthCutoff;
+cacheParams.minFiringRate = cacheOpts.minFiringRate;
+cacheParams.maxFiringRate = cacheOpts.maxFiringRate;
+cacheParams.firingRateCheckTime = cacheOpts.firingRateCheckTime;
+cacheParams.pOrder = analysisConfig.pOrder;
+cacheParams.critType = analysisConfig.critType;
+cacheParams.minSpikesPerBin = analysisConfig.minSpikesPerBin;
+cacheParams.minBinsPerWindow = analysisConfig.minBinsPerWindow;
+cacheParams.maxSpikesPerBin = analysisConfig.maxSpikesPerBin;
+end
+
+function cacheFile = session_d2_cache_filepath(sessionType, sessionName, subjectName, cacheParams)
+% SESSION_D2_CACHE_FILEPATH - Shared cache path plus this script's extra key
+%
+% Variables:
+%   sessionType, sessionName, subjectName - Session identity
+%   cacheParams - Output of make_session_d2_cache_params
+%
+% Returns:
+%   cacheFile - .mat path. The suffix keeps step, permutations, data source,
+%               neuron floors, width cutoff, and firing-rate filters from
+%               colliding with another run that shares the AR filename fields.
+
+cacheFile = manuscript_session_cache_filepath(sessionType, sessionName, subjectName, cacheParams);
+[cacheDir, cacheName, cacheExt] = fileparts(cacheFile);
+tag = sprintf('_step%s_%s_%s_nmin%s_mm%s_w%s_%s', ...
+    session_d2_number_tag(cacheParams.stepSize), ...
+    session_d2_perm_tag(cacheParams), ...
+    matlab.lang.makeValidName(char(cacheParams.dataSource)), ...
+    session_d2_number_tag(cacheParams.nMinNeurons), ...
+    session_d2_number_tag(cacheParams.minNeuronsMultiple), ...
+    session_d2_number_tag(cacheParams.widthCutoff), ...
+    session_d2_firing_rate_tag(cacheParams));
+cacheFile = fullfile(cacheDir, [cacheName, tag, cacheExt]);
+end
+
+function [payload, didLoad] = try_load_session_d2_cache(cacheFile, cacheParams)
+% TRY_LOAD_SESSION_D2_CACHE - Load payload when shared and extra keys match
+%
+% Variables:
+%   cacheFile   - Path from session_d2_cache_filepath
+%   cacheParams - Requested key
+%
+% Returns:
+%   payload - Saved results, or []
+%   didLoad - True only when both the shared matcher and the extra fields agree
+
+[payload, didLoad] = try_load_manuscript_session_cache(cacheFile, cacheParams);
+if ~didLoad
+    return;
+end
+loaded = load(cacheFile, 'cacheParams');
+if ~isfield(loaded, 'cacheParams') || ~session_d2_cache_extras_match(cacheParams, loaded.cacheParams)
+    payload = [];
+    didLoad = false;
+end
+end
+
+function tf = session_d2_cache_extras_match(requested, stored)
+% SESSION_D2_CACHE_EXTRAS_MATCH - True when script-specific keys agree
+%
+% Variables:
+%   requested, stored - cacheParams structs
+%
+% Goal:
+%   The shared matcher ignores step size, permutations, and neuron filters.
+%   Those fields change the d2 series this script plots.
+
+extraFields = { ...
+    'stepSize', 'dataSource', 'enablePermutations', 'nShuffles', 'normalizeD2', ...
+    'minNeuronsMultiple', 'nMinNeurons', 'widthCutoff', ...
+    'minFiringRate', 'maxFiringRate', 'firingRateCheckTime', ...
+    'pOrder', 'critType', 'minSpikesPerBin', 'minBinsPerWindow', 'maxSpikesPerBin'};
+tf = false;
+if ~isstruct(requested) || ~isstruct(stored)
+    return;
+end
+for iField = 1:numel(extraFields)
+    fieldName = extraFields{iField};
+    if ~isfield(requested, fieldName) || ~isfield(stored, fieldName)
+        return;
+    end
+    if ~session_d2_cache_values_equal(requested.(fieldName), stored.(fieldName))
+        return;
+    end
+end
+tf = true;
+end
+
+function tf = session_d2_cache_values_equal(a, b)
+% SESSION_D2_CACHE_VALUES_EQUAL - Char-normalized equality for cache fields
+
+if isstring(a)
+    a = char(a);
+end
+if isstring(b)
+    b = char(b);
+end
+tf = isequaln(a, b);
+end
+
+function tag = session_d2_perm_tag(cacheParams)
+% SESSION_D2_PERM_TAG - Filename token for circular shuffles
+
+if isfield(cacheParams, 'enablePermutations') && cacheParams.enablePermutations
+    tag = sprintf('perm%s', session_d2_number_tag(cacheParams.nShuffles));
+else
+    tag = 'permoff';
+end
+end
+
+function tag = session_d2_firing_rate_tag(cacheParams)
+% SESSION_D2_FIRING_RATE_TAG - Filename token for rate inclusion filters
+
+tag = sprintf('fr%sto%s', ...
+    session_d2_number_tag(cacheParams.minFiringRate), ...
+    session_d2_number_tag(cacheParams.maxFiringRate));
+checkTime = [];
+if isfield(cacheParams, 'firingRateCheckTime')
+    checkTime = cacheParams.firingRateCheckTime;
+end
+if isnumeric(checkTime) && isscalar(checkTime) && isfinite(checkTime)
+    tag = sprintf('%s_t%s', tag, session_d2_number_tag(checkTime));
+end
+end
+
+function tag = session_d2_number_tag(value)
+% SESSION_D2_NUMBER_TAG - Filesystem-safe token for one numeric cache field
+
+if isempty(value) || ~isnumeric(value) || ~isscalar(value) || ~isfinite(value)
+    tag = 'na';
+    return;
+end
+tag = strrep(sprintf('%.4g', value), '.', 'p');
+tag = strrep(tag, '-', 'm');
+tag = strrep(tag, '+', '');
+end
 
 function engOut = run_session_d2_engagement(sessionType, sessionName, subjectName, opts, ...
     analysisConfig, brainArea, brainAreaCombinations, d2Window, useLog10D2, ...

@@ -17,8 +17,8 @@ sessionFolder = fullfile(opts.dataPath, opts.sessionName);
 
 switch dataType
     case 'behavior'
-        % Frame-wise behavior_labels*.csv (session root, or session/behavior).
-        % Interval ethograms are bout tables: session/behavior/bouts.csv.
+        % Frame-wise behavior_labels*.csv live in session/behavior.
+        % Interval ethograms may instead be session/behavior/bouts.csv.
         [searchPath, behaviorFileKind] = resolve_behavior_file(sessionFolder);
         if strcmp(behaviorFileKind, 'bouts')
             data = load_behavior_bouts(fullfile(searchPath, 'bouts.csv'), opts);
@@ -254,20 +254,13 @@ function [searchPath, behaviorFileKind] = resolve_behavior_file(sessionFolder)
 %   sessionFolder - Session directory (parent of an optional behavior folder)
 %
 % Goal:
-%   Frame-wise behavior_labels*.csv in the session root stay where they are
-%   (spontaneous). Interval task ethograms live in sessionFolder/behavior
-%   (behavior_labels*.csv or bouts.csv).
+%   Frame-wise behavior_labels*.csv live in sessionFolder/behavior.
+%   Interval task ethograms may instead be bouts.csv in that folder.
+%   A file left in the session root is used only if behavior/ has none.
 %
 % Returns:
 %   searchPath       - Folder that contains the behavior file
 %   behaviorFileKind - 'labels' or 'bouts'
-
-labelHere = dir(fullfile(sessionFolder, 'behavior_labels*.csv'));
-if ~isempty(labelHere)
-    searchPath = sessionFolder;
-    behaviorFileKind = 'labels';
-    return;
-end
 
 behaviorDir = fullfile(sessionFolder, 'behavior');
 if isfolder(behaviorDir)
@@ -282,6 +275,13 @@ if isfolder(behaviorDir)
         behaviorFileKind = 'bouts';
         return;
     end
+end
+
+labelHere = dir(fullfile(sessionFolder, 'behavior_labels*.csv'));
+if ~isempty(labelHere)
+    searchPath = sessionFolder;
+    behaviorFileKind = 'labels';
+    return;
 end
 
 if isfile(fullfile(sessionFolder, 'bouts.csv'))

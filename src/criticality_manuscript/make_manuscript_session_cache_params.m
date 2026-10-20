@@ -86,6 +86,11 @@ if nargin >= 3 && ~isempty(sessionType) ...
     cacheParams.awakeOnly = logical(opts.restrictToAwake);
   end
 end
+cacheParams.perSegmentThreshold = false;
+if strcmp(kindGroup, 'av') && strcmp(cacheParams.kind, 'engagement_av')
+  % Engagement AV caches one threshold per engaged/non-engaged segment.
+  cacheParams.perSegmentThreshold = true;
+end
 end
 
 function binSize = resolve_cache_bin_size(kindGroup, opts)

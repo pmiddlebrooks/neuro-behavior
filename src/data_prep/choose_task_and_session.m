@@ -78,8 +78,8 @@ sessionName = 'ey9166_2026_03_27';  %
 % sessionName = 'ey9387_2026_05_11';  % Don't use: depths are all weird - looks like only a small portion of M56/M23
 
 % Leonidis
-% subjectName = 'ey9755';
-% sessionName = 'ey9755_2026_10_08';
+subjectName = 'ey9755';
+sessionName = 'ey9755_2026_10_08';
 %% =============================    Interval Data Loading    =============================
 % Data type selection
 sessionType = 'interval';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'

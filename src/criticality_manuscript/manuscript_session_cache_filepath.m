@@ -59,9 +59,9 @@ pcaTag = format_pca_file_tag( ...
   get_cache_field(cacheParams, 'nDim'), ...
   get_cache_field(cacheParams, 'pcaFirstFlag'));
 
-fileName = sprintf('%s%s_%s_%s_%s_%s_%s%s%s.mat', ...
+fileName = sprintf('%s%s_%s_%s_%s_%s_%s%s%s%s.mat', ...
   kindTag, cellTag, areaTag, collectTag, windowTag, binTag, subTag, pcaTag, ...
-  format_d2_method_cache_tag(cacheParams));
+  format_d2_method_cache_tag(cacheParams), format_per_segment_cache_tag(cacheParams));
 cacheFile = fullfile(sessDir, fileName);
 end
 
@@ -104,6 +104,18 @@ if isfield(cacheParams, 'binSizeD2') && ~isempty(cacheParams.binSizeD2) ...
   binTag = sprintf('%s_%dms', prefix, round(cacheParams.binSizeD2 * 1000));
 else
   binTag = sprintf('%s_na', prefix);
+end
+end
+
+function tag = format_per_segment_cache_tag(cacheParams)
+% FORMAT_PER_SEGMENT_CACHE_TAG - Distinct file when each segment has its own cutoff
+tag = '';
+kindGroup = manuscript_session_cache_kind_group(cacheParams.kind);
+if ~strcmp(kindGroup, 'av')
+  return;
+end
+if isfield(cacheParams, 'perSegmentThreshold') && isequal(cacheParams.perSegmentThreshold, true)
+  tag = '_seg';
 end
 end
 

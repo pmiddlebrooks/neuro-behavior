@@ -9,10 +9,11 @@
 %
 % Variables (configure in this section):
 %   sessionTypes, dataSource, collectStart, collectEnd
-%   avWindow - Avalanche tile (s); [] = full collect / class-level threshold.
-%              When set, each tile gets its own threshold. Engaged and
-%              non-engaged always use distinct class-level (or per-tile)
-%              cutoffs — not one threshold shared across engagement classes.
+%   avWindow - Avalanche tile (s) for the total class and for spontaneous;
+%              [] = full collect, one shared threshold. When set, each tile
+%              gets its own threshold and events are pooled for one fit.
+%              Each engaged segment and each non-engaged segment is one
+%              window with its own threshold; avWindow does not tile them.
 %   brainArea, brainAreaCombinations, areasToPlot
 %   runBatch, plotResults, saveBatchResults, batchResultsFile
 %   powerLawFitMethod, avalancheDetectionMode, thresholdMethod, gofThreshold
@@ -86,10 +87,12 @@ end
 fprintf('\n=== Criticality Avalanche Across Task Types (Engagement) ===\n');
 fprintf('Collect window: [%.1f, %s] s\n', collectStart, format_collect_end_label(collectEnd));
 if isempty(avWindow)
-  fprintf(['AV window: full collect (distinct thresholds for total / ', ...
-    'engaged / non-engaged)\n']);
+  fprintf(['AV window: full collect for total. Engaged and non-engaged: ', ...
+    'each segment is one window with its own threshold.\n']);
 else
-  fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
+  fprintf(['AV window: %.0f s for total (per-window thresholds; pool events, one fit). ', ...
+    'Engaged and non-engaged: each segment is one window with its own threshold.\n'], ...
+    avWindow);
 end
 fprintf('Power-law fit: %s | detection: %s | threshold: %s\n', ...
   powerLawFitMethod, avalancheDetectionMode, thresholdMethod);
@@ -348,6 +351,9 @@ engOpts.pcaFlag = analysisConfig.pcaFlag;
 engOpts.pcaFirstFlag = analysisConfig.pcaFirstFlag;
 engOpts.nDim = analysisConfig.nDim;
 engOpts.minNonEngagedWindow = minNonEngagedWindow;
+% Total class still tiles by avWindow when it is set. Engaged and
+% non-engaged segments each get their own threshold; the engagement
+% modules ignore avWindow for those classes.
 if nargin >= 21
   engOpts.avWindow = avWindow;
 else

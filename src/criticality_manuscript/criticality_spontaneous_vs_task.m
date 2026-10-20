@@ -32,11 +32,11 @@
 %   across-tasks manuscript plots.
 
 %% Configuration
-subjectName = 'ey9387';
+subjectName = 'ey9166';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
 % taskTypes = {'interval', 'reach'};
-taskTypes = {'interval'};
-d2Method = 'kl';         % 'euclidean' or 'kl'
+% taskTypes = {'interval'};
+d2Method = 'euclidean';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
@@ -86,13 +86,13 @@ brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 
 % Pipeline selection — any combination of d2 (AR), avalanche (AV), PRG
-runArBatch = true;   % d2
+runArBatch = false;   % d2
 runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
 forceRecompute = false;   % true: reprocess and overwrite per-session cache
-forceRecomputeSessionTypes = {'spontaneous'};  % e.g. {'spontaneous'} recomputes only that type
+forceRecomputeSessionTypes = {'interval', 'semicircle'};  % e.g. {'spontaneous'} recomputes only that type
 forceRecomputeSubject = '';       % e.g. 'ey9387'; with session types set, only this subject
 plotResults = true;
 plotMetricPairScatters = true;
@@ -106,12 +106,12 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged / non-engaged plots (spontaneous on both)
+splitByEngagement = true;  % true: engaged (open) and non-engaged (filled) on one plot
 
 useLog10D2 = false;
-useSubsampling = true;
+useSubsampling = false;
 nSubsamples = 40;
-nNeuronsSubsample = 50;
+nNeuronsSubsample = 75;
 minNeuronsMultiple = 1.1;
 
 powerLawFitMethod = 'plfit2023';
@@ -177,13 +177,19 @@ else
 end
 if isempty(avWindow)
   if splitByEngagement
-    fprintf(['AV window: full collect (distinct thresholds for total / ', ...
-      'engaged / non-engaged)\n']);
+    fprintf(['AV window: full collect for total. Engaged and non-engaged: ', ...
+      'each segment is one window with its own threshold.\n']);
   else
     fprintf('AV window: full collect (one shared threshold)\n');
   end
 else
-  fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
+  if splitByEngagement
+    fprintf(['AV window: %.0f s for total (per-window thresholds; pool events, one fit). ', ...
+      'Engaged and non-engaged: each segment is one window with its own threshold.\n'], ...
+      avWindow);
+  else
+    fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
+  end
 end
 fprintf('binSizeD2: %.3f s; binSizePrg: %.3f s; binSizeAv: %.3f s\n', ...
   binSizeD2, binSizePrg, binSizeAv);
@@ -284,9 +290,19 @@ else
   fprintf('Skipping AR (d2) batch.\n');
 end
 
-% AV batch (tau, alpha, paramSD, decades, dcc)
+% AV batch (tau, alpha, paramSD, decades, dcc). With splitByEngagement,
+% interval/reach/semicircle avalanches come from engaged and non-engaged
+% segments only. Spontaneous and other non-engagement types stay full-session.
+avSessionTypes = sessionTypes;
+if splitByEngagement
+  keepFullAv = false(size(sessionTypes));
+  for iType = 1:numel(sessionTypes)
+    keepFullAv(iType) = ~is_manuscript_engagement_session_type(sessionTypes{iType});
+  end
+  avSessionTypes = sessionTypes(keepFullAv);
+end
 avOpts = struct( ...
-  'sessionTypes', {sessionTypes}, ...
+  'sessionTypes', {avSessionTypes}, ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
   'avWindow', avWindow, ...
@@ -312,8 +328,16 @@ avOpts = struct( ...
   'plotResults', false, ...
   'subjectName', subjectName);
 
-if useAv
+if useAv && ~isempty(avSessionTypes)
+  if splitByEngagement && numel(avSessionTypes) < numel(sessionTypes)
+    fprintf(['Full-session AV: %s. Engagement tasks use engaged and ', ...
+      'non-engaged segments only.\n'], strjoin(avSessionTypes, ', '));
+  end
   avOut = criticality_av_across_tasks(avOpts);
+elseif useAv
+  avOut = [];
+  fprintf(['Skipping full-session AV batch (splitByEngagement: engaged and ', ...
+    'non-engaged segments only).\n']);
 else
   avOut = [];
   fprintf('Skipping AV batch.\n');
@@ -521,7 +545,7 @@ if plotResults
       error('No common brain areas for engagement paired plots.');
     end
 
-    % Shared maps + y-limits across engaged/non-engaged so sister axes match
+    % Shared maps + y-limits so engaged and non-engaged share one scale
     if ~isempty(metricsToPlot)
       sharedByArea = compute_shared_engagement_plot_scales(classViews, plotAreas, ...
         sessionTypes, metricsToPlot, anchorMetric, useAnchorAffineMap);
@@ -534,30 +558,32 @@ if plotResults
         classViews, plotAreas, sessionTypes, metricsToPlot, enablePermutations, activeAnalyses);
     end
 
-    for iClass = 1:numel(engagementClasses)
-      engClass = engagementClasses{iClass};
-      fprintf('Areas (%s): %s\n', engClass, strjoin(plotAreas, ', '));
-      if ~isempty(metricsToPlot)
-        plot_multimetric_d2_tau_alpha_across_tasks( ...
-          classViews.(engClass).ar, classViews.(engClass).av, plotAreas, ...
-          sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-          plotConfig, anchorMetric, engClass, metricsToPlot, sharedByArea, useAnchorAffineMap, ...
-          useSubsampling, nNeuronsSubsample, avWindow, pcaFileTag);
-      end
-      if plotSeparatedMetrics
-        plot_multimetric_separated_axes_across_tasks( ...
-          classViews.(engClass).ar, classViews.(engClass).av, classViews.(engClass).prg, ...
-          plotAreas, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
-          useLog10D2, plotConfig, engClass, metricsToPlot, classViews.(engClass).av, ...
-          finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample, ...
-          activeAnalyses, avWindow, binSizeD2, pcaFileTag, sharedSeparatedYLim);
-      end
-      if plotMetricPairScatters
-        plot_multimetric_pair_scatters_across_tasks( ...
-          classViews.(engClass).ar, classViews.(engClass).av, plotAreas, ...
-          sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
-          plotConfig, engClass, useSubsampling, nNeuronsSubsample, activeAnalyses, avWindow, pcaFileTag);
-      end
+    fprintf('Areas (engaged + non-engaged): %s\n', strjoin(plotAreas, ', '));
+    engagedOverlay = struct( ...
+      'ar', classViews.engaged.ar, ...
+      'av', classViews.engaged.av, ...
+      'prg', classViews.engaged.prg);
+    if ~isempty(metricsToPlot)
+      plot_multimetric_d2_tau_alpha_across_tasks( ...
+        classViews.nonEngaged.ar, classViews.nonEngaged.av, plotAreas, ...
+        sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
+        plotConfig, anchorMetric, 'engagement', metricsToPlot, sharedByArea, useAnchorAffineMap, ...
+        useSubsampling, nNeuronsSubsample, avWindow, pcaFileTag, engagedOverlay);
+    end
+    if plotSeparatedMetrics
+      plot_multimetric_separated_axes_across_tasks( ...
+        classViews.nonEngaged.ar, classViews.nonEngaged.av, classViews.nonEngaged.prg, ...
+        plotAreas, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
+        useLog10D2, plotConfig, 'engagement', metricsToPlot, classViews.nonEngaged.av, ...
+        finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample, ...
+        activeAnalyses, avWindow, binSizeD2, pcaFileTag, sharedSeparatedYLim, engagedOverlay);
+    end
+    if plotMetricPairScatters
+      plot_multimetric_pair_scatters_across_tasks( ...
+        classViews.nonEngaged.ar, classViews.nonEngaged.av, plotAreas, ...
+        sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
+        plotConfig, 'engagement', useSubsampling, nNeuronsSubsample, activeAnalyses, avWindow, ...
+        pcaFileTag, engagedOverlay);
     end
   end
 else
@@ -1071,7 +1097,7 @@ end
 function plot_multimetric_d2_tau_alpha_across_tasks(arPlotData, avPlotData, areasToPlot, ...
     sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
     plotConfig, anchorMetric, engagementTag, metricsToPlot, sharedByArea, useAnchorAffineMap, ...
-    useSubsampling, nNeuronsSubsample, avWindow, pcaFileTag)
+    useSubsampling, nNeuronsSubsample, avWindow, pcaFileTag, engagedOverlay)
 % PLOT_MULTIMETRIC_D2_TAU_ALPHA_ACROSS_TASKS - Aligned d2/tau/alpha session plot
 %
 % Variables:
@@ -1108,6 +1134,11 @@ end
 if nargin < 20 || isempty(pcaFileTag)
   pcaFileTag = '';
 end
+if nargin < 21 || isempty(engagedOverlay)
+  engagedOverlay = struct();
+end
+hasEngagedOverlay = isstruct(engagedOverlay) && isfield(engagedOverlay, 'ar') ...
+  && isfield(engagedOverlay, 'av');
 metricsToPlot = normalize_metrics_to_plot(metricsToPlot);
 anchorMetric = lower(char(anchorMetric));
 validAnchors = {'d2', 'tau', 'alpha'};
@@ -1155,7 +1186,18 @@ for a = 1:numel(areasToPlot)
   end
 
   sessionTable = build_multimetric_session_table(arPlotData, avPlotData, sessionTypes, ...
-    areaIdxAr, areaIdxAv, metricsToPlot, strcmpi(engagementTag, 'nonEngaged'));
+    areaIdxAr, areaIdxAv, metricsToPlot, ...
+    strcmpi(engagementTag, 'nonEngaged') || hasEngagedOverlay);
+  engagedSessionTable = table();
+  if hasEngagedOverlay
+    engAreaIdxAr = find(strcmp(engagedOverlay.ar.areas, areaName), 1);
+    engAreaIdxAv = find(strcmp(engagedOverlay.av.areas, areaName), 1);
+    if ~isempty(engAreaIdxAr) && ~isempty(engAreaIdxAv)
+      engagedSessionTable = build_multimetric_session_table( ...
+        engagedOverlay.ar, engagedOverlay.av, sessionTypes, ...
+        engAreaIdxAr, engAreaIdxAv, metricsToPlot, true);
+    end
+  end
   if isempty(sessionTable)
     fprintf('Skipping %s: no aligned sessions for metrics [%s].\n', ...
       areaName, strjoin(metricsToPlot, ', '));
@@ -1268,14 +1310,37 @@ for a = 1:numel(areasToPlot)
         xMetric = xPos(iSess) + xOffsets(m);
         yMetric = yVals.(metricName)(rowIdx(iSess));
         ySem = ySems.(metricName)(rowIdx(iSess));
-        if ~(isfinite(xMetric) && isfinite(yMetric))
+        if isfinite(xMetric) && isfinite(yMetric)
+          hMetric = plot_metric_errorbar_group(axMain, xMetric, yMetric, ySem, ...
+            metricMarkers.(metricName), taskColor, faceColor, plotConfig);
+          if isempty(legendHandles) || ~ismember(metricLabels.(metricName), legendLabels)
+            legendHandles(end + 1) = hMetric; %#ok<AGROW>
+            legendLabels{end + 1} = metricLabels.(metricName); %#ok<AGROW>
+          end
+        end
+        if ~(isfinite(xMetric)) || ~hasEngagedOverlay ...
+            || ~is_manuscript_engagement_session_type(sessionType) ...
+            || isempty(engagedSessionTable)
           continue;
         end
-        hMetric = plot_metric_errorbar_group(axMain, xMetric, yMetric, ySem, ...
-          metricMarkers.(metricName), taskColor, faceColor, plotConfig);
-        if isempty(legendHandles) || ~ismember(metricLabels.(metricName), legendLabels)
-          legendHandles(end + 1) = hMetric; %#ok<AGROW>
-          legendLabels{end + 1} = metricLabels.(metricName); %#ok<AGROW>
+        if hasEngagedOverlay && is_manuscript_engagement_session_type(sessionType) ...
+            && ~isempty(engagedSessionTable)
+          engRow = find_overlay_session_row(engagedSessionTable, sessionType, ...
+            sessionTable.sessionName{rowIdx(iSess)});
+          if ~isempty(engRow)
+            yEng = apply_metric_affine_map( ...
+              engagedSessionTable.([metricName, 'Mean'])(engRow), maps.(metricName));
+            yEngSem = abs(maps.(metricName).gain) * ...
+              engagedSessionTable.([metricName, 'Sem'])(engRow);
+            if isfinite(yEng)
+              hOpen = plot_metric_errorbar_group(axMain, xMetric, yEng, yEngSem, ...
+                'o', taskColor, 'none', plotConfig);
+              if ~ismember('engaged', legendLabels)
+                legendHandles(end + 1) = hOpen; %#ok<AGROW>
+                legendLabels{end + 1} = 'engaged'; %#ok<AGROW>
+              end
+            end
+          end
         end
       end
     end
@@ -1312,11 +1377,24 @@ for a = 1:numel(areasToPlot)
     end
   end
   if isempty(yLimPlot) || ~all(isfinite(yLimPlot))
-    warning('criticality_multiple_metrics_across_tasks:EmptyYLim', ...
+    warning('criticality_spontaneous_vs_task:EmptyYLim', ...
       'Skipping %s: could not compute y-limits for anchor metric "%s".', ...
       areaName, anchorMetric);
     close(fig);
     continue;
+  end
+  if hasEngagedOverlay && ~isempty(engagedSessionTable)
+    yExtra = [];
+    for mExtra = 1:nMetrics
+      extraName = metricsToPlot{mExtra};
+      yExtra = [yExtra; apply_metric_affine_map( ...
+        engagedSessionTable.([extraName, 'Mean']), maps.(extraName))]; %#ok<AGROW>
+    end
+    yExtra = yExtra(isfinite(yExtra));
+    if ~isempty(yExtra)
+      yLimPlot(1) = min(yLimPlot(1), min(yExtra));
+      yLimPlot(2) = max(yLimPlot(2), max(yExtra));
+    end
   end
   ylim(axMain, yLimPlot);
   xlim(axMain, xLimPlot);
@@ -1395,7 +1473,7 @@ function plot_multimetric_separated_axes_across_tasks(arPlotData, avPlotData, pr
     areasToPlot, sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, ...
     useLog10D2, plotConfig, engagementTag, metricsToPlot, avPlotDataDecades, ...
     finalCutoffDivisor, enablePermutations, useSubsampling, nNeuronsSubsample, activeAnalyses, ...
-    avWindow, binSizeD2, pcaFileTag, sharedYLimByArea)
+    avWindow, binSizeD2, pcaFileTag, sharedYLimByArea, engagedOverlay)
 % PLOT_MULTIMETRIC_SEPARATED_AXES_ACROSS_TASKS - 2x4 panels of session metrics
 %
 % Layout:
@@ -1465,6 +1543,11 @@ end
 if nargin < 24 || isempty(sharedYLimByArea)
   sharedYLimByArea = struct();
 end
+if nargin < 25 || isempty(engagedOverlay)
+  engagedOverlay = struct();
+end
+hasEngagedOverlay = isstruct(engagedOverlay) && isfield(engagedOverlay, 'ar') ...
+  && isfield(engagedOverlay, 'av');
 activeAnalyses = fill_active_analyses(activeAnalyses);
 enablePermutations = logical(enablePermutations);
 if isempty(metricsToPlot)
@@ -1591,7 +1674,23 @@ for a = 1:numel(areasToPlot)
   sessionTable = build_separated_metrics_session_table( ...
     arPlotData, avPlotData, prgPlotData, avPlotDataDecades, sessionTypes, ...
     areaIdxAr, areaIdxAv, areaIdxPrg, areaIdxAvDec, topMetrics, ...
-    strcmpi(engagementTag, 'nonEngaged') || numel(activePanelKeys) < 8);
+    strcmpi(engagementTag, 'nonEngaged') || hasEngagedOverlay || numel(activePanelKeys) < 8);
+  engagedSessionTable = table();
+  if hasEngagedOverlay
+    engAreaIdxAr = find(strcmp(engagedOverlay.ar.areas, areaName), 1);
+    engAreaIdxAv = find(strcmp(engagedOverlay.av.areas, areaName), 1);
+    engAreaIdxPrg = [];
+    if isfield(engagedOverlay, 'prg') && isfield(engagedOverlay.prg, 'areas')
+      engAreaIdxPrg = find(strcmp(engagedOverlay.prg.areas, areaName), 1);
+    end
+    if isempty(engAreaIdxAr), engAreaIdxAr = inf; end
+    if isempty(engAreaIdxAv), engAreaIdxAv = inf; end
+    if isempty(engAreaIdxPrg), engAreaIdxPrg = inf; end
+    engagedSessionTable = build_separated_metrics_session_table( ...
+      engagedOverlay.ar, engagedOverlay.av, engagedOverlay.prg, engagedOverlay.av, ...
+      sessionTypes, engAreaIdxAr, engAreaIdxAv, engAreaIdxPrg, engAreaIdxAv, ...
+      topMetrics, true);
+  end
   if isempty(sessionTable)
     fprintf('Skipping separated metrics for %s: no aligned sessions.\n', areaName);
     continue;
@@ -1619,6 +1718,10 @@ for a = 1:numel(areasToPlot)
     if panelIsActive && enablePermutations ...
         && ismember(shuffleField, sessionTable.Properties.VariableNames)
       yLimVals = [yLimVals; sessionTable.(shuffleField)(:)]; %#ok<AGROW>
+    end
+    if hasEngagedOverlay && panelIsActive && ~isempty(engagedSessionTable) ...
+        && ismember(yField, engagedSessionTable.Properties.VariableNames)
+      yLimVals = [yLimVals; engagedSessionTable.(yField)(:)]; %#ok<AGROW>
     end
 
     for t = 1:numel(sessionTypes)
@@ -1664,6 +1767,27 @@ for a = 1:numel(areasToPlot)
 
       plot_metric_errorbar_group(ax, xPos, yPos, ySem, ...
         markerByKey.(metricKey), taskColor, faceColor, plotConfig);
+      if hasEngagedOverlay && panelIsActive && is_manuscript_engagement_session_type(sessionType) ...
+          && ~isempty(engagedSessionTable) ...
+          && ismember(yField, engagedSessionTable.Properties.VariableNames)
+        yEng = nan(numSessions, 1);
+        semEng = nan(numSessions, 1);
+        for iSess = 1:numSessions
+          engRow = find_overlay_session_row(engagedSessionTable, sessionType, ...
+            sessionTable.sessionName{rowIdx(iSess)});
+          if isempty(engRow)
+            continue;
+          end
+          yEng(iSess) = engagedSessionTable.(yField)(engRow);
+          if ismember(semField, engagedSessionTable.Properties.VariableNames)
+            semEng(iSess) = engagedSessionTable.(semField)(engRow);
+          end
+        end
+        if any(isfinite(yEng))
+          plot_metric_errorbar_group(ax, xPos, yEng, semEng, ...
+            'o', taskColor, 'none', plotConfig);
+        end
+      end
 
       for i = 1:numSessions
         xticksCenters(end + 1) = xPos(i); %#ok<AGROW>
@@ -1875,7 +1999,7 @@ end
 function plot_multimetric_pair_scatters_across_tasks(arPlotData, avPlotData, areasToPlot, ...
     sessionTypes, collectStart, collectEnd, d2Window, paths, brainArea, useLog10D2, ...
     plotConfig, engagementTag, useSubsampling, nNeuronsSubsample, activeAnalyses, avWindow, ...
-    pcaFileTag)
+    pcaFileTag, engagedOverlay)
 % PLOT_MULTIMETRIC_PAIR_SCATTERS_ACROSS_TASKS - 2x2 session metric scatters
 %
 % Panels (titles are Y vs X):
@@ -1923,6 +2047,11 @@ end
 if nargin < 17 || isempty(pcaFileTag)
   pcaFileTag = '';
 end
+if nargin < 18 || isempty(engagedOverlay)
+  engagedOverlay = struct();
+end
+hasEngagedOverlay = isstruct(engagedOverlay) && isfield(engagedOverlay, 'ar') ...
+  && isfield(engagedOverlay, 'av');
 activeAnalyses = fill_active_analyses(activeAnalyses);
 engagementTag = char(engagementTag);
 if ~activeAnalyses.ar && ~activeAnalyses.av
@@ -1961,6 +2090,16 @@ for a = 1:numel(areasToPlot)
   if isempty(sessionTable)
     fprintf('Skipping pair scatters for %s: no aligned sessions.\n', areaName);
     continue;
+  end
+  engagedSessionTable = table();
+  if hasEngagedOverlay
+    engAreaIdxAr = find(strcmp(engagedOverlay.ar.areas, areaName), 1);
+    engAreaIdxAv = find(strcmp(engagedOverlay.av.areas, areaName), 1);
+    if isempty(engAreaIdxAr), engAreaIdxAr = inf; end
+    if isempty(engAreaIdxAv), engAreaIdxAv = inf; end
+    engagedSessionTable = build_pair_scatter_session_table( ...
+      engagedOverlay.ar, engagedOverlay.av, sessionTypes, ...
+      engAreaIdxAr, engAreaIdxAv, activeAnalyses);
   end
 
   fig = figure('Color', 'w', 'Name', sprintf('Metric pair scatters — %s', areaName));
@@ -2008,6 +2147,21 @@ for a = 1:numel(areasToPlot)
       if iPair == 1 && (isempty(legendLabels) || ~ismember(sessionType, legendLabels))
         legendHandles(end + 1) = hSc; %#ok<AGROW>
         legendLabels{end + 1} = sessionType; %#ok<AGROW>
+      end
+      if hasEngagedOverlay && is_manuscript_engagement_session_type(sessionType) ...
+          && ~isempty(engagedSessionTable)
+        engMask = strcmp(cellstr(engagedSessionTable.sessionType), sessionType);
+        xEng = engagedSessionTable.(xField)(engMask);
+        yEng = engagedSessionTable.(yField)(engMask);
+        validEng = isfinite(xEng) & isfinite(yEng);
+        if any(validEng)
+          hOpen = scatter_manuscript_open(ax, xEng(validEng), yEng(validEng), ...
+            plotConfig, taskColor);
+          if iPair == 1 && ~ismember('engaged', legendLabels)
+            legendHandles(end + 1) = hOpen; %#ok<AGROW>
+            legendLabels{end + 1} = 'engaged'; %#ok<AGROW>
+          end
+        end
       end
     end
 
@@ -2954,6 +3108,8 @@ elseif strcmpi(engagementTag, 'engaged')
   titleTag = ' | engaged';
 elseif strcmpi(engagementTag, 'nonEngaged')
   titleTag = ' | non-engaged';
+elseif strcmpi(engagementTag, 'engagement')
+  titleTag = ' | open circles = engaged';
 else
   titleTag = sprintf(' | %s', engagementTag);
 end
@@ -3468,26 +3624,19 @@ for s = 1:numSessions
   [cachedPipelines, missingAnalyses] = try_load_engagement_pipeline_caches( ...
     sessionType, sessionName, subjectName, opts, analyses);
 
-  % Prefer full-session AR/PRG caches: engagement d2/PRG are full-containment
-  % window splits of those results. Avalanche class fits cannot be recovered
-  % from full-session AV.
+  % A saved engagement split is the result to reuse. Full-session AR/PRG is
+  % only a fallback when that split is missing, so windows can be classified
+  % without recomputing d2 or PRG. Avalanche class fits cannot be recovered
+  % from a full-session AV cache.
   cachedArResults = [];
   cachedPrgResults = [];
-  if any(strcmpi(analyses, 'd2'))
+  if any(strcmpi(analyses, 'd2')) && isempty(cachedPipelines.d2)
     cachedArResults = try_load_full_session_pipeline_cache( ...
       'ar', sessionType, sessionName, subjectName, opts);
-    if ~isempty(cachedArResults)
-      cachedPipelines.d2 = [];
-      missingAnalyses = union_analysis_list(missingAnalyses, 'd2');
-    end
   end
-  if any(strcmpi(analyses, 'kurtosis'))
+  if any(strcmpi(analyses, 'kurtosis')) && isempty(cachedPipelines.kurtosis)
     cachedPrgResults = try_load_full_session_pipeline_cache( ...
       'prg', sessionType, sessionName, subjectName, opts);
-    if ~isempty(cachedPrgResults)
-      cachedPipelines.kurtosis = [];
-      missingAnalyses = union_analysis_list(missingAnalyses, 'kurtosis');
-    end
   end
   if any(strcmpi(analyses, 'avalanches')) && any(strcmpi(missingAnalyses, 'avalanches'))
     fprintf(['  Avalanches: full-session AV cache cannot be split by engagement ', ...
@@ -3653,6 +3802,8 @@ end
 if isfield(opts, 'avWindow')
   engModOpts.avWindow = opts.avWindow;
 end
+% Engagement plots use engaged and non-engaged avalanche fits only.
+engModOpts.runTotalAvalanches = false;
 % Engagement timing: reach uses reachBufferBefore/After;
 % interval/semicircle use eventBufferBefore/After (legacy *Buffer still accepted)
 [bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
@@ -3848,13 +3999,24 @@ for s = 1:numel(batchResults)
     plotData.byType.(typeKey) = init_engagement_metric_type(metricFields, numel(plotData.areas));
   end
   typeData = plotData.byType.(typeKey);
-  d2Split = batchResults(s).d2Split;
-  avByClass = batchResults(s).avalanches.byClass;
+  d2Split = [];
+  if isfield(batchResults(s), 'd2Split') && isstruct(batchResults(s).d2Split)
+    d2Split = batchResults(s).d2Split;
+  end
+  avByClass = struct();
+  if isfield(batchResults(s), 'avalanches') && isstruct(batchResults(s).avalanches) ...
+      && isfield(batchResults(s).avalanches, 'byClass') ...
+      && isstruct(batchResults(s).avalanches.byClass)
+    avByClass = batchResults(s).avalanches.byClass;
+  end
   prgSplit = [];
-  if isfield(batchResults(s), 'kurtosis') && ~isempty(batchResults(s).kurtosis)
+  if isfield(batchResults(s), 'kurtosis') && isstruct(batchResults(s).kurtosis)
     prgSplit = batchResults(s).kurtosis;
   end
-  areaNames = d2Split.areas;
+  areaNames = engagement_plot_area_names(d2Split, batchResults(s).avalanches, prgSplit);
+  if isempty(areaNames)
+    continue;
+  end
   nonEngagedSec = get_batch_non_engaged_sec(batchResults(s));
 
   for a = 1:numel(areaNames)
@@ -3868,17 +4030,24 @@ for s = 1:numel(batchResults)
     end
     typeData = ensure_engagement_area_slots(typeData, metricFields, areaIdx);
 
-    engSummary = summarize_engagement_d2_vector(d2Split.d2{2}{a}, useLog10D2);
-    nonSummary = summarize_engagement_d2_vector(d2Split.d2{3}{a}, useLog10D2);
+    [engSummary, nonSummary] = summarize_engagement_d2_area(d2Split, areaName, useLog10D2);
     typeData.d2EngagedMean{areaIdx}(end + 1) = engSummary.mean;
     typeData.d2EngagedSem{areaIdx}(end + 1) = engSummary.sem;
     typeData.d2NonEngagedMean{areaIdx}(end + 1) = nonSummary.mean;
     typeData.d2NonEngagedSem{areaIdx}(end + 1) = nonSummary.sem;
 
+    engagedAv = [];
+    nonEngagedAv = [];
+    if isfield(avByClass, 'engaged')
+      engagedAv = avByClass.engaged;
+    end
+    if isfield(avByClass, 'nonEngaged')
+      nonEngagedAv = avByClass.nonEngaged;
+    end
     [tauEng, alphaEng, paramSDEng, dccEng, decadesEng] = get_engagement_area_av_scalars( ...
-      avByClass.engaged, areaName);
+      engagedAv, areaName);
     [tauNon, alphaNon, paramSDNon, dccNon, decadesNon] = get_engagement_area_av_scalars( ...
-      avByClass.nonEngaged, areaName);
+      nonEngagedAv, areaName);
     typeData.tauEngaged{areaIdx}(end + 1) = tauEng;
     typeData.tauNonEngaged{areaIdx}(end + 1) = tauNon;
     typeData.alphaEngaged{areaIdx}(end + 1) = alphaEng;
@@ -3909,6 +4078,60 @@ for s = 1:numel(batchResults)
   typeData.nonEngagedSec(end + 1) = nonEngagedSec; %#ok<AGROW>
   plotData.byType.(typeKey) = typeData;
 end
+end
+
+function areaNames = engagement_plot_area_names(d2Split, avalanches, prgSplit)
+% ENGAGEMENT_PLOT_AREA_NAMES - Areas from whichever engagement pipeline is present
+%
+% Variables:
+%   d2Split    - Engagement d2 split, or [] when AR was not run
+%   avalanches - Engagement avalanche result, or [] when AV was not run
+%   prgSplit   - Engagement PRG split, or [] when PRG was not run
+%
+% Goal:
+%   Plot aggregation can run with any subset of d2, avalanches, and kurtosis.
+
+areaNames = {};
+if isstruct(d2Split) && isfield(d2Split, 'areas') && ~isempty(d2Split.areas)
+  areaNames = d2Split.areas;
+  return;
+end
+if isstruct(avalanches) && isfield(avalanches, 'byClass') && isstruct(avalanches.byClass)
+  classFields = {'engaged', 'nonEngaged', 'total'};
+  for iClass = 1:numel(classFields)
+    className = classFields{iClass};
+    if ~isfield(avalanches.byClass, className) || ~isstruct(avalanches.byClass.(className))
+      continue;
+    end
+    classResult = avalanches.byClass.(className);
+    if isfield(classResult, 'areas') && ~isempty(classResult.areas)
+      areaNames = classResult.areas;
+      return;
+    end
+  end
+end
+if isstruct(prgSplit) && isfield(prgSplit, 'areas') && ~isempty(prgSplit.areas)
+  areaNames = prgSplit.areas;
+end
+end
+
+function [engSummary, nonSummary] = summarize_engagement_d2_area(d2Split, areaName, useLog10D2)
+% SUMMARIZE_ENGAGEMENT_D2_AREA - Engaged and non-engaged d2 mean/SEM for one area
+%
+% Returns NaN summaries when the d2 split is absent or has no matching area.
+
+engSummary = struct('mean', nan, 'sem', nan);
+nonSummary = engSummary;
+if ~isstruct(d2Split) || ~isfield(d2Split, 'd2') || ~isfield(d2Split, 'areas') ...
+    || numel(d2Split.d2) < 3
+  return;
+end
+d2AreaIdx = find(strcmp(d2Split.areas, areaName), 1);
+if isempty(d2AreaIdx) || d2AreaIdx > numel(d2Split.d2{2}) || d2AreaIdx > numel(d2Split.d2{3})
+  return;
+end
+engSummary = summarize_engagement_d2_vector(d2Split.d2{2}{d2AreaIdx}, useLog10D2);
+nonSummary = summarize_engagement_d2_vector(d2Split.d2{3}{d2AreaIdx}, useLog10D2);
 end
 
 function nonEngagedSec = get_batch_non_engaged_sec(batchResult)

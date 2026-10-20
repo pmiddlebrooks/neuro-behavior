@@ -50,6 +50,11 @@ if ~awake_only_cache_params_match(requested, stored)
   return;
 end
 
+if strcmp(kindGroup, 'av') && cache_per_segment_threshold(requested) ...
+    ~= cache_per_segment_threshold(stored)
+  return;
+end
+
 tf = true;
 end
 
@@ -64,6 +69,14 @@ function tf = cache_awake_only(s)
 tf = false;
 if isfield(s, 'awakeOnly') && ~isempty(s.awakeOnly)
   tf = logical(s.awakeOnly);
+end
+end
+
+function tf = cache_per_segment_threshold(s)
+% CACHE_PER_SEGMENT_THRESHOLD - Missing field matches false (pre-segment caches)
+tf = false;
+if isfield(s, 'perSegmentThreshold') && ~isempty(s.perSegmentThreshold)
+  tf = logical(s.perSegmentThreshold);
 end
 end
 

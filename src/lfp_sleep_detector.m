@@ -132,7 +132,7 @@ function params = parse_sleep_detector_params(varargin)
 
 parser = inputParser;
 parser.addParameter('brainArea', 'M56', @(c) (ischar(c) || isstring(c)) && ~isempty(c));
-parser.addParameter('minSegmentLength', 120, @(x) isnumeric(x) && isscalar(x) && x > 0);
+parser.addParameter('minSegmentLength', 60, @(x) isnumeric(x) && isscalar(x) && x > 0);
 parser.addParameter('windowSec', 4, @(x) isnumeric(x) && isscalar(x) && x > 0);
 parser.addParameter('stepSec', 1, @(x) isnumeric(x) && isscalar(x) && x > 0);
 parser.addParameter('smoothSec', 30, @(x) isnumeric(x) && isscalar(x) && x >= 0);

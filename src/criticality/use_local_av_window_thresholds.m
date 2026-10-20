@@ -7,10 +7,15 @@ function tf = use_local_av_window_thresholds(config)
 %
 % Goal:
 %   avWindow set to a positive scalar means tile time and recompute the
-%   population cutoff from each window's own pop activity.
+%   population cutoff from each window's own pop activity. perSegmentThreshold
+%   also requests a local cutoff, one per segment, without tiling.
 
 if nargin < 1
   config = struct();
+end
+if isfield(config, 'perSegmentThreshold') && isequal(config.perSegmentThreshold, true)
+  tf = true;
+  return;
 end
 avWindow = resolve_effective_av_window(config);
 tf = ~isempty(avWindow);

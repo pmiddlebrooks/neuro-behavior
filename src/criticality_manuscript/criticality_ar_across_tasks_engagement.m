@@ -30,8 +30,10 @@
 %
 % Goal:
 %   Compare d2 across sessions grouped by task type. Reach/interval/semicircle:
-%   engaged and non-engaged side-by-side per session (+ shuffled mean in bar mode).
-%   Optional violin mode shows window distributions with means. Spontaneous: session total.
+%   engaged and non-engaged on the same session x. Non-engaged markers are
+%   filled circles; engaged markers are open circles in the same color
+%   (+ shuffled mean in bar mode). Optional violin mode shows window
+%   distributions (non-engaged filled, engaged outline). Spontaneous: session total.
 
 %% Configuration
 sessionTypes = default_manuscript_session_types();
@@ -885,15 +887,13 @@ for t = 1:length(sessionTypes)
 
     for i = 1:numSessions
       xBase = xCursor + i;
-      xEng = xBase - 0.12;
-      xNon = xBase + 0.12;
-      xShuf = xBase + 0.34;
+      xShuf = xBase + 0.28;
 
-      hEng = errorbar(ax, xEng, engagedMeans(i), engagedSems(i), 'o', ...
+      hNon = errorbar(ax, xBase, nonMeans(i), nonSems(i), 'o', ...
         'Color', taskColor, 'MarkerFaceColor', taskColor, ...
         'MarkerSize', plotConfig.scatterMarkerSize / 4, ...
         'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize);
-      hNon = errorbar(ax, xNon, nonMeans(i), nonSems(i), 'o', ...
+      hEng = errorbar(ax, xBase, engagedMeans(i), engagedSems(i), 'o', ...
         'Color', taskColor, 'MarkerFaceColor', 'none', ...
         'MarkerSize', plotConfig.scatterMarkerSize / 4, ...
         'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize);
@@ -904,12 +904,12 @@ for t = 1:length(sessionTypes)
           'MarkerSize', plotConfig.scatterMarkerSize / 4, ...
           'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize);
         if isempty(legendHandles) || numel(legendHandles) < 3
-          legendHandles = [hEng, hNon, hShuf]; %#ok<AGROW>
-          legendLabels = {'engaged d2', 'non-engaged d2', 'shuffled mean'};
+          legendHandles = [hNon, hEng, hShuf]; %#ok<AGROW>
+          legendLabels = {'non-engaged d2', 'engaged d2', 'shuffled mean'};
         end
       elseif isempty(legendHandles)
-        legendHandles = [hEng, hNon]; %#ok<AGROW>
-        legendLabels = {'engaged d2', 'non-engaged d2'};
+        legendHandles = [hNon, hEng]; %#ok<AGROW>
+        legendLabels = {'non-engaged d2', 'engaged d2'};
       end
 
       xticksCenters(end + 1) = xBase; %#ok<AGROW>
@@ -970,6 +970,8 @@ hold(ax, 'on');
 xCursor = 0;
 xticksCenters = [];
 xtickLabels = {};
+legendHandles = [];
+legendLabels = {};
 
 for t = 1:length(sessionTypes)
   sessionType = sessionTypes{t};
@@ -992,14 +994,18 @@ for t = 1:length(sessionTypes)
 
     for i = 1:numSessions
       xBase = xCursor + i;
-      errorbar(ax, xBase - 0.12, engagedMeans(i), engagedSems(i), 'o', ...
+      hNon = errorbar(ax, xBase, nonMeans(i), nonSems(i), 'o', ...
         'Color', taskColor, 'MarkerFaceColor', taskColor, ...
         'MarkerSize', plotConfig.scatterMarkerSize / 4, ...
         'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize);
-      errorbar(ax, xBase + 0.12, nonMeans(i), nonSems(i), 'o', ...
+      hEng = errorbar(ax, xBase, engagedMeans(i), engagedSems(i), 'o', ...
         'Color', taskColor, 'MarkerFaceColor', 'none', ...
         'MarkerSize', plotConfig.scatterMarkerSize / 4, ...
         'LineWidth', plotConfig.lineWidth, 'CapSize', plotConfig.errorCapSize);
+      if isempty(legendHandles)
+        legendHandles = [hNon, hEng]; %#ok<AGROW>
+        legendLabels = {'non-engaged', 'engaged'};
+      end
       xticksCenters(end + 1) = xBase; %#ok<AGROW>
       xtickLabels{end + 1} = get_session_bar_label(typeData, i, sessionType); %#ok<AGROW>
     end
@@ -1027,6 +1033,10 @@ if ~isempty(xticksCenters)
   set(ax, 'XTick', xticksCenters, 'XTickLabel', xtickLabels, 'XTickLabelRotation', 45);
 end
 grid(ax, 'off');
+if ~isempty(legendHandles)
+  legend(ax, legendHandles, legendLabels, 'Location', 'best', ...
+    'FontSize', plotConfig.legendFontSize);
+end
 hold(ax, 'off');
 end
 
@@ -1167,11 +1177,21 @@ end
 function pairHandles = plot_engagement_mirror_violin_pair(ax, xJoin, engagedVec, nonEngagedVec, ...
     engagedColor, nonEngagedColor, opts)
 % PLOT_ENGAGEMENT_MIRROR_VIOLIN_PAIR - Back-to-back engaged/non-engaged half violins
+%
+% Both classes use engagedColor. Non-engaged is filled; engaged is an outline
+% so the two distributions share one session x and one color.
+% nonEngagedColor is accepted for older callers and is not used.
 
+if nargin < 6
+  nonEngagedColor = engagedColor; %#ok<NASGU>
+end
+optsFilled = opts;
+optsOpen = opts;
+optsOpen.faceAlpha = 0;
 pairHandles = struct('engaged', struct('violin', [], 'mean', []), ...
   'nonEngaged', struct('violin', [], 'mean', []));
-pairHandles.engaged = plot_manuscript_half_violin(ax, xJoin, engagedVec, engagedColor, 'left', opts);
-pairHandles.nonEngaged = plot_manuscript_half_violin(ax, xJoin, nonEngagedVec, nonEngagedColor, 'right', opts);
+pairHandles.nonEngaged = plot_manuscript_half_violin(ax, xJoin, nonEngagedVec, engagedColor, 'right', optsFilled);
+pairHandles.engaged = plot_manuscript_half_violin(ax, xJoin, engagedVec, engagedColor, 'left', optsOpen);
 end
 
 function handles = plot_manuscript_symmetric_violin(ax, xCenter, values, color, opts)
@@ -1239,8 +1259,12 @@ if strcmp(side, 'both')
       'FaceAlpha', faceAlpha, 'EdgeColor', edgeColor, 'LineWidth', lineWidth);
   end
   if showMean
+    meanFace = color;
+    if faceAlpha == 0
+      meanFace = 'none';
+    end
     handles.mean = plot(ax, xEdge, meanVal, 'd', ...
-      'Color', edgeColor, 'MarkerFaceColor', color, ...
+      'Color', edgeColor, 'MarkerFaceColor', meanFace, ...
       'MarkerSize', plotConfig.markerSize, 'LineWidth', 1);
   end
   return;
@@ -1291,8 +1315,12 @@ if showMean
   else
     xMean = xEdge + width * 0.08;
   end
+  meanFace = color;
+  if faceAlpha == 0
+    meanFace = 'none';
+  end
   handles.mean = plot(ax, xMean, meanVal, 'd', ...
-    'Color', edgeColor, 'MarkerFaceColor', color, ...
+    'Color', edgeColor, 'MarkerFaceColor', meanFace, ...
     'MarkerSize', plotConfig.markerSize, 'LineWidth', 1);
 end
 end

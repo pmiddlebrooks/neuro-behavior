@@ -13,8 +13,10 @@ function avData = extract_pooled_area_avalanches(dataStruct, areaIndex, analysis
 %   Detect avalanches in each segment (or avWindow tile), pool sizes/durations,
 %   and fit power laws once on the pooled sample. When avWindow is set, each
 %   tile uses a threshold from that tile's own population activity. When
-%   avWindow is empty, reuse sharedThresholdByArea (collect-range for total;
-%   engagement callers pass class-specific cutoffs for engaged / non-engaged).
+%   perSegmentThreshold is set, each segment is one window with its own
+%   cutoff and avWindow is not applied. When avWindow is empty and
+%   perSegmentThreshold is off, reuse sharedThresholdByArea (collect-range
+%   for total; engagement callers pass class-specific cutoffs).
 
 if nargin < 5 || isempty(computeShuffles)
   computeShuffles = false;
@@ -33,11 +35,20 @@ if isfield(analysisConfig, 'sharedThresholdByArea') ...
     analysisConfig, analysisConfig.sharedThresholdByArea{areaIndex});
 end
 
+perSegment = isfield(analysisConfig, 'perSegmentThreshold') ...
+  && isequal(analysisConfig.perSegmentThreshold, true);
 avWindow = resolve_effective_av_window(analysisConfig);
-useLocalThresh = ~isempty(avWindow);
+if perSegment
+  % Each engagement segment is one window; do not tile it by avWindow.
+  avWindow = [];
+  analysisConfig.avWindow = [];
+end
+useLocalThresh = perSegment || ~isempty(avWindow);
 if useLocalThresh
-  analysisConfig.avWindow = avWindow;
-  % Keep fixed neuron subsets; drop collect-range cutoffs (recomputed per tile)
+  if ~perSegment
+    analysisConfig.avWindow = avWindow;
+  end
+  % Keep fixed neuron subsets; drop shared cutoffs (recomputed per window)
   if isfield(analysisConfig, 'thresholdPerSubsample')
     analysisConfig = rmfield(analysisConfig, 'thresholdPerSubsample');
   end

@@ -30,9 +30,10 @@ if ~isfield(opts, 'fsBhv') || isempty(opts.fsBhv)
 end
 
 sessionFolder = fullfile(opts.dataPath, opts.sessionName);
+behaviorDir = fullfile(sessionFolder, 'behavior');
 if ~behavior_labels_available(sessionFolder)
   warning('load_spontaneous_behavior_labels:NoBehaviorLabels', ...
-    'No behavior_labels CSV in %s; skipping behavior data.', sessionFolder);
+    'No behavior_labels CSV in %s; skipping behavior data.', behaviorDir);
   dataStruct = attach_empty_behavior_fields(dataStruct, opts);
   return;
 end
@@ -64,7 +65,20 @@ end
 end
 
 function tf = behavior_labels_available(sessionFolder)
-csvFiles = dir(fullfile(sessionFolder, 'behavior_labels*.csv'));
+% BEHAVIOR_LABELS_AVAILABLE - True when a frame-wise label CSV exists
+%
+% Variables:
+%   sessionFolder - Session directory (parent of the behavior folder)
+%
+% Goal:
+%   Labels live in sessionFolder/behavior/behavior_labels*.csv.
+%   A CSV left in the session root still counts.
+
+behaviorDir = fullfile(sessionFolder, 'behavior');
+csvFiles = dir(fullfile(behaviorDir, 'behavior_labels*.csv'));
+if isempty(csvFiles)
+  csvFiles = dir(fullfile(sessionFolder, 'behavior_labels*.csv'));
+end
 tf = ~isempty(csvFiles);
 end
 

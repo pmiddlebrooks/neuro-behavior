@@ -12,9 +12,10 @@ function avConfigClass = attach_engagement_class_av_thresholds(avConfig, dataStr
 %
 % Goal:
 %   Total uses the collect-range cutoff. Engaged and non-engaged each get a
-%   cutoff from that class's pooled pop activity when avWindow is empty.
-%   When avWindow is set, reuse collect-range shared info (neuron subsets);
-%   per-tile cutoffs are attached later in extract_pooled_area_avalanches.
+%   cutoff from that class's pooled pop activity when avWindow is empty and
+%   perSegmentThreshold is off. When avWindow is set, or perSegmentThreshold
+%   is on, reuse collect-range shared info (neuron subsets); per-window
+%   cutoffs are attached later in extract_pooled_area_avalanches.
 
 avConfigClass = avConfig;
 if nargin < 6 || isempty(classLabel)
