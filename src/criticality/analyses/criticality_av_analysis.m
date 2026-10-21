@@ -22,8 +22,9 @@ function results = criticality_av_analysis(dataStruct, config)
 %     neuron subsample when useSubsampling) and reused for every sliding window.
 %     .avWindow - If set (or via set_manuscript_av_window), tile the collect
 %                 range, recompute the cutoff per tile, pool events, and fit once.
-%     .restrictToAwake - Spontaneous sessions only (default true): use awake
-%                epochs from lfp_sleep_detector (windows or pooled tiles).
+%     .restrictToAwake - Spontaneous sessions only (default true): each awake
+%                period from lfp_sleep_detector is one window with its own
+%                threshold; avalanche sizes and durations are pooled.
 %     .makePlots - Create plots (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
 %     .includeM2356 - Include combined M23+M56 area (default: false)
@@ -736,7 +737,7 @@ function config = set_config_defaults(config)
     defaults.gofThreshold = 0.8;
     defaults.runClausetPlpva = false;
     defaults.compareTailModels = true;
-    defaults.restrictToAwake = true;     % Spontaneous: drop windows that overlap sleep
+    defaults.restrictToAwake = true;     % Spontaneous: one threshold per wake period
     
     % Apply defaults
     fields = fieldnames(defaults);

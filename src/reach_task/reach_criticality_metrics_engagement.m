@@ -13,11 +13,12 @@ function out = reach_criticality_metrics_engagement(sessionName, opts)
 %       .reachBufferBefore   - Seconds before each reach treated as engaged (default 1).
 %       .reachBufferAfter    - Seconds after each reach treated as engaged (default 1).
 %                              Used to build continuous engaged / non-engaged
-%                              segments. d2 and kurtosis: a window/block counts
-%                              as engaged or non-engaged only if it lies fully
-%                              inside one segment (boundary-straddling windows
-%                              are skipped). Avalanches: that buffer interval
-%                              is excluded from non-engaged gaps.
+%                              segments. d2: as many d2Window blocks as fit are
+%                              center-packed inside each segment. Kurtosis: a
+%                              block counts only if it lies fully inside one
+%                              segment (boundary-straddling blocks are skipped).
+%                              Avalanches: that buffer interval is excluded
+%                              from non-engaged gaps.
 %       .reachBuffer         - Legacy symmetric alias; if before/after unset, sets both.
 %       .minNonEngagedWindow - Min gap without reaches (s) for non-engaged segments
 %       .absorbSingleReaches - If true (default), isolated single reaches flanked by
@@ -57,9 +58,11 @@ function out = reach_criticality_metrics_engagement(sessionName, opts)
 % Goal:
 %   Test whether criticality metrics differ with task engagement by separating
 %   time near reaches vs away from reaches (reachBufferBefore/After, default 1 s):
-%     d2 / kurtosis - window/block fully inside an engaged or non-engaged
-%                     segment (straddling windows skipped); segments may absorb
+%     d2            - as many d2Window blocks as fit, center-packed in each
+%                     engaged and non-engaged segment; segments may absorb
 %                     isolated single reaches (absorbSingleReaches)
+%     kurtosis      - block fully inside an engaged or non-engaged segment
+%                     (straddling blocks skipped)
 %     avalanches    - continuous gaps >= minNonEngagedWindow (outside reach
 %                     buffers) = non-engaged; complement = engaged; pool
 %                     avalanches across segments of each class (+ full session)
@@ -222,19 +225,25 @@ if opts.makePlots
     collectStart, collectEnd, opts.minNonEngagedWindow, opts.reachBufferBefore, opts.reachBufferAfter, plotConfig);
 end
 
-%% d2: classify non-overlapping windows by full containment in engagement segments
+%% d2: center-pack d2Window blocks inside each engaged and non-engaged segment
 if ismember('d2', opts.analyses)
   fprintf('\n--- d2 ---\n');
-  fprintf(['reachBuffer: %s; d2 windows count only if fully inside an ', ...
+  fprintf(['reachBuffer: %s; d2 windows are center-packed inside each ', ...
     'engaged or non-engaged segment\n'], ...
     format_engagement_buffer_label(opts.reachBufferBefore, opts.reachBufferAfter));
-  if isfield(opts, 'cachedArResults') && ar_cache_has_window_times(opts.cachedArResults)
-    fprintf('Using full-session d2 cache (split windows by engagement).\n');
-    resultsD2 = opts.cachedArResults;
-  else
-    arConfig = build_ar_config(opts);
-    resultsD2 = criticality_ar_analysis(dataStruct, arConfig);
+  windowCenters = [ ...
+    center_pack_windows_in_segments(engagedSegs, opts.d2Window), ...
+    center_pack_windows_in_segments(nonEngagedSegs, opts.d2Window)];
+  windowCenters = unique(windowCenters, 'sorted');
+  if isempty(windowCenters)
+    error('reach_criticality_metrics_engagement:NoD2Windows', ...
+      'No %.1f s d2 windows fit inside engaged or non-engaged segments.', opts.d2Window);
   end
+  fprintf(['Center-packed d2 windows: %d (%.1f s), placed from the middle ', ...
+    'of each segment\n'], numel(windowCenters), opts.d2Window);
+  arConfig = build_ar_config(opts);
+  arConfig.windowCenterTimes = windowCenters;
+  resultsD2 = criticality_ar_analysis(dataStruct, arConfig);
   if ~isempty(opts.brainArea)
     resultsD2 = filter_ar_results_to_brain_area(resultsD2, opts.brainArea);
   end
@@ -1442,8 +1451,8 @@ function d2Split = split_d2_by_engagement_segments(results, engagedSegs, nonEnga
 %
 % Goal:
 %   A window counts as engaged or non-engaged only if it lies fully inside one
-%   of those segments. Windows that straddle a segment boundary are skipped for
-%   both classes. Total still uses all windows.
+%   of those segments. Center-packed windows are placed that way, so straddlers
+%   are not produced. Total is every analyzed window.
 
 classNames = engagement_class_names();
 d2Split = struct();
@@ -1468,11 +1477,9 @@ for a = 1:numel(d2Split.areas)
   if a > numel(results.startS) || isempty(results.startS{a})
     continue;
   end
-  % startS is window center relative to collectStart
-  centerRel = results.startS{a}(:);
+  % startS from criticality_ar_analysis is an absolute window center.
   winLen = resolve_d2_split_window_length(results, a, d2Window);
-  winStartAbs = collectStart + centerRel - winLen / 2;
-  winEndAbs = collectStart + centerRel + winLen / 2;
+  [winStartAbs, winEndAbs] = absolute_d2_window_bounds(results.startS{a}, collectStart, winLen);
   engagedMask = window_fully_inside_segments(winStartAbs, winEndAbs, engagedSegs);
   nonEngagedMask = window_fully_inside_segments(winStartAbs, winEndAbs, nonEngagedSegs);
   skippedMask = ~(engagedMask | nonEngagedMask);

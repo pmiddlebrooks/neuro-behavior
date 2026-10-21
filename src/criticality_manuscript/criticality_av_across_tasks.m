@@ -5,8 +5,9 @@
 % batches across session types, and plots metrics grouped by sessionType.
 % avWindow tiles the collect range with a local threshold per tile; events
 % are pooled and fit once. Empty avWindow = one shared collect-range threshold.
-% Spontaneous sessions with lfp.mat use awake epochs only (lfp_sleep_detector).
-% Sessions without lfp.mat use the whole recording.
+% Spontaneous sessions with lfp.mat use each awake period as one window with
+% its own threshold, then pool (lfp_sleep_detector). Sessions without lfp.mat
+% use the whole recording.
 %
 % Variables (configure in this section):
 %   sessionTypes  - Cell array of session types to include

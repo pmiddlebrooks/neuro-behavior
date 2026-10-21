@@ -23,7 +23,8 @@
 %   Remaining options match criticality_multiple_metrics_across_tasks.m
 %   (including useSessionCache, forceRecompute, forceRecomputeSessionTypes,
 %   and forceRecomputeSubject). Spontaneous sessions with lfp.mat contribute
-%   only awake epochs from lfp_sleep_detector. Sessions without lfp.mat use
+%   only awake epochs from lfp_sleep_detector. Avalanches use one threshold
+%   per wake period and pool sizes and durations. Sessions without lfp.mat use
 %   the whole recording.
 %
 % Goal:
@@ -32,10 +33,10 @@
 %   across-tasks manuscript plots.
 
 %% Configuration
-subjectName = 'ey9166';
+subjectName = 'ey9387';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
 % taskTypes = {'interval', 'reach'};
-% taskTypes = {'interval'};
+taskTypes = {'interval'};
 d2Method = 'euclidean';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
@@ -53,12 +54,12 @@ sessionTypes = order_manuscript_session_types([{'spontaneous'}, taskTypes]);
 collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
-d2Window = 45;
+d2Window = 30;
 prgWindow = d2Window;
 avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
 
-binSizeD2 = 0.04;   % d2/AR spike bin width (s); overrides AR default
+binSizeD2 = 0.025;   % d2/AR spike bin width (s); overrides AR default
 binSizePrg = 0.05;  % PRG spike bin width (s); overrides PRG default
 binSizeAv = 0.05;   % avalanche spike bin width (s); overrides AV default
 
@@ -86,13 +87,13 @@ brainAreaCombinations = default_manuscript_brain_area_combinations();
 areasToPlot = {};
 
 % Pipeline selection — any combination of d2 (AR), avalanche (AV), PRG
-runArBatch = false;   % d2
-runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
+runArBatch = true;   % d2
+runAvBatch = false;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
-forceRecompute = false;   % true: reprocess and overwrite per-session cache
-forceRecomputeSessionTypes = {'interval', 'semicircle'};  % e.g. {'spontaneous'} recomputes only that type
+forceRecompute = true;   % true: reprocess and overwrite per-session cache
+forceRecomputeSessionTypes = {};  % e.g. {'spontaneous'} recomputes only that type
 forceRecomputeSubject = '';       % e.g. 'ey9387'; with session types set, only this subject
 plotResults = true;
 plotMetricPairScatters = true;
@@ -106,7 +107,7 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = true;  % true: engaged (open) and non-engaged (filled) on one plot
+splitByEngagement = false;  % true: engaged (open) and non-engaged (filled) on one plot
 
 useLog10D2 = false;
 useSubsampling = false;
@@ -189,6 +190,10 @@ else
       avWindow);
   else
     fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
+  end
+  if any(strcmpi(sessionTypes, 'spontaneous'))
+    fprintf(['Spontaneous avalanches: each awake period is one window with ', ...
+      'its own threshold; sizes and durations are pooled.\n']);
   end
 end
 fprintf('binSizeD2: %.3f s; binSizePrg: %.3f s; binSizeAv: %.3f s\n', ...
@@ -3624,16 +3629,12 @@ for s = 1:numSessions
   [cachedPipelines, missingAnalyses] = try_load_engagement_pipeline_caches( ...
     sessionType, sessionName, subjectName, opts, analyses);
 
-  % A saved engagement split is the result to reuse. Full-session AR/PRG is
-  % only a fallback when that split is missing, so windows can be classified
-  % without recomputing d2 or PRG. Avalanche class fits cannot be recovered
+  % A saved engagement split is the result to reuse. d2 is center-packed
+  % inside each engaged and non-engaged segment, so a full-session AR grid
+  % cannot supply those windows. Full-session PRG is still a fallback when
+  % the kurtosis split is missing. Avalanche class fits cannot be recovered
   % from a full-session AV cache.
-  cachedArResults = [];
   cachedPrgResults = [];
-  if any(strcmpi(analyses, 'd2')) && isempty(cachedPipelines.d2)
-    cachedArResults = try_load_full_session_pipeline_cache( ...
-      'ar', sessionType, sessionName, subjectName, opts);
-  end
   if any(strcmpi(analyses, 'kurtosis')) && isempty(cachedPipelines.kurtosis)
     cachedPrgResults = try_load_full_session_pipeline_cache( ...
       'prg', sessionType, sessionName, subjectName, opts);
@@ -3656,7 +3657,6 @@ for s = 1:numSessions
     engModOpts = build_multimetric_engagement_module_opts(opts, sessionType);
     engModOpts.analyses = missingAnalyses;
     engModOpts.useSessionCache = false;
-    engModOpts.cachedArResults = cachedArResults;
     engModOpts.cachedPrgResults = cachedPrgResults;
     if strcmpi(sessionType, 'reach')
       sessionOut = reach_criticality_metrics_engagement(sessionName, engModOpts);

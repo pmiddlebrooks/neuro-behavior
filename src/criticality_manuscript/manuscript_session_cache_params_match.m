@@ -55,6 +55,10 @@ if strcmp(kindGroup, 'av') && cache_per_segment_threshold(requested) ...
   return;
 end
 
+if ~d2_engagement_pack_cache_params_match(requested, stored)
+  return;
+end
+
 tf = true;
 end
 
@@ -77,6 +81,20 @@ function tf = cache_per_segment_threshold(s)
 tf = false;
 if isfield(s, 'perSegmentThreshold') && ~isempty(s.perSegmentThreshold)
   tf = logical(s.perSegmentThreshold);
+end
+end
+
+function tf = d2_engagement_pack_cache_params_match(requested, stored)
+% D2_ENGAGEMENT_PACK_CACHE_PARAMS_MATCH - Center-pack tag; missing matches ''
+reqPack = cache_d2_engagement_pack(requested);
+stoPack = cache_d2_engagement_pack(stored);
+tf = strcmp(reqPack, stoPack);
+end
+
+function pack = cache_d2_engagement_pack(s)
+pack = '';
+if isfield(s, 'd2EngagementPack') && ~isempty(s.d2EngagementPack)
+  pack = char(s.d2EngagementPack);
 end
 end
 

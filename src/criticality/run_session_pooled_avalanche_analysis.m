@@ -12,7 +12,9 @@ function results = run_session_pooled_avalanche_analysis(dataStruct, analysisCon
 %   Manuscript session-level avalanche scalars. When avWindow is set, tile the
 %   collect range, compute a threshold per tile from that tile's pop activity,
 %   pool avalanches, and fit once (do not average per-window exponents).
-%   Returns a criticality_av_analysis-like results struct (one value per area).
+%   Spontaneous sessions use each awake period as one window with its own
+%   threshold, then pool sizes and durations (avWindow does not tile those
+%   periods). Returns a criticality_av_analysis-like results struct.
 
 if nargin < 4 || isempty(collectEnd) || isempty(collectStart)
   error('run_session_pooled_avalanche_analysis:MissingCollectRange', ...
@@ -72,21 +74,19 @@ if applyAwakeFilter
   for iSeg = 1:numel(segments)
     awakeDuration = awakeDuration + (segments(iSeg).end - segments(iSeg).start);
   end
-  fprintf('Spontaneous awake-only avalanches: %d epoch(s), %.1f s (sleep excluded)\n', ...
+  fprintf(['Spontaneous awake avalanches: %d wake period(s), %.1f s. ', ...
+    'Each period has its own threshold; sizes and durations are pooled.\n'], ...
     numel(segments), awakeDuration);
+  % Same pattern as engaged / non-engaged segments: one cutoff per bout.
+  analysisConfig = mark_per_segment_av_config(analysisConfig);
 else
   segments = struct('start', collectStart, 'end', collectEnd);
 end
 
-% Neuron subsets come from the collect range. Shared cutoffs that are not
-% recomputed per tile must be fit on awake activity only.
+% Neuron subsets come from the collect range. Per-wake and per-tile cutoffs
+% are recomputed later from each window's own population activity.
 analysisConfig.sharedThresholdByArea = prepare_shared_av_thresholds_by_area( ...
   dataStruct, areasToAnalyze, analysisConfig, collectStart, collectEnd);
-if applyAwakeFilter && ~use_local_av_window_thresholds(analysisConfig)
-  analysisConfig.sharedThresholdByArea = prepare_segment_class_av_thresholds_by_area( ...
-    dataStruct, areasToAnalyze, analysisConfig, segments, ...
-    analysisConfig.sharedThresholdByArea, 'awake');
-end
 
 metricNames = {'dcc', 'kappa', 'decades', 'tau', 'alpha', 'paramSD'};
 results = struct();
@@ -105,7 +105,10 @@ results.startS = cell(1, numAreas);
 results.binSize = nan(1, numAreas);
 results.slidingWindowSize = nan(1, numAreas);
 avWindowUsed = collectEnd - collectStart;
-if use_local_av_window_thresholds(analysisConfig)
+if applyAwakeFilter
+  % Wake periods have different lengths; the fit is on the pooled sample.
+  avWindowUsed = nan;
+elseif use_local_av_window_thresholds(analysisConfig) && ~isempty(analysisConfig.avWindow)
   avWindowUsed = analysisConfig.avWindow;
 end
 
@@ -175,4 +178,5 @@ if isfield(analysisConfig, 'avalancheDetectionMode')
   results.params.avalancheDetectionMode = analysisConfig.avalancheDetectionMode;
 end
 results.params.pooledAcrossWindows = true;
+results.params.awakePerSegment = applyAwakeFilter;
 end

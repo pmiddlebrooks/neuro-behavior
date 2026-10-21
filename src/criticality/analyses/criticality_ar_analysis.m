@@ -31,6 +31,9 @@ function results = criticality_ar_analysis(dataStruct, config)
 %     .klParallel - If true, parallelize KL error-bar gradient (default: false)
 %     .restrictToAwake - Spontaneous sessions only (default true): keep windows
 %                that lie fully inside awake epochs from lfp_sleep_detector
+%     .windowCenterTimes - Optional absolute centers (s). When set, these
+%                replace the regular session grid (used to center-pack d2
+%                windows inside engagement segments).
 %
 % Goal:
 %   Compute d2 and/or mrBr criticality measures in sliding windows for spike data.
@@ -250,34 +253,45 @@ function results = criticality_ar_analysis(dataStruct, config)
     % This ensures all areas have aligned windows regardless of their optimized window sizes
     % Total time from spike data
     totalTime = timeRange(2) - timeRange(1);
-
-    % If session is meaningfully shorter than requested window, use full session
-    % (e.g. d2Window = collectEnd / 1e6 sentinel on a shorter recording)
-    windowToleranceSec = 1;
-    if config.slidingWindowSize > (totalTime + windowToleranceSec)
-        fprintf(['  slidingWindowSize %.1f s exceeds session duration %.1f s; ', ...
-            'using full session for d2 window.\n'], config.slidingWindowSize, totalTime);
-        config.slidingWindowSize = totalTime;
-        config.stepSize = totalTime;
-    end
-    if config.stepSize > (totalTime + windowToleranceSec)
-        config.stepSize = totalTime;
-    end
-    % Keep per-area window vector in sync with the clamped config window
-    oversizedMask = isfinite(slidingWindowSize) & ...
-      (slidingWindowSize > (totalTime + windowToleranceSec));
-    if any(oversizedMask)
-      slidingWindowSize(oversizedMask) = totalTime;
-    end
-    
-    % Generate common centerTime values in absolute session time
-    % (bin indexing subtracts timeOrigin via calculate_window_indices_from_center)
     timeOrigin = timeRange(1);
-    firstCenterTime = timeOrigin + config.slidingWindowSize / 2;
-    lastCenterTime = timeOrigin + totalTime - config.slidingWindowSize / 2;
-    commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
-    commonCenterTimes = keep_windows_during_awake(dataStruct, config, commonCenterTimes, ...
-        config.slidingWindowSize, config.stepSize, 'center', timeRange);
+    useExplicitCenters = isfield(config, 'windowCenterTimes') && ~isempty(config.windowCenterTimes);
+
+    if useExplicitCenters
+        % Caller chose the windows (engagement center-pack). Keep the requested
+        % window length even if it is shorter than the collect range.
+        commonCenterTimes = config.windowCenterTimes(:)';
+        commonCenterTimes = commonCenterTimes(isfinite(commonCenterTimes));
+        commonCenterTimes = unique(commonCenterTimes, 'sorted');
+        fprintf(['Using %d explicit d2 window centers ', ...
+            '(session grid replaced).\n'], numel(commonCenterTimes));
+    else
+        % If session is meaningfully shorter than requested window, use full session
+        % (e.g. d2Window = collectEnd / 1e6 sentinel on a shorter recording)
+        windowToleranceSec = 1;
+        if config.slidingWindowSize > (totalTime + windowToleranceSec)
+            fprintf(['  slidingWindowSize %.1f s exceeds session duration %.1f s; ', ...
+                'using full session for d2 window.\n'], config.slidingWindowSize, totalTime);
+            config.slidingWindowSize = totalTime;
+            config.stepSize = totalTime;
+        end
+        if config.stepSize > (totalTime + windowToleranceSec)
+            config.stepSize = totalTime;
+        end
+        % Keep per-area window vector in sync with the clamped config window
+        oversizedMask = isfinite(slidingWindowSize) & ...
+          (slidingWindowSize > (totalTime + windowToleranceSec));
+        if any(oversizedMask)
+          slidingWindowSize(oversizedMask) = totalTime;
+        end
+
+        % Generate common centerTime values in absolute session time
+        % (bin indexing subtracts timeOrigin via calculate_window_indices_from_center)
+        firstCenterTime = timeOrigin + config.slidingWindowSize / 2;
+        lastCenterTime = timeOrigin + totalTime - config.slidingWindowSize / 2;
+        commonCenterTimes = firstCenterTime:config.stepSize:lastCenterTime;
+        commonCenterTimes = keep_windows_during_awake(dataStruct, config, commonCenterTimes, ...
+            config.slidingWindowSize, config.stepSize, 'center', timeRange);
+    end
     
     if isempty(commonCenterTimes)
         error('No valid windows found. Check slidingWindowSize and stepSize relative to total time.');

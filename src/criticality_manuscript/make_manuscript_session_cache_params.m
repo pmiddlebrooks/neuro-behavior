@@ -91,6 +91,16 @@ if strcmp(kindGroup, 'av') && strcmp(cacheParams.kind, 'engagement_av')
   % Engagement AV caches one threshold per engaged/non-engaged segment.
   cacheParams.perSegmentThreshold = true;
 end
+if strcmp(kindGroup, 'av') && cacheParams.awakeOnly
+  % Spontaneous AV caches one threshold per wake period, then pools.
+  cacheParams.perSegmentThreshold = true;
+end
+cacheParams.d2EngagementPack = '';
+if strcmp(cacheParams.kind, 'engagement_d2')
+  % Windows are center-packed inside each engagement segment, not tiled
+  % across the whole collect range.
+  cacheParams.d2EngagementPack = 'center';
+end
 end
 
 function binSize = resolve_cache_bin_size(kindGroup, opts)

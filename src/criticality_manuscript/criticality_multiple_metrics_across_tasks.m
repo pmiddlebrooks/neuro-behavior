@@ -17,6 +17,8 @@
 %                         engaged segment and each non-engaged segment is one
 %                         window with its own threshold; avWindow is not applied
 %                         to those segments (total still uses avWindow).
+%                         Spontaneous sessions do the same with each awake
+%                         period: one threshold per wake bout, then pool.
 %   binSizeD2 / binSizePrg / binSizeAv - Spike bin width (s) for d2, PRG, and
 %                         avalanche analyses; overrides each pipeline default
 %   engagementBufferBefore - Seconds before each engagement event counted as engaged
@@ -48,9 +50,12 @@
 %                        types still load from cache. With forceRecomputeSubject
 %                        set, only that subject is recomputed inside those types.
 %                        Spontaneous sessions with lfp.mat use only awake
-%                        epochs (lfp_sleep_detector). Sessions without lfp.mat
-%                        use the whole recording. Awake-only caches do not
-%                        match files saved before that filter.
+%                        epochs (lfp_sleep_detector). Avalanches use one
+%                        threshold per wake period and pool sizes and durations.
+%                        Sessions without lfp.mat use the whole recording.
+%                        Awake-only caches do not match files saved before
+%                        that filter. Per-wake avalanche caches do not match
+%                        files that tiled avWindow inside awake time.
 %   plotResults        - Create combined d2/tau/alpha figure(s)
 %   plotMetricPairScatters - 2x2 figure: d2 vs tau, d2 vs alpha,
 %                            paramSD (crackling 1/σνz) vs (α-1)/(τ-1),
@@ -81,7 +86,9 @@
 %                        on one plot: non-engaged points stay filled, engaged
 %                        points are open circles in the same color. Spontaneous
 %                        sessions are included once (filled).
-%                        d2/PRG: a window/block counts only if fully inside an
+%                        d2: each engaged and non-engaged segment is filled with
+%                        as many d2Window blocks as fit, centered in the
+%                        segment. PRG: a block counts only if fully inside an
 %                        engaged or non-engaged segment (straddlers skipped);
 %                        split from full-session cache when present. Avalanches:
 %                        detected on engaged vs non-engaged segments (cannot be
@@ -230,6 +237,10 @@ else
       avWindow);
   else
     fprintf('AV window: %.0f s (per-window thresholds; pool events, one fit)\n', avWindow);
+  end
+  if any(strcmpi(sessionTypes, 'spontaneous'))
+    fprintf(['Spontaneous avalanches: each awake period is one window with ', ...
+      'its own threshold; sizes and durations are pooled.\n']);
   end
 end
 fprintf('binSizeD2: %.3f s; binSizePrg: %.3f s; binSizeAv: %.3f s\n', ...
@@ -3543,16 +3554,12 @@ for s = 1:numSessions
   [cachedPipelines, missingAnalyses] = try_load_engagement_pipeline_caches( ...
     sessionType, sessionName, subjectName, opts, analyses);
 
-  % A saved engagement split is the result to reuse. Full-session AR/PRG is
-  % only a fallback when that split is missing, so windows can be classified
-  % without recomputing d2 or PRG. Avalanche class fits cannot be recovered
+  % A saved engagement split is the result to reuse. d2 is center-packed
+  % inside each engaged and non-engaged segment, so a full-session AR grid
+  % cannot supply those windows. Full-session PRG is still a fallback when
+  % the kurtosis split is missing. Avalanche class fits cannot be recovered
   % from a full-session AV cache.
-  cachedArResults = [];
   cachedPrgResults = [];
-  if any(strcmpi(analyses, 'd2')) && isempty(cachedPipelines.d2)
-    cachedArResults = try_load_full_session_pipeline_cache( ...
-      'ar', sessionType, sessionName, subjectName, opts);
-  end
   if any(strcmpi(analyses, 'kurtosis')) && isempty(cachedPipelines.kurtosis)
     cachedPrgResults = try_load_full_session_pipeline_cache( ...
       'prg', sessionType, sessionName, subjectName, opts);
@@ -3575,7 +3582,6 @@ for s = 1:numSessions
     engModOpts = build_multimetric_engagement_module_opts(opts, sessionType);
     engModOpts.analyses = missingAnalyses;
     engModOpts.useSessionCache = false;
-    engModOpts.cachedArResults = cachedArResults;
     engModOpts.cachedPrgResults = cachedPrgResults;
     if strcmpi(sessionType, 'reach')
       sessionOut = reach_criticality_metrics_engagement(sessionName, engModOpts);
