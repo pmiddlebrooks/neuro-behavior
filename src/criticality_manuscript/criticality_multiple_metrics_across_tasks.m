@@ -8,7 +8,10 @@
 % Variables:
 %   sessionTypes, collectStart, collectEnd, d2Window, prgWindow, brainArea, areasToPlot
 %   d2Window / prgWindow - Analysis window length (s); [] = one window over the
-%                         full collect duration per session
+%                         full collect duration per session. With
+%                         splitByEngagement, interval/reach/semicircle d2 is
+%                         center-packed inside each engaged and non-engaged
+%                         segment and is not also run as a full session.
 %   avWindow             - Avalanche analysis tile (s); [] = full collect with
 %                         one shared population threshold (total class). When
 %                         set, each tile gets its own threshold from that
@@ -288,9 +291,19 @@ set_manuscript_av_window(avWindow);
 pcaFileTag = format_pca_file_tag(pcaFlag, nDim, pcaFirstFlag);
 maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
-% AR batch (d2) — full-session metrics across all requested session types
+% AR batch (d2). With splitByEngagement, interval/reach/semicircle d2 is
+% center-packed inside engaged and non-engaged segments. Spontaneous and
+% other non-engagement types stay full-session.
+arSessionTypes = sessionTypes;
+if splitByEngagement
+  keepFullAr = false(size(sessionTypes));
+  for iType = 1:numel(sessionTypes)
+    keepFullAr(iType) = ~is_manuscript_engagement_session_type(sessionTypes{iType});
+  end
+  arSessionTypes = sessionTypes(keepFullAr);
+end
 arOpts = struct( ...
-  'sessionTypes', {sessionTypes}, ...
+  'sessionTypes', {arSessionTypes}, ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
   'd2Window', d2Window, ...
@@ -318,8 +331,16 @@ arOpts = struct( ...
   'klParallel', klParallel, ...
   'nWorkers', nWorkers);
 
-if useAr
+if useAr && ~isempty(arSessionTypes)
+  if splitByEngagement && numel(arSessionTypes) < numel(sessionTypes)
+    fprintf(['Full-session d2: %s. Engagement tasks use windows inside ', ...
+      'engaged and non-engaged segments only.\n'], strjoin(arSessionTypes, ', '));
+  end
   arOut = criticality_ar_across_tasks(arOpts);
+elseif useAr
+  arOut = [];
+  fprintf(['Skipping full-session d2 batch (splitByEngagement: engaged and ', ...
+    'non-engaged segments only).\n']);
 else
   arOut = [];
   fprintf('Skipping AR (d2) batch.\n');

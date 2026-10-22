@@ -33,11 +33,11 @@
 %   across-tasks manuscript plots.
 
 %% Configuration
-subjectName = 'ey9387';
+subjectName = 'ey9166';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
 % taskTypes = {'interval', 'reach'};
-taskTypes = {'interval'};
-d2Method = 'euclidean';         % 'euclidean' or 'kl'
+% taskTypes = {'interval'};
+d2Method = 'kl';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
 klErrBars = false;
@@ -54,7 +54,7 @@ sessionTypes = order_manuscript_session_types([{'spontaneous'}, taskTypes]);
 collectStart = [];
 collectEnd = 120*60;
 % collectEnd = [];  % [] = full session
-d2Window = 30;
+d2Window = 45;
 prgWindow = d2Window;
 avWindow = 5*60;   % [] = full collect, shared threshold; e.g. 30 = per-window thresholds
 % One d2/PRG estimate for the full collect window ([] when collectEnd is [])
@@ -88,7 +88,7 @@ areasToPlot = {};
 
 % Pipeline selection — any combination of d2 (AR), avalanche (AV), PRG
 runArBatch = true;   % d2
-runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
+runAvBatch = false;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
@@ -107,10 +107,10 @@ useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
 % metricsToPlot = {'d2', 'tau'};  % any non-empty subset
-splitByEngagement = false;  % true: engaged (open) and non-engaged (filled) on one plot
+splitByEngagement = true;  % true: engaged (open) and non-engaged (filled) on one plot
 
 useLog10D2 = false;
-useSubsampling = false;
+useSubsampling = true;
 nSubsamples = 40;
 nNeuronsSubsample = 75;
 minNeuronsMultiple = 1.1;
@@ -258,9 +258,19 @@ end
 fprintf('Matched sessions: %s\n', strjoin(matchBits, ', '));
 maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
-% AR batch (d2) — full-session metrics across all requested session types
+% AR batch (d2). With splitByEngagement, interval/reach/semicircle d2 is
+% center-packed inside engaged and non-engaged segments. Spontaneous and
+% other non-engagement types stay full-session.
+arSessionTypes = sessionTypes;
+if splitByEngagement
+  keepFullAr = false(size(sessionTypes));
+  for iType = 1:numel(sessionTypes)
+    keepFullAr(iType) = ~is_manuscript_engagement_session_type(sessionTypes{iType});
+  end
+  arSessionTypes = sessionTypes(keepFullAr);
+end
 arOpts = struct( ...
-  'sessionTypes', {sessionTypes}, ...
+  'sessionTypes', {arSessionTypes}, ...
   'collectStart', collectStart, ...
   'collectEnd', collectEnd, ...
   'd2Window', d2Window, ...
@@ -288,8 +298,16 @@ arOpts = struct( ...
   'klErrBars', klErrBars, ...
   'klParallel', klParallel);
 
-if useAr
+if useAr && ~isempty(arSessionTypes)
+  if splitByEngagement && numel(arSessionTypes) < numel(sessionTypes)
+    fprintf(['Full-session d2: %s. Engagement tasks use windows inside ', ...
+      'engaged and non-engaged segments only.\n'], strjoin(arSessionTypes, ', '));
+  end
   arOut = criticality_ar_across_tasks(arOpts);
+elseif useAr
+  arOut = [];
+  fprintf(['Skipping full-session d2 batch (splitByEngagement: engaged and ', ...
+    'non-engaged segments only).\n']);
 else
   arOut = [];
   fprintf('Skipping AR (d2) batch.\n');
