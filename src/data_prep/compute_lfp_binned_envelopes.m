@@ -14,6 +14,16 @@ function dataStruct = compute_lfp_binned_envelopes(dataStruct, opts, lfpCleanPar
 % Returns:
 %   dataStruct - Updated with binnedEnvelopes, bandBinSizes, etc.
 
+    if isempty(bands)
+        dataStruct.bands = cell(0, 2);
+        dataStruct.bandBinSizes = [];
+        dataStruct.binnedEnvelopes = {};
+        dataStruct.binnedPower = {};
+        dataStruct.timePoints = {};
+        fprintf('Skipping LFP band-power envelopes.\n');
+        return;
+    end
+
     % Minimum bin size (for highest frequency band). Snap to whole samples
     % so a 5 ms target is exact at 1000 Hz and 6 samples (4.8 ms) at 1250 Hz.
     minBinSize = 0.005;

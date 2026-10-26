@@ -14,6 +14,11 @@ function results = criticality_lfp_analysis(dataStruct, config)
 %     .plotBinnedEnvelopes - Plot binned envelope results (default: true)
 %     .plotRawLfp - Plot raw LFP results (default: true)
 %     .saveDir - Save directory (optional, uses dataStruct.saveDir)
+%     .pOrder - AR order (default 10)
+%     .critType - tRG beta (default 2)
+%     .d2Method - 'euclidean' (Yule-Walker + getFixedPointDistance2, default)
+%                 or 'kl' (Sooter calc_db). KL flags: klFitMethod, klErrBars, klParallel
+%     .analyzeBandPower - Band-power d2 in addition to raw LFP (default true)
 %     .restrictToAwake - Spontaneous sessions only (default true): keep windows
 %                that lie fully inside awake epochs from lfp_sleep_detector
 %
@@ -41,16 +46,28 @@ function results = criticality_lfp_analysis(dataStruct, config)
     config = set_config_defaults_lfp(config);
     binnedField = config.binnedSignalField;
 
-    validate_workspace_vars({'bands', 'bandBinSizes'}, dataStruct, ...
-        'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
-    if ~isfield(dataStruct, binnedField) || isempty(dataStruct.(binnedField))
-        error('dataStruct.%s is required for LFP criticality analysis.', binnedField);
+    hasRawLfp = isfield(dataStruct, 'lfpPerArea') && ~isempty(dataStruct.lfpPerArea) && ...
+        isfield(dataStruct, 'lfpBinSize') && ~isempty(dataStruct.lfpBinSize);
+
+    if config.analyzeBandPower
+        validate_workspace_vars({'bands', 'bandBinSizes'}, dataStruct, ...
+            'errorMsg', 'Required field', 'source', 'load_sliding_window_data');
+        if ~isfield(dataStruct, binnedField) || isempty(dataStruct.(binnedField))
+            error('dataStruct.%s is required for LFP criticality analysis.', binnedField);
+        end
+        numBands = size(dataStruct.bands, 1);
+        binnedSignals = dataStruct.(binnedField);
+        numAreas = length(binnedSignals);
+    else
+        numBands = 0;
+        binnedSignals = {};
+        if ~hasRawLfp
+            error('Raw LFP is required when analyzeBandPower is false.');
+        end
+        numAreas = size(dataStruct.lfpPerArea, 2);
     end
 
     areas = dataStruct.areas;
-    numBands = size(dataStruct.bands, 1);
-    binnedSignals = dataStruct.(binnedField);
-    numAreas = length(binnedSignals);
     
     if isfield(dataStruct, 'areasToTest')
         areasToTest = dataStruct.areasToTest;
@@ -60,10 +77,9 @@ function results = criticality_lfp_analysis(dataStruct, config)
     
     % Check for raw LFP data. Bin widths are snapped to whole samples so a
     % 5 ms target stays exact at 1000 Hz and becomes 6 samples at 1250 Hz.
-    hasRawLfp = isfield(dataStruct, 'lfpPerArea') && ~isempty(dataStruct.lfpPerArea) && ...
-        isfield(dataStruct, 'lfpBinSize') && ~isempty(dataStruct.lfpBinSize);
-    if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'fsLfp') ...
-            && ~isempty(dataStruct.opts.fsLfp) && dataStruct.opts.fsLfp > 0
+    if config.analyzeBandPower && isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'fsLfp') ...
+            && ~isempty(dataStruct.opts.fsLfp) && dataStruct.opts.fsLfp > 0 ...
+            && isfield(dataStruct, 'bandBinSizes') && ~isempty(dataStruct.bandBinSizes)
         dataStruct.bandBinSizes = snap_lfp_bin_widths(dataStruct.bandBinSizes, dataStruct.opts.fsLfp);
     end
     
@@ -125,7 +141,11 @@ function results = criticality_lfp_analysis(dataStruct, config)
     % Calculate window sizes
     d2WindowSize = config.slidingWindowSize;
     dfaEnvWinSamples_min = 1000;
-    dfaEnvWinSize = max(dfaEnvWinSamples_min * max(dataStruct.bandBinSizes), 30);
+    if config.analyzeBandPower && isfield(dataStruct, 'bandBinSizes') && ~isempty(dataStruct.bandBinSizes)
+        dfaEnvWinSize = max(dfaEnvWinSamples_min * max(dataStruct.bandBinSizes), 30);
+    else
+        dfaEnvWinSize = d2WindowSize;
+    end
     dfaLfpWinSamples_min = 2000;
     
     % DFA windows are longer than d2 windows. Skip them when DFA is off so
@@ -146,13 +166,20 @@ function results = criticality_lfp_analysis(dataStruct, config)
         end
     end
     
-    % Calculate common centerTime values in absolute session time
-    firstCenterTime = timeOrigin + maxWindowSize / 2;
-    lastCenterTime = timeOrigin + totalSessionDuration - maxWindowSize / 2;
-    commonCenterTimes = firstCenterTime:stepSize:lastCenterTime;
-    lfpTimeRange = [timeOrigin, timeOrigin + totalSessionDuration];
-    commonCenterTimes = keep_windows_during_awake(dataStruct, config, commonCenterTimes, ...
-        maxWindowSize, stepSize, 'center', lfpTimeRange);
+    % Caller-supplied centers are already packed inside engagement segments.
+    % The default grid is retiled inside awake bouts for spontaneous sessions.
+    useCustomCenters = isfield(config, 'windowCenterTimes') && ~isempty(config.windowCenterTimes);
+    if useCustomCenters
+        commonCenterTimes = double(config.windowCenterTimes(:)');
+        commonCenterTimes = commonCenterTimes(isfinite(commonCenterTimes));
+    else
+        firstCenterTime = timeOrigin + maxWindowSize / 2;
+        lastCenterTime = timeOrigin + totalSessionDuration - maxWindowSize / 2;
+        commonCenterTimes = firstCenterTime:stepSize:lastCenterTime;
+        lfpTimeRange = [timeOrigin, timeOrigin + totalSessionDuration];
+        commonCenterTimes = keep_windows_during_awake(dataStruct, config, commonCenterTimes, ...
+            maxWindowSize, stepSize, 'center', lfpTimeRange);
+    end
     
     if isempty(commonCenterTimes)
         error('No valid windows found. Check maxWindowSize and stepSize relative to total session duration.');
@@ -189,7 +216,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
         fprintf('\nProcessing area %s...\n', areas{a});
         
         % Process binned band signals (envelopes or power)
-        if length(binnedSignals) >= a && ~isempty(binnedSignals{a})
+        if config.analyzeBandPower && length(binnedSignals) >= a && ~isempty(binnedSignals{a})
             areaEnvelopes = binnedSignals{a};
             
             for b = 1:numBands
@@ -226,8 +253,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
                         % Check if window is valid (within bounds)
                         if d2StartBin >= 1 && d2EndBin <= numFrames_b && d2StartBin <= d2EndBin
                             d2Segment = bandSignal(d2StartBin:d2EndBin);
-                            [varphi, ~] = myYuleWalker3(d2Segment, config.pOrder);
-                            d2{a}{b}(w) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                            d2{a}{b}(w) = lfp_window_d2(d2Segment, bandBinSize, config);
                         end
                     end
                     
@@ -295,8 +321,7 @@ function results = criticality_lfp_analysis(dataStruct, config)
                         % Check if window is valid (within bounds)
                         if d2StartBin >= 1 && d2EndBin <= numFrames_lfp && d2StartBin <= d2EndBin
                             d2Segment = binnedLfp(d2StartBin:d2EndBin);
-                            [varphi, ~] = myYuleWalker3(d2Segment, config.pOrder);
-                            d2Lfp{a}{lb}(w) = getFixedPointDistance2(config.pOrder, config.critType, varphi);
+                            d2Lfp{a}{lb}(w) = lfp_window_d2(d2Segment, currentLfpBinSize, config);
                         end
                     end
                     
@@ -381,6 +406,11 @@ function config = set_config_defaults_lfp(config)
     defaults.minSegmentLength = 50;
     defaults.pOrder = 10;
     defaults.critType = 2;
+    defaults.d2Method = 'euclidean';  % 'euclidean' or 'kl' (Sooter calc_db)
+    defaults.klFitMethod = 'MaxLikelihood';
+    defaults.klErrBars = false;
+    defaults.klParallel = false;
+    defaults.analyzeBandPower = true;
     defaults.saveResults = true;
     defaults.binnedSignalField = 'binnedEnvelopes';
     defaults.restrictToAwake = true;     % Spontaneous: drop windows that overlap sleep
@@ -392,6 +422,25 @@ function config = set_config_defaults_lfp(config)
             config.(fields{i}) = defaults.(fields{i});
         end
     end
+    [config.d2Method, config.klFitMethod, config.klErrBars, config.klParallel] = ...
+        normalize_kl_d2_options(config.d2Method, config.klFitMethod, ...
+        config.klErrBars, config.klParallel);
+end
+
+function d2Val = lfp_window_d2(segment, binSizeSec, config)
+% LFP_WINDOW_D2 - Euclidean or KL-rate d2 for one LFP window
+%
+% Variables:
+%   segment   - Mean-binned raw LFP or one band-power frame series
+%   binSizeSec - Duration of one sample (s); KL-rate deltaT
+%   config    - .pOrder, .critType, .d2Method, and KL fit flags
+%
+% Goal:
+%   Same call as the spike AR pipeline. Euclidean is Yule-Walker plus
+%   getFixedPointDistance2. KL is Sooter calc_db on this one-dimensional trace.
+
+d2Val = compute_d2_from_pop_trace(double(segment(:)), config.pOrder, ...
+    config.critType, binSizeSec, config.d2Method, config);
 end
 
 function results = build_results_structure_lfp(dataStruct, config, areas, areasToTest, ...

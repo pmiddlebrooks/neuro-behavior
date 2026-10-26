@@ -17,6 +17,7 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
 %           loaders read behavior_labels CSVs / bhvID.
 %       'lfpCleanParams' - LFP cleaning parameters
 %       'bands' - Frequency bands for LFP
+%       'computeLfpBands' - If false, skip band-power envelopes (default true)
 %       'minBinSize' - Minimum bin size for LFP bands (default 0.005)
 %
 % Goal:
@@ -33,6 +34,7 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
     addParameter(p, 'opts', [], @(x) isstruct(x) || isempty(x));
     addParameter(p, 'lfpCleanParams', [], @(x) isstruct(x) || isempty(x));
     addParameter(p, 'bands', [], @(x) iscell(x) || isempty(x));
+    addParameter(p, 'computeLfpBands', true, @(x) islogical(x) || isnumeric(x));
     addParameter(p, 'minBinSize', 0.005, @isnumeric);
     parse(p, varargin{:});
 
@@ -41,6 +43,7 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
     opts = p.Results.opts;
     lfpCleanParams = p.Results.lfpCleanParams;
     bands = p.Results.bands;
+    computeLfpBands = logical(p.Results.computeLfpBands);
     minBinSize = p.Results.minBinSize;
 
     paths = get_paths;
@@ -60,7 +63,9 @@ function dataStruct = load_session_data(sessionType, dataSource, varargin)
     end
 
     if strcmp(dataSource, 'lfp')
-        if isempty(bands)
+        if ~computeLfpBands
+            bands = cell(0, 2);
+        elseif isempty(bands)
             bands = {'alpha', [8 13]; ...
                 'beta', [13 30]; ...
                 'lowGamma', [30 50]; ...
