@@ -3,8 +3,9 @@
 %
 % For one session and one brain area, bandpasses the LFP (no artifact
 % cleaning), zero-means the analysis window, and runs:
-%   d2        - non-overlapping windows on mean-binned raw LFP and on each
-%               band's binned power (criticality_lfp_analysis)
+%   d2        - non-overlapping windows on mean-binned raw LFP, and, when
+%               analyzeBandD2 is true, on each band's binned power
+%               (criticality_lfp_analysis)
 %   avalanches - Klaus / Plenz procedure at a 2.5 SD cutoff
 %                raw LFP: negative peaks <= -nSd * SD, binned at the mean
 %                inter-event interval
@@ -34,6 +35,7 @@
 %                      matches a 100 Hz lowpass (200 Hz bins) and is snapped
 %                      to a whole number of samples at opts.fsLfp.
 %   useLog10D2       - If true, plot log10(d2)
+%   analyzeBandD2    - If true (default), also compute d2 on binned band power
 %   pOrder, critType - AR order and criticality type for getFixedPointDistance2
 %   lfpHighpassHz    - Highpass cutoff (Hz) applied after load (default 1)
 %   lfpLowpassHz     - Lowpass cutoff (Hz) applied after load (default 100)
@@ -61,10 +63,11 @@ collectEnd = [];
 brainArea = 'M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 
-d2Window = 45;   % seconds
-d2Step = 45;     % seconds; equal to d2Window => non-overlapping
-rawD2BinSize = 0.002;
+d2Window = 30;   % seconds
+d2Step = 30;     % seconds; equal to d2Window => non-overlapping
+rawD2BinSize = 0.005;
 useLog10D2 = false;
+analyzeBandD2 = false;  % d2 on binned band power; raw LFP d2 still runs
 pOrder = 10;
 critType = 2;
 
@@ -125,6 +128,7 @@ fprintf('LFP: no artifact cleaning; bandpass %.0f-%.0f Hz; zero-mean window\n', 
 fprintf('Avalanches: Klaus nLFP / binned-power cutoff = %.1f SD\n', nSdCutoff);
 fprintf('d2 windows: %.1f s, step %.1f s; raw bin %.0f ms\n', ...
     d2Window, d2Step, rawD2BinSize * 1000);
+fprintf('Band-power d2: %d\n', analyzeBandD2);
 
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 loadArgs = [loadArgs, {'lfpCleanParams', lfpCleanParams, 'bands', bands}];
@@ -152,7 +156,7 @@ fprintf('Analysis trace: %s, %d samples at %.0f Hz, mean = %.3g\n', ...
     areaLabel, size(dataStruct.lfpPerArea, 1), dataStruct.opts.fsLfp, ...
     mean(dataStruct.lfpPerArea(:, 1)));
 
-% d2 on raw LFP and binned power
+% d2 on raw LFP, and on binned power when analyzeBandD2 is true
 d2Config = struct();
 d2Config.slidingWindowSize = d2Window;
 d2Config.stepSize = d2Step;
@@ -164,6 +168,7 @@ d2Config.saveResults = false;
 d2Config.plotBinnedEnvelopes = false;
 d2Config.plotRawLfp = false;
 d2Config.binnedSignalField = 'binnedPower';
+d2Config.analyzeBandPower = analyzeBandD2;
 d2Config.pOrder = pOrder;
 d2Config.critType = critType;
 d2Config.minSegmentLength = 50;
@@ -410,7 +415,8 @@ function fig = plot_lfp_d2_timeline(d2Plot, sessionType, sessionName, areaLabel,
 %
 % Goal:
 %   Match the running-d2 panel in session_d2_distributions. Band-power d2
-%   share the top axes. Raw LFP d2 is on the bottom axes. Both use startS.
+%   share the top axes when those series exist. Raw LFP d2 is on its own axes.
+%   Both use startS.
 
 if nargin < 9 || isempty(plotConfig)
     plotConfig = fill_manuscript_plot_config();
@@ -440,27 +446,29 @@ end
 
 fig = figure('Color', 'w', 'Position', [140 80 900 640], ...
     'Name', sprintf('LFP d2 timeline | %s | %s', sessionName, areaLabel));
-tileLayout = tiledlayout(fig, 2, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
-
-axBand = nexttile(tileLayout);
-hold(axBand, 'on');
-for iSig = bandIdx(:)'
-    [tPlot, yPlot] = align_d2_to_time(timeSec, d2Plot.alignedValues{iSig});
-    if ~any(isfinite(yPlot))
-        continue;
+nRows = 1 + ~isempty(bandIdx);
+tileLayout = tiledlayout(fig, nRows, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+if ~isempty(bandIdx)
+    axBand = nexttile(tileLayout);
+    hold(axBand, 'on');
+    for iSig = bandIdx(:)'
+        [tPlot, yPlot] = align_d2_to_time(timeSec, d2Plot.alignedValues{iSig});
+        if ~any(isfinite(yPlot))
+            continue;
+        end
+        plot(axBand, tPlot, yPlot, '-o', 'Color', colors(iSig, :), ...
+            'MarkerFaceColor', colors(iSig, :), 'MarkerSize', 5, ...
+            'LineWidth', lineWidth, 'DisplayName', d2Plot.names{iSig});
     end
-    plot(axBand, tPlot, yPlot, '-o', 'Color', colors(iSig, :), ...
-        'MarkerFaceColor', colors(iSig, :), 'MarkerSize', 5, ...
-        'LineWidth', lineWidth, 'DisplayName', d2Plot.names{iSig});
+    apply_lfp_d2_time_limits(axBand, timeSec, collectStart, collectEnd);
+    apply_manuscript_axes_style(axBand, plotConfig, '', yLabelText, 'Band power', ...
+        labelInterpreter);
+    set(axBand, 'XTickLabel', []);
+    legend(axBand, 'Location', 'northeast', 'FontSize', plotConfig.legendFontSize, ...
+        'Interpreter', 'none');
+    grid(axBand, 'on');
+    hold(axBand, 'off');
 end
-apply_lfp_d2_time_limits(axBand, timeSec, collectStart, collectEnd);
-apply_manuscript_axes_style(axBand, plotConfig, '', yLabelText, 'Band power', ...
-    labelInterpreter);
-set(axBand, 'XTickLabel', []);
-legend(axBand, 'Location', 'northeast', 'FontSize', plotConfig.legendFontSize, ...
-    'Interpreter', 'none');
-grid(axBand, 'on');
-hold(axBand, 'off');
 
 axRaw = nexttile(tileLayout);
 hold(axRaw, 'on');
@@ -477,7 +485,9 @@ apply_manuscript_axes_style(axRaw, plotConfig, 'Time (s)', yLabelText, 'Raw LFP'
 grid(axRaw, 'on');
 hold(axRaw, 'off');
 
-linkaxes([axBand, axRaw], 'x');
+if ~isempty(bandIdx)
+    linkaxes([axBand, axRaw], 'x');
+end
 sgtitle(tileLayout, sprintf('LFP d2 vs time | %s | %s | %s | %.0f s windows%s', ...
     areaLabel, sessionType, sessionName, d2Window, format_title_window(collectStart, collectEnd)), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
