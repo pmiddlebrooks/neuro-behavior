@@ -52,8 +52,8 @@ collectEnd = 120 * 60;  % [] = through the end of the loaded LFP
 brainArea = 'M56';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 
-d2Window = 45;
-d2Step = 45;
+d2Window = 30;
+d2Step = 30;
 rawD2BinSize = 0.005;  % 100 Hz lowpass -> 5 ms mean bins, snapped to samples
 useLog10D2 = false;
 d2Method = 'kl';         % 'euclidean' or 'kl'
@@ -73,7 +73,7 @@ bands = {'alpha', [8 13]; ...
   'beta', [13 30]; ...
   'lowGamma', [30 50]; ...
   'highGamma', [50 80]};
-analyzeBandPower = false;  % band-power envelopes, d2, and the band plot
+analyzeBandPower = true;  % band-power envelopes, d2, and the band plot
 
 % Engagement timing matches criticality_spontaneous_vs_task
 splitByEngagement = true;  % tasks: engaged (open) and non-engaged (filled)

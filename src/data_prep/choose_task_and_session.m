@@ -70,16 +70,16 @@ subjectName = 'ey9166';
 sessionName = 'ey9166_2026_03_27';  % 
 % 
 % Archimedes
-% subjectName = 'ey9387';
+subjectName = 'ey9387';
 % sessionName = 'ey9387_2026_05_03';  % 
 % sessionName = 'ey9387_2026_05_04';  % 
-% sessionName = 'ey9387_2026_05_06';  % 
+sessionName = 'ey9387_2026_05_06';  % 
 % sessionName = 'ey9387_2026_05_08';  % Don't use: depths all weird
 % sessionName = 'ey9387_2026_05_11';  % Don't use: depths are all weird - looks like only a small portion of M56/M23
 
 % Leonidis
-subjectName = 'ey9755';
-sessionName = 'ey9755_2026_10_08';
+% subjectName = 'ey9755';
+% sessionName = 'ey9755_2026_10_08';
 %% =============================    Interval Data Loading    =============================
 % Data type selection
 sessionType = 'interval';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'
@@ -94,11 +94,11 @@ sessionName =  'ey9166_2026_04_07';
 sessionName =  'ey9166_2026_04_09';
 % 
 % ey9887 interval sessions don't have LFP files yet
-% subjectName = 'ey9387';
+subjectName = 'ey9387';
 % sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
 % sessionName =  'ey9387_2026_05_21';
-% sessionName =  'ey9387_2026_05_22';
+sessionName =  'ey9387_2026_05_22';
 % sessionName =  'ey9387_2026_05_25';
 % sessionName =  'ey9387_2026_05_26';
 % sessionName =  'ey9387_2026_05_27';

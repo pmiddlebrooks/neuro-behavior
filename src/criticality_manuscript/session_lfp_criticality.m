@@ -63,7 +63,7 @@ brainAreaCombinations = default_manuscript_brain_area_combinations();
 
 d2Window = 45;   % seconds
 d2Step = 45;     % seconds; equal to d2Window => non-overlapping
-rawD2BinSize = 0.005;
+rawD2BinSize = 0.002;
 useLog10D2 = false;
 pOrder = 10;
 critType = 2;
@@ -152,7 +152,7 @@ fprintf('Analysis trace: %s, %d samples at %.0f Hz, mean = %.3g\n', ...
     areaLabel, size(dataStruct.lfpPerArea, 1), dataStruct.opts.fsLfp, ...
     mean(dataStruct.lfpPerArea(:, 1)));
 
-%% d2 on raw LFP and binned power
+% d2 on raw LFP and binned power
 d2Config = struct();
 d2Config.slidingWindowSize = d2Window;
 d2Config.stepSize = d2Step;

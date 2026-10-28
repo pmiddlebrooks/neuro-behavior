@@ -36,7 +36,7 @@
 subjectName = 'ey9166';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
 % taskTypes = {'interval', 'reach'};
-% taskTypes = {'interval'};
+taskTypes = {'interval'};
 d2Method = 'kl';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
@@ -110,7 +110,7 @@ metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to s
 splitByEngagement = true;  % true: engaged (open) and non-engaged (filled) on one plot
 
 useLog10D2 = false;
-useSubsampling = true;
+useSubsampling = false;
 nSubsamples = 40;
 nNeuronsSubsample = 75;
 minNeuronsMultiple = 1.1;

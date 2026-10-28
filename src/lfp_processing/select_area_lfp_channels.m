@@ -11,7 +11,8 @@ function areaChan = select_area_lfp_channels(sessionFolder, brainAreas, probeTyp
 %   Use the same depth ranges as load_session_cluster_info.m /
 %   get_brain_area_depth_ranges.m. For each requested area, pick the raw
 %   LFP channels nearest 1/3 and 2/3 of that depth span and return their
-%   IDs and oriented depths (0 = surface, 3840 = deepest).
+%   IDs and oriented depths (0 = surface, 3840 = deepest). Areas with
+%   fewer than two LFP channels are skipped. Errors if none remain.
 
 if nargin < 2 || isempty(brainAreas)
     brainAreas = {'M23', 'M56', 'DS', 'VS'};
@@ -56,9 +57,9 @@ for iArea = 1:nAreas
     ids = channelIds(inRange);
     deps = orientedDepths(inRange);
     if numel(ids) < 2
-        error('select_area_lfp_channels:TooFew', ...
-            '%s [%d %d] um has %d LFP channels; need at least 2.', ...
+        fprintf('  %s [%d %d] um has %d LFP channels; skipping (need at least 2).\n', ...
             areaName, dMin, dMax, numel(ids));
+        continue
     end
 
     span = dMax - dMin;
@@ -88,6 +89,11 @@ for iArea = 1:nAreas
     fprintf('  %s [%d %d] um  targets %.0f / %.0f  -> ch %d (%.0f um), ch %d (%.0f um)\n', ...
         areaName, dMin, dMax, targetDepths(1), targetDepths(2), ...
         pickedIds(1), pickedDepths(1), pickedIds(2), pickedDepths(2));
+end
+
+if isempty(areaChan)
+    error('select_area_lfp_channels:NoAreas', ...
+        'No requested brain area has at least 2 LFP channels.');
 end
 end
 
