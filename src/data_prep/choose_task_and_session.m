@@ -94,11 +94,11 @@ sessionName =  'ey9166_2026_04_07';
 sessionName =  'ey9166_2026_04_09';
 % 
 % ey9887 interval sessions don't have LFP files yet
-subjectName = 'ey9387';
+% subjectName = 'ey9387';
 % sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
 % sessionName =  'ey9387_2026_05_21';
-sessionName =  'ey9387_2026_05_22';
+% sessionName =  'ey9387_2026_05_22';
 % sessionName =  'ey9387_2026_05_25';
 % sessionName =  'ey9387_2026_05_26';
 % sessionName =  'ey9387_2026_05_27';

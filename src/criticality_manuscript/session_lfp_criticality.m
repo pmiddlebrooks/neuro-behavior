@@ -48,6 +48,16 @@
 %   gofThreshold     - Used for 'plfit2023' and 'hybrid'
 %   saveFigure       - Export PNG/EPS to dropPath/criticality_manuscript
 %   plotConfig       - Axis fonts/line widths (see fill_manuscript_plot_config)
+%   splitByEngagement  - If true (reach/interval/semicircle), also run engaged vs
+%                        non-engaged d2 and avalanches. Windows and avalanches
+%                        stay inside one class; straddlers are skipped.
+%   engagementBufferBefore - Seconds before each engagement event = engaged
+%   engagementBufferAfter  - Seconds after each engagement event = engaged
+%   engagementBuffer       - Legacy symmetric alias; if before/after unset, sets both
+%   minNonEngagedWindow - Min gap without events (s) for non-engaged segments
+%   minTimeNonEngaged  - Min total non-engaged time (s) to plot; 0 = no filter.
+%                        Below this, non-engaged results are omitted from plots.
+%   absorbSingleEvents - Merge isolated single events into non-engaged gaps
 %
 % Goal:
 %   Compare raw-LFP and band-power criticality (d2 and avalanches) in one area.
@@ -85,6 +95,14 @@ compareTailModels = true;
 runClausetPlpva = false;
 gofThreshold = 0.8;
 saveFigure = false;
+
+% Optional engaged vs non-engaged (reach / interval / semicircle only)
+splitByEngagement = true;
+engagementBufferBefore = 3;  % s before each engagement event = engaged
+engagementBufferAfter = 1;   % s after each engagement event = engaged
+minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
+absorbSingleEvents = true;   % merge isolated single events into non-engaged gaps
+minTimeNonEngaged = 180;     % min total non-engaged time (s) to plot; 0 = no filter
 
 plotConfig = fill_manuscript_plot_config();
 plotConfig.drawPowerLawFit = true;
@@ -129,6 +147,13 @@ fprintf('Avalanches: Klaus nLFP / binned-power cutoff = %.1f SD\n', nSdCutoff);
 fprintf('d2 windows: %.1f s, step %.1f s; raw bin %.0f ms\n', ...
     d2Window, d2Step, rawD2BinSize * 1000);
 fprintf('Band-power d2: %d\n', analyzeBandD2);
+fprintf('splitByEngagement: %d\n', splitByEngagement);
+if splitByEngagement
+    fprintf('engagementBuffer: before=%.3g s, after=%.3g s; minNonEngagedWindow=%.1f s\n', ...
+        engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow);
+    fprintf('minTimeNonEngaged: %.1f s (omit non-engaged plots below this; 0 = off)\n', ...
+        minTimeNonEngaged);
+end
 
 loadArgs = build_session_load_args(sessionType, sessionName, opts, subjectNameForLoad);
 loadArgs = [loadArgs, {'lfpCleanParams', lfpCleanParams, 'bands', bands}];
@@ -231,9 +256,228 @@ if saveFigure
     fprintf('Saved figure: %s\n', fullfile(saveDir, avBase));
 end
 
+if splitByEngagement
+    run_session_lfp_engagement(dataStruct, sessionType, sessionName, subjectNameForLoad, ...
+        areaLabel, d2Config, d2Window, useLog10D2, nSdCutoff, fitConfig, ...
+        lfpHighpassHz, lfpLowpassHz, collectStart, collectEnd, plotConfig, ...
+        engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, ...
+        minTimeNonEngaged, absorbSingleEvents, saveFigure, paths);
+end
+
 fprintf('\n=== Done ===\n');
 
 %% Local functions
+
+function run_session_lfp_engagement(dataStruct, sessionType, sessionName, subjectName, ...
+    areaLabel, d2Config, d2Window, useLog10D2, nSdCutoff, fitConfig, ...
+    lfpHighpassHz, lfpLowpassHz, collectStart, collectEnd, plotConfig, ...
+    engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, ...
+    minTimeNonEngaged, absorbSingleEvents, saveFigure, paths)
+% RUN_SESSION_LFP_ENGAGEMENT - Engaged and non-engaged d2 and avalanches
+%
+% Variables:
+%   dataStruct - Prepared single-area LFP already used for the full session
+%   d2Config   - criticality_lfp_analysis settings for the full-session run
+%   minTimeNonEngaged - Omit non-engaged plots when total non-engaged time is shorter
+%
+% Goal:
+%   Use the same event clocks and segment rule as the spike engagement
+%   modules. d2 windows are center-packed inside each class. Avalanches use
+%   one threshold per segment so a run cannot cross a class boundary.
+
+if ~is_manuscript_engagement_session_type(sessionType)
+    error('session_lfp_criticality:BadEngagementType', ...
+        'splitByEngagement requires sessionType interval, reach, or semicircle (got %s).', ...
+        sessionType);
+end
+
+timeOrigin = 0;
+if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectStart') ...
+        && ~isempty(dataStruct.opts.collectStart)
+    timeOrigin = dataStruct.opts.collectStart;
+end
+timeEnd = timeOrigin + size(dataStruct.lfpPerArea, 1) / dataStruct.opts.fsLfp;
+eventTimes = load_session_lfp_engagement_events(dataStruct, sessionType, subjectName, sessionName);
+eventTimes = eventTimes(eventTimes >= timeOrigin & eventTimes <= timeEnd);
+if isempty(eventTimes)
+    error('session_lfp_criticality:NoEngagementEvents', ...
+        'No engagement events in the collect window.');
+end
+
+bufOpts = struct( ...
+    'engagementBufferBefore', engagementBufferBefore, ...
+    'engagementBufferAfter', engagementBufferAfter);
+[bufBefore, bufAfter] = resolve_engagement_buffer_pair( ...
+    bufOpts, 'engagementBufferBefore', 'engagementBufferAfter', 'engagementBuffer', 1);
+[engagedSegs, nonEngagedSegs] = define_engagement_segments( ...
+    timeOrigin, timeEnd, eventTimes, minNonEngagedWindow, ...
+    bufBefore, bufAfter, absorbSingleEvents);
+nonEngagedSec = sum_lfp_segment_durations(nonEngagedSegs);
+fprintf('\n--- Engagement LFP ---\n');
+fprintf('Events: %d; engaged: %d segment(s), %.1f s; non-engaged: %d segment(s), %.1f s\n', ...
+    numel(eventTimes), numel(engagedSegs), sum_lfp_segment_durations(engagedSegs), ...
+    numel(nonEngagedSegs), nonEngagedSec);
+
+plotNonEngaged = ~(minTimeNonEngaged > 0 && nonEngagedSec < minTimeNonEngaged);
+if ~plotNonEngaged
+    fprintf('Non-engaged time %.1f s is below %.1f s; non-engaged plots omitted.\n', ...
+        nonEngagedSec, minTimeNonEngaged);
+end
+
+plot_lfp_engagement_class(dataStruct, 'Engaged', engagedSegs, true, ...
+    areaLabel, sessionType, sessionName, d2Config, d2Window, useLog10D2, ...
+    nSdCutoff, fitConfig, lfpHighpassHz, lfpLowpassHz, collectStart, collectEnd, ...
+    plotConfig, saveFigure, paths);
+plot_lfp_engagement_class(dataStruct, 'Non-engaged', nonEngagedSegs, plotNonEngaged, ...
+    areaLabel, sessionType, sessionName, d2Config, d2Window, useLog10D2, ...
+    nSdCutoff, fitConfig, lfpHighpassHz, lfpLowpassHz, collectStart, collectEnd, ...
+    plotConfig, saveFigure, paths);
+end
+
+function plot_lfp_engagement_class(dataStruct, classLabel, segments, doPlot, ...
+    areaLabel, sessionType, sessionName, d2Config, d2Window, useLog10D2, ...
+    nSdCutoff, fitConfig, lfpHighpassHz, lfpLowpassHz, collectStart, collectEnd, ...
+    plotConfig, saveFigure, paths)
+% PLOT_LFP_ENGAGEMENT_CLASS - d2 and avalanches for one engagement class
+%
+% Variables:
+%   segments - Struct array with .start and .end (s)
+%   doPlot   - False omits figures after the class has been scored
+%
+% Goal:
+%   Score the class even when its plots are omitted, so a short non-engaged
+%   period is still reported.
+
+fprintf('\n=== %s ===\n', classLabel);
+centerTimes = center_pack_windows_in_segments(segments, d2Window);
+figD2 = [];
+figD2Time = [];
+if isempty(centerTimes)
+    fprintf('No %.0f s d2 window fits inside %s segments.\n', d2Window, lower(classLabel));
+else
+    classConfig = d2Config;
+    classConfig.restrictToAwake = false;
+    classConfig.windowCenterTimes = centerTimes;
+    d2Results = criticality_lfp_analysis(dataStruct, classConfig);
+    d2Plot = collect_lfp_d2_series(d2Results, useLog10D2);
+    print_lfp_d2_summary(d2Plot, useLog10D2);
+    if doPlot && lfp_d2_plot_has_values(d2Plot)
+        figD2 = plot_lfp_d2_overlap(d2Plot, sessionType, sessionName, areaLabel, ...
+            d2Window, collectStart, collectEnd, useLog10D2, plotConfig, classLabel);
+        figD2Time = plot_lfp_d2_timeline(d2Plot, sessionType, sessionName, areaLabel, ...
+            d2Window, collectStart, collectEnd, useLog10D2, plotConfig, classLabel);
+    end
+end
+
+avPlot = run_lfp_avalanches(dataStruct, nSdCutoff, fitConfig, segments);
+print_lfp_avalanche_summary(avPlot);
+figAv = [];
+if doPlot
+    figAv = plot_lfp_avalanche_distributions(avPlot, sessionName, areaLabel, ...
+        nSdCutoff, lfpHighpassHz, lfpLowpassHz, plotConfig, classLabel);
+end
+if saveFigure && doPlot
+    save_session_lfp_engagement_figures(figD2, figD2Time, figAv, paths, ...
+        sessionName, areaLabel, classLabel, d2Window, collectStart, collectEnd, ...
+        useLog10D2, nSdCutoff, lfpLowpassHz);
+end
+end
+
+function tf = lfp_d2_plot_has_values(d2Plot)
+% LFP_D2_PLOT_HAS_VALUES - True when any signal has a finite d2
+tf = false;
+for iSig = 1:numel(d2Plot.values)
+    vals = d2Plot.values{iSig};
+    if any(isfinite(vals))
+        tf = true;
+        return;
+    end
+end
+end
+
+function eventTimes = load_session_lfp_engagement_events(dataStruct, sessionType, subjectName, sessionName)
+% LOAD_SESSION_LFP_ENGAGEMENT_EVENTS - Reach onsets, interval outcomes, or semicircle times
+%
+% Goal:
+%   Use the same event clocks as the spike engagement modules.
+
+paths = get_paths();
+switch lower(strtrim(char(sessionType)))
+    case 'reach'
+        if ~isfield(dataStruct, 'reachStart') || isempty(dataStruct.reachStart)
+            error('session_lfp_criticality:NoReachTimes', ...
+                'Reach session has no reachStart times.');
+        end
+        eventTimes = dataStruct.reachStart(:);
+    case 'interval'
+        eventTimes = load_interval_beam_break_events(paths, subjectName, sessionName, 0.1);
+    case 'semicircle'
+        eventTimes = load_semicircle_beam_break_events(paths, subjectName, sessionName);
+    otherwise
+        eventTimes = [];
+end
+eventTimes = double(eventTimes(:));
+eventTimes = eventTimes(isfinite(eventTimes));
+end
+
+function totalSec = sum_lfp_segment_durations(segments)
+% SUM_LFP_SEGMENT_DURATIONS - Total length of a segment list (s)
+if isempty(segments)
+    totalSec = 0;
+    return;
+end
+totalSec = sum([segments.end] - [segments.start]);
+end
+
+function tag = format_lfp_class_tag(classLabel)
+% FORMAT_LFP_CLASS_TAG - Title fragment for an engagement class, or empty
+if nargin < 1 || isempty(classLabel)
+    tag = '';
+    return;
+end
+tag = [' | ' classLabel];
+end
+
+function save_session_lfp_engagement_figures(figD2, figD2Time, figAv, paths, ...
+    sessionName, areaLabel, classLabel, d2Window, collectStart, collectEnd, ...
+    useLog10D2, nSdCutoff, lfpLowpassHz)
+% SAVE_SESSION_LFP_ENGAGEMENT_FIGURES - PNG and EPS for one engagement class
+
+saveDir = fullfile(paths.dropPath, 'criticality_manuscript');
+if ~exist(saveDir, 'dir')
+    mkdir(saveDir);
+end
+collectTag = format_collect_tag(collectStart, collectEnd);
+areaTag = matlab.lang.makeValidName(areaLabel);
+classTag = matlab.lang.makeValidName(classLabel);
+if ~isempty(figD2)
+    d2Base = sprintf('session_lfp_d2_%s_%s_%s_win%.0fs_%s', ...
+        sessionName, areaTag, classTag, d2Window, collectTag);
+    if useLog10D2
+        d2Base = [d2Base, '_log10'];
+    end
+    exportgraphics(figD2, fullfile(saveDir, [d2Base, '.png']), 'Resolution', 300);
+    exportgraphics(figD2, fullfile(saveDir, [d2Base, '.eps']), 'ContentType', 'vector');
+    fprintf('Saved figure: %s\n', fullfile(saveDir, d2Base));
+end
+if ~isempty(figD2Time)
+    d2TimeBase = sprintf('session_lfp_d2_timeline_%s_%s_%s_win%.0fs_%s', ...
+        sessionName, areaTag, classTag, d2Window, collectTag);
+    if useLog10D2
+        d2TimeBase = [d2TimeBase, '_log10'];
+    end
+    exportgraphics(figD2Time, fullfile(saveDir, [d2TimeBase, '.png']), 'Resolution', 300);
+    exportgraphics(figD2Time, fullfile(saveDir, [d2TimeBase, '.eps']), 'ContentType', 'vector');
+    fprintf('Saved figure: %s\n', fullfile(saveDir, d2TimeBase));
+end
+if ~isempty(figAv)
+    avBase = sprintf('session_lfp_avalanches_%s_%s_%s_%.1fsd_lp%.0f_%s', ...
+        sessionName, areaTag, classTag, nSdCutoff, lfpLowpassHz, collectTag);
+    exportgraphics(figAv, fullfile(saveDir, [avBase, '.png']), 'Resolution', 300);
+    exportgraphics(figAv, fullfile(saveDir, [avBase, '.eps']), 'ContentType', 'vector');
+    fprintf('Saved figure: %s\n', fullfile(saveDir, avBase));
+end
+end
 
 function d2Plot = collect_lfp_d2_series(d2Results, useLog10D2)
 % COLLECT_LFP_D2_SERIES - Raw and per-band window-wise d2 for one area
@@ -336,7 +580,7 @@ end
 end
 
 function fig = plot_lfp_d2_overlap(d2Plot, sessionType, sessionName, areaLabel, ...
-    d2Window, collectStart, collectEnd, useLog10D2, plotConfig)
+    d2Window, collectStart, collectEnd, useLog10D2, plotConfig, classLabel)
 % PLOT_LFP_D2_OVERLAP - One axes, raw and band d2 densities in different colors
 %
 % Variables:
@@ -349,6 +593,9 @@ function fig = plot_lfp_d2_overlap(d2Plot, sessionType, sessionName, areaLabel, 
 
 if nargin < 9 || isempty(plotConfig)
     plotConfig = fill_manuscript_plot_config();
+end
+if nargin < 10 || isempty(classLabel)
+    classLabel = '';
 end
 
 allVals = [];
@@ -372,7 +619,7 @@ end
 
 colors = lfp_signal_colors(numel(d2Plot.names));
 fig = figure('Color', 'w', 'Position', [120 140 760 480], ...
-    'Name', sprintf('LFP d2 | %s | %s', sessionName, areaLabel));
+    'Name', sprintf('LFP d2%s | %s | %s', format_lfp_class_tag(classLabel), sessionName, areaLabel));
 ax = axes(fig);
 hold(ax, 'on');
 for iSig = 1:numel(d2Plot.names)
@@ -398,13 +645,14 @@ legend(ax, 'Location', 'northeast', 'FontSize', plotConfig.legendFontSize, ...
 grid(ax, 'on');
 hold(ax, 'off');
 
-sgtitle(fig, sprintf('LFP d2 | %s | %s | %s | %.0f s windows%s', ...
-    areaLabel, sessionType, sessionName, d2Window, format_title_window(collectStart, collectEnd)), ...
+sgtitle(fig, sprintf('LFP d2%s | %s | %s | %s | %.0f s windows%s', ...
+    format_lfp_class_tag(classLabel), areaLabel, sessionType, sessionName, d2Window, ...
+    format_title_window(collectStart, collectEnd)), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
 function fig = plot_lfp_d2_timeline(d2Plot, sessionType, sessionName, areaLabel, ...
-    d2Window, collectStart, collectEnd, useLog10D2, plotConfig)
+    d2Window, collectStart, collectEnd, useLog10D2, plotConfig, classLabel)
 % PLOT_LFP_D2_TIMELINE - Window-wise d2 versus time
 %
 % Variables:
@@ -420,6 +668,9 @@ function fig = plot_lfp_d2_timeline(d2Plot, sessionType, sessionName, areaLabel,
 
 if nargin < 9 || isempty(plotConfig)
     plotConfig = fill_manuscript_plot_config();
+end
+if nargin < 10 || isempty(classLabel)
+    classLabel = '';
 end
 
 timeSec = d2Plot.timeSec(:);
@@ -445,7 +696,8 @@ if isfield(plotConfig, 'axesLineWidth') && ~isempty(plotConfig.axesLineWidth)
 end
 
 fig = figure('Color', 'w', 'Position', [140 80 900 640], ...
-    'Name', sprintf('LFP d2 timeline | %s | %s', sessionName, areaLabel));
+    'Name', sprintf('LFP d2 timeline%s | %s | %s', format_lfp_class_tag(classLabel), ...
+    sessionName, areaLabel));
 nRows = 1 + ~isempty(bandIdx);
 tileLayout = tiledlayout(fig, nRows, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
 if ~isempty(bandIdx)
@@ -488,8 +740,9 @@ hold(axRaw, 'off');
 if ~isempty(bandIdx)
     linkaxes([axBand, axRaw], 'x');
 end
-sgtitle(tileLayout, sprintf('LFP d2 vs time | %s | %s | %s | %.0f s windows%s', ...
-    areaLabel, sessionType, sessionName, d2Window, format_title_window(collectStart, collectEnd)), ...
+sgtitle(tileLayout, sprintf('LFP d2 vs time%s | %s | %s | %s | %.0f s windows%s', ...
+    format_lfp_class_tag(classLabel), areaLabel, sessionType, sessionName, d2Window, ...
+    format_title_window(collectStart, collectEnd)), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
@@ -537,24 +790,31 @@ end
 xlim(ax, [xMin, xMax]);
 end
 
-function avPlot = run_lfp_avalanches(dataStruct, nSdCutoff, fitConfig)
+function avPlot = run_lfp_avalanches(dataStruct, nSdCutoff, fitConfig, segments)
 % RUN_LFP_AVALANCHES - Klaus avalanches for raw LFP and each binned power band
 %
 % Variables:
 %   dataStruct - Prepared single-area LFP struct (lfpPerArea, binnedPower, bands)
 %   nSdCutoff  - SD cutoff (2.5)
 %   fitConfig  - Fields for fit_avalanche_power_law
+%   segments   - Optional engagement bouts. Omit to use the whole trace.
 %
 % Goal:
 %   Detect avalanches, fit size (threshold units) and duration (bins), and
 %   keep Δt so duration CCDFs can be drawn in milliseconds.
 
+useSegments = nargin >= 4;
 avPlot = struct();
 avPlot.names = {};
 avPlot.results = {};
 fs = dataStruct.opts.fsLfp;
-rawAv = detect_klaus_on_awake_epochs(dataStruct, dataStruct.lfpPerArea(:, 1), ...
-    1 / fs, nSdCutoff, 'nlfp');
+if useSegments
+    rawAv = detect_klaus_on_awake_epochs(dataStruct, dataStruct.lfpPerArea(:, 1), ...
+        1 / fs, nSdCutoff, 'nlfp', segments);
+else
+    rawAv = detect_klaus_on_awake_epochs(dataStruct, dataStruct.lfpPerArea(:, 1), ...
+        1 / fs, nSdCutoff, 'nlfp');
+end
 rawAv = fit_lfp_avalanche_laws(rawAv, fitConfig);
 rawAv.name = 'Raw LFP';
 avPlot = append_av_result(avPlot, rawAv);
@@ -563,15 +823,20 @@ numBands = size(dataStruct.bands, 1);
 for b = 1:numBands
     bandName = char(dataStruct.bands{b, 1});
     bandSignal = dataStruct.binnedPower{1}{b};
-    bandAv = detect_klaus_on_awake_epochs(dataStruct, bandSignal, ...
-        dataStruct.bandBinSizes(b), nSdCutoff, 'binnedPower');
+    if useSegments
+        bandAv = detect_klaus_on_awake_epochs(dataStruct, bandSignal, ...
+            dataStruct.bandBinSizes(b), nSdCutoff, 'binnedPower', segments);
+    else
+        bandAv = detect_klaus_on_awake_epochs(dataStruct, bandSignal, ...
+            dataStruct.bandBinSizes(b), nSdCutoff, 'binnedPower');
+    end
     bandAv = fit_lfp_avalanche_laws(bandAv, fitConfig);
     bandAv.name = bandName;
     avPlot = append_av_result(avPlot, bandAv);
 end
 end
 
-function av = detect_klaus_on_awake_epochs(dataStruct, signal, samplePeriodSec, nSd, mode)
+function av = detect_klaus_on_awake_epochs(dataStruct, signal, samplePeriodSec, nSd, mode, segments)
 % DETECT_KLAUS_ON_AWAKE_EPOCHS - Klaus avalanches on awake pieces of one trace
 %
 % Variables:
@@ -580,11 +845,18 @@ function av = detect_klaus_on_awake_epochs(dataStruct, signal, samplePeriodSec, 
 %   samplePeriodSec - Seconds per sample
 %   nSd             - SD cutoff
 %   mode            - 'nlfp' or 'binnedPower'
+%   segments        - Optional engagement bouts (.start, .end). When passed,
+%                     each bout is detected on its own. Omit it to use the
+%                     whole trace, including spontaneous sleep.
 %
 % Goal:
-%   This session view uses the whole trace, including spontaneous sleep.
+%   Pool Klaus avalanches without letting a run cross a bout boundary.
 %   Across-session summaries still drop sleep.
 
+useCallerSegments = nargin >= 6;
+if ~useCallerSegments
+    segments = [];
+end
 signal = signal(:);
 if numel(signal) < 3 || ~(isfinite(samplePeriodSec) && samplePeriodSec > 0)
     av = detect_klaus_avalanches(signal, samplePeriodSec, nSd, mode);
@@ -595,16 +867,22 @@ if isfield(dataStruct, 'opts') && isfield(dataStruct.opts, 'collectStart') ...
         && ~isempty(dataStruct.opts.collectStart)
     timeOrigin = dataStruct.opts.collectStart;
 end
-timeEnd = timeOrigin + numel(signal) * samplePeriodSec;
-[segments, applyFilter] = resolve_spontaneous_awake_segments( ...
-    dataStruct, struct('restrictToAwake', false), [timeOrigin, timeEnd]);
-if ~applyFilter
-    av = detect_klaus_avalanches(signal, samplePeriodSec, nSd, mode);
-    return;
+if ~useCallerSegments
+    timeEnd = timeOrigin + numel(signal) * samplePeriodSec;
+    [segments, applyFilter] = resolve_spontaneous_awake_segments( ...
+        dataStruct, struct('restrictToAwake', false), [timeOrigin, timeEnd]);
+    if ~applyFilter
+        av = detect_klaus_avalanches(signal, samplePeriodSec, nSd, mode);
+        return;
+    end
 end
 if isempty(segments)
     av = detect_klaus_avalanches([], samplePeriodSec, nSd, mode);
-    fprintf('LFP avalanches (%s): no awake epochs; nothing pooled\n', mode);
+    if useCallerSegments
+        fprintf('LFP avalanches (%s): no engagement segments; nothing pooled\n', mode);
+    else
+        fprintf('LFP avalanches (%s): no awake epochs; nothing pooled\n', mode);
+    end
     return;
 end
 
@@ -651,7 +929,11 @@ av.nAvalanches = numel(sizes);
 if nSamples > 0
     av.fractionActive = activeWeight / nSamples;
 end
-fprintf('LFP avalanches (%s): pooled %d awake epoch(s)\n', mode, numel(segments));
+if useCallerSegments
+    fprintf('LFP avalanches (%s): pooled %d engagement segment(s)\n', mode, numel(segments));
+else
+    fprintf('LFP avalanches (%s): pooled %d awake epoch(s)\n', mode, numel(segments));
+end
 end
 
 function piece = signal_inside_segment(signal, samplePeriodSec, timeOrigin, segment)
@@ -736,7 +1018,7 @@ end
 end
 
 function fig = plot_lfp_avalanche_distributions(avPlot, sessionName, areaLabel, ...
-    nSdCutoff, lfpHighpassHz, lfpLowpassHz, plotConfig)
+    nSdCutoff, lfpHighpassHz, lfpLowpassHz, plotConfig, classLabel)
 % PLOT_LFP_AVALANCHE_DISTRIBUTIONS - Size and duration CCDFs, one column per signal
 %
 % Variables:
@@ -748,8 +1030,11 @@ function fig = plot_lfp_avalanche_distributions(avPlot, sessionName, areaLabel, 
 %   Same figure, separate axes for raw LFP and each binned power band.
 %   Top row is avalanche size; bottom row is duration in milliseconds.
 
-if nargin < 6 || isempty(plotConfig)
+if nargin < 7 || isempty(plotConfig)
     plotConfig = fill_manuscript_plot_config();
+end
+if nargin < 8 || isempty(classLabel)
+    classLabel = '';
 end
 plotConfig = fill_lfp_avalanche_plot_config(plotConfig);
 
@@ -757,7 +1042,8 @@ nSignals = numel(avPlot.results);
 colors = lfp_signal_colors(nSignals);
 fig = figure('Color', 'w', ...
     'Position', [80 80 max(900, 280 * nSignals) 640], ...
-    'Name', sprintf('LFP avalanches | %s | %s', sessionName, areaLabel));
+    'Name', sprintf('LFP avalanches%s | %s | %s', format_lfp_class_tag(classLabel), ...
+    sessionName, areaLabel));
 tileLayout = tiledlayout(fig, 2, nSignals, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 for iSig = 1:nSignals
@@ -785,9 +1071,9 @@ for iSig = 1:nSignals
     grid(axDur, 'on');
 end
 
-sgtitle(tileLayout, sprintf(['LFP avalanches | %s | %s | %.1f SD | %.0f-%.0f Hz | ', ...
-    'Klaus nLFP (raw) and binned power'], sessionName, areaLabel, nSdCutoff, ...
-    lfpHighpassHz, lfpLowpassHz), ...
+sgtitle(tileLayout, sprintf(['LFP avalanches%s | %s | %s | %.1f SD | %.0f-%.0f Hz | ', ...
+    'Klaus nLFP (raw) and binned power'], format_lfp_class_tag(classLabel), ...
+    sessionName, areaLabel, nSdCutoff, lfpHighpassHz, lfpLowpassHz), ...
     'FontSize', plotConfig.sgtitleFontSize, 'Interpreter', 'none');
 end
 
