@@ -3,6 +3,7 @@ function fileInfo = find_np1_lfp_files(lfpDataPath, sessionDate, sessionFolder)
 %
 % Variables:
 %   lfpDataPath   - Folder containing np1-lfp_YYYY-MM-DDTHH_MM_SS*.raw
+%                   (hour/minute/second may be separated by _ or -)
 %   sessionDate   - 'YYYY-MM-DD' parsed from sessionName
 %   sessionFolder - Optional spike session folder (for params.py timestamp)
 %
@@ -37,7 +38,7 @@ fileInfo = struct('name', {}, 'path', {}, 'timestamp', {}, 'segmentStartHour', {
 for iFile = 1:numel(rawFiles)
     fileName = rawFiles(iFile).name;
     dateTok = regexp(fileName, ...
-        'np1-lfp_(\d{4}-\d{2}-\d{2})T(\d{2})_(\d{2})_(\d{2})(?:_(.*))?\.raw', ...
+        'np1-lfp_(\d{4}-\d{2}-\d{2})T(\d{2})[_-](\d{2})[_-](\d{2})(?:_(.*))?\.raw', ...
         'tokens', 'once');
     if isempty(dateTok)
         continue

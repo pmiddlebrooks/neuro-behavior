@@ -19,14 +19,19 @@ function sleepResult = lfp_sleep_detector(sessionType, subjectName, sessionName,
 % Goal:
 %   Mark sleep in a spontaneous session so those epochs can be left out of
 %   criticality analyses. Delta power is high in sleep and low in wake, and
-%   the split is the valley between those two modes. A running average, then
-%   a minimum bout length, keeps brief dips and surges from flipping state.
+%   the split is the valley between those two modes. Sleep also has to sit
+%   above 0 on the log10 running average (wake sits near -0.5). If the
+%   histogram is not bimodal, the recording is scored entirely awake.
+%   A running average, then a minimum bout length, keeps brief dips and
+%   surges from flipping state.
 %
 % Returns:
 %   sleepResult - Struct with:
 %     .centerTimes, .deltaPower, .deltaPowerSmooth
 %     .sleepThreshold, .sleepThresholdLog10, .thresholdMethod
-%     .isSleepRaw  - Above threshold, before the minimum bout length
+%       thresholdMethod is 'valley', 'twoMeans', or 'notBimodal'
+%     .isSleepRaw  - Candidate sleep before the minimum bout length.
+%                    All false when the histogram is not bimodal.
 %     .isSleep     - Final label at each window center
 %     .sleepSegments, .awakeSegments - [n x 2] absolute start and end (s)
 %     .sleepFraction, .nShortRunsAbsorbed
@@ -64,7 +69,15 @@ deltaPowerSmooth = running_average_power(deltaPower, params.stepSec, params.smoo
     delta_bimodal_threshold(deltaPowerSmooth);
 
 logSmooth = log10(deltaPowerSmooth);
-isSleepRaw = logSmooth > thresholdLog;
+sleepFloorLog = 0;
+if strcmp(thresholdMethod, 'notBimodal')
+    isSleepRaw = false(size(logSmooth));
+    nBelowFloor = 0;
+else
+    isSleepRaw = logSmooth > thresholdLog;
+    [isSleepRaw, nBelowFloor] = reject_sleep_below_floor( ...
+        isSleepRaw, logSmooth, sleepFloorLog);
+end
 [isSleep, nShortRunsAbsorbed] = enforce_min_segment_length( ...
     isSleepRaw, logSmooth, thresholdLog, params.stepSec, params.minSegmentLength);
 
@@ -108,6 +121,10 @@ sleepResult.collectEnd = tEnd;
 
 fprintf('Threshold: log10(delta) = %.3f (%s)\n', thresholdLog, thresholdMethod);
 fprintf('Modes (log10): %.3f and %.3f\n', modeLog(1), modeLog(2));
+if nBelowFloor > 0
+    fprintf(['Cleared %d candidate sleep bout(s) whose smoothed log10 delta ', ...
+        'did not stay above 0.\n'], nBelowFloor);
+end
 fprintf('Absorbed %d bout(s) shorter than %.0f s\n', ...
     nShortRunsAbsorbed, params.minSegmentLength);
 fprintf('Sleep: %d epoch(s), %.1f%% of %.1f s | Awake: %d epoch(s)\n', ...
@@ -296,11 +313,13 @@ function [thresholdLog, method, histCenters, histCounts, modeLog] = ...
 % Goal:
 %   Put the threshold in the valley between the two modes of log10 power.
 %   If the histogram has no clear valley, use the midpoint between two
-%   fitted modes. Sleep is every sample above the threshold.
+%   fitted modes. When neither split is clear, mark the method 'notBimodal'.
+%   The caller then scores the recording as awake. A usable split still has
+%   to pass the log10 > 0 sleep floor.
 %
 % Returns:
 %   thresholdLog - Threshold on log10(delta power)
-%   method        - 'valley' or 'twoMeans'
+%   method        - 'valley', 'twoMeans', or 'notBimodal'
 %   histCenters   - Histogram bin centers (log10 power)
 %   histCounts    - Smoothed bin counts
 %   modeLog       - [lowMode highMode] on log10 power
@@ -308,19 +327,27 @@ function [thresholdLog, method, histCenters, histCounts, modeLog] = ...
 logPower = log10(deltaPowerSmooth(:));
 logPower = logPower(isfinite(logPower));
 powerRange = max(logPower) - min(logPower);
+nBins = 60;
+if numel(logPower) < 2
+    histCenters = zeros(0, 1);
+    histCounts = zeros(0, 1);
+else
+    [rawCounts, edges] = histcounts(logPower, nBins);
+    histCenters = ((edges(1:end-1) + edges(2:end)) / 2)';
+    histCounts = rawCounts(:);
+end
 if numel(logPower) < 10 || powerRange < 0.05
-    error('lfp_sleep_detector:NotBimodal', ...
-        'Delta power has too little range to separate sleep from wake.');
+    thresholdLog = median(logPower);
+    modeLog = [nan nan];
+    method = 'notBimodal';
+    fprintf(['Delta power has too little range for a sleep/wake split. ', ...
+        'Scoring this recording as awake.\n']);
+    return
 end
 
-nBins = 60;
-[rawCounts, edges] = histcounts(logPower, nBins);
-histCenters = ((edges(1:end-1) + edges(2:end)) / 2)';
-rawCounts = rawCounts(:);
-smoothCounts = movmean(rawCounts, 5);
+smoothCounts = movmean(histCounts, 5);
 
 [foundValley, thresholdLog, modeLog] = valley_between_modes(histCenters, smoothCounts);
-histCounts = rawCounts;
 if foundValley
     method = 'valley';
     return
@@ -328,9 +355,10 @@ end
 
 [thresholdLog, modeLog, modesOk] = two_means_threshold(logPower, modeLog);
 if ~modesOk
-    error('lfp_sleep_detector:NotBimodal', ...
-        ['Delta power is not clearly bimodal (no valley, and the two fitted ', ...
-        'modes are not separated). Check the area, the delta band, or smoothSec.']);
+    method = 'notBimodal';
+    fprintf(['Delta power is not clearly bimodal (no valley, and the two fitted ', ...
+        'modes are not separated). Scoring this recording as awake.\n']);
+    return
 end
 method = 'twoMeans';
 fprintf(['Delta histogram had no clear valley. Threshold is the midpoint ', ...
@@ -455,6 +483,40 @@ modesOk = cHigh > cLow && (cHigh - cLow) >= 0.2 ...
     && fracHigh >= 0.05 && fracHigh <= 0.95;
 thresholdLog = (cLow + cHigh) / 2;
 modeLog = [cLow cHigh];
+end
+
+function [isSleep, nRejected] = reject_sleep_below_floor(isSleep, logSmooth, floorLog)
+% REJECT_SLEEP_BELOW_FLOOR - Drop candidate sleep that does not sit above 0
+%
+% Variables:
+%   isSleep   - Logical label at each window (true = candidate sleep)
+%   logSmooth - log10 of the running-average delta power
+%   floorLog  - Bout median of logSmooth must be greater than this
+%
+% Goal:
+%   Wake log10 delta hovers near -0.5. Sleep stays above 0. A bout on the
+%   high side of a split is still awake when its smoothed power does not
+%   sit above the floor.
+%
+% Returns:
+%   isSleep   - Labels after bouts at or below the floor are cleared
+%   nRejected - How many candidate sleep bouts were cleared
+
+isSleep = isSleep(:);
+logSmooth = logSmooth(:);
+nRejected = 0;
+[starts, ends, states] = label_runs(isSleep);
+for iRun = 1:numel(starts)
+    if ~states(iRun)
+        continue
+    end
+    idx = starts(iRun):ends(iRun);
+    boutLevel = median(logSmooth(idx), 'omitnan');
+    if ~isfinite(boutLevel) || boutLevel <= floorLog
+        isSleep(idx) = false;
+        nRejected = nRejected + 1;
+    end
+end
 end
 
 function [isSleep, nAbsorbed] = enforce_min_segment_length( ...
@@ -666,7 +728,7 @@ logRaw = log10(sleepResult.deltaPower);
 logSmooth = log10(sleepResult.deltaPowerSmooth);
 logRaw(~isfinite(logRaw)) = nan;
 
-yVals = [logRaw; logSmooth; sleepResult.sleepThresholdLog10];
+yVals = [logRaw; logSmooth; sleepResult.sleepThresholdLog10; 0];
 yVals = yVals(isfinite(yVals));
 yPad = 0.05 * (max(yVals) - min(yVals));
 if yPad == 0
@@ -691,13 +753,22 @@ plot(axTime, sleepResult.centerTimes, logRaw, 'Color', [0.65 0.65 0.65], ...
     'LineWidth', 0.8, 'DisplayName', 'Window delta');
 plot(axTime, sleepResult.centerTimes, logSmooth, 'Color', [0.45 0.20 0.70], ...
     'LineWidth', 1.4, 'DisplayName', 'Running average');
-yline(axTime, sleepResult.sleepThresholdLog10, '--', 'Color', [0.15 0.15 0.15], ...
-    'LineWidth', 1.1, 'DisplayName', 'Sleep threshold');
+yline(axTime, 0, '-', 'Color', [0.15 0.45 0.15], ...
+    'LineWidth', 1.0, 'DisplayName', 'Sleep floor');
+if ismember(sleepResult.thresholdMethod, {'valley', 'twoMeans'}) ...
+        && isfinite(sleepResult.sleepThresholdLog10)
+    yline(axTime, sleepResult.sleepThresholdLog10, '--', 'Color', [0.15 0.15 0.15], ...
+        'LineWidth', 1.1, 'DisplayName', 'Sleep threshold');
+end
 hold(axTime, 'off');
 ylim(axTime, yLim);
 ylabel(axTime, 'log_{10}(delta power)', 'Interpreter', 'tex');
-title(axTime, sprintf('%s | sleep %.1f%% | min bout %.0f s', ...
-    sleepResult.brainArea, 100 * sleepResult.sleepFraction, ...
+titlePrefix = '';
+if strcmp(sleepResult.thresholdMethod, 'notBimodal')
+    titlePrefix = 'awake (not bimodal) | ';
+end
+title(axTime, sprintf('%s%s | sleep %.1f%% | min bout %.0f s', ...
+    titlePrefix, sleepResult.brainArea, 100 * sleepResult.sleepFraction, ...
     sleepResult.minSegmentLength), 'Interpreter', 'none');
 legend(axTime, 'Location', 'northeast');
 set(axTime, 'Box', 'off', 'TickDir', 'out', 'FontSize', 11);
@@ -707,8 +778,11 @@ axHist = nexttile(tileLayout);
 bar(axHist, sleepResult.histogramCenters, sleepResult.histogramCounts, 1, ...
     'FaceColor', [0.75 0.75 0.82], 'EdgeColor', 'none');
 hold(axHist, 'on');
-xline(axHist, sleepResult.sleepThresholdLog10, '--', 'Color', [0.15 0.15 0.15], ...
-    'LineWidth', 1.1);
+xline(axHist, 0, '-', 'Color', [0.15 0.45 0.15], 'LineWidth', 1.0);
+if isfinite(sleepResult.sleepThresholdLog10)
+    xline(axHist, sleepResult.sleepThresholdLog10, '--', 'Color', [0.15 0.15 0.15], ...
+        'LineWidth', 1.1);
+end
 if all(isfinite(sleepResult.modeLog10))
     xline(axHist, sleepResult.modeLog10(1), ':', 'Color', [0.20 0.40 0.85], 'LineWidth', 1.1);
     xline(axHist, sleepResult.modeLog10(2), ':', 'Color', [0.45 0.20 0.70], 'LineWidth', 1.1);

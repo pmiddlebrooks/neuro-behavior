@@ -89,7 +89,7 @@ areasToPlot = {};
 
 % Pipeline selection — any combination of d2 (AR), avalanche (AV), PRG
 runArBatch = true;   % d2
-runAvBatch = false;   % tau, alpha, paramSD, decades, dcc
+runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
 runPrgBatch = false;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
@@ -101,7 +101,7 @@ plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
 plotCorrelationMatrix = true;
 enablePermutations = false;
-pcaFlag = false;           % reconstruct from nDim PCs before d2 / avalanches
+pcaFlag = true;           % reconstruct from nDim PCs before d2 / avalanches
 pcaFirstFlag = true;       % true = first nDim PCs; false = last nDim
 nDim = 5;
 useAnchorAffineMap = false;  % false: native scales with independent right axes

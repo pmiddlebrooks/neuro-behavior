@@ -77,7 +77,7 @@ d2Window = 30;   % seconds
 d2Step = 30;     % seconds; equal to d2Window => non-overlapping
 rawD2BinSize = 0.005;
 useLog10D2 = false;
-analyzeBandD2 = false;  % d2 on binned band power; raw LFP d2 still runs
+analyzeBandD2 = true;  % d2 on binned band power; raw LFP d2 still runs
 pOrder = 10;
 critType = 2;
 

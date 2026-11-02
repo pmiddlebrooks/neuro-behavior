@@ -122,7 +122,7 @@ splitExcitatoryInhibitory = false;
 widthCutoff = 0.35;  % ms; peak-to-trough width (narrow <= cutoff = inhibitory)
 
 % Optional engaged vs non-engaged (reach / interval / semicircle only)
-splitByEngagement = true;
+splitByEngagement = false;
 engagementBufferBefore = 3;  % s before each engagement event = engaged
 engagementBufferAfter = 1;   % s after each engagement event = engaged
 minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
@@ -146,7 +146,7 @@ analysisConfig.binSize = binSize;
 analysisConfig.useOptimalBinWindowFunction = false;
 analysisConfig.analyzeD2 = true;
 analysisConfig.analyzeMrBr = false;
-analysisConfig.pcaFlag = 0;
+analysisConfig.pcaFlag = 1;
 analysisConfig.pcaFirstFlag = 1;
 analysisConfig.nDim = 5;
 analysisConfig.enablePermutations = enablePermutations;

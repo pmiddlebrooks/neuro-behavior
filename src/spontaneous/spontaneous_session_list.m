@@ -33,6 +33,9 @@ sessions = [
     struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_03_24')     % ok, few M56
     struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_03_26')     % ok, few M56
     struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_03_27')     % ok, few M56
+    struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_10_15')     % ok, few M56
+    struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_10_16')     % ok, few M56
+    struct('subjectName', 'ey9166', 'sessionName', 'ey9166_2026_10_18')     % ok, few M56
     struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_03')     % ok, few M56
     struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_04')     % ok, few M56
     struct('subjectName', 'ey9387', 'sessionName', 'ey9387_2026_05_06')     % ok, few M56
