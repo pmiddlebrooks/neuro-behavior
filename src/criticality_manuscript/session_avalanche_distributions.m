@@ -78,7 +78,7 @@ avWindow = 10*60;   % [] = full collect, shared threshold; e.g. 5*60 = per-windo
 windowDurationSec = collectEnd - collectStart;
 
 brainArea = 'M23M56';
-brainArea = 'DS';
+% brainArea = 'DS';
 brainAreaCombinations = default_manuscript_brain_area_combinations();
 saveFigure = false;
 
@@ -154,7 +154,7 @@ analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-analysisConfig.pcaFlag = 0;
+analysisConfig.pcaFlag = 1;
 analysisConfig.pcaFirstFlag = 1;  % 1 = first nDim PCs; 0 = last nDim
 analysisConfig.nDim = 5;  % components used when pcaFlag is true
 analysisConfig.gofThreshold = gofThreshold;
