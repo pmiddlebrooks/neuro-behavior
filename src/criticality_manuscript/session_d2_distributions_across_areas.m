@@ -16,6 +16,15 @@
 %   useLog10D2, useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple
 %   enablePermutations, nPermutations, binSize, d2Method, kl* , runParallel, nWorkers
 %   useRelativeTime, saveFigure, plotConfig
+%   splitByEngagement - If true (reach/interval/semicircle), center-pack d2
+%                       windows inside engaged and non-engaged segments.
+%                       Correlation and timeline plots use open markers for
+%                       engaged windows and filled markers for non-engaged.
+%   engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow,
+%   absorbSingleEvents, minTimeNonEngaged - Same meaning as
+%                       criticality_spontaneous_vs_task.m. Non-engaged windows
+%                       stay computed but are omitted from plots when their
+%                       total time is below minTimeNonEngaged (0 = no filter).
 %
 % Goal:
 %   Show whether window-wise d2 moves together across brain areas, and show
@@ -36,25 +45,33 @@ dataSource = 'spikes';
 collectStart = 0;
 collectEnd = [];
 d2Window = 45;  % seconds
-stepSize = 10;   % same window grid as session_d2_distributions.m
+stepSize = 45;   % same window grid as session_d2_distributions.m
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge'
 useLog10D2 = false;
-useSubsampling = false;
+useSubsampling = true;
 nSubsamples = 20;
-nNeuronsSubsample = 60;
+nNeuronsSubsample = 75;
 minNeuronsMultiple = 1.1;
 enablePermutations = false;
 nPermutations = 3;
 useRelativeTime = false;
 binSize = 0.025;
 binSize = 0.04;
-d2Method = 'kl'; % euclidean or kl
+d2Method = 'euclidean'; % euclidean or kl
 klFitMethod = 'MaxLikelihood';
 klErrBars = false;
 runParallel = true;
 nWorkers = 3;
 klParallel = runParallel;
 saveFigure = false;
+
+% Engaged vs non-engaged (reach / interval / semicircle only)
+splitByEngagement = true;
+engagementBufferBefore = 3;  % s before each engagement event = engaged
+engagementBufferAfter = 1;   % s after each engagement event = engaged
+minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
+absorbSingleEvents = true;   % merge isolated single events into non-engaged gaps
+minTimeNonEngaged = 180;     % min total non-engaged time (s) to plot; 0 = no filter
 
 plotConfig = fill_manuscript_plot_config();
 
@@ -122,6 +139,23 @@ fprintf('Areas: %s\n', strjoin(areasToCorrelate, ', '));
 fprintf('d2 windows: %.1f s, step %.1f s (%s); binSize: %.3f s\n', ...
     d2Window, stepSize, d2WindowAlign, binSize);
 fprintf('d2Method: %s\n', d2Method);
+fprintf('splitByEngagement: %d\n', splitByEngagement);
+if splitByEngagement
+    if ~is_manuscript_engagement_session_type(sessionType)
+        error('session_d2_distributions_across_areas:BadEngagementType', ...
+            ['splitByEngagement requires sessionType interval, reach, or semicircle ', ...
+            '(got %s).'], sessionType);
+    end
+    fprintf(['engagementBuffer: before=%.3g s, after=%.3g s; ', ...
+        'minNonEngagedWindow: %.1f s; absorbSingleEvents: %d\n'], ...
+        engagementBufferBefore, engagementBufferAfter, minNonEngagedWindow, absorbSingleEvents);
+    fprintf('minTimeNonEngaged: %.1f s (blank non-engaged below this; 0 = off)\n', ...
+        minTimeNonEngaged);
+    if abs(stepSize - d2Window) > 1e-6
+        fprintf(['splitByEngagement center-packs non-overlapping %.0f s windows ', ...
+            '(stepSize %.0f s is not used).\n'], d2Window, stepSize);
+    end
+end
 maybe_start_kl_d2_parallel_pool(d2Method, klErrBars, klParallel, nWorkers);
 
 subjectNameForLoad = '';
@@ -164,10 +198,47 @@ for iArea = 1:numel(areasToCorrelate)
 end
 analysisConfig.brainAreas = areasToCorrelate;
 
+if splitByEngagement
+    engagementCollectEnd = collectEnd;
+    if isempty(engagementCollectEnd)
+        engagementCollectEnd = loaded_session_end(dataStruct);
+    end
+    if ~(isscalar(engagementCollectEnd) && isfinite(engagementCollectEnd) ...
+            && engagementCollectEnd > collectStart)
+        error('session_d2_distributions_across_areas:NoCollectEnd', ...
+            'Could not resolve a collect end for engagement segments.');
+    end
+    eventTimes = engagement_event_times(dataStruct, sessionType, subjectNameForLoad, ...
+        collectStart, engagementCollectEnd);
+    if isempty(eventTimes)
+        error('session_d2_distributions_across_areas:NoEngagementEvents', ...
+            'No engagement events in the collect window.');
+    end
+    [engagedSegs, nonEngagedSegs] = define_engagement_segments( ...
+        collectStart, engagementCollectEnd, eventTimes, minNonEngagedWindow, ...
+        engagementBufferBefore, engagementBufferAfter, absorbSingleEvents);
+    windowCenters = [ ...
+        center_pack_windows_in_segments(engagedSegs, d2Window), ...
+        center_pack_windows_in_segments(nonEngagedSegs, d2Window)];
+    windowCenters = unique(windowCenters, 'sorted');
+    if isempty(windowCenters)
+        error('session_d2_distributions_across_areas:NoEngagementWindows', ...
+            'No %.1f s d2 windows fit inside engaged or non-engaged segments.', d2Window);
+    end
+    fprintf(['Center-packed d2 windows: %d (%.1f s), placed from the middle ', ...
+        'of each engagement segment\n'], numel(windowCenters), d2Window);
+    analysisConfig.windowCenterTimes = windowCenters;
+    analysisConfig.stepSize = d2Window;
+end
+
 results = criticality_ar_analysis(dataStruct, analysisConfig);
 [results, keptAreas] = keep_correlate_areas(results, areasToCorrelate);
 if numel(keptAreas) < 2
     error('Need at least two areas with d2. Kept: %s', strjoin(keptAreas, ', '));
+end
+if splitByEngagement
+    results = label_d2_windows_by_engagement(results, engagedSegs, nonEngagedSegs, ...
+        d2Window, minTimeNonEngaged, sessionName);
 end
 
 [d2AxisLabel, d2TitleLabel, d2LabelInterpreter] = get_d2_plot_labels(useLog10D2, d2Method);
@@ -195,10 +266,14 @@ if saveFigure
     if useLog10D2
         logTag = '_log10';
     end
-    corrBase = sprintf('session_d2_across_areas_corr_%s_%s_win%.0fs_%ss%s%s', ...
-        sessionName, areaTag, d2Window, collectTag, logTag, d2PlotTag);
-    timeBase = sprintf('session_d2_across_areas_timeline_%s_%s_win%.0fs_%ss_%s%s%s', ...
-        sessionName, areaTag, d2Window, collectTag, d2WindowAlign, logTag, d2PlotTag);
+    engTag = '';
+    if splitByEngagement
+        engTag = '_eng';
+    end
+    corrBase = sprintf('session_d2_across_areas_corr_%s_%s_win%.0fs_%ss%s%s%s', ...
+        sessionName, areaTag, d2Window, collectTag, engTag, logTag, d2PlotTag);
+    timeBase = sprintf('session_d2_across_areas_timeline_%s_%s_win%.0fs_%ss_%s%s%s%s', ...
+        sessionName, areaTag, d2Window, collectTag, d2WindowAlign, engTag, logTag, d2PlotTag);
     exportgraphics(figCorr, fullfile(saveDir, [corrBase, '.png']), 'Resolution', 300);
     exportgraphics(figCorr, fullfile(saveDir, [corrBase, '.eps']), 'ContentType', 'vector');
     exportgraphics(figTime, fullfile(saveDir, [timeBase, '.png']), 'Resolution', 300);
@@ -288,6 +363,8 @@ function fig = plot_d2_area_correlation_scatters(results, keptAreas, useLog10D2,
 % Goal:
 %   One scatter per unique pair. Each point is one window present in both areas.
 %   Every panel uses the same x and y limits, spanning all plotted d2 values.
+%   When splitByEngagement, engaged windows are open markers and non-engaged
+%   windows are filled. Each class gets its own correlation.
 
 nAreas = numel(keptAreas);
 pairIdx = nchoosek(1:nAreas, 2);
@@ -295,6 +372,9 @@ nPairs = size(pairIdx, 1);
 nCols = ceil(sqrt(nPairs));
 nRows = ceil(nPairs / nCols);
 sharedLim = shared_d2_axis_limits(results, nAreas, useLog10D2);
+splitEngagement = results_split_by_engagement(results);
+engagedColor = [0.15, 0.45, 0.75];
+nonEngagedColor = [0.85, 0.35, 0.15];
 
 fig = figure('Color', 'w', 'Name', sprintf('d2 area correlation — %s', sessionName), ...
     'Position', [80 80 max(520, 380 * nCols) max(420, 340 * nRows)]);
@@ -302,7 +382,7 @@ fig = figure('Color', 'w', 'Name', sprintf('d2 area correlation — %s', session
 for iPair = 1:nPairs
     idxX = pairIdx(iPair, 1);
     idxY = pairIdx(iPair, 2);
-    [xVals, yVals] = paired_window_d2(results, idxX, idxY, useLog10D2);
+    [xVals, yVals, classLabels] = paired_window_d2(results, idxX, idxY, useLog10D2);
     ax = subplot(nRows, nCols, iPair, 'Parent', fig);
     hold(ax, 'on');
     colorX = area_plot_color(keptAreas{idxX});
@@ -310,15 +390,39 @@ for iPair = 1:nPairs
     if isempty(xVals)
         text(ax, 0.5, 0.5, 'no shared windows', 'Units', 'normalized', ...
             'HorizontalAlignment', 'center', 'Color', [0.45 0.45 0.45]);
-        rVal = nan;
-        nWin = 0;
+        titleText = 'r = NaN   n = 0';
+    elseif splitEngagement
+        engagedMask = strcmp(classLabels, 'engaged');
+        nonEngagedMask = strcmp(classLabels, 'nonEngaged');
+        if any(nonEngagedMask)
+            scatter(ax, xVals(nonEngagedMask), yVals(nonEngagedMask), ...
+                plotConfig.scatterMarkerSize, nonEngagedColor, 'filled', ...
+                'MarkerFaceAlpha', plotConfig.markerFaceAlpha, ...
+                'MarkerEdgeColor', 'none', 'DisplayName', 'Non-engaged');
+            add_regression_line(ax, xVals(nonEngagedMask), yVals(nonEngagedMask), ...
+                plotConfig, nonEngagedColor);
+        end
+        if any(engagedMask)
+            scatter(ax, xVals(engagedMask), yVals(engagedMask), ...
+                plotConfig.scatterMarkerSize, 'MarkerFaceColor', 'none', ...
+                'MarkerEdgeColor', engagedColor, 'LineWidth', plotConfig.lineWidth, ...
+                'DisplayName', 'Engaged');
+            add_regression_line(ax, xVals(engagedMask), yVals(engagedMask), ...
+                plotConfig, engagedColor);
+        end
+        titleText = sprintf('eng r = %.3f (n=%d)   non r = %.3f (n=%d)', ...
+            pearson_r(xVals(engagedMask), yVals(engagedMask)), sum(engagedMask), ...
+            pearson_r(xVals(nonEngagedMask), yVals(nonEngagedMask)), sum(nonEngagedMask));
+        if iPair == 1
+            legend(ax, 'Location', 'best', 'FontSize', plotConfig.legendFontSize, ...
+                'Interpreter', 'none');
+        end
     else
         scatter(ax, xVals, yVals, plotConfig.scatterMarkerSize, [0.2 0.2 0.2], ...
             'filled', 'MarkerFaceAlpha', plotConfig.markerFaceAlpha, ...
             'MarkerEdgeColor', 'none');
-        add_regression_line(ax, xVals, yVals, plotConfig);
-        rVal = pearson_r(xVals, yVals);
-        nWin = numel(xVals);
+        add_regression_line(ax, xVals, yVals, plotConfig, [0 0 0]);
+        titleText = sprintf('r = %.3f   n = %d', pearson_r(xVals, yVals), numel(xVals));
     end
     xlabel(ax, sprintf('%s %s', keptAreas{idxX}, d2AxisLabel), ...
         'Color', colorX, 'FontSize', plotConfig.axisLabelFontSize, ...
@@ -326,8 +430,7 @@ for iPair = 1:nPairs
     ylabel(ax, sprintf('%s %s', keptAreas{idxY}, d2AxisLabel), ...
         'Color', colorY, 'FontSize', plotConfig.axisLabelFontSize, ...
         'Interpreter', d2LabelInterpreter);
-    title(ax, sprintf('r = %.3f   n = %d', rVal, nWin), ...
-        'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
+    title(ax, titleText, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
     if ~isempty(sharedLim)
         xlim(ax, sharedLim);
         ylim(ax, sharedLim);
@@ -338,8 +441,12 @@ for iPair = 1:nPairs
     hold(ax, 'off');
 end
 
-sgtitle(fig, sprintf('%s | d2 across areas (%.0f s windows)', sessionName, d2Window), ...
-    'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', 'Interpreter', 'none');
+titleStr = sprintf('%s | d2 across areas (%.0f s windows)', sessionName, d2Window);
+if splitEngagement
+    titleStr = sprintf('%s | open = engaged, filled = non-engaged', titleStr);
+end
+sgtitle(fig, titleStr, 'FontSize', plotConfig.sgtitleFontSize, ...
+    'FontWeight', 'bold', 'Interpreter', 'none');
 end
 
 function sharedLim = shared_d2_axis_limits(results, nAreas, useLog10D2)
@@ -357,6 +464,8 @@ function sharedLim = shared_d2_axis_limits(results, nAreas, useLog10D2)
 allD2 = [];
 for iArea = 1:nAreas
     d2Vec = area_d2_vector(results, iArea, useLog10D2);
+    includeMask = windows_included_in_plots(results, iArea, numel(d2Vec));
+    d2Vec = d2Vec(includeMask);
     allD2 = [allD2; d2Vec(isfinite(d2Vec))]; %#ok<AGROW>
 end
 if isempty(allD2)
@@ -375,20 +484,34 @@ end
 
 function print_d2_area_correlations(results, keptAreas, useLog10D2)
 % PRINT_D2_AREA_CORRELATIONS - Pearson r for each area pair
+%
+% Goal:
+%   With splitByEngagement, print engaged and non-engaged correlations separately.
 
 fprintf('\n=== Window-wise d2 correlations ===\n');
 nAreas = numel(keptAreas);
+splitEngagement = results_split_by_engagement(results);
 for idxX = 1:nAreas
     for idxY = idxX + 1:nAreas
-        [xVals, yVals] = paired_window_d2(results, idxX, idxY, useLog10D2);
-        rVal = pearson_r(xVals, yVals);
-        fprintf('  %s vs %s: r = %.3f, n = %d\n', ...
-            keptAreas{idxX}, keptAreas{idxY}, rVal, numel(xVals));
+        [xVals, yVals, classLabels] = paired_window_d2(results, idxX, idxY, useLog10D2);
+        if splitEngagement
+            engagedMask = strcmp(classLabels, 'engaged');
+            nonEngagedMask = strcmp(classLabels, 'nonEngaged');
+            fprintf('  %s vs %s engaged: r = %.3f, n = %d\n', ...
+                keptAreas{idxX}, keptAreas{idxY}, ...
+                pearson_r(xVals(engagedMask), yVals(engagedMask)), sum(engagedMask));
+            fprintf('  %s vs %s non-engaged: r = %.3f, n = %d\n', ...
+                keptAreas{idxX}, keptAreas{idxY}, ...
+                pearson_r(xVals(nonEngagedMask), yVals(nonEngagedMask)), sum(nonEngagedMask));
+        else
+            fprintf('  %s vs %s: r = %.3f, n = %d\n', ...
+                keptAreas{idxX}, keptAreas{idxY}, pearson_r(xVals, yVals), numel(xVals));
+        end
     end
 end
 end
 
-function [xVals, yVals] = paired_window_d2(results, idxX, idxY, useLog10D2)
+function [xVals, yVals, classLabels] = paired_window_d2(results, idxX, idxY, useLog10D2)
 % PAIRED_WINDOW_D2 - Finite d2 pairs aligned on window center time
 %
 % Variables:
@@ -398,13 +521,17 @@ function [xVals, yVals] = paired_window_d2(results, idxX, idxY, useLog10D2)
 %
 % Goal:
 %   Match windows by startS so each pair is the same analysis window.
+%   classLabels is 'engaged', 'nonEngaged', or '' for each returned pair.
+%   Windows blanked by minTimeNonEngaged are omitted.
 
 xVals = [];
 yVals = [];
+classLabels = {};
 d2X = area_d2_vector(results, idxX, useLog10D2);
 d2Y = area_d2_vector(results, idxY, useLog10D2);
 tX = area_start_times(results, idxX);
 tY = area_start_times(results, idxY);
+classX = window_class_labels(results, idxX);
 if isempty(d2X) || isempty(d2Y) || isempty(tX) || isempty(tY)
     return;
 end
@@ -415,11 +542,19 @@ d2X = d2X(1:nX);
 tX = tX(1:nX);
 d2Y = d2Y(1:nY);
 tY = tY(1:nY);
+includeX = windows_included_in_plots(results, idxX, nX);
+includeY = windows_included_in_plots(results, idxY, nY);
+if numel(classX) < nX
+    classX = [classX(:); repmat({''}, nX - numel(classX), 1)];
+else
+    classX = classX(1:nX);
+end
 
 if nX == nY && max(abs(tX - tY)) < 1e-6
-    validMask = isfinite(d2X) & isfinite(d2Y);
+    validMask = isfinite(d2X) & isfinite(d2Y) & includeX & includeY;
     xVals = d2X(validMask);
     yVals = d2Y(validMask);
+    classLabels = classX(validMask);
     return;
 end
 
@@ -430,9 +565,13 @@ if isempty(tCommon)
 end
 d2X = d2X(idxInX);
 d2Y = d2Y(idxInY);
-validMask = isfinite(d2X) & isfinite(d2Y);
+includeX = includeX(idxInX);
+includeY = includeY(idxInY);
+classX = classX(idxInX);
+validMask = isfinite(d2X) & isfinite(d2Y) & includeX & includeY;
 xVals = d2X(validMask);
 yVals = d2Y(validMask);
+classLabels = classX(validMask);
 end
 
 function [tCommon, idxInX, idxInY] = intersect_window_times(tX, tY, matchTol)
@@ -470,6 +609,8 @@ function fig = plot_overlaid_pop_d2_timeline(results, keptAreas, collectStart, c
 %
 % Goal:
 %   Two stacked axes. Each axis draws every requested area in its own color.
+%   When splitByEngagement, open markers are engaged windows and filled markers
+%   are non-engaged. Segment spans are shaded behind both axes.
 
 nAreas = numel(keptAreas);
 tMinAbs = collectStart;
@@ -507,12 +648,24 @@ for iArea = 1:nAreas
     if isfield(results, 'popActivityWindows') && iArea <= numel(results.popActivityWindows)
         popVec = results.popActivityWindows{iArea}(:);
     end
+    splitEngagement = results_split_by_engagement(results);
     if ~isempty(popVec) && ~isempty(tWin)
         nPlot = min(numel(popVec), numel(tWin));
-        plot(axPop, tWin(1:nPlot), popVec(1:nPlot), '-o', ...
-            'Color', areaColor, 'MarkerFaceColor', areaColor, ...
-            'MarkerSize', 4, 'LineWidth', plotConfig.axesLineWidth, ...
-            'DisplayName', areaName);
+        tPop = tWin(1:nPlot);
+        popPlot = popVec(1:nPlot);
+        includeMask = windows_included_in_plots(results, iArea, nPlot);
+        if splitEngagement
+            plot(axPop, tPop(includeMask), popPlot(includeMask), '-', ...
+                'Color', areaColor, 'LineWidth', plotConfig.axesLineWidth, ...
+                'DisplayName', areaName);
+            plot_engagement_time_markers(axPop, tPop, popPlot, ...
+                window_class_labels(results, iArea), includeMask, areaColor, plotConfig);
+        else
+            plot(axPop, tPop, popPlot, '-o', ...
+                'Color', areaColor, 'MarkerFaceColor', areaColor, ...
+                'MarkerSize', 4, 'LineWidth', plotConfig.axesLineWidth, ...
+                'DisplayName', areaName);
+        end
     end
 
     d2Vec = area_d2_vector(results, iArea, useLog10D2);
@@ -520,14 +673,28 @@ for iArea = 1:nAreas
         nPlot = min(numel(d2Vec), numel(tWin));
         tD2 = tWin(1:nPlot);
         d2Vec = d2Vec(1:nPlot);
+        includeMask = windows_included_in_plots(results, iArea, nPlot);
+        finiteMask = isfinite(d2Vec) & isfinite(tD2) & includeMask;
         d2Sem = subsample_sem_d2(results, iArea, useLog10D2);
-        add_sem_errorbars(axD2, tD2, d2Vec, d2Sem, isfinite(d2Vec) & isfinite(tD2), ...
-            areaColor, plotConfig);
-        plot(axD2, tD2, d2Vec, '-o', ...
-            'Color', areaColor, 'MarkerFaceColor', areaColor, ...
-            'MarkerSize', 4, 'LineWidth', plotConfig.axesLineWidth, ...
-            'DisplayName', areaName);
+        add_sem_errorbars(axD2, tD2, d2Vec, d2Sem, finiteMask, areaColor, plotConfig);
+        if splitEngagement
+            plot(axD2, tD2(includeMask), d2Vec(includeMask), '-', ...
+                'Color', areaColor, 'LineWidth', plotConfig.axesLineWidth, ...
+                'HandleVisibility', 'off');
+            plot_engagement_time_markers(axD2, tD2, d2Vec, ...
+                window_class_labels(results, iArea), includeMask, areaColor, plotConfig);
+        else
+            plot(axD2, tD2, d2Vec, '-o', ...
+                'Color', areaColor, 'MarkerFaceColor', areaColor, ...
+                'MarkerSize', 4, 'LineWidth', plotConfig.axesLineWidth, ...
+                'DisplayName', areaName);
+        end
     end
+end
+
+if results_split_by_engagement(results)
+    shade_engagement_segments(axPop, results, timeShift);
+    shade_engagement_segments(axD2, results, timeShift);
 end
 
 xlim(axPop, [tMin, tMax]);
@@ -546,8 +713,9 @@ hold(axPop, 'off');
 hold(axD2, 'off');
 linkaxes([axPop, axD2], 'x');
 
-sgtitle(fig, sprintf('%s | mean pop / %s (%.0fs windows, %s, bin=%.0f ms)', ...
-    sessionName, d2TitleLabel, d2Window, d2WindowAlign, binSize * 1000), ...
+sgtitle(fig, sprintf('%s | mean pop / %s (%.0fs windows, %s, bin=%.0f ms)%s', ...
+    sessionName, d2TitleLabel, d2Window, d2WindowAlign, binSize * 1000, ...
+    engagement_timeline_title_suffix(results)), ...
     'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', 'Interpreter', 'none');
 fprintf('Plotted overlaid popActivity and d2 (%d areas, t=[%.1f, %.1f] s).\n', ...
     nAreas, tMin, tMax);
@@ -641,16 +809,22 @@ errorbar(ax, xVals(semMask), yVals(semMask), ySem(semMask), ...
     'HandleVisibility', 'off');
 end
 
-function add_regression_line(ax, xVals, yVals, plotConfig)
+function add_regression_line(ax, xVals, yVals, plotConfig, lineColor)
 % ADD_REGRESSION_LINE - Least-squares line through a d2 pair
+%
+% Variables:
+%   lineColor - RGB for the fit. Defaults to black.
 
+if nargin < 5 || isempty(lineColor)
+    lineColor = [0 0 0];
+end
 if numel(xVals) < 2
     return;
 end
 slope = polyfit(xVals(:), yVals(:), 1);
 xLine = [min(xVals), max(xVals)];
 yLine = polyval(slope, xLine);
-plot(ax, xLine, yLine, '-', 'Color', [0 0 0], ...
+plot(ax, xLine, yLine, '-', 'Color', lineColor, ...
     'LineWidth', plotConfig.lineWidth, 'HandleVisibility', 'off');
 end
 
@@ -789,4 +963,280 @@ function y = log10_safe_numeric(x)
 validMask = isfinite(x) & x > 0;
 y = nan(size(x));
 y(validMask) = log10(x(validMask));
+end
+
+function eventTimes = engagement_event_times(dataStruct, sessionType, subjectName, ...
+    collectStart, collectEnd)
+% ENGAGEMENT_EVENT_TIMES - Event times that define engaged neighborhoods
+%
+% Variables:
+%   dataStruct   - Loaded session
+%   sessionType  - 'reach', 'interval', or 'semicircle'
+%   subjectName  - Subject folder for interval and semicircle logs
+%   collectStart, collectEnd - Keep events inside this window (s)
+%
+% Goal:
+%   Match the engagement modules: reach onsets, interval beam-break outcomes,
+%   or semicircle TaskMatrix times.
+
+sessionType = lower(strtrim(char(sessionType)));
+if isempty(subjectName) && isfield(dataStruct, 'subjectName')
+    subjectName = dataStruct.subjectName;
+end
+paths = get_paths();
+switch sessionType
+    case 'reach'
+        if ~isfield(dataStruct, 'reachStart') || isempty(dataStruct.reachStart)
+            error('session_d2_distributions_across_areas:NoReachStarts', ...
+                'Reach session has no reachStart times.');
+        end
+        eventTimes = dataStruct.reachStart(:);
+    case 'interval'
+        if isempty(subjectName)
+            error('session_d2_distributions_across_areas:NoSubject', ...
+                'subjectName is required to load interval engagement events.');
+        end
+        eventTimes = load_interval_beam_break_events( ...
+            paths, subjectName, dataStruct.sessionName, 0.1);
+    case 'semicircle'
+        if isempty(subjectName)
+            error('session_d2_distributions_across_areas:NoSubject', ...
+                'subjectName is required to load semicircle engagement events.');
+        end
+        eventTimes = load_semicircle_beam_break_events( ...
+            paths, subjectName, dataStruct.sessionName);
+    otherwise
+        error('session_d2_distributions_across_areas:BadEngagementType', ...
+            'splitByEngagement requires interval, reach, or semicircle (got %s).', ...
+            sessionType);
+end
+eventTimes = eventTimes(isfinite(eventTimes));
+eventTimes = eventTimes(eventTimes >= collectStart & eventTimes <= collectEnd);
+eventTimes = unique(eventTimes(:))';
+end
+
+function results = label_d2_windows_by_engagement(results, engagedSegs, nonEngagedSegs, ...
+    d2Window, minTimeNonEngaged, sessionName)
+% LABEL_D2_WINDOWS_BY_ENGAGEMENT - Mark each window engaged or non-engaged
+%
+% Variables:
+%   results            - AR results after area filtering
+%   engagedSegs        - Struct array with .start and .end (s)
+%   nonEngagedSegs     - Struct array with .start and .end (s)
+%   d2Window           - Window length (s); startS is the window center
+%   minTimeNonEngaged  - Blank non-engaged plots below this covered time (s)
+%   sessionName        - Used in the blanking log line
+%
+% Goal:
+%   A center-packed window is engaged or non-engaged only when it lies fully
+%   inside one of those segments. Covered non-engaged time is nWindows * d2Window.
+
+if nargin < 6 || isempty(sessionName)
+    sessionName = '';
+end
+
+nAreas = numel(results.areas);
+results.splitByEngagement = true;
+results.engagedSegs = engagedSegs;
+results.nonEngagedSegs = nonEngagedSegs;
+results.engagementClass = cell(1, nAreas);
+results.blankNonEngaged = false;
+
+nEngaged = 0;
+nNonEngaged = 0;
+countedWindows = false;
+halfWindow = d2Window / 2;
+edgeTol = 1e-4;
+for iArea = 1:nAreas
+    tCenter = area_start_times(results, iArea);
+    classLabels = repmat({''}, numel(tCenter), 1);
+    if ~isempty(tCenter)
+        winStart = tCenter - halfWindow + edgeTol;
+        winEnd = tCenter + halfWindow - edgeTol;
+        engagedMask = window_fully_inside_segments(winStart, winEnd, engagedSegs);
+        nonEngagedMask = window_fully_inside_segments(winStart, winEnd, nonEngagedSegs) ...
+            & ~engagedMask;
+        classLabels(engagedMask) = {'engaged'};
+        classLabels(nonEngagedMask) = {'nonEngaged'};
+        if ~countedWindows
+            nEngaged = sum(engagedMask);
+            nNonEngaged = sum(nonEngagedMask);
+            countedWindows = true;
+        end
+    end
+    results.engagementClass{iArea} = classLabels;
+end
+
+results.engagedSec = nEngaged * d2Window;
+results.nonEngagedSec = nNonEngaged * d2Window;
+fprintf('  Engagement windows: engaged=%d (%.1f s), non-engaged=%d (%.1f s)\n', ...
+    nEngaged, results.engagedSec, nNonEngaged, results.nonEngagedSec);
+
+if isfinite(minTimeNonEngaged) && minTimeNonEngaged > 0 ...
+        && results.nonEngagedSec < minTimeNonEngaged
+    results.blankNonEngaged = true;
+    fprintf(['  Blanking non-engaged %s: non-engaged time %.1f s ', ...
+        '< minTimeNonEngaged %.1f s\n'], sessionName, results.nonEngagedSec, ...
+        minTimeNonEngaged);
+end
+end
+
+function isInside = window_fully_inside_segments(winStart, winEnd, segments)
+% WINDOW_FULLY_INSIDE_SEGMENTS - True when [winStart, winEnd] lies in one segment
+
+isInside = false(size(winStart));
+if isempty(segments)
+    return;
+end
+segStarts = [segments.start];
+segEnds = [segments.end];
+for iWin = 1:numel(winStart)
+    isInside(iWin) = any(winStart(iWin) >= segStarts & winEnd(iWin) <= segEnds);
+end
+end
+
+function tf = results_split_by_engagement(results)
+% RESULTS_SPLIT_BY_ENGAGEMENT - True when windows were labeled by engagement
+
+tf = isfield(results, 'splitByEngagement') && logical(results.splitByEngagement);
+end
+
+function classLabels = window_class_labels(results, areaIdx)
+% WINDOW_CLASS_LABELS - 'engaged', 'nonEngaged', or '' per window
+
+classLabels = {};
+if ~isfield(results, 'engagementClass') || areaIdx > numel(results.engagementClass)
+    return;
+end
+classLabels = results.engagementClass{areaIdx};
+if isstring(classLabels)
+    classLabels = cellstr(classLabels);
+end
+classLabels = classLabels(:);
+end
+
+function includeMask = windows_included_in_plots(results, areaIdx, nWindows)
+% WINDOWS_INCLUDED_IN_PLOTS - Windows drawn after the non-engaged time filter
+%
+% Goal:
+%   Without an engagement split, every window is included. When non-engaged
+%   time is below minTimeNonEngaged, those windows stay in results but drop
+%   out of correlations and the timeline.
+
+includeMask = true(nWindows, 1);
+if nWindows == 0 || ~results_split_by_engagement(results)
+    return;
+end
+classLabels = window_class_labels(results, areaIdx);
+blankNonEngaged = isfield(results, 'blankNonEngaged') && results.blankNonEngaged;
+nUse = min(nWindows, numel(classLabels));
+includeMask = false(nWindows, 1);
+for iWin = 1:nUse
+    label = classLabels{iWin};
+    if strcmp(label, 'engaged') || (strcmp(label, 'nonEngaged') && ~blankNonEngaged)
+        includeMask(iWin) = true;
+    end
+end
+end
+
+function plot_engagement_time_markers(ax, tVals, yVals, classLabels, includeMask, ...
+    areaColor, plotConfig)
+% PLOT_ENGAGEMENT_TIME_MARKERS - Open engaged and filled non-engaged markers
+%
+% Variables:
+%   tVals, yVals   - Aligned window times and values
+%   classLabels    - Per-window 'engaged' / 'nonEngaged'
+%   includeMask    - Windows that pass the non-engaged time filter
+%   areaColor      - Marker color for this brain area
+%
+% Goal:
+%   Same open/filled convention as the across-task engagement plots, colored
+%   by area. Markers are omitted from the legend; the area line carries the name.
+
+if isempty(tVals) || isempty(yVals)
+    return;
+end
+nPlot = min(numel(tVals), numel(yVals));
+tVals = tVals(1:nPlot);
+yVals = yVals(1:nPlot);
+includeMask = includeMask(:);
+includeMask = includeMask(1:min(nPlot, numel(includeMask)));
+if numel(includeMask) < nPlot
+    includeMask(end + 1:nPlot) = false;
+end
+if numel(classLabels) < nPlot
+    classLabels = [classLabels(:); repmat({''}, nPlot - numel(classLabels), 1)];
+else
+    classLabels = classLabels(1:nPlot);
+end
+engagedMask = includeMask & strcmp(classLabels, 'engaged') & isfinite(tVals) & isfinite(yVals);
+nonEngagedMask = includeMask & strcmp(classLabels, 'nonEngaged') & isfinite(tVals) & isfinite(yVals);
+markerSize = 5;
+if isfield(plotConfig, 'markerSize') && ~isempty(plotConfig.markerSize)
+    markerSize = plotConfig.markerSize;
+end
+if any(nonEngagedMask)
+    plot(ax, tVals(nonEngagedMask), yVals(nonEngagedMask), 'o', ...
+        'Color', areaColor, 'MarkerFaceColor', areaColor, ...
+        'MarkerSize', markerSize, 'LineWidth', plotConfig.axesLineWidth, ...
+        'HandleVisibility', 'off');
+end
+if any(engagedMask)
+    plot(ax, tVals(engagedMask), yVals(engagedMask), 'o', ...
+        'Color', areaColor, 'MarkerFaceColor', 'none', ...
+        'MarkerSize', markerSize, 'LineWidth', plotConfig.axesLineWidth, ...
+        'HandleVisibility', 'off');
+end
+end
+
+function shade_engagement_segments(ax, results, timeShift)
+% SHADE_ENGAGEMENT_SEGMENTS - Light engaged and non-engaged spans behind data
+%
+% Variables:
+%   ax        - Target axes
+%   results   - Must contain engagedSegs and nonEngagedSegs
+%   timeShift - Subtracted from absolute segment times (0 when plotting absolute time)
+%
+% Goal:
+%   Show which parts of the session are engaged without covering the traces.
+
+if ~isfield(results, 'engagedSegs')
+    return;
+end
+engagedColor = [0.15, 0.45, 0.75];
+nonEngagedColor = [0.85, 0.35, 0.15];
+yLim = ylim(ax);
+blankNonEngaged = isfield(results, 'blankNonEngaged') && results.blankNonEngaged;
+add_segment_patches(ax, results.engagedSegs, engagedColor, yLim, timeShift);
+if ~blankNonEngaged
+    add_segment_patches(ax, results.nonEngagedSegs, nonEngagedColor, yLim, timeShift);
+end
+ylim(ax, yLim);
+end
+
+function add_segment_patches(ax, segments, faceColor, yLim, timeShift)
+% ADD_SEGMENT_PATCHES - Translucent [start, end] spans on one axes
+
+if isempty(segments)
+    return;
+end
+for iSeg = 1:numel(segments)
+    t0 = segments(iSeg).start - timeShift;
+    t1 = segments(iSeg).end - timeShift;
+    if ~(isfinite(t0) && isfinite(t1)) || t1 <= t0
+        continue;
+    end
+    hPatch = patch(ax, [t0, t1, t1, t0], [yLim(1), yLim(1), yLim(2), yLim(2)], faceColor, ...
+        'FaceAlpha', 0.08, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    uistack(hPatch, 'bottom');
+end
+end
+
+function suffix = engagement_timeline_title_suffix(results)
+% ENGAGEMENT_TIMELINE_TITLE_SUFFIX - Marker key appended to the timeline title
+
+suffix = '';
+if results_split_by_engagement(results)
+    suffix = ' | open = engaged, filled = non-engaged';
+end
 end

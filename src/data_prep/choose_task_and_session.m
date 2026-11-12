@@ -65,13 +65,13 @@ sessionName = 'ag112321_2';
 % Pericles
 subjectName = 'ey9166';
 % sessionName = 'ey9166_2026_03_19';  % 
-sessionName = 'ey9166_2026_03_24';  % 
-sessionName = 'ey9166_2026_03_26';  % 
-% sessionName = 'ey9166_2026_03_27';  % 
-% sessionName = 'ey9166_2026_10_15';  % 
+% sessionName = 'ey9166_2026_03_24';  % 
+% sessionName = 'ey9166_2026_03_26';  % 
+sessionName = 'ey9166_2026_03_27';  % 
+sessionName = 'ey9166_2026_10_15';  % 
 sessionName = 'ey9166_2026_10_16';  % 
-% sessionName = 'ey9166_2026_10_18';  % 
-% 
+sessionName = 'ey9166_2026_10_18';  % 
+ 
 % Archimedes
 % subjectName = 'ey9387';
 % sessionName = 'ey9387_2026_05_03';  % 
@@ -82,10 +82,12 @@ sessionName = 'ey9166_2026_10_16';  %
 
 % Leonidis
 % subjectName = 'ey9755';
-% sessionName = 'ey9755_2026_10_06'; % Don't use (before asking Aden)
-% sessionName = 'ey9755_2026_10_07'; % Don't use (before asking Aden)
+% sessionName = 'ey9755_2026_10_06';
+% sessionName = 'ey9755_2026_10_07';
 % sessionName = 'ey9755_2026_10_08';
 % sessionName = 'ey9755_2026_10_09';
+
+
 %% =============================    Interval Data Loading    =============================
 % Data type selection
 sessionType = 'interval';  % 'reach' , 'spontaneous' , 'interval' , 'schall' , 'hong'
@@ -100,10 +102,10 @@ sessionName =  'ey9166_2026_04_07';
 sessionName =  'ey9166_2026_04_09';
 % 
 % ey9887 interval sessions don't have LFP files yet
-% subjectName = 'ey9387';
+subjectName = 'ey9387';
 % sessionName =  'ey9387_2026_05_19';
 % sessionName =  'ey9387_2026_05_20';
-% sessionName =  'ey9387_2026_05_21';
+sessionName =  'ey9387_2026_05_21';
 % sessionName =  'ey9387_2026_05_22';
 % sessionName =  'ey9387_2026_05_25';
 % sessionName =  'ey9387_2026_05_26';

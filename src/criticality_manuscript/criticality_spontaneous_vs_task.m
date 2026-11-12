@@ -33,10 +33,9 @@
 %   across-tasks manuscript plots.
 
 %% Configuration
-subjectName = 'ey9166';
+subjectName = 'ey9387';
 taskTypes = {'interval', 'semicircle'};  % one or more of 'reach', 'interval', 'semicircle'
-% taskTypes = {'interval', 'reach'};
-% taskTypes = {'interval'};
+taskTypes = {'interval'};
 d2Method = 'kl';         % 'euclidean' or 'kl'
 % prox_crit_toolkit / Sooter et al. S2.5 (used when d2Method = 'kl')
 klFitMethod = 'MaxLikelihood';  % required for error bars
@@ -90,7 +89,7 @@ areasToPlot = {};
 % Pipeline selection — any combination of d2 (AR), avalanche (AV), PRG
 runArBatch = true;   % d2
 runAvBatch = true;   % tau, alpha, paramSD, decades, dcc
-runPrgBatch = false;  % kurtosis, JS distance
+runPrgBatch = true;  % kurtosis, JS distance
 runEngagementBatch = true;
 useSessionCache = true;   % per-session d2 / AV / PRG files; skip cached sessions
 forceRecompute = false;   % true: reprocess and overwrite per-session cache
@@ -101,9 +100,9 @@ plotMetricPairScatters = true;
 plotSeparatedMetrics = true;
 plotCorrelationMatrix = true;
 enablePermutations = false;
-pcaFlag = true;           % reconstruct from nDim PCs before d2 / avalanches
+pcaFlag = false;           % reconstruct from nDim PCs before d2 / avalanches
 pcaFirstFlag = true;       % true = first nDim PCs; false = last nDim
-nDim = 2;
+nDim = 10;
 useAnchorAffineMap = false;  % false: native scales with independent right axes
 anchorMetric = 'd2';  % 'd2', 'tau', or 'alpha' (primary / left axis)
 metricsToPlot = {'d2', 'tau', 'alpha'};  % subset of markers; auto-narrowed to selected pipelines
