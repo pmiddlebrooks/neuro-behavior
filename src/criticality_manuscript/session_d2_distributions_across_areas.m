@@ -5,8 +5,8 @@
 % window-wise d2 between user-specified brain areas and plots:
 %   1) pairwise d2 scatter (one point per shared window)
 %   2) mean popActivity and d2 vs time, areas overlaid in area colors
-% Spontaneous sessions include sleep windows so the timeline shows them.
-% Across-session means leave those windows out.
+% restrictToAwake drops spontaneous sleep windows (sessions without lfp.mat
+% keep the whole recording). Other session types ignore that flag.
 %
 % Variables (configure in this section):
 %   sessionType, sessionName, subjectName - Set in the workspace before running
@@ -15,6 +15,13 @@
 %   dataSource, collectStart, collectEnd, d2Window, d2WindowAlign, stepSize
 %   useLog10D2, useSubsampling, nSubsamples, nNeuronsSubsample, minNeuronsMultiple
 %   enablePermutations, nPermutations, binSize, d2Method, kl* , runParallel, nWorkers
+%   permuteCorrelations - If true, circularly shift window-mean d2 to test
+%                       each pair's correlation and each difference between
+%                       pair correlations. Independent of enablePermutations.
+%   nShuffles          - Number of circular shifts for those tests
+%   restrictToAwake - Spontaneous only. If true, tile d2 windows inside awake
+%                     epochs from lfp_sleep_detector. The whole window must sit
+%                     in one awake bout. No lfp.mat means the whole recording.
 %   useRelativeTime, saveFigure, plotConfig
 %   splitByEngagement - If true (reach/interval/semicircle), center-pack d2
 %                       windows inside engaged and non-engaged segments.
@@ -47,13 +54,16 @@ collectEnd = [];
 d2Window = 45;  % seconds
 stepSize = 45;   % same window grid as session_d2_distributions.m
 d2WindowAlign = 'center';  % 'center' | 'leadingEdge'
+restrictToAwake = true;  % spontaneous: true drops sleep windows
 useLog10D2 = false;
 useSubsampling = true;
-nSubsamples = 20;
-nNeuronsSubsample = 75;
+nSubsamples = 25;
+nNeuronsSubsample = 60;
 minNeuronsMultiple = 1.1;
 enablePermutations = false;
 nPermutations = 3;
+permuteCorrelations = true;  % circular-shift tests of window-mean d2 correlations
+nShuffles = 1000;            % shifts per test; not the spike-shuffle count
 useRelativeTime = false;
 binSize = 0.025;
 binSize = 0.04;
@@ -66,7 +76,7 @@ klParallel = runParallel;
 saveFigure = false;
 
 % Engaged vs non-engaged (reach / interval / semicircle only)
-splitByEngagement = true;
+splitByEngagement = false;
 engagementBufferBefore = 3;  % s before each engagement event = engaged
 engagementBufferAfter = 1;   % s after each engagement event = engaged
 minNonEngagedWindow = 30;    % min gap (s) for non-engaged segments
@@ -113,7 +123,7 @@ analysisConfig.useSubsampling = useSubsampling;
 analysisConfig.nSubsamples = nSubsamples;
 analysisConfig.nNeuronsSubsample = nNeuronsSubsample;
 analysisConfig.minNeuronsMultiple = minNeuronsMultiple;
-analysisConfig.restrictToAwake = false;  % keep sleep windows on the session timeline
+analysisConfig.restrictToAwake = logical(restrictToAwake);
 
 setup_criticality_manuscript_paths('session_d2_distributions_across_areas');
 paths = get_paths();
@@ -138,7 +148,18 @@ fprintf('Session [%s]: %s\n', sessionType, sessionName);
 fprintf('Areas: %s\n', strjoin(areasToCorrelate, ', '));
 fprintf('d2 windows: %.1f s, step %.1f s (%s); binSize: %.3f s\n', ...
     d2Window, stepSize, d2WindowAlign, binSize);
+fprintf('restrictToAwake: %d (spontaneous sleep windows dropped when true and lfp.mat exists)\n', ...
+    analysisConfig.restrictToAwake);
 fprintf('d2Method: %s\n', d2Method);
+fprintf('permuteCorrelations: %d\n', permuteCorrelations);
+if permuteCorrelations
+    if isempty(nShuffles) || ~isscalar(nShuffles) || ~isfinite(nShuffles) || nShuffles < 1
+        error('session_d2_distributions_across_areas:BadNShuffles', ...
+            'nShuffles must be a positive integer when permuteCorrelations is true.');
+    end
+    nShuffles = round(nShuffles);
+    fprintf('nShuffles: %d (circular shifts of window-mean d2)\n', nShuffles);
+end
 fprintf('splitByEngagement: %d\n', splitByEngagement);
 if splitByEngagement
     if ~is_manuscript_engagement_session_type(sessionType)
@@ -243,9 +264,19 @@ end
 
 [d2AxisLabel, d2TitleLabel, d2LabelInterpreter] = get_d2_plot_labels(useLog10D2, d2Method);
 
+correlationTests = [];
+if permuteCorrelations
+    correlationTests = permute_d2_area_correlations( ...
+        results, keptAreas, useLog10D2, nShuffles);
+end
+
 figCorr = plot_d2_area_correlation_scatters(results, keptAreas, useLog10D2, ...
-    d2AxisLabel, d2LabelInterpreter, plotConfig, sessionName, d2Window);
+    d2AxisLabel, d2LabelInterpreter, plotConfig, sessionName, d2Window, ...
+    correlationTests);
 print_d2_area_correlations(results, keptAreas, useLog10D2);
+if permuteCorrelations
+    print_d2_correlation_permutations(correlationTests);
+end
 
 figTime = plot_overlaid_pop_d2_timeline(results, keptAreas, collectStart, collectEnd, ...
     d2Window, binSize, useLog10D2, plotConfig, sessionName, useRelativeTime, ...
@@ -270,10 +301,18 @@ if saveFigure
     if splitByEngagement
         engTag = '_eng';
     end
-    corrBase = sprintf('session_d2_across_areas_corr_%s_%s_win%.0fs_%ss%s%s%s', ...
-        sessionName, areaTag, d2Window, collectTag, engTag, logTag, d2PlotTag);
-    timeBase = sprintf('session_d2_across_areas_timeline_%s_%s_win%.0fs_%ss_%s%s%s%s', ...
-        sessionName, areaTag, d2Window, collectTag, d2WindowAlign, engTag, logTag, d2PlotTag);
+    permTag = '';
+    if permuteCorrelations
+        permTag = '_perm';
+    end
+    awakeTag = '';
+    if restrictToAwake
+        awakeTag = '_awake';
+    end
+    corrBase = sprintf('session_d2_across_areas_corr_%s_%s_win%.0fs_%ss%s%s%s%s%s', ...
+        sessionName, areaTag, d2Window, collectTag, engTag, permTag, awakeTag, logTag, d2PlotTag);
+    timeBase = sprintf('session_d2_across_areas_timeline_%s_%s_win%.0fs_%ss_%s%s%s%s%s', ...
+        sessionName, areaTag, d2Window, collectTag, d2WindowAlign, engTag, awakeTag, logTag, d2PlotTag);
     exportgraphics(figCorr, fullfile(saveDir, [corrBase, '.png']), 'Resolution', 300);
     exportgraphics(figCorr, fullfile(saveDir, [corrBase, '.eps']), 'ContentType', 'vector');
     exportgraphics(figTime, fullfile(saveDir, [timeBase, '.png']), 'Resolution', 300);
@@ -351,7 +390,8 @@ end
 end
 
 function fig = plot_d2_area_correlation_scatters(results, keptAreas, useLog10D2, ...
-    d2AxisLabel, d2LabelInterpreter, plotConfig, sessionName, d2Window)
+    d2AxisLabel, d2LabelInterpreter, plotConfig, sessionName, d2Window, ...
+    correlationTests)
 % PLOT_D2_AREA_CORRELATION_SCATTERS - Pairwise window d2 scatter
 %
 % Variables:
@@ -359,6 +399,7 @@ function fig = plot_d2_area_correlation_scatters(results, keptAreas, useLog10D2,
 %   useLog10D2         - Apply log10 before correlating
 %   d2AxisLabel        - Shared axis label text
 %   plotConfig         - Fonts and marker sizes
+%   correlationTests   - Output of permute_d2_area_correlations, or []
 %
 % Goal:
 %   One scatter per unique pair. Each point is one window present in both areas.
@@ -410,9 +451,15 @@ for iPair = 1:nPairs
             add_regression_line(ax, xVals(engagedMask), yVals(engagedMask), ...
                 plotConfig, engagedColor);
         end
-        titleText = sprintf('eng r = %.3f (n=%d)   non r = %.3f (n=%d)', ...
+        pEngaged = lookup_pair_permutation_p(correlationTests, 'engaged', ...
+            keptAreas{idxX}, keptAreas{idxY});
+        pNonEngaged = lookup_pair_permutation_p(correlationTests, 'nonEngaged', ...
+            keptAreas{idxX}, keptAreas{idxY});
+        titleText = sprintf('eng r = %.3f (n=%d%s)   non r = %.3f (n=%d%s)', ...
             pearson_r(xVals(engagedMask), yVals(engagedMask)), sum(engagedMask), ...
-            pearson_r(xVals(nonEngagedMask), yVals(nonEngagedMask)), sum(nonEngagedMask));
+            format_p_clause(pEngaged), ...
+            pearson_r(xVals(nonEngagedMask), yVals(nonEngagedMask)), sum(nonEngagedMask), ...
+            format_p_clause(pNonEngaged));
         if iPair == 1
             legend(ax, 'Location', 'best', 'FontSize', plotConfig.legendFontSize, ...
                 'Interpreter', 'none');
@@ -422,7 +469,10 @@ for iPair = 1:nPairs
             'filled', 'MarkerFaceAlpha', plotConfig.markerFaceAlpha, ...
             'MarkerEdgeColor', 'none');
         add_regression_line(ax, xVals, yVals, plotConfig, [0 0 0]);
-        titleText = sprintf('r = %.3f   n = %d', pearson_r(xVals, yVals), numel(xVals));
+        pPair = lookup_pair_permutation_p(correlationTests, 'all', ...
+            keptAreas{idxX}, keptAreas{idxY});
+        titleText = sprintf('r = %.3f   n = %d%s', pearson_r(xVals, yVals), ...
+            numel(xVals), format_p_clause(pPair));
     end
     xlabel(ax, sprintf('%s %s', keptAreas{idxX}, d2AxisLabel), ...
         'Color', colorX, 'FontSize', plotConfig.axisLabelFontSize, ...
@@ -1239,4 +1289,323 @@ suffix = '';
 if results_split_by_engagement(results)
     suffix = ' | open = engaged, filled = non-engaged';
 end
+end
+
+function tests = permute_d2_area_correlations(results, areaNames, useLog10D2, nShuffles)
+% PERMUTE_D2_AREA_CORRELATIONS - Circular-shift tests of window-mean d2 correlations
+%
+% Variables:
+%   results     - AR results after area filtering (and engagement labels)
+%   areaNames   - Area names in column order
+%   useLog10D2  - Apply the same transform used in the scatters
+%   nShuffles   - Number of circular shifts
+%
+% Goal:
+%   Test each pair's Pearson r by shifting one area's window-mean d2, and
+%   test each difference between pair correlations by shifting every area
+%   independently. Engagement classes are tested separately. p-values are
+%   two-sided and use the +1 correction, so the smallest p is 1/(nShuffles+1).
+%
+% Returns:
+%   tests - tests.nShuffles and tests.classes, with .pairs and .differences
+
+[d2Mat, rowClass] = aligned_area_d2_matrix(results, numel(areaNames), useLog10D2);
+if results_split_by_engagement(results)
+    classNames = {'engaged', 'nonEngaged'};
+else
+    classNames = {'all'};
+end
+
+classList = cell(1, numel(classNames));
+for iClass = 1:numel(classNames)
+    className = classNames{iClass};
+    if strcmp(className, 'all')
+        rowMask = any(isfinite(d2Mat), 2);
+    else
+        rowMask = strcmp(rowClass, className);
+    end
+    classList{iClass} = permute_one_d2_class( ...
+        d2Mat(rowMask, :), areaNames, nShuffles, className);
+end
+
+tests = struct();
+tests.nShuffles = nShuffles;
+tests.classes = vertcat(classList{:});
+end
+
+function classResult = permute_one_d2_class(d2Mat, areaNames, nShuffles, className)
+% PERMUTE_ONE_D2_CLASS - Within-pair and between-pair shift tests for one window set
+%
+% Variables:
+%   d2Mat      - Window-mean d2, rows are time-ordered windows, columns are areas
+%   areaNames  - Column names
+%   nShuffles  - Number of circular shifts
+%   className  - 'all', 'engaged', or 'nonEngaged'
+%
+% Goal:
+%   Within a pair, shift only the second area by a nonzero offset. Between
+%   pairs, shift every area by its own offset and record r1 - r2.
+
+nWindows = size(d2Mat, 1);
+nAreas = size(d2Mat, 2);
+if nAreas >= 2
+    pairIdx = nchoosek(1:nAreas, 2);
+else
+    pairIdx = zeros(0, 2);
+end
+nPairs = size(pairIdx, 1);
+[rObs, nObserved] = pairwise_window_correlations(d2Mat, pairIdx);
+
+pairLabels = cell(nPairs, 1);
+pairs = repmat(struct('areaX', '', 'areaY', '', 'label', '', 'r', nan, 'n', 0, 'p', nan), ...
+    nPairs, 1);
+for iPair = 1:nPairs
+    idxX = pairIdx(iPair, 1);
+    idxY = pairIdx(iPair, 2);
+    pairs(iPair).areaX = areaNames{idxX};
+    pairs(iPair).areaY = areaNames{idxY};
+    pairs(iPair).label = sprintf('%s vs %s', areaNames{idxX}, areaNames{idxY});
+    pairs(iPair).r = rObs(iPair);
+    pairs(iPair).n = nObserved(iPair);
+    pairLabels{iPair} = pairs(iPair).label;
+end
+
+nullR = nan(nShuffles, nPairs);
+canShift = nWindows >= 3 && nShuffles >= 1 && nPairs >= 1;
+if canShift
+    pairShifts = randi(nWindows - 1, nShuffles, nPairs);
+    for iShuffle = 1:nShuffles
+        for iPair = 1:nPairs
+            yShift = circshift(d2Mat(:, pairIdx(iPair, 2)), pairShifts(iShuffle, iPair));
+            nullR(iShuffle, iPair) = pearson_r(d2Mat(:, pairIdx(iPair, 1)), yShift);
+        end
+    end
+end
+pPair = permutation_p_values(rObs, nullR);
+tooFew = nObserved < 3 | ~isfinite(rObs);
+pPair(tooFew) = nan;
+for iPair = 1:nPairs
+    pairs(iPair).p = pPair(iPair);
+end
+
+if nPairs >= 2
+    diffIdx = nchoosek(1:nPairs, 2);
+else
+    diffIdx = zeros(0, 2);
+end
+nDiff = size(diffIdx, 1);
+deltaObs = nan(nDiff, 1);
+if nDiff > 0
+    deltaObs = rObs(diffIdx(:, 1)) - rObs(diffIdx(:, 2));
+end
+nullDeltaR = nan(nShuffles, nDiff);
+if canShift && nDiff > 0
+    for iShuffle = 1:nShuffles
+        areaShifts = randi(nWindows, 1, nAreas) - 1;
+        shifted = d2Mat;
+        for iArea = 1:nAreas
+            shifted(:, iArea) = circshift(d2Mat(:, iArea), areaShifts(iArea));
+        end
+        rPerm = pairwise_window_correlations(shifted, pairIdx);
+        nullDeltaR(iShuffle, :) = (rPerm(diffIdx(:, 1)) - rPerm(diffIdx(:, 2)))';
+    end
+end
+pDiff = permutation_p_values(deltaObs, nullDeltaR);
+if nDiff > 0
+    validDiff = nObserved(diffIdx(:, 1)) >= 3 & nObserved(diffIdx(:, 2)) >= 3 ...
+        & isfinite(deltaObs);
+    pDiff(~validDiff) = nan;
+end
+
+differences = repmat(struct( ...
+    'pairLabel1', '', 'pairLabel2', '', 'deltaR', nan, 'p', nan), nDiff, 1);
+for iDiff = 1:nDiff
+    differences(iDiff).pairLabel1 = pairLabels{diffIdx(iDiff, 1)};
+    differences(iDiff).pairLabel2 = pairLabels{diffIdx(iDiff, 2)};
+    differences(iDiff).deltaR = deltaObs(iDiff);
+    differences(iDiff).p = pDiff(iDiff);
+end
+
+classResult = struct();
+classResult.name = className;
+classResult.nWindows = nWindows;
+classResult.pairs = pairs;
+classResult.differences = differences;
+classResult.nullR = nullR;
+classResult.nullDeltaR = nullDeltaR;
+end
+
+function [rVals, nVals] = pairwise_window_correlations(d2Mat, pairIdx)
+% PAIRWISE_WINDOW_CORRELATIONS - Pearson r and pairwise-complete n for each pair
+
+nPairs = size(pairIdx, 1);
+rVals = nan(nPairs, 1);
+nVals = zeros(nPairs, 1);
+for iPair = 1:nPairs
+    xVals = d2Mat(:, pairIdx(iPair, 1));
+    yVals = d2Mat(:, pairIdx(iPair, 2));
+    nVals(iPair) = sum(isfinite(xVals) & isfinite(yVals));
+    rVals(iPair) = pearson_r(xVals, yVals);
+end
+end
+
+function [d2Mat, rowClass] = aligned_area_d2_matrix(results, nAreas, useLog10D2)
+% ALIGNED_AREA_D2_MATRIX - Time-ordered window-mean d2 with one column per area
+%
+% Variables:
+%   results    - AR results with startS and d2
+%   nAreas     - Number of kept areas
+%   useLog10D2 - Match the scatter values
+%
+% Goal:
+%   Put every area on one window clock so a circular shift moves whole windows.
+%   Rows dropped from the plots (including blanked non-engaged windows) stay NaN.
+
+matchTol = 1e-3;
+timeKeys = [];
+for iArea = 1:nAreas
+    tArea = area_start_times(results, iArea);
+    tArea = tArea(isfinite(tArea));
+    timeKeys = [timeKeys; round(tArea(:) / matchTol)]; %#ok<AGROW>
+end
+uniqueKeys = unique(timeKeys, 'sorted');
+nWindows = numel(uniqueKeys);
+d2Mat = nan(nWindows, nAreas);
+rowClass = repmat({''}, nWindows, 1);
+if nWindows == 0
+    return;
+end
+
+for iArea = 1:nAreas
+    tArea = area_start_times(results, iArea);
+    d2Vec = area_d2_vector(results, iArea, useLog10D2);
+    nUse = min(numel(tArea), numel(d2Vec));
+    if nUse == 0
+        continue;
+    end
+    tArea = tArea(1:nUse);
+    d2Vec = d2Vec(1:nUse);
+    includeMask = windows_included_in_plots(results, iArea, nUse);
+    classLabels = window_class_labels(results, iArea);
+    [found, loc] = ismember(round(tArea / matchTol), uniqueKeys);
+    valid = found & includeMask & isfinite(d2Vec);
+    d2Mat(loc(valid), iArea) = d2Vec(valid);
+    if isempty(classLabels)
+        continue;
+    end
+    nClass = min(nUse, numel(classLabels));
+    for iWin = find(valid(1:nClass))'
+        if isempty(rowClass{loc(iWin)})
+            rowClass{loc(iWin)} = classLabels{iWin};
+        end
+    end
+end
+end
+
+function pVals = permutation_p_values(observed, nullSamples)
+% PERMUTATION_P_VALUES - Two-sided permutation p with the +1 correction
+%
+% Variables:
+%   observed    - Column of observed statistics
+%   nullSamples - nShuffles by nStats null values
+%
+% Goal:
+%   p = (nExtreme + 1) / (nFiniteNull + 1), counting null draws at least as
+%   far from zero as the observed statistic.
+
+observed = observed(:);
+nStats = numel(observed);
+pVals = nan(nStats, 1);
+if isempty(nullSamples) || nStats == 0
+    return;
+end
+for iStat = 1:nStats
+    obs = observed(iStat);
+    if iStat > size(nullSamples, 2) || ~isfinite(obs)
+        continue;
+    end
+    nullVals = nullSamples(:, iStat);
+    nullVals = nullVals(isfinite(nullVals));
+    if isempty(nullVals)
+        continue;
+    end
+    nExtreme = sum(abs(nullVals) >= abs(obs));
+    pVals(iStat) = (nExtreme + 1) / (numel(nullVals) + 1);
+end
+end
+
+function print_d2_correlation_permutations(correlationTests)
+% PRINT_D2_CORRELATION_PERMUTATIONS - Within-pair r and between-pair differences
+%
+% Goal:
+%   Report the circular-shift tests. Within-pair p values ask whether that
+%   pair's r is large. Between-pair p values ask whether r of pair 1 minus r
+%   of pair 2 is large. Both are two-sided.
+
+if isempty(correlationTests) || ~isfield(correlationTests, 'classes')
+    return;
+end
+fprintf(['\n=== d2 correlation permutations (%d circular shifts) ===\n', ...
+    'Within pair: shift the second area. Between pairs: shift every area.\n'], ...
+    correlationTests.nShuffles);
+for iClass = 1:numel(correlationTests.classes)
+    classResult = correlationTests.classes(iClass);
+    fprintf('\n%s (%d windows)\n', classResult.name, classResult.nWindows);
+    if classResult.nWindows < 3
+        fprintf('  Too few windows to permute (need at least 3).\n');
+    end
+    fprintf('  Within pair:\n');
+    if isempty(classResult.pairs)
+        fprintf('    (none)\n');
+    end
+    for iPair = 1:numel(classResult.pairs)
+        pairResult = classResult.pairs(iPair);
+        fprintf('    %s: r = %.3f, n = %d, p = %.3f\n', ...
+            pairResult.label, pairResult.r, pairResult.n, pairResult.p);
+    end
+    fprintf('  Between pairs (r1 - r2):\n');
+    if isempty(classResult.differences)
+        fprintf('    Need at least three areas.\n');
+    end
+    for iDiff = 1:numel(classResult.differences)
+        diffResult = classResult.differences(iDiff);
+        fprintf('    (%s) - (%s): delta r = %.3f, p = %.3f\n', ...
+            diffResult.pairLabel1, diffResult.pairLabel2, ...
+            diffResult.deltaR, diffResult.p);
+    end
+end
+end
+
+function pVal = lookup_pair_permutation_p(correlationTests, className, areaX, areaY)
+% LOOKUP_PAIR_PERMUTATION_P - Within-pair p for one area pair and window class
+
+pVal = nan;
+if isempty(correlationTests) || ~isfield(correlationTests, 'classes')
+    return;
+end
+for iClass = 1:numel(correlationTests.classes)
+    classResult = correlationTests.classes(iClass);
+    if ~strcmp(classResult.name, className)
+        continue;
+    end
+    for iPair = 1:numel(classResult.pairs)
+        pairResult = classResult.pairs(iPair);
+        sameOrder = strcmp(pairResult.areaX, areaX) && strcmp(pairResult.areaY, areaY);
+        flipOrder = strcmp(pairResult.areaX, areaY) && strcmp(pairResult.areaY, areaX);
+        if sameOrder || flipOrder
+            pVal = pairResult.p;
+            return;
+        end
+    end
+end
+end
+
+function clause = format_p_clause(pVal)
+% FORMAT_P_CLAUSE - Title suffix for a finite permutation p-value
+
+clause = '';
+if isempty(pVal) || ~isscalar(pVal) || ~isfinite(pVal)
+    return;
+end
+clause = sprintf(', p = %.3f', pVal);
 end

@@ -6,7 +6,7 @@ function sleepResult = lfp_sleep_detector(sessionType, subjectName, sessionName,
 %   subjectName      - Subject folder; '' when the session type has none
 %   sessionName      - Session folder
 %   brainArea        - Area whose delta power is scored (default 'M56')
-%   minSegmentLength - Shortest kept awake or sleep bout, in seconds (default 120)
+%   minSegmentLength - Shortest kept awake or sleep bout, in seconds (default 60)
 %   windowSec        - Sliding-window length for delta power (default 4)
 %   stepSec          - Step between window centers, in seconds (default 1)
 %   smoothSec        - Running-average length applied before the threshold (default 30).
