@@ -19,6 +19,11 @@
 %                       each pair's correlation and each difference between
 %                       pair correlations. Independent of enablePermutations.
 %   nShuffles          - Number of circular shifts for those tests
+%   testD2GivenPop     - If true, ask whether cross-area d2 correlations
+%                        remain after removing each area's d2-pop relationship
+%                        (own-pop residuals) and after partialling both areas'
+%                        pop activity. Uses nShuffles circular shifts.
+%   popFitDegree       - Polynomial degree of pop activity in those fits
 %   restrictToAwake - Spontaneous only. If true, tile d2 windows inside awake
 %                     epochs from lfp_sleep_detector. The whole window must sit
 %                     in one awake bout. No lfp.mat means the whole recording.
@@ -58,12 +63,14 @@ restrictToAwake = true;  % spontaneous: true drops sleep windows
 useLog10D2 = false;
 useSubsampling = true;
 nSubsamples = 25;
-nNeuronsSubsample = 60;
+nNeuronsSubsample = 70;
 minNeuronsMultiple = 1.1;
 enablePermutations = false;
 nPermutations = 3;
 permuteCorrelations = true;  % circular-shift tests of window-mean d2 correlations
 nShuffles = 1000;            % shifts per test; not the spike-shuffle count
+testD2GivenPop = true;       % residual and partial d2 correlations given pop
+popFitDegree = 2;            % polynomial degree of pop activity in those fits
 useRelativeTime = false;
 binSize = 0.025;
 binSize = 0.04;
@@ -152,13 +159,22 @@ fprintf('restrictToAwake: %d (spontaneous sleep windows dropped when true and lf
     analysisConfig.restrictToAwake);
 fprintf('d2Method: %s\n', d2Method);
 fprintf('permuteCorrelations: %d\n', permuteCorrelations);
-if permuteCorrelations
+fprintf('testD2GivenPop: %d\n', testD2GivenPop);
+if permuteCorrelations || testD2GivenPop
     if isempty(nShuffles) || ~isscalar(nShuffles) || ~isfinite(nShuffles) || nShuffles < 1
         error('session_d2_distributions_across_areas:BadNShuffles', ...
-            'nShuffles must be a positive integer when permuteCorrelations is true.');
+            'nShuffles must be a positive integer when permutation tests are on.');
     end
     nShuffles = round(nShuffles);
-    fprintf('nShuffles: %d (circular shifts of window-mean d2)\n', nShuffles);
+    fprintf('nShuffles: %d (circular shifts)\n', nShuffles);
+end
+if testD2GivenPop
+    if isempty(popFitDegree) || ~isscalar(popFitDegree) || ~isfinite(popFitDegree) || popFitDegree < 1
+        error('session_d2_distributions_across_areas:BadPopFitDegree', ...
+            'popFitDegree must be a positive integer.');
+    end
+    popFitDegree = round(popFitDegree);
+    fprintf('popFitDegree: %d\n', popFitDegree);
 end
 fprintf('splitByEngagement: %d\n', splitByEngagement);
 if splitByEngagement
@@ -278,6 +294,22 @@ if permuteCorrelations
     print_d2_correlation_permutations(correlationTests);
 end
 
+popAdjustedTests = [];
+figD2Pop = [];
+figResid = [];
+figPartial = [];
+if testD2GivenPop
+    popAdjustedTests = test_d2_correlation_given_pop( ...
+        results, keptAreas, useLog10D2, nShuffles, popFitDegree);
+    print_d2_given_pop(popAdjustedTests);
+    figD2Pop = plot_d2_vs_pop_by_area(popAdjustedTests, plotConfig, sessionName, ...
+        d2AxisLabel, d2LabelInterpreter);
+    figResid = plot_pop_adjusted_d2_pairs(popAdjustedTests, plotConfig, sessionName, ...
+        'residual');
+    figPartial = plot_pop_adjusted_d2_pairs(popAdjustedTests, plotConfig, sessionName, ...
+        'partial');
+end
+
 figTime = plot_overlaid_pop_d2_timeline(results, keptAreas, collectStart, collectEnd, ...
     d2Window, binSize, useLog10D2, plotConfig, sessionName, useRelativeTime, ...
     d2WindowAlign, d2AxisLabel, d2TitleLabel, d2LabelInterpreter, dataStruct);
@@ -319,6 +351,14 @@ if saveFigure
     exportgraphics(figTime, fullfile(saveDir, [timeBase, '.eps']), 'ContentType', 'vector');
     fprintf('Saved figures:\n  %s\n  %s\n', ...
         fullfile(saveDir, corrBase), fullfile(saveDir, timeBase));
+    fileStem = sprintf('%s_%s_win%.0fs_%ss%s%s%s%s', ...
+        sessionName, areaTag, d2Window, collectTag, engTag, awakeTag, logTag, d2PlotTag);
+    export_across_areas_figure(figD2Pop, saveDir, ...
+        ['session_d2_across_areas_d2pop_', fileStem]);
+    export_across_areas_figure(figResid, saveDir, ...
+        ['session_d2_across_areas_d2resid_', fileStem]);
+    export_across_areas_figure(figPartial, saveDir, ...
+        ['session_d2_across_areas_d2partial_', fileStem]);
 end
 
 function areaNames = normalize_area_name_list(areaNames)
@@ -810,6 +850,17 @@ if useLog10D2
 end
 end
 
+function popVec = area_pop_vector(results, areaIdx)
+% AREA_POP_VECTOR - Mean full-population bin count in each d2 window
+
+popVec = [];
+if ~isfield(results, 'popActivityWindows') || areaIdx > numel(results.popActivityWindows) ...
+        || isempty(results.popActivityWindows{areaIdx})
+    return;
+end
+popVec = results.popActivityWindows{areaIdx}(:);
+end
+
 function tStart = area_start_times(results, areaIdx)
 % AREA_START_TIMES - Window center times (s) for one area
 
@@ -879,13 +930,25 @@ plot(ax, xLine, yLine, '-', 'Color', lineColor, ...
 end
 
 function rVal = pearson_r(x, y)
-% PEARSON_R - Pearson correlation, NaN when undefined
+% PEARSON_R - Pearson correlation on pairwise-complete rows
+%
+% Goal:
+%   Drop non-finite rows so a missing window does not blank the correlation.
 
 rVal = nan;
-if numel(x) < 2 || numel(y) < 2
+x = x(:);
+y = y(:);
+n = min(numel(x), numel(y));
+if n < 2
     return;
 end
-cMat = corrcoef(x(:), y(:));
+x = x(1:n);
+y = y(1:n);
+keep = isfinite(x) & isfinite(y);
+if sum(keep) < 2
+    return;
+end
+cMat = corrcoef(x(keep), y(keep));
 rVal = cMat(1, 2);
 end
 
@@ -1449,17 +1512,18 @@ for iPair = 1:nPairs
 end
 end
 
-function [d2Mat, rowClass] = aligned_area_d2_matrix(results, nAreas, useLog10D2)
-% ALIGNED_AREA_D2_MATRIX - Time-ordered window-mean d2 with one column per area
+function [d2Mat, rowClass, popMat] = aligned_area_d2_matrix(results, nAreas, useLog10D2)
+% ALIGNED_AREA_D2_MATRIX - Time-ordered window-mean d2 and pop activity
 %
 % Variables:
-%   results    - AR results with startS and d2
+%   results    - AR results with startS, d2, and popActivityWindows
 %   nAreas     - Number of kept areas
 %   useLog10D2 - Match the scatter values
 %
 % Goal:
 %   Put every area on one window clock so a circular shift moves whole windows.
 %   Rows dropped from the plots (including blanked non-engaged windows) stay NaN.
+%   popMat is the full-population mean bin count in the same windows.
 
 matchTol = 1e-3;
 timeKeys = [];
@@ -1471,6 +1535,7 @@ end
 uniqueKeys = unique(timeKeys, 'sorted');
 nWindows = numel(uniqueKeys);
 d2Mat = nan(nWindows, nAreas);
+popMat = nan(nWindows, nAreas);
 rowClass = repmat({''}, nWindows, 1);
 if nWindows == 0
     return;
@@ -1485,11 +1550,19 @@ for iArea = 1:nAreas
     end
     tArea = tArea(1:nUse);
     d2Vec = d2Vec(1:nUse);
+    popVec = area_pop_vector(results, iArea);
+    if numel(popVec) < nUse
+        popVec(end + 1:nUse, 1) = nan;
+    else
+        popVec = popVec(1:nUse);
+    end
     includeMask = windows_included_in_plots(results, iArea, nUse);
     classLabels = window_class_labels(results, iArea);
     [found, loc] = ismember(round(tArea / matchTol), uniqueKeys);
     valid = found & includeMask & isfinite(d2Vec);
     d2Mat(loc(valid), iArea) = d2Vec(valid);
+    popValid = found & includeMask & isfinite(popVec);
+    popMat(loc(popValid), iArea) = popVec(popValid);
     if isempty(classLabels)
         continue;
     end
@@ -1608,4 +1681,623 @@ if isempty(pVal) || ~isscalar(pVal) || ~isfinite(pVal)
     return;
 end
 clause = sprintf(', p = %.3f', pVal);
+end
+
+function tests = test_d2_correlation_given_pop(results, areaNames, useLog10D2, ...
+    nShuffles, popFitDegree)
+% TEST_D2_CORRELATION_GIVEN_POP - Is cross-area d2 correlation left after pop?
+%
+% Variables:
+%   results      - AR results with window-mean d2 and popActivityWindows
+%   areaNames    - Area names in column order
+%   useLog10D2   - Match the d2 values used in the scatters
+%   nShuffles    - Circular shifts of one residual series
+%   popFitDegree - Polynomial degree of pop activity
+%
+% Goal:
+%   Within each area, residual d2 is observed d2 minus a polynomial in that
+%   area's pop activity. The residual correlation is the d2 lock that remains.
+%   The partial correlation also removes both areas' pop activity from both
+%   d2 series. p-values circularly shift one residual series.
+
+[d2Mat, rowClass, popMat] = aligned_area_d2_matrix(results, numel(areaNames), useLog10D2);
+if results_split_by_engagement(results)
+    classNames = {'engaged', 'nonEngaged'};
+else
+    classNames = {'all'};
+end
+
+classList = cell(1, numel(classNames));
+for iClass = 1:numel(classNames)
+    className = classNames{iClass};
+    if strcmp(className, 'all')
+        rowMask = any(isfinite(d2Mat), 2);
+    else
+        rowMask = strcmp(rowClass, className);
+    end
+    classList{iClass} = d2_given_pop_one_class( ...
+        d2Mat(rowMask, :), popMat(rowMask, :), areaNames, nShuffles, ...
+        popFitDegree, className);
+end
+
+tests = struct();
+tests.nShuffles = nShuffles;
+tests.popFitDegree = popFitDegree;
+tests.classes = vertcat(classList{:});
+end
+
+function classResult = d2_given_pop_one_class(d2Mat, popMat, areaNames, ...
+    nShuffles, popFitDegree, className)
+% D2_GIVEN_POP_ONE_CLASS - Within-area d2-pop fits and adjusted pair correlations
+%
+% Variables:
+%   d2Mat, popMat - Time-ordered window means, one column per area
+%   areaNames     - Column names
+%   nShuffles     - Circular shifts
+%   popFitDegree  - Requested polynomial degree
+%   className     - 'all', 'engaged', or 'nonEngaged'
+%
+% Goal:
+%   Fit each area on its own windows, then score pairs on shared windows.
+
+nAreas = size(d2Mat, 2);
+areas = repmat(empty_area_pop_fit(), nAreas, 1);
+for iArea = 1:nAreas
+    [resid, yHat, degreeUsed] = regress_out_polynomial( ...
+        d2Mat(:, iArea), popMat(:, iArea), popFitDegree);
+    [rPop, pPop, nPop] = shifted_series_correlation( ...
+        d2Mat(:, iArea), popMat(:, iArea), nShuffles);
+    areas(iArea).areaName = areaNames{iArea};
+    areas(iArea).r = rPop;
+    areas(iArea).p = pPop;
+    areas(iArea).n = nPop;
+    areas(iArea).degreeUsed = degreeUsed;
+    areas(iArea).d2 = d2Mat(:, iArea);
+    areas(iArea).pop = popMat(:, iArea);
+    areas(iArea).d2Hat = yHat;
+    areas(iArea).resid = resid;
+end
+
+if nAreas >= 2
+    pairIdx = nchoosek(1:nAreas, 2);
+else
+    pairIdx = zeros(0, 2);
+end
+nPairs = size(pairIdx, 1);
+pairs = repmat(empty_pop_adjusted_pair(), nPairs, 1);
+for iPair = 1:nPairs
+    idxX = pairIdx(iPair, 1);
+    idxY = pairIdx(iPair, 2);
+    d2X = d2Mat(:, idxX);
+    d2Y = d2Mat(:, idxY);
+    popX = popMat(:, idxX);
+    popY = popMat(:, idxY);
+    both = isfinite(d2X) & isfinite(d2Y) & isfinite(popX) & isfinite(popY);
+    residX = areas(idxX).resid;
+    residY = areas(idxY).resid;
+    [rResidual, pResidual, nResidual] = shifted_series_correlation( ...
+        residX, residY, nShuffles);
+    [partialX, partialY, degreePartial] = partial_d2_residuals( ...
+        d2X, d2Y, popX, popY, popFitDegree);
+    [rPartial, pPartial, nPartial] = shifted_series_correlation( ...
+        partialX, partialY, nShuffles);
+
+    pairs(iPair).areaX = areaNames{idxX};
+    pairs(iPair).areaY = areaNames{idxY};
+    pairs(iPair).label = sprintf('%s vs %s', areaNames{idxX}, areaNames{idxY});
+    pairs(iPair).rD2 = pearson_r(d2X(both), d2Y(both));
+    pairs(iPair).rPop = pearson_r(popX(both), popY(both));
+    pairs(iPair).n = sum(both);
+    pairs(iPair).rResidual = rResidual;
+    pairs(iPair).pResidual = pResidual;
+    pairs(iPair).nResidual = nResidual;
+    pairs(iPair).residX = residX;
+    pairs(iPair).residY = residY;
+    pairs(iPair).rPartial = rPartial;
+    pairs(iPair).pPartial = pPartial;
+    pairs(iPair).nPartial = nPartial;
+    pairs(iPair).partialX = partialX;
+    pairs(iPair).partialY = partialY;
+    pairs(iPair).degreeUsed = degreePartial;
+end
+
+classResult = struct();
+classResult.name = className;
+classResult.nWindows = size(d2Mat, 1);
+classResult.areas = areas;
+classResult.pairs = pairs;
+end
+
+function areaFit = empty_area_pop_fit()
+% EMPTY_AREA_POP_FIT - One area's d2 versus pop summary
+
+areaFit = struct( ...
+    'areaName', '', ...
+    'r', nan, ...
+    'p', nan, ...
+    'n', 0, ...
+    'degreeUsed', 0, ...
+    'd2', [], ...
+    'pop', [], ...
+    'd2Hat', [], ...
+    'resid', []);
+end
+
+function pairFit = empty_pop_adjusted_pair()
+% EMPTY_POP_ADJUSTED_PAIR - One area pair's pop-adjusted d2 correlation
+
+pairFit = struct( ...
+    'areaX', '', ...
+    'areaY', '', ...
+    'label', '', ...
+    'rD2', nan, ...
+    'rPop', nan, ...
+    'n', 0, ...
+    'rResidual', nan, ...
+    'pResidual', nan, ...
+    'nResidual', 0, ...
+    'residX', [], ...
+    'residY', [], ...
+    'rPartial', nan, ...
+    'pPartial', nan, ...
+    'nPartial', 0, ...
+    'partialX', [], ...
+    'partialY', [], ...
+    'degreeUsed', 0);
+end
+
+function [residX, residY, degreeUsed] = partial_d2_residuals(d2X, d2Y, popX, popY, degree)
+% PARTIAL_D2_RESIDUALS - Remove both pop traces from both d2 series
+%
+% Goal:
+%   Each residual is d2 minus a polynomial in popX and popY. Both fits use
+%   only windows where both d2 series and both pop series are finite.
+
+n = min([numel(d2X), numel(d2Y), numel(popX), numel(popY)]);
+d2X = d2X(1:n);
+d2Y = d2Y(1:n);
+popX = popX(1:n);
+popY = popY(1:n);
+shared = isfinite(d2X) & isfinite(d2Y) & isfinite(popX) & isfinite(popY);
+d2X(~shared) = nan;
+d2Y(~shared) = nan;
+popX(~shared) = nan;
+popY(~shared) = nan;
+predictors = [popX, popY];
+[residX, ~, degreeX] = regress_out_poly_predictors(d2X, predictors, degree);
+[residY, ~, degreeY] = regress_out_poly_predictors(d2Y, predictors, degree);
+degreeUsed = max(degreeX, degreeY);
+end
+
+function [rObs, pVal, nObs] = shifted_series_correlation(x, y, nShuffles)
+% SHIFTED_SERIES_CORRELATION - Pearson r and circular-shift p-value
+%
+% Goal:
+%   Keep x fixed and circularly shift y by a nonzero offset. The p-value is
+%   two-sided with the +1 correction.
+
+x = x(:);
+y = y(:);
+n = min(numel(x), numel(y));
+x = x(1:n);
+y = y(1:n);
+rObs = pearson_r(x, y);
+nObs = sum(isfinite(x) & isfinite(y));
+nullR = nan(nShuffles, 1);
+if n >= 3 && nObs >= 3 && nShuffles >= 1 && isfinite(rObs)
+    shifts = randi(n - 1, nShuffles, 1);
+    for iShuffle = 1:nShuffles
+        nullR(iShuffle) = pearson_r(x, circshift(y, shifts(iShuffle)));
+    end
+end
+pVal = permutation_p_values(rObs, nullR);
+if nObs < 3 || ~isfinite(rObs)
+    pVal = nan;
+end
+end
+
+function [resid, yHat, degreeUsed] = regress_out_polynomial(y, x, degree)
+% REGRESS_OUT_POLYNOMIAL - Residual of y after a polynomial in one x
+%
+% Variables:
+%   y, x   - Paired window values. Non-finite pairs are left as NaN.
+%   degree - Requested polynomial degree. Lowered when the sample is short.
+%
+% Goal:
+%   yHat is the fitted d2 at the observed pop values. resid = y - yHat.
+
+[resid, yHat, degreeUsed] = regress_out_poly_predictors(y, x(:), degree);
+end
+
+function [resid, yHat, degreeUsed] = regress_out_poly_predictors(y, predictors, degree)
+% REGRESS_OUT_POLY_PREDICTORS - Residual of y after polynomials in each column
+%
+% Variables:
+%   y          - Column response
+%   predictors - Columns to partial out. Each column is centered and scaled.
+%   degree     - Highest power of each predictor
+%
+% Goal:
+%   Fit on complete rows only. A constant predictor is absorbed by the intercept.
+%   The degree drops until there is at least one residual degree of freedom.
+
+y = y(:);
+n = numel(y);
+if size(predictors, 1) ~= n
+    n = min(n, size(predictors, 1));
+    y = y(1:n);
+    predictors = predictors(1:n, :);
+end
+resid = nan(n, 1);
+yHat = nan(n, 1);
+degreeUsed = 0;
+complete = isfinite(y) & all(isfinite(predictors), 2);
+nComplete = sum(complete);
+nPredictors = size(predictors, 2);
+if nComplete < 3 || nPredictors < 1
+    return;
+end
+degreeUsed = degree;
+nCoef = 1 + nPredictors * degreeUsed;
+while degreeUsed > 1 && nComplete < nCoef + 1
+    degreeUsed = degreeUsed - 1;
+    nCoef = 1 + nPredictors * degreeUsed;
+end
+if nComplete < nCoef + 1
+    degreeUsed = 0;
+    return;
+end
+
+xComplete = predictors(complete, :);
+design = ones(nComplete, 1);
+highestPower = 0;
+for iPred = 1:nPredictors
+    xCol = xComplete(:, iPred);
+    center = mean(xCol);
+    scale = std(xCol);
+    if ~(scale > 0)
+        continue;
+    end
+    z = (xCol - center) / scale;
+    for iPower = 1:degreeUsed
+        design(:, end + 1) = z .^ iPower; %#ok<AGROW>
+        highestPower = iPower;
+    end
+end
+degreeUsed = highestPower;
+coef = pinv(design) * y(complete);
+fitted = design * coef;
+yHat(complete) = fitted;
+resid(complete) = y(complete) - fitted;
+end
+
+function print_d2_given_pop(popAdjustedTests)
+% PRINT_D2_GIVEN_POP - Within-area d2-pop r and pop-adjusted pair correlations
+%
+% Goal:
+%   Report whether cross-area d2 correlations remain after the pop fits.
+%   r_resid removes each area's own pop curve. r_partial removes both pops.
+
+if isempty(popAdjustedTests) || ~isfield(popAdjustedTests, 'classes')
+    return;
+end
+fprintf(['\n=== d2 correlations given pop activity (degree %d, %d shifts) ===\n', ...
+    'r_resid: each d2 minus its own pop polynomial.\n', ...
+    'r_partial: each d2 minus a polynomial in both areas'' pop.\n'], ...
+    popAdjustedTests.popFitDegree, popAdjustedTests.nShuffles);
+for iClass = 1:numel(popAdjustedTests.classes)
+    classResult = popAdjustedTests.classes(iClass);
+    fprintf('\n%s (%d windows)\n', classResult.name, classResult.nWindows);
+    fprintf('  Within area, d2 vs pop:\n');
+    for iArea = 1:numel(classResult.areas)
+        areaFit = classResult.areas(iArea);
+        fprintf('    %s: r = %.3f, n = %d, p = %.3f (degree %d)\n', ...
+            areaFit.areaName, areaFit.r, areaFit.n, areaFit.p, areaFit.degreeUsed);
+    end
+    fprintf('  Own-pop residual correlation:\n');
+    if isempty(classResult.pairs)
+        fprintf('    (none)\n');
+    end
+    for iPair = 1:numel(classResult.pairs)
+        pairFit = classResult.pairs(iPair);
+        fprintf(['    %s: r_d2 = %.3f, r_pop = %.3f, r_resid = %.3f, ', ...
+            'n = %d, p = %.3f\n'], ...
+            pairFit.label, pairFit.rD2, pairFit.rPop, pairFit.rResidual, ...
+            pairFit.nResidual, pairFit.pResidual);
+    end
+    fprintf('  Partial correlation given both pops:\n');
+    for iPair = 1:numel(classResult.pairs)
+        pairFit = classResult.pairs(iPair);
+        fprintf('    %s: r_partial = %.3f, n = %d, p = %.3f (degree %d)\n', ...
+            pairFit.label, pairFit.rPartial, pairFit.nPartial, ...
+            pairFit.pPartial, pairFit.degreeUsed);
+    end
+end
+end
+
+function fig = plot_d2_vs_pop_by_area(popAdjustedTests, plotConfig, sessionName, ...
+    d2AxisLabel, d2LabelInterpreter)
+% PLOT_D2_VS_POP_BY_AREA - Window-mean d2 against pop activity, one panel per area
+%
+% Goal:
+%   Show the within-area fit whose residuals are correlated across areas.
+%   Engaged windows are open markers. Non-engaged windows are filled.
+
+fig = [];
+if isempty(popAdjustedTests) || ~isfield(popAdjustedTests, 'classes') ...
+        || isempty(popAdjustedTests.classes)
+    return;
+end
+areaNames = {popAdjustedTests.classes(1).areas.areaName};
+nAreas = numel(areaNames);
+if nAreas < 1
+    return;
+end
+engagedColor = [0.15, 0.45, 0.75];
+nonEngagedColor = [0.85, 0.35, 0.15];
+fig = figure('Color', 'w', 'Name', sprintf('d2 vs pop — %s', sessionName), ...
+    'Position', [60 80 max(420, 320 * nAreas) 420]);
+for iArea = 1:nAreas
+    ax = subplot(1, nAreas, iArea, 'Parent', fig);
+    hold(ax, 'on');
+    areaName = areaNames{iArea};
+    areaColor = area_plot_color(areaName);
+    drewLegend = false;
+    for iClass = 1:numel(popAdjustedTests.classes)
+        classResult = popAdjustedTests.classes(iClass);
+        areaFit = classResult.areas(iArea);
+        [popVals, d2Vals] = finite_pair(areaFit.pop, areaFit.d2);
+        [popHat, d2Hat] = finite_pair(areaFit.pop, areaFit.d2Hat);
+        if isempty(popVals)
+            continue;
+        end
+        [lineColor, markerArgs, displayName] = pop_class_marker( ...
+            classResult.name, areaColor, engagedColor, nonEngagedColor, plotConfig);
+        scatter_with_optional_name(ax, popVals, d2Vals, ...
+            plotConfig.scatterMarkerSize, markerArgs, displayName);
+        if ~isempty(popHat)
+            [popHat, order] = sort(popHat);
+            d2Hat = d2Hat(order);
+            plot(ax, popHat, d2Hat, '-', 'Color', lineColor, ...
+                'LineWidth', plotConfig.lineWidth, 'HandleVisibility', 'off');
+        end
+        drewLegend = drewLegend || ~strcmp(classResult.name, 'all');
+    end
+    titleText = d2_pop_area_title(popAdjustedTests, areaName);
+    title(ax, titleText, 'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
+    xlabel(ax, 'mean pop', 'FontSize', plotConfig.axisLabelFontSize);
+    ylabel(ax, d2AxisLabel, 'FontSize', plotConfig.axisLabelFontSize, ...
+        'Interpreter', d2LabelInterpreter);
+    set(ax, 'Box', 'off', 'TickDir', 'out', ...
+        'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth);
+    if drewLegend
+        legend(ax, 'Location', 'best', 'FontSize', plotConfig.legendFontSize, ...
+            'Interpreter', 'none');
+    end
+    hold(ax, 'off');
+end
+sgtitle(fig, sprintf('%s | d2 vs pop activity', sessionName), ...
+    'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', 'Interpreter', 'none');
+end
+
+function fig = plot_pop_adjusted_d2_pairs(popAdjustedTests, plotConfig, sessionName, kind)
+% PLOT_POP_ADJUSTED_D2_PAIRS - Residual or partial d2 scatters for each area pair
+%
+% Variables:
+%   kind - 'residual' (own pop removed) or 'partial' (both pops removed)
+%
+% Goal:
+%   One panel per area pair. The title is the leftover correlation and its
+%   circular-shift p-value.
+
+fig = [];
+if isempty(popAdjustedTests) || ~isfield(popAdjustedTests, 'classes') ...
+        || isempty(popAdjustedTests.classes) || isempty(popAdjustedTests.classes(1).pairs)
+    return;
+end
+pairLabels = {popAdjustedTests.classes(1).pairs.label};
+nPairs = numel(pairLabels);
+nCols = ceil(sqrt(nPairs));
+nRows = ceil(nPairs / nCols);
+if strcmp(kind, 'partial')
+    figName = 'd2 partial residuals';
+    xField = 'partialX';
+    yField = 'partialY';
+    rField = 'rPartial';
+    pField = 'pPartial';
+    nField = 'nPartial';
+    axisWord = 'partial residual';
+else
+    figName = 'd2 residuals after own pop';
+    xField = 'residX';
+    yField = 'residY';
+    rField = 'rResidual';
+    pField = 'pResidual';
+    nField = 'nResidual';
+    axisWord = 'd2 residual';
+end
+engagedColor = [0.15, 0.45, 0.75];
+nonEngagedColor = [0.85, 0.35, 0.15];
+sharedLim = pop_adjusted_axis_limits(popAdjustedTests, xField, yField);
+fig = figure('Color', 'w', 'Name', sprintf('%s — %s', figName, sessionName), ...
+    'Position', [80 60 max(520, 380 * nCols) max(420, 340 * nRows)]);
+for iPair = 1:nPairs
+    ax = subplot(nRows, nCols, iPair, 'Parent', fig);
+    hold(ax, 'on');
+    pairLabel = pairLabels{iPair};
+    areaBits = strsplit(pairLabel, ' vs ');
+    drew = false;
+    for iClass = 1:numel(popAdjustedTests.classes)
+        classResult = popAdjustedTests.classes(iClass);
+        pairFit = classResult.pairs(iPair);
+        [xVals, yVals] = finite_pair(pairFit.(xField), pairFit.(yField));
+        if isempty(xVals)
+            continue;
+        end
+        [lineColor, markerArgs, displayName] = pop_class_marker( ...
+            classResult.name, [0.2 0.2 0.2], engagedColor, nonEngagedColor, plotConfig);
+        scatter_with_optional_name(ax, xVals, yVals, ...
+            plotConfig.scatterMarkerSize, markerArgs, displayName);
+        add_regression_line(ax, xVals, yVals, plotConfig, lineColor);
+        drew = true;
+    end
+    if ~drew
+        text(ax, 0.5, 0.5, 'no shared windows', 'Units', 'normalized', ...
+            'HorizontalAlignment', 'center', 'Color', [0.45 0.45 0.45]);
+    end
+    title(ax, pop_adjusted_pair_title(popAdjustedTests, iPair, rField, pField, nField), ...
+        'FontSize', plotConfig.titleFontSize, 'Interpreter', 'none');
+    if numel(areaBits) == 2
+        xlabel(ax, sprintf('%s %s', areaBits{1}, axisWord), ...
+            'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', 'none');
+        ylabel(ax, sprintf('%s %s', areaBits{2}, axisWord), ...
+            'FontSize', plotConfig.axisLabelFontSize, 'Interpreter', 'none');
+    end
+    if ~isempty(sharedLim)
+        xlim(ax, sharedLim);
+        ylim(ax, sharedLim);
+        axis(ax, 'square');
+    end
+    set(ax, 'Box', 'off', 'TickDir', 'out', ...
+        'FontSize', plotConfig.tickLabelFontSize, 'LineWidth', plotConfig.axesLineWidth);
+    if drew && numel(popAdjustedTests.classes) > 1 && iPair == 1
+        legend(ax, 'Location', 'best', 'FontSize', plotConfig.legendFontSize, ...
+            'Interpreter', 'none');
+    end
+    hold(ax, 'off');
+end
+sgtitle(fig, sprintf('%s | %s', sessionName, figName), ...
+    'FontSize', plotConfig.sgtitleFontSize, 'FontWeight', 'bold', 'Interpreter', 'none');
+end
+
+function [xVals, yVals] = finite_pair(x, y)
+% FINITE_PAIR - Rows where both series are finite
+
+x = x(:);
+y = y(:);
+n = min(numel(x), numel(y));
+x = x(1:n);
+y = y(1:n);
+keep = isfinite(x) & isfinite(y);
+xVals = x(keep);
+yVals = y(keep);
+end
+
+function [lineColor, markerArgs, displayName] = pop_class_marker(className, areaColor, ...
+    engagedColor, nonEngagedColor, plotConfig)
+% POP_CLASS_MARKER - Line color and scatter args for one engagement class
+
+if strcmp(className, 'engaged')
+    lineColor = engagedColor;
+    markerArgs = {'MarkerFaceColor', 'none', 'MarkerEdgeColor', engagedColor, ...
+        'LineWidth', plotConfig.lineWidth};
+    displayName = 'Engaged';
+elseif strcmp(className, 'nonEngaged')
+    lineColor = nonEngagedColor;
+    markerArgs = {'MarkerFaceColor', nonEngagedColor, 'MarkerEdgeColor', 'none', ...
+        'MarkerFaceAlpha', plotConfig.markerFaceAlpha};
+    displayName = 'Non-engaged';
+else
+    lineColor = areaColor;
+    markerArgs = {'MarkerFaceColor', areaColor, 'MarkerEdgeColor', 'none', ...
+        'MarkerFaceAlpha', plotConfig.markerFaceAlpha};
+    displayName = '';
+end
+end
+
+function scatter_with_optional_name(ax, xVals, yVals, markerSize, markerArgs, displayName)
+% SCATTER_WITH_OPTIONAL_NAME - Scatter, with a legend name only when one is set
+
+if isempty(displayName)
+    scatter(ax, xVals, yVals, markerSize, markerArgs{:});
+else
+    scatter(ax, xVals, yVals, markerSize, markerArgs{:}, 'DisplayName', displayName);
+end
+end
+
+function titleText = d2_pop_area_title(popAdjustedTests, areaName)
+% D2_POP_AREA_TITLE - Within-area d2-pop correlation for the panel title
+
+bits = {};
+for iClass = 1:numel(popAdjustedTests.classes)
+    classResult = popAdjustedTests.classes(iClass);
+    for iArea = 1:numel(classResult.areas)
+        areaFit = classResult.areas(iArea);
+        if ~strcmp(areaFit.areaName, areaName)
+            continue;
+        end
+        bits{end + 1} = sprintf('%sr = %.3f, n = %d%s', ...
+            pop_class_prefix(classResult.name), areaFit.r, areaFit.n, ...
+            format_p_clause(areaFit.p)); %#ok<AGROW>
+    end
+end
+if isempty(bits)
+    titleText = areaName;
+else
+    titleText = sprintf('%s | %s', areaName, strjoin(bits, '   '));
+end
+end
+
+function titleText = pop_adjusted_pair_title(popAdjustedTests, pairIdx, ...
+    rField, pField, nField)
+% POP_ADJUSTED_PAIR_TITLE - Leftover correlation and shift p-value
+
+bits = {};
+for iClass = 1:numel(popAdjustedTests.classes)
+    pairFit = popAdjustedTests.classes(iClass).pairs(pairIdx);
+    bits{end + 1} = sprintf('%sr = %.3f, n = %d%s', ...
+        pop_class_prefix(popAdjustedTests.classes(iClass).name), ...
+        pairFit.(rField), pairFit.(nField), ...
+        format_p_clause(pairFit.(pField))); %#ok<AGROW>
+end
+titleText = strjoin(bits, '   ');
+end
+
+function prefix = pop_class_prefix(className)
+% POP_CLASS_PREFIX - Short title tag for an engagement class
+
+if strcmp(className, 'engaged')
+    prefix = 'eng ';
+elseif strcmp(className, 'nonEngaged')
+    prefix = 'non ';
+else
+    prefix = '';
+end
+end
+
+function sharedLim = pop_adjusted_axis_limits(popAdjustedTests, xField, yField)
+% POP_ADJUSTED_AXIS_LIMITS - Shared residual range across pair panels
+
+allVals = [];
+for iClass = 1:numel(popAdjustedTests.classes)
+    for iPair = 1:numel(popAdjustedTests.classes(iClass).pairs)
+        pairFit = popAdjustedTests.classes(iClass).pairs(iPair);
+        [xVals, yVals] = finite_pair(pairFit.(xField), pairFit.(yField));
+        allVals = [allVals; xVals; yVals]; %#ok<AGROW>
+    end
+end
+allVals = allVals(isfinite(allVals));
+if isempty(allVals)
+    sharedLim = [];
+    return;
+end
+valMin = min(allVals);
+valMax = max(allVals);
+if valMin == valMax
+    pad = max(abs(valMin) * 0.05, 1e-3);
+else
+    pad = 0.05 * (valMax - valMin);
+end
+sharedLim = [valMin - pad, valMax + pad];
+end
+
+function export_across_areas_figure(fig, saveDir, fileStem)
+% EXPORT_ACROSS_AREAS_FIGURE - Write png and eps when the figure exists
+
+if isempty(fig) || ~isgraphics(fig)
+    return;
+end
+exportgraphics(fig, fullfile(saveDir, [fileStem, '.png']), 'Resolution', 300);
+exportgraphics(fig, fullfile(saveDir, [fileStem, '.eps']), 'ContentType', 'vector');
+fprintf('Saved figure: %s\n', fullfile(saveDir, fileStem));
 end
